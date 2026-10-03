@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.17](https://github.com/home-operations/kritika/compare/0.0.16...0.0.17) (2026-10-03)
+
+
+### Features
+
+* **webapi:** name the cause of a job's last error when GitHub did not answer ([#406](https://github.com/home-operations/kritika/issues/406)) ([8f2cad2](https://github.com/home-operations/kritika/commit/8f2cad20492542eea35b3d8bb30f801c08792b12))
+* **webapi:** say what the queued job is doing when a re-run is refused ([#409](https://github.com/home-operations/kritika/issues/409)) ([238b42b](https://github.com/home-operations/kritika/commit/238b42b8f61688e5f216e2f836637106c69f1760))
+* **web:** count a pull request's completed reviews and their cost in the list ([#410](https://github.com/home-operations/kritika/issues/410)) ([c556214](https://github.com/home-operations/kritika/commit/c556214bec8901c79fd884a0804bd39bb1555774))
+* **web:** show a pull request's unfinished review job on its page ([#407](https://github.com/home-operations/kritika/issues/407)) ([da6047c](https://github.com/home-operations/kritika/commit/da6047c89b59ac0caf856387d04b4be19ecfb790))
+
 ## [0.0.16](https://github.com/home-operations/kritika/compare/0.0.15...0.0.16) (2026-10-03)
 
 
