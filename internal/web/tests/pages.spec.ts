@@ -252,7 +252,7 @@ test.describe('pulls list', () => {
     // '?' in the search box is the box's, not the help overlay's.
     await page.getByRole('combobox', { name: 'Search pull requests' }).focus();
     await page.keyboard.press('?');
-    await expect(page.locator('.help-overlay')).toHaveCount(0);
+    await expect(page.locator('.help-card')).toHaveCount(0);
 
     await page.locator('.key-hints').click();
     await page.keyboard.press('j');

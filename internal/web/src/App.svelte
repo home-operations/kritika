@@ -255,8 +255,8 @@
     <Toasts />
     <Dialog.Root open={help.open} onOpenChange={(now) => !now && closeOverlays()}>
       <Dialog.Portal>
-        <Dialog.Overlay class="help-overlay" />
-        <Dialog.Content class="help-card">
+        <Dialog.Overlay class="overlay" />
+        <Dialog.Content class="modal modal-centered help-card">
           <Dialog.Title>
             {#snippet child({ props })}<h2 {...props}>Keyboard shortcuts</h2>{/snippet}
           </Dialog.Title>

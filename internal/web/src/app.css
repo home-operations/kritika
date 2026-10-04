@@ -180,25 +180,42 @@ body {
 }
 
 /* ---- keyboard-shortcuts help ------------------------------------------ */
-.help-overlay,
-.palette-overlay {
+/* What stacks over what, lowest first. */
+:root {
+  --z-sticky: 1;
+  --z-tip: 2;
+  --z-popup: 5;
+  --z-menu: 10;
+  --z-overlay: 30;
+  --z-modal: 31;
+  --z-toast: 40;
+}
+
+/* A modal and the dimmed page behind it: the confirmation dialog, the
+   shortcuts help and the palette. Each adds its own size and place. */
+.overlay {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: var(--z-overlay);
   background: color-mix(in srgb, var(--bg) 60%, transparent);
 }
-.help-card {
+.modal {
   position: fixed;
-  inset: 0;
-  z-index: 11;
-  margin: auto;
-  width: fit-content;
-  height: fit-content;
+  z-index: var(--z-modal);
   background: var(--panel);
+  color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 16px 20px;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
+}
+.modal-centered {
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+}
+.help-card {
+  width: fit-content;
+  padding: 16px 20px;
   min-width: 280px;
 }
 /* The card itself takes focus, having nothing in it to focus. */
@@ -237,18 +254,14 @@ kbd {
 
 /* ---- command palette (Ctrl/⌘ K) ---------------------------------------- */
 .palette {
-  position: fixed;
   top: 12vh;
   left: 0;
   right: 0;
-  z-index: 11;
   margin: 0 auto;
   width: min(640px, 92vw);
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 16px 48px color-mix(in srgb, var(--text) 25%, transparent);
   overflow: hidden;
@@ -394,7 +407,7 @@ kbd {
 
 /* ---- menus (account switcher, user) ------------------------------------ */
 .menu-panel {
-  z-index: 10;
+  z-index: var(--z-menu);
   display: flex;
   flex-direction: column;
   background: var(--panel);
