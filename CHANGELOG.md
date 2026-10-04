@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.19](https://github.com/home-operations/kritika/compare/0.0.18...0.0.19) (2026-10-04)
+
+
+### Features
+
+* **web:** count everything that needs attention, on the server ([#432](https://github.com/home-operations/kritika/issues/432)) ([87ef38e](https://github.com/home-operations/kritika/commit/87ef38e817d1c8f3a697810d7dc70ae603a7bbed))
+* **web:** link a follow-up's question and its reply on GitHub ([#435](https://github.com/home-operations/kritika/issues/435)) ([65663ea](https://github.com/home-operations/kritika/commit/65663eae6608812b74b66f5d1026293c4c29c06d))
+* **web:** list the rules a review checked ([#433](https://github.com/home-operations/kritika/issues/433)) ([9141bac](https://github.com/home-operations/kritika/commit/9141bac08d473f07b7bb8b2dd785ab4cc6b9a32a))
+* **web:** say when an account was last polled ([#436](https://github.com/home-operations/kritika/issues/436)) ([02f0cbf](https://github.com/home-operations/kritika/commit/02f0cbf4429b34226a2cb49dae926f70fe395b6a))
+* **web:** set names in mono and everything else in the text face ([#438](https://github.com/home-operations/kritika/issues/438)) ([d0942a0](https://github.com/home-operations/kritika/commit/d0942a0737546e9cd44718a0dc54bc1716322cba))
+
+
+### Bug Fixes
+
+* **worker:** build a forge client once when a caller misses a finished build ([#437](https://github.com/home-operations/kritika/issues/437)) ([faa20ef](https://github.com/home-operations/kritika/commit/faa20ef01859b76bf54efabbf53a896cb9e7bc58))
+
 ## [0.0.18](https://github.com/home-operations/kritika/compare/0.0.17...0.0.18) (2026-10-04)
 
 
