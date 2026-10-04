@@ -188,7 +188,7 @@
           <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
             <Icon path={mdiMagnify} label="Go to" />
           </button>
-          <button class="btn btn-icon" onclick={toggleHelp} title="Keyboard shortcuts (?)">
+          <button class="btn btn-icon keys-button" onclick={toggleHelp} title="Keyboard shortcuts (?)">
             <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
           </button>
           <button class="btn btn-icon" onclick={cycleTheme} title={`Theme: ${theme.pref}`}>
