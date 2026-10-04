@@ -6,7 +6,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
-  import { tokens, usd } from '../format';
+  import { tokens, usd, wholeNumber } from '../format';
   import type { InstanceSetting, AdminAccount } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
@@ -67,8 +67,8 @@
                         <Pill tone="ok" label="live" />
                       {/if}
                     </td>
-                    <td class="num">{t.repositories}</td>
-                    <td class="num">{t.reviews7d}</td>
+                    <td class="num">{wholeNumber(t.repositories)}</td>
+                    <td class="num">{wholeNumber(t.reviews7d)}</td>
                     <td class="num">{tokens(t.usage.tokens)}</td>
                     <td class="num">{usd(t.usage.costUsd)}</td>
                   </tr>

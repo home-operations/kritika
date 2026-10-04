@@ -226,7 +226,7 @@
                       <td>{run.mode}</td>
                       <td class="mono small" title={run.commitSha}>{shortSha(run.commitSha)}{run.baseSha ? ` ← ${shortSha(run.baseSha)}` : ''}</td>
                       <td>{run.trigger}</td>
-                      <td class="num">{run.chunkCount}</td>
+                      <td class="num">{wholeNumber(run.chunkCount)}</td>
                       <td class="mono small">{run.embedModel}</td>
                       <td><Time iso={run.createdAt} /></td>
                       <td>{run.finishedAt ? duration(Date.parse(run.finishedAt) - Date.parse(run.createdAt)) : '…'}</td>

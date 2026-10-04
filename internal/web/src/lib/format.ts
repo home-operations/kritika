@@ -4,6 +4,7 @@ import type { SkipReason, JobCause, JobState, ReviewStatus, Severity, IndexRunSt
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
+const cents = new Intl.NumberFormat('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // tokens renders a token count compactly ("12.3K"), with the exact figure
 // available through wholeNumber for a title attribute.
@@ -20,7 +21,7 @@ export function wholeNumber(n: number): string {
 export function usd(n: number): string {
   if (n === 0) return '$0';
   if (Math.abs(n) < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
+  return `$${cents.format(n)}`;
 }
 
 export function duration(ms: number | null | undefined): string {

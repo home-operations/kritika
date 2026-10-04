@@ -8,6 +8,7 @@
   import { Resource } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { findingFilter } from '../routes';
+  import { wholeNumber } from '../format';
   import { parseTokens, type TokenSpec } from '../tokensearch';
   import type { Rule, RuleKind, RuleSource } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -159,8 +160,8 @@
                       {#if r.kind === 'rule'}
                         <span class="rule-cited">
                           {#if r.findings}
-                            <a href={href({ name: 'findings', slug, filter: citedBy(r) })} title="Findings that cite {r.id}">{r.findings}</a>
-                            <span class="small muted">{r.addressed} addressed</span>
+                            <a href={href({ name: 'findings', slug, filter: citedBy(r) })} title="Findings that cite {r.id}">{wholeNumber(r.findings)}</a>
+                            <span class="small muted">{wholeNumber(r.addressed)} addressed</span>
                           {:else}<span class="muted">0</span>{/if}
                         </span>
                       {/if}
