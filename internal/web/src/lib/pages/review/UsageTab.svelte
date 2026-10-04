@@ -12,7 +12,7 @@
 {#if d.usage.length === 0}
   <p class="state-msg">No usage recorded.</p>
 {:else}
-  <div class="table-wrap">
+  <div class="table-wrap table-card">
     <table class="data">
       <thead>
         <tr>
