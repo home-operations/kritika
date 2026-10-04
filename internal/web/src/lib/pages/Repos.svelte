@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Switch } from 'bits-ui';
   import { href } from '../router.svelte';
   import { Paged, live } from '../resource.svelte';
   import { indexTone } from '../format';
@@ -235,17 +236,18 @@
                     <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
                     <td>
                       {#if manage}
-                        <label class="toggle" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
-                          <input
-                            type="checkbox"
-                            role="switch"
+                        <span class="toggle" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
+                          <Switch.Root
+                            class="switch"
                             aria-label={`Review and index ${repo.fullName}`}
                             checked={isOn(repo)}
                             disabled={busy || repo.archived}
-                            onchange={(e) => setEnabled([repo.fullName], e.currentTarget.checked)}
-                          />
+                            onCheckedChange={(on) => setEnabled([repo.fullName], on)}
+                          >
+                            <Switch.Thumb class="switch-thumb" />
+                          </Switch.Root>
                           <span>{isOn(repo) ? 'On' : 'Off'}</span>
-                        </label>
+                        </span>
                       {:else if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}
                     </td>
                     <td>
