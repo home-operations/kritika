@@ -5,6 +5,8 @@
   import Icon from '../../Icon.svelte';
   import { mdiChevronDown, mdiChevronRight } from '../../icons';
   import FindingCard from './FindingCard.svelte';
+  import Tokens from '../../components/Tokens.svelte';
+  import { highlightDiff, languageOf, type Token } from '../../highlight';
 
   let {
     file,
@@ -24,6 +26,19 @@
   });
   const shownLines = $derived(new Set(file.lines.map((l) => l.newNo).filter((n) => n !== null)));
   const orphans = $derived(findings.filter((f) => !shownLines.has(f.line)));
+
+  // The lines' tokens, once the file is open and its language has loaded;
+  // plain text until then, and for a language that is not highlighted.
+  // Raw: the file is compared by identity, which a state proxy would hide.
+  let tokens = $state.raw<{ of: DiffFile; lines: (Token[] | undefined)[] } | undefined>(undefined);
+  $effect(() => {
+    const of = file;
+    if (!open) return;
+    void highlightDiff(of.lines, languageOf(of.path)).then((lines) => {
+      if (lines && of === file) tokens = { of, lines };
+    });
+  });
+  const highlighted = $derived(tokens?.of === file ? tokens.lines : undefined);
 </script>
 
 <section class="diff-file">
@@ -50,7 +65,7 @@
                 <tr class="dl dl-{l.kind}" class:dl-marked={anchored}>
                   <td class="ln" aria-hidden="true">{l.oldNo ?? ''}</td>
                   <td class="ln" aria-hidden="true">{l.newNo ?? ''}</td>
-                  <td class="code"><span class="sign" aria-hidden="true">{l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}</span>{l.text}</td>
+                  <td class="code"><span class="sign" aria-hidden="true">{l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}</span>{#if highlighted?.[i]}<Tokens line={highlighted[i]} />{:else}{l.text}{/if}</td>
                 </tr>
                 {#if anchored}
                   <tr class="dl-finding">
