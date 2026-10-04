@@ -462,6 +462,21 @@ kbd {
   height: 100%;
   background: var(--tone, var(--ok));
 }
+/* A name of any length beside several columns: one name's column takes the
+   room the others leave and is cut short before the table runs past its
+   card, and a second is held to a width. The title holds the whole name. */
+table.data td.name-fill {
+  width: 100%;
+  max-width: 0;
+  min-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.data td.name-clip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .account-breakdown .meter {
   margin-top: 4px;
 }
@@ -1073,10 +1088,13 @@ table.data td.wrap {
   gap: 4px 14px;
   margin: 0;
 }
+/* Room for two side by side, so a row that wants several looks does not
+   stack them one to a line when its table is short of width. */
 .account-wants {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
+  min-width: 180px;
 }
 .account-wants a {
   text-decoration: none;
