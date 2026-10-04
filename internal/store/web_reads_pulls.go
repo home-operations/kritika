@@ -222,8 +222,7 @@ type ReviewRow struct {
 	// is it.
 	NewestReviewID *string
 	// SkipReason is why a skipped review was: the repository's own reason
-	// (a repoconfig.SkipReason), or the runner's "unchanged_patch" or
-	// "too_large".
+	// (a repoconfig.SkipReason), or the runner's (runner.Skip*).
 	SkipReason        string
 	Error             string
 	CreatedAt         time.Time
@@ -236,16 +235,8 @@ type ReviewRow struct {
 	OutputTokens int64
 }
 
-// reviewSkipReason is why a skipped review was. A skip the runner decides
-// is recorded on its context pack, and a bot's unchanged patch caught
-// before a runner starts leaves neither a reason nor an error.
-const reviewSkipReason = `CASE WHEN v.skip_reason <> '' OR v.status <> 'skipped' THEN v.skip_reason
-	ELSE coalesce((SELECT nullif(cp.skip_reason, '') FROM context_packs cp JOIN runner_runs rr ON rr.id = cp.runner_run_id
-		WHERE rr.review_id = v.id ORDER BY rr.created_at DESC LIMIT 1),
-		CASE WHEN v.error = '' THEN 'unchanged_patch' ELSE '' END) END`
-
 const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.scope, v.scope_reason,
-	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, ` + reviewSkipReason + `, v.error, v.created_at, v.finished_at,
+	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, v.skip_reason, v.error, v.created_at, v.finished_at,
 	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0),
 	(SELECT n.id FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND (n.created_at, n.id) > (v.created_at, v.id)
 		ORDER BY n.created_at DESC, n.id DESC LIMIT 1), p.state, p.merged

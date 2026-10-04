@@ -9,7 +9,11 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestDedupesBotPatch(t *testing.T) {
@@ -56,6 +60,38 @@ func TestSnooze(t *testing.T) {
 			}
 			if snooze.Duration < tt.min || snooze.Duration > tt.max {
 				t.Errorf("Duration = %v, want within [%v, %v]", snooze.Duration, tt.min, tt.max)
+			}
+		})
+	}
+}
+
+// TestEarlyEndStatus checks the commit status an early end reports: a skip
+// states the reason recorded with it, the repository's or the runner's, and
+// one with none, an admission's, the error it ends with.
+func TestEarlyEndStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    store.ReviewStatus
+		skip      string
+		reason    string
+		wantState forge.StatusState
+		want      string
+	}{
+		{name: "the repository's filter", status: store.ReviewSkipped, skip: string(repoconfig.SkipFiltered),
+			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered by " + repoconfig.FileName + ")"},
+		{name: "a bot's unchanged patch", status: store.ReviewSkipped, skip: runner.SkipUnchangedPatch,
+			wantState: forge.StatusSuccess, want: "kritika: skipped (patch unchanged since the last review)"},
+		{name: "an admission's own reason", status: store.ReviewSkipped, reason: "no review model is configured for this repository",
+			wantState: forge.StatusSuccess, want: "kritika: skipped (no review model is configured for this repository)"},
+		{name: "a cap", status: store.ReviewCapped, reason: "reviewsPerDay (5) reached",
+			wantState: forge.StatusSuccess, want: "kritika: capped (reviewsPerDay (5) reached)"},
+		{name: "a superseded head reports nothing", status: store.ReviewSuperseded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, desc := earlyEnd{skip: tt.skip}.status(tt.status, tt.reason)
+			if state != tt.wantState || desc != tt.want {
+				t.Errorf("status = %q %q, want %q %q", state, desc, tt.wantState, tt.want)
 			}
 		})
 	}

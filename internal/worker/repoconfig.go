@@ -105,7 +105,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bo
 		return false, nil
 	}
 	e.logger.Info("review skipped before its runner", "reason", reason)
-	e.skip = reason
+	e.skip = string(reason)
 	return true, w.end(ctx, e, store.ReviewSkipped, "")
 }
 

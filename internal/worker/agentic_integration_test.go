@@ -1269,14 +1269,15 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped", status)
 	}
-	var skip string
+	var skip, recorded string
 	var agentRows int
 	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `SELECT c.skip_reason, (SELECT count(*) FROM agent_runs a WHERE a.runner_run_id = r.id)
-			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id WHERE r.review_id = $1`, reviewID).Scan(&skip, &agentRows)
+		return tx.QueryRow(h.ctx, `SELECT c.skip_reason, v.skip_reason, (SELECT count(*) FROM agent_runs a WHERE a.runner_run_id = r.id)
+			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id JOIN reviews v ON v.id = r.review_id
+			WHERE r.review_id = $1`, reviewID).Scan(&skip, &recorded, &agentRows)
 	})
-	if err != nil || skip != runner.SkipUnchangedPatch || agentRows != 0 {
-		t.Fatalf("pack skip = %q with %d agent run(s), %v; want %s with none", skip, agentRows, err, runner.SkipUnchangedPatch)
+	if err != nil || skip != runner.SkipUnchangedPatch || recorded != skip || agentRows != 0 {
+		t.Fatalf("pack skip = %q, the review's %q, with %d agent run(s), %v; want %s on both with none", skip, recorded, agentRows, err, runner.SkipUnchangedPatch)
 	}
 	h.lf.mu.Lock()
 	forgeStatus := h.lf.status
@@ -1307,14 +1308,15 @@ func checkTooLarge(t *testing.T, h *agenticHarness) {
 	if status != "skipped" {
 		t.Fatalf("status = %s, want skipped", status)
 	}
-	var skip string
+	var skip, recorded string
 	var agentRows int
 	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `SELECT c.skip_reason, (SELECT count(*) FROM agent_runs a WHERE a.runner_run_id = r.id)
-			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id WHERE r.review_id = $1`, reviewID).Scan(&skip, &agentRows)
+		return tx.QueryRow(h.ctx, `SELECT c.skip_reason, v.skip_reason, (SELECT count(*) FROM agent_runs a WHERE a.runner_run_id = r.id)
+			FROM runner_runs r JOIN context_packs c ON c.runner_run_id = r.id JOIN reviews v ON v.id = r.review_id
+			WHERE r.review_id = $1`, reviewID).Scan(&skip, &recorded, &agentRows)
 	})
-	if err != nil || skip != runner.SkipTooLarge || agentRows != 0 {
-		t.Fatalf("pack skip = %q with %d agent run(s), %v; want %s with none", skip, agentRows, err, runner.SkipTooLarge)
+	if err != nil || skip != runner.SkipTooLarge || recorded != skip || agentRows != 0 {
+		t.Fatalf("pack skip = %q, the review's %q, with %d agent run(s), %v; want %s on both with none", skip, recorded, agentRows, err, runner.SkipTooLarge)
 	}
 	h.sm.mu.Lock()
 	after := h.sm.requests

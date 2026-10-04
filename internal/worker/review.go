@@ -24,7 +24,6 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/jobs"
-	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
@@ -313,10 +312,7 @@ func (w *Review) afterRun(
 	}
 	if pack.SkipReason != "" {
 		logger.Info("review skipped", "reason", pack.SkipReason, "patch_id", review.ShortSHA(pack.PatchID))
-		end := store.ReviewEnd{Status: store.ReviewSkipped, PatchID: pack.PatchID}
-		if reason := repoconfig.SkipReason(pack.SkipReason); reason.Valid() {
-			end.SkipReason = reason
-		}
+		end := store.ReviewEnd{Status: store.ReviewSkipped, PatchID: pack.PatchID, SkipReason: pack.SkipReason}
 		if _, err := w.endReview(ctx, args.AccountID, reviewID, end); err != nil {
 			return prepared{}, "", err
 		}
@@ -368,8 +364,9 @@ type earlyEnd struct {
 	args                              jobs.ReviewArgs
 	pr                                *pullRequest
 	accountKey, mergeBase, forgePatch string
-	// skip is why the repository's .kritika.yaml skipped the review.
-	skip    repoconfig.SkipReason
+	// skip is why the review was skipped: the repository's .kritika.yaml
+	// did (a repoconfig.SkipReason), or a bot's patch was unchanged.
+	skip    string
 	started time.Time
 	logger  *slog.Logger
 	// client reports the end on the head commit, under owner/repo; nil
@@ -411,13 +408,10 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 	case store.ReviewCapped:
 		return forge.StatusSuccess, "kritika: capped (" + reason + ")"
 	case store.ReviewSkipped:
-		switch {
-		case e.skip.Valid():
-			reason = e.skip.Description()
-		case reason == "":
-			// The one skip with neither a repository reason nor an
-			// admission reason is an unchanged bot patch.
-			reason = skipDescription(runner.SkipUnchangedPatch, 0)
+		// A skip with no reason of its own is an admission's, whose
+		// reason is the error it records.
+		if e.skip != "" {
+			reason = skipDescription(e.skip, 0)
 		}
 		return forge.StatusSuccess, "kritika: skipped (" + reason + ")"
 	}
@@ -438,7 +432,7 @@ func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.
 		return patch, false, nil
 	}
 	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", review.ShortSHA(patch))
-	e.forgePatch = patch
+	e.forgePatch, e.skip = patch, runner.SkipUnchangedPatch
 	return patch, true, w.end(ctx, e, store.ReviewSkipped, "")
 }
 
