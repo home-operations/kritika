@@ -204,7 +204,7 @@
               </summary>
               <div class="menu-panel user-panel">
                 <p class="user-name">{me.user.displayName}</p>
-                <p class="user-email mono">{me.user.email}</p>
+                <p class="user-email">{me.user.email}</p>
                 <button class="btn" onclick={signOut}>
                   <Icon path={mdiLogout} size={14} /> Sign out
                 </button>

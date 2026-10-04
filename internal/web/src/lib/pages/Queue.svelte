@@ -43,7 +43,7 @@
             <tbody>
               {#each jobs as j (j.id)}
                 <tr>
-                  <td class="num mono">{j.id}</td>
+                  <td class="num">{j.id}</td>
                   <td>{j.kind}</td>
                   <td><Pill tone={jobTone[j.state]} label={j.state} /></td>
                   <td class="num">{j.attempt}/{j.maxAttempts}</td>
@@ -55,7 +55,7 @@
                   <td class="small">
                     {#if j.args.trigger}<span>{j.args.trigger}</span>{/if}
                     {#if j.args.head}<span class="mono" title={j.args.head}>{shortSha(j.args.head)}</span>{/if}
-                    {#if j.args.commentId}<span class="mono">comment {j.args.commentId}</span>{/if}
+                    {#if j.args.commentId}<span>comment {j.args.commentId}</span>{/if}
                   </td>
                   <td><Time iso={j.scheduledAt} /></td>
                   <td><Time iso={j.attemptedAt} /></td>

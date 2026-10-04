@@ -1321,7 +1321,6 @@ input[type='checkbox'][role='switch']:focus-visible {
 .turn-title {
   margin: 0;
   font-size: 13px;
-  font-family: var(--font-mono);
 }
 .turn-usage {
   font-variant-numeric: tabular-nums;

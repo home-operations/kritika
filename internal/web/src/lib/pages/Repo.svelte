@@ -114,7 +114,7 @@
   <dd>
     <span class:mono={r.mono}>{value}</span>
     {#if value !== own}
-      <span class="muted small">({sourceLabel.repository}; the admin's is <span class:mono={r.mono}>{own}</span>)</span>
+      <span class="muted small">(<span class="mono">{sourceLabel.repository}</span>; the admin's is <span class:mono={r.mono}>{own}</span>)</span>
     {:else}
       <span class="muted small">({sourceLabel[d.sources[r.key] ?? 'default']})</span>
     {/if}

@@ -401,7 +401,7 @@ test.describe('findings', () => {
     await expect(row).toContainText(f.title);
     await expect(row).toContainText(f.explanation);
     await expect(row.locator('.sev')).toHaveText(f.severity);
-    await expect(row.getByRole('link', { name: `${f.pull.repository} #${f.pull.number}` })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
+    await expect(row.getByRole('link', { name: `${f.pull.repository}#${f.pull.number}` })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
     await expect(row.locator('.status-word')).toHaveText(f.status);
     await expect(row.getByTitle('Reactions to its comment on GitHub')).toHaveText(`${f.reactionsUp} ${f.reactionsDown}`);
     await expect(row.getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${f.pull.url}#discussion_r${f.forgeCommentId}`);
@@ -708,6 +708,25 @@ test('a time still to come says how far off it is', async ({ page }) => {
   await expect(page.locator(`tbody time[datetime="${due}"]`)).toHaveText('in 10m');
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('.job-notice')).toContainText('failed, the next is due in 10m.');
+});
+
+test('names are set in mono, and words and numbers in the text face', async ({ page }) => {
+  const mono = /(^| )mono( |$)/;
+  await page.goto(`/${T}/findings`);
+  const f = g.accountFinding;
+  await expect(page.getByRole('link', { name: `${f.pull.repository}#${f.pull.number}` })).toHaveClass(mono);
+  await page.goto(`/${T}/queue`);
+  const cells = page.locator('tbody tr').first().locator('td');
+  await expect(cells.nth(0)).toHaveText(String(g.job.id));
+  await expect(cells.nth(0)).not.toHaveClass(mono);
+  await expect(cells.nth(4)).toHaveClass(mono);
+  const role = { ...g.usageSeries, group: 'role', rows: [{ ...g.usageSeries.rows[0]!, key: 'review' }] };
+  await g.mockApi(page, [[/\/usage$/, (u: URL) => (u.searchParams.get('group') === 'role' ? role : { ...role, group: 'model', rows: [{ ...role.rows[0]!, key: 'acme/large' }] })], ...g.defaultApi()]);
+  await page.goto(`/${T}/usage`);
+  await expect(page.locator('tbody td').first()).toHaveClass(mono);
+  await page.getByRole('radio', { name: 'Role' }).click();
+  await expect(page.locator('tbody td').first()).toHaveText('review');
+  await expect(page.locator('tbody td').first()).not.toHaveClass(mono);
 });
 
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {

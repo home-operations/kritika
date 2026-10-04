@@ -34,6 +34,8 @@
   interface Entry {
     label: string;
     hint?: string;
+    // words says the hint is a word, not a name: it is set in the text face.
+    words?: boolean;
     route: Route;
     icon: string;
     // target selects the element to focus once the route shows it.
@@ -57,7 +59,7 @@
       entries.push({ label: 'Configuration', route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings' });
       if (searching) {
         for (const { label, target, keywords } of CONSOLE_SECTIONS) {
-          entries.push({ label, hint: 'configuration', route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
+          entries.push({ label, hint: 'configuration', words: true, route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
         }
       }
     }
@@ -187,7 +189,7 @@
             <Icon path={row.icon} size={14} />
             <span class="row-main">
               <span class="row-title">{row.label}</span>
-              {#if row.hint}<span class="row-sub mono">{row.hint}</span>{/if}
+              {#if row.hint}<span class="row-sub" class:mono={!row.words}>{row.hint}</span>{/if}
             </span>
           </button>
         {/each}
