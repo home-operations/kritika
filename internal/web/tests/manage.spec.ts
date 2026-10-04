@@ -314,6 +314,16 @@ test.describe('repository switches', () => {
     await expect(page.getByRole('switch', { name: 'Review and index alpha/two' })).toBeChecked();
   });
 
+  test("a row's switch leaves the other rows picked for a bulk action as they are", async ({ page }) => {
+    await turnable(page, [g.repoPage.items[0]!, second]);
+    await page.goto(`/${REPOS}`);
+    await page.getByRole('checkbox', { name: 'Select alpha/one' }).check();
+    await page.getByRole('switch', { name: 'Review and index alpha/two' }).check();
+    await expect(page.getByRole('status')).toContainText('1 repository turned on');
+    await expect(page.getByRole('checkbox', { name: 'Select alpha/one' })).toBeChecked();
+    await expect(page.getByRole('group', { name: 'Selected repositories' })).toContainText('1 selected');
+  });
+
   test('a fork is turned on like any repository, and an archived repository cannot be', async ({ page }) => {
     const copy: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-3', fullName: 'alpha/copy', fork: true, enabled: false };
     const old: T.Repository = { ...g.repoPage.items[0]!, id: 'repo-4', fullName: 'alpha/old', archived: true, enabled: false };

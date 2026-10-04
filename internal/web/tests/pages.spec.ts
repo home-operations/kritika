@@ -149,7 +149,9 @@ test('repositories filter and repository detail', async ({ page }) => {
   await page.goto(`/${T}/repos`);
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.getByPlaceholder('Filter by name').fill('nomatch');
-  await expect(page.locator('.state-msg')).toContainText('Nothing matches');
+  // The filter only sees the pages loaded so far, and the golden page has more.
+  await expect(page.locator('.state-msg')).toContainText('Nothing loaded yet matches “nomatch”: load more to look further.');
+  await expect(page.getByRole('combobox', { name: 'Type' }).locator('option').first()).toHaveText('In use');
   await page.getByRole('button', { name: 'Clear filter' }).click();
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await expect(page.getByPlaceholder('Filter by name')).toBeFocused();

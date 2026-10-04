@@ -88,7 +88,7 @@
       }
     }
     busy = false;
-    selected = [];
+    selected = selected.filter((n) => !names.includes(n));
     void paged.load();
     const parts = [`${plural(names.length - failed.length)} turned ${on ? 'on' : 'off'}`];
     if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
@@ -162,7 +162,7 @@
       <label class="select">
         <span class="sr-only">Type</span>
         <select bind:value={() => kind, show} aria-label="Type">
-          <option value="">All repositories</option>
+          <option value="">In use</option>
           <option value="forks">Forks</option>
           <option value="archived">Archived</option>
         </select>
@@ -190,7 +190,7 @@
         {@const rows = visible()}
         {#if rows.length === 0}
           <div class="state-msg">
-            <span>Nothing matches “{filter}”.</span>
+            <span>{paged.cursor ? `Nothing loaded yet matches “${filter}”: load more to look further.` : `Nothing matches “${filter}”.`}</span>
             <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
           </div>
         {:else}
