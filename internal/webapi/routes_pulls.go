@@ -54,7 +54,7 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 func pull(p store.PullRow) Pull {
 	out := Pull{
 		Repository: p.Repository, Number: p.Number, Title: p.Title, Author: p.Author, State: p.State, Draft: p.Draft, Fork: p.Fork,
-		Merged: p.Merged, HeadSHA: p.HeadSHA, HeadRef: p.HeadRef, BaseRef: p.BaseRef, URL: p.URL, OpenedAt: p.OpenedAt,
+		Merged: p.Merged, Paused: p.Paused, HeadSHA: p.HeadSHA, HeadRef: p.HeadRef, BaseRef: p.BaseRef, URL: p.URL, OpenedAt: p.OpenedAt,
 		UpdatedAt: p.UpdatedAt, Labels: make([]Label, len(p.Labels)), ReviewCount: p.Reviews, CostUSD: p.CostUSD,
 	}
 	for i, l := range p.Labels {

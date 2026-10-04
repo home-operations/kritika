@@ -49,8 +49,10 @@ type PullRow struct {
 	State        string
 	Draft        bool
 	// Fork is whether the head is in another repository.
-	Fork       bool
-	Merged     bool
+	Fork   bool
+	Merged bool
+	// Paused is whether its automatic reviews are paused.
+	Paused     bool
 	HeadSHA    string
 	HeadRef    string
 	BaseRef    string
@@ -78,7 +80,7 @@ type PullFilter struct {
 	Query        string
 }
 
-const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged,
+const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged, p.paused,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit,
 	(SELECT count(*) FROM reviews WHERE pull_request_id = p.id AND status = 'completed'),
@@ -99,7 +101,7 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	var at *time.Time
 	var blocking, important, nit *int
 	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Fork, &p.Merged,
-		&p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
+		&p.Paused, &p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
 		&id, &status, &scope, &at, &blocking, &important, &nit, &p.Reviews, &p.CostUSD); err != nil {
 		return p, err
 	}

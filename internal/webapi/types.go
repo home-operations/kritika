@@ -240,14 +240,18 @@ type ReviewBrief struct {
 
 // Pull is one pull request.
 type Pull struct {
-	Repository string       `json:"repository"`
-	Number     int          `json:"number"`
-	Title      string       `json:"title"`
-	Author     string       `json:"author"`
-	State      string       `json:"state"`
-	Draft      bool         `json:"draft"`
-	Fork       bool         `json:"fork"`
-	Merged     bool         `json:"merged"`
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
+	Title      string `json:"title"`
+	Author     string `json:"author"`
+	State      string `json:"state"`
+	Draft      bool   `json:"draft"`
+	Fork       bool   `json:"fork"`
+	Merged     bool   `json:"merged"`
+	// Paused is whether its automatic reviews are paused: a push is
+	// recorded, not reviewed, until someone asks for a review or resumes
+	// them.
+	Paused     bool         `json:"paused"`
 	HeadSHA    string       `json:"headSha"`
 	HeadRef    string       `json:"headRef"`
 	BaseRef    string       `json:"baseRef"`

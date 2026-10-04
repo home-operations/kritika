@@ -295,6 +295,18 @@ test.describe('pulls list', () => {
     await expect(rows.nth(1).locator('td.num')).toContainText(['0', '$0']);
   });
 
+  test('a pull request whose automatic reviews are paused says so, in the list and on its page', async ({ page }) => {
+    const paused: Pull = { ...g.pull, paused: true };
+    await g.mockApi(page, [[/\/pulls$/, g.pageOf([paused, { ...g.pull, number: 8, url: g.pull.url.replace(/\d+$/, '8') }])], [/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, pull: paused }], ...g.defaultApi()]);
+    await page.goto(`/${T}/pulls`);
+    const rows = page.locator('.pull-rows tr');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0).locator('.badge')).toHaveText('paused');
+    await expect(rows.nth(1).locator('.badge')).toHaveCount(0);
+    await page.goto(`/${T}/pulls/alpha/one/7`);
+    await expect(page.locator('.paused-notice')).toContainText('Automatic reviews of this pull request are paused');
+  });
+
   test("a fork's pull request not reviewed says it is reviewed on request", async ({ page }) => {
     const fork = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), fork: true, lastReview: null };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([fork, { ...g.pull, lastReview: null }])], ...g.defaultApi()]);
