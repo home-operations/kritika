@@ -200,6 +200,16 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	return m, nil
 }
 
+// ReadLastPoll reads when the account was last polled for pull requests,
+// nil when it never was.
+func ReadLastPoll(ctx context.Context, tx pgx.Tx) (*time.Time, error) {
+	var at *time.Time
+	if err := tx.QueryRow(ctx, `SELECT max(last_polled_at) FROM poll_state`).Scan(&at); err != nil {
+		return nil, fmt.Errorf("store: read last poll: %w", err)
+	}
+	return at, nil
+}
+
 // WebhookDeliveries is when a connection's webhook last delivered a
 // verified request and one with no signature, each nil for never.
 type WebhookDeliveries struct {

@@ -153,6 +153,8 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 		VALUES ($1, $2, 'a.go', 3, 'blocking', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'nit', 'naming', 'y')`, s.accountID, s.reviewID)
 	s.runID = e.scalar(`INSERT INTO runner_runs (account_id, review_id, kind, phase, log_tail)
 		VALUES ($1, $2, 'review', 'done', $3) RETURNING id::text`, s.accountID, s.reviewID, "tail of "+slug)
+	e.exec(`INSERT INTO poll_state (account_id, last_polled_at) VALUES ($1, '2026-09-01T12:00:00Z')
+		ON CONFLICT (account_id) DO UPDATE SET last_polled_at = excluded.last_polled_at`, s.accountID)
 	e.exec(`INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, rule_ids, stages, repo_files)
 		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}', '{wrap-errors}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
@@ -282,6 +284,8 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 	// Each path of account A and a string only account A's answer contains.
 	endpoints := []struct{ path, marker string }{
 		{a, `"slug":"github/wa"`},
+		// The hour is the server's zone's.
+		{a, `"lastPolledAt":"2026-09-01T`},
 		{a + "/repos", `"fullName":"wa/one"`},
 		{a + "/repos/wa/one", `"activeCommit":"commit7"`},
 		{a + "/repos/wa/one", `"commit":"base7","found":true`},

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -140,12 +141,16 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	ctx := r.Context()
 	var month store.MonthUsage
 	var webhooks map[string]store.WebhookDeliveries
+	var polled *time.Time
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		var err error
 		if month, err = store.ReadMonthUsage(ctx, tx); err != nil {
 			return err
 		}
-		webhooks, err = store.ReadWebhookDeliveries(ctx, tx)
+		if webhooks, err = store.ReadWebhookDeliveries(ctx, tx); err != nil {
+			return err
+		}
+		polled, err = store.ReadLastPoll(ctx, tx)
 		return err
 	}); err != nil {
 		return err
@@ -154,7 +159,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	d := AccountDetail{
 		Slug:   t.account.Slug(),
 		Models: settings.Models, Limits: settings.Limits, Filter: filterSource(settings),
-		Usage: monthUsage(month, settings.Limits),
+		Usage: monthUsage(month, settings.Limits), LastPolledAt: polled,
 	}
 	if in := t.file.ConnectionFor(t.account); in != nil {
 		d.Connection = connection(in)

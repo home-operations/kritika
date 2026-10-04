@@ -109,7 +109,7 @@ var goldens = map[string]any{
 		},
 		Models: configfile.Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
 		Limits: configfile.Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
-		Usage: goldenSummary.Usage,
+		Usage: goldenSummary.Usage, LastPolledAt: &t1,
 	},
 	"repository":       goldenRepo,
 	"instance_setting": InstanceSetting{Section: "connections", Key: "alpha-bot", Value: "alpha, webhook /hooks/alpha-bot", Source: configfile.SourceFile},

@@ -18,6 +18,7 @@
   import ColumnChart from '../components/ColumnChart.svelte';
   import SeverityCounts from '../components/SeverityCounts.svelte';
   import Pill from '../components/Pill.svelte';
+  import Time from '../components/Time.svelte';
 
   let { slug }: { slug: string } = $props();
   const base = $derived(accountApi(slug));
@@ -125,6 +126,9 @@
             cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{hookURL(inst.hookPath)}</span>.
           </p>
         {/if}
+        <p class="small muted panel-body last-poll">
+          {#if detail.data.lastPolledAt}Last polled <Time iso={detail.data.lastPolledAt} />.{:else}Not polled yet.{/if}
+        </p>
       </section>
     {/if}
 

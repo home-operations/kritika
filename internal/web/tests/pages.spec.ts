@@ -150,6 +150,11 @@ test('analytics says when no webhook has reached the connection', async ({ page 
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
   await page.reload();
   await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${g.meta.webUrl}${detail.connection.hookPath}`);
+  await expect(panel.locator(`.last-poll time[datetime="${detail.lastPolledAt}"]`)).toBeVisible();
+
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, lastPolledAt: null, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
+  await page.reload();
+  await expect(panel.locator('.last-poll')).toHaveText('Not polled yet.');
 });
 
 test("analytics says when the connection's webhooks arrive unsigned", async ({ page }) => {
