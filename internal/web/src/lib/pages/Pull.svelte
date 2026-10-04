@@ -12,7 +12,8 @@
   import StateView from '../components/StateView.svelte';
   import Time from '../components/Time.svelte';
   import Icon from '../Icon.svelte';
-  import { mdiOpenInNew, mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline, mdiSourcePull } from '../icons';
+  import { mdiOpenInNew } from '../icons';
+  import { lifecycle } from '../lifecycle';
   import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
   import ReviewMeta from '../components/ReviewMeta.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
@@ -56,13 +57,6 @@
   // falls back to the border colour rather than reaching the style attribute.
   function labelColor(c: string): string | undefined {
     return /^[0-9a-f]{3,8}$/i.test(c) ? `#${c}` : undefined;
-  }
-
-  function lifecycle(p: PullDetail['pull']): { icon: string; label: string; tone: string } {
-    if (p.merged) return { icon: mdiSourceMerge, label: 'Merged', tone: 'merged' };
-    if (p.state === 'closed') return { icon: mdiSourceBranchRemove, label: 'Closed', tone: 'danger' };
-    if (p.draft) return { icon: mdiFileDocumentEditOutline, label: 'Draft', tone: 'muted' };
-    return { icon: mdiSourcePull, label: 'Open', tone: 'ok' };
   }
 </script>
 
