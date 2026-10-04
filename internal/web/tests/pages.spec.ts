@@ -582,6 +582,15 @@ test.describe('rules', () => {
     await expect(rows.locator('.rule-sub')).toHaveText(renovate.id);
   });
 
+  test('a rule keeps room for its words on a phone, where the table scrolls sideways instead', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto(`/${T}/rules`);
+    const main = page.locator('.rule-main').first();
+    await expect(main).toBeVisible();
+    expect((await main.boundingBox())!.width).toBeGreaterThanOrEqual(240);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  });
+
   test('says how to add a rule when there is none', async ({ page }) => {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
