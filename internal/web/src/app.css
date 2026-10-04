@@ -127,6 +127,7 @@ body {
 }
 .brand {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   color: inherit;
@@ -417,6 +418,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   max-width: 280px;
   padding: 4px 8px;
   border-radius: 6px;
@@ -646,5 +648,11 @@ kbd {
   }
   .account-button {
     max-width: 140px;
+  }
+}
+/* A touch screen has no keys to list the shortcuts of. */
+@media (pointer: coarse) {
+  .keys-button {
+    display: none;
   }
 }

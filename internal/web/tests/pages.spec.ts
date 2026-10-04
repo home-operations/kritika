@@ -942,6 +942,14 @@ test.describe('your settings', () => {
   });
 });
 
+test('the top bar fits a phone: the logo keeps its size and the user menu stays on screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.goto(`/${T}/pulls`);
+  const user = (await page.locator('.user-button').boundingBox())!;
+  expect(user.x + user.width).toBeLessThanOrEqual(390);
+  expect((await page.locator('.brand img').boundingBox())!.width).toBe(22);
+});
+
 test('your settings fit a phone: no control runs past the screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.goto('/#/settings');
