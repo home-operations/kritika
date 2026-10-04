@@ -46,10 +46,12 @@
         <dl class="deflist prefs">
           <dt><label for="pref-zone">Time zone</label></dt>
           <dd>
-            <select id="pref-zone" value={settings.timeZone} onchange={(e) => saveSettings({ timeZone: e.currentTarget.value })}>
-              <option value="">Browser's ({browserZone})</option>
-              {#each zones as z (z)}<option value={z}>{z}</option>{/each}
-            </select>
+            <span class="select">
+              <select id="pref-zone" value={settings.timeZone} onchange={(e) => saveSettings({ timeZone: e.currentTarget.value })}>
+                <option value="">Browser's ({browserZone})</option>
+                {#each zones as z (z)}<option value={z}>{z}</option>{/each}
+              </select>
+            </span>
             {#if settings.timeZone && !zoneKnown(settings.timeZone)}
               <span class="small muted">This browser does not know {settings.timeZone}, and uses its own.</span>
             {/if}
