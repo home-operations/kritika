@@ -132,6 +132,15 @@ func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo st
 		return client, nil
 	}
 	results := c.building.DoChan(key, func() (any, error) {
+		// A caller that missed the cache may only get here once the build
+		// it would have joined is over and forgotten: it takes that
+		// build's client instead of building another.
+		c.mu.Lock()
+		client, ok := c.clients[key]
+		c.mu.Unlock()
+		if ok {
+			return client, nil
+		}
 		bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forgeBuildTimeout)
 		defer cancel()
 		client, err := c.Build(bctx, in, repo)
