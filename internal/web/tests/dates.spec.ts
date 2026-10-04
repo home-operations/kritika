@@ -1,7 +1,7 @@
 // The dashboard's one way of writing dates and times (src/lib/dates.ts):
 // plain functions, called directly, with no browser.
 import { test, expect } from '@playwright/test';
-import { day, relative, timestamp } from '../src/lib/dates';
+import { day, hour12Of, relative, timestamp } from '../src/lib/dates';
 
 const now = Date.parse('2026-09-15T12:00:00Z');
 const at = (seconds: number) => new Date(now + seconds * 1000).toISOString();
@@ -35,8 +35,15 @@ test.describe('dates: relative()', () => {
   });
 });
 
-test('dates: timestamp() is the full moment, 24-hour, with its zone', () => {
-  expect(timestamp('2026-09-01T14:05:09Z')).toMatch(/^(Aug 31|Sep [12]), 2026, \d\d:\d\d:09 \S+$/);
+test("dates: hour12Of() is the locale's clock", () => {
+  expect(hour12Of('en-US')).toBe(true);
+  expect(hour12Of('en-GB')).toBe(false);
+  expect(hour12Of('de')).toBe(false);
+});
+
+test("dates: timestamp() is the full moment with its zone, on the locale's clock", () => {
+  const clock = hour12Of() ? /\d{1,2}:\d\d:09 [AP]M/ : /\d\d:\d\d:09/;
+  expect(timestamp('2026-09-01T14:05:09Z')).toMatch(new RegExp(`^(Aug 31|Sep [12]), 2026, ${clock.source} \\S+$`));
   expect(timestamp(undefined)).toBe('');
   expect(timestamp('soon')).toBe('');
 });
