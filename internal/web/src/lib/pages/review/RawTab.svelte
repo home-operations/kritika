@@ -47,7 +47,7 @@
       {#each x.stages as s, i (i)}
         <Collapsible title="{s.stage} · {s.path}:{s.startLine}-{s.endLine}">
           {#snippet meta()}<span class="mono small muted">{s.kind} {s.symbol}</span>{/snippet}
-          <CodeBlock text={s.text} label={s.language || undefined} />
+          <CodeBlock text={s.text} label={s.language || undefined} lang={s.language || s.path} />
         </Collapsible>
       {:else}
         <p class="state-msg">No stages.</p>

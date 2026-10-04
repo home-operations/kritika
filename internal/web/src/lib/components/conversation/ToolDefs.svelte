@@ -12,7 +12,7 @@
       <Collapsible title={t.name}>
         {#snippet meta()}<span class="muted">{t.description.split('\n')[0]}</span>{/snippet}
         {#if t.description}<CodeBlock text={t.description} plain copy={false} />{/if}
-        <CodeBlock text={pretty(t.inputSchema)} label="input schema" />
+        <CodeBlock text={pretty(t.inputSchema)} label="input schema" lang="json" />
       </Collapsible>
     </li>
   {/each}

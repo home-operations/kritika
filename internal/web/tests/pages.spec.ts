@@ -651,6 +651,28 @@ test.describe('review', () => {
     await expect(rules).toHaveCount(0);
   });
 
+  test('code is highlighted where its language is known, with the same text, and left plain where it is not', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    await page.goto(`/${T}/reviews/rev-1/raw`);
+    // The submitted result is JSON, and the golden log tail is no language.
+    const result = page.getByRole('region', { name: 'Submitted result' }).locator('pre');
+    await expect(result).toHaveAttribute('data-lang', 'json');
+    await expect(result.locator('span').first()).toBeVisible();
+    await expect(result).toHaveText(JSON.stringify(g.reviewRaw.result, null, 2));
+    const log = page.getByRole('region', { name: 'Log tail' }).locator('pre');
+    await expect(log).not.toHaveAttribute('data-lang');
+    await expect(log.locator('span')).toHaveCount(0);
+
+    // A finding's replacement takes its language from the finding's file.
+    await page.goto(`/${T}/reviews/rev-1`);
+    const f = g.reviewDetail.findings[0]!;
+    const replacement = page.locator(`#finding-${f.id} pre`).first();
+    await expect(replacement).toHaveAttribute('data-lang', 'go');
+    await expect(replacement).toHaveText(f.replacement);
+    expect(errors).toEqual([]);
+  });
+
   test('diff anchors a finding under its line', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/diff`);
     const anchored = page.locator('tr.dl-finding');
