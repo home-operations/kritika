@@ -55,10 +55,10 @@
               <tbody>
                 {#each list as t (t.slug)}
                   <tr>
-                    <td class="mono">
+                    <td class="mono name-fill" title={t.slug}>
                       {#if t.live}<a href={href({ name: 'account', slug: t.slug })}>{t.slug}</a>{:else}{t.slug}{/if}
                     </td>
-                    <td class="mono small">{t.connection || '—'}</td>
+                    <td class="mono small name-clip" title={t.connection}>{t.connection || '—'}</td>
                     <td>
                       {#if t.conflict}
                         <Pill tone="warn" label="not served" />

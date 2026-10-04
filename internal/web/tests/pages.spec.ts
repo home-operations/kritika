@@ -47,6 +47,28 @@ test.describe('overview', () => {
   });
 });
 
+test('a long account or App name is cut short, whole in its title, before a table of accounts runs past its card', async ({ page }) => {
+  const slug = 'github/an-organization-with-a-very-long-name';
+  const connection = 'an-app-with-a-very-long-name-too';
+  const long = { slug, connection, attention: { failed: 12, capped: 3, blocking: 40, paused: 7 }, lastWebhookAt: null };
+  await g.mockApi(page, [
+    [/\/api\/v1\/me$/, { ...g.me, admin: true }],
+    [/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, ...long }]],
+    [/\/api\/v1\/admin\/accounts$/, [g.adminAccount, { ...g.adminAccount, ...long }]],
+    ...g.defaultApi(),
+  ]);
+  for (const h of ['#/', '#/admin']) {
+    await page.goto(`/${h}`);
+    const row = page.getByRole('row').filter({ hasText: 'an-organization' });
+    await expect(row.locator('td.name-fill')).toHaveAttribute('title', slug);
+    await expect(row.locator('td.name-clip')).toHaveAttribute('title', connection);
+    expect(await row.locator('xpath=ancestor::div[contains(@class,"table-wrap")]').evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  }
+  await page.goto('/#/');
+  const wants = page.getByRole('row').filter({ hasText: 'an-organization' }).locator('.account-wants .pill');
+  expect((await wants.nth(0).boundingBox())!.y).toBe((await wants.nth(1).boundingBox())!.y);
+});
+
 test('analytics shows the totals against the window before, the charts and the repositories', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}`);
