@@ -85,7 +85,7 @@
       <span class="small muted">{a.steps} steps · {a.stopReason} · {usd(a.costUsd)}</span>
     </header>
     {#if steps.length}
-      <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} />
+      <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />
     {/if}
     <dl class="deflist">
       <dt>Model</dt><dd class="mono">{a.model}</dd>

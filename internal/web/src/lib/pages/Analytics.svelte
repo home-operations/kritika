@@ -220,6 +220,7 @@
                 series={[{ label: 'Reviews', color: 'var(--chart-ink)' }]}
                 rows={rows(d.series, (x) => [x.reviews])}
                 format={wholeNumber}
+                whole
                 view={reviewsView}
               />
             </section>
@@ -233,6 +234,7 @@
                 series={SEV_SERIES}
                 rows={rows(d.series, (x) => [x.findings.blocking, x.findings.important, x.findings.nit])}
                 format={wholeNumber}
+                whole
                 view={findingsView}
               />
               <p class="panel-foot badge-row">
