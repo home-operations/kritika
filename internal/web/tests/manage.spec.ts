@@ -101,8 +101,14 @@ test.describe('actions', () => {
     await page.getByRole('button', { name: 'Re-run' }).click();
     const dialog = page.getByRole('dialog', { name: 'Re-run the review?' });
     await expect(dialog).toBeVisible();
+    // Tab stays inside the dialog, and Escape hands focus back to what opened it.
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Re-run' })).toBeFocused();
     expect(sent).toHaveLength(0);
     await page.getByRole('button', { name: 'Re-run' }).click();
     await dialog.getByRole('button', { name: 'Re-run' }).click();
