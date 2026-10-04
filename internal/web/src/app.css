@@ -462,6 +462,15 @@ kbd {
   width: 15px;
   flex: 0 0 auto;
 }
+/* What is set in mono: a name or value someone could paste into a
+   terminal, a configuration file or GitHub. An account, a repository and a
+   pull request written as owner/repo#7; a branch, a commit, a path, a glob;
+   a model, a rule id, an App; a configuration key, value or expression; a
+   job, pod, node or tool; a command to type; code and diffs.
+   Everything else is in the text face: a person's login or email, a title,
+   a status, trigger or other word from a fixed set, a count, a cost, a
+   date, a number on its own (#7, a job id), and any sentence, even one a
+   name appears in as plain text (a dialog, a toast, a tooltip). */
 .mono {
   font-family: var(--font-mono);
 }

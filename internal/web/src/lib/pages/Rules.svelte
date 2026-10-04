@@ -146,7 +146,7 @@
                         >
                       {/if}
                     </td>
-                    <td class="small">{SOURCES[r.source] ?? r.source}</td>
+                    <td class="small" class:mono={r.source === 'repository'}>{SOURCES[r.source] ?? r.source}</td>
                     <td class="wrap" title={r.repositories.join('\n')}>
                       <div class="rule-repos">
                         {#each r.repositories.slice(0, 2) as name (name)}

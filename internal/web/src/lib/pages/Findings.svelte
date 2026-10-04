@@ -183,7 +183,7 @@
                       {#if f.category}<a class="badge" href={href({ name: 'findings', slug, filter: { category: f.category } })} title="Findings of this kind">{f.category}</a>{/if}
                     </td>
                     <td class="finding-pull">
-                      <a href={href(pullRoute(slug, f.pull))} title={f.pull.title}><span class="mono">{f.pull.repository}</span> #{f.pull.number}</a>
+                      <a class="mono" href={href(pullRoute(slug, f.pull))} title={f.pull.title}>{f.pull.repository}#{f.pull.number}</a>
                       <span class="finding-sub mono">
                         {f.path}:{f.line}
                         {#if threadUrl(f.pull.url, f.forgeCommentId)}

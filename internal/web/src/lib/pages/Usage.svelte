@@ -129,7 +129,7 @@
               <!-- Days read newest first; the other groups keep the server's order. -->
               {#each s.group === 'day' ? [...s.rows].reverse() : s.rows as r (r.key)}
                 <tr>
-                  <td class:mono={s.group !== 'day'} class="small">{s.group === 'day' ? day(r.key) : named(r.key)}</td>
+                  <td class:mono={s.group === 'model' || s.group === 'repo'} class="small">{s.group === 'day' ? day(r.key) : named(r.key)}</td>
                   <td class="num">{wholeNumber(r.calls)}</td>
                   <td class="num" title={wholeNumber(r.inputTokens)}>{tokens(r.inputTokens)}</td>
                   <td class="num" title={wholeNumber(r.cacheReadTokens)}>{tokens(r.cacheReadTokens)}</td>
