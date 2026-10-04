@@ -15,7 +15,7 @@ test('served under a path prefix, every request stays under it', async ({ page }
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(DEFAULT_ME) }),
   );
   await page.goto('/kritika/index.html');
-  await expect(page.locator('.sections .section-tab').first()).toHaveAttribute('href', '#/a/github/acme');
+  await expect(page.locator('.sections .section-tab').first()).toHaveAttribute('href', '#/');
   expect(paths).toContain('/kritika/api/v1/me');
   expect(paths).toContain('/kritika/api/events');
   expect(paths.filter((p) => !p.startsWith('/kritika/'))).toEqual([]);

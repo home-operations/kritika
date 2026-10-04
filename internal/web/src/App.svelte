@@ -16,6 +16,7 @@
     mdiMagnify,
     mdiChartBoxOutline,
     mdiViewGridOutline,
+    mdiConsoleLine,
     mdiSourcePull,
     mdiScaleBalance,
     mdiCogOutline,
@@ -25,7 +26,8 @@
     mdiUnfoldMoreHorizontal,
     mdiCheck,
   } from './lib/icons';
-  import { SECTIONS, SECTION_ORDER, sectionOf, type Section } from './lib/sections';
+  import { INSTANCE_TABS, SECTIONS, SECTION_ORDER, scopeOf, sectionOf, type Section } from './lib/sections';
+  import type { Route } from './lib/routes';
   import { focusOnMount, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Palette from './lib/Palette.svelte';
@@ -79,11 +81,15 @@
     navigate({ name: 'signin' });
   }
 
-  // currentSlug reads the account slug off whatever route is active, falling
-  // back to the first account so the tabs have somewhere to point before the
-  // user has ever picked one explicitly.
-  const currentSlug = $derived('slug' in router.route ? router.route.slug : me?.accounts[0]);
+  // The account the route is in the scope of; none in the instance's.
+  const currentSlug = $derived(scopeOf(router.route));
   const currentSection = $derived(sectionOf(router.route));
+  const instanceTabs = $derived(INSTANCE_TABS.filter((t) => !t.admin || me?.admin));
+
+  const instanceIcon: Partial<Record<Route['name'], string>> = {
+    overview: mdiViewGridOutline,
+    console: mdiConsoleLine,
+  };
 
   const sectionIcon: Record<Section, string> = {
     analytics: mdiChartBoxOutline,
@@ -149,20 +155,22 @@
           <!-- Escape from anywhere in the open menu closes it before the window's handlers see it. -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <details class="menu account-menu" bind:this={accountMenuEl} onkeydown={onMenuKeydown}>
-            <summary class="account-button" title="Switch account">
-              {#if router.route.name === 'overview'}
-                <span>All accounts</span>
-              {:else}
+            <summary class="account-button" title="Switch between the instance and an account">
+              {#if currentSlug}
                 <span class="mono">{currentSlug}</span>
+              {:else}
+                <span>Instance</span>
               {/if}
-              <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch account" />
+              <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch scope" />
             </summary>
-            <nav class="menu-panel account-panel" aria-label="Accounts">
-              <a class="menu-item" href={href({ name: 'overview' })} aria-current={router.route.name === 'overview' ? 'page' : undefined}>
-                <Icon path={mdiViewGridOutline} size={15} /> All accounts
+            <nav class="menu-panel account-panel" aria-label="Scope">
+              <a class="menu-item" href={href({ name: 'overview' })} aria-current={currentSlug ? undefined : 'true'}>
+                <span class="menu-check">{#if !currentSlug}<Icon path={mdiCheck} size={14} />{/if}</span>
+                Instance
               </a>
+              <p class="menu-heading">Accounts</p>
               {#each me.accounts as slug (slug)}
-                {@const on = router.route.name !== 'overview' && slug === currentSlug}
+                {@const on = slug === currentSlug}
                 <a class="menu-item mono" href={href({ name: 'account', slug })} aria-current={on ? 'true' : undefined}>
                   <span class="menu-check">{#if on}<Icon path={mdiCheck} size={14} />{/if}</span>
                   {slug}
@@ -217,7 +225,17 @@
         </div>
       </div>
 
-      {#if me && currentSlug}
+      {#if me && !currentSlug}
+        <nav class="sections" aria-label="Instance">
+          {#each instanceTabs as t (t.route.name)}
+            {@const on = router.route.name === t.route.name}
+            <a class="section-tab" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
+              <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
+              <span class="section-label">{t.label}</span>
+            </a>
+          {/each}
+        </nav>
+      {:else if me && currentSlug}
         <nav class="sections" aria-label="Sections">
           {#each SECTION_ORDER as s (s)}
             <a

@@ -1,10 +1,10 @@
 <script lang="ts">
-  // The Settings section's own navigation: the account's pages, then, for an
-  // admin, the instance's Configuration page, which lists its parts under it
-  // while it is shown.
+  // The navigation beside a settings page: an account's pages in its scope,
+  // or, in the instance's, the Configuration page with its parts under it.
   import { href } from '../router.svelte';
   import type { Route } from '../routes';
   import { session } from '../session.svelte';
+  import { scopeOf } from '../sections';
   import { focusWhenShown } from '../focus';
   import { CONSOLE_SECTIONS, type SettingEntry } from '../settingsindex';
   import Icon from '../Icon.svelte';
@@ -12,7 +12,7 @@
 
   let { route }: { route: Route } = $props();
 
-  const slug = $derived('slug' in route ? route.slug : session.me?.accounts[0]);
+  const slug = $derived(scopeOf(route));
   const admin = $derived(session.me?.admin === true);
 
   interface Item {
@@ -40,7 +40,7 @@
       }
       groups.push({ group: slug, mono: true, items: account });
     }
-    if (admin) {
+    if (admin && !slug) {
       groups.push({
         group: 'Instance',
         mono: false,

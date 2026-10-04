@@ -54,9 +54,9 @@
   // and each account's audit log are for admins, and "Sign in" only makes
   // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
-    const entries: Entry[] = [{ label: 'All accounts', route: { name: 'overview' }, icon: mdiViewGridOutline }];
+    const entries: Entry[] = [{ label: 'Overview', hint: 'instance', words: true, route: { name: 'overview' }, icon: mdiViewGridOutline, keywords: 'all accounts' }];
     if (me?.admin) {
-      entries.push({ label: 'Configuration', route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings' });
+      entries.push({ label: 'Configuration', hint: 'instance', words: true, route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings' });
       if (searching) {
         for (const { label, target, keywords } of CONSOLE_SECTIONS) {
           entries.push({ label, hint: 'configuration', words: true, route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
