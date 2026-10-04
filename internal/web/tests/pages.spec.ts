@@ -1062,6 +1062,14 @@ test('a page longer than the window scrolls in one place, not the document as we
   }
 });
 
+test('nothing slides for a viewer who asked for less motion', async ({ page }) => {
+  await page.goto(`/${T}/repos`);
+  const one = page.getByRole('switch').first();
+  await expect(one).toHaveCSS('transition-duration', '0.15s');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(one).toHaveCSS('transition-duration', '0s');
+});
+
 test('dark theme renders every page without console errors', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
