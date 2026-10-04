@@ -31,7 +31,7 @@
   {#if turn.error}<p class="error-text turn-error-text" role="note">{turn.error}</p>{/if}
 
   {#if raw}
-    <CodeBlock text={pretty(turn)} label="turn {turn.index}" maxLines={200} />
+    <CodeBlock text={pretty(turn)} label="turn {turn.index}" maxLines={200} lang="json" />
   {:else}
     {#if turn.system !== null}
       <Collapsible title="system prompt changed"><CodeBlock text={turn.system} plain /></Collapsible>

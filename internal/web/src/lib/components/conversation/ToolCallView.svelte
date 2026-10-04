@@ -11,5 +11,5 @@
     <span class="mono tool-name">{call.name}</span>
     <span class="mono small muted">{call.id}</span>
   </div>
-  <CodeBlock text={pretty(call.input)} label="input" />
+  <CodeBlock text={pretty(call.input)} label="input" lang="json" />
 </div>

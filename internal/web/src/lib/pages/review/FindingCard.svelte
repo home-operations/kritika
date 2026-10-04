@@ -39,7 +39,7 @@
     <p class="finding-label">Suggested fix</p>
     <Markdown text={f.suggestedFix} />
   {/if}
-  {#if f.replacement}<CodeBlock text={f.replacement} label="replacement" />{/if}
+  {#if f.replacement}<CodeBlock text={f.replacement} label="replacement" lang={f.path} />{/if}
   {#if f.agentPrompt}
     <Collapsible title="Agent prompt"><CodeBlock text={f.agentPrompt} plain /></Collapsible>
   {/if}

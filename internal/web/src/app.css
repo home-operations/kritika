@@ -468,6 +468,26 @@ kbd {
   width: 15px;
   flex: 0 0 auto;
 }
+/* The colours of highlighted code, which highlight.ts names: each is one of
+   the palette's, so both themes have them. */
+:root {
+  --code-token-keyword: var(--merged);
+  --code-token-string: var(--ok);
+  --code-token-string-expression: var(--ok);
+  --code-token-constant: var(--accent);
+  --code-token-function: var(--caution);
+  --code-token-parameter: var(--text);
+  --code-token-comment: var(--muted);
+  --code-token-punctuation: var(--muted);
+  --code-token-link: var(--accent);
+  --code-token-inserted: var(--add-bar);
+  --code-token-deleted: var(--del-bar);
+  --code-token-changed: var(--caution);
+}
+.code-italic {
+  font-style: italic;
+}
+
 /* What is set in mono: a name or value someone could paste into a
    terminal, a configuration file or GitHub. An account, a repository and a
    pull request written as owner/repo#7; a branch, a commit, a path, a glob;
