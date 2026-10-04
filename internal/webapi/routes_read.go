@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ const recentIndexRuns = 20
 // registerReads mounts the read-only API.
 func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", s.handler(s.getMe))
+	mux.HandleFunc("PUT /api/v1/me/settings", s.handler(s.putSettings))
 	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
 	mux.HandleFunc("GET /api/v1/queue", s.handler(s.listInstanceQueue))
 	mux.HandleFunc("GET /api/v1/admin/accounts", s.admin(s.listAdminAccounts))
@@ -56,11 +58,37 @@ func toUser(a store.User) User {
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
 	p := auth.PrincipalFrom(r.Context())
-	me := Me{User: toUser(p.User), Admin: p.Admin, Accounts: []string{}}
+	me := Me{User: toUser(p.User), Admin: p.Admin, Accounts: []string{}, Settings: UserSettings(p.User.Settings)}
 	for _, t := range readable(s.current.Get(), p) {
 		me.Accounts = append(me.Accounts, t.Slug())
 	}
 	writeJSON(w, http.StatusOK, me)
+	return nil
+}
+
+// timeZoneName is the shape of an IANA zone name. Whether it names a zone
+// is the browser's to say, which is what formats with it: the server's own
+// zone database need not match the viewer's.
+var timeZoneName = regexp.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$`)
+
+// putSettings replaces the caller's own settings.
+func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) error {
+	var req UserSettings
+	if err := readBody(r, &req); err != nil {
+		return err
+	}
+	switch {
+	case req.TimeZone != "" && (len(req.TimeZone) > 64 || !timeZoneName.MatchString(req.TimeZone)):
+		return errBadRequest(CodeBadRequest, "timeZone must be an IANA time zone name, or empty")
+	case req.Clock != "" && req.Clock != "12" && req.Clock != "24":
+		return errBadRequest(CodeBadRequest, `clock must be "12", "24" or empty`)
+	case req.Theme != "" && req.Theme != "light" && req.Theme != "dark":
+		return errBadRequest(CodeBadRequest, `theme must be "light", "dark" or empty`)
+	}
+	if err := s.store.SetUserSettings(r.Context(), auth.PrincipalFrom(r.Context()).User.ID, store.UserSettings(req)); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 

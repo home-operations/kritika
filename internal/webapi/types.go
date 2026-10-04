@@ -33,9 +33,19 @@ type User struct {
 // everything, or a member of Accounts, the slugs ("<forge>/<name>") of the
 // accounts it may read.
 type Me struct {
-	User     User     `json:"user"`
-	Admin    bool     `json:"admin"`
-	Accounts []string `json:"accounts"`
+	User     User         `json:"user"`
+	Admin    bool         `json:"admin"`
+	Accounts []string     `json:"accounts"`
+	Settings UserSettings `json:"settings"`
+}
+
+// UserSettings is what a user chose for their own dashboard; an empty
+// field leaves the choice to the browser. TimeZone is an IANA zone name,
+// Clock "12" or "24", Theme "light" or "dark".
+type UserSettings struct {
+	TimeZone string `json:"timeZone"`
+	Clock    string `json:"clock"`
+	Theme    string `json:"theme"`
 }
 
 // MonthUsage is an account's usage against its caps; a zero cap is unset.

@@ -392,3 +392,27 @@ func TestRecovererAnswers500(t *testing.T) {
 		t.Fatalf("got %d %s, want a JSON 500", w.Code, w.Body)
 	}
 }
+
+// TestPutSettingsRejectsWhatItCannotStore: a setting outside its values is
+// refused before anything is written, for whoever sent it.
+func TestPutSettingsRejectsWhatItCannotStore(t *testing.T) {
+	ts := newTestServer(t, "https://kritika.example")
+	member := memberOf(t, ts.file, "alpha")
+	for _, body := range []string{
+		`{"timeZone":"Europe/Amsterdam; DROP","clock":"","theme":""}`,
+		`{"timeZone":"` + strings.Repeat("a", 65) + `","clock":"","theme":""}`,
+		`{"timeZone":"","clock":"13","theme":""}`,
+		`{"timeZone":"","clock":"","theme":"sepia"}`,
+		`{"timeZone":"","clock":"","theme":"","landing":"x"}`,
+		`not json`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPut, "/api/v1/me/settings", strings.NewReader(body))
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+			r.Header.Set("X-Kritika", "1")
+			if w := ts.as(member, r); w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body)
+			}
+		})
+	}
+}

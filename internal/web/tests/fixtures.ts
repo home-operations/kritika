@@ -10,6 +10,7 @@ export const DEFAULT_ME: Me = {
   user: { id: 'u1', displayName: 'Ada Lovelace', email: 'ada@example.com', avatarUrl: '' },
   admin: false,
   accounts: ['github/acme'],
+  settings: { timeZone: '', clock: '', theme: '' },
 };
 
 export const DEFAULT_PROVIDERS: SignInProvider[] = [{ name: 'github', type: 'github', displayName: 'GitHub' }];

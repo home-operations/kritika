@@ -270,6 +270,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("read endpoints scope to the account", func(t *testing.T) { testReadEndpointsScopeToAccount(t, e) })
 	t.Run("account B's ids under account A", func(t *testing.T) { testCrossAccountIDs(t, e) })
 	t.Run("me and account lists", func(t *testing.T) { testMeAndAccountLists(t, e) })
+	t.Run("a user's settings are their own", func(t *testing.T) { testUserSettings(t, e) })
 	t.Run("account detail shows each connection's last webhook", func(t *testing.T) { testLastWebhook(t, e) })
 	t.Run("transcripts equal Rebuild", func(t *testing.T) { testTranscriptsEqualRebuild(t, e) })
 	t.Run("repository pagination", func(t *testing.T) { testRepoPagination(t, e) })
@@ -668,5 +669,57 @@ wait:
 				t.Fatal("a stream stayed open after Run returned")
 			}
 		}
+	}
+}
+
+// putSettings replaces who's settings, as the dashboard would, or without
+// its same-origin headers.
+func (e *apiEnv) putSettings(who, body string, sameOrigin bool) int {
+	e.t.Helper()
+	req, err := http.NewRequest(http.MethodPut, e.http.URL+"/api/v1/me/settings", strings.NewReader(body))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if c := e.cookie[who]; c != nil {
+		req.AddCookie(c)
+	}
+	if sameOrigin {
+		req.Header.Set("Origin", "https://kritika.example")
+		req.Header.Set("X-Kritika", "1")
+	}
+	resp, err := e.http.Client().Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+func testUserSettings(t *testing.T, e *apiEnv) {
+	const chosen = `{"timeZone":"Europe/Amsterdam","clock":"24","theme":"dark"}`
+	if status := e.putSettings("nobody", chosen, true); status != http.StatusUnauthorized {
+		t.Fatalf("without a session: status = %d, want 401", status)
+	}
+	if status := e.putSettings("member-a", chosen, false); status != http.StatusForbidden {
+		t.Fatalf("from another origin: status = %d, want 403", status)
+	}
+	if _, body := e.getBody("member-a", "/api/v1/me"); !bytes.Contains(body, []byte(`"settings":{"timeZone":"","clock":"","theme":""}`)) {
+		t.Fatalf("before any choice: %s", body)
+	}
+	if status := e.putSettings("member-a", chosen, true); status != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", status)
+	}
+	if _, body := e.getBody("member-a", "/api/v1/me"); !bytes.Contains(body, []byte(`"settings":`+chosen)) {
+		t.Fatalf("member-a after the choice: %s", body)
+	}
+	if _, body := e.getBody("member-b", "/api/v1/me"); !bytes.Contains(body, []byte(`"settings":{"timeZone":"","clock":"","theme":""}`)) {
+		t.Fatalf("member-b after member-a's choice: %s", body)
+	}
+	// Choosing nothing again hands each back to the browser.
+	if status := e.putSettings("member-a", `{"timeZone":"","clock":"","theme":""}`, true); status != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", status)
+	}
+	if _, body := e.getBody("member-a", "/api/v1/me"); !bytes.Contains(body, []byte(`"settings":{"timeZone":"","clock":"","theme":""}`)) {
+		t.Fatalf("member-a after clearing: %s", body)
 	}
 }

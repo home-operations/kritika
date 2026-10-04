@@ -15,7 +15,10 @@ export function golden<V>(name: string): V {
   return JSON.parse(readFileSync(new URL(`${name}.golden.json`, dir), 'utf8')) as V;
 }
 
-export const me = golden<T.Me>('me');
+// The golden user chose a zone, a clock and a theme; the pages are tested
+// as a user who left each to the browser sees them.
+export const NO_SETTINGS: T.UserSettings = { timeZone: '', clock: '', theme: '' };
+export const me: T.Me = { ...golden<T.Me>('me'), settings: NO_SETTINGS };
 export const accountSummary = golden<T.AccountSummary>('account_summary');
 export const adminAccount = golden<T.AdminAccount>('admin_account');
 export const instanceSetting = golden<T.InstanceSetting>('instance_setting');
