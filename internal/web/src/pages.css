@@ -545,10 +545,12 @@ table.data td.pick {
   width: 1%;
   padding-right: 0;
 }
-.pull-row.selected td {
+.pull-row.selected td,
+.finding-row.selected td {
   background: var(--mark-wash);
 }
-.pull-row.selected td:first-child {
+.pull-row.selected td:first-child,
+.finding-row.selected td:first-child {
   box-shadow: inset 3px 0 0 var(--edge);
 }
 table.data td.pull-main {
