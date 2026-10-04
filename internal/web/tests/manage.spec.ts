@@ -38,6 +38,19 @@ test('the audit log pages and expands detail', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 });
 
+test('an audit row with detail is as tall as one without, until the detail is opened', async ({ page }) => {
+  const plain: T.AuditEvent = { ...g.auditEvent, id: '6', action: 'review.rerun', target: 'rev-1', detail: {} };
+  await setup(page, adminMe, [[new RegExp(`${API}/audit$`), g.pageOf([g.auditEvent, plain])]]);
+  await page.goto(`/${ADMIN}/audit`);
+  const rows = page.locator('table.audit tbody > tr');
+  await expect(rows).toHaveCount(2);
+  const height = async (i: number) => (await rows.nth(i).boundingBox())!.height;
+  expect(await height(0)).toBe(await height(1));
+  await rows.first().getByRole('button', { name: 'detail' }).click();
+  await expect(rows.first().locator('.detail-json')).toBeVisible();
+  expect(await height(0)).toBeGreaterThan(await height(1));
+});
+
 test.describe('actions', () => {
   test('an admin picks pull requests and re-runs them together', async ({ page }) => {
     const second = { ...g.pull, number: 9, title: 'Second', url: g.pull.url.replace(/\d+$/, '9') };
