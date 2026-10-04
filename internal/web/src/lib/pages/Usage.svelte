@@ -1,5 +1,6 @@
 <script lang="ts">
   import { accountApi } from '../links';
+  import { day } from '../dates';
   import { getJSON } from '../api.svelte';
   import { Resource, live } from '../resource.svelte';
   import { daysAgo, tokens, usd, wholeNumber } from '../format';
@@ -65,13 +66,12 @@
   const groupLabel = (g: UsageGroup) => GROUPS.find((x) => x.value === g)?.label ?? g;
   // A row with no key is usage no model, repository or role was recorded for.
   const named = (key: string) => key || '(none)';
-  const dayFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
   function columns(rows: UsagePoint[]) {
     return rows.map((r) => ({
       key: r.key,
-      label: group === 'day' ? dayFmt.format(new Date(`${r.key}T00:00:00Z`)) : (r.key.split('/').pop() ?? r.key),
-      title: named(r.key),
+      label: group === 'day' ? day(r.key, true) : (r.key.split('/').pop() ?? r.key),
+      title: group === 'day' ? day(r.key) : named(r.key),
       values: [metric === 'cost' ? r.costUsd : total(r)],
     }));
   }
@@ -129,7 +129,7 @@
               <!-- Days read newest first; the other groups keep the server's order. -->
               {#each s.group === 'day' ? [...s.rows].reverse() : s.rows as r (r.key)}
                 <tr>
-                  <td class="mono small">{named(r.key)}</td>
+                  <td class:mono={s.group !== 'day'} class="small">{s.group === 'day' ? day(r.key) : named(r.key)}</td>
                   <td class="num">{wholeNumber(r.calls)}</td>
                   <td class="num" title={wholeNumber(r.inputTokens)}>{tokens(r.inputTokens)}</td>
                   <td class="num" title={wholeNumber(r.cacheReadTokens)}>{tokens(r.cacheReadTokens)}</td>

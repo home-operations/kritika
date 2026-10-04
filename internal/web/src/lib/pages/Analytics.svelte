@@ -7,6 +7,7 @@
   import { unsignedWebhooks } from '../setup';
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
+  import { day } from '../dates';
   import { daysAgo, duration, reviewTone, usd, wholeNumber, CATEGORIES } from '../format';
   import type { AccountDetail, Analytics, AnalyticsPoint, Page, Pull } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -71,13 +72,11 @@
   const found = (c: { blocking: number; important: number; nit: number }) => c.blocking + c.important + c.nit;
   const rate = (addressed: number, total: number) => (total ? (addressed / total) * 100 : null);
 
-  const dayFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const when = (key: string) => dayFmt.format(new Date(`${key}T00:00:00Z`));
   function rows(series: AnalyticsPoint[], values: (p: AnalyticsPoint) => number[]) {
     return series.map((p) => ({
       key: p.key,
-      label: when(p.key),
-      title: group === 'week' ? `Week of ${when(p.key)}` : when(p.key),
+      label: day(p.key, true),
+      title: group === 'week' ? `Week of ${day(p.key)}` : day(p.key),
       values: values(p),
     }));
   }

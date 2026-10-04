@@ -55,7 +55,7 @@ test('analytics shows the totals against the window before, the charts and the r
   const findings = page.getByRole('region', { name: 'Findings by severity' });
   await expect(findings.getByRole('list', { name: /legend/ }).getByRole('listitem')).toHaveText(['Blocking', 'Important', 'Nit']);
   await findings.getByRole('radio', { name: 'Table' }).click();
-  await expect(findings.locator('tbody tr')).toHaveText([/Sep 1\s*1\s*2\s*3\s*6/]);
+  await expect(findings.locator('tbody tr')).toHaveText([/Sep 1, 2026\s*1\s*2\s*3\s*6/]);
   await expect(page.getByRole('region', { name: 'Most reviewed repositories' }).locator('tbody tr')).toContainText(g.analytics.repositories[0]!.repository);
 
   await page.getByRole('radio', { name: '90 days' }).click();
@@ -76,13 +76,13 @@ test('tables over time read newest first', async ({ page }) => {
   await page.goto(`/${T}`);
   const reviews = page.getByRole('region', { name: 'Reviews', exact: true });
   await reviews.getByRole('radio', { name: 'Table' }).click();
-  await expect(reviews.locator('tbody tr')).toHaveText([/Sep 2\s*7/, /Sep 1\s*5/]);
+  await expect(reviews.locator('tbody tr')).toHaveText([/Sep 2, 2026\s*7/, /Sep 1, 2026\s*5/]);
   const findings = page.getByRole('region', { name: 'Findings by severity' });
   await findings.getByRole('radio', { name: 'Table' }).click();
-  await expect(findings.locator('tbody tr').first()).toHaveText(/Sep 2\s*4\s*0\s*0\s*4/);
+  await expect(findings.locator('tbody tr').first()).toHaveText(/Sep 2, 2026\s*4\s*0\s*0\s*4/);
 
   await page.goto(`/${T}/usage`);
-  await expect(page.locator('tbody tr td:first-child')).toHaveText(['2026-09-02', '2026-09-01']);
+  await expect(page.locator('tbody tr td:first-child')).toHaveText(['Sep 2, 2026', 'Sep 1, 2026']);
   await expect(page.locator('thead th').first()).toHaveText('Day');
   await expect(page.locator('tfoot td').nth(1)).toHaveAttribute('title', String(2 * day.inputTokens));
 
@@ -690,7 +690,7 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
   await expect(page.locator('tbody tr')).toContainText(`${g.job.attempt}/${g.job.maxAttempts}`);
 
   await page.goto(`/${T}/usage`);
-  await expect(page.locator('tbody tr')).toContainText(g.usageSeries.rows[0]!.key);
+  await expect(page.locator('tbody tr')).toContainText('Sep 1, 2026');
   await expect(page.getByRole('img', { name: /Cost by day/ })).toBeVisible();
   await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
   await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
