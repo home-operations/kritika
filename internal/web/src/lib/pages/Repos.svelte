@@ -5,7 +5,7 @@
   import { indexTone } from '../format';
   import { repoRoute, accountApi, reindexPath, turnedOnPath } from '../links';
   import { getJSON, sendJSON } from '../api.svelte';
-  import { describe, isCode } from '../manage';
+  import { describe, sendEach, toastTally } from '../manage';
   import { isAdmin } from '../session.svelte';
   import { toast } from '../toast.svelte';
   import type { AccountDetail, RegisterResult, Repository, TurnOnRequest } from '../types';
@@ -80,20 +80,11 @@
   async function setEnabled(names: string[], on: boolean): Promise<void> {
     busy = true;
     const body: TurnOnRequest = { on };
-    const failed: string[] = [];
-    for (const name of names) {
-      try {
-        await sendJSON('PUT', turnedOnPath(slug, name), body);
-      } catch (err) {
-        failed.push(`${name}: ${describe(err)}`);
-      }
-    }
+    const tally = await sendEach(names, (name) => name, (name) => sendJSON('PUT', turnedOnPath(slug, name), body));
     busy = false;
     selected = selected.filter((n) => !names.includes(n));
     void paged.load();
-    const parts = [`${plural(names.length - failed.length)} turned ${on ? 'on' : 'off'}`];
-    if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
-    toast(parts.join(', '), failed.length ? 'danger' : 'ok');
+    toastTally(tally, `${plural(tally.done)} turned ${on ? 'on' : 'off'}`);
   }
 
   // reindex queues a reindex of each selected repository that is on, one
@@ -101,25 +92,11 @@
   async function reindex(): Promise<void> {
     busy = true;
     const targets = paged.items.filter((r) => selected.includes(r.fullName) && isOn(r)).map((r) => r.fullName);
-    let queued = 0;
-    let already = 0;
-    const failed: string[] = [];
-    for (const name of targets) {
-      try {
-        await sendJSON('POST', reindexPath(slug, name));
-        queued++;
-      } catch (err) {
-        if (isCode(err, 'already_queued')) already++;
-        else failed.push(`${name}: ${describe(err)}`);
-      }
-    }
+    const tally = await sendEach(targets, (name) => name, (name) => sendJSON('POST', reindexPath(slug, name)));
     busy = false;
     confirmReindex = false;
     selected = [];
-    const parts = [`Reindex queued for ${plural(queued)}`];
-    if (already) parts.push(`${already} already queued`);
-    if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
-    toast(parts.join(', '), failed.length ? 'danger' : 'ok');
+    toastTally(tally, `Reindex queued for ${plural(tally.done)}`);
   }
 
   // resync lists the repositories the account's App reaches again, which
