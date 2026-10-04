@@ -15,8 +15,9 @@ func TestSessionGrant(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
 	now := time.Now()
-	acct, err := s.UpsertIdentity(ctx, SignInIdentity{Provider: "github", Origin: "github:https://github.com",
-		Subject: "store-test-" + now.Format(time.RFC3339Nano), Login: "x"})
+	id := SignInIdentity{Provider: "github", Origin: "github:https://github.com",
+		Subject: "store-test-" + now.Format(time.RFC3339Nano), Login: "x"}
+	acct, err := s.UpsertIdentity(ctx, id)
 	if err != nil {
 		t.Fatalf("UpsertIdentity: %v", err)
 	}
@@ -45,6 +46,29 @@ func TestSessionGrant(t *testing.T) {
 	}
 	if _, err := s.CreateSession(ctx, acct.ID, "github", "github:https://github.com", SessionGrant{}, now, now.Add(time.Hour)); err == nil {
 		t.Fatal("a grant without a role was stored")
+	}
+
+	// A user's settings come back with every session of theirs, and a
+	// later sign-in, which refreshes the profile, leaves them alone.
+	token, err := s.CreateSession(ctx, acct.ID, "github", "github:https://github.com", SessionGrant{Role: RoleMember, Key: "k4"}, now, now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if sess, err := s.LookupSession(ctx, token, now); err != nil || sess.User.Settings != (UserSettings{}) {
+		t.Fatalf("a new user's settings = %+v, %v; want none", sess.User.Settings, err)
+	}
+	want := UserSettings{TimeZone: "Europe/Amsterdam", Clock: "24", Theme: "dark"}
+	if err := s.SetUserSettings(ctx, acct.ID, want); err != nil {
+		t.Fatalf("SetUserSettings: %v", err)
+	}
+	if _, err := s.UpsertIdentity(ctx, id); err != nil {
+		t.Fatalf("UpsertIdentity again: %v", err)
+	}
+	if sess, err := s.LookupSession(ctx, token, now); err != nil || sess.User.Settings != want {
+		t.Fatalf("settings = %+v, %v; want %+v", sess.User.Settings, err, want)
+	}
+	if err := s.SetUserSettings(ctx, "00000000-0000-0000-0000-000000000000", want); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetUserSettings of no user = %v, want ErrNotFound", err)
 	}
 }
 

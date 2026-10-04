@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -45,6 +46,34 @@ type User struct {
 	Email         string
 	EmailVerified bool
 	AvatarURL     string
+	Settings      UserSettings
+}
+
+// UserSettings is what a user chose for their own dashboard. An empty
+// field leaves the choice to the browser.
+type UserSettings struct {
+	// TimeZone is an IANA zone name, as "Europe/Amsterdam".
+	TimeZone string `json:"timeZone,omitempty"`
+	// Clock is "12" or "24".
+	Clock string `json:"clock,omitempty"`
+	// Theme is "light" or "dark".
+	Theme string `json:"theme,omitempty"`
+}
+
+// SetUserSettings replaces the user's settings.
+func (s *Store) SetUserSettings(ctx context.Context, userID string, v UserSettings) error {
+	doc, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("store: encode user settings: %w", err)
+	}
+	tag, err := s.app.Exec(ctx, `UPDATE users SET settings = $2 WHERE id = $1`, userID, doc)
+	if err != nil {
+		return fmt.Errorf("store: set user settings: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SignInIdentity is who a sign-in provider says a human is. Provider is the
@@ -205,9 +234,10 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 	}
 	hash := tokenHash(token)
 	var sess Session
+	var settings []byte
 	err := s.app.QueryRow(ctx, `SELECT s.user_id, s.provider, s.provider_origin,
 			s.role, s.all_accounts, s.accounts, s.grant_key,
-			u.display_name, u.email, u.email_verified, u.avatar_url, i.subject, i.login
+			u.display_name, u.email, u.email_verified, u.avatar_url, u.settings, i.subject, i.login
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		JOIN identities i ON i.user_id = s.user_id AND i.provider = s.provider AND i.origin = s.provider_origin
@@ -215,13 +245,16 @@ func (s *Store) LookupSession(ctx context.Context, token string, now time.Time) 
 		ORDER BY i.created_at LIMIT 1`, hash, now).
 		Scan(&sess.User.ID, &sess.Identity.Provider, &sess.Identity.Origin,
 			&sess.Grant.Role, &sess.Grant.AllAccounts, &sess.Grant.Accounts, &sess.Grant.Key,
-			&sess.User.DisplayName, &sess.User.Email, &sess.User.EmailVerified, &sess.User.AvatarURL,
+			&sess.User.DisplayName, &sess.User.Email, &sess.User.EmailVerified, &sess.User.AvatarURL, &settings,
 			&sess.Identity.Subject, &sess.Identity.Login)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrSession
 	}
 	if err != nil {
 		return Session{}, fmt.Errorf("store: look up session: %w", err)
+	}
+	if err := json.Unmarshal(settings, &sess.User.Settings); err != nil {
+		return Session{}, fmt.Errorf("store: decode user settings: %w", err)
 	}
 	return sess, nil
 }

@@ -98,6 +98,7 @@ var goldens = map[string]any{
 	"me": Me{
 		User:  User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com", AvatarURL: "https://img.example/a.png"},
 		Admin: true, Accounts: []string{"github/alpha"},
+		Settings: UserSettings{TimeZone: "Europe/Amsterdam", Clock: "24", Theme: "dark"},
 	},
 	"account_summary": goldenSummary,
 	"admin_account":   AdminAccount{AccountSummary: goldenSummary, Live: false, Conflict: "no connection serves this account"},

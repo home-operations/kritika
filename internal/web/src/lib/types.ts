@@ -19,6 +19,15 @@ export interface Me {
   user: User;
   admin: boolean;
   accounts: string[];
+  settings: UserSettings;
+}
+
+// What a user chose for their own dashboard; '' leaves the choice to the
+// browser. timeZone is an IANA zone name.
+export interface UserSettings {
+  timeZone: string;
+  clock: '' | '12' | '24';
+  theme: '' | 'light' | 'dark';
 }
 
 // local is the admin's username and password form, posted to /auth/local.

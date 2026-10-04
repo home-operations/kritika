@@ -6,5 +6,10 @@
     "avatarUrl": "https://img.example/a.png"
   },
   "admin": true,
-  "accounts": ["github/alpha"]
+  "accounts": ["github/alpha"],
+  "settings": {
+    "timeZone": "Europe/Amsterdam",
+    "clock": "24",
+    "theme": "dark"
+  }
 }
