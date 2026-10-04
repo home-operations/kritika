@@ -2,39 +2,26 @@
 // modifier keys, so it never fights the browser or a page's filter box.
 
 // Two overlays: the shortcuts help ('?' or the topbar button) and the command
-// palette (Cmd/Ctrl+K). They are mutually exclusive, and opening either
-// remembers the focused element so closing restores it (WCAG 2.4.3 focus order).
+// palette (Cmd/Ctrl+K). They are mutually exclusive. Each is a Bits UI
+// dialog, which closes on Escape and returns focus to what had it.
 export const help = $state({ open: false });
 export const palette = $state({ open: false });
 
-let restoreFocus: HTMLElement | null = null;
-
-// open shows one overlay, closing the other first and recording the element to
-// restore focus to on close.
-function open(show: () => void): void {
-  const active = document.activeElement;
-  restoreFocus = active instanceof HTMLElement ? active : null;
-  help.open = false;
-  palette.open = false;
-  show();
-}
-
-// closeOverlays shuts both overlays and returns focus to whatever opened them.
 export function closeOverlays(): void {
   help.open = false;
   palette.open = false;
-  restoreFocus?.focus();
-  restoreFocus = null;
 }
 
 export function toggleHelp(): void {
-  if (help.open) closeOverlays();
-  else open(() => (help.open = true));
+  const now = !help.open;
+  closeOverlays();
+  help.open = now;
 }
 
 export function togglePalette(): void {
-  if (palette.open) closeOverlays();
-  else open(() => (palette.open = true));
+  const now = !palette.open;
+  closeOverlays();
+  palette.open = now;
 }
 
 export function isTyping(e: KeyboardEvent): boolean {
@@ -53,15 +40,9 @@ export function initKeyboard(): void {
 
     if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
 
-    // '?' toggles the help on any screen; while either overlay is open,
-    // Escape closes it instead of falling through to a page's own handling.
+    // '?' toggles the help on any screen.
     if (e.key === '?') {
       toggleHelp();
-      e.preventDefault();
-      return;
-    }
-    if ((help.open || palette.open) && e.key === 'Escape') {
-      closeOverlays();
       e.preventDefault();
     }
   });

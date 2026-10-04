@@ -6,13 +6,14 @@
   // shows them.
   import type { Route } from './router.svelte';
   import { router, navigate, href } from './router.svelte';
-  import { palette, togglePalette } from './keyboard.svelte';
+  import { Command, Dialog } from 'bits-ui';
+  import { palette, closeOverlays } from './keyboard.svelte';
   import Icon from './Icon.svelte';
   import type { Me, Page, Pull } from './types';
   import { getJSON } from './api.svelte';
   import { pullRoute, accountApi } from './links';
   import { CONSOLE_SECTIONS } from './settingsindex';
-  import { focusWhenShown, focusOnMount } from './focus';
+  import { focusWhenShown } from './focus';
   import {
     mdiMagnify,
     mdiLogin,
@@ -130,7 +131,6 @@
   });
 
   let q = $state('');
-  let idx = $state(0);
 
   // Fresh state on every open: the component stays mounted between opens, so
   // drop the previous query.
@@ -145,77 +145,46 @@
     return entries.filter((e) => [e.label, e.hint, e.keywords].some((s) => s?.toLowerCase().includes(needle)));
   });
 
-  // Clamp the cursor when the rows change under it (typing narrows the list).
-  $effect(() => {
-    if (idx >= rows.length) idx = Math.max(0, rows.length - 1);
-  });
-
   function commit(row: Entry | undefined): void {
     if (!row) return;
-    togglePalette();
+    closeOverlays();
     navigate(row.route);
     if (row.target) focusWhenShown(row.target);
   }
-
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
-      togglePalette();
-    } else if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
-      idx = rows.length ? (idx + 1) % rows.length : 0;
-    } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
-      idx = rows.length ? (idx - 1 + rows.length) % rows.length : 0;
-    } else if (e.key === 'Enter') {
-      commit(rows[idx]);
-    } else {
-      return;
-    }
-    e.preventDefault();
-  }
 </script>
 
-{#if palette.open}
-  <div class="palette-overlay">
-    <button class="help-backdrop" aria-label="Close palette" onclick={togglePalette}></button>
-    <!-- The keydown handler lives on the dialog (not the input) so Tab cycles
-         the rows — and never escapes to the page behind — wherever focus sits
-         inside the palette. aria-modal marks the background inert for AT. -->
-    <div class="palette" role="dialog" aria-modal="true" aria-label="Go to" tabindex="-1" onkeydown={onKeydown}>
-      <div class="palette-input">
-        <Icon path={mdiMagnify} size={16} />
-        <input
-          bind:value={q}
-          {@attach focusOnMount}
-          oninput={() => (idx = 0)}
-          placeholder="Go to…"
-          aria-label="Go to"
-        />
-        <span class="palette-esc"><kbd>Esc</kbd></span>
-      </div>
+<Dialog.Root open={palette.open} onOpenChange={(now) => !now && closeOverlays()}>
+  <Dialog.Portal>
+    <Dialog.Overlay class="palette-overlay" />
+    <Dialog.Content class="palette" aria-label="Go to">
+      <!-- The rows are already the ones that match, so Bits UI's own filter is off; it keeps the cursor and the arrow keys. -->
+      <Command.Root class="palette-command" shouldFilter={false} loop label="Go to">
+        <div class="palette-input">
+          <Icon path={mdiMagnify} size={16} />
+          <Command.Input bind:value={q} placeholder="Go to…" aria-label="Go to" />
+          <span class="palette-esc"><kbd>Esc</kbd></span>
+        </div>
 
-      <div class="palette-body">
-        {#each rows as row, i (`${row.label}\u0000${href(row.route)}`)}
-          <button
-            class="palette-row"
-            class:active={i === idx}
-            onclick={() => commit(row)}
-            onmouseenter={() => (idx = i)}
-          >
-            <Icon path={row.icon} size={14} />
-            <span class="row-main">
-              <span class="row-title">{row.label}</span>
-              {#if row.hint}<span class="row-sub" class:mono={!row.words}>{row.hint}</span>{/if}
-            </span>
-          </button>
-        {/each}
-        {#if q.trim() && !rows.length}
-          <p class="palette-empty">Nothing matches “{q}”.</p>
-        {/if}
-      </div>
+        <Command.List class="palette-body">
+          {#each rows as row (`${row.label}\u0000${href(row.route)}`)}
+            <Command.Item class="palette-row" value={`${row.label}\u0000${href(row.route)}`} onSelect={() => commit(row)}>
+              <Icon path={row.icon} size={14} />
+              <span class="row-main">
+                <span class="row-title">{row.label}</span>
+                {#if row.hint}<span class="row-sub" class:mono={!row.words}>{row.hint}</span>{/if}
+              </span>
+            </Command.Item>
+          {/each}
+          {#if q.trim() && !rows.length}
+            <p class="palette-empty">Nothing matches “{q}”.</p>
+          {/if}
+        </Command.List>
+      </Command.Root>
 
       <div class="palette-footer">
         <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
         <span><kbd>⏎</kbd> open</span>
       </div>
-    </div>
-  </div>
-{/if}
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>

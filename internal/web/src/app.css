@@ -180,29 +180,30 @@ body {
 }
 
 /* ---- keyboard-shortcuts help ------------------------------------------ */
-.help-overlay {
+.help-overlay,
+.palette-overlay {
   position: fixed;
   inset: 0;
   z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.help-backdrop {
-  position: absolute;
-  inset: 0;
-  border: none;
   background: color-mix(in srgb, var(--bg) 60%, transparent);
-  cursor: default;
 }
 .help-card {
-  position: relative;
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px 20px;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
   min-width: 280px;
+}
+/* The card itself takes focus, having nothing in it to focus. */
+.help-card:focus {
+  outline: none;
 }
 .help-card h2 {
   margin: 0 0 12px;
@@ -235,17 +236,13 @@ kbd {
 }
 
 /* ---- command palette (Ctrl/⌘ K) ---------------------------------------- */
-.palette-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 12vh;
-}
 .palette {
-  position: relative;
+  position: fixed;
+  top: 12vh;
+  left: 0;
+  right: 0;
+  z-index: 11;
+  margin: 0 auto;
   width: min(640px, 92vw);
   max-height: 70vh;
   display: flex;
@@ -255,6 +252,11 @@ kbd {
   border-radius: 10px;
   box-shadow: 0 16px 48px color-mix(in srgb, var(--text) 25%, transparent);
   overflow: hidden;
+}
+.palette-command {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .palette-input {
   display: flex;
@@ -295,7 +297,7 @@ kbd {
   text-align: left;
   cursor: pointer;
 }
-.palette-row.active {
+.palette-row[data-selected] {
   background: var(--mark-wash);
   box-shadow: inset 3px 0 0 var(--edge);
 }
