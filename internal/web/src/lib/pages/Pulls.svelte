@@ -2,8 +2,7 @@
   import { tick, untrack } from 'svelte';
   import { getJSON, sendJSON } from '../api.svelte';
   import { isAdmin } from '../session.svelte';
-  import { describe, isCode } from '../manage';
-  import { toast } from '../toast.svelte';
+  import { sendEach, toastTally } from '../manage';
   import { navigate, replace } from '../router.svelte';
   import { PULL_IS, PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
@@ -137,25 +136,11 @@
   async function rerunPicked(): Promise<void> {
     busy = true;
     const targets = items.filter((p) => picked.includes(pullKey(p)));
-    let queued = 0;
-    let already = 0;
-    const failed: string[] = [];
-    for (const p of targets) {
-      try {
-        await sendJSON('POST', rerunPath(slug, p));
-        queued++;
-      } catch (err) {
-        if (isCode(err, 'already_queued')) already++;
-        else failed.push(`${pullKey(p)}: ${describe(err)}`);
-      }
-    }
+    const tally = await sendEach(targets, pullKey, (p) => sendJSON('POST', rerunPath(slug, p)));
     busy = false;
     confirmRerun = false;
     pick(picked, false);
-    const parts = [`Re-run queued for ${plural(queued)}`];
-    if (already) parts.push(`${already} already queued or running`);
-    if (failed.length) parts.push(`${failed.length} failed (${failed.join('; ')})`);
-    toast(parts.join(', '), failed.length ? 'danger' : 'ok');
+    toastTally(tally, `Re-run queued for ${plural(tally.done)}`, 'already queued or running');
     void paged.load();
   }
 
