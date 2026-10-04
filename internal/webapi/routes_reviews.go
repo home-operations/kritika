@@ -110,6 +110,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 	d := ReviewDetail{
 		Review: ReviewInfo{
 			Review: reviewItem(v), Pull: PullRef{Repository: v.Repository, Number: v.Number, Title: v.Title, URL: v.URL},
+			PullState: v.PullState, PullMerged: v.PullMerged,
 			ScopeReason: v.ScopeReason, MergeBaseSHA: v.MergeBaseSHA, PatchID: v.PatchID, PriorReviewID: v.PriorReviewID,
 			NewestReviewID:    v.NewestReviewID,
 			CancelRequestedAt: v.CancelRequestedAt,

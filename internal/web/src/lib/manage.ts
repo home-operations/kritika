@@ -11,7 +11,6 @@ const hints: Partial<Record<ManagementErrorCode | ErrorCode, string>> = {
   unauthenticated: 'Your session has ended; sign in again.',
   csrf: 'The request was refused as not coming from this page; reload and try again.',
   not_cancelable: 'The review is no longer running.',
-  no_head: 'The pull request has no known head to review.',
   forbidden: 'You are not allowed to do this.',
 };
 

@@ -112,7 +112,7 @@
       focusSearch: () => searchEl?.focus(),
       toggle: (i) => {
         const p = items[i];
-        if (p && isAdmin()) pick([pullKey(p)], !picked.includes(pullKey(p)));
+        if (p && p.state === 'open' && isAdmin()) pick([pullKey(p)], !picked.includes(pullKey(p)));
       },
     }),
   );

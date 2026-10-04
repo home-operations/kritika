@@ -234,7 +234,8 @@ func TestDispatchSkipsPaused(t *testing.T) {
 
 // TestDispatchPollSkipsReviewedHead: a poll lists a pull request whenever it
 // moved, so a head a review has already seen is skipped rather than
-// reviewed again, while a new head is reviewed.
+// reviewed again, while a new head is reviewed. A merged pull request is
+// recorded and never reviewed, whatever the action and however new its head.
 func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
@@ -291,6 +292,13 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	}
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &stranded))); err != nil || out.Status != Enqueued {
 		t.Fatalf("poll of a superseded head = %+v, %v; want it enqueued", out, err)
+	}
+	merged := *pr
+	merged.HeadSHA, merged.State, merged.Merged = "fff", "closed", true
+	for _, action := range []string{ActionPoll, "synchronize", "reopened"} {
+		if out, err := svc.Dispatch(ctx, request(f, ev(action, &merged))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonClosed}) {
+			t.Fatalf("%s of a merged pull request = %+v, %v; want it skipped as closed", action, out, err)
+		}
 	}
 }
 

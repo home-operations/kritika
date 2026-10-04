@@ -22,6 +22,8 @@
       "title": "Add widgets",
       "url": "https://git.example/alpha/one/pulls/7"
     },
+    "pullState": "open",
+    "pullMerged": false,
     "scopeReason": "delta",
     "mergeBaseSha": "base1",
     "patchId": "patch1",

@@ -113,6 +113,12 @@
 .section-head {
   gap: 0;
 }
+.no-more-reviews {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
 .page-actions:empty {
   display: none;
 }

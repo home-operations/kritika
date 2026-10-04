@@ -181,6 +181,10 @@ type ReviewRow struct {
 	Number        int
 	Title         string
 	URL           string
+	// PullState and PullMerged are the pull request's: a merged or closed
+	// one takes no more reviews.
+	PullState     string
+	PullMerged    bool
 	Status        ReviewStatus
 	Trigger       string
 	Scope         review.Scope
@@ -220,7 +224,7 @@ const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url
 	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, ` + reviewSkipReason + `, v.error, v.created_at, v.finished_at,
 	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0),
 	(SELECT n.id FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND (n.created_at, n.id) > (v.created_at, v.id)
-		ORDER BY n.created_at DESC, n.id DESC LIMIT 1)
+		ORDER BY n.created_at DESC, n.id DESC LIMIT 1), p.state, p.merged
 	FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT sum(cost_usd)::float8 AS cost, sum(input_tokens) AS input, sum(output_tokens) AS output
 		FROM usage WHERE review_id = v.id) u ON true`
@@ -231,7 +235,8 @@ func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var summary []byte
 	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &scope, &v.ScopeReason,
 		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &v.SkipReason, &v.Error, &v.CreatedAt, &v.FinishedAt,
-		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.NewestReviewID); err != nil {
+		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.NewestReviewID,
+		&v.PullState, &v.PullMerged); err != nil {
 		return v, err
 	}
 	v.Status = ReviewStatus(status)

@@ -40,6 +40,7 @@ const (
 	reasonReviewed     = "reviewed"
 	reasonStale        = "stale"
 	reasonPaused       = "paused"
+	reasonClosed       = "closed"
 )
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
@@ -121,7 +122,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 				return store.ClosePullRequest(ctx, tx, repoID(req, ev.Repository.FullName), pr.Number, pr.Merged, pr.ClosedAt, pr.UpdatedAt)
 			})
-			return Outcome{Status: Ignored, Reason: "closed"}, err
+			return Outcome{Status: Ignored, Reason: reasonClosed}, err
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
@@ -178,6 +179,11 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			return nil
 		case !review:
 			out = Outcome{Status: Skipped, Reason: ev.Action}
+			return nil
+		case pr.State == "closed":
+			// Merged or closed, whatever the action says: it is recorded,
+			// and takes no more reviews.
+			out = Outcome{Status: Skipped, Reason: reasonClosed}
 			return nil
 		}
 		// A paused pull request is recorded, not reviewed, until someone

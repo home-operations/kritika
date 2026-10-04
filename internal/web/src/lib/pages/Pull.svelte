@@ -18,6 +18,7 @@
   import FollowupItem from '../components/FollowupItem.svelte';
   import Markdown from '../components/Markdown.svelte';
   import Pill from '../components/Pill.svelte';
+  import NoMoreReviews from '../components/NoMoreReviews.svelte';
 
   let { slug, owner, repo, number }: { slug: string; owner: string; repo: string; number: number } = $props();
   const fullName = $derived(`${owner}/${repo}`);
@@ -91,7 +92,9 @@
               <a class="external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
             {/if}
           </p>
-          {#if isAdmin()}
+          {#if p.state !== 'open'}
+            <NoMoreReviews merged={p.merged} />
+          {:else if isAdmin()}
             <div class="page-actions">
               <ActionButton
                 label="Re-run"

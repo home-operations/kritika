@@ -140,7 +140,7 @@ var goldens = map[string]any{
 	},
 	"review_detail": ReviewDetail{
 		Review: ReviewInfo{
-			Review: goldenReview, Pull: goldenPullRef, ScopeReason: "delta",
+			Review: goldenReview, Pull: goldenPullRef, PullState: "open", ScopeReason: "delta",
 			MergeBaseSHA: "base1", PatchID: "patch1", PriorReviewID: new("rev-0"), CancelRequestedAt: nil,
 		},
 		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}},

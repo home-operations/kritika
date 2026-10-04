@@ -3,13 +3,14 @@
   // author; its last review's findings and status; when it last changed.
   // `selected` marks the keyboard cursor; a click anywhere on a row that is
   // not a link opens the pull request. With onpick, each row has a checkbox
-  // for a bulk action, picked naming the ones checked by pullKey.
+  // for a bulk action, picked naming the ones checked by pullKey; a merged
+  // or closed pull request takes no more reviews, so it has none.
   import { href, navigate } from '../router.svelte';
   import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
   import { usd } from '../format';
   import Icon from '../Icon.svelte';
-  import { mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline } from '../icons';
+  import { mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline, mdiLockOutline } from '../icons';
   import Time from './Time.svelte';
   import ReviewStatusTile from './ReviewStatusTile.svelte';
   import SeverityCounts from './SeverityCounts.svelte';
@@ -21,6 +22,8 @@
     picked = [],
     onpick,
   }: { slug: string; items: Pull[]; selected?: number; picked?: string[]; onpick?: (keys: string[], on: boolean) => void } = $props();
+
+  const open = $derived(items.filter((p) => p.state === 'open'));
 
   // lifecycle marks a pull request that is no longer simply open.
   function lifecycle(p: Pull): { icon: string; label: string; tone: string } | undefined {
@@ -45,8 +48,9 @@
             <input
               type="checkbox"
               aria-label="Select every pull request shown"
-              checked={items.length > 0 && items.every((p) => picked.includes(pullKey(p)))}
-              onchange={(e) => onpick(items.map(pullKey), e.currentTarget.checked)}
+              checked={open.length > 0 && open.every((p) => picked.includes(pullKey(p)))}
+              disabled={open.length === 0}
+              onchange={(e) => onpick(open.map(pullKey), e.currentTarget.checked)}
             />
           </th>
         {/if}
@@ -65,12 +69,18 @@
         <tr class="pull-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, p)}>
           {#if onpick}
             <td class="pick">
-              <input
-                type="checkbox"
-                aria-label="Select {p.repository}#{p.number}"
-                checked={picked.includes(pullKey(p))}
-                onchange={(e) => onpick([pullKey(p)], e.currentTarget.checked)}
-              />
+              {#if p.state === 'open'}
+                <input
+                  type="checkbox"
+                  aria-label="Select {p.repository}#{p.number}"
+                  checked={picked.includes(pullKey(p))}
+                  onchange={(e) => onpick([pullKey(p)], e.currentTarget.checked)}
+                />
+              {:else}
+                <span class="muted" title={p.merged ? 'Merged: it is not reviewed again' : 'Closed: it is not reviewed while it is'}>
+                  <Icon path={mdiLockOutline} size={13} label="Takes no more reviews" />
+                </span>
+              {/if}
             </td>
           {/if}
           <td class="pull-main">

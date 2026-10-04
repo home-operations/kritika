@@ -12,6 +12,7 @@
   import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
   import ReviewMeta from '../../components/ReviewMeta.svelte';
   import Time from '../../components/Time.svelte';
+  import NoMoreReviews from '../../components/NoMoreReviews.svelte';
   import SummaryTab from './SummaryTab.svelte';
   import DiffTab from './DiffTab.svelte';
   import ConversationTab from './ConversationTab.svelte';
@@ -65,6 +66,7 @@
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const r = d.review}
+        {@const cancelable = isActive(r.status) && !r.cancelRequestedAt}
         <header class="page-head">
           <p class="crumbs">
             <a href={href({ name: 'pulls', slug })}>Pull requests</a> /
@@ -88,17 +90,20 @@
           {/if}
           {#if r.error}<p class="error-text" role="note">{r.error}</p>{/if}
           {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
-          {#if isAdmin()}
+          {#if r.pullState !== 'open'}<NoMoreReviews merged={r.pullMerged} />{/if}
+          {#if isAdmin() && (r.pullState === 'open' || cancelable)}
             <div class="page-actions">
-              <ActionButton
-                label="Re-run"
-                title="Re-run the review?"
-                body={`Queue a fresh review of ${r.pull.repository}#${r.pull.number} at its current head.`}
-                path={rerunPath(slug, r.pull)}
-                done="Re-run queued"
-                ondone={() => res.load()}
-              />
-              {#if isActive(r.status) && !r.cancelRequestedAt}
+              {#if r.pullState === 'open'}
+                <ActionButton
+                  label="Re-run"
+                  title="Re-run the review?"
+                  body={`Queue a fresh review of ${r.pull.repository}#${r.pull.number} at its current head.`}
+                  path={rerunPath(slug, r.pull)}
+                  done="Re-run queued"
+                  ondone={() => res.load()}
+                />
+              {/if}
+              {#if cancelable}
                 <ActionButton
                   label="Cancel review"
                   title="Cancel this review?"
