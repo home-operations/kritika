@@ -303,6 +303,8 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + fmt.Sprintf("/followups/%d/transcript", followupComment), `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
 		{a + "/analytics?group=week", `"repository":"wa/one"`},
+		{a + "/attention", `"blocking":1,"paused":0`},
+		{a + "/pulls?is=blocking", `"title":"PR of webapi-a"`},
 		{a + "/queue", `"repository":"wa/one"`},
 	}
 	for _, ep := range endpoints {

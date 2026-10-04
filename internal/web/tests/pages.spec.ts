@@ -112,22 +112,32 @@ test('a chart reads one column at a time, by pointer or by keyboard', async ({ p
   await expect(tip).toContainText('Sep 1');
 });
 
-test('account overview links the open pulls whose last review failed or was capped', async ({ page }) => {
-  const as = (n: number, status: ReviewStatus): Pull => ({ ...g.pull, number: n, url: g.pull.url.replace(/\d+$/, String(n)), lastReview: { ...g.pull.lastReview!, status } });
+test('analytics says what needs attention now, each kind linking to its pull requests', async ({ page }) => {
   const attention = page.getByRole('region', { name: 'Needs attention' });
   await page.goto(`/${T}`);
   await expect(page.getByRole('region', { name: 'Most reviewed repositories' })).toBeVisible();
   await expect(attention).toHaveCount(0);
 
-  await g.mockApi(page, [
-    [new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), (u: URL) => (u.searchParams.get('state') === 'open' ? g.pageOf([as(1, 'failed'), as(2, 'failed'), as(3, 'capped'), g.pull], 'next') : g.pageOf([g.pull]))],
+  const detail = g.golden<AccountDetail>('account_detail');
+  const seen = await g.mockApi(page, [
+    [/\/attention$/, g.attention],
+    [new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, usage: { ...detail.usage, tokens: 950_000, tokensPerMonth: 1_000_000, reviewsToday: 2, reviewsPerDay: 50 } }],
     ...g.defaultApi(),
   ]);
   await page.reload();
-  await expect(attention.getByRole('listitem')).toHaveText([/2\+ open pull requests whose last review failed/, /1\+ open pull requests whose last review hit a limit/]);
-  await attention.getByRole('link', { name: /hit a limit/ }).click();
-  await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?outcome=capped$`));
-  await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('status:capped');
+  await expect(attention.getByRole('listitem')).toHaveText([
+    /2 open pull requests whose last review failed/,
+    /1 open pull request whose last review hit a limit/,
+    /3 open pull requests whose last review found something blocking/,
+    /1 open pull request whose automatic reviews are paused/,
+    /95% of the month's tokens are spent/,
+  ]);
+  await expect(attention.getByRole('link', { name: /tokens are spent/ })).toHaveAttribute('href', `${T}/usage`);
+  await expect(attention.getByRole('link', { name: /hit a limit/ })).toHaveAttribute('href', `${T}/pulls?outcome=capped`);
+  await attention.getByRole('link', { name: /something blocking/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?is=blocking$`));
+  await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('is:blocking');
+  await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('is') === 'blocking')).toBe(true);
 });
 
 test('analytics says when no webhook has reached the connection', async ({ page }) => {
@@ -236,7 +246,7 @@ test.describe('pulls list', () => {
     const search = page.getByRole('combobox', { name: 'Search pull requests' });
     const options = page.getByRole('listbox', { name: 'Suggestions' }).getByRole('option');
     await search.focus();
-    await expect(options).toHaveText([/^repo:/, /^author:/, /^status:/]);
+    await expect(options).toHaveText([/^repo:/, /^author:/, /^status:/, /^is:/]);
     await expect(search).toHaveAttribute('aria-expanded', 'true');
 
     await search.pressSequentially('st');

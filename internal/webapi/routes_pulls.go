@@ -12,6 +12,20 @@ import (
 	"github.com/home-operations/kritika/internal/transcript"
 )
 
+func (s *Server) getAttention(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	ctx := r.Context()
+	var a store.Attention
+	if err := s.read(ctx, t, func(tx pgx.Tx) error {
+		var err error
+		a, err = store.ReadAttention(ctx, tx)
+		return err
+	}); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, Attention{Failed: a.Failed, Capped: a.Capped, Blocking: a.Blocking, Paused: a.Paused})
+	return nil
+}
+
 // pullFollowups bounds the follow-ups a pull request's detail lists.
 const pullFollowups = 200
 
@@ -23,6 +37,7 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 	q := r.URL.Query()
 	f := store.PullFilter{
 		State: store.PullState(q.Get("state")), Outcome: store.ReviewStatus(q.Get("outcome")), Author: q.Get("author"), Query: q.Get("q"),
+		Is: store.PullIs(q.Get("is")),
 	}
 	f.State = cmp.Or(f.State, store.PullOpen)
 	if !f.State.Valid() {
@@ -30,6 +45,9 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 	}
 	if f.Outcome != "" && !f.Outcome.Valid() {
 		return errBadRequest(CodeBadRequest, "outcome is not a review status")
+	}
+	if f.Is != "" && !f.Is.Valid() {
+		return errBadRequest(CodeBadRequest, "is must be paused or blocking")
 	}
 	ctx := r.Context()
 	var rows []store.PullRow

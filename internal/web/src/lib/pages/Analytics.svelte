@@ -8,8 +8,9 @@
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { day } from '../dates';
-  import { daysAgo, duration, reviewTone, usd, wholeNumber, CATEGORIES } from '../format';
-  import type { AccountDetail, Analytics, AnalyticsPoint, Page, Pull } from '../types';
+  import { daysAgo, duration, usd, wholeNumber, CATEGORIES, type Tone } from '../format';
+  import type { AccountDetail, Analytics, AnalyticsPoint, Attention, MonthUsage } from '../types';
+  import type { PullFilter } from '../routes';
   import StateView from '../components/StateView.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
   import Segmented from '../components/Segmented.svelte';
@@ -35,38 +36,48 @@
     return getJSON<Analytics>(`${base}/analytics?${p}`);
   });
   const detail = new Resource(() => getJSON<AccountDetail>(base));
-  const open = new Resource(() => getJSON<Page<Pull>>(`${base}/pulls?state=open&limit=100`));
+  const attention = new Resource(() => getJSON<Attention>(`${base}/attention`));
   $effect(() => {
     void res.load();
   });
   $effect(() => {
     void detail.load();
-    void open.load();
+    void attention.load();
   });
   $effect(() =>
     live(
       (e) => e.account === slug && e.kind === 'review',
       () => {
         void res.load();
-        void open.load();
+        void attention.load();
+        void detail.load();
       },
       1000,
     ),
   );
 
-  // The open pulls whose last review did not get done, by why. Only the
-  // first page of open pulls is loaded, so while there are more a count is
-  // a floor.
-  const STUCK = [
-    { outcome: 'failed', why: 'last review failed' },
-    { outcome: 'capped', why: 'last review hit a limit' },
-  ] as const;
-  function stuck(p: Page<Pull>) {
-    const more = p.nextCursor ? '+' : '';
-    return STUCK.flatMap(({ outcome, why }) => {
-      const n = p.items.filter((x) => x.lastReview?.status === outcome).length;
-      return n ? [{ outcome, text: `${n}${more} open ${n === 1 && !more ? 'pull request' : 'pull requests'} whose ${why}` }] : [];
-    });
+  // The open pull requests that want a look, each kind linking to the list
+  // narrowed to it.
+  const WANTS: { key: keyof Attention; tone: Tone; label: string; why: string; filter: PullFilter }[] = [
+    { key: 'failed', tone: 'danger', label: 'failed', why: 'whose last review failed', filter: { outcome: 'failed' } },
+    { key: 'capped', tone: 'warn', label: 'capped', why: 'whose last review hit a limit', filter: { outcome: 'capped' } },
+    { key: 'blocking', tone: 'danger', label: 'blocking', why: 'whose last review found something blocking', filter: { is: 'blocking' } },
+    { key: 'paused', tone: 'muted', label: 'paused', why: 'whose automatic reviews are paused', filter: { is: 'paused' } },
+  ];
+  const plural = (n: number) => `${wholeNumber(n)} open ${n === 1 ? 'pull request' : 'pull requests'}`;
+
+  // A cap is close from nine tenths of it, where the Spend page's meter
+  // turns red.
+  const NEAR = 0.9;
+  function caps(u: MonthUsage): string[] {
+    const out: string[] = [];
+    if (u.tokensPerMonth && u.tokens >= u.tokensPerMonth * NEAR) {
+      out.push(`${Math.floor((u.tokens / u.tokensPerMonth) * 100)}% of the month's tokens are spent`);
+    }
+    if (u.reviewsPerDay && u.reviewsToday >= u.reviewsPerDay * NEAR) {
+      out.push(`${wholeNumber(u.reviewsToday)} of today's ${wholeNumber(u.reviewsPerDay)} reviews are done`);
+    }
+    return out;
   }
 
   const found = (c: { blocking: number; important: number; nit: number }) => c.blocking + c.important + c.nit;
@@ -117,17 +128,26 @@
       </section>
     {/if}
 
-    {#if open.data}
-      {@const attention = stuck(open.data)}
-      {#if attention.length}
+    {#if attention.data && detail.data}
+      {@const wants = WANTS.filter((w) => attention.data![w.key] > 0)}
+      {@const near = caps(detail.data.usage)}
+      {#if wants.length || near.length}
         <section class="panel" aria-labelledby="an-attention">
           <header class="panel-head"><h2 id="an-attention">Needs attention</h2></header>
           <ul class="rows">
-            {#each attention as a (a.outcome)}
+            {#each wants as w (w.key)}
               <li class="row">
-                <a class="row-link" href={href({ name: 'pulls', slug, filter: { outcome: a.outcome } })}>
-                  <Pill tone={reviewTone[a.outcome]} label={a.outcome} />
-                  <span class="row-text">{a.text}</span>
+                <a class="row-link" href={href({ name: 'pulls', slug, filter: w.filter })}>
+                  <Pill tone={w.tone} label={w.label} />
+                  <span class="row-text">{plural(attention.data[w.key])} {w.why}</span>
+                </a>
+              </li>
+            {/each}
+            {#each near as text (text)}
+              <li class="row">
+                <a class="row-link" href={href({ name: 'usage', slug })}>
+                  <Pill tone="warn" label="cap" />
+                  <span class="row-text">{text}</span>
                 </a>
               </li>
             {/each}

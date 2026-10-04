@@ -308,6 +308,15 @@ export interface Pull {
   costUsd: number;
 }
 
+// The account's open pull requests that want a look, by why; one may count
+// under several.
+export interface Attention {
+  failed: number;
+  capped: number;
+  blocking: number;
+  paused: number;
+}
+
 export interface TokenCounts {
   input: number;
   output: number;

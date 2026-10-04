@@ -77,6 +77,7 @@ type PullFilter struct {
 	Outcome      ReviewStatus
 	Author       string
 	Query        string
+	Is           PullIs
 }
 
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged, p.paused,
@@ -128,7 +129,7 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 		return nil, nil, err
 	}
 	f.State = cmp.Or(f.State, PullAll)
-	if !f.State.Valid() || (f.Outcome != "" && !f.Outcome.Valid()) {
+	if !f.State.Valid() || (f.Outcome != "" && !f.Outcome.Valid()) || (f.Is != "" && !f.Is.Valid()) {
 		return nil, nil, ErrFilter
 	}
 	number := -1
@@ -143,9 +144,10 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 			AND ($4 = '' OR p.title ILIKE $5 OR p.author ILIKE $5 OR p.number = $6)
 			AND ($7 OR (p.updated_at, p.id) < ($8, $9::uuid))
 			AND ($11 = '' OR lower(p.author) = lower($11))
+			AND ($12 = '' OR CASE $12 WHEN 'paused' THEN p.paused ELSE coalesce(lr.blocking, 0) > 0 END)
 		ORDER BY p.updated_at DESC, p.id DESC LIMIT $10`,
 		uuidParam(f.RepositoryID), string(f.State), string(f.Outcome), f.Query, like, number,
-		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Author)
+		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Author, string(f.Is))
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list pull requests: %w", err)
 	}
@@ -155,6 +157,28 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 	}
 	items, next := paged(out, p.Limit, func(r PullRow) Cursor { return Cursor{T: r.UpdatedAt, ID: r.ID} })
 	return items, next, nil
+}
+
+// Attention counts the account's open pull requests that want a look, by
+// why: the newest review failed, hit a cap or found something blocking, or
+// automatic reviews are paused. One pull request may count under several.
+type Attention struct {
+	Failed, Capped, Blocking, Paused int
+}
+
+// ReadAttention counts the open pull requests that want a look.
+func ReadAttention(ctx context.Context, tx pgx.Tx) (Attention, error) {
+	var a Attention
+	err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE lr.status = 'failed'), count(*) FILTER (WHERE lr.status = 'capped'),
+			count(*) FILTER (WHERE lr.blocking > 0), count(*) FILTER (WHERE p.paused)
+		FROM pull_requests p LEFT JOIN LATERAL (SELECT v.status,
+			(SELECT count(*) FROM findings f WHERE f.review_id = v.id AND f.severity = 'blocking') AS blocking
+			FROM reviews v WHERE v.pull_request_id = p.id ORDER BY v.created_at DESC, v.id DESC LIMIT 1) lr ON true
+		WHERE p.state = 'open'`).Scan(&a.Failed, &a.Capped, &a.Blocking, &a.Paused)
+	if err != nil {
+		return a, fmt.Errorf("store: read attention: %w", err)
+	}
+	return a, nil
 }
 
 // FindPull returns the pull request numbered number of a repository.
