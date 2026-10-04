@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.20](https://github.com/home-operations/kritika/compare/0.0.19...0.0.20) (2026-10-04)
+
+
+### Features
+
+* **web:** add the instance's queue, with the model slots jobs wait on ([#443](https://github.com/home-operations/kritika/issues/443)) ([16158ac](https://github.com/home-operations/kritika/commit/16158acbf50d361e2505561be5f28eb57e9297e0))
+* **webapi:** keep a user's own dashboard settings ([#448](https://github.com/home-operations/kritika/issues/448)) ([3c3578f](https://github.com/home-operations/kritika/commit/3c3578f0a47b256bca9abf3d44af301b359538a7))
+* **web:** find every account's recent pull requests in the palette ([#445](https://github.com/home-operations/kritika/issues/445)) ([8cf5f3f](https://github.com/home-operations/kritika/commit/8cf5f3fc55082006d54723ac9e86322787537939))
+* **web:** give the instance and an account their own tabs ([#440](https://github.com/home-operations/kritika/issues/440)) ([b75ff5c](https://github.com/home-operations/kritika/commit/b75ff5c8afa5febeb3b0844955bb23c389b84f7d))
+* **web:** highlight the code a review shows ([#452](https://github.com/home-operations/kritika/issues/452)) ([c7cb805](https://github.com/home-operations/kritika/commit/c7cb805ea174c54a21bd1053281185ab33c58ca8))
+* **web:** highlight the diff a review read ([#453](https://github.com/home-operations/kritika/issues/453)) ([7ca9aa0](https://github.com/home-operations/kritika/commit/7ca9aa05a2b8ef4b26366b969130c69c06f2d430))
+* **web:** keep a light or dark theme with the user ([#451](https://github.com/home-operations/kritika/issues/451)) ([549772a](https://github.com/home-operations/kritika/commit/549772ab8d973e6d04d19d2941db8f058ea3d4a0))
+* **web:** keep the page when switching between accounts and the instance ([#444](https://github.com/home-operations/kritika/issues/444)) ([8d6f6ed](https://github.com/home-operations/kritika/commit/8d6f6ed4c8055d2053f3a344f021d04aa8edeac4))
+* **web:** let a user choose their time zone and clock ([#450](https://github.com/home-operations/kritika/issues/450)) ([c41bd11](https://github.com/home-operations/kritika/commit/c41bd11c7cd58df1294ed867a57e42f3b0436570))
+* **web:** render the Markdown a review writes ([#454](https://github.com/home-operations/kritika/issues/454)) ([e9cdb3a](https://github.com/home-operations/kritika/commit/e9cdb3acb808858bb4cf2b39c747319ac6703033))
+* **web:** show each account's health on the instance overview ([#441](https://github.com/home-operations/kritika/issues/441)) ([0484e84](https://github.com/home-operations/kritika/commit/0484e84e839d967a91356ff80a17dcc1faef8a39))
+* **web:** write times on the clock the browser's locale keeps ([#447](https://github.com/home-operations/kritika/issues/447)) ([f39ee21](https://github.com/home-operations/kritika/commit/f39ee2100f51f00da4447f0ee0608fdf057ac60f))
+
 ## [0.0.19](https://github.com/home-operations/kritika/compare/0.0.18...0.0.19) (2026-10-04)
 
 
