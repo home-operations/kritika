@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.18](https://github.com/home-operations/kritika/compare/0.0.17...0.0.18) (2026-10-04)
+
+
+### Features
+
+* **review:** collapse earlier findings and list a finding reported again once ([#416](https://github.com/home-operations/kritika/issues/416)) ([5b19277](https://github.com/home-operations/kritika/commit/5b19277be11a11f1b5e4fea273a83e0168752ec7))
+* **web:** filter findings by status with a control, and tell open from dismissed ([#426](https://github.com/home-operations/kritika/issues/426)) ([dbeadf7](https://github.com/home-operations/kritika/commit/dbeadf7bc6d072f2c6e4caa6df3f2c974c8ea3d4))
+* **web:** list a table's dates newest first ([#423](https://github.com/home-operations/kritika/issues/423)) ([786e3c1](https://github.com/home-operations/kritika/commit/786e3c1c86bb79eea9bb3a04dc60a39d5f10c23b))
+* **web:** move through the findings list by keyboard, and list every shortcut ([#427](https://github.com/home-operations/kritika/issues/427)) ([55b4620](https://github.com/home-operations/kritika/commit/55b462029ec6a8e482758fa5e6273ea8299542bb))
+* **web:** open a review at the finding a link names ([#421](https://github.com/home-operations/kritika/issues/421)) ([c0fc4be](https://github.com/home-operations/kritika/commit/c0fc4be394edfffd5e49811267aa50ab22d92f9e))
+* **web:** say on a review what became of each finding ([#422](https://github.com/home-operations/kritika/issues/422)) ([151fd8c](https://github.com/home-operations/kritika/commit/151fd8c2b00295dd91c0fd5e2586f9216aab219f))
+* **web:** say on a review when its pull request has a newer one ([#428](https://github.com/home-operations/kritika/issues/428)) ([2a2d9be](https://github.com/home-operations/kritika/commit/2a2d9be47df90bff61c0de3c25a47bc28546be20))
+* **web:** say when a pull request's automatic reviews are paused ([#418](https://github.com/home-operations/kritika/issues/418)) ([1cf2349](https://github.com/home-operations/kritika/commit/1cf23499d7ef123ec556a8685696b5565bf59842))
+* **web:** say why a review was skipped, whoever decided it ([#420](https://github.com/home-operations/kritika/issues/420)) ([e155914](https://github.com/home-operations/kritika/commit/e155914d1970cc527a5d896c03dd0d69c86ec0cf))
+* **web:** write dates and times one way across the dashboard ([#431](https://github.com/home-operations/kritika/issues/431)) ([3cc05e5](https://github.com/home-operations/kritika/commit/3cc05e54e2088e24bfc2025bc349883a9919fb93))
+
+
+### Bug Fixes
+
+* **github:** leave review threads open when the App cannot write contents ([#413](https://github.com/home-operations/kritika/issues/413)) ([e51d4d7](https://github.com/home-operations/kritika/commit/e51d4d7d8ca53a837d8c27f6dedb736968341e9c))
+* review nothing of a merged or closed pull request ([#430](https://github.com/home-operations/kritika/issues/430)) ([fd3cba0](https://github.com/home-operations/kritika/commit/fd3cba0c742ea989f625ac49b0a7f265daf758dd))
+* **web:** keep the repository list's selection, and name what it shows ([#424](https://github.com/home-operations/kritika/issues/424)) ([b598ad0](https://github.com/home-operations/kritika/commit/b598ad0556fdff68a9eff5dcf4b025d6f1a4207f))
+* **web:** name the spend table's group and its usage with none ([#429](https://github.com/home-operations/kritika/issues/429)) ([26520f5](https://github.com/home-operations/kritika/commit/26520f525a99c407b22da0ea1cd21cc18eeb6682))
+* **web:** offer no reindex of a repository that is off, and link its pull requests ([#425](https://github.com/home-operations/kritika/issues/425)) ([146944c](https://github.com/home-operations/kritika/commit/146944c300ac237523cf580d307255e5ae01f70c))
+* **web:** say how far off a time still to come is ([#417](https://github.com/home-operations/kritika/issues/417)) ([0880d6e](https://github.com/home-operations/kritika/commit/0880d6e930558cfbca59e4d6f0610946f8e2f860))
+
 ## [0.0.17](https://github.com/home-operations/kritika/compare/0.0.16...0.0.17) (2026-10-03)
 
 
