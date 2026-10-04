@@ -47,6 +47,26 @@ test.describe('overview', () => {
   });
 });
 
+test('a count of a thousand or more groups its digits, in every table', async ({ page }) => {
+  const run = { ...g.repoDetail.indexRuns[0]!, chunkCount: 123456 };
+  await g.mockApi(page, [
+    [/\/api\/v1\/me$/, { ...g.me, admin: true }],
+    [/\/api\/v1\/admin\/accounts$/, [{ ...g.adminAccount, repositories: 1240, reviews7d: 10432 }]],
+    [new RegExp(`/api/v1/accounts/${g.SLUG}/repos/alpha/one$`), { ...g.repoDetail, indexRuns: [run] }],
+    [new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([{ ...g.pull, reviewCount: 1500, costUsd: 1234.5 }])],
+    [new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), [{ ...g.rule, findings: 1204, addressed: 1100 }]],
+    ...g.defaultApi(),
+  ]);
+  await page.goto('/#/admin');
+  await expect(page.getByRole('row').filter({ hasText: g.adminAccount.slug }).first().locator('td.num')).toContainText(['1,240', '10,432']);
+  await page.goto(`/${T}/repos/alpha/one`);
+  await expect(page.getByRole('region', { name: 'Index runs' }).locator('td.num')).toHaveText('123,456');
+  await expect(page.getByRole('region', { name: 'Pull requests' }).locator('td.num')).toContainText(['1,500', '$1,234.50']);
+  await page.goto(`/${T}/rules`);
+  await expect(page.locator('.rule-cited')).toContainText('1,204');
+  await expect(page.locator('.rule-cited')).toContainText('1,100 addressed');
+});
+
 test('a long account or App name is cut short, whole in its title, before a table of accounts runs past its card', async ({ page }) => {
   const slug = 'github/an-organization-with-a-very-long-name';
   const connection = 'an-app-with-a-very-long-name-too';
