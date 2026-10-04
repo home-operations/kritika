@@ -1078,6 +1078,23 @@ test('nothing slides for a viewer who asked for less motion', async ({ page }) =
   await expect(one).toHaveCSS('transition-duration', '0s');
 });
 
+test('a tab stays where it is whichever tab is the current one', async ({ page }) => {
+  const lefts = (sel: string) => page.locator(sel).evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+  await page.goto(`/${T}`);
+  await expect(page.locator('.section-tab.active')).toHaveText('Analytics');
+  const sections = await lefts('.section-tab');
+  await page.goto(`/${T}/rules`);
+  await expect(page.locator('.section-tab.active')).toHaveText('Rules');
+  expect(await lefts('.section-tab')).toEqual(sections);
+
+  await page.goto(`/${T}/reviews/rev-1`);
+  await expect(page.locator('.tab.active')).toContainText('Summary');
+  const tabs = await lefts('.tabs .tab');
+  await page.goto(`/${T}/reviews/rev-1/conversation`);
+  await expect(page.locator('.tab.active')).toHaveText('Conversation');
+  expect(await lefts('.tabs .tab')).toEqual(tabs);
+});
+
 test('dark theme renders every page without console errors', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
