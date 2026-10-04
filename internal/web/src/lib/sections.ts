@@ -72,3 +72,38 @@ export const SUB_TABS: Partial<Record<Section, readonly SubTab[]>> = {
     { label: 'Follow-ups', name: 'followups', route: (slug) => ({ name: 'followups', slug }) },
   ],
 };
+
+// pageIn is the page r shows, in the account slug: the same list or
+// settings page, and for a record, which the other account does not have,
+// the list it belongs to. A filter stays behind, since it may name what
+// only r's account has. From the instance's queue it is the account's.
+export function pageIn(r: Route, slug: string): Route {
+  switch (r.name) {
+    case 'findings':
+    case 'usage':
+    case 'pulls':
+    case 'queue':
+    case 'followups':
+    case 'rules':
+    case 'repos':
+      return { name: r.name, slug };
+    case 'admin':
+      return r.section ? { name: 'admin', slug, section: r.section } : { name: 'admin', slug };
+    case 'pull':
+    case 'review':
+      return { name: 'pulls', slug };
+    case 'repo':
+      return { name: 'repos', slug };
+    case 'instanceQueue':
+      return { name: 'queue', slug };
+    default:
+      return { name: 'account', slug };
+  }
+}
+
+// pageOfInstance is the instance's page for what r shows: its queue from
+// an account's, when the instance has that tab, and its overview otherwise.
+export function pageOfInstance(r: Route, queue: boolean): Route {
+  if (!scopeOf(r)) return r.name === 'signin' ? { name: 'overview' } : r;
+  return r.name === 'queue' && queue ? { name: 'instanceQueue' } : { name: 'overview' };
+}
