@@ -395,6 +395,10 @@ export interface Finding {
   reactionsDown: number;
   // rules are the ids of the review rules it enforces.
   rules: string[];
+  // status is what became of it on its pull request; dismissReason is the
+  // reason a dismissed one was dismissed with.
+  status: FindingStatus;
+  dismissReason: string;
 }
 
 export type AnalyticsGroup = 'day' | 'week' | 'month';
@@ -470,13 +474,10 @@ export type FindingStatus = 'open' | 'addressed' | 'dismissed';
 export type Category = 'correctness' | 'security' | 'performance' | 'reliability' | 'maintainability' | 'tests';
 
 // AccountFinding is one finding of a pull request, however many of its
-// reviews reported it, as the latest of them did; dismissReason is the
-// reason a dismissed one was dismissed with.
+// reviews reported it, as the latest of them did.
 export interface AccountFinding extends Finding {
   reviewId: string;
   pull: PullRef;
-  status: FindingStatus;
-  dismissReason: string;
   firstSeenAt: string;
   lastSeenAt: string;
 }

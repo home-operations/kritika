@@ -148,7 +148,7 @@ var goldens = map[string]any{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",
 			Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
-			Rules: []string{"wrap-errors"},
+			Rules: []string{"wrap-errors"}, Status: store.FindingOpen,
 		}},
 		RunnerRun: &RunnerRun{
 			ID: "run-1", Phase: "done", JobName: "job", PodName: "pod", NodeName: "node", CreatedAt: t0, ScheduledAt: &t0,
@@ -177,9 +177,9 @@ var goldens = map[string]any{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "", AgentPrompt: "", Fingerprint: "fp",
 			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
-			Rules: []string{"wrap-errors"},
+			Rules: []string{"wrap-errors"}, Status: store.FindingAddressed,
 		},
-		ReviewID: "rev-1", Pull: goldenPullRef, Status: store.FindingAddressed, FirstSeenAt: t0, LastSeenAt: t1,
+		ReviewID: "rev-1", Pull: goldenPullRef, FirstSeenAt: t0, LastSeenAt: t1,
 	},
 	"review_diff": ReviewDiff{Diff: "diff --git a/a.go b/a.go\n", DeltaDiff: ""},
 	"review_raw": ReviewRaw{

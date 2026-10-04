@@ -27,7 +27,7 @@ func TestListAccountFindings(t *testing.T) {
 	account := accountID(t, s, "findings")
 	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
-	var first, second string
+	var first, second, earliest string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		var repoID string
 		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'findings/one'`, account).Scan(&repoID); err != nil {
@@ -41,7 +41,7 @@ func TestListAccountFindings(t *testing.T) {
 			}
 			return id
 		}
-		reviewAt := func(pr, head, status string, at time.Time, findings ...[3]string) {
+		reviewAt := func(pr, head, status string, at time.Time, findings ...[3]string) string {
 			var id string
 			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
 				VALUES ($1, $2, $3, $4, $5) RETURNING id`, account, pr, head, status, at).Scan(&id); err != nil {
@@ -53,9 +53,10 @@ func TestListAccountFindings(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			return id
 		}
 		first, second = pull(7, "Add widgets"), pull(8, "More widgets")
-		reviewAt(first, "h1", "completed", t0, [3]string{"blocking", "nil deref", "fp-a"}, [3]string{"nit", "naming", "fp-b"})
+		earliest = reviewAt(first, "h1", "completed", t0, [3]string{"blocking", "nil deref", "fp-a"}, [3]string{"nit", "naming", "fp-b"})
 		// The same head again: a re-run that leaves naming out did not address it.
 		reviewAt(first, "h1", "completed", t0.Add(time.Minute), [3]string{"blocking", "nil deref", "fp-a"})
 		reviewAt(first, "h2", "completed", t0.Add(2*time.Minute), [3]string{"important", "Nil deref", "fp-a"})
@@ -121,6 +122,20 @@ func TestListAccountFindings(t *testing.T) {
 		t.Fatalf("pull 7's finding = %+v, want first seen at t0 and last two minutes later", a)
 	}
 
+	// The earliest review's own findings say what became of each since.
+	var own []FindingRow
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		own, err = ListFindings(ctx, tx, earliest)
+		return err
+	}); err != nil {
+		t.Fatalf("ListFindings: %v", err)
+	}
+	if len(own) != 2 || own[0].Title != "nil deref" || own[0].Status != FindingOpen || own[1].Title != "naming" ||
+		own[1].Status != FindingAddressed {
+		t.Fatalf("the earliest review's findings = %+v, want nil deref open and naming addressed", own)
+	}
+
 	addressed, _ := list(FindingFilter{Status: FindingAddressed}, Page{Limit: 10})
 	check("addressed", addressed, row{7, "naming", review.SeverityNit, FindingAddressed})
 	important, _ := list(FindingFilter{Severity: review.SeverityImportant}, Page{Limit: 10})
@@ -166,7 +181,7 @@ func TestDismissedFindings(t *testing.T) {
 	}
 	account := accountID(t, s, "dismissed")
 	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	var pull string
+	var pull, earliest string
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		var repoID string
 		if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'dismissed/one'`, account).Scan(&repoID); err != nil {
@@ -181,6 +196,9 @@ func TestDismissedFindings(t *testing.T) {
 			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
 				VALUES ($1, $2, $3, 'completed', $4) RETURNING id`, account, pull, head, t0.Add(time.Duration(i)*time.Minute)).Scan(&id); err != nil {
 				return err
+			}
+			if i == 0 {
+				earliest = id
 			}
 			// The second review drops naming, which would address it.
 			findings := [][2]string{{"nil deref", "fp-a"}, {"naming", "fp-b"}}[:2-i]
@@ -217,6 +235,9 @@ func TestDismissedFindings(t *testing.T) {
 				reason += a.DismissReason
 			}
 		}
+		if err := checkDismissedOwn(ctx, t, tx, earliest); err != nil {
+			return err
+		}
 		var err error
 		ds, err = Dismissals(ctx, tx, pull)
 		return err
@@ -230,6 +251,29 @@ func TestDismissedFindings(t *testing.T) {
 	if len(ds) != 1 || ds[0].Fingerprint != "fp-b" || ds[0].Finding.Title != "naming" || ds[0].CommentID != 99 {
 		t.Fatalf("Dismissals = %+v", ds)
 	}
+}
+
+// checkDismissedOwn checks that a review's own findings say naming was
+// dismissed, with its reason, and the other is still open.
+func checkDismissedOwn(ctx context.Context, t *testing.T, tx pgx.Tx, reviewID string) error {
+	t.Helper()
+	own, err := ListFindings(ctx, tx, reviewID)
+	if err != nil {
+		return err
+	}
+	if len(own) != 2 {
+		t.Errorf("the review has %d findings, want 2", len(own))
+	}
+	for _, f := range own {
+		want, why := FindingOpen, ""
+		if f.Title == "naming" {
+			want, why = FindingDismissed, "house style"
+		}
+		if f.Status != want || f.DismissReason != why {
+			t.Errorf("the review's %s is %s (%q), want %s (%q)", f.Title, f.Status, f.DismissReason, want, why)
+		}
+	}
+	return nil
 }
 
 // TestDeleteDismissal: a dismissal taken back is gone, and taking back one

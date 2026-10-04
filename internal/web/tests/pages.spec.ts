@@ -504,6 +504,23 @@ test.describe('review', () => {
     await expect(page.locator('.tab.active')).toHaveText('Usage');
   });
 
+  test('a finding says when a later review dropped it or a maintainer dismissed it', async ({ page }) => {
+    const f = g.reviewDetail.findings[0]!;
+    const findings = [
+      { ...f, id: 'f-a', status: 'addressed' as const },
+      { ...f, id: 'f-d', status: 'dismissed' as const, dismissReason: 'house style' },
+      { ...f, id: 'f-o' },
+    ];
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, findings }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1`);
+    await expect(page.locator('#finding-f-a .pill')).toHaveText('addressed');
+    await expect(page.locator('#finding-f-d .pill')).toHaveText('dismissed');
+    await expect(page.locator('#finding-f-d')).toContainText('Dismissed: house style');
+    await expect(page.locator('#finding-f-o .pill')).toHaveCount(0);
+    await page.goto(`/${T}/pulls/alpha/one/7`);
+    await expect(page.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toContainText(['addressed', 'dismissed', f.title]);
+  });
+
   test('diff anchors a finding under its line', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/diff`);
     const anchored = page.locator('tr.dl-finding');
