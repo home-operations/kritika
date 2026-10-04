@@ -34,11 +34,16 @@ _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .Pri
 {{ end }}
 {{ end -}}
 {{ if .Prior -}}
-**Earlier findings**
+{{ $resolved := 0 }}{{ $dismissed := 0 -}}
+{{ range .Prior }}{{ if .Dismissed }}{{ $dismissed = add $dismissed 1 }}{{ else }}{{ $resolved = add $resolved 1 }}{{ end }}{{ end -}}
+<details>
+<summary>Earlier findings ({{ if $resolved }}{{ $resolved }} resolved{{ end }}{{ if and $resolved $dismissed }}, {{ end }}{{ if $dismissed }}{{ $dismissed }} dismissed{{ end }})</summary>
 
 {{ range .Prior -}}
-- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else if .Resolved }}resolved{{ else }}still open{{ end }}
+- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else }}resolved{{ end }}
 {{ end }}
+</details>
+
 {{ end -}}
 {{ end -}}
 ### Summary

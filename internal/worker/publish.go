@@ -354,10 +354,11 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 }
 
 // priorFindings is the last review's findings as this review's summary
-// lists them: resolved when the model, asked to report each again only if
-// still present, did not, and linked to their threads where they have one,
-// then the findings maintainers dismissed, each linked to the comment that
-// dismissed it.
+// lists them: those the model, asked to report each again only if still
+// present, did not, linked to their threads where they have one, then the
+// findings maintainers dismissed, each linked to the comment that
+// dismissed it. A finding reported again is left out, as the summary
+// already lists it among this review's.
 func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 	reported := make(map[string]bool, len(res.Findings))
 	for _, f := range res.Findings {
@@ -367,11 +368,14 @@ func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 	out := make([]review.PriorFinding, 0, len(p.prior.findings))
 	for _, pf := range p.prior.findings {
 		f := pf.Finding
+		if reported[review.Fingerprint(f)] {
+			continue
+		}
 		f.URL = p.client.FileURL(owner, repo, p.prior.headSHA, f.Path, f.Line, f.EndLine)
 		if pf.commentID != 0 {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
 		}
-		out = append(out, review.PriorFinding{Finding: f, Resolved: !reported[review.Fingerprint(f)]})
+		out = append(out, review.PriorFinding{Finding: f, Resolved: true})
 	}
 	for _, d := range p.prior.dismissed {
 		f := d.Finding

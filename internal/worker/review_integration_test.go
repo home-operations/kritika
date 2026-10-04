@@ -1692,14 +1692,14 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	}
 	resolved := len(lf.resolved)
 	lf.mu.Unlock()
-	// The earlier finding was reported again, so its thread stays open.
+	// The earlier finding was reported again, so its thread stays open and
+	// the summary lists it once, among this review's findings.
 	if resolved != 0 {
 		t.Fatalf("%d thread(s) resolved; the earlier finding is still open", resolved)
 	}
 	if !strings.Contains(sticky, "_Incremental review of the changes since [`"+prior[:7]+"`](local://onedr0p/home-ops/commit/"+prior+")._") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
-		!strings.Contains(sticky, "**Earlier findings**\n\n- **[important · correctness]** [`main.go:1`](local://onedr0p/home-ops/"+prior+"/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
-		!strings.Contains(sticky, " · still open\n") {
+		strings.Contains(sticky, "Earlier findings") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
 

@@ -142,8 +142,8 @@ type Finding struct {
 	ThreadURL string `json:"-"`
 }
 
-// PriorFinding is a finding the last review made, as the summary of a
-// review that builds on it lists them.
+// PriorFinding is a finding the last review made and this one did not
+// report again, as the summary of a review that builds on it lists them.
 type PriorFinding struct {
 	Finding
 	// Resolved is whether this review, asked to report the finding again
