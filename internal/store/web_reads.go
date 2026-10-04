@@ -75,6 +75,19 @@ const (
 // Valid reports whether s is a pull state filter.
 func (s PullState) Valid() bool { return s == PullOpen || s == PullClosed || s == PullAll }
 
+// PullIs narrows a pull request list to those that are something.
+type PullIs string
+
+// What a list may ask its pull requests to be: with automatic reviews
+// paused, or with a blocking finding in their newest review.
+const (
+	PullPaused   PullIs = "paused"
+	PullBlocking PullIs = "blocking"
+)
+
+// Valid reports whether i is something a list may ask for.
+func (i PullIs) Valid() bool { return i == PullPaused || i == PullBlocking }
+
 // Cursor is the position after the last row of a page: the sort key of that
 // row (T for a time-ordered list, S for a text-ordered one) and its id, the
 // tiebreak. The zero Cursor is the first page.

@@ -5,7 +5,7 @@
   import { describe, isCode } from '../manage';
   import { toast } from '../toast.svelte';
   import { navigate, replace } from '../router.svelte';
-  import { PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
+  import { PULL_IS, PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
   import { Paged, Resource, live } from '../resource.svelte';
   import { pullKey, pullRoute, accountApi, rerunPath } from '../links';
   import { listKeys } from '../listkeys';
@@ -39,7 +39,7 @@
 
   function query(after?: string): string {
     const p = new URLSearchParams({ state: prState, limit: '50' });
-    for (const k of ['outcome', 'repo', 'author', 'q'] as const) {
+    for (const k of ['outcome', 'is', 'repo', 'author', 'q'] as const) {
       const v = filter?.[k];
       if (v) p.set(k, v);
     }
@@ -66,8 +66,9 @@
     { key: 'repo', hint: 'a repository', values: repoNames },
     { key: 'author', hint: "an author's login", values: authors, open: true },
     { key: 'status', hint: "the last review's status", values: PULL_OUTCOMES },
+    { key: 'is', hint: 'paused, or blocking', values: PULL_IS },
   ]);
-  const boxText = (f: PullFilter | undefined) => formatTokens(specs, { repo: f?.repo, author: f?.author, status: f?.outcome }, f?.q);
+  const boxText = (f: PullFilter | undefined) => formatTokens(specs, { repo: f?.repo, author: f?.author, status: f?.outcome, is: f?.is }, f?.q);
 
   // written is the box's text for the filter it last wrote to the URL: any
   // other change to the filter, such as following a link to the unfiltered
@@ -75,7 +76,7 @@
   let text = $state(untrack(() => boxText(filter)));
   let written = untrack(() => boxText(filter));
   function onapply(p: Parsed): void {
-    const f = { state: filter?.state, repo: p.tokens.repo, author: p.tokens.author, outcome: p.tokens.status, q: p.q };
+    const f = { state: filter?.state, repo: p.tokens.repo, author: p.tokens.author, outcome: p.tokens.status, is: p.tokens.is, q: p.q };
     written = boxText(pullFilter(f));
     setFilter(f);
   }
@@ -174,7 +175,7 @@
       <TokenSearch
         id="pull-search"
         label="Search pull requests"
-        placeholder="Search, or filter by repo:, author: or status:"
+        placeholder="Search, or filter by repo:, author:, status: or is:"
         {specs}
         bind:text
         bind:input={searchEl}

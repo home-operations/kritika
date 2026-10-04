@@ -209,6 +209,7 @@ var goldens = map[string]any{
 		Group: store.UsageByDay, From: t0, To: t1,
 		Rows: []UsagePoint{{Key: "2026-09-01", InputTokens: 100, CacheReadTokens: 50, CacheWriteTokens: 5, OutputTokens: 20, CostUSD: 0.1, Calls: 2}},
 	},
+	"attention": Attention{Failed: 2, Capped: 1, Blocking: 3, Paused: 1},
 	"analytics": Analytics{
 		Group: store.AnalyticsByDay, From: t0, To: t1,
 		Current: AnalyticsTotals{

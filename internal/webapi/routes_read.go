@@ -44,6 +44,7 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}/raw", s.account(s.getReviewRaw))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/usage", s.account(s.getUsage))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/analytics", s.account(s.getAnalytics))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/attention", s.account(s.getAttention))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/queue", s.account(s.listQueue))
 }
 
