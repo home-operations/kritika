@@ -16,7 +16,7 @@
   <nav class="tabs" aria-label={SECTIONS[section].label}>
     {#each tabs as t (t.name)}
       <a class="tab" class:active={t.name === current} aria-current={t.name === current ? 'page' : undefined} href={href(t.route(slug))}>
-        {t.label}
+        <span class="tab-label" data-label={t.label}>{t.label}</span>
       </a>
     {/each}
   </nav>

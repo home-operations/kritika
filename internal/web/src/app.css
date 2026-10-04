@@ -409,8 +409,24 @@ kbd {
   font-weight: 600;
   border-bottom-color: var(--edge);
 }
+/* A tab's label is bold only while it is the current one. The bold text's
+   width is held from the start, so the tabs beside it stay where they are. */
+.section-label,
+.tab-label {
+  display: inline-flex;
+  flex-direction: column;
+}
+.section-label::after,
+.tab-label::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+}
 .section-tab.active .section-label {
   padding: 0 0.2em;
+  margin: 0 -0.2em;
   border-radius: 0.15em 0.35em 0.2em 0.4em / 0.4em 0.2em 0.35em 0.15em;
   background: linear-gradient(transparent 38%, var(--mark) 38%, var(--mark) 94%, transparent 94%);
 }

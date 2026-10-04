@@ -123,7 +123,7 @@
           {#each REVIEW_TABS as t (t)}
             {#if t === RUN_TABS[0]}<span class="tabs-group-label">Run</span>{/if}
             <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t })}>
-              {labels[t]}{#if t === 'summary' && d.findings.length}<span class="tab-count">{d.findings.length}</span>{/if}
+              <span class="tab-label" data-label={labels[t]}>{labels[t]}</span>{#if t === 'summary' && d.findings.length}<span class="tab-count">{d.findings.length}</span>{/if}
             </a>
           {/each}
         </nav>

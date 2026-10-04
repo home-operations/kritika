@@ -224,7 +224,7 @@
             {@const on = router.route.name === t.route.name}
             <a class="section-tab" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
               <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
-              <span class="section-label">{t.label}</span>
+              <span class="section-label" data-label={t.label}>{t.label}</span>
             </a>
           {/each}
         </nav>
@@ -239,7 +239,7 @@
               {@attach currentSection === s && revealInNav}
             >
               <Icon path={sectionIcon[s]} size={15} />
-              <span class="section-label">{SECTIONS[s].label}</span>
+              <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
             </a>
           {/each}
         </nav>
