@@ -83,9 +83,19 @@ test('tables over time read newest first', async ({ page }) => {
 
   await page.goto(`/${T}/usage`);
   await expect(page.locator('tbody tr td:first-child')).toHaveText(['2026-09-02', '2026-09-01']);
+  await expect(page.locator('thead th').first()).toHaveText('Day');
+  await expect(page.locator('tfoot td').nth(1)).toHaveAttribute('title', String(2 * day.inputTokens));
 
   await page.goto(`/${T}/reviews/rev-1/usage`);
   await expect(page.locator('tbody tr td:first-child')).toHaveText(['followup', call.role]);
+});
+
+test('the spend table names its group, and usage with none', async ({ page }) => {
+  const day = g.usageSeries.rows[0]!;
+  await g.mockApi(page, [[/\/usage$/, { ...g.usageSeries, group: 'repo', rows: [{ ...day, key: '' }] }], ...g.defaultApi()]);
+  await page.goto(`/${T}/usage`);
+  await expect(page.locator('thead th').first()).toHaveText('Repository');
+  await expect(page.locator('tbody tr td:first-child')).toHaveText(['(none)']);
 });
 
 test('a chart reads one column at a time, by pointer or by keyboard', async ({ page }) => {

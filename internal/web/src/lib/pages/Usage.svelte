@@ -62,11 +62,16 @@
     return z;
   }
 
+  const groupLabel = (g: UsageGroup) => GROUPS.find((x) => x.value === g)?.label ?? g;
+  // A row with no key is usage no model, repository or role was recorded for.
+  const named = (key: string) => key || '(none)';
+  const dayFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
   function columns(rows: UsagePoint[]) {
     return rows.map((r) => ({
       key: r.key,
-      label: group === 'day' ? r.key.slice(5) : (r.key.split('/').pop() ?? r.key),
-      title: r.key || '(none)',
+      label: group === 'day' ? dayFmt.format(new Date(`${r.key}T00:00:00Z`)) : (r.key.split('/').pop() ?? r.key),
+      title: named(r.key),
       values: [metric === 'cost' ? r.costUsd : total(r)],
     }));
   }
@@ -103,7 +108,7 @@
       {#snippet children(s)}
         {@const t = sum(s.rows)}
         <section class="panel" aria-labelledby="usage-chart">
-          <header class="panel-head"><h2 id="usage-chart">{metric === 'cost' ? 'Cost' : 'Tokens'} by {s.group}</h2></header>
+          <header class="panel-head"><h2 id="usage-chart">{metric === 'cost' ? 'Cost' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
           <ColumnChart
             label="{metric === 'cost' ? 'Cost' : 'Tokens'} by {s.group}, last {days} days"
             series={[{ label: metric === 'cost' ? 'Cost' : 'Tokens', color: 'var(--chart-ink)' }]}
@@ -115,7 +120,7 @@
           <table class="data">
             <thead>
               <tr>
-                <th scope="col">{s.group}</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input</th>
+                <th scope="col">{groupLabel(s.group)}</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input</th>
                 <th scope="col" class="num">Cache read</th><th scope="col" class="num">Cache write</th><th scope="col" class="num">Output</th>
                 <th scope="col" class="num">Cost</th>
               </tr>
@@ -124,7 +129,7 @@
               <!-- Days read newest first; the other groups keep the server's order. -->
               {#each s.group === 'day' ? [...s.rows].reverse() : s.rows as r (r.key)}
                 <tr>
-                  <td class="mono small">{r.key}</td>
+                  <td class="mono small">{named(r.key)}</td>
                   <td class="num">{wholeNumber(r.calls)}</td>
                   <td class="num" title={wholeNumber(r.inputTokens)}>{tokens(r.inputTokens)}</td>
                   <td class="num" title={wholeNumber(r.cacheReadTokens)}>{tokens(r.cacheReadTokens)}</td>
@@ -138,10 +143,10 @@
               <tr>
                 <th scope="row">Total</th>
                 <td class="num">{wholeNumber(t.calls)}</td>
-                <td class="num">{tokens(t.inputTokens)}</td>
-                <td class="num">{tokens(t.cacheReadTokens)}</td>
-                <td class="num">{tokens(t.cacheWriteTokens)}</td>
-                <td class="num">{tokens(t.outputTokens)}</td>
+                <td class="num" title={wholeNumber(t.inputTokens)}>{tokens(t.inputTokens)}</td>
+                <td class="num" title={wholeNumber(t.cacheReadTokens)}>{tokens(t.cacheReadTokens)}</td>
+                <td class="num" title={wholeNumber(t.cacheWriteTokens)}>{tokens(t.cacheWriteTokens)}</td>
+                <td class="num" title={wholeNumber(t.outputTokens)}>{tokens(t.outputTokens)}</td>
                 <td class="num">{usd(t.costUsd)}</td>
               </tr>
             </tfoot>
