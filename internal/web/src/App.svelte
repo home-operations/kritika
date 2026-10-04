@@ -258,6 +258,14 @@
             <dd>go to a page</dd>
             <dt><kbd>?</kbd></dt>
             <dd>toggle this help</dd>
+            <dt><kbd>j</kbd> / <kbd>k</kbd></dt>
+            <dd>move down or up a list of pull requests or findings</dd>
+            <dt><kbd>⏎</kbd></dt>
+            <dd>open the row the cursor is on</dd>
+            <dt><kbd>/</kbd></dt>
+            <dd>search the list</dd>
+            <dt><kbd>space</kbd></dt>
+            <dd>select a pull request for a bulk action, as an admin</dd>
           </dl>
         </div>
       </div>

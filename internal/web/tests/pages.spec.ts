@@ -410,6 +410,24 @@ test.describe('findings', () => {
     await expect(page).toHaveURL(new RegExp(`${T}/findings$`));
   });
 
+  test('j, k and Enter move a cursor down the list and open its finding', async ({ page }) => {
+    const f = g.accountFinding;
+    await g.mockApi(page, [[/\/findings$/, g.pageOf([f, { ...f, id: 'f-2', title: 'second' }])], ...g.defaultApi()]);
+    await page.goto(`/${T}/findings`);
+    const rows = page.locator('.finding-row');
+    await expect(rows).toHaveCount(2);
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    await expect(rows.nth(1)).toHaveClass(/selected/);
+    await page.keyboard.press('k');
+    await expect(rows.nth(0)).toHaveClass(/selected/);
+    await page.keyboard.press('/');
+    await expect(page.getByRole('combobox', { name: 'Search findings' })).toBeFocused();
+    await page.getByRole('combobox', { name: 'Search findings' }).blur();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}\\?finding=${f.id}$`));
+  });
+
   test('filters by severity, status and repository tokens, in the URL', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/findings`);

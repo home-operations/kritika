@@ -243,6 +243,7 @@ test.describe('keyboard shortcuts', () => {
     await page.goto('/');
     await page.keyboard.press('?');
     await expect(page.locator('.help-card h2')).toHaveText('Keyboard shortcuts');
+    await expect(page.locator('.help-keys dd')).toContainText(['go to a page', 'toggle this help', 'move down or up a list', 'open the row', 'search the list', 'select a pull request']);
     await page.keyboard.press('Escape');
     await expect(page.locator('.help-overlay')).toHaveCount(0);
   });

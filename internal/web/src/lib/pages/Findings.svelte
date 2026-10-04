@@ -2,7 +2,7 @@
   // Every finding of the account, once per pull request however many of
   // its reviews repeated it, and whether a later review found it addressed
   // or a maintainer dismissed it.
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
   import { href, navigate, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
@@ -10,6 +10,7 @@
   import { accountApi, pullRoute, threadUrl } from '../links';
   import { CATEGORIES, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
+  import { listKeys } from '../listkeys';
   import type { AccountFinding, Page, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import LoadMore from '../components/LoadMore.svelte';
@@ -88,6 +89,30 @@
 
   const reviewOf = (f: AccountFinding) => ({ name: 'review' as const, slug, id: f.reviewId, finding: f.id });
 
+  // The cursor follows its finding, as the pull request list's follows its
+  // pull request.
+  let selectedId = $state('');
+  const selected = $derived(paged.items.findIndex((f) => f.id === selectedId));
+  async function select(i: number): Promise<void> {
+    const f = paged.items[i];
+    if (!f) return;
+    selectedId = f.id;
+    await tick();
+    document.querySelector(`.finding-table [data-index="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+  }
+  $effect(() =>
+    listKeys({
+      count: () => paged.items.length,
+      get: () => selected,
+      set: (i) => void select(i),
+      open: (i) => {
+        const f = paged.items[i];
+        if (f) navigate(reviewOf(f));
+      },
+      focusSearch: () => searchEl?.focus(),
+    }),
+  );
+
   function onRowClick(e: MouseEvent, f: AccountFinding): void {
     if ((e.target as Element).closest('a, button') || getSelection()?.toString()) return;
     navigate(reviewOf(f));
@@ -139,11 +164,11 @@
                 </tr>
               </thead>
               <tbody>
-                {#each paged.items as f (f.id)}
+                {#each paged.items as f, i (f.id)}
                   <!-- The title is the row's link; the click is a larger target for a pointer. -->
-                  <tr class="finding-row" onclick={(e) => onRowClick(e, f)}>
+                  <tr class="finding-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
                     <td class="finding-main">
-                      <a class="finding-link" href={href(reviewOf(f))}>{f.title}</a>
+                      <a class="finding-link" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined}>{f.title}</a>
                       <span class="finding-sub">{f.explanation}</span>
                       {#if f.rules.length}
                         <span class="finding-rules">
@@ -186,5 +211,6 @@
         {/if}
       {/snippet}
     </StateView>
+    <p class="muted small key-hints"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>
 </main>
