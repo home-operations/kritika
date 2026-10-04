@@ -618,6 +618,20 @@ kbd {
   color: var(--danger);
 }
 
+/* ---- reduced motion ------------------------------------------------------ */
+/* Nothing slides or fades for a viewer who asked for less motion; the
+   spinner still turns, slowly, since it is the only sign of work under way. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
 /* ---- mobile -------------------------------------------------------------- */
 @media (max-width: 640px) {
   .wordmark {
