@@ -292,6 +292,9 @@ type InstallationTokens struct {
 	mu  sync.Mutex
 	tok string
 	exp time.Time
+	// contentsReadOnly is whether the cached token was minted without
+	// write access to repository contents.
+	contentsReadOnly bool
 }
 
 // Token returns a valid installation token, minting one if needed.
@@ -306,7 +309,20 @@ func (t *InstallationTokens) Token(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("github: mint installation token for %d: %w", t.instID, err)
 	}
 	t.tok, t.exp = it.GetToken(), it.GetExpiresAt().Time
+	t.contentsReadOnly = it.Permissions != nil && it.Permissions.GetContents() != "write"
 	return t.tok, nil
+}
+
+// CanWriteContents reports whether the installation was granted write
+// access to repository contents. A token GitHub minted without saying what
+// it may do counts as one that can.
+func (t *InstallationTokens) CanWriteContents(ctx context.Context) (bool, error) {
+	if _, err := t.Token(ctx); err != nil {
+		return false, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return !t.contentsReadOnly, nil
 }
 
 // ReadOnly mints a token that can only read repo's contents and metadata,

@@ -75,7 +75,13 @@ Register a GitHub App under the account whose repositories kritika reviews
   installed on.
 - **Repository permissions:**
   - Contents: read-only, for branches, files, comparisons and fetching the
-    code.
+    code. Read and write is optional and has one use: GitHub lets an App
+    resolve a review thread only with write access to the contents, so
+    with read-only kritika leaves its finding threads open, both those a
+    later review finds fixed and those `dismiss` closes, for a person to
+    resolve. The summary and the dashboard record them either way. Read
+    and write also lets the App push to the repository, which kritika
+    never does.
   - Metadata: read-only.
   - Pull requests: read and write, for reviews, inline comments and
     replies, and conversation comments.

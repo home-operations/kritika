@@ -148,7 +148,7 @@ func newFakeAPI(t *testing.T) (*fakeAPI, *Client) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f, &Client{api: api}
+	return f, &Client{api: api, tokens: &InstallationTokens{tok: "ghs_test", exp: time.Now().Add(time.Hour)}}
 }
 
 func (f *fakeAPI) reply(pattern string, status int, body string) {

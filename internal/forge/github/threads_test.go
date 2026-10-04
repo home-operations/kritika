@@ -3,9 +3,12 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // threadsAPI answers the review threads query with pages of threads and
@@ -115,6 +118,62 @@ func TestResolveThread(t *testing.T) {
 				}
 			} else if vars["owner"] != "o" || vars["repo"] != "r" || vars["number"] != float64(7) {
 				t.Errorf("query variables = %v", vars)
+			}
+		})
+	}
+}
+
+// TestResolveThreadWithoutContentsWrite: GitHub refuses the mutation to an
+// installation that cannot write contents, so the client does not ask.
+func TestResolveThreadWithoutContentsWrite(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions string
+		want        bool
+	}{
+		{"contents read resolves nothing", `,"permissions":{"contents":"read","pull_requests":"write"}`, false},
+		{"contents write resolves", `,"permissions":{"contents":"write","pull_requests":"write"}`, true},
+		{"permissions unsaid resolves", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			graphql := 0
+			_, pemKey := testKeyPEM(t)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v3/app/installations/42/access_tokens", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"token":"ghs_test","expires_at":%q%s}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339), tt.permissions)
+			})
+			mux.HandleFunc("POST /api/graphql", func(w http.ResponseWriter, r *http.Request) {
+				graphql++
+				w.Header().Set("Content-Type", "application/json")
+				body, _ := io.ReadAll(r.Body)
+				if strings.Contains(string(body), "resolveReviewThread") {
+					_, _ = fmt.Fprint(w, `{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}`)
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[%s]}}}}}`, thread("T1", false, "kritika#11"))
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+			app, err := NewApp("Iv1.abc", pemKey, srv.URL+"/api/v3")
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err := NewClient(app, 42)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.login = "kritika[bot]"
+			got, err := c.ResolveThread(t.Context(), "o", "r", 7, 11, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("ResolveThread() = %v, want %v", got, tt.want)
+			}
+			if !tt.want && graphql != 0 {
+				t.Errorf("%d GraphQL requests, want none", graphql)
 			}
 		})
 	}
