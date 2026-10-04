@@ -130,7 +130,7 @@
 
         <section class="tab-panel" aria-label={labels[tab]}>
           {#if tab === 'summary'}
-            <SummaryTab {d} {finding} />
+            <SummaryTab {slug} {d} {finding} />
           {:else if tab === 'diff'}
             <DiffTab {base} {d} />
           {:else if tab === 'conversation'}

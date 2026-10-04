@@ -618,6 +618,18 @@ test.describe('review', () => {
     await expect(page.locator('.newer-notice').getByRole('link', { name: 'Open its latest review' })).toHaveAttribute('href', `${T}/reviews/rev-2`);
   });
 
+  test('the summary lists the rules the review checked, and how many findings cite each', async ({ page }) => {
+    await page.goto(`/${T}/reviews/rev-1`);
+    const rules = page.getByRole('region', { name: 'Rules checked' });
+    await expect(rules.getByRole('listitem')).toHaveText([/wrap-errors\s*1 finding/, /no-tokens\s*no finding/]);
+    await expect(rules.getByRole('link', { name: 'wrap-errors' })).toHaveAttribute('href', `${T}/findings?rule=wrap-errors`);
+    const pack = { ...g.reviewDetail.contextPack!, ruleIds: [] };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, contextPack: pack }], ...g.defaultApi()]);
+    await page.reload();
+    await expect(page.locator('.page-head h1')).toBeVisible();
+    await expect(rules).toHaveCount(0);
+  });
+
   test('diff anchors a finding under its line', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/diff`);
     const anchored = page.locator('tr.dl-finding');

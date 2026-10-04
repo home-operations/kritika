@@ -210,6 +210,8 @@ type ContextPackMeta struct {
 	DeltaPaths   []string
 	PriorHeadSHA *string
 	RepoNotes    []string
+	// RuleIDs are the ids of the rules the review's prompt was given.
+	RuleIDs []string
 	// Stages are the context chunks with Text empty; StageBytes[i] is the
 	// size of Stages[i]'s text.
 	Stages     []contextpack.Chunk
@@ -230,12 +232,13 @@ type stageMeta struct {
 func FindContextPackMeta(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackMeta, error) {
 	var m ContextPackMeta
 	var stages, files []byte
-	err := tx.QueryRow(ctx, `SELECT head_sha, base_sha, patch_id, changed_paths, delta_paths, prior_head_sha, repo_notes,
+	err := tx.QueryRow(ctx, `SELECT head_sha, base_sha, patch_id, changed_paths, delta_paths, prior_head_sha, repo_notes, rule_ids,
 		(SELECT coalesce(jsonb_agg((e - 'text') || jsonb_build_object('bytes', octet_length(e->>'text')) ORDER BY n), '[]')
 			FROM jsonb_array_elements(stages) WITH ORDINALITY AS s(e, n)),
 		(SELECT coalesce(jsonb_object_agg(k, octet_length(v)), '{}') FROM jsonb_each_text(repo_files) AS f(k, v)),
 		created_at FROM context_packs WHERE runner_run_id = $1`, runnerRunID).
-		Scan(&m.HeadSHA, &m.BaseSHA, &m.PatchID, &m.ChangedPaths, &m.DeltaPaths, &m.PriorHeadSHA, &m.RepoNotes, &stages, &files, &m.CreatedAt)
+		Scan(&m.HeadSHA, &m.BaseSHA, &m.PatchID, &m.ChangedPaths, &m.DeltaPaths, &m.PriorHeadSHA, &m.RepoNotes, &m.RuleIDs,
+			&stages, &files, &m.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return m, ErrNotFound
 	}

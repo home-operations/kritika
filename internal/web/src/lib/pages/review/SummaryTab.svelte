@@ -5,9 +5,11 @@
   import FindingCard from './FindingCard.svelte';
 
   import { focusWhenShown } from '../../focus';
+  import { href } from '../../router.svelte';
 
   // finding is the id of the finding a link led here for.
-  let { d, finding }: { d: ReviewDetail; finding?: string } = $props();
+  // slug is the account, for the links to a rule's findings.
+  let { slug, d, finding }: { slug: string; d: ReviewDetail; finding?: string } = $props();
   $effect(() => {
     if (finding) focusWhenShown(`#finding-${CSS.escape(finding)}`, true);
   });
@@ -43,3 +45,23 @@
     {#each g.items as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />{/each}
   </section>
 {/each}
+
+<!-- The rules this review was given: one it cites nowhere was checked and found kept. -->
+{#if d.contextPack?.ruleIds.length}
+  {@const cited = (id: string) => d.findings.filter((f) => f.rules.includes(id)).length}
+  <section class="panel" aria-labelledby="sum-rules">
+    <header class="panel-head">
+      <h2 id="sum-rules">Rules checked</h2>
+      <span class="small muted">{d.contextPack.ruleIds.length} applied to this change</span>
+    </header>
+    <ul class="rule-checks">
+      {#each d.contextPack.ruleIds as id (id)}
+        {@const n = cited(id)}
+        <li>
+          <a class="badge mono" href={href({ name: 'findings', slug, filter: { rule: id } })} title="Every finding that cites {id}">{id}</a>
+          <span class="small" class:muted={!n}>{n ? `${n} ${n === 1 ? 'finding' : 'findings'}` : 'no finding'}</span>
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}

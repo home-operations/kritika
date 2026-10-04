@@ -1058,6 +1058,19 @@ input[type='checkbox'][role='switch']:focus-visible {
   align-items: baseline;
   gap: 4px 10px;
 }
+.rule-checks {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.rule-checks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .finding-group {
   display: flex;
   flex-direction: column;

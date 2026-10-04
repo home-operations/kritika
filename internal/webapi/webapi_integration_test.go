@@ -153,8 +153,8 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 		VALUES ($1, $2, 'a.go', 3, 'blocking', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'nit', 'naming', 'y')`, s.accountID, s.reviewID)
 	s.runID = e.scalar(`INSERT INTO runner_runs (account_id, review_id, kind, phase, log_tail)
 		VALUES ($1, $2, 'review', 'done', $3) RETURNING id::text`, s.accountID, s.reviewID, "tail of "+slug)
-	e.exec(`INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
-		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}',
+	e.exec(`INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, rule_ids, stages, repo_files)
+		VALUES ($1, $2, 'head7', 'base7', 'patch7', $3, '{a.go}', '{wrap-errors}',
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
 			jsonb_build_object('.kritika.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
 		"rules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
@@ -293,6 +293,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/pulls/wa/one/7", `"reviewCount":1,"costUsd":0.5`},
 		{a + "/pulls?repo=wa/one", `"reviewCount":1,"costUsd":0.5`},
 		{a + "/reviews/" + e.a.reviewID, `"logTail":"tail of webapi-a"`},
+		{a + "/reviews/" + e.a.reviewID, `"ruleIds":["wrap-errors"]`},
 		{a + "/reviews/" + e.a.reviewID + "/diff", `"diff":"diff of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},

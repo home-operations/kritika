@@ -161,7 +161,7 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 func contextPack(m *store.ContextPackMeta) *ContextPack {
 	out := &ContextPack{
 		HeadSHA: m.HeadSHA, BaseSHA: m.BaseSHA, PatchID: m.PatchID, ChangedPaths: nonNil(m.ChangedPaths),
-		DeltaPaths: nonNil(m.DeltaPaths), PriorHeadSHA: m.PriorHeadSHA, RepoNotes: nonNil(m.RepoNotes),
+		DeltaPaths: nonNil(m.DeltaPaths), PriorHeadSHA: m.PriorHeadSHA, RepoNotes: nonNil(m.RepoNotes), RuleIDs: nonNil(m.RuleIDs),
 		Stages: make([]Stage, len(m.Stages)), RepoFiles: make([]RepoFile, 0, len(m.RepoFiles)), CreatedAt: m.CreatedAt,
 	}
 	for i, c := range m.Stages {
