@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.21](https://github.com/home-operations/kritika/compare/0.0.20...0.0.21) (2026-10-04)
+
+
+### Code Refactoring
+
+* record why a review was skipped where it is decided ([#463](https://github.com/home-operations/kritika/issues/463)) ([254812f](https://github.com/home-operations/kritika/commit/254812ff62ea540494815af04fec079e5c5d7767))
+* **store:** define what became of a finding once ([#462](https://github.com/home-operations/kritika/issues/462)) ([6877527](https://github.com/home-operations/kritika/commit/6877527be1f4e83d658be2bbc6fdec4225f09992))
+* **web:** build the dialog on Bits UI ([#455](https://github.com/home-operations/kritika/issues/455)) ([92544cb](https://github.com/home-operations/kritika/commit/92544cb07964373f525711c9d86f59cb0a42ee01))
+* **web:** build the disclosure and the repository switch on Bits UI ([#459](https://github.com/home-operations/kritika/issues/459)) ([f6b6ab6](https://github.com/home-operations/kritika/commit/f6b6ab6eb7ce6bd76497f04ab814422f86390c0c))
+* **web:** build the scope and user menus on Bits UI popovers ([#456](https://github.com/home-operations/kritika/issues/456)) ([9d7b689](https://github.com/home-operations/kritika/commit/9d7b6894e8b2b1a1b4052a3cb764a11be7c1cd70))
+* **web:** build the segmented control on Bits UI's radio group ([#458](https://github.com/home-operations/kritika/issues/458)) ([86ee3e7](https://github.com/home-operations/kritika/commit/86ee3e7bb5e59a4ad9ac1bad33779acc1c749363))
+* **web:** build the shortcuts help and the palette on Bits UI ([#460](https://github.com/home-operations/kritika/issues/460)) ([88c0a4e](https://github.com/home-operations/kritika/commit/88c0a4e432a37e76956e35c9628079e25cd356ba))
+* **web:** build the usage meter on Bits UI ([#461](https://github.com/home-operations/kritika/issues/461)) ([b48c7a7](https://github.com/home-operations/kritika/commit/b48c7a7e5713c9b4e052447b0c398f24abeda504))
+* **web:** define a pull request's lifecycle once ([#467](https://github.com/home-operations/kritika/issues/467)) ([49d62fa](https://github.com/home-operations/kritika/commit/49d62fad30e89314ca7eb2fa02805d1437903358))
+* **web:** give the modals one base style and the layers a scale ([#465](https://github.com/home-operations/kritika/issues/465)) ([123d3c8](https://github.com/home-operations/kritika/commit/123d3c831c939b064473a4a13312c9bdd68a580b))
+* **web:** import Shiki's languages by their package, and name the date helpers ([#466](https://github.com/home-operations/kritika/issues/466)) ([c60adea](https://github.com/home-operations/kritika/commit/c60adea56d42c20fa52f70eca46cb4cf3e0078ac))
+* **web:** share what the pages repeated ([#464](https://github.com/home-operations/kritika/issues/464)) ([a19fb74](https://github.com/home-operations/kritika/commit/a19fb74cfe3d006c4677c13fc992d58dd2e12d02))
+* **web:** write the bulk action's loop once ([#468](https://github.com/home-operations/kritika/issues/468)) ([c36f1f2](https://github.com/home-operations/kritika/commit/c36f1f2263785f616132b03bb87fd73e2b43200b))
+
 ## [0.0.20](https://github.com/home-operations/kritika/compare/0.0.19...0.0.20) (2026-10-04)
 
 
