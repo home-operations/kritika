@@ -654,6 +654,30 @@ test.describe('rules', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   });
 
+  test("a rule file's long path breaks after a slash or a hyphen, not inside a word", async ({ page }) => {
+    const file: Rule = { ...g.rule, id: 'style', text: '', path: 'docs/contributing/code-style-and-review-guidelines.md' };
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), [file]], ...g.defaultApi()]);
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto(`/${T}/rules`);
+    const lines = await page.locator('.rule-path').evaluate((el) => {
+      const text = el.firstChild as Text;
+      const out: string[] = [];
+      let top = -1;
+      for (let i = 0; i < text.length; i++) {
+        const r = document.createRange();
+        r.setStart(text, i);
+        r.setEnd(text, i + 1);
+        const t = Math.round(r.getBoundingClientRect().top);
+        if (t !== top) out.push('');
+        top = t;
+        out[out.length - 1] += text.data[i];
+      }
+      return out;
+    });
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines.slice(0, -1)) expect(line).toMatch(/[/-]$/);
+  });
+
   test('says how to add a rule when there is none', async ({ page }) => {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
