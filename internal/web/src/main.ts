@@ -1,6 +1,7 @@
 import { mount } from 'svelte';
 import '@fontsource-variable/schibsted-grotesk'; // UI/prose sans (--font-sans), self-hosted
 import '@fontsource-variable/red-hat-mono'; // code/identifier mono (--font-mono)
+import './reset.css';
 import './app.css';
 import './pages.css';
 import './admin.css';
