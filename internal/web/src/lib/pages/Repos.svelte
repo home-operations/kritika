@@ -237,7 +237,9 @@
                         <Time iso={repo.index.lastRunAt} />
                       {:else}<span class="muted">never</span>{/if}
                     </td>
-                    <td class="mono small">{repo.index.activeCommit.slice(0, 7) || '—'}</td>
+                    <td class="small">
+                      {#if repo.index.activeCommit}<span class="mono">{repo.index.activeCommit.slice(0, 7)}</span>{:else}<span class="muted">—</span>{/if}
+                    </td>
                     <td>
                       {#if repo.lastReview}
                         <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusTile status={repo.lastReview.status} /></a>
