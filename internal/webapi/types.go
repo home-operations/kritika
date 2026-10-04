@@ -304,10 +304,12 @@ type Review struct {
 
 // Followup is one @-mention of the bot and what came of it.
 type Followup struct {
-	ID             string               `json:"id"`
-	CommentID      int64                `json:"commentId"`
-	Repository     string               `json:"repository"`
-	Number         int                  `json:"number"`
+	ID         string `json:"id"`
+	CommentID  int64  `json:"commentId"`
+	Repository string `json:"repository"`
+	Number     int    `json:"number"`
+	// PullURL is the pull request on the forge, where its comments are.
+	PullURL        string               `json:"pullUrl"`
 	Author         string               `json:"author"`
 	Inline         bool                 `json:"inline"`
 	Path           string               `json:"path"`

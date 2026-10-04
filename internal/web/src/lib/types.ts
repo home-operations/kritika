@@ -343,6 +343,8 @@ export interface Followup {
   commentId: number;
   repository: string;
   number: number;
+  // pullUrl is the pull request on the forge, where its comments are.
+  pullUrl: string;
   author: string;
   inline: boolean;
   path: string;

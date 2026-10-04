@@ -3,6 +3,7 @@
   "commentId": 99,
   "repository": "alpha/one",
   "number": 7,
+  "pullUrl": "https://git.example/alpha/one/pulls/7",
   "author": "bob",
   "inline": true,
   "path": "a.go",

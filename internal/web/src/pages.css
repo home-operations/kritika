@@ -1058,6 +1058,12 @@ input[type='checkbox'][role='switch']:focus-visible {
   align-items: baseline;
   gap: 4px 10px;
 }
+.followup-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+}
 .rule-checks {
   list-style: none;
   margin: 0;
