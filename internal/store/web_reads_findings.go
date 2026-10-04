@@ -83,13 +83,19 @@ type FindingFilter struct {
 // and whether a later completed review at another head dropped it, which
 // a dismissed finding does not count as. A finding stored without a
 // fingerprint is its own.
-const findingIssues = `seen AS (
+var findingIssues = findingIssuesOf("")
+
+// findingIssuesOf is findingIssues over the completed reviews scope keeps:
+// a predicate on v, the review, led by AND, or "" for every one. It is the
+// one definition of what became of a finding, whoever asks.
+func findingIssuesOf(scope string) string {
+	return `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.category, f.title, f.explanation, f.suggested_fix, f.replacement,
 			f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up, f.reactions_down, f.rules,
 			v.id AS review_id, v.pull_request_id, v.head_sha, v.created_at AS seen_at,
 			row_number() OVER newest AS nth, min(v.created_at) OVER issue AS first_at
 		FROM findings f JOIN reviews v ON v.id = f.review_id
-		WHERE v.status = 'completed'
+		WHERE v.status = 'completed'` + scope + `
 		WINDOW issue AS (PARTITION BY v.pull_request_id, coalesce(nullif(f.fingerprint, ''), f.id::text)),
 			newest AS (issue ORDER BY v.created_at DESC, v.id DESC)),
 	latest AS (
@@ -98,8 +104,9 @@ const findingIssues = `seen AS (
 				AND n.status = 'completed' AND n.created_at > s.seen_at AND n.head_sha <> s.head_sha) AS addressed
 		FROM seen s LEFT JOIN dismissals d ON d.pull_request_id = s.pull_request_id AND d.fingerprint = s.fingerprint
 		WHERE s.nth = 1)`
+}
 
-const accountFindings = `WITH ` + findingIssues + `
+var accountFindings = `WITH ` + findingIssues + `
 	SELECT l.id, l.path, l.line, l.end_line, l.severity, l.category, l.title, l.explanation, l.suggested_fix, l.replacement,
 		l.agent_prompt, l.fingerprint, l.posted_inline, l.forge_comment_id, l.created_at, l.reactions_up, l.reactions_down, l.rules,
 		l.review_id, r.name, p.number, p.title, p.url, l.addressed, l.dismissed, l.dismiss_reason, l.first_at, l.seen_at
