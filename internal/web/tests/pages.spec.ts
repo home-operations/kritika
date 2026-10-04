@@ -783,6 +783,50 @@ test("the palette finds every account's recent pull requests, the current accoun
   await expect(page.locator('.palette .row-title')).toHaveText(['Queue']);
 });
 
+test.describe('your settings', () => {
+  const updated = g.pullDetail.pull.updatedAt;
+  const hover = (page: import('@playwright/test').Page) => page.locator(`.page-head time[datetime="${updated}"]`);
+
+  test('a time zone and a clock are saved as chosen, and every time follows them', async ({ page }) => {
+    const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
+    await page.goto('/#/');
+    await page.locator('.user-menu summary').click();
+    await page.getByRole('link', { name: 'Your settings' }).click();
+    await expect(page).toHaveURL(/#\/settings$/);
+    await expect(page.locator('.page-head h1')).toHaveText('Your settings');
+
+    await page.getByLabel('Time zone').selectOption('Asia/Tokyo');
+    await page.getByRole('radio', { name: '24-hour', exact: true }).click();
+    await expect.poll(() => sent.map((s) => s.body)).toEqual([
+      { timeZone: 'Asia/Tokyo', clock: '', theme: '' },
+      { timeZone: 'Asia/Tokyo', clock: '24', theme: '' },
+    ]);
+    await expect(page.getByText(/^Now: .* GMT\+9$/)).toBeVisible();
+
+    // In-app navigation: no reload, so the choice just made is what applies.
+    await page.locator('.brand').click();
+    await page.evaluate((h) => (location.hash = h), `${T}/pulls/alpha/one/7`);
+    await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 21:01:30 GMT+9');
+  });
+
+  test('settings kept with the user apply from the first page', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/me$/, { ...g.me, settings: { timeZone: 'UTC', clock: '12', theme: '' } }], ...g.defaultApi()]);
+    await page.goto(`/${T}/pulls/alpha/one/7`);
+    await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 12:01:30 PM UTC');
+    await page.goto('/#/settings');
+    await expect(page.getByLabel('Time zone')).toHaveValue('UTC');
+    await expect(page.getByRole('radio', { name: '12-hour', exact: true })).toBeChecked();
+  });
+
+  test('a choice the server refuses is taken back, and says so', async ({ page }) => {
+    await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, g.apiError(400, 'bad_request', 'clock must be "12", "24" or empty')]]);
+    await page.goto('/#/settings');
+    await page.getByRole('radio', { name: '24-hour', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Not saved');
+    await expect(page.getByRole('radio', { name: /^Browser's/ })).toBeChecked();
+  });
+});
+
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);

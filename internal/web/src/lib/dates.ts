@@ -8,7 +8,8 @@
 //
 //   A full timestamp (a hover title, running text that needs the moment):
 //   "Sep 1, 2026, 14:05:09 GMT+2", or "2:05:09 PM", in the viewer's time
-//   zone and on the clock their browser's locale keeps, 12 or 24 hours.
+//   zone and on their clock, 12 or 24 hours: the ones they chose in their
+//   settings, or else their browser's.
 //
 //   A day a figure is counted over (a chart column, a table row): the
 //   server's days are UTC, so "Sep 1, 2026" in UTC; "Sep 1" where the year
@@ -24,21 +25,53 @@ export function hour12Of(locale?: string): boolean {
   return cycle === 'h11' || cycle === 'h12';
 }
 
-function stampFormat(hour12: boolean): Intl.DateTimeFormat {
-  return new Intl.DateTimeFormat('en', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: hour12 ? 'numeric' : '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: hour12 ? 'h12' : 'h23',
-    timeZoneName: 'short',
-  });
+// DatePrefs is what the viewer chose over the browser's own: a time zone,
+// an IANA name, and a clock, '12' or '24'; '' leaves either to the browser.
+export interface DatePrefs {
+  timeZone: string;
+  clock: '' | '12' | '24';
 }
-const stampFmt = stampFormat(hour12Of());
-const dateFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
-const dateYearFmt = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' });
+
+// zoneKnown is whether the browser knows the time zone a name gives.
+export function zoneKnown(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formats(p: DatePrefs) {
+  // A zone this browser does not know is left to the browser, like none.
+  const timeZone = p.timeZone && zoneKnown(p.timeZone) ? p.timeZone : undefined;
+  const hour12 = p.clock ? p.clock === '12' : hour12Of();
+  return {
+    stamp: new Intl.DateTimeFormat('en', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: hour12 ? 'numeric' : '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: hour12 ? 'h12' : 'h23',
+      timeZoneName: 'short',
+      timeZone,
+    }),
+    date: new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone }),
+    dateYear: new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric', timeZone }),
+    year: new Intl.DateTimeFormat('en', { year: 'numeric', timeZone }),
+  };
+}
+let fmt = formats({ timeZone: '', clock: '' });
+
+// setDatePrefs has every instant written from here on in the viewer's
+// zone and on their clock. What is already on a page stays until it is
+// rendered again: time.svelte.ts's applyDatePrefs sees to that.
+export function setDatePrefs(p: DatePrefs): void {
+  fmt = formats(p);
+}
+
 const dayFmt = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const dayShortFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
@@ -52,7 +85,7 @@ export function relative(iso: string | null | undefined, now: number): string {
   if (Number.isNaN(t)) return '';
   const s = Math.round(Math.abs(now - t) / 1000);
   if (s < 45) return 'just now';
-  if (s >= WEEK) return (new Date(t).getFullYear() === new Date(now).getFullYear() ? dateFmt : dateYearFmt).format(t);
+  if (s >= WEEK) return (fmt.year.format(t) === fmt.year.format(now) ? fmt.date : fmt.dateYear).format(t);
   const say = (n: string) => (t > now ? `in ${n}` : `${n} ago`);
   const m = Math.round(s / 60);
   if (m < 60) return say(`${m}m`);
@@ -65,7 +98,7 @@ export function relative(iso: string | null | undefined, now: number): string {
 export function timestamp(iso: string | null | undefined): string {
   if (!iso) return '';
   const t = Date.parse(iso);
-  return Number.isNaN(t) ? '' : stampFmt.format(t);
+  return Number.isNaN(t) ? '' : fmt.stamp.format(t);
 }
 
 // day renders a UTC day the server keys a figure by, "2026-09-01"; a key

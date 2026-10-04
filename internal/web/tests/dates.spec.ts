@@ -1,7 +1,7 @@
 // The dashboard's one way of writing dates and times (src/lib/dates.ts):
 // plain functions, called directly, with no browser.
 import { test, expect } from '@playwright/test';
-import { day, hour12Of, relative, timestamp } from '../src/lib/dates';
+import { day, hour12Of, relative, setDatePrefs, timestamp, zoneKnown } from '../src/lib/dates';
 
 const now = Date.parse('2026-09-15T12:00:00Z');
 const at = (seconds: number) => new Date(now + seconds * 1000).toISOString();
@@ -52,4 +52,32 @@ test('dates: day() is a UTC day, with the year unless short', () => {
   expect(day('2026-09-01')).toBe('Sep 1, 2026');
   expect(day('2026-09-01', true)).toBe('Sep 1');
   expect(day('acme/large')).toBe('acme/large');
+});
+
+test.describe('dates: the zone and clock a viewer chose', () => {
+  test.afterEach(() => setDatePrefs({ timeZone: '', clock: '' }));
+
+  test('a zone moves the timestamp, and the date an instant falls on', () => {
+    setDatePrefs({ timeZone: 'Asia/Tokyo', clock: '24' });
+    expect(timestamp('2026-09-01T14:05:09Z')).toBe('Sep 1, 2026, 23:05:09 GMT+9');
+    // 20:00 UTC on Aug 31 is Sep 1 in Tokyo, and Aug 31 in Honolulu.
+    const later = Date.parse('2026-09-20T00:00:00Z');
+    expect(relative('2026-08-31T20:00:00Z', later)).toBe('Sep 1');
+    setDatePrefs({ timeZone: 'Pacific/Honolulu', clock: '24' });
+    expect(relative('2026-08-31T20:00:00Z', later)).toBe('Aug 31');
+  });
+
+  test('a clock is 12 or 24 hours, whatever the locale keeps', () => {
+    setDatePrefs({ timeZone: 'UTC', clock: '12' });
+    expect(timestamp('2026-09-01T14:05:09Z')).toBe('Sep 1, 2026, 2:05:09 PM UTC');
+    setDatePrefs({ timeZone: 'UTC', clock: '24' });
+    expect(timestamp('2026-09-01T14:05:09Z')).toBe('Sep 1, 2026, 14:05:09 UTC');
+  });
+
+  test('a zone the browser does not know is left to the browser', () => {
+    expect(zoneKnown('Europe/Amsterdam')).toBe(true);
+    expect(zoneKnown('Mars/Olympus')).toBe(false);
+    setDatePrefs({ timeZone: 'Mars/Olympus', clock: '24' });
+    expect(timestamp('2026-09-01T14:05:09Z')).toMatch(/^(Aug 31|Sep [12]), 2026, \d\d:\d\d:09 \S+$/);
+  });
 });

@@ -66,6 +66,9 @@
         }
       }
     }
+    if (me) {
+      entries.push({ label: 'Your settings', route: { name: 'preferences' }, icon: mdiCogOutline, keywords: 'preferences time zone clock' });
+    }
     if (!me) {
       entries.push({ label: 'Sign in', route: { name: 'signin' }, icon: mdiLogin });
     }

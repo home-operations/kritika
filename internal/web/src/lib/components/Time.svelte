@@ -5,10 +5,13 @@
   import { clock } from '../time.svelte';
   import { relative, timestamp } from '../dates';
   let { iso }: { iso: string | null | undefined } = $props();
+  // Reading rev has both written again when the viewer's zone or clock changes.
+  const title = $derived((clock.rev, timestamp(iso)));
+  const text = $derived((clock.rev, relative(iso, clock.now)));
 </script>
 
 {#if iso}
-  <time class="reltime" datetime={iso} title={timestamp(iso)}>{relative(iso, clock.now)}</time>
+  <time class="reltime" datetime={iso} {title}>{text}</time>
 {:else}
   <span class="muted">—</span>
 {/if}

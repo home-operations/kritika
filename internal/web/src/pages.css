@@ -1072,6 +1072,12 @@ input[type='checkbox'][role='switch']:focus-visible {
 .account-wants a {
   text-decoration: none;
 }
+.prefs select {
+  max-width: 100%;
+}
+.prefs p {
+  margin: 4px 0 0;
+}
 .rule-checks {
   list-style: none;
   margin: 0;
