@@ -142,7 +142,7 @@
               {#if currentSlug}
                 <span class="mono">{currentSlug}</span>
               {:else}
-                <span>Instance</span>
+                <span>All accounts</span>
               {/if}
               <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch scope" />
             </Popover.Trigger>
@@ -155,7 +155,7 @@
                 aria-current={currentSlug ? undefined : 'true'}
               >
                 <span class="menu-check">{#if !currentSlug}<Icon path={mdiCheck} size={14} />{/if}</span>
-                Instance
+                All accounts
               </a>
               <p class="menu-heading">Accounts</p>
               {#each me.accounts as slug (slug)}
