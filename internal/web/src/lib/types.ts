@@ -140,6 +140,9 @@ export interface AccountDetail {
   limits: Limits;
   filter: string;
   usage: MonthUsage;
+  // lastPolledAt is when kritika last polled the account for pull requests,
+  // null when it never has.
+  lastPolledAt: string | null;
 }
 
 export interface IndexState {

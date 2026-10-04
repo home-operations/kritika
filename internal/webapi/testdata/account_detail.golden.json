@@ -29,5 +29,6 @@
     "tokensPerMonth": 1000000,
     "reviewsToday": 2,
     "reviewsPerDay": 50
-  }
+  },
+  "lastPolledAt": "2026-09-01T12:01:30Z"
 }

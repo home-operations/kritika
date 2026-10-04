@@ -114,6 +114,10 @@ type AccountDetail struct {
 	Limits     configfile.Limits `json:"limits"`
 	Filter     string            `json:"filter"`
 	Usage      MonthUsage        `json:"usage"`
+	// LastPolledAt is when kritika last polled the account for pull
+	// requests, null when it never has: what stands in for a webhook that
+	// does not arrive.
+	LastPolledAt *time.Time `json:"lastPolledAt"`
 }
 
 // IndexState is a repository's embedding index: the active generation and
