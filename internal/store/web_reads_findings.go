@@ -25,6 +25,18 @@ const (
 	FindingDismissed FindingStatus = "dismissed"
 )
 
+// findingStatus is the status of a finding that was dismissed, or dropped
+// by a later review: a dismissed one is not also addressed.
+func findingStatus(dismissed, addressed bool) FindingStatus {
+	switch {
+	case dismissed:
+		return FindingDismissed
+	case addressed:
+		return FindingAddressed
+	}
+	return FindingOpen
+}
+
 // Valid reports whether s is a finding status.
 func (s FindingStatus) Valid() bool {
 	return s == FindingOpen || s == FindingAddressed || s == FindingDismissed
@@ -36,9 +48,6 @@ type AccountFinding struct {
 	FindingRow
 	ReviewID    string
 	PullRequest PullRef
-	Status      FindingStatus
-	// DismissReason is the reason a dismissed finding was dismissed with.
-	DismissReason string
 	// FirstSeenAt and LastSeenAt are when the first and the latest
 	// reviews that reported it ran.
 	FirstSeenAt time.Time
@@ -132,13 +141,7 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 			&a.AgentPrompt, &a.Fingerprint, &a.PostedInline, &a.ForgeCommentID, &a.CreatedAt, &a.ReactionsUp, &a.ReactionsDown, &a.Rules,
 			&a.ReviewID, &a.PullRequest.Repository, &a.PullRequest.Number, &a.PullRequest.Title, &a.PullRequest.URL,
 			&addressed, &dismissed, &a.DismissReason, &a.FirstSeenAt, &a.LastSeenAt)
-		a.Severity, a.Category, a.Status = review.Severity(sev), review.Category(cat), FindingOpen
-		switch {
-		case dismissed:
-			a.Status = FindingDismissed
-		case addressed:
-			a.Status = FindingAddressed
-		}
+		a.Severity, a.Category, a.Status = review.Severity(sev), review.Category(cat), findingStatus(dismissed, addressed)
 		return a, err
 	})
 	if err != nil {

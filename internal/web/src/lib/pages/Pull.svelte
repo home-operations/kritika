@@ -17,6 +17,7 @@
   import ReviewMeta from '../components/ReviewMeta.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
   import Markdown from '../components/Markdown.svelte';
+  import Pill from '../components/Pill.svelte';
 
   let { slug, owner, repo, number }: { slug: string; owner: string; repo: string; number: number } = $props();
   const fullName = $derived(`${owner}/${repo}`);
@@ -157,6 +158,7 @@
                         {#if f.category}<span class="badge">{f.category}</span>{/if}
                         <a href={href({ name: 'review', slug, id: r.id, finding: f.id })}>{f.title}</a>
                         <span class="mono small muted">{f.path}:{f.line}</span>
+                        {#if f.status !== 'open'}<Pill tone={f.status === 'addressed' ? 'ok' : 'muted'} label={f.status} title={f.dismissReason || undefined} />{/if}
                         {#if threadUrl(p.url, f.forgeCommentId)}
                           <a class="external small" href={threadUrl(p.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer">
                             Thread <Icon path={mdiOpenInNew} size={11} />

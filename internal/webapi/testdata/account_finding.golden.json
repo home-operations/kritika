@@ -17,6 +17,8 @@
   "reactionsUp": 2,
   "reactionsDown": 1,
   "rules": ["wrap-errors"],
+  "status": "addressed",
+  "dismissReason": "",
   "reviewId": "rev-1",
   "pull": {
     "repository": "alpha/one",
@@ -24,8 +26,6 @@
     "title": "Add widgets",
     "url": "https://git.example/alpha/one/pulls/7"
   },
-  "status": "addressed",
-  "dismissReason": "",
   "firstSeenAt": "2026-09-01T12:00:00Z",
   "lastSeenAt": "2026-09-01T12:01:30Z"
 }

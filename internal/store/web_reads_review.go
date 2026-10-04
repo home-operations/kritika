@@ -36,23 +36,40 @@ type FindingRow struct {
 	ReactionsDown  int
 	// Rules are the ids of the review rules it enforces.
 	Rules []string
+	// Status is what became of it on its pull request, and DismissReason
+	// the reason a dismissed one was dismissed with.
+	Status        FindingStatus
+	DismissReason string
 }
 
-// ListFindings returns a review's findings, most serious first.
+// ListFindings returns a review's findings, most serious first, each with
+// what became of it since: its status is that of the pull request's
+// finding of its fingerprint, as ListAccountFindings reports it.
 func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow, error) {
-	rows, err := tx.Query(ctx, `SELECT id, path, line, end_line, severity, title, explanation, suggested_fix, replacement,
-		agent_prompt, fingerprint, posted_inline, forge_comment_id, created_at, reactions_up, reactions_down, rules, category
-		FROM findings WHERE review_id = $1
-		ORDER BY CASE severity WHEN 'blocking' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, path, line, id`, reviewID)
+	rows, err := tx.Query(ctx, `SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix,
+		f.replacement, f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up,
+		f.reactions_down, f.rules, f.category, d.pull_request_id IS NOT NULL, coalesce(d.reason, ''),
+		EXISTS (SELECT 1 FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND n.status = 'completed'
+			AND n.created_at > last.seen_at AND n.head_sha <> last.head_sha)
+		FROM findings f JOIN reviews v ON v.id = f.review_id
+		LEFT JOIN dismissals d ON d.pull_request_id = v.pull_request_id AND d.fingerprint = f.fingerprint
+		LEFT JOIN LATERAL (SELECT lv.created_at AS seen_at, lv.head_sha FROM findings lf JOIN reviews lv ON lv.id = lf.review_id
+			WHERE lv.pull_request_id = v.pull_request_id AND lv.status = 'completed'
+				AND coalesce(nullif(lf.fingerprint, ''), lf.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
+			ORDER BY lv.created_at DESC, lv.id DESC LIMIT 1) last ON true
+		WHERE f.review_id = $1
+		ORDER BY CASE f.severity WHEN 'blocking' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, f.path, f.line, f.id`, reviewID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list findings: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (FindingRow, error) {
 		var f FindingRow
 		var sev, cat string
+		var dismissed, addressed bool
 		err := row.Scan(&f.ID, &f.Path, &f.Line, &f.EndLine, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.Replacement,
-			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules, &cat)
-		f.Severity, f.Category = review.Severity(sev), review.Category(cat)
+			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules, &cat,
+			&dismissed, &f.DismissReason, &addressed)
+		f.Severity, f.Category, f.Status = review.Severity(sev), review.Category(cat), findingStatus(dismissed, addressed)
 		return f, err
 	})
 	if err != nil {

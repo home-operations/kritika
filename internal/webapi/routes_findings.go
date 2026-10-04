@@ -45,7 +45,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 	items := make([]AccountFinding, len(rows))
 	for i, a := range rows {
 		items[i] = AccountFinding{
-			Finding: finding(a.FindingRow), ReviewID: a.ReviewID, Status: a.Status, DismissReason: a.DismissReason,
+			Finding: finding(a.FindingRow), ReviewID: a.ReviewID,
 			FirstSeenAt: a.FirstSeenAt, LastSeenAt: a.LastSeenAt, Pull: pullRef(a.PullRequest),
 		}
 	}
