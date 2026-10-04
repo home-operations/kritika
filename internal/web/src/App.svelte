@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Popover } from 'bits-ui';
+  import { Dialog, Popover } from 'bits-ui';
   import { basePath } from './lib/base';
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
@@ -8,7 +8,7 @@
   import { theme, nextTheme, setTheme, initTheme } from './lib/theme.svelte';
   import { initClock, clock } from './lib/time.svelte';
   import { timestamp } from './lib/dates';
-  import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
+  import { initKeyboard, help, closeOverlays, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
     mdiThemeLightDark,
     mdiWeatherNight,
@@ -30,7 +30,7 @@
   } from './lib/icons';
   import { INSTANCE_TABS, SECTIONS, SECTION_ORDER, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
   import type { Route } from './lib/routes';
-  import { focusOnMount, revealInNav } from './lib/focus';
+  import { revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
@@ -112,12 +112,6 @@
     const next = nextTheme();
     if (session.me) void saveSettings({ theme: next === 'auto' ? '' : next });
     else setTheme(next);
-  }
-
-  // Keep the help dialog's Tab from escaping to the page behind the backdrop;
-  // Escape (global handler) and the backdrop close it.
-  function trapTab(e: KeyboardEvent): void {
-    if (e.key === 'Tab') e.preventDefault();
   }
 
   // The scope and user menus are popovers: Bits UI closes one on Escape or
@@ -259,19 +253,13 @@
     </div>
     <Palette {me} />
     <Toasts />
-    {#if help.open}
-      <div class="help-overlay">
-        <button class="help-backdrop" aria-label="Close keyboard shortcuts" onclick={toggleHelp}></button>
-        <div
-          class="help-card"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Keyboard shortcuts"
-          tabindex="-1"
-          {@attach focusOnMount}
-          onkeydown={trapTab}
-        >
-          <h2>Keyboard shortcuts</h2>
+    <Dialog.Root open={help.open} onOpenChange={(now) => !now && closeOverlays()}>
+      <Dialog.Portal>
+        <Dialog.Overlay class="help-overlay" />
+        <Dialog.Content class="help-card">
+          <Dialog.Title>
+            {#snippet child({ props })}<h2 {...props}>Keyboard shortcuts</h2>{/snippet}
+          </Dialog.Title>
           <dl class="help-keys">
             <dt><kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>k</kbd></dt>
             <dd>go to a page</dd>
@@ -286,8 +274,8 @@
             <dt><kbd>space</kbd></dt>
             <dd>select a pull request for a bulk action, as an admin</dd>
           </dl>
-        </div>
-      </div>
-    {/if}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   </div>
 {/if}

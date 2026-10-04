@@ -1,11 +1,5 @@
 import type { Attachment } from 'svelte/attachments';
 
-// focusOnMount focuses an overlay's first field, or the overlay itself, as
-// soon as it is in the DOM.
-export const focusOnMount: Attachment<HTMLElement> = (node) => {
-  node.focus();
-};
-
 // revealInNav scrolls a navigation's current item into view, for a strip
 // that scrolls sideways on a narrow screen.
 export const revealInNav: Attachment<HTMLElement> = (node) => {
