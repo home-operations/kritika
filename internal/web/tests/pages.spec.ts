@@ -681,6 +681,34 @@ test.describe('review', () => {
     await expect(page.locator('table.diff tr.dl-hunk td.code span:not(.sign)')).toHaveCount(0);
   });
 
+  test("a finding's prose renders its lists, tables and emphasis, and its html as text", async ({ page }) => {
+    const f = g.reviewDetail.findings[0]!;
+    const explanation = [
+      'The handler *never* checks `x`:',
+      '',
+      '- it is read on line 3',
+      '- [docs](https://example.com/nil) say it may be nil',
+      '',
+      '| case | result |',
+      '|---|---|',
+      '| nil | panic |',
+      '',
+      '<img src=x onerror="document.title=1"> ![chart](https://example.com/c.png)',
+    ].join('\n');
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, findings: [{ ...f, explanation }] }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1`);
+    const md = page.locator(`#finding-${f.id} .md`).first();
+    await expect(md.locator('em')).toHaveText('never');
+    await expect(md.locator('ul > li')).toHaveText(['it is read on line 3', 'docs say it may be nil']);
+    await expect(md.getByRole('link', { name: 'docs' })).toHaveAttribute('href', 'https://example.com/nil');
+    await expect(md.locator('table.md-table tbody td')).toHaveText(['nil', 'panic']);
+    // The html is text, and the image a link: nothing is loaded or run.
+    await expect(md).toContainText('<img src=x onerror="document.title=1">');
+    await expect(md.locator('img')).toHaveCount(0);
+    await expect(md.getByRole('link', { name: 'chart' })).toHaveAttribute('href', 'https://example.com/c.png');
+    expect(await page.title()).not.toBe('1');
+  });
+
   test('diff anchors a finding under its line', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/diff`);
     const anchored = page.locator('tr.dl-finding');

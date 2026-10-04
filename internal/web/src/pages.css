@@ -1177,6 +1177,61 @@ input[type='checkbox'][role='switch']:focus-visible {
 .md p:last-child {
   margin-bottom: 0;
 }
+.md > :last-child,
+.md li > :last-child,
+.md blockquote > :last-child {
+  margin-bottom: 0;
+}
+.md .md-heading {
+  font-weight: 650;
+}
+.md .md-h1 {
+  font-size: 15px;
+}
+.md .md-h2 {
+  font-size: 14px;
+}
+.md ul,
+.md ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+  line-height: 1.5;
+}
+.md li.md-task {
+  list-style: none;
+  margin-left: -18px;
+}
+.md li.md-task > input {
+  margin: 0 4px 0 0;
+  vertical-align: middle;
+}
+.md li.md-task > p {
+  display: inline;
+}
+.md blockquote {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+.md .table-wrap {
+  margin-bottom: 6px;
+}
+.md-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  text-align: left;
+}
 .md code {
   font-family: var(--font-mono);
   font-size: 12px;
