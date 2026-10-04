@@ -803,6 +803,13 @@ test('a time still to come says how far off it is', async ({ page }) => {
   await expect(page.locator('.job-notice')).toContainText('failed, the next is due in 10m.');
 });
 
+test("a run's phases say the second each began and ended, not only how long ago", async ({ page }) => {
+  await page.goto(`/${T}/reviews/rev-1/timeline`);
+  const times = page.locator('#tl-runner').locator('xpath=ancestor::section').locator('tbody time');
+  await expect(times.first()).toHaveText(/\d{1,2}:\d{2}:\d{2}/);
+  await expect(times.first()).not.toHaveAttribute('title');
+});
+
 test('names are set in mono, and words and numbers in the text face', async ({ page }) => {
   const mono = /(^| )mono( |$)/;
   await page.goto(`/${T}/findings`);
