@@ -42,8 +42,17 @@ type reviewThread struct {
 	} `json:"comments"`
 }
 
-// ResolveThread implements forge.Client.
+// ResolveThread implements forge.Client. GitHub lets an App resolve a
+// thread only with write access to the repository's contents, whatever its
+// access to pull requests, so an installation without it resolves nothing.
 func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error) {
+	can, err := c.tokens.CanWriteContents(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !can {
+		return false, nil
+	}
 	login, err := c.BotLogin(ctx)
 	if err != nil {
 		return false, err
