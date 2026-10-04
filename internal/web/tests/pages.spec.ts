@@ -160,6 +160,7 @@ test('repositories filter and repository detail', async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one$`));
   await expect(page.locator('.deflist').first()).toContainText(g.repoDetail.settings.ignore[0]!);
   await expect(page.locator('#repo-index').locator('../..')).toContainText(String(g.repoDetail.indexRuns[0]!.chunkCount));
+  await expect(page.getByRole('region', { name: 'Pull requests' }).getByRole('link', { name: 'See all' })).toHaveAttribute('href', `${T}/pulls?state=all&repo=alpha%2Fone`);
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
 });
 
