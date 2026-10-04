@@ -148,6 +148,25 @@
   font-size: var(--type-md);
 }
 
+/* In the audit table a closed detail is a word in its cell and not a box,
+   so a row with one is as tall as a row without. */
+table.audit .collapsible {
+  border: none;
+  background: none;
+}
+table.audit .collapsible-head {
+  width: auto;
+  padding: 0;
+  gap: 4px;
+}
+table.audit .collapsible-head:hover {
+  background: none;
+  text-decoration: underline;
+}
+table.audit .collapsible-body {
+  padding: 6px 0 2px;
+  border-top: none;
+}
 .detail-json {
   margin: 0;
   font-family: var(--font-mono);
