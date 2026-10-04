@@ -31,15 +31,18 @@ export function sectionOf(r: Route): Section | undefined {
   return SECTION_ORDER.find((s) => SECTIONS[s].names.includes(r.name));
 }
 
-// One of the instance's tabs; admin is one only an admin has.
+// One of the instance's tabs; admin is one only an admin has, and several
+// one that only says something new with more than one account.
 export interface InstanceTab {
   label: string;
   route: Route;
   admin?: boolean;
+  several?: boolean;
 }
 
 export const INSTANCE_TABS: readonly InstanceTab[] = [
   { label: 'Overview', route: { name: 'overview' } },
+  { label: 'Queue', route: { name: 'instanceQueue' }, several: true },
   { label: 'Configuration', route: { name: 'console' }, admin: true },
 ];
 

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/riverqueue/river/rivertype"
-
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -744,33 +742,6 @@ type Analytics struct {
 	Previous     AnalyticsTotals      `json:"previous"`
 	Series       []AnalyticsPoint     `json:"series"`
 	Repositories []RepoActivity       `json:"repositories"`
-}
-
-// JobArgs are the parts of a job's arguments the queue shows; fields a
-// kind does not carry are zero.
-type JobArgs struct {
-	Repository string `json:"repository"`
-	Number     int    `json:"number"`
-	Head       string `json:"head"`
-	Trigger    string `json:"trigger"`
-	CommentID  int64  `json:"commentId"`
-}
-
-// Job is one River job of the account.
-type Job struct {
-	ID          int64              `json:"id"`
-	Kind        string             `json:"kind"`
-	State       rivertype.JobState `json:"state"`
-	Attempt     int                `json:"attempt"`
-	MaxAttempts int                `json:"maxAttempts"`
-	CreatedAt   time.Time          `json:"createdAt"`
-	ScheduledAt time.Time          `json:"scheduledAt"`
-	AttemptedAt *time.Time         `json:"attemptedAt"`
-	FinalizedAt *time.Time         `json:"finalizedAt"`
-	Args        JobArgs            `json:"args"`
-	LastError   string             `json:"lastError"`
-	// Cause is why the last attempt failed, "" when the error does not say.
-	Cause JobCause `json:"cause"`
 }
 
 // Event is one server-sent event's data: a row of Kind changed in the

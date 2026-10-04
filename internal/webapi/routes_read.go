@@ -27,6 +27,7 @@ const recentIndexRuns = 20
 func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/me", s.handler(s.getMe))
 	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
+	mux.HandleFunc("GET /api/v1/queue", s.handler(s.listInstanceQueue))
 	mux.HandleFunc("GET /api/v1/admin/accounts", s.admin(s.listAdminAccounts))
 	mux.HandleFunc("GET /api/v1/admin/instance", s.admin(s.listInstanceSettings))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}", s.account(s.getAccount))

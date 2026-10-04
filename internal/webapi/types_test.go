@@ -228,7 +228,11 @@ var goldens = map[string]any{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
 		Source: RuleFromEntry, Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
 	},
-	"job":   goldenJob,
+	"job": goldenJob,
+	"instance_queue": InstanceQueue{
+		Jobs:  []InstanceJob{{Job: goldenJob, Account: "github/alpha"}},
+		Slots: []ModelSlots{{Account: "github/alpha", Model: "openrouter/acme-large", Held: 2, Slots: 2}},
+	},
 	"event": Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
 	"error": ErrorBody{Code: CodeNotFound, Message: "account not found"},
 }

@@ -1,0 +1,33 @@
+{
+  "jobs": [
+    {
+      "id": 42,
+      "kind": "review",
+      "state": "retryable",
+      "attempt": 2,
+      "maxAttempts": 5,
+      "createdAt": "2026-09-01T12:00:00Z",
+      "scheduledAt": "2026-09-01T12:01:30Z",
+      "attemptedAt": "2026-09-01T12:00:00Z",
+      "finalizedAt": null,
+      "args": {
+        "repository": "alpha/one",
+        "number": 7,
+        "head": "abc123",
+        "trigger": "push",
+        "commentId": 0
+      },
+      "lastError": "github: list files: context deadline exceeded",
+      "cause": "forge_unavailable",
+      "account": "github/alpha"
+    }
+  ],
+  "slots": [
+    {
+      "account": "github/alpha",
+      "model": "openrouter/acme-large",
+      "held": 2,
+      "slots": 2
+    }
+  ]
+}

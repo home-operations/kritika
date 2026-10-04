@@ -745,6 +745,22 @@ test('names are set in mono, and words and numbers in the text face', async ({ p
   await expect(page.locator('tbody td').first()).not.toHaveClass(mono);
 });
 
+test("the instance's queue lists every account's jobs and the model slots they wait on", async ({ page }) => {
+  const q = g.instanceQueue;
+  const other = { ...q.jobs[0]!, id: 43, account: 'github/beta', args: { ...q.jobs[0]!.args, repository: 'beta/two', number: 3 } };
+  await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...q, jobs: [...q.jobs, other], slots: [...q.slots, { account: 'github/beta', model: 'acme/small', held: 1, slots: 0 }] }], ...g.defaultApi()]);
+  await page.goto('/#/queue');
+  await expect(page.locator('.page-head h1')).toHaveText('Queue');
+  await expect(page.locator('.account-button')).toHaveText('Instance');
+  const slots = page.getByRole('region', { name: 'Model slots' }).locator('tbody tr');
+  await expect(slots).toHaveText([/github\/alpha\s*openrouter\/acme-large\s*2 of 2/, /github\/beta\s*acme\/small\s*1, no limit/]);
+  await expect(page.getByRole('meter', { name: 'Slots of openrouter/acme-large busy for github/alpha' })).toHaveAttribute('aria-valuenow', '2');
+  const jobs = page.locator('main > .page-inner > .table-wrap tbody tr');
+  await expect(jobs).toHaveCount(2);
+  await expect(jobs.nth(1).getByRole('link', { name: 'github/beta' })).toHaveAttribute('href', '#/a/github/beta/queue');
+  await expect(jobs.nth(1).getByRole('link', { name: 'beta/two#3' })).toHaveAttribute('href', '#/a/github/beta/pulls/beta/two/3');
+});
+
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);

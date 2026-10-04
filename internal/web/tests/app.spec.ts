@@ -182,10 +182,15 @@ test.describe('signed-in shell', () => {
     await expect(nav.getByRole('link', { name: 'Repositories' })).toHaveCount(0);
   });
 
-  test('a member has no Configuration tab', async ({ page, signIn }) => {
+  test('a member has no Configuration tab, and the Queue tab comes with a second account', async ({ page, signIn }) => {
+    const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
     await signIn(DEFAULT_ME);
     await page.goto('/');
-    await expect(page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link')).toHaveText(['Overview']);
+    await expect(tabs).toHaveText(['Overview']);
+    await signIn({ ...DEFAULT_ME, accounts: ['github/acme', 'github/globex'] });
+    await page.reload();
+    await expect(tabs).toHaveText(['Overview', 'Queue']);
+    await expect(tabs.nth(1)).toHaveAttribute('href', '#/queue');
   });
 
   test('switching accounts in the menu navigates to that account', async ({ page, signIn }) => {

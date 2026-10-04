@@ -739,6 +739,27 @@ export interface Job {
   cause: JobCause | '';
 }
 
+// A job with the slug of the account it is of.
+export interface InstanceJob extends Job {
+  account: string;
+}
+
+// How many of an account's concurrency slots for a model a running review
+// holds; slots is the account's limit, 0 for none.
+export interface ModelSlots {
+  account: string;
+  model: string;
+  held: number;
+  slots: number;
+}
+
+// The queue of every account the viewer can read, and the model slots that
+// say why a job waits.
+export interface InstanceQueue {
+  jobs: InstanceJob[];
+  slots: ModelSlots[];
+}
+
 // One server-sent event's data; the SSE event name is its kind, plus
 // "resync" (data {}) when the client should refetch everything it shows.
 export interface LiveEvent {

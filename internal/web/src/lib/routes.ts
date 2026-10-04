@@ -6,6 +6,7 @@
 //   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
 //   #/admin                                   admin console (cross-account)
+//   #/queue                                   the queue of every account
 //   #/a/<slug>                                account overview; slug is <forge>/<name>
 //   #/a/<slug>/repos                          account's repo list
 //   #/a/<slug>/repos/<owner>/<repo>           one repo
@@ -115,6 +116,7 @@ export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
   | { name: 'console' }
+  | { name: 'instanceQueue' }
   | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string }
   | { name: 'repo'; slug: string; owner: string; repo: string }
@@ -227,6 +229,7 @@ export function parse(hash: string): Route {
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'admin') return { name: 'console' };
+  if (parts.length === 1 && parts[0] === 'queue') return { name: 'instanceQueue' };
   if (slug) return parseAccountRoute(slug, parts.slice(3), new URLSearchParams(q < 0 ? '' : hash.slice(q + 1)));
   return { name: 'overview' };
 }
@@ -246,6 +249,8 @@ export function href(r: Route): string {
       return '#/signin';
     case 'console':
       return '#/admin';
+    case 'instanceQueue':
+      return '#/queue';
     case 'account':
       return `#/a/${slugPath(r.slug)}`;
     case 'repos':

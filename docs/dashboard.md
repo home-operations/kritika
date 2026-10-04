@@ -19,6 +19,10 @@ The instance's tabs are about every account at once:
   account's own with its health: the open pull requests that want a
   look, a cap that is close, and whether its App's webhooks arrive or
   kritika only polls it. Each links to where the account shows it.
+- **Queue:** with more than one account, the review, follow-up and
+  index jobs of all of them, and how many of each account's model slots
+  (`limits.concurrency`) running reviews hold, which is why a review of
+  it waits.
 - **Configuration:** for an admin, the
   [Configuration page](#configuration-page).
 
