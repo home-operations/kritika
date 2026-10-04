@@ -64,6 +64,12 @@ An account's tabs are its sections:
   addressed. The page only lists them.
 - **Settings:** its repositories, and for an admin its audit log.
 
+Times are written in your browser's time zone, on the 12 or 24 hour
+clock its locale keeps. **Your settings**, in the user menu, choose
+another zone or clock; they are kept with your user, so they hold in any
+browser you sign in from. Figures by day count each day in UTC whatever
+the zone.
+
 A dot in the top bar shows whether live updates are connected. Once they
 have been down for two seconds it reads "Reconnecting…", and the page may
 be out of date until they are back.

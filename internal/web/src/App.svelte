@@ -5,7 +5,7 @@
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
   import { initEvents, closeEvents, stream } from './lib/events.svelte';
   import { theme, cycleTheme, initTheme } from './lib/theme.svelte';
-  import { initClock } from './lib/time.svelte';
+  import { initClock, applyDatePrefs, clock } from './lib/time.svelte';
   import { timestamp } from './lib/dates';
   import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
@@ -53,6 +53,7 @@
   async function loadMe(): Promise<void> {
     try {
       session.me = await getJSON<Me>('/api/v1/me');
+      applyDatePrefs(session.me.settings);
       initEvents();
     } catch (err) {
       // A 401 already redirected to #/signin (see api.svelte.ts); anything
@@ -194,7 +195,7 @@
               class="live"
               class:live-down={stream.down}
               aria-live="polite"
-              title={stream.down ? `Live updates stopped at ${timestamp(stream.since)}; this page may be out of date.` : 'Live updates on'}
+              title={stream.down ? `Live updates stopped at ${(clock.rev, timestamp(stream.since))}; this page may be out of date.` : 'Live updates on'}
             >
               <span class="live-dot" aria-hidden="true"></span>
               {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
@@ -219,6 +220,7 @@
               <div class="menu-panel user-panel">
                 <p class="user-name">{me.user.displayName}</p>
                 <p class="user-email">{me.user.email}</p>
+                <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Your settings</a>
                 <button class="btn" onclick={signOut}>
                   <Icon path={mdiLogout} size={14} /> Sign out
                 </button>

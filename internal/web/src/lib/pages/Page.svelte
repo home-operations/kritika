@@ -13,6 +13,7 @@
   import Review from './review/Review.svelte';
   import Queue from './Queue.svelte';
   import InstanceQueue from './InstanceQueue.svelte';
+  import Preferences from './Preferences.svelte';
   import Findings from './Findings.svelte';
   import Rules from './Rules.svelte';
   import Usage from './Usage.svelte';
@@ -44,6 +45,8 @@
     <Console />
   {:else if route.name === 'instanceQueue'}
     <InstanceQueue />
+  {:else if route.name === 'preferences'}
+    <Preferences />
   {:else if route.name === 'account'}
     <Analytics slug={route.slug} />
   {:else if route.name === 'repos'}
