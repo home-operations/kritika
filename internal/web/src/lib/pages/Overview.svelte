@@ -8,11 +8,10 @@
   import { tokens, usd, wholeNumber } from '../format';
   import type { AccountSummary } from '../types';
   import { WANTS, nearCaps } from '../attention';
-  import { unsignedWebhooks } from '../setup';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
-  import Time from '../components/Time.svelte';
+  import WebhookState from '../components/WebhookState.svelte';
 
   const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
 
@@ -102,16 +101,7 @@
                       </span>
                     </td>
                     <td>
-                      {#if unsignedWebhooks(t)}
-                        <Pill tone="danger" label="unsigned" title="GitHub sends the App's webhooks with no signature, so kritika refuses them and only polls: set the App's webhook secret" />
-                      {:else if t.lastWebhookAt}
-                        <Pill tone="ok" label="receiving" />
-                      {:else}
-                        <Pill tone="warn" label="polling only" title="No webhook has reached the account's App, so kritika only polls it for new pull requests and cannot answer mentions" />
-                      {/if}
-                      {#if unsignedWebhooks(t) || !t.lastWebhookAt}
-                        <span class="small muted">{#if t.lastPolledAt}polled <Time iso={t.lastPolledAt} />{:else}not polled yet{/if}</span>
-                      {/if}
+                      <WebhookState of={t} polled={{ at: t.lastPolledAt }} />
                     </td>
                     <td class="num">{usd(t.usage.costUsd)}</td>
                     <td>

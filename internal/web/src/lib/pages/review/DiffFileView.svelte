@@ -6,7 +6,8 @@
   import { mdiChevronDown, mdiChevronRight } from '../../icons';
   import FindingCard from './FindingCard.svelte';
   import Tokens from '../../components/Tokens.svelte';
-  import { highlightDiff, languageOf, type Token } from '../../highlight';
+  import { highlightDiff, languageOf } from '../../highlight';
+  import { Highlighted } from '../../tokens.svelte';
 
   let {
     file,
@@ -29,16 +30,12 @@
 
   // The lines' tokens, once the file is open and its language has loaded;
   // plain text until then, and for a language that is not highlighted.
-  // Raw: the file is compared by identity, which a state proxy would hide.
-  let tokens = $state.raw<{ of: DiffFile; lines: (Token[] | undefined)[] } | undefined>(undefined);
-  $effect(() => {
-    const of = file;
-    if (!open) return;
-    void highlightDiff(of.lines, languageOf(of.path)).then((lines) => {
-      if (lines && of === file) tokens = { of, lines };
-    });
-  });
-  const highlighted = $derived(tokens?.of === file ? tokens.lines : undefined);
+  const tokens = new Highlighted(
+    () => file,
+    (f) => highlightDiff(f.lines, languageOf(f.path)),
+    () => open,
+  );
+  const highlighted = $derived(tokens.value);
 </script>
 
 <section class="diff-file">

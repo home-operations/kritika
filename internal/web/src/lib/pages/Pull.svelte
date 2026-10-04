@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource, live, pollJobs } from '../resource.svelte';
   import { repoRoute, rerunPath, accountApi, threadUrl } from '../links';
   import { isAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
@@ -45,13 +45,11 @@
     ),
   );
 
-  // A job that waits or is retried changes state without an event, so poll
-  // while there is one.
+  // Only while the pull request has a job that has not finished.
   const job = $derived(res.data?.job);
   $effect(() => {
     if (!job) return;
-    const t = setInterval(() => void res.load(), 15_000);
-    return () => clearInterval(t);
+    return pollJobs(() => void res.load());
   });
 
   // Label colours come from the forge; anything but a hex triplet/quad/etc.

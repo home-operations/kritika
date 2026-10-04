@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getJSON } from '../api.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource, live, pollJobs } from '../resource.svelte';
   import { accountApi } from '../links';
   import type { Job } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -14,12 +14,7 @@
     void res.load();
   });
   $effect(() => live((e) => e.account === slug, () => void res.load()));
-  // Job state changes (a retry coming due, a worker picking a job up) don't
-  // all emit events, so also poll while the page is open.
-  $effect(() => {
-    const t = setInterval(() => void res.load(), 15_000);
-    return () => clearInterval(t);
-  });
+  $effect(() => pollJobs(() => void res.load()));
 </script>
 
 <svelte:head><title>Queue · {slug} · kritika</title></svelte:head>

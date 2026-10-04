@@ -93,6 +93,12 @@ export const skipText: Record<Exclude<SkipReason, ''>, string> = {
   too_large: 'more changed lines than the repository allows',
 };
 
+// noMoreReviews says why a pull request that is not open takes no more
+// reviews: a merged one never does, a closed one not while it is.
+export function noMoreReviews(merged: boolean): string {
+  return merged ? 'Merged: it is not reviewed again' : 'Closed: it is not reviewed while it is';
+}
+
 export const indexTone: Record<IndexRunStatus, Tone> = {
   running: 'accent',
   completed: 'ok',
