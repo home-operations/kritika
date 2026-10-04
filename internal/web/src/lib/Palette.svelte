@@ -155,8 +155,8 @@
 
 <Dialog.Root open={palette.open} onOpenChange={(now) => !now && closeOverlays()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="palette-overlay" />
-    <Dialog.Content class="palette" aria-label="Go to">
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class="modal palette" aria-label="Go to">
       <!-- The rows are already the ones that match, so Bits UI's own filter is off; it keeps the cursor and the arrow keys. -->
       <Command.Root class="palette-command" shouldFilter={false} loop label="Go to">
         <div class="palette-input">

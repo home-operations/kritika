@@ -45,9 +45,11 @@
 
 <Dialog.Root bind:open onOpenChange={(now) => !now && onclose?.()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="dialog-overlay" />
-    <Dialog.Content class={['dialog', wide && 'dialog-wide']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
-      <Dialog.Title class="dialog-title" level={2}>{title}</Dialog.Title>
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class={['modal modal-centered dialog', wide && 'dialog-wide']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
+      <Dialog.Title>
+        {#snippet child({ props })}<h2 {...props} class="dialog-title">{title}</h2>{/snippet}
+      </Dialog.Title>
       <div class="dialog-body">{@render children()}</div>
       {#if footer}<div class="dialog-actions">{@render footer()}</div>{/if}
     </Dialog.Content>

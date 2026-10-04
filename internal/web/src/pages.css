@@ -728,7 +728,7 @@ table.data td.wrap {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 5;
+  z-index: var(--z-popup);
   margin: 0;
   padding: 4px 0;
   list-style: none;
@@ -1435,7 +1435,7 @@ table.data td.wrap {
   margin: 0;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-sticky);
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   border-radius: 8px 8px 0 0;
@@ -1581,7 +1581,7 @@ table.diff td.code {
 .chart-tip {
   position: absolute;
   top: 8px;
-  z-index: 2;
+  z-index: var(--z-tip);
   min-width: 120px;
   padding: 8px 10px;
   transform: translateX(12px);

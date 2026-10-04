@@ -282,7 +282,7 @@ test.describe('keyboard shortcuts', () => {
     await expect(page.locator('.help-card h2')).toHaveText('Keyboard shortcuts');
     await expect(page.locator('.help-keys dd')).toContainText(['go to a page', 'toggle this help', 'move down or up a list', 'open the row', 'search the list', 'select a pull request']);
     await page.keyboard.press('Escape');
-    await expect(page.locator('.help-overlay')).toHaveCount(0);
+    await expect(page.locator('.help-card')).toHaveCount(0);
   });
 
   test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page, signIn }) => {
@@ -297,7 +297,7 @@ test.describe('keyboard shortcuts', () => {
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/admin$/);
-    await expect(page.locator('.palette-overlay')).toHaveCount(0);
+    await expect(page.locator('.palette')).toHaveCount(0);
   });
 
   test('the palette shows an empty state when nothing matches', async ({ page }) => {
