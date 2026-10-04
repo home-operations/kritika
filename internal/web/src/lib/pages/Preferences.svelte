@@ -7,6 +7,7 @@
   import { clock, stamp } from '../time.svelte';
   import { hour12Of, zoneKnown } from '../dates';
   import Segmented from '../components/Segmented.svelte';
+  import Spinner from '../Spinner.svelte';
 
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const settings = $derived(session.me?.settings);
@@ -69,7 +70,7 @@
         </dl>
       </section>
     {:else}
-      <p class="state-msg" aria-live="polite">Loading…</p>
+      <p class="state-msg" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {/if}
   </div>
 </main>

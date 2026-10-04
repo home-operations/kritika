@@ -2,6 +2,7 @@
   import { accountApi } from '../../links';
   import { isAdmin, session } from '../../session.svelte';
   import AuditTable from '../../components/AuditTable.svelte';
+  import Spinner from '../../Spinner.svelte';
 
   let { slug, section }: { slug: string; section?: string } = $props();
 
@@ -18,7 +19,7 @@
       <h1>{title}</h1>
     </header>
     {#if !session.me}
-      <p class="state-msg" aria-live="polite">Loading…</p>
+      <p class="state-msg" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {:else if !isAdmin()}
       <p class="state-msg" role="alert">Only an admin can see this page.</p>
     {:else if !Object.hasOwn(SECTIONS, current)}
