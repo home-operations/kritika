@@ -1,6 +1,8 @@
 // Theme: auto (follow OS), light, or dark. The chosen theme drives a `light`/
 // `dark` class on <html>, which the design tokens key off. The preference
-// persists in localStorage.
+// persists in localStorage, which theme.js reads before the first paint; a
+// light or dark kept with the user (their settings) is written there too
+// when they sign in, so it holds in any browser.
 
 export type ThemePref = 'auto' | 'light' | 'dark';
 
@@ -29,9 +31,15 @@ export function applyTheme(): void {
   root.classList.toggle('light', eff === 'light');
 }
 
-export function cycleTheme(): void {
+// nextTheme is the preference after the current one, as the top bar's
+// button steps through them.
+export function nextTheme(): ThemePref {
   const order: ThemePref[] = ['auto', 'light', 'dark'];
-  theme.pref = order[(order.indexOf(theme.pref) + 1) % order.length];
+  return order[(order.indexOf(theme.pref) + 1) % order.length]!;
+}
+
+export function setTheme(pref: ThemePref): void {
+  theme.pref = pref;
   try {
     localStorage.setItem(KEY, theme.pref);
   } catch {

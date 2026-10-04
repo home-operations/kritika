@@ -823,7 +823,38 @@ test.describe('your settings', () => {
     await page.goto('/#/settings');
     await page.getByRole('radio', { name: '24-hour', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Not saved');
-    await expect(page.getByRole('radio', { name: /^Browser's/ })).toBeChecked();
+    await expect(page.getByRole('radiogroup', { name: 'Clock' }).getByRole('radio', { name: /^Browser's/ })).toBeChecked();
+
+    // A refused theme leaves the page as it looked.
+    const html = page.locator('html');
+    const was = await html.getAttribute('class');
+    await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Dark' }).click();
+    await expect(page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: "Browser's" })).toBeChecked();
+    await expect(html).toHaveAttribute('class', was ?? '');
+  });
+
+  test('a theme is kept with the user, from the page or the top bar, and applies wherever they sign in', async ({ page }) => {
+    const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
+    await page.goto('/#/settings');
+    const themes = page.getByRole('radiogroup', { name: 'Theme' });
+    await themes.getByRole('radio', { name: 'Dark' }).click();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+    await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'dark' });
+
+    // The top bar's button steps dark to auto, which is the browser's own.
+    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: '' });
+    await expect(themes.getByRole('radio', { name: "Browser's" })).toBeChecked();
+    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'light' });
+    await expect(themes.getByRole('radio', { name: 'Light' })).toBeChecked();
+
+    // Another browser, whose own preference is light: the user's dark wins.
+    await page.evaluate(() => localStorage.setItem('kritika-theme', 'light'));
+    await g.mockApi(page, [[/\/api\/v1\/me$/, { ...g.me, settings: { ...g.NO_SETTINGS, theme: 'dark' } }], ...g.defaultApi()]);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+    await expect(themes.getByRole('radio', { name: 'Dark' })).toBeChecked();
   });
 });
 
