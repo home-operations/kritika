@@ -121,7 +121,8 @@
               </tr>
             </thead>
             <tbody>
-              {#each s.rows as r (r.key)}
+              <!-- Days read newest first; the other groups keep the server's order. -->
+              {#each s.group === 'day' ? [...s.rows].reverse() : s.rows as r (r.key)}
                 <tr>
                   <td class="mono small">{r.key}</td>
                   <td class="num">{wholeNumber(r.calls)}</td>

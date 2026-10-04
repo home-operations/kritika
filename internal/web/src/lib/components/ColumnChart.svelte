@@ -102,11 +102,12 @@
         </tr>
       </thead>
       <tbody>
-        {#each rows as r, i (r.key)}
+        <!-- Newest first, where the chart reads oldest first. -->
+        {#each [...rows].reverse() as r, i (r.key)}
           <tr>
             <td>{r.title}</td>
             {#each r.values as v, j (j)}<td class="num">{format(v)}</td>{/each}
-            {#if series.length > 1}<td class="num">{format(totals[i]!)}</td>{/if}
+            {#if series.length > 1}<td class="num">{format(totals[rows.length - 1 - i]!)}</td>{/if}
           </tr>
         {/each}
       </tbody>

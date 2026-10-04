@@ -21,7 +21,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each d.usage as u, i (i)}
+        {#each [...d.usage].reverse() as u, i (i)}
           <tr>
             <td>{u.role}</td>
             <td class="mono small">{u.model}</td>

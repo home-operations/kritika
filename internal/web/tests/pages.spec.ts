@@ -62,6 +62,32 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/analytics') && u.searchParams.get('group') === 'week')).toBe(true);
 });
 
+test('tables over time read newest first', async ({ page }) => {
+  const point = g.analytics.series[0]!;
+  const series = [point, { ...point, key: '2026-09-02', reviews: 7, findings: { blocking: 4, important: 0, nit: 0 } }];
+  const day = g.usageSeries.rows[0]!;
+  const call = g.reviewDetail.usage[0]!;
+  await g.mockApi(page, [
+    [/\/analytics$/, { ...g.analytics, series }],
+    [/\/usage$/, { ...g.usageSeries, rows: [day, { ...day, key: '2026-09-02' }] }],
+    [/\/reviews\/rev-1$/, { ...g.reviewDetail, usage: [call, { ...call, role: 'followup' }] }],
+    ...g.defaultApi(),
+  ]);
+  await page.goto(`/${T}`);
+  const reviews = page.getByRole('region', { name: 'Reviews', exact: true });
+  await reviews.getByRole('radio', { name: 'Table' }).click();
+  await expect(reviews.locator('tbody tr')).toHaveText([/Sep 2\s*7/, /Sep 1\s*5/]);
+  const findings = page.getByRole('region', { name: 'Findings by severity' });
+  await findings.getByRole('radio', { name: 'Table' }).click();
+  await expect(findings.locator('tbody tr').first()).toHaveText(/Sep 2\s*4\s*0\s*0\s*4/);
+
+  await page.goto(`/${T}/usage`);
+  await expect(page.locator('tbody tr td:first-child')).toHaveText(['2026-09-02', '2026-09-01']);
+
+  await page.goto(`/${T}/reviews/rev-1/usage`);
+  await expect(page.locator('tbody tr td:first-child')).toHaveText(['followup', call.role]);
+});
+
 test('a chart reads one column at a time, by pointer or by keyboard', async ({ page }) => {
   await page.goto(`/${T}`);
   const chart = page.getByRole('img', { name: /^Completed reviews per day/ });
