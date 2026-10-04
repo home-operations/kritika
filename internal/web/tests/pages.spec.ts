@@ -968,6 +968,20 @@ test('the top bar fits a phone: the logo keeps its size and the user menu stays 
   expect((await page.locator('.brand img').boundingBox())!.width).toBe(22);
 });
 
+test("this month's tiles fill their grid at every width, with no cell left empty", async ({ page }) => {
+  for (const [width, columns] of [
+    [1280, 3],
+    [600, 3],
+    [390, 1],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`/${T}/usage`);
+    const tiles = page.getByRole('region', { name: 'This month' });
+    await expect(tiles.locator('.stat')).toHaveCount(3);
+    expect(await tiles.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
+  }
+});
+
 test('your settings fit a phone: no control runs past the screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.goto('/#/settings');
