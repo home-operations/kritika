@@ -89,7 +89,7 @@ body {
   /* Sans for the UI chrome and prose; code and identifiers — diffs, SHAs,
      resource names, image refs — use mono where defined. */
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--type-md);
   -webkit-font-smoothing: antialiased;
 }
 .icon {
@@ -145,9 +145,9 @@ body {
   border: 1px solid var(--border);
   background: var(--panel-alt);
   color: var(--text);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: var(--type-md);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -179,6 +179,17 @@ body {
 }
 
 /* ---- keyboard-shortcuts help ------------------------------------------ */
+/* The sizes text is set in and the corners boxes are cut with. A size or
+   a corner outside these is one of a kind, and written where it is used. */
+:root {
+  --type-xs: 11px;
+  --type-sm: 12px;
+  --type-md: 13px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
 /* What stacks over what, lowest first. */
 :root {
   --z-sticky: 1;
@@ -204,7 +215,7 @@ body {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
 }
 .modal-centered {
@@ -231,7 +242,7 @@ body {
   grid-template-columns: auto 1fr;
   gap: 8px 14px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--type-md);
 }
 .help-keys dt {
   text-align: right;
@@ -243,10 +254,10 @@ body {
 }
 kbd {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-xs);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 5px;
   background: var(--panel-alt);
 }
@@ -327,14 +338,14 @@ kbd {
 }
 .row-title.mono {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--type-md);
 }
 .row-sub {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .palette-empty {
   margin: 0;
@@ -351,7 +362,7 @@ kbd {
   padding: 7px 14px;
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-xs);
 }
 
 /* ---- brand + nav (kritika-specific: no konflate equivalent) ------------ */
@@ -386,7 +397,7 @@ kbd {
   margin-bottom: -1px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--type-md);
   white-space: nowrap;
 }
 .section-tab:hover {
@@ -421,9 +432,9 @@ kbd {
   min-width: 0;
   max-width: 280px;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--type-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -450,7 +461,7 @@ kbd {
   gap: 8px;
   padding: 6px 12px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--type-md);
   white-space: nowrap;
 }
 .menu-item:hover {
@@ -463,7 +474,7 @@ kbd {
 .menu-heading {
   margin: 6px 0 2px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--type-xs);
   color: var(--muted);
 }
 .menu-check {
@@ -511,7 +522,7 @@ kbd {
   align-items: center;
   gap: 6px;
   padding: 0 4px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -532,18 +543,18 @@ kbd {
   gap: 8px;
   min-width: 200px;
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 .user-name {
   margin: 0;
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--type-md);
 }
 .user-email,
 .user-version {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -551,7 +562,7 @@ kbd {
 .user-version {
   padding-top: 8px;
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: var(--type-xs);
 }
 
 /* ---- sign-in ------------------------------------------------------------ */
@@ -584,7 +595,7 @@ kbd {
 .signin-sub {
   margin: 0 0 12px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--type-md);
 }
 .signin-providers {
   display: flex;
@@ -606,13 +617,13 @@ kbd {
 .signin-or {
   margin: 6px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .signin-empty,
 .signin-error {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--type-md);
 }
 .signin-error {
   color: var(--danger);

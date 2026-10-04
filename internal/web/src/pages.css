@@ -29,7 +29,7 @@
 }
 .subnav-group {
   margin: 12px 10px 4px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   font-weight: 650;
   color: var(--muted);
   overflow: hidden;
@@ -44,9 +44,9 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--type-md);
   white-space: nowrap;
 }
 .subnav-item:hover {
@@ -64,9 +64,9 @@
 .subnav-part {
   display: block;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-sm);
   white-space: nowrap;
 }
 .subnav-part:hover {
@@ -126,7 +126,7 @@
   display: none;
 }
 .crumbs {
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
 }
 a {
@@ -147,7 +147,7 @@ input:focus-visible {
   color: var(--muted);
 }
 .small {
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .sr-only {
   position: absolute;
@@ -163,7 +163,7 @@ input:focus-visible {
   align-items: center;
   gap: 4px 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 /* A record's facts, each named: "Scope full", "Cost $0.42". */
 .facts {
@@ -171,7 +171,7 @@ input:focus-visible {
   flex-wrap: wrap;
   gap: 4px 16px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .facts > div {
   display: inline-flex;
@@ -195,21 +195,21 @@ a.external {
   align-items: center;
   gap: 4px;
   padding: 1px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
   color: var(--tone);
   background: color-mix(in srgb, var(--tone) 12%, transparent);
 }
 .error-text {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--type-sm);
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
 }
 .error-cell {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--type-sm);
   max-width: 320px;
   word-break: break-word;
 }
@@ -227,7 +227,7 @@ a.external {
   color: var(--danger);
   border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
   background: color-mix(in srgb, var(--danger) 6%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 /* ---- pills, badges, severities ----------------------------------------- */
@@ -237,11 +237,11 @@ a.external {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--type-xs);
   font-weight: 600;
   line-height: 1.5;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 7px;
   color: var(--muted);
   white-space: nowrap;
@@ -308,8 +308,8 @@ a.external {
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--type-xs);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--sev);
@@ -322,7 +322,7 @@ a.external {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--text);
   white-space: nowrap;
 }
@@ -332,7 +332,7 @@ a.external {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--tone, var(--muted));
   background: color-mix(in srgb, var(--tone, var(--muted)) 14%, transparent);
 }
@@ -348,17 +348,17 @@ a.external {
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--panel-alt);
 }
 .segmented button {
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--muted);
   padding: 4px 10px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--type-sm);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -376,7 +376,7 @@ a.external {
   cursor: default;
 }
 .label-chip {
-  font-size: 11px;
+  font-size: var(--type-xs);
   padding: 0 7px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--label, var(--border)) 60%, var(--border));
@@ -390,7 +390,7 @@ kbd {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   min-width: 0;
 }
 .panel > .code-block,
@@ -411,7 +411,7 @@ kbd {
 }
 .panel-head h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--type-md);
   font-weight: 650;
 }
 .panel-body {
@@ -419,7 +419,7 @@ kbd {
 }
 .subhead {
   margin: 12px 12px 4px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   font-weight: 650;
   color: var(--muted);
 }
@@ -436,14 +436,14 @@ kbd {
 .tile {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 .tile-label {
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
 }
 .tile-value {
@@ -472,7 +472,7 @@ kbd {
   grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
   gap: 4px 14px;
   margin: 10px 12px;
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .deflist dt {
   color: var(--muted);
@@ -494,7 +494,7 @@ kbd {
 table.data {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 table.data th,
 table.data td {
@@ -529,21 +529,21 @@ table.data tbody tr:hover {
 .table-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 .table-card table.data tbody tr:last-child td {
   border-bottom: none;
 }
 .table-card table.data thead th:first-child {
-  border-top-left-radius: 8px;
+  border-top-left-radius: var(--radius-lg);
 }
 .table-card table.data thead th:last-child {
-  border-top-right-radius: 8px;
+  border-top-right-radius: var(--radius-lg);
 }
 /* Inside a panel the panel is the card. */
 .panel > .table-card {
   border: none;
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .panel > .table-card table.data thead th {
   border-radius: 0;
@@ -577,7 +577,7 @@ table.data td.pull-main {
   gap: 6px;
   min-width: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--type-md);
   font-weight: 550;
 }
 .pull-text {
@@ -590,7 +590,7 @@ table.data td.pull-main {
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: var(--type-xs);
   color: var(--muted);
 }
 .lifecycle {
@@ -623,7 +623,7 @@ table.data td.finding-main {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--type-md);
   font-weight: 550;
 }
 .finding-sub {
@@ -631,7 +631,7 @@ table.data td.finding-main {
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: var(--type-xs);
   color: var(--muted);
 }
 .finding-pull .finding-sub,
@@ -645,7 +645,7 @@ table.data td.finding-main {
   margin-top: 4px;
 }
 .finding-rules a {
-  font-size: 11px;
+  font-size: var(--type-xs);
   padding: 0 5px;
   border-radius: 3px;
   color: var(--text);
@@ -669,7 +669,7 @@ table.data td.wrap {
   flex: none;
   width: 22px;
   height: 22px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   background: var(--panel-alt);
   border: 1px solid var(--border);
@@ -681,7 +681,7 @@ table.data td.wrap {
   min-width: 0;
 }
 .rule-path {
-  font-size: 13px;
+  font-size: var(--type-md);
   font-weight: 600;
   word-break: break-all;
 }
@@ -692,11 +692,11 @@ table.data td.wrap {
   -webkit-line-clamp: 3;
   line-clamp: 3;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--type-md);
   white-space: pre-line;
 }
 .rule-sub {
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
 }
 .rule-globs {
@@ -712,7 +712,7 @@ table.data td.wrap {
 .rule-globs code,
 .rule-when code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--type-xs);
   padding: 0 5px;
   border-radius: 3px;
   background: var(--panel-alt);
@@ -745,7 +745,7 @@ table.data td.wrap {
   list-style: none;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 12%, transparent);
 }
 .suggest li {
@@ -833,7 +833,7 @@ table.data td.wrap {
 .select select {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   padding: 6px 10px;
@@ -850,7 +850,7 @@ table.data td.wrap {
 }
 .btn-small {
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--type-xs);
 }
 .load-more {
   align-self: center;
@@ -858,7 +858,7 @@ table.data td.wrap {
 .view-toggle {
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .view-toggle button {
@@ -866,7 +866,7 @@ table.data td.wrap {
   background: var(--panel);
   color: var(--muted);
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   cursor: pointer;
 }
 .view-toggle button + button {
@@ -885,7 +885,7 @@ table.data td.wrap {
   padding: 0;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 .panel .rows {
   border: none;
@@ -922,7 +922,7 @@ table.data td.wrap {
 }
 .reltime {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-sm);
   white-space: nowrap;
 }
 
@@ -960,7 +960,7 @@ table.data td.wrap {
 .followups:not(.panel .followups) {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 .followup {
   padding: 8px 12px;
@@ -1012,14 +1012,14 @@ table.data td.wrap {
   padding: 7px 6px 7px 16px;
   align-self: center;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-xs);
   white-space: nowrap;
 }
 .tab-count {
-  font-size: 11px;
+  font-size: var(--type-xs);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 6px;
 }
 .tab-panel {
@@ -1099,7 +1099,7 @@ table.data td.wrap {
 }
 .finding-group-head {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--type-md);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1107,7 +1107,7 @@ table.data td.wrap {
 .finding {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -1139,7 +1139,7 @@ table.data td.wrap {
   display: inline-flex;
   gap: 8px;
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -1156,7 +1156,7 @@ table.data td.wrap {
 }
 .finding-label {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--type-sm);
   font-weight: 600;
   color: var(--muted);
 }
@@ -1225,7 +1225,7 @@ table.data td.wrap {
 }
 .md-table {
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .md-table th,
 .md-table td {
@@ -1235,7 +1235,7 @@ table.data td.wrap {
 }
 .md code {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--type-sm);
   background: var(--panel-alt);
   border-radius: 3px;
   padding: 0 4px;
@@ -1244,7 +1244,7 @@ table.data td.wrap {
 /* ---- code blocks + collapsibles ------------------------------------------ */
 .code-block {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--panel-alt);
   min-width: 0;
   display: flex;
@@ -1258,13 +1258,13 @@ table.data td.wrap {
   border-bottom: 1px solid var(--border);
 }
 .code-label {
-  font-size: 11px;
+  font-size: var(--type-xs);
   color: var(--muted);
 }
 .code-block pre {
   margin: 0;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--type-sm);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1289,7 +1289,7 @@ table.data td.wrap {
 }
 .code-block.plain pre {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--type-md);
   padding: 2px 72px 2px 0;
 }
 .code-more {
@@ -1298,7 +1298,7 @@ table.data td.wrap {
 }
 .collapsible {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   min-width: 0;
 }
@@ -1327,7 +1327,7 @@ table.data td.wrap {
 }
 .collapsible-title {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--type-sm);
   white-space: nowrap;
 }
 .collapsible-meta {
@@ -1365,7 +1365,7 @@ table.data td.wrap {
 .turn {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1386,11 +1386,11 @@ table.data td.wrap {
   padding: 7px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--panel-alt);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .turn-title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--type-md);
 }
 .turn-usage {
   font-variant-numeric: tabular-nums;
@@ -1406,7 +1406,7 @@ table.data td.wrap {
   border-left-color: var(--accent);
 }
 .role-label {
-  font-size: 11px;
+  font-size: var(--type-xs);
   font-weight: 650;
   color: var(--muted);
 }
@@ -1431,7 +1431,7 @@ table.data td.wrap {
 .diff-file {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   min-width: 0;
 }
 .diff-file-head {
@@ -1441,7 +1441,7 @@ table.data td.wrap {
   z-index: var(--z-sticky);
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 .diff-file-head button {
   width: 100%;
@@ -1453,7 +1453,7 @@ table.data td.wrap {
   background: none;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--type-sm);
   cursor: pointer;
   text-align: left;
 }
@@ -1469,7 +1469,7 @@ table.diff {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--type-sm);
   line-height: 1.5;
 }
 table.diff td.ln {
@@ -1568,7 +1568,7 @@ table.diff td.code {
   margin: 10px 12px 0;
   padding: 0;
   list-style: none;
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
 }
 .chart-legend li {
@@ -1591,9 +1591,9 @@ table.diff td.code {
   pointer-events: none;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 12%, transparent);
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .chart-tip.flip {
   transform: translateX(calc(-100% - 12px));
@@ -1601,7 +1601,7 @@ table.diff td.code {
 .chart-tip-head {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-xs);
 }
 .chart-tip-row {
   display: flex;
@@ -1623,7 +1623,7 @@ table.diff td.code {
   margin: 0;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--type-sm);
 }
 .badge-row {
   display: flex;
@@ -1639,7 +1639,7 @@ table.diff td.code {
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 /* Eight tiles fill four columns, or two, or one, with no cell left over. */
@@ -1665,7 +1665,7 @@ table.diff td.code {
   background: var(--panel);
 }
 .stat-label {
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
 }
 .stat-line {
@@ -1680,13 +1680,13 @@ table.diff td.code {
   letter-spacing: -0.01em;
 }
 .stat-sub {
-  font-size: 12px;
+  font-size: var(--type-sm);
   color: var(--muted);
 }
 .delta {
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--type-xs);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--tone);
@@ -1704,9 +1704,9 @@ table.diff td.code {
 .phase-bar {
   display: flex;
   height: 22px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--type-xs);
 }
 .phase-seg {
   min-width: 48px;
