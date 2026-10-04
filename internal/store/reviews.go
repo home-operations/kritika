@@ -45,7 +45,9 @@ func StartReview(ctx context.Context, tx pgx.Tx, r NewReview) (reviewID, runID s
 type EndedReview struct {
 	AccountID, PullRequestID, HeadSHA, MergeBaseSHA, ForgePatchID, Trigger, Error string
 	Status                                                                        ReviewStatus
-	SkipReason                                                                    repoconfig.SkipReason
+	// SkipReason is why a skipped review was: one of the repository's own
+	// (a repoconfig.SkipReason) or of the runner's (runner.Skip*).
+	SkipReason string
 }
 
 // RecordEndedReview records a review that never ran, as its terminal
@@ -54,7 +56,7 @@ func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO reviews
 		(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
-		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Status, string(r.SkipReason), r.Trigger, r.Error); err != nil {
+		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Status, r.SkipReason, r.Trigger, r.Error); err != nil {
 		return fmt.Errorf("store: record ended review: %w", err)
 	}
 	return nil
@@ -65,7 +67,7 @@ func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) error {
 type ReviewEnd struct {
 	Status     ReviewStatus
 	PatchID    string
-	SkipReason repoconfig.SkipReason
+	SkipReason string
 	Error      string
 	// OnlyUnfinished ends the review only if nothing has ended it yet.
 	OnlyUnfinished bool
@@ -77,7 +79,7 @@ func EndReview(ctx context.Context, tx pgx.Tx, reviewID string, end ReviewEnd) (
 	tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = CASE WHEN $3 = '' THEN patch_id ELSE $3 END,
 		skip_reason = CASE WHEN $4 = '' THEN skip_reason ELSE $4 END, error = left($5, 2000), finished_at = now()
 		WHERE id = $1 AND (NOT $6 OR finished_at IS NULL)`,
-		reviewID, end.Status, end.PatchID, string(end.SkipReason), end.Error, end.OnlyUnfinished)
+		reviewID, end.Status, end.PatchID, end.SkipReason, end.Error, end.OnlyUnfinished)
 	if err != nil {
 		return false, fmt.Errorf("store: end review: %w", err)
 	}

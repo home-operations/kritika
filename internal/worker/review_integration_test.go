@@ -1270,12 +1270,13 @@ func checkBotPatchIDSkip(
 	}
 	// The forge's diff told it before any runner was made for the head.
 	var runs int
-	var forgePatch string
+	var forgePatch, skipReason string
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT forge_patch_id, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
-			FROM reviews r WHERE head_sha = $1`, newHead.String()).Scan(&forgePatch, &runs)
-	}); err != nil || runs != 0 || forgePatch == "" {
-		t.Fatalf("skipped review: forge patch %q, %d runner runs, %v; want a forge patch and no runner", forgePatch, runs, err)
+		return tx.QueryRow(ctx, `SELECT forge_patch_id, skip_reason, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
+			FROM reviews r WHERE head_sha = $1`, newHead.String()).Scan(&forgePatch, &skipReason, &runs)
+	}); err != nil || runs != 0 || forgePatch == "" || skipReason != runner.SkipUnchangedPatch {
+		t.Fatalf("skipped review: forge patch %q, reason %q, %d runner runs, %v; want a forge patch, %s and no runner",
+			forgePatch, skipReason, runs, err, runner.SkipUnchangedPatch)
 	}
 
 	// A manual re-run of the same unchanged bot patch must bypass the skip:

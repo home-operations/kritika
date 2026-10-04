@@ -135,7 +135,7 @@ func list[T ~string](values []T) string {
 }
 
 // SkipReason says why the repository's own configuration skips a review.
-// The values match the reviews.skip_reason CHECK.
+// The reviews.skip_reason CHECK admits these values, and the runner's.
 type SkipReason string
 
 // Skip reasons.
