@@ -7,6 +7,7 @@
   "draft": false,
   "fork": false,
   "merged": false,
+  "paused": false,
   "headSha": "abc123",
   "headRef": "widgets",
   "baseRef": "main",

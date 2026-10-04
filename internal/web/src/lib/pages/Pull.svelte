@@ -110,6 +110,13 @@
           {/if}
         </header>
 
+        {#if p.paused && p.state === 'open'}
+          <p class="notice paused-notice" role="note">
+            Automatic reviews of this pull request are paused: a push is recorded, not reviewed. A comment asking the bot to
+            <span class="mono">review</span> still reviews it, and one asking it to <span class="mono">resume</span> turns them back on.
+          </p>
+        {/if}
+
         <!-- A running job with no failed attempt behind it is the running review below. -->
         {#if d.job && (d.job.state !== 'running' || d.job.lastError)}
           {@const j = d.job}

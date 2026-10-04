@@ -291,6 +291,9 @@ export interface Pull {
   // is reviewed when a maintainer asks.
   fork: boolean;
   merged: boolean;
+  // paused is whether its automatic reviews are paused: a push is recorded,
+  // not reviewed, until someone asks for a review or resumes them.
+  paused: boolean;
   headSha: string;
   headRef: string;
   baseRef: string;

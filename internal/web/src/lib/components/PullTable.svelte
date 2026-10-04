@@ -93,6 +93,9 @@
             {:else}
               <span class="small muted">not reviewed</span>
             {/if}
+            {#if p.paused && p.state === 'open'}
+              <span class="badge" title="Automatic reviews are paused: a push is not reviewed until someone asks for a review or resumes them">paused</span>
+            {/if}
           </td>
           <td class="num">{p.reviewCount}</td>
           <td class="num">{usd(p.costUsd)}</td>

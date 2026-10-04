@@ -83,4 +83,15 @@ func TestPausePullRequest(t *testing.T) {
 	if !paused() {
 		t.Fatal("a request pauses")
 	}
+	var row PullRow
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		row, err = FindPull(ctx, tx, repoID, 7)
+		return err
+	}); err != nil {
+		t.Fatalf("FindPull: %v", err)
+	}
+	if !row.Paused {
+		t.Fatal("the dashboard's read of a paused pull request says it is paused")
+	}
 }
