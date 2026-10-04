@@ -46,17 +46,16 @@ type FindingRow struct {
 // what became of it since: its status is that of the pull request's
 // finding of its fingerprint, as ListAccountFindings reports it.
 func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow, error) {
-	rows, err := tx.Query(ctx, `SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix,
-		f.replacement, f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up,
-		f.reactions_down, f.rules, f.category, d.pull_request_id IS NOT NULL, coalesce(d.reason, ''),
-		EXISTS (SELECT 1 FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND n.status = 'completed'
-			AND n.created_at > last.seen_at AND n.head_sha <> last.head_sha)
-		FROM findings f JOIN reviews v ON v.id = f.review_id
-		LEFT JOIN dismissals d ON d.pull_request_id = v.pull_request_id AND d.fingerprint = f.fingerprint
-		LEFT JOIN LATERAL (SELECT lv.created_at AS seen_at, lv.head_sha FROM findings lf JOIN reviews lv ON lv.id = lf.review_id
-			WHERE lv.pull_request_id = v.pull_request_id AND lv.status = 'completed'
-				AND coalesce(nullif(lf.fingerprint, ''), lf.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
-			ORDER BY lv.created_at DESC, lv.id DESC LIMIT 1) last ON true
+	// The pull request's issues, as the account's list has them, joined to
+	// this review's findings by fingerprint: a finding of a review that did
+	// not complete has no issue, and is open.
+	rows, err := tx.Query(ctx, `WITH `+findingIssuesOf(` AND v.pull_request_id = (SELECT pull_request_id FROM reviews WHERE id = $1)`)+`
+		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix,
+			f.replacement, f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up,
+			f.reactions_down, f.rules, f.category, coalesce(l.dismissed, false), coalesce(l.dismiss_reason, ''),
+			coalesce(l.addressed, false)
+		FROM findings f LEFT JOIN latest l
+			ON coalesce(nullif(l.fingerprint, ''), l.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
 		WHERE f.review_id = $1
 		ORDER BY CASE f.severity WHEN 'blocking' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, f.path, f.line, f.id`, reviewID)
 	if err != nil {
