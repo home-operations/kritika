@@ -1,6 +1,7 @@
 <script lang="ts" generics="V extends string">
-  // A choice of a few, all in view: a radio group drawn as one control.
-  // Arrow keys move the choice, as in a native radio group.
+  // A choice of a few, all in view: Bits UI's radio group drawn as one
+  // control. Arrow keys move the choice, as in a native radio group.
+  import { RadioGroup } from 'bits-ui';
   let {
     label,
     options,
@@ -17,32 +18,10 @@
     // path is the spec path a form marks the control with.
     path?: string;
   } = $props();
-
-  let group = $state<HTMLDivElement | undefined>(undefined);
-
-  function onkeydown(e: KeyboardEvent): void {
-    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-    if (!step) return;
-    e.preventDefault();
-    const i = options.findIndex((o) => o.value === value);
-    const next = options[(i + step + options.length) % options.length]!;
-    onchange(next.value);
-    group?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[options.indexOf(next)]?.focus();
-  }
 </script>
 
-<div class="segmented" role="radiogroup" aria-label={label} data-path={path} bind:this={group}>
+<RadioGroup.Root class="segmented" orientation="horizontal" aria-label={label} data-path={path} {value} {disabled} onValueChange={(v) => onchange(v as V)}>
   {#each options as o (o.value)}
-    <button
-      type="button"
-      role="radio"
-      aria-checked={o.value === value}
-      tabindex={o.value === value ? 0 : -1}
-      {disabled}
-      onclick={() => onchange(o.value)}
-      {onkeydown}
-    >
-      {o.label}
-    </button>
+    <RadioGroup.Item value={o.value}>{o.label}</RadioGroup.Item>
   {/each}
-</div>
+</RadioGroup.Root>
