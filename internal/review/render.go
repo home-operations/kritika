@@ -52,8 +52,8 @@ type RenderData struct {
 	// PriorHeadURL links the last review's head on the forge, "" when
 	// unknown.
 	PriorHeadURL string
-	// Prior are the last review's findings, each marked resolved or not,
-	// when this review builds on it.
+	// Prior are the last review's findings this review did not report
+	// again, each resolved or dismissed, when this review builds on it.
 	Prior []PriorFinding
 	// Unanchored are findings on lines the diff does not show, which
 	// have no inline comment and are listed in the summary only.

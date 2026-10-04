@@ -110,8 +110,8 @@ func TestRenderSummaryLinks(t *testing.T) {
 	d.Result.Findings[0].ThreadURL = "https://forge.example/o/r/pull/42#r1"
 	d.Incremental, d.PriorHeadSHA, d.PriorHeadURL = true, "fedcba9876543210", "https://forge.example/o/r/commit/fedcba9876543210"
 	d.Prior = []PriorFinding{
-		{Path: "main.go", Line: 9, Severity: SeverityBlocking, Title: "nil map write",
-			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r1"},
+		{Path: "main.go", Line: 9, Severity: SeverityBlocking, Title: "nil map write", Resolved: true,
+			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r2"},
 		{Path: "util.go", Line: 3, Severity: SeverityImportant, Title: "unchecked error", Resolved: true},
 		{Path: "cache.go", Line: 5, Severity: SeverityNit, Title: "terse name", Dismissed: true, DismissReason: "house style"},
 	}
@@ -125,10 +125,10 @@ func TestRenderSummaryLinks(t *testing.T) {
 		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1)\n",
 		"- **[nit]** `README.md:2` typo\n",
 		"**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
-		"**Earlier findings**\n\n" +
-			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r1) · still open\n" +
+		"<details>\n<summary>Earlier findings (2 resolved, 1 dismissed)</summary>\n\n" +
+			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n" +
 			"- **[important]** `util.go:3` unchecked error · resolved\n" +
-			"- **[nit]** `cache.go:5` terse name · dismissed: house style\n",
+			"- **[nit]** `cache.go:5` terse name · dismissed: house style\n\n</details>\n\n### Summary",
 		"<sub>Reviewed [`0123456`](https://forge.example/o/r/commit/0123456789abcdef) by kritika with vendor/model-x.</sub>",
 	} {
 		if !strings.Contains(body, want) {
@@ -139,8 +139,8 @@ func TestRenderSummaryLinks(t *testing.T) {
 		t.Fatalf("a bot's pull request is praised, or blank lines doubled:\n%s", body)
 	}
 	if strings.Index(body, "## Findings") > strings.Index(body, "**Outside the diff**") ||
-		strings.Index(body, "**Outside the diff**") > strings.Index(body, "**Earlier findings**") ||
-		strings.Index(body, "**Earlier findings**") > strings.Index(body, "### Summary") || strings.Index(body, "### Summary") > strings.Index(body, "_1 file") {
+		strings.Index(body, "**Outside the diff**") > strings.Index(body, "<summary>Earlier findings") ||
+		strings.Index(body, "<summary>Earlier findings") > strings.Index(body, "### Summary") || strings.Index(body, "### Summary") > strings.Index(body, "_1 file") {
 		t.Fatalf("sections out of order:\n%s", body)
 	}
 }
