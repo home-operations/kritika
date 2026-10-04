@@ -157,7 +157,7 @@ func followupList(rows []store.FollowupRow) []Followup {
 	out := make([]Followup, len(rows))
 	for i, f := range rows {
 		out[i] = Followup{
-			ID: f.ID, CommentID: f.CommentID, Repository: f.Repository, Number: f.Number, Author: f.Author, Inline: f.Inline,
+			ID: f.ID, CommentID: f.CommentID, Repository: f.Repository, Number: f.Number, PullURL: f.PullURL, Author: f.Author, Inline: f.Inline,
 			Path: f.Path, Line: f.Line, Status: f.Status, Reason: f.Reason, ReplyCommentID: f.ReplyCommentID, Model: f.Model,
 			CreatedAt: f.CreatedAt,
 		}

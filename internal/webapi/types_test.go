@@ -85,7 +85,7 @@ var goldenPull = Pull{
 }
 
 var goldenFollowup = Followup{
-	ID: "fu-1", CommentID: 99, Repository: "alpha/one", Number: 7, Author: "bob", Inline: true, Path: "a.go", Line: 4,
+	ID: "fu-1", CommentID: 99, Repository: "alpha/one", Number: 7, PullURL: goldenPullRef.URL, Author: "bob", Inline: true, Path: "a.go", Line: 4,
 	Status: store.FollowupAnswered, Reason: "", ReplyCommentID: new(int64(100)), Model: "acme/large", CreatedAt: t0,
 }
 

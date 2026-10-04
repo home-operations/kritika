@@ -35,6 +35,11 @@ export function threadUrl(pullUrl: string, commentId: number | null): string | u
   return commentId ? safeHref(`${pullUrl}#discussion_r${commentId}`) : undefined;
 }
 
+// commentUrl links a comment on a pull request's conversation.
+export function commentUrl(pullUrl: string, commentId: number | null): string | undefined {
+  return commentId ? safeHref(`${pullUrl}#issuecomment-${commentId}`) : undefined;
+}
+
 export function cancelPath(slug: string, reviewId: string): string {
   return `${accountApi(slug)}/reviews/${encodeURIComponent(reviewId)}/cancel`;
 }

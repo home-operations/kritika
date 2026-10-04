@@ -309,10 +309,12 @@ func FindReview(ctx context.Context, tx pgx.Tx, id string) (ReviewRow, error) {
 
 // FollowupRow is one followups row.
 type FollowupRow struct {
-	ID             string
-	PullRequestID  string
-	Repository     string
-	Number         int
+	ID            string
+	PullRequestID string
+	Repository    string
+	Number        int
+	// PullURL is the pull request on the forge, where the comments are.
+	PullURL        string
 	CommentID      int64
 	Author         string
 	Inline         bool
@@ -337,7 +339,7 @@ func ListFollowups(ctx context.Context, tx pgx.Tx, f FollowupFilter, p Page) ([]
 	if err := p.check(); err != nil {
 		return nil, nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT f.id, f.pull_request_id, r.name, p.number, f.comment_id, f.author, f.inline, f.path, f.line,
+	rows, err := tx.Query(ctx, `SELECT f.id, f.pull_request_id, r.name, p.number, p.url, f.comment_id, f.author, f.inline, f.path, f.line,
 		f.status, f.reason, f.reply_comment_id, f.model, f.created_at
 		FROM followups f JOIN pull_requests p ON p.id = f.pull_request_id JOIN repositories r ON r.id = p.repository_id
 		WHERE ($1::uuid IS NULL OR p.repository_id = $1) AND ($2::uuid IS NULL OR f.pull_request_id = $2)
@@ -350,7 +352,7 @@ func ListFollowups(ctx context.Context, tx pgx.Tx, f FollowupFilter, p Page) ([]
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (FollowupRow, error) {
 		var x FollowupRow
 		var status string
-		err := row.Scan(&x.ID, &x.PullRequestID, &x.Repository, &x.Number, &x.CommentID, &x.Author, &x.Inline, &x.Path, &x.Line,
+		err := row.Scan(&x.ID, &x.PullRequestID, &x.Repository, &x.Number, &x.PullURL, &x.CommentID, &x.Author, &x.Inline, &x.Path, &x.Line,
 			&status, &x.Reason, &x.ReplyCommentID, &x.Model, &x.CreatedAt)
 		x.Status = FollowupStatus(status)
 		return x, err

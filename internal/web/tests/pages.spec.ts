@@ -722,6 +722,15 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
 
   await page.goto(`/${T}/followups`);
   await expect(page.locator('.followup')).toContainText(`${g.followup.repository}#${g.followup.number}`);
+  // The golden follow-up was asked in a thread, and answered there.
+  const fu = g.followup;
+  await expect(page.locator('.followup').getByRole('link', { name: 'The question on GitHub' })).toHaveAttribute('href', `${fu.pullUrl}#discussion_r${fu.commentId}`);
+  await expect(page.locator('.followup').getByRole('link', { name: "kritika's reply" })).toHaveAttribute('href', `${fu.pullUrl}#discussion_r${fu.replyCommentId}`);
+  await g.mockApi(page, [[/\/followups$/, g.pageOf([{ ...fu, inline: false, status: 'ignored', reason: 'not a maintainer', replyCommentId: null }])], ...g.defaultApi()]);
+  await page.reload();
+  await expect(page.locator('.followup').getByRole('link', { name: 'The question on GitHub' })).toHaveAttribute('href', `${fu.pullUrl}#issuecomment-${fu.commentId}`);
+  await expect(page.locator('.followup').getByRole('link', { name: "kritika's reply" })).toHaveCount(0);
+  await expect(page.locator('.followup-reason')).toHaveText('not a maintainer');
 
   await page.goto('/#/admin');
   await expect(page.getByRole('row').filter({ hasText: g.adminAccount.slug })).toContainText('not served');
