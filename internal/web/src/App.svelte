@@ -6,8 +6,7 @@
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
   import { initEvents, closeEvents, stream } from './lib/events.svelte';
   import { theme, nextTheme, setTheme, initTheme } from './lib/theme.svelte';
-  import { initClock, clock } from './lib/time.svelte';
-  import { timestamp } from './lib/dates';
+  import { initClock, stamp } from './lib/time.svelte';
   import { initKeyboard, help, closeOverlays, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
     mdiThemeLightDark,
@@ -180,7 +179,7 @@
               class="live"
               class:live-down={stream.down}
               aria-live="polite"
-              title={stream.down ? `Live updates stopped at ${(clock.rev, timestamp(stream.since))}; this page may be out of date.` : 'Live updates on'}
+              title={stream.down ? `Live updates stopped at ${stamp(stream.since)}; this page may be out of date.` : 'Live updates on'}
             >
               <span class="live-dot" aria-hidden="true"></span>
               {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}

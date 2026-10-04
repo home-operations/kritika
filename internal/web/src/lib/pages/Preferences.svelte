@@ -4,8 +4,8 @@
   // Each is saved as it is chosen, and kept with the user, so it holds in
   // any browser they sign in from.
   import { session, saveSettings } from '../session.svelte';
-  import { clock } from '../time.svelte';
-  import { hour12Of, timestamp, zoneKnown } from '../dates';
+  import { clock, stamp } from '../time.svelte';
+  import { hour12Of, zoneKnown } from '../dates';
   import Segmented from '../components/Segmented.svelte';
 
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -19,7 +19,7 @@
     { value: '24', label: '24-hour' },
   ] as const;
 
-  const now = $derived((clock.rev, timestamp(new Date(clock.now).toISOString())));
+  const now = $derived(stamp(new Date(clock.now).toISOString()));
 
   const THEMES = [
     { value: '', label: "Browser's" },
