@@ -673,6 +673,14 @@ test.describe('review', () => {
     expect(errors).toEqual([]);
   });
 
+  test('the diff highlights a file whose language it knows, line for line', async ({ page }) => {
+    await page.goto(`/${T}/reviews/rev-1/diff`);
+    const added = page.locator('table.diff tr.dl-add td.code');
+    await expect(added.locator('span:not(.sign)').first()).toBeVisible();
+    await expect(added).toHaveText('+var x *int');
+    await expect(page.locator('table.diff tr.dl-hunk td.code span:not(.sign)')).toHaveCount(0);
+  });
+
   test('diff anchors a finding under its line', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/diff`);
     const anchored = page.locator('tr.dl-finding');

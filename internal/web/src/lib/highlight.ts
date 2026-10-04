@@ -112,3 +112,33 @@ export async function highlight(code: string, lang: string | undefined): Promise
     })),
   );
 }
+
+// highlightDiff highlights a file's diff lines: an array as long as lines,
+// holding each code line's tokens and undefined for a hunk header or a
+// note. The new side (context and additions) and the old (context and
+// deletions) are each read as one text, so a construct that spans lines
+// keeps its colours; a hunk starts mid-file, so its first lines may be read
+// out of context. undefined when the language is not one highlighted.
+export async function highlightDiff(
+  lines: readonly { kind: 'add' | 'del' | 'ctx' | 'hunk' | 'meta'; text: string }[],
+  lang: string | undefined,
+): Promise<(Token[] | undefined)[] | undefined> {
+  const side = (kinds: string[]) => lines.filter((l) => kinds.includes(l.kind)).map((l) => l.text).join('\n');
+  const [fresh, old] = await Promise.all([highlight(side(['ctx', 'add']), lang), highlight(side(['ctx', 'del']), lang)]);
+  if (!fresh || !old) return undefined;
+  let n = 0;
+  let o = 0;
+  return lines.map((l) => {
+    switch (l.kind) {
+      case 'add':
+        return fresh[n++];
+      case 'del':
+        return old[o++];
+      case 'ctx':
+        o++;
+        return fresh[n++];
+      default:
+        return undefined;
+    }
+  });
+}

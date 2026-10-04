@@ -26,7 +26,7 @@
   const shown = $derived(clipped ? lines.slice(0, maxLines).join('\n') : text);
 
   const language = $derived(plain ? undefined : languageOf(lang ?? label));
-  let tokens = $state<{ of: string; lines: Token[][] } | undefined>(undefined);
+  let tokens = $state.raw<{ of: string; lines: Token[][] } | undefined>(undefined);
   $effect(() => {
     const of = text;
     if (!language) return;
