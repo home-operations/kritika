@@ -164,7 +164,7 @@ var goldens = map[string]any{
 		Usage: []UsageRow{{Role: "review", Model: "acme/large", Upstream: "acme", InputTokens: 100, OutputTokens: 20, CostUSD: 0.1, CreatedAt: t1}},
 		ContextPack: &ContextPack{
 			HeadSHA: "abc123", BaseSHA: "base1", PatchID: "patch1", ChangedPaths: []string{"a.go"}, DeltaPaths: []string{"a.go"},
-			PriorHeadSHA: new("abc000"),
+			PriorHeadSHA: new("abc000"), RuleIDs: []string{"wrap-errors", "no-tokens"},
 			Stages: []Stage{{
 				Stage: "definitions", Path: "b.go", Language: "go", Symbol: "F", Kind: "func", Scope: "pkg", StartLine: 1,
 				EndLine: 9, Ref: "F", Bytes: 120,

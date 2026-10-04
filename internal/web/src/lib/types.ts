@@ -582,6 +582,8 @@ export interface ContextPack {
   priorHeadSha: string | null;
   stages: Stage[];
   repoNotes: string[];
+  // ruleIds are the ids of the rules the review was given to check.
+  ruleIds: string[];
   repoFiles: RepoFile[];
   createdAt: string;
 }

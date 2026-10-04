@@ -140,6 +140,7 @@
       }
     ],
     "repoNotes": ["docs/missing.md: not found"],
+    "ruleIds": ["wrap-errors", "no-tokens"],
     "repoFiles": [
       {
         "path": ".kritika.yaml",

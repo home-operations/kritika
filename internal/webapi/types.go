@@ -490,16 +490,19 @@ type RepoFile struct {
 // ContextPack is what a review's Job gathered, without diff bodies,
 // stage texts or file contents.
 type ContextPack struct {
-	HeadSHA      string     `json:"headSha"`
-	BaseSHA      string     `json:"baseSha"`
-	PatchID      string     `json:"patchId"`
-	ChangedPaths []string   `json:"changedPaths"`
-	DeltaPaths   []string   `json:"deltaPaths"`
-	PriorHeadSHA *string    `json:"priorHeadSha"`
-	Stages       []Stage    `json:"stages"`
-	RepoNotes    []string   `json:"repoNotes"`
-	RepoFiles    []RepoFile `json:"repoFiles"`
-	CreatedAt    time.Time  `json:"createdAt"`
+	HeadSHA      string   `json:"headSha"`
+	BaseSHA      string   `json:"baseSha"`
+	PatchID      string   `json:"patchId"`
+	ChangedPaths []string `json:"changedPaths"`
+	DeltaPaths   []string `json:"deltaPaths"`
+	PriorHeadSHA *string  `json:"priorHeadSha"`
+	Stages       []Stage  `json:"stages"`
+	RepoNotes    []string `json:"repoNotes"`
+	// RuleIDs are the ids of the rules the review was given to check: the
+	// ones that apply to the paths it changed and to the pull request.
+	RuleIDs   []string   `json:"ruleIds"`
+	RepoFiles []RepoFile `json:"repoFiles"`
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
 // ReviewDetail is everything recorded about one review but its bodies.
