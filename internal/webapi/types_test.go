@@ -29,7 +29,7 @@ var (
 var goldenReview = Review{
 	ID: "rev-1", Status: store.ReviewCompleted, Trigger: "push", Scope: review.ScopeIncremental,
 	Model: "acme/large", HeadSHA: "abc123", CostUSD: 0.42, Tokens: TokenCounts{Input: 1000, Output: 200}, DurationMs: new(int64(90000)),
-	CreatedAt: t0, FinishedAt: &t1, SkipReason: repoconfig.SkipFiltered, Error: "",
+	CreatedAt: t0, FinishedAt: &t1, SkipReason: string(repoconfig.SkipFiltered), Error: "",
 }
 
 var goldenJob = Job{

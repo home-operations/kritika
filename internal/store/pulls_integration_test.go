@@ -95,3 +95,55 @@ func TestPausePullRequest(t *testing.T) {
 		t.Fatal("the dashboard's read of a paused pull request says it is paused")
 	}
 }
+
+// TestReviewSkipReason checks that a skipped review says why: with the
+// repository's own reason, with the one its runner recorded on the context
+// pack, or, with neither and no error, as a bot's unchanged patch.
+func TestReviewSkipReason(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("skips"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "skips")
+	tests := []struct {
+		name                     string
+		status, own, pack, error string
+		want                     string
+	}{
+		{name: "the repository's own reason", status: "skipped", own: "filtered", want: "filtered"},
+		{name: "the runner's too large diff", status: "skipped", pack: "too_large", want: "too_large"},
+		{name: "the runner's unchanged patch", status: "skipped", pack: "unchanged_patch", want: "unchanged_patch"},
+		{name: "a bot's unchanged patch, before a runner", status: "skipped", want: "unchanged_patch"},
+		{name: "an admission reason is the error's", status: "skipped", error: "no review model", want: ""},
+		{name: "a review that was not skipped", status: "completed", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := insertReview(t, ctx, s, account)
+			var got ReviewRow
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, skip_reason = $3, error = $4 WHERE id = $1`,
+					id, tt.status, tt.own, tt.error); err != nil {
+					return err
+				}
+				if tt.pack != "" {
+					if _, err := tx.Exec(ctx, `WITH run AS (INSERT INTO runner_runs (account_id, review_id, kind)
+						VALUES ($1, $2, 'review') RETURNING id)
+						INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, skip_reason)
+						SELECT id, $1, 'abc', 'base', 'patch', '', $3 FROM run`, account, id, tt.pack); err != nil {
+						return err
+					}
+				}
+				var err error
+				got, err = FindReview(ctx, tx, id)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if got.SkipReason != tt.want {
+				t.Errorf("SkipReason = %q, want %q", got.SkipReason, tt.want)
+			}
+		})
+	}
+}

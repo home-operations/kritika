@@ -56,7 +56,8 @@ export type ReviewStatus =
   | 'failed'
   | 'canceled';
 export type ReviewScope = 'full' | 'incremental';
-export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths';
+// The repository's own reasons, then the runner's.
+export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths' | 'unchanged_patch' | 'too_large';
 export type Severity = 'blocking' | 'important' | 'nit';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
