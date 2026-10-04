@@ -3,7 +3,8 @@
   // behind a "show all" toggle so one huge tool result doesn't bury a page.
   // Code in a language highlight.ts knows is highlighted once that has
   // loaded, and shown plain until then.
-  import { highlight, languageOf, type Token } from '../highlight';
+  import { highlight, languageOf } from '../highlight';
+  import { Highlighted } from '../tokens.svelte';
   import Copy from './Copy.svelte';
   import Tokens from './Tokens.svelte';
 
@@ -26,16 +27,12 @@
   const shown = $derived(clipped ? lines.slice(0, maxLines).join('\n') : text);
 
   const language = $derived(plain ? undefined : languageOf(lang ?? label));
-  let tokens = $state.raw<{ of: string; lines: Token[][] } | undefined>(undefined);
-  $effect(() => {
-    const of = text;
-    if (!language) return;
-    void highlight(of, language).then((out) => {
-      if (out && of === text) tokens = { of, lines: out };
-    });
-  });
-  // Tokens of an earlier text are not this one's.
-  const highlighted = $derived(language && tokens?.of === text ? tokens.lines : undefined);
+  const tokens = new Highlighted(
+    () => text,
+    (code) => highlight(code, language),
+    () => !!language,
+  );
+  const highlighted = $derived(language ? tokens.value : undefined);
 </script>
 
 <div class="code-block" class:plain>

@@ -3,7 +3,7 @@
   // each account's running reviews hold, which is why a job of it waits.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource, live, pollJobs } from '../resource.svelte';
   import type { InstanceQueue } from '../types';
   import StateView from '../components/StateView.svelte';
   import JobTable from '../components/JobTable.svelte';
@@ -15,11 +15,7 @@
     void res.load();
   });
   $effect(() => live(() => true, () => void res.load()));
-  // As on an account's queue: not every change of a job's state is an event.
-  $effect(() => {
-    const t = setInterval(() => void res.load(), 15_000);
-    return () => clearInterval(t);
-  });
+  $effect(() => pollJobs(() => void res.load()));
 </script>
 
 <svelte:head><title>Queue · kritika</title></svelte:head>

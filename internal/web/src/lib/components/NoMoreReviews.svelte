@@ -3,10 +3,11 @@
   // one would be: a merged one never does, a closed one not while it is.
   import Icon from '../Icon.svelte';
   import { mdiLockOutline } from '../icons';
+  import { noMoreReviews } from '../format';
   let { merged }: { merged: boolean } = $props();
 </script>
 
 <p class="small muted no-more-reviews">
   <Icon path={mdiLockOutline} size={13} />
-  {merged ? 'Merged: it is not reviewed again.' : 'Closed: it is not reviewed while it is.'}
+  {noMoreReviews(merged)}.
 </p>

@@ -48,6 +48,18 @@ function isLiveEvent(v: unknown): v is LiveEvent {
   return typeof v === 'object' && v !== null && 'kind' in v && 'account' in v;
 }
 
+// JOB_POLL_MS is how often a page that shows jobs refetches them: a job's
+// state changes (a retry coming due, a worker picking it up) are not all
+// events.
+const JOB_POLL_MS = 15_000;
+
+// pollJobs calls refetch every JOB_POLL_MS. It returns the stop, so it
+// drops straight into an $effect.
+export function pollJobs(refetch: () => void): () => void {
+  const t = setInterval(refetch, JOB_POLL_MS);
+  return () => clearInterval(t);
+}
+
 // live calls refetch whenever a server-sent event matches, and on every
 // "resync" (the server lost track of what this client saw). Calls are
 // debounced by delayMs, but a steady stream still refetches at least every

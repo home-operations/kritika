@@ -8,7 +8,7 @@
   import { href, navigate } from '../router.svelte';
   import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
-  import { usd } from '../format';
+  import { noMoreReviews, usd } from '../format';
   import Icon from '../Icon.svelte';
   import { mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline, mdiLockOutline } from '../icons';
   import Time from './Time.svelte';
@@ -77,7 +77,7 @@
                   onchange={(e) => onpick([pullKey(p)], e.currentTarget.checked)}
                 />
               {:else}
-                <span class="muted" title={p.merged ? 'Merged: it is not reviewed again' : 'Closed: it is not reviewed while it is'}>
+                <span class="muted" title={noMoreReviews(p.merged)}>
                   <Icon path={mdiLockOutline} size={13} label="Takes no more reviews" />
                 </span>
               {/if}
