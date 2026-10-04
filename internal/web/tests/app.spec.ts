@@ -193,7 +193,7 @@ test.describe('signed-in shell', () => {
     await expect(tabs.nth(1)).toHaveAttribute('href', '#/queue');
   });
 
-  test('switching accounts in the menu navigates to that account', async ({ page, signIn }) => {
+  test('switching scope in the menu keeps the page', async ({ page, signIn }) => {
     await signIn({
       ...DEFAULT_ME,
       accounts: ['github/acme', 'github/globex'],
@@ -202,9 +202,18 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.account-button')).toHaveText('github/acme');
     await page.locator('.account-button').click();
     await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'github/globex' }).click();
-    await expect(page).toHaveURL(/#\/a\/github\/globex$/);
+    await expect(page).toHaveURL(/#\/a\/github\/globex\/pulls$/);
     await expect(page.getByRole('navigation', { name: 'Scope' })).toBeHidden();
     await expect(page.locator('.account-button')).toHaveText('github/globex');
+
+    // An account's queue leads to the instance's, and back to an account's.
+    await page.goto('/#/a/github/globex/queue');
+    await page.locator('.account-button').click();
+    await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'Instance' }).click();
+    await expect(page).toHaveURL(/#\/queue$/);
+    await page.locator('.account-button').click();
+    await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'github/acme' }).click();
+    await expect(page).toHaveURL(/#\/a\/github\/acme\/queue$/);
   });
 
   test('a signed-in visit to #/signin redirects to the overview', async ({ page, signIn, mockProviders }) => {

@@ -27,7 +27,7 @@
     mdiUnfoldMoreHorizontal,
     mdiCheck,
   } from './lib/icons';
-  import { INSTANCE_TABS, SECTIONS, SECTION_ORDER, scopeOf, sectionOf, type Section } from './lib/sections';
+  import { INSTANCE_TABS, SECTIONS, SECTION_ORDER, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
   import type { Route } from './lib/routes';
   import { focusOnMount, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
@@ -166,14 +166,18 @@
               <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch scope" />
             </summary>
             <nav class="menu-panel account-panel" aria-label="Scope">
-              <a class="menu-item" href={href({ name: 'overview' })} aria-current={currentSlug ? undefined : 'true'}>
+              <a
+                class="menu-item"
+                href={href(pageOfInstance(router.route, instanceTabs.some((t) => t.route.name === 'instanceQueue')))}
+                aria-current={currentSlug ? undefined : 'true'}
+              >
                 <span class="menu-check">{#if !currentSlug}<Icon path={mdiCheck} size={14} />{/if}</span>
                 Instance
               </a>
               <p class="menu-heading">Accounts</p>
               {#each me.accounts as slug (slug)}
                 {@const on = slug === currentSlug}
-                <a class="menu-item mono" href={href({ name: 'account', slug })} aria-current={on ? 'true' : undefined}>
+                <a class="menu-item mono" href={href(pageIn(router.route, slug))} aria-current={on ? 'true' : undefined}>
                   <span class="menu-check">{#if on}<Icon path={mdiCheck} size={14} />{/if}</span>
                   {slug}
                 </a>

@@ -11,7 +11,9 @@ which the dashboard shows but does not change.
 
 The top bar switches between two scopes, each with its own tabs: the
 instance, and one of the accounts you can read. No tab chooses an account
-for you: you enter one from the switcher or a link that names it.
+for you: you enter one from the switcher or a link that names it. The
+switcher keeps the page: from one account's queue it opens another's, or
+the instance's.
 
 The instance's tabs are about every account at once:
 

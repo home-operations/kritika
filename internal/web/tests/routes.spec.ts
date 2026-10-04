@@ -4,7 +4,7 @@
 // a real page -- this file calls them directly and needs no browser.
 import { test, expect } from '@playwright/test';
 import { href, parse, type Route } from '../src/lib/routes';
-import { INSTANCE_TABS, scopeOf, sectionOf, SUB_TABS } from '../src/lib/sections';
+import { INSTANCE_TABS, pageIn, pageOfInstance, scopeOf, sectionOf, SUB_TABS } from '../src/lib/sections';
 
 const ROUTES: Route[] = [
   { name: 'overview' },
@@ -102,4 +102,31 @@ test('every account page belongs to one section, each sub-tab to its own, and th
   for (const [section, tabs] of Object.entries(SUB_TABS)) {
     for (const t of tabs) expect(sectionOf(t.route('github/acme')), t.label).toBe(section);
   }
+});
+
+test('switching account keeps the page, and a record gives way to its list', () => {
+  const a = 'github/acme';
+  const b = 'github/globex';
+  const cases: [Route, Route][] = [
+    [{ name: 'account', slug: a }, { name: 'account', slug: b }],
+    [{ name: 'queue', slug: a }, { name: 'queue', slug: b }],
+    [{ name: 'findings', slug: a, filter: { repo: 'acme/one' } }, { name: 'findings', slug: b }],
+    [{ name: 'pulls', slug: a, filter: { state: 'all' } }, { name: 'pulls', slug: b }],
+    [{ name: 'pull', slug: a, owner: 'acme', repo: 'one', number: 7 }, { name: 'pulls', slug: b }],
+    [{ name: 'review', slug: a, id: 'r1', tab: 'diff' }, { name: 'pulls', slug: b }],
+    [{ name: 'repo', slug: a, owner: 'acme', repo: 'one' }, { name: 'repos', slug: b }],
+    [{ name: 'admin', slug: a, section: 'audit' }, { name: 'admin', slug: b, section: 'audit' }],
+    [{ name: 'instanceQueue' }, { name: 'queue', slug: b }],
+    [{ name: 'overview' }, { name: 'account', slug: b }],
+    [{ name: 'console' }, { name: 'account', slug: b }],
+  ];
+  for (const [from, to] of cases) expect(pageIn(from, b), JSON.stringify(from)).toEqual(to);
+});
+
+test("switching to the instance lands on its queue from an account's, and its overview otherwise", () => {
+  const a = 'github/acme';
+  expect(pageOfInstance({ name: 'queue', slug: a }, true)).toEqual({ name: 'instanceQueue' });
+  expect(pageOfInstance({ name: 'queue', slug: a }, false)).toEqual({ name: 'overview' });
+  expect(pageOfInstance({ name: 'pulls', slug: a }, true)).toEqual({ name: 'overview' });
+  expect(pageOfInstance({ name: 'console' }, true)).toEqual({ name: 'console' });
 });
