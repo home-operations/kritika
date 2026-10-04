@@ -848,7 +848,7 @@ test.describe('your settings', () => {
   test('a time zone and a clock are saved as chosen, and every time follows them', async ({ page }) => {
     const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
     await page.goto('/#/');
-    await page.locator('.user-menu summary').click();
+    await page.locator('.user-button').click();
     await page.getByRole('link', { name: 'Your settings' }).click();
     await expect(page).toHaveURL(/#\/settings$/);
     await expect(page.locator('.page-head h1')).toHaveText('Your settings');
@@ -977,7 +977,7 @@ test('a stream that (re)opens refetches the page, event or not', async ({ page }
 
 test('the user menu shows the version the server reports', async ({ page }) => {
   await page.goto(`/${T}`);
-  await page.locator('.user-menu summary').click();
+  await page.locator('.user-button').click();
   await expect(page.locator('.user-panel .user-version')).toHaveText(`kritika ${g.meta.version}`);
 });
 

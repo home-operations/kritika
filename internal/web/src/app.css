@@ -391,18 +391,7 @@ kbd {
 }
 
 /* ---- menus (account switcher, user) ------------------------------------ */
-.menu {
-  position: relative;
-}
-.menu summary {
-  list-style: none;
-}
-.menu summary::-webkit-details-marker {
-  display: none;
-}
 .menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -435,7 +424,6 @@ kbd {
   color: var(--muted);
 }
 .account-panel {
-  left: 0;
   min-width: 220px;
   max-height: 60vh;
   overflow-y: auto;
@@ -526,7 +514,6 @@ kbd {
 
 /* ---- user menu --------------------------------------------------------- */
 .user-panel {
-  right: 0;
   gap: 8px;
   min-width: 200px;
   padding: 12px 14px;
