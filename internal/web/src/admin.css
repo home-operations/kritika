@@ -14,10 +14,20 @@
   color: var(--on-accent);
 }
 
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
 .dialog {
-  /* Tailwind's preflight zeroes every margin, which drops the margin: auto
-     that centers a modal dialog. */
+  position: fixed;
+  inset: 0;
+  z-index: 61;
   margin: auto;
+  height: fit-content;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
@@ -28,9 +38,6 @@
 }
 .dialog-wide {
   width: min(820px, calc(100vw - 32px));
-}
-.dialog::backdrop {
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
 }
 .dialog-title {
   margin: 0 0 12px;
