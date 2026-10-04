@@ -77,7 +77,7 @@
     searchEl?.focus();
   }
 
-  const reviewOf = (f: AccountFinding) => ({ name: 'review' as const, slug, id: f.reviewId });
+  const reviewOf = (f: AccountFinding) => ({ name: 'review' as const, slug, id: f.reviewId, finding: f.id });
 
   function onRowClick(e: MouseEvent, f: AccountFinding): void {
     if ((e.target as Element).closest('a, button') || getSelection()?.toString()) return;

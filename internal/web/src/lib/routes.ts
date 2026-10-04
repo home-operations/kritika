@@ -12,6 +12,7 @@
 //   #/a/<slug>/pulls[?<filter>]               account's pull list; filter is a PullFilter
 //   #/a/<slug>/pulls/<owner>/<repo>/<n>       one pull request
 //   #/a/<slug>/reviews/<id>[/<tab>]           one review, optional tab
+//   #/a/<slug>/reviews/<id>?finding=<id>      one review, at one of its findings
 //   #/a/<slug>/findings[?<filter>]            account's findings; filter is a FindingFilter
 //   #/a/<slug>/rules                          the files reviews read
 //   #/a/<slug>/queue                          run queue
@@ -113,7 +114,8 @@ export type Route =
   | { name: 'repo'; slug: string; owner: string; repo: string }
   | { name: 'pulls'; slug: string; filter?: PullFilter }
   | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
-  | { name: 'review'; slug: string; id: string; tab?: ReviewTab }
+  // finding is the id of the finding the summary scrolls to.
+  | { name: 'review'; slug: string; id: string; tab?: ReviewTab; finding?: string }
   | { name: 'findings'; slug: string; filter?: FindingFilter }
   | { name: 'rules'; slug: string }
   | { name: 'queue'; slug: string }
@@ -172,7 +174,10 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
       }
       break;
     case 'reviews':
-      if (tail.length === 1) return { name: 'review', slug, id: tail[0]! };
+      if (tail.length === 1) {
+        const finding = query.get('finding');
+        return finding ? { name: 'review', slug, id: tail[0]!, finding } : { name: 'review', slug, id: tail[0]! };
+      }
       if (tail.length === 2) return { name: 'review', slug, id: tail[0]!, tab: isReviewTab(tail[1]) ? tail[1] : undefined };
       break;
     case 'findings':
@@ -248,7 +253,8 @@ export function href(r: Route): string {
     case 'pull':
       return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
     case 'review':
-      return r.tab ? `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}` : `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}`;
+      if (r.tab) return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}`;
+      return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
     case 'findings': {
       const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
       return `#/a/${slugPath(r.slug)}/findings${query ? `?${query}` : ''}`;

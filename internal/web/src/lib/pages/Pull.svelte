@@ -155,7 +155,7 @@
                       <li>
                         <span class="sev sev-{f.severity}">{f.severity}</span>
                         {#if f.category}<span class="badge">{f.category}</span>{/if}
-                        <a href={href({ name: 'review', slug, id: r.id })}>{f.title}</a>
+                        <a href={href({ name: 'review', slug, id: r.id, finding: f.id })}>{f.title}</a>
                         <span class="mono small muted">{f.path}:{f.line}</span>
                         {#if threadUrl(p.url, f.forgeCommentId)}
                           <a class="external small" href={threadUrl(p.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer">

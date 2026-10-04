@@ -1072,6 +1072,11 @@ input[type='checkbox'][role='switch']:focus-visible {
   font-family: var(--font-sans);
   white-space: normal;
 }
+/* The finding a link led to. */
+.finding:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .sev-edge-blocking {
   box-shadow: inset 3px 0 0 var(--danger);
 }
