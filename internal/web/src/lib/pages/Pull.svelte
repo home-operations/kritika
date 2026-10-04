@@ -7,6 +7,7 @@
   import ActionButton from '../components/ActionButton.svelte';
   import { jobCauseText, shortSha, SEVERITIES } from '../format';
   import { safeHref } from '../markdown';
+  import { clock } from '../time.svelte';
   import type { PullDetail, ReviewDetail } from '../types';
   import StateView from '../components/StateView.svelte';
   import Time from '../components/Time.svelte';
@@ -116,8 +117,8 @@
             {#if j.state === 'running'}
               A review is running, attempt {j.attempt} of {j.maxAttempts}.
             {:else if j.lastError}
-              A review is waiting to run again: attempt {j.attempt} of {j.maxAttempts} failed, the next is due at
-              <time datetime={j.scheduledAt}>{new Date(j.scheduledAt).toLocaleTimeString()}</time>.
+              A review is waiting to run again: attempt {j.attempt} of {j.maxAttempts} failed, the next
+              {Date.parse(j.scheduledAt) > clock.now ? 'is' : 'was'} due <Time iso={j.scheduledAt} />.
             {:else}
               A review is queued.
             {/if}

@@ -520,7 +520,7 @@ test('pull detail says what its unfinished review job waits on, and nothing of o
   await page.goto(`/${T}/pulls/alpha/one/7`);
   const j = g.job;
   const notice = page.locator('.job-notice');
-  await expect(notice).toContainText(`A review is waiting to run again: attempt ${j.attempt} of ${j.maxAttempts} failed, the next is due at`);
+  await expect(notice).toContainText(`A review is waiting to run again: attempt ${j.attempt} of ${j.maxAttempts} failed, the next was due`);
   await expect(notice).toContainText(`GitHub did not answer. ${j.lastError}`);
   await expect(notice.getByRole('link', { name: 'Open the queue' })).toHaveAttribute('href', `#/a/${g.SLUG}/queue`);
 
@@ -537,6 +537,16 @@ test('pull detail says what its unfinished review job waits on, and nothing of o
   await page.reload();
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
   await expect(notice).toHaveCount(0);
+});
+
+test('a time still to come says how far off it is', async ({ page }) => {
+  const due = new Date(Date.now() + 10 * 60_000).toISOString();
+  const waiting = { ...g.job, scheduledAt: due };
+  await g.mockApi(page, [[/\/queue$/, [waiting]], [/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, job: waiting }], ...g.defaultApi()]);
+  await page.goto(`/${T}/queue`);
+  await expect(page.locator(`tbody time[datetime="${due}"]`)).toHaveText('in 10m');
+  await page.goto(`/${T}/pulls/alpha/one/7`);
+  await expect(page.locator('.job-notice')).toContainText('failed, the next is due in 10m.');
 });
 
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
