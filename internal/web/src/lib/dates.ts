@@ -7,7 +7,8 @@
 //   components/Time.svelte, which carries the full timestamp on hover.
 //
 //   A full timestamp (a hover title, running text that needs the moment):
-//   "Sep 1, 2026, 14:05:09 GMT+2", in the viewer's time zone, 24-hour.
+//   "Sep 1, 2026, 14:05:09 GMT+2", or "2:05:09 PM", in the viewer's time
+//   zone and on the clock their browser's locale keeps, 12 or 24 hours.
 //
 //   A day a figure is counted over (a chart column, a table row): the
 //   server's days are UTC, so "Sep 1, 2026" in UTC; "Sep 1" where the year
@@ -16,16 +17,26 @@
 // The words are English like the rest of the dashboard, whatever the
 // browser's locale. How long something took is format.ts's duration.
 
-const stampFmt = new Intl.DateTimeFormat('en', {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
-  timeZoneName: 'short',
-});
+// hour12Of is whether a locale, the browser's when none is given, keeps a
+// 12-hour clock.
+export function hour12Of(locale?: string): boolean {
+  const cycle = new Intl.DateTimeFormat(locale, { hour: 'numeric' }).resolvedOptions().hourCycle;
+  return cycle === 'h11' || cycle === 'h12';
+}
+
+function stampFormat(hour12: boolean): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: hour12 ? 'numeric' : '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: hour12 ? 'h12' : 'h23',
+    timeZoneName: 'short',
+  });
+}
+const stampFmt = stampFormat(hour12Of());
 const dateFmt = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
 const dateYearFmt = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' });
 const dayFmt = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
