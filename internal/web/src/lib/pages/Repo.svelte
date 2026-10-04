@@ -197,9 +197,9 @@
               <p class="notice" role="note">Ignored as a whole: {rc.ignored}</p>
             {/if}
             {#if rc.dropped.length}
-              <p class="small">Values the file may not set, where the admin's apply instead:</p>
-              <ul class="small">
-                {#each rc.dropped as note (note)}<li>{note}</li>{/each}
+              <h3 class="subhead">Values the file may not set, where the admin's apply instead</h3>
+              <ul class="plain-list">
+                {#each rc.dropped as note (note)}<li class="small">{note}</li>{/each}
               </ul>
             {/if}
           {/if}

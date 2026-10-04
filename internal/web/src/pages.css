@@ -538,6 +538,14 @@ table.data tbody tr:hover {
 .table-card table.data thead th:last-child {
   border-top-right-radius: 8px;
 }
+/* Inside a panel the panel is the card. */
+.panel > .table-card {
+  border: none;
+  border-radius: 0 0 8px 8px;
+}
+.panel > .table-card table.data thead th {
+  border-radius: 0;
+}
 .pull-row {
   cursor: pointer;
 }
