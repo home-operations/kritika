@@ -1642,9 +1642,13 @@ table.diff td.code {
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
-/* Eight tiles fill four columns, or two, or one, with no cell left over. */
+/* Eight tiles fill four columns, or two, or one, and three fill three or
+   one, with no cell left over. */
 .stats.stats-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.stats.stats-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 @media (max-width: 900px) {
   .stats.stats-4 {
@@ -1652,7 +1656,8 @@ table.diff td.code {
   }
 }
 @media (max-width: 480px) {
-  .stats.stats-4 {
+  .stats.stats-4,
+  .stats.stats-3 {
     grid-template-columns: minmax(0, 1fr);
   }
 }

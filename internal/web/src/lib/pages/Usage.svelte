@@ -83,7 +83,7 @@
   <div class="page-inner">
     <SectionTabs section="analytics" {slug} current="usage" />
     {#if month}
-      <section class="stats" aria-label="This month">
+      <section class="stats stats-3" aria-label="This month">
         <StatTile label="Spend this month" value={usd(month.costUsd)} />
         <div class="stat">
           <span class="stat-label">Tokens this month</span>
