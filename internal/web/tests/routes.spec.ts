@@ -10,6 +10,7 @@ const ROUTES: Route[] = [
   { name: 'overview' },
   { name: 'signin' },
   { name: 'console' },
+  { name: 'instanceQueue' },
   { name: 'account', slug: 'github/acme' },
   { name: 'repos', slug: 'github/acme' },
   { name: 'repo', slug: 'github/acme', owner: 'kritika', repo: 'kritika' },

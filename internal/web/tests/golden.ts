@@ -28,6 +28,7 @@ export const reviewDiff = golden<T.ReviewDiff>('review_diff');
 export const reviewRaw = golden<T.ReviewRaw>('review_raw');
 export const transcript = golden<T.Transcript>('transcript');
 export const job = golden<T.Job>('job');
+export const instanceQueue = golden<T.InstanceQueue>('instance_queue');
 export const followup = golden<T.Followup>('followup');
 export const accountFinding = golden<T.AccountFinding>('account_finding');
 export const analytics = golden<T.Analytics>('analytics');
@@ -82,6 +83,7 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/meta$/, meta],
     [/\/api\/v1\/me$/, me],
     [/\/api\/v1\/accounts$/, [accountSummary]],
+    [/\/api\/v1\/queue$/, instanceQueue],
     [/\/api\/v1\/admin\/accounts$/, [adminAccount]],
     [/\/api\/v1\/admin\/instance$/, [instanceSetting]],
     [/\/api\/v1\/admin\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],

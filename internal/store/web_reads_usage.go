@@ -154,6 +154,26 @@ func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 	return out, nil
 }
 
+// ReadHeldSlots counts, for each model the account has ever leased a slot
+// of, the slots a live lease holds now.
+func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[string]int, error) {
+	rows, err := tx.Query(ctx, `SELECT model_key, count(*) FILTER (WHERE job_id IS NOT NULL AND expires_at >= now())
+		FROM model_leases GROUP BY model_key`)
+	if err != nil {
+		return nil, fmt.Errorf("store: read held slots: %w", err)
+	}
+	out := map[string]int{}
+	var key string
+	var held int
+	if _, err := pgx.ForEachRow(rows, []any{&key, &held}, func() error {
+		out[key] = held
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("store: read held slots: %w", err)
+	}
+	return out, nil
+}
+
 // FindLiveReviewJob returns the review job of a pull request that has not
 // finished, the newest when there are several, or nil when there is none.
 func FindLiveReviewJob(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (*JobRow, error) {

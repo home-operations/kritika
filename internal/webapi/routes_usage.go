@@ -2,11 +2,14 @@ package webapi
 
 import (
 	"cmp"
+	"maps"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -71,6 +74,58 @@ func (s *Server) listQueue(w http.ResponseWriter, r *http.Request, t *accountSco
 	for i, j := range rows {
 		out[i] = jobItem(j)
 	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// listInstanceQueue merges the queues of the accounts the viewer can read,
+// each read under its own account's row-level security.
+func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	file := s.current.Get()
+	out := InstanceQueue{Jobs: []InstanceJob{}, Slots: []ModelSlots{}}
+	for _, t := range readable(file, auth.PrincipalFrom(ctx)) {
+		var rows []store.JobRow
+		var held map[string]int
+		if err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
+			var err error
+			if rows, err = store.ListQueue(ctx, tx); err != nil {
+				return err
+			}
+			held, err = store.ReadHeldSlots(ctx, tx)
+			return err
+		}); err != nil {
+			return err
+		}
+		for _, j := range rows {
+			out.Jobs = append(out.Jobs, InstanceJob{Job: jobItem(j), Account: t.Slug()})
+		}
+		// The account's own review model always shows, busy or not; another
+		// model, a repository's choice, only while it holds a slot.
+		settings := file.Settings(t, "")
+		own := string(settings.Models.Review)
+		if _, ok := held[own]; !ok && own != "" {
+			held[own] = 0
+		}
+		for _, model := range slices.Sorted(maps.Keys(held)) {
+			if held[model] > 0 || model == own {
+				out.Slots = append(out.Slots, ModelSlots{Account: t.Slug(), Model: model, Held: held[model], Slots: settings.Limits.Concurrency})
+			}
+		}
+	}
+	// Unfinished jobs lead, the longest scheduled first, then the finished,
+	// the latest first: each account's own order, kept across them.
+	slices.SortStableFunc(out.Jobs, func(a, b InstanceJob) int {
+		switch {
+		case a.FinalizedAt == nil && b.FinalizedAt == nil:
+			return cmp.Or(a.ScheduledAt.Compare(b.ScheduledAt), cmp.Compare(a.ID, b.ID))
+		case a.FinalizedAt == nil:
+			return -1
+		case b.FinalizedAt == nil:
+			return 1
+		}
+		return cmp.Or(b.FinalizedAt.Compare(*a.FinalizedAt), cmp.Compare(b.ID, a.ID))
+	})
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

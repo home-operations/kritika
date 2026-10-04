@@ -17,6 +17,7 @@
     mdiChartBoxOutline,
     mdiViewGridOutline,
     mdiConsoleLine,
+    mdiTrayFull,
     mdiSourcePull,
     mdiScaleBalance,
     mdiCogOutline,
@@ -84,10 +85,11 @@
   // The account the route is in the scope of; none in the instance's.
   const currentSlug = $derived(scopeOf(router.route));
   const currentSection = $derived(sectionOf(router.route));
-  const instanceTabs = $derived(INSTANCE_TABS.filter((t) => !t.admin || me?.admin));
+  const instanceTabs = $derived(INSTANCE_TABS.filter((t) => (!t.admin || me?.admin) && (!t.several || (me?.accounts.length ?? 0) > 1)));
 
   const instanceIcon: Partial<Record<Route['name'], string>> = {
     overview: mdiViewGridOutline,
+    instanceQueue: mdiTrayFull,
     console: mdiConsoleLine,
   };
 
