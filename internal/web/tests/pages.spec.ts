@@ -44,6 +44,17 @@ test.describe('overview', () => {
     await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
     await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.accountSummary.repositories));
     await expect(tiles.locator('.tile').filter({ hasText: 'Spend this month' })).toContainText('$3.00');
+    const wants = tiles.locator('.tile').filter({ hasText: 'Needs attention' });
+    await expect(wants.locator('.tile-value')).toHaveText('6');
+    await expect(wants).toContainText('2 failed · 4 blocking');
+  });
+
+  test('the attention tile says so when nothing wants a look', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, blocking: 0, paused: 0 } }]], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const wants = page.getByRole('region', { name: 'Across all accounts' }).locator('.tile').filter({ hasText: 'Needs attention' });
+    await expect(wants.locator('.tile-value')).toHaveText('0');
+    await expect(wants).toContainText('no open pull request wants a look');
   });
 });
 
