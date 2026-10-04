@@ -27,11 +27,8 @@
   }
   let { label, series, rows, format, whole = false, view = 'chart', height = 180 }: Props = $props();
 
-  const pad = { top: 10, right: 6, bottom: 22, left: 46 };
   const GAP = 2;
   let width = $state(0);
-  const plotW = $derived(Math.max(0, width - pad.left - pad.right));
-  const plotH = $derived(height - pad.top - pad.bottom);
   const totals = $derived(rows.map((r) => r.values.reduce((a, b) => a + b, 0)));
 
   // niceMax rounds the tallest column up to 1, 2, 2.5 or 5 times a power of
@@ -45,6 +42,11 @@
   }
   const max = $derived(niceMax(Math.max(0, ...totals)));
   const ticks = $derived([0, max / 2, max]);
+  // The left margin holds the widest axis label, at about 6.5px a character
+  // of the 10px tick text, so a long one ($2,000.00) is not cut off.
+  const pad = $derived({ top: 10, right: 6, bottom: 22, left: Math.max(46, 12 + 6.5 * Math.max(...ticks.map((t) => format(t).length))) });
+  const plotW = $derived(Math.max(0, width - pad.left - pad.right));
+  const plotH = $derived(height - pad.top - pad.bottom);
   const y = (v: number) => pad.top + plotH - (v / max) * plotH;
 
   const band = $derived(rows.length ? plotW / rows.length : 0);

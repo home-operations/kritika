@@ -188,6 +188,16 @@ test("a chart of counts has whole numbers on its axis, and one of cost its cents
   await expect(page.locator('.chart-tick').filter({ hasText: '$' })).toHaveText(['$0', '$0.05', '$0.10']);
 });
 
+test("a chart's axis has room for its longest label", async ({ page }) => {
+  const row = { ...g.usageSeries.rows[0]!, costUsd: 1234.56 };
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/usage$`), { ...g.usageSeries, rows: [row] }], ...g.defaultApi()]);
+  await page.goto(`/${T}/usage`);
+  const ticks = page.locator('.chart-tick').filter({ hasText: '$' });
+  await expect(ticks).toHaveText(['$0', '$1,000.00', '$2,000.00']);
+  const svg = (await page.getByRole('img', { name: /^Cost by day/ }).boundingBox())!;
+  for (const t of await ticks.all()) expect((await t.boundingBox())!.x).toBeGreaterThanOrEqual(svg.x);
+});
+
 test('analytics says what needs attention now, each kind linking to its pull requests', async ({ page }) => {
   const attention = page.getByRole('region', { name: 'Needs attention' });
   await page.goto(`/${T}`);
