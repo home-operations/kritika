@@ -16,7 +16,9 @@ for you: you enter one from the switcher or a link that names it.
 The instance's tabs are about every account at once:
 
 - **Overview:** totals across the accounts you can read, and each
-  account's own.
+  account's own with its health: the open pull requests that want a
+  look, a cap that is close, and whether its App's webhooks arrive or
+  kritika only polls it. Each links to where the account shows it.
 - **Configuration:** for an admin, the
   [Configuration page](#configuration-page).
 

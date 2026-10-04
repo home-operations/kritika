@@ -86,13 +86,20 @@ export interface MonthUsage {
   reviewsPerDay: number;
 }
 
-// connection names the connection serving the account.
+// connection names the connection serving the account. attention and the
+// three times are its health: what wants a look, when the connection's
+// webhook last delivered, verified and unsigned, and when the account was
+// last polled, each null for never.
 export interface AccountSummary {
   slug: string;
   connection: string;
   repositories: number;
   reviews7d: number;
   usage: MonthUsage;
+  attention: Attention;
+  lastWebhookAt: string | null;
+  lastUnsignedWebhookAt: string | null;
+  lastPolledAt: string | null;
 }
 
 // live is false for an entry of the instance spec no connection serves,

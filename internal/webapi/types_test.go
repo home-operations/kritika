@@ -42,7 +42,8 @@ var goldenPullRef = PullRef{Repository: "alpha/one", Number: 7, Title: "Add widg
 
 var goldenSummary = AccountSummary{
 	Slug: "github/alpha", Connection: "alpha-bot", Repositories: 3, Reviews7d: 9,
-	Usage: MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
+	Usage:     MonthUsage{Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50},
+	Attention: Attention{Failed: 1, Blocking: 2}, LastWebhookAt: &t0, LastPolledAt: &t1,
 }
 
 var goldenRepo = Repository{

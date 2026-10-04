@@ -22,8 +22,12 @@ func (s *Server) getAttention(w http.ResponseWriter, r *http.Request, t *account
 	}); err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, Attention{Failed: a.Failed, Capped: a.Capped, Blocking: a.Blocking, Paused: a.Paused})
+	writeJSON(w, http.StatusOK, attentionDTO(a))
 	return nil
+}
+
+func attentionDTO(a store.Attention) Attention {
+	return Attention{Failed: a.Failed, Capped: a.Capped, Blocking: a.Blocking, Paused: a.Paused}
 }
 
 // pullFollowups bounds the follow-ups a pull request's detail lists.

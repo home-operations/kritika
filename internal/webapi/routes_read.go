@@ -91,9 +91,22 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *configfile.Account) (AccountSummary, error) {
 	var stats store.AccountStats
+	var attention store.Attention
+	var polled *time.Time
+	var webhooks map[string]store.WebhookDeliveries
 	err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 		var err error
 		stats, err = store.ReadAccountStats(ctx, tx, func(name string, traits configfile.RepoTraits) bool { return file.Runs(t, name, traits) })
+		if err != nil {
+			return err
+		}
+		if attention, err = store.ReadAttention(ctx, tx); err != nil {
+			return err
+		}
+		if polled, err = store.ReadLastPoll(ctx, tx); err != nil {
+			return err
+		}
+		webhooks, err = store.ReadWebhookDeliveries(ctx, tx)
 		return err
 	})
 	if err != nil {
@@ -102,9 +115,12 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	sum := AccountSummary{
 		Slug: t.Slug(), Repositories: stats.Repositories,
 		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
+		Attention: attentionDTO(attention), LastPolledAt: polled,
 	}
 	if in := file.ConnectionFor(t); in != nil {
 		sum.Connection = in.Name
+		d := webhooks[in.ID()]
+		sum.LastWebhookAt, sum.LastUnsignedWebhookAt = d.Verified, d.Unsigned
 	}
 	return sum, nil
 }

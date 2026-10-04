@@ -20,6 +20,22 @@ test.describe('overview', () => {
     await expect(page).toHaveURL(new RegExp(`#/a/${g.accountSummary.slug}$`));
   });
 
+  test("each account's row says what wants a look and whether its webhooks arrive, and leads there", async ({ page }) => {
+    const a = g.accountSummary;
+    const quiet = { ...a, slug: 'github/quiet', attention: { failed: 0, capped: 0, blocking: 0, paused: 0 } };
+    const polled = { ...a, slug: 'github/polled', lastWebhookAt: null, usage: { ...a.usage, tokens: a.usage.tokensPerMonth } };
+    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [a, quiet, polled]], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const row = (slug: string) => page.getByRole('row').filter({ hasText: slug });
+    await expect(row(a.slug).locator('.account-wants .pill')).toHaveText([`${a.attention.failed} failed`, `${a.attention.blocking} blocking`]);
+    await expect(row(a.slug).getByRole('link', { name: /blocking/ })).toHaveAttribute('href', `#/a/${a.slug}/pulls?is=blocking`);
+    await expect(row(a.slug)).toContainText('receiving');
+    await expect(row('github/quiet').locator('.account-wants')).toHaveText('—');
+    await expect(row('github/polled')).toContainText('polling only');
+    await expect(row('github/polled').locator(`time[datetime="${a.lastPolledAt}"]`)).toBeVisible();
+    await expect(row('github/polled').getByRole('link', { name: 'cap' })).toHaveAttribute('href', '#/a/github/polled/usage');
+  });
+
   test('several accounts each get a row, and the tiles add them up', async ({ page }) => {
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, slug: 'beta' }]], ...g.defaultApi()]);
     await page.goto('/#/');

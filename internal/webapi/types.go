@@ -50,13 +50,20 @@ type MonthUsage struct {
 }
 
 // AccountSummary is one row of the account list. Connection names the
-// connection serving it.
+// connection serving it. Attention and the three times are the account's
+// health: what wants a look, when the connection's webhook last delivered,
+// verified and unsigned, and when the account was last polled, each null
+// for never.
 type AccountSummary struct {
-	Slug         string     `json:"slug"`
-	Connection   string     `json:"connection"`
-	Repositories int        `json:"repositories"`
-	Reviews7d    int        `json:"reviews7d"`
-	Usage        MonthUsage `json:"usage"`
+	Slug                  string     `json:"slug"`
+	Connection            string     `json:"connection"`
+	Repositories          int        `json:"repositories"`
+	Reviews7d             int        `json:"reviews7d"`
+	Usage                 MonthUsage `json:"usage"`
+	Attention             Attention  `json:"attention"`
+	LastWebhookAt         *time.Time `json:"lastWebhookAt"`
+	LastUnsignedWebhookAt *time.Time `json:"lastUnsignedWebhookAt"`
+	LastPolledAt          *time.Time `json:"lastPolledAt"`
 }
 
 // AdminAccount is one account as an admin sees it: Live is false for an
