@@ -942,6 +942,15 @@ test.describe('your settings', () => {
   });
 });
 
+test('your settings fit a phone: no control runs past the screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.goto('/#/settings');
+  for (const control of [page.locator('#pref-zone'), ...(await page.locator('.prefs .segmented').all())]) {
+    const box = (await control.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
+});
+
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);

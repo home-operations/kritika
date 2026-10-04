@@ -343,6 +343,8 @@ a.external {
 /* ---- segmented control ------------------------------------------------- */
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--border);
@@ -467,7 +469,7 @@ kbd {
 /* ---- definition lists ---------------------------------------------------- */
 .deflist {
   display: grid;
-  grid-template-columns: minmax(120px, max-content) 1fr;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
   gap: 4px 14px;
   margin: 10px 12px;
   font-size: 12px;
