@@ -235,7 +235,7 @@
                 format={wholeNumber}
                 view={findingsView}
               />
-              <p class="panel-foot">
+              <p class="panel-foot badge-row">
                 {#each CATEGORIES as k (k)}
                   <a class="badge" href={href({ name: 'findings', slug, filter: { category: k } })} title="Findings of this kind first reported in the period">{k} {wholeNumber(c.categories[k])}</a>
                 {/each}
