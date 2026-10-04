@@ -26,6 +26,7 @@
     "mergeBaseSha": "base1",
     "patchId": "patch1",
     "priorReviewId": "rev-0",
+    "newestReviewId": null,
     "cancelRequestedAt": null
   },
   "summary": {

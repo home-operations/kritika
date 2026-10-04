@@ -190,6 +190,9 @@ type ReviewRow struct {
 	MergeBaseSHA  string
 	PatchID       string
 	PriorReviewID *string
+	// NewestReviewID is the pull request's newest review, nil when this
+	// is it.
+	NewestReviewID *string
 	// SkipReason is why a skipped review was: the repository's own reason
 	// (a repoconfig.SkipReason), or the runner's "unchanged_patch" or
 	// "too_large".
@@ -215,7 +218,9 @@ const reviewSkipReason = `CASE WHEN v.skip_reason <> '' OR v.status <> 'skipped'
 
 const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.scope, v.scope_reason,
 	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, ` + reviewSkipReason + `, v.error, v.created_at, v.finished_at,
-	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0)
+	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0),
+	(SELECT n.id FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND (n.created_at, n.id) > (v.created_at, v.id)
+		ORDER BY n.created_at DESC, n.id DESC LIMIT 1)
 	FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT sum(cost_usd)::float8 AS cost, sum(input_tokens) AS input, sum(output_tokens) AS output
 		FROM usage WHERE review_id = v.id) u ON true`
@@ -226,7 +231,7 @@ func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var summary []byte
 	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &scope, &v.ScopeReason,
 		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &v.SkipReason, &v.Error, &v.CreatedAt, &v.FinishedAt,
-		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens); err != nil {
+		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.NewestReviewID); err != nil {
 		return v, err
 	}
 	v.Status = ReviewStatus(status)

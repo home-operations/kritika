@@ -331,11 +331,14 @@ type PullRef struct {
 // ReviewInfo is a review row in full.
 type ReviewInfo struct {
 	Review
-	Pull              PullRef    `json:"pull"`
-	ScopeReason       string     `json:"scopeReason"`
-	MergeBaseSHA      string     `json:"mergeBaseSha"`
-	PatchID           string     `json:"patchId"`
-	PriorReviewID     *string    `json:"priorReviewId"`
+	Pull          PullRef `json:"pull"`
+	ScopeReason   string  `json:"scopeReason"`
+	MergeBaseSHA  string  `json:"mergeBaseSha"`
+	PatchID       string  `json:"patchId"`
+	PriorReviewID *string `json:"priorReviewId"`
+	// NewestReviewID is the pull request's newest review, null when this
+	// is it.
+	NewestReviewID    *string    `json:"newestReviewId"`
 	CancelRequestedAt *time.Time `json:"cancelRequestedAt"`
 }
 
