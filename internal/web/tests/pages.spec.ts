@@ -62,7 +62,7 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect(stat('Addressed').locator('.stat-sub')).toHaveText('2 of 6');
   await expect(stat('Addressed').locator('.delta')).toHaveCount(0);
   await expect(stat('Median review').locator('.stat-value')).toHaveText('1m 30s');
-  await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h 0m');
+  await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h');
   await expect(stat('Reactions').locator('.stat-value')).toHaveText(`${c.reactionsUp} up`);
   await expect(stat('Reactions').locator('.stat-sub')).toHaveText(`${c.reactionsDown} down`);
   await expect(stat('Spend').locator('.delta')).toHaveText('new');

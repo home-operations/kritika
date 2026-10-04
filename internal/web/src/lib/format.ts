@@ -32,7 +32,7 @@ export function duration(ms: number | null | undefined): string {
   const rem = Math.round(s % 60);
   if (m < 60) return rem ? `${m}m ${rem}s` : `${m}m`;
   const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
 }
 
 // between is the duration between two RFC 3339 timestamps, null when either
