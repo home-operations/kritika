@@ -615,7 +615,8 @@ table.data td.finding-main {
   font-size: 11px;
   color: var(--muted);
 }
-.finding-pull .finding-sub {
+.finding-pull .finding-sub,
+.finding-dismissed {
   max-width: 220px;
 }
 .finding-rules {
