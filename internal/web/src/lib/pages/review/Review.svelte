@@ -3,7 +3,7 @@
   import { href } from '../../router.svelte';
   import { REVIEW_TABS, type ReviewTab } from '../../routes';
   import { Resource, live } from '../../resource.svelte';
-  import { isActive } from '../../format';
+  import { isActive, skipText } from '../../format';
   import { pullRoute, rerunPath, cancelPath, accountApi } from '../../links';
   import { isAdmin } from '../../session.svelte';
   import ActionButton from '../../components/ActionButton.svelte';
@@ -74,6 +74,7 @@
           <p class="meta-line">
             <ReviewStatusTile status={r.status} />
             <span>started <Time iso={r.createdAt} /></span>
+            {#if r.status === 'skipped' && r.skipReason}<span>skipped: {skipText[r.skipReason]}</span>{/if}
             {#if r.priorReviewId}
               <span>after <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a></span>
             {/if}

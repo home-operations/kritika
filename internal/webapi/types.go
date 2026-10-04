@@ -8,7 +8,6 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
-	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/transcript"
@@ -275,19 +274,22 @@ type TokenCounts struct {
 // Review is one review pass as lists show it. DurationMs is null while
 // the review runs.
 type Review struct {
-	ID         string                `json:"id"`
-	Status     store.ReviewStatus    `json:"status"`
-	Trigger    string                `json:"trigger"`
-	Scope      review.Scope          `json:"scope"`
-	Model      string                `json:"model"`
-	HeadSHA    string                `json:"headSha"`
-	CostUSD    float64               `json:"costUsd"`
-	Tokens     TokenCounts           `json:"tokens"`
-	DurationMs *int64                `json:"durationMs"`
-	CreatedAt  time.Time             `json:"createdAt"`
-	FinishedAt *time.Time            `json:"finishedAt"`
-	SkipReason repoconfig.SkipReason `json:"skipReason"`
-	Error      string                `json:"error"`
+	ID         string             `json:"id"`
+	Status     store.ReviewStatus `json:"status"`
+	Trigger    string             `json:"trigger"`
+	Scope      review.Scope       `json:"scope"`
+	Model      string             `json:"model"`
+	HeadSHA    string             `json:"headSha"`
+	CostUSD    float64            `json:"costUsd"`
+	Tokens     TokenCounts        `json:"tokens"`
+	DurationMs *int64             `json:"durationMs"`
+	CreatedAt  time.Time          `json:"createdAt"`
+	FinishedAt *time.Time         `json:"finishedAt"`
+	// SkipReason is why a skipped review was: disabled, filtered or
+	// only_skipped_paths from the repository's configuration, or the
+	// runner's unchanged_patch or too_large.
+	SkipReason string `json:"skipReason"`
+	Error      string `json:"error"`
 }
 
 // Followup is one @-mention of the bot and what came of it.

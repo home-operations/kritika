@@ -5,7 +5,7 @@
   import { repoRoute, rerunPath, accountApi, threadUrl } from '../links';
   import { isAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
-  import { jobCauseText, shortSha, SEVERITIES } from '../format';
+  import { jobCauseText, shortSha, skipText, SEVERITIES } from '../format';
   import { safeHref } from '../markdown';
   import { clock } from '../time.svelte';
   import type { PullDetail, ReviewDetail } from '../types';
@@ -57,12 +57,6 @@
   function labelColor(c: string): string | undefined {
     return /^[0-9a-f]{3,8}$/i.test(c) ? `#${c}` : undefined;
   }
-
-  const skipText: Record<string, string> = {
-    disabled: 'reviews disabled',
-    filtered: 'excluded by filter',
-    only_skipped_paths: 'only ignored paths changed',
-  };
 
   function lifecycle(p: PullDetail['pull']): { icon: string; label: string; tone: string } {
     if (p.merged) return { icon: mdiSourceMerge, label: 'Merged', tone: 'merged' };
@@ -149,7 +143,7 @@
               <p class="meta-line">
                 <ReviewStatusTile status={r.status} />
                 <span>started <Time iso={r.createdAt} /></span>
-                {#if r.status === 'skipped' && r.skipReason}<span>skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
+                {#if r.status === 'skipped' && r.skipReason}<span>skipped: {skipText[r.skipReason]}</span>{/if}
               </p>
               {#if r.error}<p class="error-text">{r.error}</p>{/if}
               {#if latest.data && latest.data.review.id === r.id}
@@ -187,7 +181,7 @@
                     <span class="timeline-top">
                       <ReviewStatusTile status={r.status} />
                       <Time iso={r.createdAt} />
-                      {#if r.status === 'skipped' && r.skipReason}<span class="small muted">skipped: {skipText[r.skipReason] ?? r.skipReason}</span>{/if}
+                      {#if r.status === 'skipped' && r.skipReason}<span class="small muted">skipped: {skipText[r.skipReason]}</span>{/if}
                     </span>
                     <ReviewMeta {r} />
                     {#if r.error}<span class="error-text">{r.error}</span>{/if}

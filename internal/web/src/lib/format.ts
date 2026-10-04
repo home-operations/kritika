@@ -1,6 +1,6 @@
 // Pure display formatting shared by every page. No runes, so tests and
 // tooling can import it directly.
-import type { JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category } from './types';
+import type { SkipReason, JobCause, JobState, ReviewStatus, Severity, IndexRunStatus, FollowupStatus, Category } from './types';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat('en');
@@ -82,6 +82,15 @@ export const jobTone: Record<JobState, Tone> = {
 // jobCauseText says a job's cause in words, ahead of the error's own text.
 export const jobCauseText: Record<JobCause, string> = {
   forge_unavailable: 'GitHub did not answer.',
+};
+
+// skipText says why a skipped review was.
+export const skipText: Record<Exclude<SkipReason, ''>, string> = {
+  disabled: 'reviews disabled',
+  filtered: 'excluded by filter',
+  only_skipped_paths: 'only ignored paths changed',
+  unchanged_patch: 'patch unchanged since the last review',
+  too_large: 'more changed lines than the repository allows',
 };
 
 export const indexTone: Record<IndexRunStatus, Tone> = {

@@ -527,6 +527,19 @@ test.describe('review', () => {
   });
 });
 
+test('a skipped review says why, on its own page and on the pull request', async ({ page }) => {
+  const skipped = { ...g.pullDetail.reviews[0]!, status: 'skipped' as const, skipReason: 'too_large' as const };
+  await g.mockApi(page, [
+    [/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [skipped] }],
+    [/\/reviews\/rev-1$/, { ...g.reviewDetail, review: { ...g.reviewDetail.review, status: 'skipped', skipReason: 'unchanged_patch' } }],
+    ...g.defaultApi(),
+  ]);
+  await page.goto(`/${T}/pulls/alpha/one/7`);
+  await expect(page.locator('.latest-review')).toContainText('skipped: more changed lines than the repository allows');
+  await page.goto(`/${T}/reviews/rev-1`);
+  await expect(page.locator('.page-head .meta-line')).toContainText('skipped: patch unchanged since the last review');
+});
+
 test('pull detail says what its unfinished review job waits on, and nothing of one that simply runs', async ({ page }) => {
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/pulls/alpha/one/7`);

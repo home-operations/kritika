@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -176,22 +175,25 @@ func FindPull(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (
 
 // ReviewRow is one reviews row with what its usage rows charged it.
 type ReviewRow struct {
-	ID                string
-	PullRequestID     string
-	Repository        string
-	Number            int
-	Title             string
-	URL               string
-	Status            ReviewStatus
-	Trigger           string
-	Scope             review.Scope
-	ScopeReason       string
-	Model             string
-	HeadSHA           string
-	MergeBaseSHA      string
-	PatchID           string
-	PriorReviewID     *string
-	SkipReason        repoconfig.SkipReason
+	ID            string
+	PullRequestID string
+	Repository    string
+	Number        int
+	Title         string
+	URL           string
+	Status        ReviewStatus
+	Trigger       string
+	Scope         review.Scope
+	ScopeReason   string
+	Model         string
+	HeadSHA       string
+	MergeBaseSHA  string
+	PatchID       string
+	PriorReviewID *string
+	// SkipReason is why a skipped review was: the repository's own reason
+	// (a repoconfig.SkipReason), or the runner's "unchanged_patch" or
+	// "too_large".
+	SkipReason        string
 	Error             string
 	CreatedAt         time.Time
 	FinishedAt        *time.Time
@@ -203,8 +205,16 @@ type ReviewRow struct {
 	OutputTokens int64
 }
 
+// reviewSkipReason is why a skipped review was. A skip the runner decides
+// is recorded on its context pack, and a bot's unchanged patch caught
+// before a runner starts leaves neither a reason nor an error.
+const reviewSkipReason = `CASE WHEN v.skip_reason <> '' OR v.status <> 'skipped' THEN v.skip_reason
+	ELSE coalesce((SELECT nullif(cp.skip_reason, '') FROM context_packs cp JOIN runner_runs rr ON rr.id = cp.runner_run_id
+		WHERE rr.review_id = v.id ORDER BY rr.created_at DESC LIMIT 1),
+		CASE WHEN v.error = '' THEN 'unchanged_patch' ELSE '' END) END`
+
 const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.scope, v.scope_reason,
-	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, v.skip_reason, v.error, v.created_at, v.finished_at,
+	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, ` + reviewSkipReason + `, v.error, v.created_at, v.finished_at,
 	v.cancel_requested_at, v.summary, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0)
 	FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT sum(cost_usd)::float8 AS cost, sum(input_tokens) AS input, sum(output_tokens) AS output
@@ -212,15 +222,15 @@ const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url
 
 func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var v ReviewRow
-	var status, scope, skip string
+	var status, scope string
 	var summary []byte
 	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &scope, &v.ScopeReason,
-		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &skip, &v.Error, &v.CreatedAt, &v.FinishedAt,
+		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &v.SkipReason, &v.Error, &v.CreatedAt, &v.FinishedAt,
 		&v.CancelRequestedAt, &summary, &v.CostUSD, &v.InputTokens, &v.OutputTokens); err != nil {
 		return v, err
 	}
 	v.Status = ReviewStatus(status)
-	v.Scope, v.SkipReason = review.Scope(scope), repoconfig.SkipReason(skip)
+	v.Scope = review.Scope(scope)
 	if len(summary) > 0 && string(summary) != "null" {
 		var s review.Summary
 		if err := json.Unmarshal(summary, &s); err != nil {
