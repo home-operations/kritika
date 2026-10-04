@@ -125,11 +125,11 @@ test.describe('signed-in shell', () => {
     await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
 
-    await expect(page.locator('.account-button')).toHaveText('Instance');
+    await expect(page.locator('.account-button')).toHaveText('All accounts');
     await page.locator('.account-button').click();
     const scopes = page.getByRole('navigation', { name: 'Scope' });
-    await expect(scopes.getByRole('link')).toHaveText(['Instance', 'github/acme']);
-    await expect(scopes.getByRole('link', { name: 'Instance' })).toHaveAttribute('aria-current', 'true');
+    await expect(scopes.getByRole('link')).toHaveText(['All accounts', 'github/acme']);
+    await expect(scopes.getByRole('link', { name: 'All accounts' })).toHaveAttribute('aria-current', 'true');
     await page.keyboard.press('Escape');
     await expect(scopes).toBeHidden();
 
@@ -149,7 +149,7 @@ test.describe('signed-in shell', () => {
     await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Instance' })).toHaveCount(0);
     await page.goto('/');
-    await expect(page.locator('.account-button')).toHaveText('Instance');
+    await expect(page.locator('.account-button')).toHaveText('All accounts');
     const bar = await page.locator('.topbar').boundingBox();
     const main = await page.locator('main.page').boundingBox();
     expect(bar && main && bar.y + bar.height <= main.y).toBe(true);
@@ -175,7 +175,7 @@ test.describe('signed-in shell', () => {
     await expect(nav.getByRole('link')).toHaveText(['Repositories', 'Audit log']);
 
     await page.goto('/#/admin');
-    await expect(page.locator('.account-button')).toHaveText('Instance');
+    await expect(page.locator('.account-button')).toHaveText('All accounts');
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Configuration');
     // Beside the page are its own parts, and no account's pages.
     await expect(nav.getByRole('link', { name: 'Configuration', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -209,7 +209,7 @@ test.describe('signed-in shell', () => {
     // An account's queue leads to the instance's, and back to an account's.
     await page.goto('/#/a/github/globex/queue');
     await page.locator('.account-button').click();
-    await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'Instance' }).click();
+    await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'All accounts' }).click();
     await expect(page).toHaveURL(/#\/queue$/);
     await page.locator('.account-button').click();
     await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'github/acme' }).click();

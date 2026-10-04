@@ -828,7 +828,7 @@ test("the instance's queue lists every account's jobs and the model slots they w
   await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...q, jobs: [...q.jobs, other], slots: [...q.slots, { account: 'github/beta', model: 'acme/small', held: 1, slots: 0 }] }], ...g.defaultApi()]);
   await page.goto('/#/queue');
   await expect(page.locator('.page-head h1')).toHaveText('Queue');
-  await expect(page.locator('.account-button')).toHaveText('Instance');
+  await expect(page.locator('.account-button')).toHaveText('All accounts');
   const slots = page.getByRole('region', { name: 'Model slots' }).locator('tbody tr');
   await expect(slots).toHaveText([/github\/alpha\s*openrouter\/acme-large\s*2 of 2/, /github\/beta\s*acme\/small\s*1, no limit/]);
   await expect(page.getByRole('meter', { name: 'Slots of openrouter/acme-large busy for github/alpha' })).toHaveAttribute('aria-valuenow', '2');
