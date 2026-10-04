@@ -223,6 +223,17 @@ test('repositories filter and repository detail', async ({ page }) => {
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
 });
 
+test("a repository's limits group their digits", async ({ page }) => {
+  const s = g.repoDetail.settings;
+  const detail = { ...g.repoDetail, settings: { ...s, limits: { ...s.limits, tokensPerMonth: 2_500_000 } } };
+  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/repos/alpha/one$`), detail], ...g.defaultApi()]);
+  await page.goto(`/${T}/repos/alpha/one`);
+  const value = (label: string) => page.locator('dt').filter({ hasText: label }).locator('+ dd');
+  await expect(value('Max tokens')).toContainText('4,000,000');
+  await expect(value('Tokens / month')).toContainText('2,500,000');
+  await expect(value('Reviews / day')).toContainText('unlimited');
+});
+
 test('repositories say which are forks or archived', async ({ page }) => {
   const copy = { ...g.repoPage.items[0]!, id: 'repo-2', fullName: 'alpha/copy', fork: true, archived: true };
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/repos$`), g.pageOf([g.repoPage.items[0]!, copy])], ...g.defaultApi()]);

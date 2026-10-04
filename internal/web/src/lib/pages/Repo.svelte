@@ -2,7 +2,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
-  import { duration, indexTone, shortSha, bytes } from '../format';
+  import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
   import type { ConfigSource, Page, Pull, RepoDetail, RepoSettings } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
@@ -44,7 +44,7 @@
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
   const yes = (b: boolean) => (b ? 'yes' : 'no');
-  const unlimited = (n: number) => (n ? String(n) : 'unlimited');
+  const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 
   // One setting as the page shows it: its label, the policy key its source
   // is reported under, and how to show its value.
@@ -63,7 +63,7 @@
     { label: 'Settle', key: 'settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
     { label: 'Max automatic reviews', key: 'maxAutoReviews', value: (s) => unlimited(s.maxAutoReviews) },
     { label: 'Max changed lines', key: 'maxChangedLines', value: (s) => unlimited(s.maxChangedLines) },
-    { label: 'Max delta files', key: 'incremental.maxDeltaFiles', value: (s) => String(s.maxDeltaFiles) },
+    { label: 'Max delta files', key: 'incremental.maxDeltaFiles', value: (s) => wholeNumber(s.maxDeltaFiles) },
     { label: 'Context files', key: 'context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
     { label: 'AGENTS.md / CLAUDE.md', key: 'agentFiles', value: (s) => (s.review.agentFiles ? 'read' : 'not read') },
     { label: 'Require suggested fix', key: 'requireSuggestedFix', value: (s) => yes(s.review.requireSuggestedFix) },
@@ -75,9 +75,9 @@
     { label: 'Tokens / month', key: 'limits', value: (s) => unlimited(s.limits.tokensPerMonth) },
   ];
   const agentRows: Row[] = [
-    { label: 'Max steps', key: 'agent.maxSteps', value: (s) => String(s.agent.maxSteps) },
+    { label: 'Max steps', key: 'agent.maxSteps', value: (s) => wholeNumber(s.agent.maxSteps) },
     { label: 'Max tool output', key: 'agent.maxToolOutputBytes', value: (s) => bytes(s.agent.maxToolOutputBytes) },
-    { label: 'Max tokens', key: 'agent.maxTokens', value: (s) => String(s.agent.maxTokens) },
+    { label: 'Max tokens', key: 'agent.maxTokens', value: (s) => wholeNumber(s.agent.maxTokens) },
     { label: 'Timeout', key: 'agent.timeout', value: (s) => duration(s.agent.timeoutSeconds * 1000) },
     { label: 'Commands', key: 'agent.commands', value: (s) => list(s.agent.commands), mono: true },
     { label: 'Command timeout', key: 'agent.commandTimeout', value: (s) => duration(s.agent.commandTimeoutSeconds * 1000) },
