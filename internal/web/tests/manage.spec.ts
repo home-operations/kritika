@@ -125,6 +125,13 @@ test.describe('actions', () => {
     await expect(page.getByRole('status')).toContainText('already queued or running');
   });
 
+  test('offer no reindex of a repository that is off', async ({ page }) => {
+    await setup(page, adminMe, [[new RegExp(`${API}/repos/alpha/one$`), { ...g.repoDetail, enabled: false }]]);
+    await page.goto(`/#/a/${S}/repos/alpha/one`);
+    await expect(page.locator('#repo-settings')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reindex' })).toHaveCount(0);
+  });
+
   test('are hidden from an account member', async ({ page }) => {
     await setup(page, memberMe);
     await page.goto(`/#/a/${S}/reviews/rev-1`);

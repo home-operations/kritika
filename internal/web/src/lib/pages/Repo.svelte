@@ -127,7 +127,8 @@
       <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
       <h1 class="mono">{fullName}</h1>
       {#if res.data?.fork || res.data?.archived}<p class="meta-line"><RepoTraits r={res.data} /></p>{/if}
-      {#if isAdmin()}
+      <!-- A repository that is off is not indexed. -->
+      {#if isAdmin() && res.data?.enabled}
         <div class="page-actions">
           <ActionButton
             label="Reindex"
@@ -241,7 +242,10 @@
     </StateView>
 
     <section class="panel" aria-labelledby="repo-pulls">
-      <header class="panel-head"><h2 id="repo-pulls">Pull requests</h2></header>
+      <header class="panel-head">
+        <h2 id="repo-pulls">Pull requests</h2>
+        <a class="small" href={href({ name: 'pulls', slug, filter: { state: 'all', repo: fullName } })}>See all</a>
+      </header>
       <StateView res={pulls} retry={() => pulls.load()} isEmpty={(p) => p.items.length === 0} empty="No pull requests seen yet.">
         {#snippet children(p)}
           <PullTable {slug} items={p.items} />
