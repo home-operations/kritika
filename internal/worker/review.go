@@ -56,6 +56,8 @@ type pullRequest struct {
 	headSHA, baseRef string
 	title, author    string
 	authorIsBot      bool
+	// closed is why it takes no more reviews, "" while it is open.
+	closed string
 }
 
 // dedupesBotPatch says whether an unchanged patch from a bot author skips
@@ -344,11 +346,13 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 	var pr pullRequest
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot
+			SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot,
+				CASE WHEN p.merged THEN 'the pull request was merged' WHEN p.state <> 'open' THEN 'the pull request is closed'
+					ELSE '' END
 			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 			WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
 			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number,
-				&pr.headSHA, &pr.baseRef, &pr.title, &pr.author, &pr.authorIsBot)
+				&pr.headSHA, &pr.baseRef, &pr.title, &pr.author, &pr.authorIsBot, &pr.closed)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, river.JobCancel(fmt.Errorf("worker: pull request %d of %s is unknown", number, repositoryID))
@@ -472,6 +476,13 @@ func (w *Review) begin(
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", review.ShortSHA(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, store.ReviewSuperseded, "")
+	}
+	// A job queued while the pull request was open may only run, after a
+	// settle time, a retry or a wait for a slot, once it is merged or
+	// closed: nothing is left to review, and no status is set on its head.
+	if pr.closed != "" {
+		logger.Info("review skipped before start", "reason", pr.closed)
+		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, pr.closed)
 	}
 	settings := file.Settings(account, pr.repository)
 	if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {

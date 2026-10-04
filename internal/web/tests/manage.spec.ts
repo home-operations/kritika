@@ -125,6 +125,32 @@ test.describe('actions', () => {
     await expect(page.getByRole('status')).toContainText('already queued or running');
   });
 
+  test('offer no re-run of a merged or closed pull request, and say why', async ({ page }) => {
+    const merged: T.Pull = { ...g.pull, state: 'closed', merged: true };
+    const closed: T.Pull = { ...g.pull, number: 8, url: g.pull.url.replace(/\d+$/, '8'), state: 'closed' };
+    const open: T.Pull = { ...g.pull, number: 9, url: g.pull.url.replace(/\d+$/, '9') };
+    await setup(page, adminMe, [
+      [new RegExp(`${API}/pulls$`), g.pageOf([merged, closed, open])],
+      [new RegExp(`${API}/pulls/alpha/one/7$`), { ...g.pullDetail, pull: merged }],
+      [new RegExp(`${API}/reviews/rev-1$`), { ...g.reviewDetail, review: { ...g.reviewDetail.review, pullState: 'closed', pullMerged: true } }],
+    ]);
+    await page.goto(`/#/a/${S}/pulls?state=all`);
+    const rows = page.locator('.pull-rows tr');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).getByRole('checkbox')).toHaveCount(0);
+    await expect(rows.nth(0).getByTitle('Merged: it is not reviewed again')).toBeVisible();
+    await expect(rows.nth(1).getByTitle('Closed: it is not reviewed while it is')).toBeVisible();
+    await page.getByRole('checkbox', { name: 'Select every pull request shown' }).check();
+    await expect(page.getByRole('group', { name: 'Selected pull requests' })).toContainText('1 selected');
+
+    await page.goto(`/#/a/${S}/pulls/alpha/one/7`);
+    await expect(page.locator('.no-more-reviews')).toHaveText('Merged: it is not reviewed again.');
+    await expect(page.getByRole('button', { name: 'Re-run' })).toHaveCount(0);
+    await page.goto(`/#/a/${S}/reviews/rev-1`);
+    await expect(page.locator('.no-more-reviews')).toHaveText('Merged: it is not reviewed again.');
+    await expect(page.getByRole('button', { name: 'Re-run' })).toHaveCount(0);
+  });
+
   test('offer no reindex of a repository that is off', async ({ page }) => {
     await setup(page, adminMe, [[new RegExp(`${API}/repos/alpha/one$`), { ...g.repoDetail, enabled: false }]]);
     await page.goto(`/#/a/${S}/repos/alpha/one`);

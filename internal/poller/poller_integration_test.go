@@ -163,7 +163,8 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		t.Fatalf("since values: first should be the lookback floor, second the first poll's start; got %v (before=%v)", sinces, before)
 	}
 
-	// A closed pull request from the forge is ignored by ingest, not an error.
+	// A closed pull request from the forge is recorded by ingest, not
+	// reviewed, and not an error.
 	lf.mu.Lock()
 	lf.prs[0].State = "closed"
 	lf.prs[0].HeadSHA = "def456"
@@ -171,10 +172,8 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	if n, err := p.Poll(ctx, file, account, in); err != nil || n != 1 {
 		t.Fatalf("third poll: n=%d err=%v", n, err)
 	}
-	if jobs, _ := countJobs(7); jobs != 2 {
-		// The poll action reviews whatever the forge lists as open; state is
-		// the forge's word, so a new head is a new job.
-		t.Fatalf("after third poll: jobs=%d", jobs)
+	if jobs, _ := countJobs(7); jobs != 1 {
+		t.Fatalf("after third poll: jobs=%d, want the closed pull request's new head left unreviewed", jobs)
 	}
 	checkAccountOff(ctx, t, p, file, account, in, lf)
 }

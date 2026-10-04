@@ -2078,6 +2078,39 @@ func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.
 	if !errors.Is(err, jobs.ErrNoHead) {
 		t.Fatalf("EnqueueRerun on a closed pull request = %v, want ErrNoHead", err)
 	}
+
+	// A job queued while the pull request was open, and run once it is
+	// closed, ends as a skipped review with no runner.
+	var head string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE repository_id = $1 AND number = 1`, repoID).Scan(&head)
+	}); err != nil {
+		t.Fatalf("read head: %v", err)
+	}
+	if _, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
+		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: head, Trigger: jobs.TriggerManual, Request: uuid.NewString(),
+	}, nil); err != nil {
+		t.Fatalf("insert review job: %v", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		var status string
+		var runs int
+		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT status, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
+				FROM reviews r WHERE head_sha = $1 AND error = 'the pull request is closed'`, head).Scan(&status, &runs)
+		})
+		if err == nil {
+			if status != "skipped" || runs != 0 {
+				t.Fatalf("review of a closed pull request: status %s with %d runner runs, want skipped with none", status, runs)
+			}
+			return
+		}
+		if !errors.Is(err, pgx.ErrNoRows) || time.Now().After(deadline) {
+			t.Fatalf("no skipped review of the closed pull request: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // activeIndexGeneration returns repositories.active_index_run_id for repoID.

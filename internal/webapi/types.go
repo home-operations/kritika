@@ -331,7 +331,11 @@ type PullRef struct {
 // ReviewInfo is a review row in full.
 type ReviewInfo struct {
 	Review
-	Pull          PullRef `json:"pull"`
+	Pull PullRef `json:"pull"`
+	// PullState is open or closed, and PullMerged whether it was merged: a
+	// merged or closed pull request takes no more reviews.
+	PullState     string  `json:"pullState"`
+	PullMerged    bool    `json:"pullMerged"`
 	ScopeReason   string  `json:"scopeReason"`
 	MergeBaseSHA  string  `json:"mergeBaseSha"`
 	PatchID       string  `json:"patchId"`

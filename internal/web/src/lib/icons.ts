@@ -33,6 +33,7 @@ export {
   mdiSwapHorizontal,
   mdiCancel,
   mdiSourceMerge,
+  mdiLockOutline,
   mdiSourceBranchRemove,
   mdiFileDocumentEditOutline,
   mdiCircleOutline,
