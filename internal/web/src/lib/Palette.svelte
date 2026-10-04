@@ -55,6 +55,9 @@
   // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', hint: 'instance', words: true, route: { name: 'overview' }, icon: mdiViewGridOutline, keywords: 'all accounts' }];
+    if ((me?.accounts.length ?? 0) > 1) {
+      entries.push({ label: 'Queue', hint: 'instance', words: true, route: { name: 'instanceQueue' }, icon: mdiTrayFull, keywords: 'jobs slots all accounts' });
+    }
     if (me?.admin) {
       entries.push({ label: 'Configuration', hint: 'instance', words: true, route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings' });
       if (searching) {
@@ -85,34 +88,42 @@
         entries.push({ label: 'Audit log', hint: slug, route: { name: 'admin', slug, section: 'audit' }, icon: mdiClipboardTextClockOutline, keywords: 'history' });
       }
     }
-    for (const p of recent) {
-      entries.push({ label: p.title, hint: `${p.repository}#${p.number}`, route: pullRoute(recentSlug, p), icon: mdiSourcePull });
+    for (const { slug, pull: p } of recent) {
+      entries.push({ label: p.title, hint: `${p.repository}#${p.number}`, route: pullRoute(slug, p), icon: mdiSourcePull });
     }
     return entries;
   }
 
-  // The current account's recently updated pulls, fetched each time the
-  // palette opens so they are jump targets too.
-  let recent = $state<Pull[]>([]);
-  let recentSlug = $state('');
+  // The recently updated pulls of every account the viewer can read,
+  // fetched each time the palette opens so they are jump targets too: the
+  // current account's lead, then the rest, the latest first.
+  let recent = $state<{ slug: string; pull: Pull }[]>([]);
 
   let recentSeq = 0;
 
-  async function loadRecent(slug: string): Promise<void> {
+  async function loadRecent(slugs: string[], current: string | undefined): Promise<void> {
     const seq = ++recentSeq;
-    try {
-      const p = await getJSON<Page<Pull>>(`${accountApi(slug)}/pulls?state=all&limit=20`);
-      if (seq !== recentSeq) return;
-      recent = p.items;
-      recentSlug = slug;
-    } catch (err) {
-      console.error('palette recent pulls:', err);
-    }
+    const pages = await Promise.all(
+      slugs.map(async (slug) => {
+        try {
+          const p = await getJSON<Page<Pull>>(`${accountApi(slug)}/pulls?state=all&limit=20`);
+          return p.items.map((pull) => ({ slug, pull }));
+        } catch (err) {
+          console.error('palette recent pulls:', err);
+          return [];
+        }
+      }),
+    );
+    if (seq !== recentSeq) return;
+    recent = pages
+      .flat()
+      .sort((a, b) => Number(b.slug === current) - Number(a.slug === current) || Date.parse(b.pull.updatedAt) - Date.parse(a.pull.updatedAt));
   }
 
   $effect(() => {
-    const slug = currentSlug(router.route) ?? me?.accounts[0];
-    if (palette.open && slug) void loadRecent(slug);
+    const current = currentSlug(router.route);
+    const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts ?? [])])];
+    if (palette.open && slugs.length) void loadRecent(slugs, current);
   });
 
   let q = $state('');

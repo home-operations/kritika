@@ -761,6 +761,28 @@ test("the instance's queue lists every account's jobs and the model slots they w
   await expect(jobs.nth(1).getByRole('link', { name: 'beta/two#3' })).toHaveAttribute('href', '#/a/github/beta/pulls/beta/two/3');
 });
 
+test("the palette finds every account's recent pull requests, the current account's first, and the instance's queue", async ({ page }) => {
+  const beta = { ...g.pull, repository: 'beta/two', number: 3, title: 'Beta gadgets', updatedAt: '2026-09-02T00:00:00Z' };
+  await g.mockApi(page, [
+    [/\/api\/v1\/me$/, { ...g.me, accounts: [g.SLUG, 'github/beta'] }],
+    [/\/accounts\/github\/beta\/pulls$/, g.pageOf([beta])],
+    ...g.defaultApi(),
+  ]);
+  await page.goto(`/${T}/rules`);
+  await expect(page.locator('.account-button')).toHaveText(g.SLUG);
+  await page.keyboard.press('Control+k');
+  const input = page.locator('.palette-input input');
+  await input.fill('#');
+  // The other account's pull request is the more recently updated one.
+  await expect(page.locator('.palette .row-sub')).toHaveText([`${g.pull.repository}#${g.pull.number}`, 'beta/two#3']);
+  await input.fill('gadgets');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/#\/a\/github\/beta\/pulls\/beta\/two\/3$/);
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input input').fill('slots');
+  await expect(page.locator('.palette .row-title')).toHaveText(['Queue']);
+});
+
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
