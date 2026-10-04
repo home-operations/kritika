@@ -377,14 +377,6 @@ a.external {
   border: 1px solid color-mix(in srgb, var(--label, var(--border)) 60%, var(--border));
   color: var(--text);
 }
-.chips {
-  list-style: none;
-  margin: 0;
-  padding: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 kbd {
   font-family: var(--font-mono);
 }
@@ -908,14 +900,6 @@ table.data td.wrap {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
-}
-.row-meta {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
 }
 .reltime {
   color: var(--muted);
@@ -1751,10 +1735,6 @@ table.diff td.code {
   }
   .row-text {
     white-space: normal;
-  }
-  .row-meta {
-    flex-wrap: wrap;
-    flex-shrink: 1;
   }
 }
 
