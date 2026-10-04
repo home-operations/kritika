@@ -507,6 +507,11 @@ table.data td {
 table.data td.error-cell {
   white-space: normal;
 }
+/* An error is the one cell that wraps, so the columns beside it would take
+   its width and leave it a word to a line; the table scrolls instead. */
+table.data td.error-cell:not(:empty) {
+  min-width: 260px;
+}
 table.data thead th {
   color: var(--muted);
   font-weight: 600;
