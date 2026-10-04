@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.0.22](https://github.com/home-operations/kritika/compare/0.0.21...0.0.22) (2026-10-04)
+
+
+### Features
+
+* **web:** call the switcher's instance scope "All accounts" ([#470](https://github.com/home-operations/kritika/issues/470)) ([8c4647a](https://github.com/home-operations/kritika/commit/8c4647a17b6f293b223b22427e1a2d132089cbb5))
+
+
+### Bug Fixes
+
+* **web:** fit the top bar on a phone ([#482](https://github.com/home-operations/kritika/issues/482)) ([0308c6f](https://github.com/home-operations/kritika/commit/0308c6fde148d199a25054b8d8b2a43647b9c955))
+* **web:** fit Your settings on a phone ([#478](https://github.com/home-operations/kritika/issues/478)) ([b3a56b4](https://github.com/home-operations/kritika/commit/b3a56b44557538717cfa1d01fe04f07e75973687))
+* **web:** honour a viewer's reduced motion setting ([#480](https://github.com/home-operations/kritika/issues/480)) ([75d35a5](https://github.com/home-operations/kritika/commit/75d35a564fc8a129065feb5ff1e8328c142eed9b))
+* **web:** pad the repository page's dropped values, and draw its pull requests in one card ([#475](https://github.com/home-operations/kritika/issues/475)) ([5b4945a](https://github.com/home-operations/kritika/commit/5b4945a5dc16ae83482362e4fc74da831c208404))
+* **web:** put the queue and a review's usage on a card, as every other table is ([#476](https://github.com/home-operations/kritika/issues/476)) ([08139d7](https://github.com/home-operations/kritika/commit/08139d7f3ee1182b823d63f3ca490a5eb1660f9b))
+* **web:** scroll a long page in one place ([#474](https://github.com/home-operations/kritika/issues/474)) ([81f6ef5](https://github.com/home-operations/kritika/commit/81f6ef5b60c9b6bedff885e00611bbdd4b9447ae))
+* **web:** show the spinner while a page waits on the session ([#473](https://github.com/home-operations/kritika/issues/473)) ([3fb7703](https://github.com/home-operations/kritika/commit/3fb77038779d09528bfeabf1325247b7211dec3c))
+* **web:** space the category counts and the key hints ([#479](https://github.com/home-operations/kritika/issues/479)) ([5b819b4](https://github.com/home-operations/kritika/commit/5b819b4a5fdb6dcd867e4bfc869834aaa3fb80bf))
+* **web:** write a run's phases to the second ([#477](https://github.com/home-operations/kritika/issues/477)) ([0d9bff2](https://github.com/home-operations/kritika/commit/0d9bff23c62af3029fd86c12d218f64a8a623036))
+
+
+### Code Refactoring
+
+* **web:** drop two style rules nothing uses ([#471](https://github.com/home-operations/kritika/issues/471)) ([d1b21f0](https://github.com/home-operations/kritika/commit/d1b21f0c8345b6c2498f81ec440e12815f41b391))
+* **web:** name the text sizes and the corner radii ([#483](https://github.com/home-operations/kritika/issues/483)) ([87d41d9](https://github.com/home-operations/kritika/commit/87d41d95a7261acfc1c6a523ba02607d2d0d1549))
+
+
+### Build System
+
+* **web:** drop Tailwind, which only supplied the reset ([#481](https://github.com/home-operations/kritika/issues/481)) ([322a04a](https://github.com/home-operations/kritika/commit/322a04a0a5105fa4e444cc17c8c7943f05dca396))
+
 ## [0.0.21](https://github.com/home-operations/kritika/compare/0.0.20...0.0.21) (2026-10-04)
 
 
