@@ -883,6 +883,21 @@ test("the instance's queue lists every account's jobs and the model slots they w
   await expect(jobs.nth(1).getByRole('link', { name: 'beta/two#3' })).toHaveAttribute('href', '#/a/github/beta/pulls/beta/two/3');
 });
 
+test("a job's error keeps a readable width however wide the columns beside it, and takes none when there is no error", async ({ page }) => {
+  const long = { ...g.instanceQueue.jobs[0]!, id: 43, account: 'github/an-account-with-a-very-long-name-indeed', lastError: 'runner: the pod exceeded its deadline after 20m0s and was deleted; the last log line was "waiting for a model slot"' };
+  const fine = { ...g.instanceQueue.jobs[0]!, id: 44, lastError: '', cause: '' };
+  await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [long, fine] }], ...g.defaultApi()]);
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.goto('/#/queue');
+  const cell = (id: number) => page.getByRole('row').filter({ has: page.getByRole('cell', { name: String(id), exact: true }) }).locator('.error-cell');
+  expect((await cell(43).boundingBox())!.width).toBeGreaterThanOrEqual(260);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+
+  await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [fine] }], ...g.defaultApi()]);
+  await page.reload();
+  expect((await cell(44).boundingBox())!.width).toBeLessThan(260);
+});
+
 test("the palette finds every account's recent pull requests, the current account's first, and the instance's queue", async ({ page }) => {
   const beta = { ...g.pull, repository: 'beta/two', number: 3, title: 'Beta gadgets', updatedAt: '2026-09-02T00:00:00Z' };
   await g.mockApi(page, [
