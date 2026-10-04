@@ -12,7 +12,7 @@
   let { jobs, account, several = false }: { jobs: J[]; account: (j: J) => string; several?: boolean } = $props();
 </script>
 
-<div class="table-wrap">
+<div class="table-wrap table-card">
   <table class="data">
     <thead>
       <tr>
