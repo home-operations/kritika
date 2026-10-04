@@ -318,9 +318,12 @@ a.external {
 }
 
 /* ---- review status: an icon on a tinted tile, and a word -------------- */
+/* Centred on the line it shares, so a time or a badge after it sits level
+   with its word: its own baseline is its tile's, which is lower. */
 .status {
   display: inline-flex;
   align-items: center;
+  vertical-align: middle;
   gap: 6px;
   font-size: var(--type-sm);
   color: var(--text);
@@ -810,6 +813,7 @@ table.data td.wrap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  vertical-align: middle;
 }
 /* Bits UI's switch: a button that turns something on or off. */
 .switch {

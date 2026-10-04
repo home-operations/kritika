@@ -286,6 +286,28 @@ test("a repository's limits group their digits", async ({ page }) => {
   await expect(value('Reviews / day')).toContainText('unlimited');
 });
 
+test("a repository's row sits on one line: the status with its time, the name with its switch, and one dash for nothing", async ({ page }) => {
+  const r = g.repoPage.items[0]!;
+  const bare = { ...r, id: 'repo-2', fullName: 'alpha/bare', index: { ...r.index, activeCommit: '' }, lastReview: null };
+  await g.mockApi(page, [[/\/api\/v1\/me$/, { ...g.me, admin: true }], [new RegExp(`/api/v1/accounts/${g.SLUG}/repos$`), g.pageOf([r, bare])], ...g.defaultApi()]);
+  await page.goto(`/${T}/repos`);
+  const row = page.getByRole('row', { name: /alpha\/one/ });
+  const middle = (sel: string) =>
+    row.locator(sel).first().evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const box = range.getBoundingClientRect();
+      return (box.top + box.bottom) / 2;
+    });
+  const word = await middle('.status-word');
+  for (const sel of ['time', 'td.mono a', '.toggle > span:last-child']) expect(Math.abs((await middle(sel)) - word)).toBeLessThanOrEqual(1);
+
+  const dashes = page.getByRole('row', { name: /alpha\/bare/ }).getByText('—', { exact: true });
+  await expect(dashes).toHaveCount(2);
+  const fonts = await dashes.evaluateAll((els) => els.map((el) => getComputedStyle(el).fontFamily));
+  expect(fonts[0]).toBe(fonts[1]);
+});
+
 test('repositories say which are forks or archived', async ({ page }) => {
   const copy = { ...g.repoPage.items[0]!, id: 'repo-2', fullName: 'alpha/copy', fork: true, archived: true };
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/repos$`), g.pageOf([g.repoPage.items[0]!, copy])], ...g.defaultApi()]);
