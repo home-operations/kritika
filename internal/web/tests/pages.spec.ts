@@ -128,6 +128,24 @@ test('a chart reads one column at a time, by pointer or by keyboard', async ({ p
   await expect(tip).toContainText('Sep 1');
 });
 
+test("a chart of counts has whole numbers on its axis, and one of cost its cents", async ({ page }) => {
+  const series = (reviews: number) => ({ ...g.analytics, series: [{ ...g.analytics.series[0]!, reviews }] });
+  const ticks = page.getByRole('img', { name: /^Completed reviews per day/ }).locator('.chart-tick').filter({ hasText: /^[\d.,]+$/ });
+  for (const [reviews, axis] of [
+    [1, ['0', '1', '2']],
+    [5, ['0', '3', '6']],
+    [25, ['0', '20', '40']],
+    [250, ['0', '125', '250']],
+  ] as const) {
+    await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/analytics$`), series(reviews)], ...g.defaultApi()]);
+    await page.goto(`/${T}`);
+    await expect(ticks).toHaveText([...axis]);
+    await page.goto('about:blank');
+  }
+  await page.goto(`/${T}/usage`);
+  await expect(page.locator('.chart-tick').filter({ hasText: '$' })).toHaveText(['$0', '$0.05', '$0.10']);
+});
+
 test('analytics says what needs attention now, each kind linking to its pull requests', async ({ page }) => {
   const attention = page.getByRole('region', { name: 'Needs attention' });
   await page.goto(`/${T}`);

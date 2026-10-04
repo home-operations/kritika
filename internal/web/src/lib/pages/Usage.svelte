@@ -114,6 +114,7 @@
             series={[{ label: metric === 'cost' ? 'Cost' : 'Tokens', color: 'var(--chart-ink)' }]}
             rows={columns(s.rows)}
             format={metric === 'cost' ? usd : tokens}
+            whole={metric !== 'cost'}
           />
         </section>
         <div class="table-wrap table-card">

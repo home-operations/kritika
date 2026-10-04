@@ -20,10 +20,12 @@
     series: Series[];
     rows: Row[];
     format: (n: number) => string;
+    // whole says the values are counts, so every gridline is a whole number.
+    whole?: boolean;
     view?: 'chart' | 'table';
     height?: number;
   }
-  let { label, series, rows, format, view = 'chart', height = 180 }: Props = $props();
+  let { label, series, rows, format, whole = false, view = 'chart', height = 180 }: Props = $props();
 
   const pad = { top: 10, right: 6, bottom: 22, left: 46 };
   const GAP = 2;
@@ -33,11 +35,13 @@
   const totals = $derived(rows.map((r) => r.values.reduce((a, b) => a + b, 0)));
 
   // niceMax rounds the tallest column up to 1, 2, 2.5 or 5 times a power of
-  // ten, so the gridlines fall on clean numbers.
+  // ten, so the gridlines fall on clean numbers. Counts also take 4 and 6,
+  // and only a top whose half is whole: the middle gridline is that half.
   function niceMax(v: number): number {
-    if (v <= 0) return 1;
+    if (v <= 0) return whole ? 2 : 1;
     const p = 10 ** Math.floor(Math.log10(v));
-    return ([1, 2, 2.5, 5, 10].find((m) => m * p >= v) ?? 10) * p;
+    const steps = whole ? [1, 2, 2.5, 4, 5, 6, 10].filter((m) => Number.isInteger((m * p) / 2)) : [1, 2, 2.5, 5, 10];
+    return (steps.find((m) => m * p >= v) ?? 10) * p;
   }
   const max = $derived(niceMax(Math.max(0, ...totals)));
   const ticks = $derived([0, max / 2, max]);
