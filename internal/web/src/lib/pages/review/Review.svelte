@@ -19,7 +19,7 @@
   import RawTab from './RawTab.svelte';
   import UsageTab from './UsageTab.svelte';
 
-  let { slug, id, tab = 'summary' }: { slug: string; id: string; tab?: ReviewTab } = $props();
+  let { slug, id, tab = 'summary', finding }: { slug: string; id: string; tab?: ReviewTab; finding?: string } = $props();
 
   const base = $derived(`${accountApi(slug)}/reviews/${encodeURIComponent(id)}`);
   const res = new Resource(() => getJSON<ReviewDetail>(base));
@@ -119,7 +119,7 @@
 
         <section class="tab-panel" aria-label={labels[tab]}>
           {#if tab === 'summary'}
-            <SummaryTab {d} />
+            <SummaryTab {d} {finding} />
           {:else if tab === 'diff'}
             <DiffTab {base} {d} />
           {:else if tab === 'conversation'}

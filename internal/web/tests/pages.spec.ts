@@ -356,7 +356,8 @@ test.describe('findings', () => {
     await expect(page.getByRole('navigation', { name: 'Analytics' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
 
     await row.locator('.finding-sub').first().click();
-    await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}$`));
+    await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}\\?finding=${f.id}$`));
+    await expect(page.locator(`#finding-${f.id}`)).toBeFocused();
   });
 
   test('filters by severity, status and repository tokens, in the URL', async ({ page }) => {
@@ -465,6 +466,10 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   await expect(page.locator('.followup .turn')).toHaveCount(g.transcript.turns.length);
   await page.locator('.timeline-link').first().click();
   await expect(page).toHaveURL(new RegExp(`${T}/reviews/rev-1$`));
+  await page.goBack();
+  await latest.getByRole('link', { name: f.title }).click();
+  await expect(page).toHaveURL(new RegExp(`${T}/reviews/rev-1\\?finding=${f.id}$`));
+  await expect(page.locator(`#finding-${f.id}`)).toBeFocused();
 });
 
 test.describe('review', () => {

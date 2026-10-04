@@ -10,12 +10,12 @@
 
   // pullUrl is the pull request on the forge, where an inline finding's
   // thread is.
-  let { f, pullUrl = '', compact = false }: { f: Finding; pullUrl?: string; compact?: boolean } = $props();
+  let { f, pullUrl = '', compact = false, id }: { f: Finding; pullUrl?: string; compact?: boolean; id?: string } = $props();
   const thread = $derived(pullUrl ? threadUrl(pullUrl, f.forgeCommentId) : undefined);
   const where = $derived(f.endLine > f.line ? `${f.path}:${f.line}-${f.endLine}` : `${f.path}:${f.line}`);
 </script>
 
-<article class="finding sev-edge-{f.severity}" aria-label="{f.severity}: {f.title}">
+<article {id} class="finding sev-edge-{f.severity}" aria-label="{f.severity}: {f.title}">
   <header class="finding-head">
     <span class="sev sev-{f.severity}">{f.severity}</span>
     {#if f.category}<span class="badge" title="What kind of problem it is">{f.category}</span>{/if}

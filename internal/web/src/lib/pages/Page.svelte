@@ -50,7 +50,7 @@
   {:else if route.name === 'pull'}
     <Pull slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} />
   {:else if route.name === 'review'}
-    <Review slug={route.slug} id={route.id} tab={route.tab} />
+    <Review slug={route.slug} id={route.id} tab={route.tab} finding={route.finding} />
   {:else if route.name === 'findings'}
     <Findings slug={route.slug} filter={route.filter} />
   {:else if route.name === 'rules'}

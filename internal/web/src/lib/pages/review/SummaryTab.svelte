@@ -4,7 +4,13 @@
   import Markdown from '../../components/Markdown.svelte';
   import FindingCard from './FindingCard.svelte';
 
-  let { d }: { d: ReviewDetail } = $props();
+  import { focusWhenShown } from '../../focus';
+
+  // finding is the id of the finding a link led here for.
+  let { d, finding }: { d: ReviewDetail; finding?: string } = $props();
+  $effect(() => {
+    if (finding) focusWhenShown(`#finding-${CSS.escape(finding)}`, true);
+  });
   const groups = $derived(
     SEVERITIES.map((s: Severity) => ({ s, items: d.findings.filter((f) => f.severity === s) })).filter((g) => g.items.length),
   );
@@ -34,6 +40,6 @@
 {#each groups as g (g.s)}
   <section class="finding-group" aria-labelledby="sev-{g.s}">
     <h2 id="sev-{g.s}" class="finding-group-head"><span class="sev sev-{g.s}">{g.s}</span> {g.items.length}</h2>
-    {#each g.items as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} />{/each}
+    {#each g.items as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />{/each}
   </section>
 {/each}
