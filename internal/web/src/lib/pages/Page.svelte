@@ -21,7 +21,9 @@
   import { sectionOf } from '../sections';
 
   let { route }: { route: Route } = $props();
-  const settings = $derived(sectionOf(route) === 'settings');
+  // The Configuration page lists its parts beside it, as the account's
+  // settings list their pages.
+  const settings = $derived(sectionOf(route) === 'settings' || route.name === 'console');
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });

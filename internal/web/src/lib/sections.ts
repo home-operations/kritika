@@ -1,5 +1,9 @@
-// The dashboard's sections: the tabs under the top bar, and the pages each
-// holds. Rune-free, like routes.ts, so tests can import it.
+// The dashboard's two scopes and their tabs under the top bar. A route that
+// names an account is in that account's scope, whose tabs are its sections;
+// any other is in the instance's, whose tabs are the pages about every
+// account at once. No tab chooses an account: one is entered by the scope
+// switcher or a link that names it. Rune-free, like routes.ts, so tests can
+// import it.
 import type { Route } from './routes';
 
 export type Section = 'analytics' | 'pulls' | 'rules' | 'settings';
@@ -18,13 +22,31 @@ export const SECTIONS: Record<Section, SectionDef> = {
   analytics: { label: 'Analytics', names: ['account', 'findings', 'usage'], home: (slug) => ({ name: 'account', slug }) },
   pulls: { label: 'Pull requests', names: ['pulls', 'pull', 'review', 'queue', 'followups'], home: (slug) => ({ name: 'pulls', slug }) },
   rules: { label: 'Rules', names: ['rules'], home: (slug) => ({ name: 'rules', slug }) },
-  settings: { label: 'Settings', names: ['repos', 'repo', 'admin', 'console'], home: (slug) => ({ name: 'repos', slug }) },
+  settings: { label: 'Settings', names: ['repos', 'repo', 'admin'], home: (slug) => ({ name: 'repos', slug }) },
 };
 
 export const SECTION_ORDER: readonly Section[] = ['analytics', 'pulls', 'rules', 'settings'];
 
 export function sectionOf(r: Route): Section | undefined {
   return SECTION_ORDER.find((s) => SECTIONS[s].names.includes(r.name));
+}
+
+// One of the instance's tabs; admin is one only an admin has.
+export interface InstanceTab {
+  label: string;
+  route: Route;
+  admin?: boolean;
+}
+
+export const INSTANCE_TABS: readonly InstanceTab[] = [
+  { label: 'Overview', route: { name: 'overview' } },
+  { label: 'Configuration', route: { name: 'console' }, admin: true },
+];
+
+// scopeOf is the account a route is in the scope of, undefined for one in
+// the instance's.
+export function scopeOf(r: Route): string | undefined {
+  return 'slug' in r ? r.slug : undefined;
 }
 
 // A section's list pages share one strip of sub-tabs in place of a page

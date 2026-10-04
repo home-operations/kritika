@@ -457,6 +457,12 @@ kbd {
 .menu-item[aria-current] {
   font-weight: 600;
 }
+.menu-heading {
+  margin: 6px 0 2px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
 .menu-check {
   display: inline-flex;
   width: 15px;

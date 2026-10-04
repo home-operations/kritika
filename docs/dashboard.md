@@ -9,8 +9,18 @@ in progress, reindex a repository's embeddings, or turn a repository on or
 off. Everything else is set in the [configuration file](configuration.md),
 which the dashboard shows but does not change.
 
-The top bar switches between the accounts you can read, or all of them
-at once, and holds a tab for each of an account's sections:
+The top bar switches between two scopes, each with its own tabs: the
+instance, and one of the accounts you can read. No tab chooses an account
+for you: you enter one from the switcher or a link that names it.
+
+The instance's tabs are about every account at once:
+
+- **Overview:** totals across the accounts you can read, and each
+  account's own.
+- **Configuration:** for an admin, the
+  [Configuration page](#configuration-page).
+
+An account's tabs are its sections:
 
 - **Analytics:** the account's reviews over the last 7, 30 or 90 days
   against the same span before: pull requests reviewed, reviews,
@@ -44,8 +54,7 @@ at once, and holds a tab for each of an account's sections:
   that cite it, counted as the Findings list counts them, and how many of
   those were addressed, so a noisy rule shows as many findings and few
   addressed. The page only lists them.
-- **Settings:** its repositories, and for an admin its audit log and the
-  instance's Configuration page.
+- **Settings:** its repositories, and for an admin its audit log.
 
 A dot in the top bar shows whether live updates are connected. Once they
 have been down for two seconds it reads "Reconnecting…", and the page may
@@ -72,7 +81,7 @@ checklist names each step still missing and what to set for it:
 
 ## Configuration page
 
-An admin's Configuration page, under Settings, shows what the instance
+An admin's Configuration page, a tab of the instance, shows what the instance
 runs and changes none of it: the Setup checklist, the accounts the
 GitHub Apps serve, each instance setting with its source, the Apps with
 the accounts each is installed on, and the admin audit log. When

@@ -54,7 +54,7 @@ entries for an account's or a repository's own settings and rules, and
 ## Sign in
 
 Sign in as an admin. Until the instance can review, a banner says what is
-missing and leads to the Configuration page, under Settings, whose Setup
+missing and leads to the Configuration page, a tab of the instance, whose Setup
 checklist names each step and what to set for it
 ([first run](dashboard.md#first-run)).
 
