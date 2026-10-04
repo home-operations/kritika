@@ -600,6 +600,12 @@ table.data td.pull-main {
 .key-hints {
   margin: 0;
 }
+/* A touch screen has no keys to hint at. */
+@media (pointer: coarse) {
+  .key-hints {
+    display: none;
+  }
+}
 
 /* ---- findings table ----------------------------------------------------- */
 .finding-row {
@@ -1618,6 +1624,11 @@ table.diff td.code {
   padding: 8px 12px;
   border-top: 1px solid var(--border);
   font-size: 12px;
+}
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* ---- stat tiles --------------------------------------------------------- */
