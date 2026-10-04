@@ -103,8 +103,9 @@
                 <tr>
                   <th scope="col">Account</th>
                   <th scope="col">Connection</th>
-                  <th scope="col" class="num">Repositories</th>
+                  <th scope="col" class="num">Repos</th>
                   <th scope="col" class="num">Reviews 7d</th>
+                  <th scope="col" title="Reviews done today, against the account's daily cap where it has one">Today</th>
                   <th scope="col" title="Open pull requests whose last review failed, hit a limit or found something blocking, or whose automatic reviews are paused; and a cap that is close">Needs attention</th>
                   <th scope="col" title="Whether GitHub's webhooks reach kritika, and when it last polled instead">Webhooks</th>
                   <th scope="col" class="num">Spend</th>
@@ -118,6 +119,14 @@
                     <td class="mono small name-clip" title={t.connection}>{t.connection}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>
+                    <td>
+                      <span class="small">
+                        {wholeNumber(t.usage.reviewsToday)}{t.usage.reviewsPerDay ? ` of ${wholeNumber(t.usage.reviewsPerDay)}` : ''}
+                      </span>
+                      {#if t.usage.reviewsPerDay}
+                        <Meter value={t.usage.reviewsToday} max={t.usage.reviewsPerDay} label={`Today's reviews done by ${t.slug}`} />
+                      {/if}
+                    </td>
                     <td>
                       <span class="account-wants">
                         {#each WANTS.filter((w) => t.attention[w.key] > 0) as w (w.key)}

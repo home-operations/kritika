@@ -72,6 +72,20 @@ test.describe('overview', () => {
     await expect(page.getByText('Running now')).toHaveCount(0);
   });
 
+  test("each account's row says how many of today's reviews are done, against its cap where it has one", async ({ page }) => {
+    const a = g.accountSummary;
+    const free = { ...a, slug: 'github/free', usage: { ...a.usage, reviewsToday: 7, reviewsPerDay: 0 } };
+    const full = { ...a, slug: 'github/full', usage: { ...a.usage, reviewsToday: 48, reviewsPerDay: 50 } };
+    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [a, free, full]], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const today = (slug: string) => page.getByRole('row').filter({ hasText: slug }).getByRole('cell').nth(4);
+    await expect(page.getByRole('columnheader').nth(4)).toHaveText('Today');
+    await expect(today(a.slug)).toContainText(`${a.usage.reviewsToday} of ${a.usage.reviewsPerDay}`);
+    await expect(today('github/free')).toHaveText('7');
+    await expect(today('github/free').getByRole('meter')).toHaveCount(0);
+    await expect(today('github/full').getByRole('meter')).toHaveClass(/tone-danger/);
+  });
+
   test('the attention tile says so when nothing wants a look', async ({ page }) => {
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, blocking: 0, paused: 0 } }]], ...g.defaultApi()]);
     await page.goto('/#/');
