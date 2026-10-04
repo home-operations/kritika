@@ -657,10 +657,13 @@ table.data td.finding-main {
 table.data td.wrap {
   white-space: normal;
 }
+/* The rule is the column that gives way, and on a narrow screen it would
+   give all of it: the table scrolls sideways before the rule's words stack. */
 .rule-main {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  min-width: 240px;
 }
 .rule-kind {
   display: inline-flex;
