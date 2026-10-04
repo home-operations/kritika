@@ -389,6 +389,27 @@ test.describe('findings', () => {
     await expect(page.locator(`#finding-${f.id}`)).toBeFocused();
   });
 
+  test('the status control narrows the list, and an open finding stands out from a dismissed one', async ({ page }) => {
+    const f = g.accountFinding;
+    const list = [
+      { ...f, id: 'f-o', status: 'open' },
+      { ...f, id: 'f-d', status: 'dismissed', dismissReason: 'house style' },
+    ];
+    await g.mockApi(page, [[/\/findings$/, g.pageOf(list)], ...g.defaultApi()]);
+    await page.goto(`/${T}/findings`);
+    const rows = page.locator('.finding-row');
+    await expect(rows.nth(0).locator('.status')).toHaveClass(/tone-accent/);
+    await expect(rows.nth(1).locator('.status')).toHaveClass(/tone-muted/);
+    await expect(rows.nth(1)).toContainText('house style');
+    const status = page.getByRole('radiogroup', { name: 'Status' });
+    await expect(status.getByRole('radio', { name: 'All' })).toBeChecked();
+    await status.getByRole('radio', { name: 'Open' }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?status=open$`));
+    await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue('status:open');
+    await status.getByRole('radio', { name: 'All' }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings$`));
+  });
+
   test('filters by severity, status and repository tokens, in the URL', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/findings`);

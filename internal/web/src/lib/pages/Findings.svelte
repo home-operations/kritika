@@ -15,12 +15,21 @@
   import LoadMore from '../components/LoadMore.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
+  import Segmented from '../components/Segmented.svelte';
   import Reactions from '../components/Reactions.svelte';
   import Time from '../components/Time.svelte';
   import Icon from '../Icon.svelte';
   import { mdiCancel, mdiCheck, mdiCircleOutline, mdiOpenInNew } from '../icons';
 
   const statusIcon = { open: mdiCircleOutline, addressed: mdiCheck, dismissed: mdiCancel } as const;
+  // An open finding is the one still asking for something.
+  const statusTone = { open: 'accent', addressed: 'ok', dismissed: 'muted' } as const;
+  const STATUSES = [
+    { value: '', label: 'All' },
+    { value: 'open', label: 'Open' },
+    { value: 'addressed', label: 'Addressed' },
+    { value: 'dismissed', label: 'Dismissed' },
+  ] as const;
 
   let { slug, filter }: { slug: string; filter?: FindingFilter } = $props();
 
@@ -101,6 +110,12 @@
         ready={!!repos.data}
         {onapply}
       />
+      <Segmented
+        label="Status"
+        options={STATUSES}
+        value={filter?.status ?? ''}
+        onchange={(status) => replace({ name: 'findings', slug, filter: findingFilter({ ...filter, status }) })}
+      />
     </div>
     <StateView {res} retry={() => res.load()}>
       {#snippet children()}
@@ -154,11 +169,12 @@
                       </span>
                     </td>
                     <td>
-                      <span class="status" class:tone-ok={f.status === 'addressed'} class:tone-muted={f.status !== 'addressed'} title={f.dismissReason}>
+                      <span class="status tone-{statusTone[f.status]}">
                         <span class="status-tile"><Icon path={statusIcon[f.status]} size={12} /></span>
                         <span class="status-word">{f.status}</span>
                       </span>
                       <Reactions up={f.reactionsUp} down={f.reactionsDown} />
+                      {#if f.dismissReason}<span class="finding-sub finding-dismissed" title="The reason it was dismissed with">{f.dismissReason}</span>{/if}
                     </td>
                     <td class="num"><Time iso={f.firstSeenAt} /></td>
                   </tr>
