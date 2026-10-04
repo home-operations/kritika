@@ -8,9 +8,9 @@
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { day } from '../dates';
-  import { daysAgo, duration, usd, wholeNumber, CATEGORIES, type Tone } from '../format';
-  import type { AccountDetail, Analytics, AnalyticsPoint, Attention, MonthUsage } from '../types';
-  import type { PullFilter } from '../routes';
+  import { daysAgo, duration, usd, wholeNumber, CATEGORIES } from '../format';
+  import type { AccountDetail, Analytics, AnalyticsPoint, Attention } from '../types';
+  import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
   import SectionTabs from '../components/SectionTabs.svelte';
   import Segmented from '../components/Segmented.svelte';
@@ -57,29 +57,7 @@
     ),
   );
 
-  // The open pull requests that want a look, each kind linking to the list
-  // narrowed to it.
-  const WANTS: { key: keyof Attention; tone: Tone; label: string; why: string; filter: PullFilter }[] = [
-    { key: 'failed', tone: 'danger', label: 'failed', why: 'whose last review failed', filter: { outcome: 'failed' } },
-    { key: 'capped', tone: 'warn', label: 'capped', why: 'whose last review hit a limit', filter: { outcome: 'capped' } },
-    { key: 'blocking', tone: 'danger', label: 'blocking', why: 'whose last review found something blocking', filter: { is: 'blocking' } },
-    { key: 'paused', tone: 'muted', label: 'paused', why: 'whose automatic reviews are paused', filter: { is: 'paused' } },
-  ];
   const plural = (n: number) => `${wholeNumber(n)} open ${n === 1 ? 'pull request' : 'pull requests'}`;
-
-  // A cap is close from nine tenths of it, where the Spend page's meter
-  // turns red.
-  const NEAR = 0.9;
-  function caps(u: MonthUsage): string[] {
-    const out: string[] = [];
-    if (u.tokensPerMonth && u.tokens >= u.tokensPerMonth * NEAR) {
-      out.push(`${Math.floor((u.tokens / u.tokensPerMonth) * 100)}% of the month's tokens are spent`);
-    }
-    if (u.reviewsPerDay && u.reviewsToday >= u.reviewsPerDay * NEAR) {
-      out.push(`${wholeNumber(u.reviewsToday)} of today's ${wholeNumber(u.reviewsPerDay)} reviews are done`);
-    }
-    return out;
-  }
 
   const found = (c: { blocking: number; important: number; nit: number }) => c.blocking + c.important + c.nit;
   const rate = (addressed: number, total: number) => (total ? (addressed / total) * 100 : null);
@@ -134,7 +112,7 @@
 
     {#if attention.data && detail.data}
       {@const wants = WANTS.filter((w) => attention.data![w.key] > 0)}
-      {@const near = caps(detail.data.usage)}
+      {@const near = nearCaps(detail.data.usage)}
       {#if wants.length || near.length}
         <section class="panel" aria-labelledby="an-attention">
           <header class="panel-head"><h2 id="an-attention">Needs attention</h2></header>

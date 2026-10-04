@@ -1,13 +1,18 @@
 <script lang="ts">
-  // The landing page: totals across every account the viewer can see, then
-  // one row per account with its own numbers, each linking to the account.
+  // The instance's landing page: totals across every account the viewer can
+  // see, then one row per account with its numbers and its health, each
+  // cell that names something wrong leading to where the account shows it.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { tokens, usd, wholeNumber } from '../format';
   import type { AccountSummary } from '../types';
+  import { WANTS, nearCaps } from '../attention';
+  import { unsignedWebhooks } from '../setup';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
+  import Pill from '../components/Pill.svelte';
+  import Time from '../components/Time.svelte';
 
   const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
 
@@ -70,6 +75,8 @@
                   <th scope="col">Connection</th>
                   <th scope="col" class="num">Repositories</th>
                   <th scope="col" class="num">Reviews 7d</th>
+                  <th scope="col" title="Open pull requests whose last review failed, hit a limit or found something blocking, or whose automatic reviews are paused; and a cap that is close">Needs attention</th>
+                  <th scope="col" title="Whether GitHub's webhooks reach kritika, and when it last polled instead">Webhooks</th>
                   <th scope="col" class="num">Spend</th>
                   <th scope="col">Tokens this month</th>
                 </tr>
@@ -81,6 +88,31 @@
                     <td class="mono small">{t.connection}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>
+                    <td>
+                      <span class="account-wants">
+                        {#each WANTS.filter((w) => t.attention[w.key] > 0) as w (w.key)}
+                          <a href={href({ name: 'pulls', slug: t.slug, filter: w.filter })} title="{t.attention[w.key]} open pull requests {w.why}">
+                            <Pill tone={w.tone} label={`${t.attention[w.key]} ${w.label}`} />
+                          </a>
+                        {/each}
+                        {#each nearCaps(t.usage) as text (text)}
+                          <a href={href({ name: 'usage', slug: t.slug })} title={text}><Pill tone="warn" label="cap" /></a>
+                        {/each}
+                        {#if !WANTS.some((w) => t.attention[w.key] > 0) && !nearCaps(t.usage).length}<span class="muted">—</span>{/if}
+                      </span>
+                    </td>
+                    <td>
+                      {#if unsignedWebhooks(t)}
+                        <Pill tone="danger" label="unsigned" title="GitHub sends the App's webhooks with no signature, so kritika refuses them and only polls: set the App's webhook secret" />
+                      {:else if t.lastWebhookAt}
+                        <Pill tone="ok" label="receiving" />
+                      {:else}
+                        <Pill tone="warn" label="polling only" title="No webhook has reached the account's App, so kritika only polls it for new pull requests and cannot answer mentions" />
+                      {/if}
+                      {#if unsignedWebhooks(t) || !t.lastWebhookAt}
+                        <span class="small muted">{#if t.lastPolledAt}polled <Time iso={t.lastPolledAt} />{:else}not polled yet{/if}</span>
+                      {/if}
+                    </td>
                     <td class="num">{usd(t.usage.costUsd)}</td>
                     <td>
                       <span class="small">

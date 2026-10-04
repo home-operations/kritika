@@ -1064,6 +1064,14 @@ input[type='checkbox'][role='switch']:focus-visible {
   gap: 4px 14px;
   margin: 0;
 }
+.account-wants {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.account-wants a {
+  text-decoration: none;
+}
 .rule-checks {
   list-style: none;
   margin: 0;

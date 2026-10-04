@@ -9,5 +9,14 @@
     "tokensPerMonth": 1000000,
     "reviewsToday": 2,
     "reviewsPerDay": 50
-  }
+  },
+  "attention": {
+    "failed": 1,
+    "capped": 0,
+    "blocking": 2,
+    "paused": 0
+  },
+  "lastWebhookAt": "2026-09-01T12:00:00Z",
+  "lastUnsignedWebhookAt": null,
+  "lastPolledAt": "2026-09-01T12:01:30Z"
 }
