@@ -111,6 +111,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 		Review: ReviewInfo{
 			Review: reviewItem(v), Pull: PullRef{Repository: v.Repository, Number: v.Number, Title: v.Title, URL: v.URL},
 			ScopeReason: v.ScopeReason, MergeBaseSHA: v.MergeBaseSHA, PatchID: v.PatchID, PriorReviewID: v.PriorReviewID,
+			NewestReviewID:    v.NewestReviewID,
 			CancelRequestedAt: v.CancelRequestedAt,
 		},
 		Findings: make([]Finding, len(findings)), Usage: make([]UsageRow, len(usage)),

@@ -147,3 +147,43 @@ func TestReviewSkipReason(t *testing.T) {
 		})
 	}
 }
+
+// TestNewestReviewID checks that a review names the pull request's newest
+// review, and that the newest names none.
+func TestNewestReviewID(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("newest"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "newest")
+	first := insertReview(t, ctx, s, account)
+	var ids [2]string
+	var got [3]ReviewRow
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		for i := range ids {
+			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
+				SELECT account_id, pull_request_id, 'abc', 'completed', created_at + $2 * interval '1 minute' FROM reviews WHERE id = $1
+				RETURNING id`, first, i+1).Scan(&ids[i]); err != nil {
+				return err
+			}
+		}
+		for i, id := range []string{first, ids[0], ids[1]} {
+			var err error
+			if got[i], err = FindReview(ctx, tx, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i, v := range got[:2] {
+		if v.NewestReviewID == nil || *v.NewestReviewID != ids[1] {
+			t.Errorf("review %d names %v as the newest, want %s", i, v.NewestReviewID, ids[1])
+		}
+	}
+	if got[2].NewestReviewID != nil {
+		t.Errorf("the newest review names %s as newer", *got[2].NewestReviewID)
+	}
+}

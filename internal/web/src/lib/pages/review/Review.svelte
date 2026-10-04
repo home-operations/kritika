@@ -80,6 +80,12 @@
             {/if}
           </p>
           <ReviewMeta {r} scopeReason={r.scopeReason} />
+          {#if r.newestReviewId}
+            <p class="notice newer-notice" role="note">
+              The pull request has been reviewed again since.
+              <a href={href({ name: 'review', slug, id: r.newestReviewId })}>Open its latest review</a>
+            </p>
+          {/if}
           {#if r.error}<p class="error-text" role="note">{r.error}</p>{/if}
           {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
           {#if isAdmin()}

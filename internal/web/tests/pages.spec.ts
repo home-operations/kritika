@@ -589,6 +589,15 @@ test.describe('review', () => {
     await expect(page.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toContainText(['addressed', 'dismissed', f.title]);
   });
 
+  test('a review that is no longer the latest leads to the one that is', async ({ page }) => {
+    await page.goto(`/${T}/reviews/rev-1`);
+    await expect(page.locator('.page-head h1')).toBeVisible();
+    await expect(page.locator('.newer-notice')).toHaveCount(0);
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, review: { ...g.reviewDetail.review, newestReviewId: 'rev-2' } }], ...g.defaultApi()]);
+    await page.reload();
+    await expect(page.locator('.newer-notice').getByRole('link', { name: 'Open its latest review' })).toHaveAttribute('href', `${T}/reviews/rev-2`);
+  });
+
   test('diff anchors a finding under its line', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/diff`);
     const anchored = page.locator('tr.dl-finding');
