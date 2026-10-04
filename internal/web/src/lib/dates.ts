@@ -6,7 +6,8 @@
 //   "Sep 1", with the year when it is not this one. Always through
 //   components/Time.svelte, which carries the full timestamp on hover.
 //
-//   A full timestamp (a hover title, running text that needs the moment):
+//   A full timestamp (a hover title, running text that needs the moment,
+//   a run's phases, which are seconds apart):
 //   "Sep 1, 2026, 14:05:09 GMT+2", or "2:05:09 PM", in the viewer's time
 //   zone and on their clock, 12 or 24 hours: the ones they chose in their
 //   settings, or else their browser's.

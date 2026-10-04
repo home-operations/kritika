@@ -58,7 +58,7 @@
         <thead><tr><th scope="col">Phase</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Took</th></tr></thead>
         <tbody>
           {#each segs as s (s.name)}
-            <tr><td>{s.name}</td><td><Time iso={s.from} /></td><td><Time iso={s.to} /></td><td>{s.to ? duration(s.ms) : `${duration(s.ms)} so far`}</td></tr>
+            <tr><td>{s.name}</td><td><Time iso={s.from} full /></td><td><Time iso={s.to} full /></td><td>{s.to ? duration(s.ms) : `${duration(s.ms)} so far`}</td></tr>
           {/each}
         </tbody>
       </table>
