@@ -4,8 +4,8 @@
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
   import { initEvents, closeEvents, stream } from './lib/events.svelte';
-  import { theme, cycleTheme, initTheme } from './lib/theme.svelte';
-  import { initClock, applyDatePrefs, clock } from './lib/time.svelte';
+  import { theme, nextTheme, setTheme, initTheme } from './lib/theme.svelte';
+  import { initClock, clock } from './lib/time.svelte';
   import { timestamp } from './lib/dates';
   import { initKeyboard, help, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
@@ -36,7 +36,7 @@
   import Page from './lib/pages/Page.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import SetupBanner from './lib/pages/admin/SetupBanner.svelte';
-  import { session, loadMeta } from './lib/session.svelte';
+  import { session, loadMeta, applySettings, saveSettings } from './lib/session.svelte';
   import type { Me } from './lib/types';
 
   const me = $derived(session.me);
@@ -53,7 +53,7 @@
   async function loadMe(): Promise<void> {
     try {
       session.me = await getJSON<Me>('/api/v1/me');
-      applyDatePrefs(session.me.settings);
+      applySettings(session.me.settings);
       initEvents();
     } catch (err) {
       // A 401 already redirected to #/signin (see api.svelte.ts); anything
@@ -104,6 +104,14 @@
   const themeIconPath = $derived(
     theme.pref === 'auto' ? mdiThemeLightDark : theme.pref === 'dark' ? mdiWeatherNight : mdiWhiteBalanceSunny,
   );
+
+  // The theme button steps to the next theme, and keeps a light or dark
+  // one with the user; auto is this browser's own to follow its system.
+  function cycleTheme(): void {
+    const next = nextTheme();
+    if (session.me) void saveSettings({ theme: next === 'auto' ? '' : next });
+    else setTheme(next);
+  }
 
   // Keep the help dialog's Tab from escaping to the page behind the backdrop;
   // Escape (global handler) and the backdrop close it.

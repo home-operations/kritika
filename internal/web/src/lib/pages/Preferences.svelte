@@ -1,14 +1,11 @@
 <script lang="ts">
-  // The viewer's own settings: how the dashboard writes times for them.
+  // The viewer's own settings: how the dashboard writes times for them, and
+  // its theme.
   // Each is saved as it is chosen, and kept with the user, so it holds in
   // any browser they sign in from.
-  import { sendJSON } from '../api.svelte';
-  import { session } from '../session.svelte';
-  import { describe } from '../manage';
-  import { toast } from '../toast.svelte';
-  import { applyDatePrefs, clock } from '../time.svelte';
+  import { session, saveSettings } from '../session.svelte';
+  import { clock } from '../time.svelte';
   import { hour12Of, timestamp, zoneKnown } from '../dates';
-  import type { UserSettings } from '../types';
   import Segmented from '../components/Segmented.svelte';
 
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -24,22 +21,11 @@
 
   const now = $derived((clock.rev, timestamp(new Date(clock.now).toISOString())));
 
-  // save applies a choice at once and keeps it; one the server refuses is
-  // taken back.
-  async function save(change: Partial<UserSettings>): Promise<void> {
-    const me = session.me;
-    if (!me) return;
-    const before = me.settings;
-    me.settings = { ...before, ...change };
-    applyDatePrefs(me.settings);
-    try {
-      await sendJSON('PUT', '/api/v1/me/settings', me.settings);
-    } catch (err) {
-      me.settings = before;
-      applyDatePrefs(before);
-      toast(`Not saved: ${describe(err)}`, 'danger');
-    }
-  }
+  const THEMES = [
+    { value: '', label: "Browser's" },
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+  ] as const;
 </script>
 
 <svelte:head><title>Your settings · kritika</title></svelte:head>
@@ -59,7 +45,7 @@
         <dl class="deflist prefs">
           <dt><label for="pref-zone">Time zone</label></dt>
           <dd>
-            <select id="pref-zone" value={settings.timeZone} onchange={(e) => save({ timeZone: e.currentTarget.value })}>
+            <select id="pref-zone" value={settings.timeZone} onchange={(e) => saveSettings({ timeZone: e.currentTarget.value })}>
               <option value="">Browser's ({browserZone})</option>
               {#each zones as z (z)}<option value={z}>{z}</option>{/each}
             </select>
@@ -69,7 +55,17 @@
             <p class="small muted">Charts and tables by day count each day in UTC, whatever the zone.</p>
           </dd>
           <dt>Clock</dt>
-          <dd><Segmented label="Clock" options={CLOCKS} value={settings.clock} onchange={(clock) => save({ clock })} /></dd>
+          <dd><Segmented label="Clock" options={CLOCKS} value={settings.clock} onchange={(clock) => saveSettings({ clock })} /></dd>
+        </dl>
+      </section>
+      <section class="panel" aria-labelledby="pref-look">
+        <header class="panel-head"><h2 id="pref-look">Appearance</h2></header>
+        <dl class="deflist prefs">
+          <dt>Theme</dt>
+          <dd>
+            <Segmented label="Theme" options={THEMES} value={settings.theme} onchange={(theme) => saveSettings({ theme })} />
+            <p class="small muted">Light or dark holds in every browser you sign in from. Left to the browser, each follows its own system.</p>
+          </dd>
         </dl>
       </section>
     {:else}
