@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -244,7 +244,7 @@ func ListPullReviews(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Re
 
 // FindReview returns one review, or ErrNotFound.
 func FindReview(ctx context.Context, tx pgx.Tx, id string) (ReviewRow, error) {
-	if uuid.Validate(id) != nil {
+	if _, err := uuid.Parse(id); err != nil {
 		return ReviewRow{}, ErrNotFound
 	}
 	rows, err := tx.Query(ctx, `SELECT `+reviewColumns+` WHERE v.id = $1::uuid`, id)

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river/rivertype"
 
@@ -105,7 +105,7 @@ func queuedMessage(j *store.JobRow) string {
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx, tid, id := r.Context(), t.account.ID(), r.PathValue("id")
-	if uuid.Validate(id) != nil {
+	if _, err := uuid.Parse(id); err != nil {
 		return errNotFound("review")
 	}
 	err := s.read(ctx, t, func(tx pgx.Tx) error {

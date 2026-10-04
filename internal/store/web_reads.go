@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -101,8 +101,10 @@ func (p Page) check() error {
 	if p.Limit <= 0 {
 		return ErrPageLimit
 	}
-	if !p.After.First() && uuid.Validate(p.After.ID) != nil {
-		return ErrFilter
+	if !p.After.First() {
+		if _, err := uuid.Parse(p.After.ID); err != nil {
+			return ErrFilter
+		}
 	}
 	return nil
 }

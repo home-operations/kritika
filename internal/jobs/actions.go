@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
@@ -81,7 +81,7 @@ func EnqueueRerun(
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		AccountID: accountID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,
-		Trigger: TriggerManual, Request: uuid.NewString(),
+		Trigger: TriggerManual, Request: uuid.New().String(),
 	}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)

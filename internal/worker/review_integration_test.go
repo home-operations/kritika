@@ -21,11 +21,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"uuid"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -1288,7 +1288,7 @@ func checkBotPatchIDSkip(
 	// outcome rather than the previous one's.
 	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
 		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: newHead.String(),
-		Trigger: jobs.TriggerManual, Request: uuid.NewString(),
+		Trigger: jobs.TriggerManual, Request: uuid.New().String(),
 	}, nil)
 	if err != nil || res.UniqueSkippedAsDuplicate {
 		t.Fatalf("insert manual rerun = %+v, %v", res, err)
@@ -1952,7 +1952,7 @@ func checkRequestCancelRejected(ctx context.Context, t *testing.T, appStore *sto
 func checkRequestCancelCrossAccount(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, headSHA string) {
 	t.Helper()
 	id := latestReviewID(ctx, t, appStore, accountID, headSHA)
-	other := uuid.NewString()
+	other := uuid.New().String()
 	err := appStore.WithAccount(ctx, other, func(tx pgx.Tx) error {
 		return jobs.RequestCancel(ctx, tx, insertOnly, id)
 	})
@@ -2364,7 +2364,7 @@ func checkEnqueueReindexSentinels(
 	errRollback := errors.New("roll back")
 	t.Run("ErrRepositoryNotFound for a repository the account does not have", func(t *testing.T) {
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, accountID, uuid.NewString())
+			_, err := jobs.EnqueueReindex(ctx, tx, insertOnly, accountID, uuid.New().String())
 			return errors.Join(err, errRollback)
 		})
 		if !errors.Is(err, jobs.ErrRepositoryNotFound) {
