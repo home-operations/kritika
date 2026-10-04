@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Popover } from 'bits-ui';
   import { basePath } from './lib/base';
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
@@ -119,37 +120,17 @@
     if (e.key === 'Tab') e.preventDefault();
   }
 
-  // The account and user menus are native <details>, which have no built-in
-  // Escape handling and stay open on an outside click or once a link in
-  // them is followed, so all three are wired up by hand here.
-  let accountMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
-  let userMenuEl = $state<HTMLDetailsElement | undefined>(undefined);
-
-  function closeMenus(): void {
-    if (accountMenuEl) accountMenuEl.open = false;
-    if (userMenuEl) userMenuEl.open = false;
-  }
-
-  function onMenuKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      closeMenus();
-    }
-  }
-
-  function onDocumentClick(e: MouseEvent): void {
-    for (const el of [accountMenuEl, userMenuEl]) {
-      if (el?.open && !el.contains(e.target as Node)) el.open = false;
-    }
-  }
+  // The scope and user menus are popovers: Bits UI closes one on Escape or
+  // a click outside, and following a link in one closes it here.
+  let scopeOpen = $state(false);
+  let userOpen = $state(false);
 
   $effect(() => {
     void router.route;
-    closeMenus();
+    scopeOpen = false;
+    userOpen = false;
   });
 </script>
-
-<svelte:window onclick={onDocumentClick} />
 
 {#if router.route.name === 'signin'}
   <SignIn />
@@ -163,18 +144,18 @@
         </a>
 
         {#if me && me.accounts.length > 0}
-          <!-- Escape from anywhere in the open menu closes it before the window's handlers see it. -->
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <details class="menu account-menu" bind:this={accountMenuEl} onkeydown={onMenuKeydown}>
-            <summary class="account-button" title="Switch between the instance and an account">
+          <Popover.Root bind:open={scopeOpen}>
+            <Popover.Trigger class="account-button" title="Switch between the instance and an account">
               {#if currentSlug}
                 <span class="mono">{currentSlug}</span>
               {:else}
                 <span>Instance</span>
               {/if}
               <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch scope" />
-            </summary>
-            <nav class="menu-panel account-panel" aria-label="Scope">
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content class="menu-panel account-panel" align="start" sideOffset={6}>
+                <nav aria-label="Scope">
               <a
                 class="menu-item"
                 href={href(pageOfInstance(router.route, instanceTabs.some((t) => t.route.name === 'instanceQueue')))}
@@ -191,8 +172,10 @@
                   {slug}
                 </a>
               {/each}
-            </nav>
-          </details>
+                </nav>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         {/if}
 
         <div class="spacer"></div>
@@ -219,13 +202,13 @@
             <Icon path={themeIconPath} label="Toggle theme" />
           </button>
           {#if me}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <details class="menu user-menu" bind:this={userMenuEl} onkeydown={onMenuKeydown}>
-              <summary class="btn btn-icon" title={me.user.displayName}>
+            <Popover.Root bind:open={userOpen}>
+              <Popover.Trigger class="btn btn-icon user-button" title={me.user.displayName}>
                 <Icon path={mdiAccountOutline} label="User" />
                 <Icon path={mdiChevronDown} size={12} />
-              </summary>
-              <div class="menu-panel user-panel">
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content class="menu-panel user-panel" align="end" sideOffset={6}>
                 <p class="user-name">{me.user.displayName}</p>
                 <p class="user-email">{me.user.email}</p>
                 <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Your settings</a>
@@ -235,8 +218,9 @@
                 {#if session.meta?.version}
                   <p class="user-version mono" title="kritika {session.meta.version}">kritika {session.meta.version}</p>
                 {/if}
-              </div>
-            </details>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
           {/if}
         </div>
       </div>

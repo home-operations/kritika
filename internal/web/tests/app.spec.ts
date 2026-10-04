@@ -153,9 +153,9 @@ test.describe('signed-in shell', () => {
     const bar = await page.locator('.topbar').boundingBox();
     const main = await page.locator('main.page').boundingBox();
     expect(bar && main && bar.y + bar.height <= main.y).toBe(true);
-    await expect(page.locator('.user-menu summary')).toHaveAttribute('title', DEFAULT_ME.user.displayName);
+    await expect(page.locator('.user-button')).toHaveAttribute('title', DEFAULT_ME.user.displayName);
 
-    await page.locator('.user-menu summary').click();
+    await page.locator('.user-button').click();
     await expect(page.locator('.user-name')).toHaveText(DEFAULT_ME.user.displayName);
     await expect(page.locator('.user-email')).toHaveText(DEFAULT_ME.user.email);
   });
@@ -230,7 +230,7 @@ test.describe('signed-in shell', () => {
     await page.route('**/auth/logout', (route) => route.fulfill({ status: 204 }));
     await page.goto('/');
 
-    await page.locator('.user-menu summary').click();
+    await page.locator('.user-button').click();
     await page.getByRole('button', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL(/#\/signin$/);
