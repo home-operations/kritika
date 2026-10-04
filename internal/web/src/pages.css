@@ -85,6 +85,9 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  /* Contains the .sr-only text below the fold, which would otherwise be
+     laid out against the document and give it a scrollbar of its own. */
+  position: relative;
 }
 .page-inner {
   width: 100%;

@@ -1038,6 +1038,14 @@ test('a signed-in user navigating to sign-in is sent back', async ({ page, mockP
   await expect(page.locator('.signin-card')).toHaveCount(0);
 });
 
+test('a page longer than the window scrolls in one place, not the document as well', async ({ page }) => {
+  for (const h of [T, `${T}/repos/alpha/one`, '#/admin']) {
+    await page.goto(`/${h}`);
+    await expect(page.locator('.state-msg[aria-live]')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBe(0);
+  }
+});
+
 test('dark theme renders every page without console errors', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
