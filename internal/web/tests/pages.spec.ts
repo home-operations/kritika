@@ -377,6 +377,25 @@ test.describe('pulls list', () => {
     await expect(page.locator('.paused-notice')).toContainText('Automatic reviews of this pull request are paused');
   });
 
+  test('a row marks a pull request that is merged, closed or a draft, and its page says which', async ({ page }) => {
+    const as = (number: number, more: Partial<Pull>): Pull => ({ ...g.pull, number, url: g.pull.url.replace(/\d+$/, String(number)), ...more });
+    const merged = as(7, { state: 'closed', merged: true });
+    await g.mockApi(page, [
+      [/\/pulls$/, g.pageOf([merged, as(8, { state: 'closed' }), as(9, { draft: true }), as(10, {})])],
+      [/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, pull: merged }],
+      ...g.defaultApi(),
+    ]);
+    await page.goto(`/${T}/pulls?state=all`);
+    const marks = page.locator('.pull-rows tr .lifecycle');
+    await expect(marks).toHaveCount(3);
+    expect(await marks.evaluateAll((els) => els.map((e) => e.getAttribute('title')))).toEqual(['Merged', 'Closed', 'Draft']);
+    await expect(marks.nth(0)).toHaveClass(/tone-merged/);
+    await expect(marks.nth(1)).toHaveClass(/tone-muted/);
+    await page.goto(`/${T}/pulls/alpha/one/7`);
+    await expect(page.locator('.lifecycle-badge')).toHaveText('Merged');
+    await expect(page.locator('.lifecycle-badge')).toHaveClass(/tone-merged/);
+  });
+
   test("a fork's pull request not reviewed says it is reviewed on request", async ({ page }) => {
     const fork = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), fork: true, lastReview: null };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([fork, { ...g.pull, lastReview: null }])], ...g.defaultApi()]);

@@ -10,7 +10,8 @@
   import type { Pull } from '../types';
   import { noMoreReviews, usd } from '../format';
   import Icon from '../Icon.svelte';
-  import { mdiSourceMerge, mdiSourceBranchRemove, mdiFileDocumentEditOutline, mdiLockOutline } from '../icons';
+  import { mdiLockOutline } from '../icons';
+  import { lifecycle } from '../lifecycle';
   import Time from './Time.svelte';
   import ReviewStatusTile from './ReviewStatusTile.svelte';
   import SeverityCounts from './SeverityCounts.svelte';
@@ -25,13 +26,6 @@
 
   const open = $derived(items.filter((p) => p.state === 'open'));
 
-  // lifecycle marks a pull request that is no longer simply open.
-  function lifecycle(p: Pull): { icon: string; label: string; tone: string } | undefined {
-    if (p.merged) return { icon: mdiSourceMerge, label: 'merged', tone: 'merged' };
-    if (p.state === 'closed') return { icon: mdiSourceBranchRemove, label: 'closed', tone: 'muted' };
-    if (p.draft) return { icon: mdiFileDocumentEditOutline, label: 'draft', tone: 'muted' };
-    return undefined;
-  }
 
   function onRowClick(e: MouseEvent, p: Pull): void {
     if ((e.target as Element).closest('a, button, input, label') || getSelection()?.toString()) return;
@@ -85,7 +79,8 @@
           {/if}
           <td class="pull-main">
             <a class="pull-title" href={href(pullRoute(slug, p))} aria-current={i === selected ? 'true' : undefined}>
-              {#if life}<span class="lifecycle tone-{life.tone}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}
+              <!-- A row marks what is no longer simply open, and only a merge in colour: a list of red marks would shout. -->
+              {#if life.state !== 'open'}<span class="lifecycle tone-{life.state === 'merged' ? life.tone : 'muted'}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}
               <span class="pull-text">{p.title}</span>
             </a>
             <span class="pull-sub"><span class="mono">{p.repository}</span> · #{p.number} · {p.author}</span>
