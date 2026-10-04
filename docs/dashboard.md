@@ -95,8 +95,10 @@ GitHub Apps serve, each instance setting with its source, the Apps with
 the accounts each is installed on, and the admin audit log. When
 the configuration file's latest content was refused, it says why, and a
 banner on every page leads there. The command palette, `Ctrl`/`⌘` `K`,
-finds each of those sections, and the Settings navigation lists them
-while the page is open. A repository's page filters its effective
+finds each of those sections, and the navigation beside the page lists
+them while it is open. The palette also opens any page of the instance or
+of an account, and the recently updated pull requests of every account
+you can read. A repository's page filters its effective
 settings.
 
 ## Repositories
