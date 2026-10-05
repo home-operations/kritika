@@ -1083,7 +1083,7 @@ test.describe('your settings', () => {
     const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
     await page.goto('/#/');
     await page.locator('.user-button').click();
-    await page.getByRole('link', { name: 'Your settings' }).click();
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/settings$/);
     await expect(page.locator('.page-head h1')).toHaveText('Your settings');
 
@@ -1115,13 +1115,13 @@ test.describe('your settings', () => {
     await page.goto('/#/settings');
     await page.getByRole('radio', { name: '24-hour', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Not saved');
-    await expect(page.getByRole('radiogroup', { name: 'Clock' }).getByRole('radio', { name: /^Browser's/ })).toBeChecked();
+    await expect(page.getByRole('radiogroup', { name: 'Clock' }).getByRole('radio', { name: 'Auto' })).toBeChecked();
 
     // A refused theme leaves the page as it looked.
     const html = page.locator('html');
     const was = await html.getAttribute('class');
     await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Dark' }).click();
-    await expect(page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: "Browser's" })).toBeChecked();
+    await expect(page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Auto' })).toBeChecked();
     await expect(html).toHaveAttribute('class', was ?? '');
   });
 
@@ -1136,7 +1136,7 @@ test.describe('your settings', () => {
     // The top bar's button steps dark to auto, which is the browser's own.
     await page.getByRole('button', { name: 'Toggle theme' }).click();
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: '' });
-    await expect(themes.getByRole('radio', { name: "Browser's" })).toBeChecked();
+    await expect(themes.getByRole('radio', { name: 'Auto' })).toBeChecked();
     await page.getByRole('button', { name: 'Toggle theme' }).click();
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'light' });
     await expect(themes.getByRole('radio', { name: 'Light' })).toBeChecked();

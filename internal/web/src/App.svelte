@@ -204,7 +204,7 @@
                 <Popover.Content class="menu-panel user-panel" align="end" sideOffset={6}>
                 <p class="user-name">{me.user.displayName}</p>
                 <p class="user-email">{me.user.email}</p>
-                <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Your settings</a>
+                <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>
                 <button class="btn" onclick={signOut}>
                   <Icon path={mdiLogout} size={14} /> Sign out
                 </button>
