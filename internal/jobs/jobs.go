@@ -29,6 +29,11 @@ const TriggerManual = "manual"
 // earlier head to supersede.
 func Settles(trigger string) bool { return trigger == "synchronize" || trigger == "poll" }
 
+// LabelChange reports whether trigger is a label added to or removed from
+// the pull request: the head is the one already judged, so only a filter
+// that reads labels can decide differently.
+func LabelChange(trigger string) bool { return trigger == "labeled" || trigger == "unlabeled" }
+
 // TriggerReindex is the Trigger EnqueueReindex gives a forced full reindex,
 // as opposed to the worker-internal onboard and push triggers.
 const TriggerReindex = "reindex"

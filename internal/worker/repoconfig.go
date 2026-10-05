@@ -104,6 +104,22 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bo
 	if reason == "" {
 		return false, nil
 	}
+	// A label change that leaves the head skipped as it was is the same
+	// skip, not a second one: its row and status stand.
+	if jobs.LabelChange(e.args.Trigger) {
+		var repeat bool
+		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+			var err error
+			repeat, err = store.HeadSkipped(ctx, tx, e.pr.id, e.args.HeadSHA, string(reason))
+			return err
+		}); err != nil {
+			return true, err
+		}
+		if repeat {
+			e.logger.Info("review still skipped after a label change", "reason", reason)
+			return true, nil
+		}
+	}
 	e.logger.Info("review skipped before its runner", "reason", reason)
 	e.skip = string(reason)
 	return true, w.end(ctx, e, store.ReviewSkipped, "")

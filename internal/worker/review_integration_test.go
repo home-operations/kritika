@@ -1188,7 +1188,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("the merge-base .kritika.yaml skips, instructs and templates", func(t *testing.T) {
-		checkRepoConfig(ctx, t, appStore, lf, fc, dir, base, dispatchPR, waitReview, account.ID())
+		checkRepoConfig(ctx, t, appStore, insertOnly, lf, fc, dir, base, dispatchPR, waitReview, account.ID())
 	})
 
 	t.Run("re-reviews build on the last reviewed head", func(t *testing.T) {
@@ -1386,8 +1386,8 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 // them a file, and a summary template onto a new merge base, then reviews
 // pull requests against it.
 func checkRepoConfig(
-	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
-	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], lf *localForge, fc *fakeCompleter,
+	dir, base string, dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
 ) {
 	t.Helper()
 	r, _ := git.PlainOpen(dir)
@@ -1525,6 +1525,37 @@ approve: true
 	lf.mu.Unlock()
 	if forgeStatus != "success: kritika: skipped (filtered by .kritika.yaml)" {
 		t.Fatalf("status = %q", forgeStatus)
+	}
+	checkLabelRepeat(ctx, t, appStore, insertOnly, accountID, labelledHead)
+}
+
+// checkLabelRepeat asserts that a label change the filter still excludes
+// the head under is the skip the head has, not one more.
+func checkLabelRepeat(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, head string) {
+	t.Helper()
+	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
+		AccountID: accountID, RepositoryID: configfile.RepositoryID(accountID, "onedr0p/home-ops"), Number: 4, HeadSHA: head, Trigger: "labeled", Request: "label-change",
+	}, nil)
+	if err != nil || res.UniqueSkippedAsDuplicate {
+		t.Fatalf("insert = %+v, %v", res, err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for state := ""; state != "completed"; time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the label change's job is %s, want completed", state)
+		}
+		if err := appStore.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, res.Job.ID).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var skips int
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, head).Scan(&skips)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if skips != 1 {
+		t.Fatalf("%d reviews of the labelled head, want the one skip", skips)
 	}
 }
 

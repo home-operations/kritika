@@ -112,6 +112,28 @@ func TestSettles(t *testing.T) {
 	}
 }
 
+func TestLabelChange(t *testing.T) {
+	tests := []struct {
+		trigger string
+		want    bool
+	}{
+		{trigger: "labeled", want: true},
+		{trigger: "unlabeled", want: true},
+		{trigger: "opened"},
+		{trigger: "synchronize"},
+		{trigger: "poll"},
+		{trigger: TriggerManual},
+		{trigger: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.trigger, func(t *testing.T) {
+			if got := LabelChange(tt.trigger); got != tt.want {
+				t.Fatalf("LabelChange(%q) = %v, want %v", tt.trigger, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestIndexArgsUniqueTags pins the key an index job is unique on: the
 // repository, not the commit, so a burst of pushes is one job; and Full, so
 // a forced rebuild is never folded into an update.
