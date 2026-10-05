@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.24](https://github.com/home-operations/kritika/compare/0.0.23...0.0.24) (2026-10-05)
+
+
+### Features
+
+* **web:** say when a pull request last synchronized and keep skips out of its history ([#506](https://github.com/home-operations/kritika/issues/506)) ([40ea7f0](https://github.com/home-operations/kritika/commit/40ea7f0155ad58e7c6e96fb017b712a61f5e81eb))
+* **web:** take a pull request's last review from those not skipped ([#508](https://github.com/home-operations/kritika/issues/508)) ([bf7b7a0](https://github.com/home-operations/kritika/commit/bf7b7a025e10041368fa42f774173e3f2355b6cd))
+* **web:** take a repository's last review from those not skipped ([#511](https://github.com/home-operations/kritika/issues/511)) ([48f237d](https://github.com/home-operations/kritika/commit/48f237dc03f1653b768354e156bc16d393f315fd))
+
+
+### Bug Fixes
+
+* **web:** count only completed reviews in the last 7 days ([#505](https://github.com/home-operations/kritika/issues/505)) ([bb599fe](https://github.com/home-operations/kritika/commit/bb599fe0c1568d679ae54953bfe8d07a7c73e010))
+* **web:** do not call a skipped review a newer review ([#509](https://github.com/home-operations/kritika/issues/509)) ([74dce02](https://github.com/home-operations/kritika/commit/74dce02fa50e77a00c6f0d3b028ca1228fc5a0ca))
+* **web:** say why a pull request was not reviewed when the skip has no reason of its own ([#510](https://github.com/home-operations/kritika/issues/510)) ([117fac9](https://github.com/home-operations/kritika/commit/117fac92c90dcdb01acf64db94c25b64dc9496f1))
+
 ## [0.0.23](https://github.com/home-operations/kritika/compare/0.0.22...0.0.23) (2026-10-05)
 
 
