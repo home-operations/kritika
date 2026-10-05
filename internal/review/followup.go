@@ -29,11 +29,10 @@ Answer the last message directly and concisely in plain markdown without heading
 path and line when it helps. If you were wrong in a finding, say so plainly. If the question cannot be answered
 from what you see, say what is missing.`
 
-// FollowUpSystemPrompt is FollowUpSystem with the rules and the
-// repository's instructions appended, as SystemPrompt appends them to a
-// review's.
-func FollowUpSystemPrompt(rules []Rule, instructions []string) string {
-	return withInstructions(FollowUpSystem, rules, "", instructions)
+// FollowUpSystemPrompt is FollowUpSystem with the rules appended, as
+// SystemPrompt appends them to a review's.
+func FollowUpSystemPrompt(rules []Rule) string {
+	return withRules(FollowUpSystem, rules, "")
 }
 
 var followUpSchema = jsonSchema{

@@ -56,23 +56,20 @@ const SkipUnchangedPatch = "unchanged_patch"
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
 const (
-	noteInstructionsTruncated = "AGENTS.md and CLAUDE.md files truncated to 32 KiB"
-	noteRulesLeft             = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
-	noteDiffOmitted           = "%d diff file(s) left out of the prompt to fit its budget: %s"
-	noteContextOmitted        = "%d context chunk(s) left out of the prompt to fit its budget"
-	noteDiffNotKept           = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
+	noteRulesLeft      = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
+	noteDiffOmitted    = "%d diff file(s) left out of the prompt to fit its budget: %s"
+	noteContextOmitted = "%d context chunk(s) left out of the prompt to fit its budget"
+	noteDiffNotKept    = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
 )
 
 // promptInputs is what the repository's files and the settings give the
-// review prompt for this change: the rules and reference files that apply
-// to its paths, and the instructions of its agent files. notes say what
-// was left out.
+// review prompt for this change: the rules, skills and reference files
+// that apply to its paths. notes say what was left out.
 type promptInputs struct {
-	rules        []review.Rule
-	skills       []repoconfig.Skill
-	instructions []string
-	references   []review.Reference
-	notes        []string
+	rules      []review.Rule
+	skills     []repoconfig.Skill
+	references []review.Reference
+	notes      []string
 }
 
 // ruleIDs is the ids of the rules the prompt was given.
@@ -85,8 +82,8 @@ func (in promptInputs) ruleIDs() []string {
 }
 
 // newPromptInputs selects, for a change of the changed paths, the spec's
-// rules, whose when conditions the worker has already judged, the context files
-// and the agent files of the changed directories.
+// rules, whose when conditions the worker has already judged, its skills
+// and its context files.
 func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
 	var in promptInputs
 	if sk := p.Prompt.Skills; sk != nil {
@@ -94,10 +91,6 @@ func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, c
 		if in.skills, left = repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed); left > 0 {
 			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, left))
 		}
-	}
-	var truncated bool
-	if in.instructions, truncated = repoconfig.Instructions(files, repoconfig.AgentFiles(files, changed)); truncated {
-		in.notes = append(in.notes, noteInstructionsTruncated)
 	}
 	var left int
 	if in.rules, left = repoconfig.ActiveRules(p.Prompt.Rules, files, changed); left > 0 {
@@ -147,7 +140,7 @@ func (a agentPrompt) notes() []string {
 // context includes the similar code the gateway found. commands are what
 // the run tool offers, and search says search_code is offered.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
-	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, p.Prompt.Focused, search)
+	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), commands, p.Prompt.Focused, search)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}

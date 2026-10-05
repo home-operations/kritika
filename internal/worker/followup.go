@@ -212,16 +212,15 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if err != nil {
 		return store.FollowupFailed, err
 	}
-	// The review's runner read the agent files; the rules' files are read
-	// again at the merge base, and win.
+	// The rules' files are read again at the merge base, and win over the
+	// review's copies.
 	files := maps.Clone(rec.files)
 	if files == nil {
 		files = repoconfig.Files{}
 	}
 	maps.Copy(files, f.ruleFiles)
-	instructions, _ := repoconfig.Instructions(files, repoconfig.AgentFiles(files, rec.changed))
 	rules, _ := repoconfig.ActiveRules(repoconfig.RulesFor(f.settings.Review.Rules, rec.vars), files, rec.changed)
-	system := review.FollowUpSystemPrompt(rules, instructions)
+	system := review.FollowUpSystemPrompt(rules)
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
 		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context, BudgetTokens: review.UserBudget(system),

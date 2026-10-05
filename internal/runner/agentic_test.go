@@ -44,7 +44,7 @@ func TestAgentPrompt(t *testing.T) {
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 2, Text: "func u() {}"}},
 		Scope:   review.ScopeFull,
 	}
-	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritika/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
+	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritika/rules.md": "Repository rules."}
 	tests := []struct {
 		name    string
 		scope   review.Scope
@@ -83,7 +83,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false)
 			system, user, strict := prompt.system, prompt.user, prompt.strict
-			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, tt.focused, false); system != want {
+			if want := review.SystemPrompt(tt.active, nil, nil, tt.focused, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -134,9 +134,8 @@ func ruleIDs(rules []review.Rule) []string {
 func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
-	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxInstructionBytes+1)}
-	in := newPromptInputs(s, files, nil, []string{"main.go"})
-	if want := []string{noteInstructionsTruncated, "1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
+	in := newPromptInputs(s, repoconfig.Files{}, nil, []string{"main.go"})
+	if want := []string{"1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
 		t.Fatalf("notes = %q, want %q", in.notes, want)
 	}
 	const lines = 60_000

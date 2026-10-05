@@ -467,8 +467,8 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	if auth != "Bearer model-key" || !strings.HasPrefix(system, "You are kritika") {
 		t.Fatalf("auth=%q system=%.40q", auth, system)
 	}
-	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
-		t.Fatalf("the runner left the root's AGENTS.md out of the system prompt:\n%s", system)
+	if strings.Contains(system, "Repository instructions") || strings.Contains(system, "Keep functions small.") {
+		t.Fatalf("the runner put the root's AGENTS.md in the system prompt:\n%s", system)
 	}
 	checkAgentRules(t, system)
 	checkAgentTranscript(t, h, reviewID)

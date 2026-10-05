@@ -28,7 +28,6 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // FileName is the repository-relative path of the per-repository config file.
@@ -42,10 +41,6 @@ const (
 	MaxFileBytes  = 256 << 10
 	MaxTotalBytes = 1 << 20
 )
-
-// MaxInstructionBytes caps the repository instructions, its agent files
-// joined, so they cannot crowd the diff out of the prompt budget.
-const MaxInstructionBytes = 32 << 10
 
 // MaxRulesBytes caps the rules a prompt lists by their ids and text, and
 // MaxRuleFileBytes the content of its file rules, for the same reason.
@@ -330,31 +325,4 @@ func RulesFor(rules []configfile.Rule, vars map[string]any) []configfile.Rule {
 		}
 	}
 	return out
-}
-
-// Instructions returns the contents of the named files, trimmed and in
-// order, skipping any that are absent or blank, so that joined by blank
-// lines they fit MaxInstructionBytes. truncated reports that the cap cut
-// them short.
-func Instructions(files Files, paths []string) (out []string, truncated bool) {
-	room := MaxInstructionBytes
-	for _, p := range paths {
-		s := strings.TrimSpace(files[p])
-		if s == "" || room <= 0 {
-			continue
-		}
-		if len(out) > 0 {
-			room -= len("\n\n")
-		}
-		if len(s) > room {
-			s = textcut.Prefix(s, max(room, 0))
-			room, truncated = 0, true
-			if s == "" {
-				continue
-			}
-		}
-		room -= len(s)
-		out = append(out, s)
-	}
-	return out, truncated
 }

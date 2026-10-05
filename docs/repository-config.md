@@ -167,7 +167,9 @@ skills:
 - `context`: files that explain the code, each a `path` with a
   `description` and optional `paths` globs, added after the admin's. The
   review is pointed at each file to read it with its own tools. A file
-  with `paths` applies only when a changed path matches one of them.
+  with `paths` applies only when a changed path matches one of them. An
+  `AGENTS.md` or `CLAUDE.md` is read only when listed here, as any other
+  file: `{ path: AGENTS.md, description: how the code is written here }`.
 - `skills`: the [Agent Skills](https://agentskills.io) the repository
   keeps for its reviews. A skill is a folder holding a `SKILL.md`: YAML
   frontmatter with a `name` (lowercase letters, digits and hyphens, at
@@ -207,11 +209,6 @@ skills:
   description written in the configuration. A skill carries its own
   description, costs the prompt only that until the review reads it, and
   is not cited by findings.
-
-A review also adds to its instructions the repository's agent files: the
-`AGENTS.md` of the root and of each directory above a changed path, or a
-directory's `CLAUDE.md` where it has no `AGENTS.md`, read from the merge
-base, within 32 KiB. They follow the rules in the prompt.
 
 A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for

@@ -929,9 +929,9 @@ func checkFollowUps(
 	if want := fmt.Sprintf("followup-%d", id); session != want {
 		t.Fatalf("follow-up session = %q, want %q: the mention is the conversation", session, want)
 	}
-	// The root's AGENTS.md, as the review's runner read it.
-	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
-		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
+	// The repository's AGENTS.md is no instruction to the follow-up.
+	if strings.Contains(system, "Repository instructions") || strings.Contains(system, "Keep functions small.") {
+		t.Fatalf("follow-up system prompt carries AGENTS.md:\n%s", system)
 	}
 	for _, want := range []string{"Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
@@ -1499,15 +1499,15 @@ review:
 	fc.mu.Lock()
 	system := fc.systems[len(fc.systems)-2]
 	fc.mu.Unlock()
-	// The root's AGENTS.md is the instructions; web/ is untouched.
-	if !strings.Contains(system, "\n\n## Repository instructions\n\n") ||
-		!strings.HasSuffix(system, "\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
-		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
+	// The agent files are no instructions: a repository lists one under
+	// context for the agent to read.
+	if strings.Contains(system, "Repository instructions") || strings.Contains(system, "table-driven") || strings.Contains(system, "inline styles") {
+		t.Fatalf("system prompt carries the agent files:\n%s", system)
 	}
 	// Only the rules whose paths the change matches and whose conditions the
-	// pull request meets, the file rule under its own heading.
-	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
-		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.\n\n## Repository instructions") ||
+	// pull request meets, the file rule under its own heading, end it.
+	if !strings.HasSuffix(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
+		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.") ||
 		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
 		t.Fatalf("system prompt does not carry the rules:\n%s", system)
 	}
