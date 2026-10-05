@@ -65,7 +65,7 @@ An account's tabs are its sections:
 - **Settings:** its repositories, and for an admin its audit log.
 
 Times are written in your browser's time zone, on the 12 or 24 hour
-clock its locale keeps. **Your settings**, in the user menu, choose
+clock its locale keeps. **Settings**, in the user menu, choose
 another zone or clock, and a light or dark theme; they are kept with your
 user, so they hold in any browser you sign in from. A theme left to the
 browser follows each browser's own system. Figures by day count each day in UTC whatever

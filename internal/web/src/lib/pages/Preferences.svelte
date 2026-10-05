@@ -5,7 +5,7 @@
   // any browser they sign in from.
   import { session, saveSettings } from '../session.svelte';
   import { clock, stamp } from '../time.svelte';
-  import { hour12Of, zoneKnown } from '../dates';
+  import { zoneKnown } from '../dates';
   import Segmented from '../components/Segmented.svelte';
   import Spinner from '../Spinner.svelte';
 
@@ -15,7 +15,7 @@
   const zones = $derived([...new Set([...(settings?.timeZone ? [settings.timeZone] : []), ...Intl.supportedValuesOf('timeZone')])].sort());
 
   const CLOCKS = [
-    { value: '', label: `Browser's (${hour12Of() ? '12-hour' : '24-hour'})` },
+    { value: '', label: 'Auto' },
     { value: '12', label: '12-hour' },
     { value: '24', label: '24-hour' },
   ] as const;
@@ -23,7 +23,7 @@
   const now = $derived(stamp(new Date(clock.now).toISOString()));
 
   const THEMES = [
-    { value: '', label: "Browser's" },
+    { value: '', label: 'Auto' },
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
   ] as const;
@@ -48,7 +48,7 @@
           <dd>
             <span class="select">
               <select id="pref-zone" value={settings.timeZone} onchange={(e) => saveSettings({ timeZone: e.currentTarget.value })}>
-                <option value="">Browser's ({browserZone})</option>
+                <option value="">Auto</option>
                 {#each zones as z (z)}<option value={z}>{z}</option>{/each}
               </select>
             </span>
