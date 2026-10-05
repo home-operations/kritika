@@ -371,8 +371,8 @@ type ReviewInfo struct {
 	MergeBaseSHA  string  `json:"mergeBaseSha"`
 	PatchID       string  `json:"patchId"`
 	PriorReviewID *string `json:"priorReviewId"`
-	// NewestReviewID is the pull request's newest review, null when this
-	// is it.
+	// NewestReviewID is the pull request's newest review that was not
+	// skipped, null when none is newer than this.
 	NewestReviewID    *string    `json:"newestReviewId"`
 	CancelRequestedAt *time.Time `json:"cancelRequestedAt"`
 }
