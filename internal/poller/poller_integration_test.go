@@ -66,13 +66,15 @@ type listForge struct {
 	prs    []forge.OpenPullRequest
 	sinces []time.Time
 	// byNumber are the pull requests the forge returns by number, open or
-	// closed.
+	// closed, and asked the numbers it was asked for.
 	byNumber map[int]forge.OpenPullRequest
+	asked    []int
 }
 
 func (f *listForge) PullRequest(_ context.Context, _, _ string, number int) (forge.OpenPullRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.asked = append(f.asked, number)
 	if pr, ok := f.byNumber[number]; ok {
 		return pr, nil
 	}
@@ -778,6 +780,20 @@ func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
 	}
 	if _, err := p.Poll(ctx, file, account, in); err != nil {
 		t.Fatalf("Poll: %v", err)
+	}
+	// The one the forge did not know is not asked for again, so it cannot
+	// use up a poll's checks for good; the others are asked each poll.
+	lf.mu.Lock()
+	lf.asked = nil
+	lf.mu.Unlock()
+	if _, err := p.Poll(ctx, file, account, in); err != nil {
+		t.Fatalf("second Poll: %v", err)
+	}
+	lf.mu.Lock()
+	asked := lf.asked
+	lf.mu.Unlock()
+	if !slices.Equal(asked, []int{933}) {
+		t.Fatalf("second poll asked for %v, want only the pull request still open on the forge", asked)
 	}
 	type row struct {
 		state    string

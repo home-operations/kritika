@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,6 +44,12 @@ type Poller struct {
 	// Reach lists, by lowercased account login, the repositories a
 	// connection's App reaches; nil registers none.
 	Reach func(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error)
+
+	// unknown are the pull requests held open that the forge did not know
+	// when asked, by "owner/name#number": asked once per process, so they
+	// neither cost a request every poll nor use up the poll's checks.
+	mu      sync.Mutex
+	unknown map[string]bool
 }
 
 // pollOffRecheck is how often Run looks again at a file that turns
@@ -253,7 +260,8 @@ const maxCloseChecks = 50
 // kritika holds open and listed, the forge's open ones, does not have: a
 // closed event that was never delivered would otherwise leave one open for
 // good. Each is asked for by number, so one opened since the listing is
-// left as it is, and one the forge no longer knows is left for a person.
+// left as it is, and one the forge no longer knows is left for a person,
+// and not asked for again while the process runs.
 func (p *Poller) closeMissed(
 	ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection, client forge.Client,
 	r store.PollRepo, listed []forge.OpenPullRequest,
@@ -270,7 +278,8 @@ func (p *Poller) closeMissed(
 	owner, name, _ := strings.Cut(r.Name, "/")
 	checks := 0
 	for _, number := range held {
-		if slices.ContainsFunc(listed, func(pr forge.OpenPullRequest) bool { return pr.Number == number }) {
+		key := fmt.Sprintf("%s#%d", r.Name, number)
+		if slices.ContainsFunc(listed, func(pr forge.OpenPullRequest) bool { return pr.Number == number }) || p.isUnknown(key) {
 			continue
 		}
 		if checks++; checks > maxCloseChecks {
@@ -279,6 +288,7 @@ func (p *Poller) closeMissed(
 		pr, err := client.PullRequest(ctx, owner, name, number)
 		if errors.Is(err, fs.ErrNotExist) {
 			p.Logger.Warn("pull request held open is unknown to the forge", "connection", in.Name, "repository", r.Name, "pr", number)
+			p.markUnknown(key)
 			continue
 		}
 		if err != nil {
@@ -298,6 +308,21 @@ func (p *Poller) closeMissed(
 		p.Logger.Info("pull request closed without its event", "connection", in.Name, "repository", r.Name, "pr", number, "merged", pr.Merged)
 	}
 	return nil
+}
+
+func (p *Poller) isUnknown(key string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.unknown[key]
+}
+
+func (p *Poller) markUnknown(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.unknown == nil {
+		p.unknown = map[string]bool{}
+	}
+	p.unknown[key] = true
 }
 
 // reactionWindow is how long after its latest review a pull request's
