@@ -935,6 +935,10 @@ func TestDispatchLabelChange(t *testing.T) {
 	if out := dispatch("labeled", "bug", "area/ci"); out != (Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "review"}) {
 		t.Fatalf("labeled with a review to come = %+v; want a duplicate", out)
 	}
+	// The poll the label change provokes finds the same review to come.
+	if out := dispatch(ActionPoll, "bug", "area/ci"); out != (Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "review"}) {
+		t.Fatalf("poll with a label change's review to come = %+v; want a duplicate", out)
+	}
 	// The skip a label can lift leaves the head open to the next change.
 	review("skipped", "filtered")
 	if out := dispatch("unlabeled", "bug"); out.Status != Enqueued {

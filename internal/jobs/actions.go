@@ -79,19 +79,9 @@ func enqueueFresh(
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}
-	var busy bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-			WHERE p.account_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
-				AND r.status IN ('running', 'prepared'))
-		OR EXISTS (
-			SELECT 1 FROM river_job
-			WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
-				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
-				AND args->>'head_sha' = $4)`,
-		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
+	busy, err := HeadBusy(ctx, tx, accountID, repositoryID, number, headSHA)
 	if err != nil {
-		return 0, fmt.Errorf("jobs: look up running reviews: %w", err)
+		return 0, err
 	}
 	if busy {
 		return 0, ErrRerunQueued
@@ -104,6 +94,27 @@ func enqueueFresh(
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)
 	}
 	return res.Job.ID, nil
+}
+
+// HeadBusy reports whether a review of the pull request's head is running
+// or prepared, or a review job for it has yet to finish, whatever Request
+// the job carries.
+func HeadBusy(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int, headSHA string) (bool, error) {
+	var busy bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+			WHERE p.account_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
+				AND r.status IN ('running', 'prepared'))
+		OR EXISTS (
+			SELECT 1 FROM river_job
+			WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
+				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+				AND args->>'head_sha' = $4)`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
+	if err != nil {
+		return false, fmt.Errorf("jobs: look up running reviews: %w", err)
+	}
+	return busy, nil
 }
 
 // RequestCancel asks the worker running reviewID to stop. It only applies

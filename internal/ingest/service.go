@@ -215,35 +215,50 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			out, err = s.labelChange(ctx, tx, req, rid, pr)
 			return err
 		}
-		// A head a review has seen is not news: a poll lists a pull request
-		// whenever anything about it moved, a comment or a label included,
-		// and a webhook event may be delivered again, or reopen a pull
-		// request whose head stands reviewed. The queue's unique key alone
-		// would not say so once River has cleaned the earlier job up.
-		statuses := store.ReviewedStatuses
-		if ev.Action == ActionPoll {
-			statuses = store.SettledStatuses
-		}
-		reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA, statuses)
-		if err != nil {
-			return err
-		}
-		if reviewed {
-			out = Outcome{Status: Skipped, Reason: reasonReviewed}
-			return nil
-		}
-		res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
-			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: ev.Action,
-		}, nil)
-		if err != nil {
-			return fmt.Errorf("ingest: enqueue review: %w", err)
-		}
-		if res.UniqueSkippedAsDuplicate {
-			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}
-		}
-		return nil
+		out, err = s.review(ctx, tx, req, rid, pr)
+		return err
 	})
 	return out, err
+}
+
+// review queues the review of the head a push, a poll or the pull request's
+// opening starts, unless the head has one already or one still to come.
+func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest) (Outcome, error) {
+	// A head a review has seen is not news: a poll lists a pull request
+	// whenever anything about it moved, a comment or a label included,
+	// and a webhook event may be delivered again, or reopen a pull
+	// request whose head stands reviewed. The queue's unique key alone
+	// would not say so once River has cleaned the earlier job up.
+	statuses := store.ReviewedStatuses
+	if req.Event.Action == ActionPoll {
+		statuses = store.SettledStatuses
+	}
+	reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA, statuses)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if reviewed {
+		return Outcome{Status: Skipped, Reason: reasonReviewed}, nil
+	}
+	// A job with a Request of its own, a re-run's or a label change's, is
+	// the head's review to come though the unique key does not span it.
+	busy, err := jobs.HeadBusy(ctx, tx, req.Account.ID(), rid, pr.Number, pr.HeadSHA)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if busy {
+		return Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}, nil
+	}
+	res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
+		AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, HeadSHA: pr.HeadSHA, Trigger: req.Event.Action,
+	}, nil)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("ingest: enqueue review: %w", err)
+	}
+	if res.UniqueSkippedAsDuplicate {
+		return Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}, nil
+	}
+	return Outcome{Status: Enqueued, Job: jobReview}, nil
 }
 
 // labelChange queues the review a label change starts, unless the head has
