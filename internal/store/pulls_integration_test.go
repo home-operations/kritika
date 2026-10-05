@@ -205,8 +205,8 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 }
 
 // TestLastReviewIsNotASkippedOne checks that a skipped review newer than
-// one with a blocking finding leaves that one the pull request's last
-// review, in the list and in what wants attention.
+// one with a blocking finding leaves that one the last review of its pull
+// request and of its repository, and its finding in what wants attention.
 func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -216,6 +216,7 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	account := accountID(t, s, "lastreview")
 	completed := insertReview(t, ctx, s, account)
 	var rows []PullRow
+	var repo RepoRow
 	var attention Attention
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		if _, err := EndReview(ctx, tx, completed, ReviewEnd{Status: ReviewCompleted}); err != nil {
@@ -233,6 +234,9 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 		if rows, _, err = ListPulls(ctx, tx, PullFilter{}, Page{Limit: 10}); err != nil {
 			return err
 		}
+		if repo, err = FindRepo(ctx, tx, "lastreview/one"); err != nil {
+			return err
+		}
 		attention, err = ReadAttention(ctx, tx)
 		return err
 	}); err != nil {
@@ -240,6 +244,9 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].LastReview == nil || rows[0].LastReview.ID != completed || rows[0].LastReview.Findings.Blocking != 1 {
 		t.Fatalf("pull requests = %+v, want one whose last review is the completed one with its blocking finding", rows)
+	}
+	if repo.LastReview == nil || repo.LastReview.ID != completed {
+		t.Errorf("repository's last review = %+v, want the completed one", repo.LastReview)
 	}
 	if attention.Blocking != 1 {
 		t.Errorf("attention = %+v, want the blocking finding still counted", attention)

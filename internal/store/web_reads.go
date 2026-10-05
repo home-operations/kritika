@@ -272,6 +272,8 @@ type ReviewRef struct {
 	CreatedAt time.Time
 }
 
+// The last review, lr, is the repository's newest that was not skipped, as
+// a pull request's is.
 const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork, r.turned_on,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
@@ -281,7 +283,7 @@ const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.
 	LEFT JOIN LATERAL (SELECT status, created_at FROM index_runs x WHERE x.repository_id = r.id
 		ORDER BY created_at DESC, id DESC LIMIT 1) l ON true
 	LEFT JOIN LATERAL (SELECT v.id, v.status, v.created_at FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id
-		WHERE p.repository_id = r.id ORDER BY v.created_at DESC, v.id DESC LIMIT 1) lr ON true`
+		WHERE p.repository_id = r.id AND v.status <> 'skipped' ORDER BY v.created_at DESC, v.id DESC LIMIT 1) lr ON true`
 
 func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var r RepoRow
