@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -36,12 +37,16 @@ const (
 	reasonDisabled     = "disabled"
 	reasonDuplicate    = "duplicate"
 	reasonNotIndexed   = "not-indexed"
+	reasonFilter       = "filter"
 	reasonFork         = "fork"
 	reasonReviewed     = "reviewed"
 	reasonStale        = "stale"
 	reasonPaused       = "paused"
 	reasonClosed       = "closed"
 )
+
+// jobReview is Outcome.Job for a review.
+const jobReview = "review"
 
 // The poller's synthetic actions: ActionPoll for an open pull request it
 // lists, and ActionBaseline for one that predates kritika's knowing its
@@ -60,7 +65,10 @@ const (
 // them when it builds its prompt, and the filter and the rules judge them,
 // so an edit that arrives after the push that queued the job, as
 // Renovate's title update does a second after its force-push, must land
-// on the row before the job reads it.
+// on the row before the job reads it. A label change is recorded the same
+// way, and starts a review where its head has none a label could not
+// change (store.LabelSettled): a filter that reads labels may now let
+// through the head it kept out.
 var pullRequestActions = map[string]bool{
 	"opened":             true,
 	"reopened":           true,
@@ -69,8 +77,8 @@ var pullRequestActions = map[string]bool{
 	ActionPoll:           true,
 	ActionBaseline:       false,
 	"edited":             false,
-	"labeled":            false,
-	"unlabeled":          false,
+	"labeled":            true,
+	"unlabeled":          true,
 	"converted_to_draft": false,
 }
 
@@ -137,7 +145,10 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	}
 	// The filter says what is reviewed, not what is recorded: an action
 	// that records only is not judged by it, or a draft's edit would leave
-	// the row behind under a filter that skips drafts.
+	// the row behind under a filter that skips drafts. A label change it
+	// keeps out is recorded all the same, the labels being what it judges.
+	labels := jobs.LabelChange(ev.Action)
+	filtered := false
 	switch {
 	case !runs:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
@@ -146,16 +157,17 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		if err != nil {
 			return Outcome{}, fmt.Errorf("ingest: filter: %w", err)
 		}
-		if !ok {
-			return Outcome{Status: Skipped, Reason: "filter"}, nil
+		if !ok && !labels {
+			return Outcome{Status: Skipped, Reason: reasonFilter}, nil
 		}
+		filtered = !ok
 	}
 
-	labels, err := json.Marshal(pr.LabelVars())
+	labelVars, err := json.Marshal(pr.LabelVars())
 	if err != nil {
 		return Outcome{}, fmt.Errorf("ingest: encode labels: %w", err)
 	}
-	out := Outcome{Status: Enqueued, Job: "review"}
+	out := Outcome{Status: Enqueued, Job: jobReview}
 	err = s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		rid, err := ensureRepository(ctx, tx, req, ev.Repository)
 		if err != nil {
@@ -165,7 +177,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: pr.Number, Title: pr.Title, Author: pr.Author,
 			AuthorIsBot: pr.AuthorIsBot, Draft: pr.Draft, Fork: pr.Fork, Merged: pr.Merged, State: pr.State, HeadRef: pr.HeadRef,
 			HeadSHA: pr.HeadSHA, BaseRef: pr.BaseRef, URL: pr.URL, Body: pr.Body, OpenedAt: pr.CreatedAt, UpdatedAt: pr.UpdatedAt,
-			ClosedAt: pr.ClosedAt, Labels: labels,
+			ClosedAt: pr.ClosedAt, Labels: labelVars,
 		})
 		if err != nil {
 			return err
@@ -179,6 +191,9 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			return nil
 		case !review:
 			out = Outcome{Status: Skipped, Reason: ev.Action}
+			return nil
+		case filtered:
+			out = Outcome{Status: Skipped, Reason: reasonFilter}
 			return nil
 		case pr.State == "closed":
 			// Merged or closed, whatever the action says: it is recorded,
@@ -195,6 +210,10 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		if paused {
 			out = Outcome{Status: Skipped, Reason: reasonPaused}
 			return nil
+		}
+		if labels {
+			out, err = s.labelChange(ctx, tx, req, rid, pr)
+			return err
 		}
 		// A head a review has seen is not news: a poll lists a pull request
 		// whenever anything about it moved, a comment or a label included,
@@ -220,11 +239,31 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			return fmt.Errorf("ingest: enqueue review: %w", err)
 		}
 		if res.UniqueSkippedAsDuplicate {
-			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "review"}
+			out = Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}
 		}
 		return nil
 	})
 	return out, err
+}
+
+// labelChange queues the review a label change starts, unless the head has
+// one a label could not change or one still to come.
+func (s *Service) labelChange(ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest) (Outcome, error) {
+	settled, err := store.LabelSettled(ctx, tx, rid, pr.Number, pr.HeadSHA)
+	if err != nil {
+		return Outcome{}, err
+	}
+	if settled {
+		return Outcome{Status: Skipped, Reason: reasonReviewed}, nil
+	}
+	_, err = jobs.EnqueueLabelChange(ctx, tx, s.queue, req.Account.ID(), rid, pr.Number, req.Event.Action)
+	switch {
+	case errors.Is(err, jobs.ErrRerunQueued):
+		return Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}, nil
+	case err != nil:
+		return Outcome{}, fmt.Errorf("ingest: enqueue review: %w", err)
+	}
+	return Outcome{Status: Enqueued, Job: jobReview}, nil
 }
 
 func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {

@@ -157,8 +157,13 @@ expression over `pr`, which has the pull request's `number`, `title`,
 `headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`
 and a `color`), and `event`, what started the review: `opened`,
 `reopened`, `ready_for_review`, `synchronize` (a push), `poll` (a push
-kritika found without its webhook) or `manual` (a re-run from the
-dashboard).
+kritika found without its webhook), `labeled` or `unlabeled` (a label
+added or removed) or `manual` (a re-run from the dashboard).
+
+A label change starts a review only of a head that has none yet: one the
+filter kept out, or whose review failed. So removing `skip-review`, or
+adding the label a filter asks for, has the pull request reviewed without
+waiting for its next push.
 
 Some filters, each the whole `filterExpr` value:
 
@@ -169,7 +174,7 @@ Some filters, each the whole `filterExpr` value:
 - Review only pull requests into `main`: `pr.baseRef == "main"`
 - Skip when the description asks to: `!pr.body.contains("[skip-review]")`
 - Review when a pull request opens or is re-run, not on every push:
-  `pr.event != "synchronize" && pr.event != "poll"`
+  `pr.event in ["opened", "reopened", "ready_for_review", "manual"]`
 
 ## Limits
 

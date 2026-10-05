@@ -46,6 +46,23 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual)
+}
+
+// EnqueueLabelChange queues a review of number's current head for trigger,
+// a label added or removed (see LabelChange). The head's earlier job, the
+// one that ended in the skip the label may lift, still holds the key a
+// push dedupes on, so the job gets a fresh Request as a re-run does, and is
+// ErrRerunQueued under the same conditions.
+func EnqueueLabelChange(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
+) (int64, error) {
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger)
+}
+
+func enqueueFresh(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
+) (int64, error) {
 	var headSHA string
 	err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests
 		WHERE account_id = $1 AND repository_id = $2 AND number = $3 AND state = 'open'`,
@@ -81,7 +98,7 @@ func EnqueueRerun(
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		AccountID: accountID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,
-		Trigger: TriggerManual, Request: uuid.NewString(),
+		Trigger: trigger, Request: uuid.NewString(),
 	}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)
