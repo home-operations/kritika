@@ -48,9 +48,13 @@ metrics and development.
   answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request;
   resolving the thread on the forge does the same.
+- **A confidence score, opt-in.** A second model scores each reviewed pull
+  request from 0 to 5, and the commit status fails under the threshold a
+  repository sets, so it can be a required check.
 - **Approvals, opt-in.** A repository or the instance can have a review that
   finds nothing blocking or important approve the pull request, and a later
-  review that does withdraw it.
+  review that does withdraw it. With a confidence score, a pull request is
+  approved when its score and the risk of its change allow it.
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through

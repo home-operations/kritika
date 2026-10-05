@@ -280,6 +280,34 @@ func (c *Client) DismissApprovals(ctx context.Context, owner, repo string, numbe
 	return len(approvals), nil
 }
 
+// ChangesRequested implements forge.Client. GitHub keeps every review a
+// user submits, oldest first: where a reviewer stands is their latest one
+// that approved, requested changes or was dismissed, a comment changing
+// nothing.
+func (c *Client) ChangesRequested(ctx context.Context, owner, repo string, number int) (bool, error) {
+	login, err := c.BotLogin(ctx)
+	if err != nil {
+		return false, err
+	}
+	stands := map[string]string{}
+	for r, err := range c.api.PullRequests.ListReviewsIter(ctx, owner, repo, number, &gh.ListOptions{PerPage: 100}) {
+		if err != nil {
+			return false, fmt.Errorf("github: list reviews on #%d: %w", number, err)
+		}
+		switch state := r.GetState(); state {
+		case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
+			stands[r.GetUser().GetLogin()] = state
+		}
+	}
+	delete(stands, login)
+	for _, state := range stands {
+		if state == "CHANGES_REQUESTED" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // approvals lists the bot's reviews of the pull request that approve it
 // and stand: GitHub reports a dismissed one as DISMISSED.
 func (c *Client) approvals(ctx context.Context, owner, repo string, number int) ([]*gh.PullRequestReview, error) {

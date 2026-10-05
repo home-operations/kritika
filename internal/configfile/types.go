@@ -550,8 +550,9 @@ type Review struct {
 	// InlineComments is false to post the summary alone.
 	InlineComments bool `json:"inlineComments"`
 	// Approve is true to approve a pull request whose review found nothing
-	// blocking or important, and to dismiss that approval when a later
-	// review does. Off unless set.
+	// blocking or important, or, where a confidence score is asked for,
+	// whose score and risk allow it, and to dismiss that approval when a
+	// later review's do not. Off unless set.
 	Approve bool          `json:"approve"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes, the broadest scope's

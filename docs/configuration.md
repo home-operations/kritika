@@ -357,7 +357,9 @@ files live:
 `confidence.risk` is the highest risk a change may be rated and still be
 approved, `low` unless set. It bears on approvals alone, never on the commit
 status: a risky change that scores well passes its check and waits for a
-person. `confidence.instructions` is plain guidance to the scorer on rating
+person. With `review.approve` on, a pull request is approved when its
+score reaches `confidence.threshold` and its risk is within
+`confidence.risk`, so one threshold decides the check and the approval. `confidence.instructions` is plain guidance to the scorer on rating
 risk in your code, such as "Renovate patch bumps of container images are
 low" or "anything under `db/migrations` is critical"; it refines the table
 above and changes nothing else about the score. It is the admin's alone, so

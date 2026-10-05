@@ -105,11 +105,15 @@ context:
   file can turn the requirement on, never off.
 - `review.approve: true`: a review that finds nothing blocking or important
   approves the pull request, as a review pinned to the head it saw; nits
-  alone do not withhold it. A later review of the same pull request that
-  does find something dismisses kritika's approval. It replaces the
-  admin's, in either direction: a repository turns it on where the
-  instance leaves it off. Off unless
-  set.
+  alone do not withhold it. Where a confidence score is asked for, the
+  score decides instead: the pull request is approved when its score
+  reaches `confidence.threshold` and its risk is within `confidence.risk`,
+  and a review left unscored approves nothing. A later review of the same
+  pull request whose verdict no longer allows it dismisses kritika's
+  approval, as does a reviewer who stands as requesting changes; a head
+  that moved while it was reviewed is left to its own review. It replaces
+  the admin's, in either direction: a repository turns it on where the
+  instance leaves it off. Off unless set.
 - `confidence.model` / `confidence.threshold`: the model that scores a
   reviewed pull request from 0 to 5, a `<provider>/<model>` held to the
   same providers as `review.model`, and the score its commit status needs
