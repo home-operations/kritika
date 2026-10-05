@@ -294,6 +294,22 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &stranded))); err != nil || out.Status != Enqueued {
 		t.Fatalf("poll of a superseded head = %+v, %v; want it enqueued", out, err)
 	}
+	// A skip settles its head only while it is the head's latest review:
+	// the poll picks up one whose later review failed.
+	failed := *pr
+	failed.HeadSHA = "ggg"
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at, finished_at)
+			SELECT account_id, id, 'ggg', s.status, now() + s.after, now() FROM pull_requests,
+				(VALUES ('skipped', interval '0'), ('failed', interval '1 second')) AS s (status, after)
+			WHERE repository_id = $1 AND number = $2`, rid, pr.Number)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &failed))); err != nil || out.Status != Enqueued {
+		t.Fatalf("poll of a head skipped, then failed = %+v, %v; want it enqueued", out, err)
+	}
 	merged := *pr
 	merged.HeadSHA, merged.State, merged.Merged = "fff", "closed", true
 	for _, action := range []string{ActionPoll, "synchronize", "reopened"} {

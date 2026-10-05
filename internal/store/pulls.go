@@ -131,29 +131,37 @@ var ReviewedStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped}
 // head unreviewed, so the poll picks it up again.
 var SettledStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped, ReviewSkipped, ReviewCanceled}
 
+// headReviews selects the statuses of the reviews of a pull request's head,
+// by repository ($1), number ($2) and head ($3).
+const headReviews = `SELECT r.status, r.skip_reason, r.created_at FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+	WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3`
+
 // HeadReviewed reports whether a review of the pull request's head ended in
-// one of statuses.
+// one of ReviewedStatuses, or its latest one in one of statuses: a skip or
+// a cancellation settles the head only until a later review of it ends
+// otherwise.
 func HeadReviewed(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string, statuses []ReviewStatus) (bool, error) {
 	var reviewed bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-		WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3 AND r.status = ANY($4))`,
-		repositoryID, number, headSHA, statuses).Scan(&reviewed); err != nil {
+	if err := tx.QueryRow(ctx, `WITH head AS (`+headReviews+`)
+		SELECT EXISTS (SELECT 1 FROM head WHERE status = ANY($4))
+			OR coalesce((SELECT status = ANY($5) FROM head ORDER BY created_at DESC LIMIT 1), false)`,
+		repositoryID, number, headSHA, ReviewedStatuses, statuses).Scan(&reviewed); err != nil {
 		return false, fmt.Errorf("store: read reviews of the head: %w", err)
 	}
 	return reviewed, nil
 }
 
 // LabelSettled reports whether the pull request's head needs nothing from a
-// label change: a review of it completed, was capped or was canceled, or
-// was skipped for anything but the repository's filter, the one skip a
-// label can lift.
+// label change: a review of it completed or was capped, or its latest one
+// was canceled or skipped for anything but the repository's filter, the
+// one skip a label can lift.
 func LabelSettled(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string) (bool, error) {
 	var settled bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-		WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3
-			AND (r.status = ANY($4) OR (r.status = $5 AND r.skip_reason <> $6)))`,
-		repositoryID, number, headSHA, []ReviewStatus{ReviewCompleted, ReviewCapped, ReviewCanceled},
-		ReviewSkipped, string(repoconfig.SkipFiltered)).Scan(&settled); err != nil {
+	if err := tx.QueryRow(ctx, `WITH head AS (`+headReviews+`)
+		SELECT EXISTS (SELECT 1 FROM head WHERE status = ANY($4))
+			OR coalesce((SELECT status = $5 OR (status = $6 AND skip_reason <> $7) FROM head ORDER BY created_at DESC LIMIT 1), false)`,
+		repositoryID, number, headSHA, ReviewedStatuses, ReviewCanceled, ReviewSkipped, string(repoconfig.SkipFiltered)).
+		Scan(&settled); err != nil {
 		return false, fmt.Errorf("store: read reviews of the head: %w", err)
 	}
 	return settled, nil

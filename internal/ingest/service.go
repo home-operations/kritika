@@ -224,6 +224,14 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 // review queues the review of the head a push, a poll or the pull request's
 // opening starts, unless the head has one already or one still to come.
 func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest) (Outcome, error) {
+	// A job with a Request of its own, a re-run's or a label change's, is
+	// the head's review to come though the unique key does not span it. It
+	// is looked for before the head's reviews: a job that finished in
+	// between has its review recorded by then.
+	queued, err := jobs.HeadQueued(ctx, tx, req.Account.ID(), rid, pr.Number, pr.HeadSHA)
+	if err != nil {
+		return Outcome{}, err
+	}
 	// A head a review has seen is not news: a poll lists a pull request
 	// whenever anything about it moved, a comment or a label included,
 	// and a webhook event may be delivered again, or reopen a pull
@@ -234,19 +242,12 @@ func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string
 		statuses = store.SettledStatuses
 	}
 	reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA, statuses)
-	if err != nil {
+	switch {
+	case err != nil:
 		return Outcome{}, err
-	}
-	if reviewed {
+	case reviewed:
 		return Outcome{Status: Skipped, Reason: reasonReviewed}, nil
-	}
-	// A job with a Request of its own, a re-run's or a label change's, is
-	// the head's review to come though the unique key does not span it.
-	busy, err := jobs.HeadBusy(ctx, tx, req.Account.ID(), rid, pr.Number, pr.HeadSHA)
-	if err != nil {
-		return Outcome{}, err
-	}
-	if busy {
+	case queued:
 		return Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}, nil
 	}
 	res, err := s.queue.InsertTx(ctx, tx, jobs.ReviewArgs{
@@ -262,14 +263,21 @@ func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string
 }
 
 // labelChange queues the review a label change starts, unless the head has
-// one a label could not change or one still to come.
+// one a label could not change or one still to come; the job is looked for
+// first, as in review.
 func (s *Service) labelChange(ctx context.Context, tx pgx.Tx, req Request, rid string, pr *webhook.PullRequest) (Outcome, error) {
-	settled, err := store.LabelSettled(ctx, tx, rid, pr.Number, pr.HeadSHA)
+	queued, err := jobs.HeadQueued(ctx, tx, req.Account.ID(), rid, pr.Number, pr.HeadSHA)
 	if err != nil {
 		return Outcome{}, err
 	}
-	if settled {
+	settled, err := store.LabelSettled(ctx, tx, rid, pr.Number, pr.HeadSHA)
+	switch {
+	case err != nil:
+		return Outcome{}, err
+	case settled:
 		return Outcome{Status: Skipped, Reason: reasonReviewed}, nil
+	case queued:
+		return Outcome{Status: Skipped, Reason: reasonDuplicate, Job: jobReview}, nil
 	}
 	_, err = jobs.EnqueueLabelChange(ctx, tx, s.queue, req.Account.ID(), rid, pr.Number, req.Event.Action)
 	switch {

@@ -79,9 +79,19 @@ func enqueueFresh(
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
 		return 0, fmt.Errorf("jobs: lock pull request: %w", err)
 	}
-	busy, err := HeadBusy(ctx, tx, accountID, repositoryID, number, headSHA)
+	var busy bool
+	err = tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+			WHERE p.account_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
+				AND r.status IN ('running', 'prepared'))
+		OR EXISTS (
+			SELECT 1 FROM river_job
+			WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
+				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+				AND args->>'head_sha' = $4)`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("jobs: look up running reviews: %w", err)
 	}
 	if busy {
 		return 0, ErrRerunQueued
@@ -96,25 +106,20 @@ func enqueueFresh(
 	return res.Job.ID, nil
 }
 
-// HeadBusy reports whether a review of the pull request's head is running
-// or prepared, or a review job for it has yet to finish, whatever Request
-// the job carries.
-func HeadBusy(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int, headSHA string) (bool, error) {
-	var busy bool
+// HeadQueued reports whether a review job for the pull request's head has
+// yet to finish, whatever Request it carries.
+func HeadQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int, headSHA string) (bool, error) {
+	var queued bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-			WHERE p.account_id = $1::text::uuid AND p.repository_id = $2::text::uuid AND p.number = $3 AND r.head_sha = $4
-				AND r.status IN ('running', 'prepared'))
-		OR EXISTS (
-			SELECT 1 FROM river_job
-			WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
-				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
-				AND args->>'head_sha' = $4)`,
-		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
+		SELECT 1 FROM river_job
+		WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
+			AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+			AND args->>'head_sha' = $4)`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&queued)
 	if err != nil {
-		return false, fmt.Errorf("jobs: look up running reviews: %w", err)
+		return false, fmt.Errorf("jobs: look up queued reviews: %w", err)
 	}
-	return busy, nil
+	return queued, nil
 }
 
 // RequestCancel asks the worker running reviewID to stop. It only applies
