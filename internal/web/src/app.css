@@ -382,10 +382,13 @@ kbd {
 /* The section tabs: the current one is marked with the highlighter over
    an ink rule, which carries the state where the highlighter alone would
    not contrast. */
+/* The strip itself reaches over the top bar's rule, so its tabs stay inside
+   it: one reaching out would scroll the strip vertically. */
 .sections {
   display: flex;
   gap: 4px;
   padding: 0 10px;
+  margin-bottom: -1px;
   overflow-x: auto;
 }
 .section-tab {
@@ -394,7 +397,6 @@ kbd {
   gap: 6px;
   padding: 6px 8px 8px;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   color: var(--muted);
   text-decoration: none;
   font-size: var(--type-md);

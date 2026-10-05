@@ -962,6 +962,14 @@ test('a skipped review with no reason of its own says what it recorded on the pu
   await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: the pull request is closed');
 });
 
+test('no tab strip scrolls vertically', async ({ page }) => {
+  await page.goto(`/${T}/reviews/rev-1`);
+  await expect(page.locator('nav.tabs')).toBeVisible();
+  for (const strip of await page.locator('.sections, .tabs').all()) {
+    expect(await strip.evaluate((n) => n.scrollHeight - n.clientHeight)).toBe(0);
+  }
+});
+
 test('pull detail says what its unfinished review job waits on, and nothing of one that simply runs', async ({ page }) => {
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/pulls/alpha/one/7`);
