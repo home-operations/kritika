@@ -88,13 +88,14 @@ type ReviewArgs struct {
 	Number       int    `json:"number"        river:"unique"`
 	HeadSHA      string `json:"head_sha"      river:"unique"`
 	// Trigger is why: opened, synchronize, reopened, ready_for_review, poll,
-	// manual.
+	// labeled, unlabeled, manual.
 	Trigger string `json:"trigger"`
-	// Request distinguishes one manual re-run from another. River dedupes
-	// by the river:"unique" fields, so every trigger but manual leaves it
-	// empty and dedupes on account, repository, number and head, and a
-	// manual re-run sets a fresh value (a UUID) so it is never deduped
-	// against a prior run of the same head, including another manual one.
+	// Request distinguishes one manual re-run, or one label change, from
+	// another. River dedupes by the river:"unique" fields, so every other
+	// trigger leaves it empty and dedupes on account, repository, number
+	// and head, and these two set a fresh value (a UUID) so the job is never
+	// deduped against a prior run of the same head, including another of
+	// its kind.
 	Request string `json:"request,omitempty" river:"unique"`
 }
 

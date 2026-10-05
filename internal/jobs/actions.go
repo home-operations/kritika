@@ -46,6 +46,23 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual)
+}
+
+// EnqueueLabelChange queues a review of number's current head for trigger,
+// a label added or removed (see LabelChange). The head's earlier job, the
+// one that ended in the skip the label may lift, still holds the key a
+// push dedupes on, so the job gets a fresh Request as a re-run does, and is
+// ErrRerunQueued under the same conditions.
+func EnqueueLabelChange(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
+) (int64, error) {
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger)
+}
+
+func enqueueFresh(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
+) (int64, error) {
 	var headSHA string
 	err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests
 		WHERE account_id = $1 AND repository_id = $2 AND number = $3 AND state = 'open'`,
@@ -81,12 +98,28 @@ func EnqueueRerun(
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		AccountID: accountID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,
-		Trigger: TriggerManual, Request: uuid.NewString(),
+		Trigger: trigger, Request: uuid.NewString(),
 	}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)
 	}
 	return res.Job.ID, nil
+}
+
+// HeadQueued reports whether a review job for the pull request's head has
+// yet to finish, whatever Request it carries.
+func HeadQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int, headSHA string) (bool, error) {
+	var queued bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM river_job
+		WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
+			AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
+			AND args->>'head_sha' = $4)`,
+		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&queued)
+	if err != nil {
+		return false, fmt.Errorf("jobs: look up queued reviews: %w", err)
+	}
+	return queued, nil
 }
 
 // RequestCancel asks the worker running reviewID to stop. It only applies

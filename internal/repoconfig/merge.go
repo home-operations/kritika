@@ -202,7 +202,8 @@ type PullRequest struct {
 	// Labels is the stored labels JSON array.
 	Labels json.RawMessage `json:"labels,omitempty"`
 	// Event is the trigger of the review the filter judges: opened,
-	// reopened, ready_for_review, synchronize, poll or manual.
+	// reopened, ready_for_review, synchronize, poll, labeled, unlabeled or
+	// manual.
 	Event string `json:"event,omitempty"`
 }
 

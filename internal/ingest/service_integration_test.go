@@ -34,6 +34,7 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
   onedr0p/*: { filterExpr: "!pr.draft" }
   onedr0p/settle: { settle: 60s }
   onedr0p/opened-only: { filterExpr: 'pr.event == "opened"' }
+  onedr0p/labelled: { filterExpr: '!pr.labels.exists(l, l.name == "skip-review")' }
 `)
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
@@ -292,6 +293,22 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	}
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &stranded))); err != nil || out.Status != Enqueued {
 		t.Fatalf("poll of a superseded head = %+v, %v; want it enqueued", out, err)
+	}
+	// A skip settles its head only while it is the head's latest review:
+	// the poll picks up one whose later review failed.
+	failed := *pr
+	failed.HeadSHA = "ggg"
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at, finished_at)
+			SELECT account_id, id, 'ggg', s.status, now() + s.after, now() FROM pull_requests,
+				(VALUES ('skipped', interval '0'), ('failed', interval '1 second')) AS s (status, after)
+			WHERE repository_id = $1 AND number = $2`, rid, pr.Number)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &failed))); err != nil || out.Status != Enqueued {
+		t.Fatalf("poll of a head skipped, then failed = %+v, %v; want it enqueued", out, err)
 	}
 	merged := *pr
 	merged.HeadSHA, merged.State, merged.Merged = "fff", "closed", true
@@ -797,7 +814,7 @@ func TestRecordUnsigned(t *testing.T) {
 
 // TestDispatchRecordsEdits: an edit, a label change or a draft conversion
 // updates what kritika holds of the pull request, past the filter, and
-// queues no review.
+// queues no review beside the one its head has coming.
 func TestDispatchRecordsEdits(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
@@ -830,11 +847,11 @@ func TestDispatchRecordsEdits(t *testing.T) {
 	}
 	labeled := edited
 	labeled.Labels = []webhook.Label{{Name: "skip-review", Color: "000000"}}
-	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "labeled", Repository: repo("onedr0p/home-ops"), PullRequest: &labeled})); err != nil || out.Status != Skipped || out.Reason != "labeled" {
+	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "labeled", Repository: repo("onedr0p/home-ops"), PullRequest: &labeled})); err != nil || out.Status != Skipped || out.Reason != reasonDuplicate {
 		t.Fatalf("labeled = %+v, %v", out, err)
 	}
-	if _, _, _, labels, _ := row(); !strings.Contains(labels, "skip-review") {
-		t.Fatalf("after labeled: labels %s; want skip-review recorded", labels)
+	if _, _, _, labels, jobs := row(); !strings.Contains(labels, "skip-review") || jobs != 1 {
+		t.Fatalf("after labeled: labels %s jobs %d; want skip-review recorded and the one job", labels, jobs)
 	}
 	// The repository's filter skips drafts; the conversion is recorded
 	// all the same, so the filter has the draft state to judge next time.
@@ -849,5 +866,118 @@ func TestDispatchRecordsEdits(t *testing.T) {
 	// A disabled repository records nothing, edits included.
 	if out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "edited", Repository: repo("onedr0p/disabled"), PullRequest: &edited})); err != nil || out.Reason != reasonDisabled {
 		t.Fatalf("edited on a disabled repository = %+v, %v", out, err)
+	}
+}
+
+// TestDispatchLabelChange: a label change is recorded whatever the filter
+// says of it, and starts a review of a head that has none a label could
+// not change, unless one is still to come.
+func TestDispatchLabelChange(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	rid := configfile.RepositoryID(account.ID(), "onedr0p/labelled")
+	label := func(names ...string) []webhook.Label {
+		labels := make([]webhook.Label, len(names))
+		for i, name := range names {
+			labels[i] = webhook.Label{Name: name, Color: "000000"}
+		}
+		return labels
+	}
+	dispatch := func(action string, labels ...string) Outcome {
+		t.Helper()
+		pr := &webhook.PullRequest{Number: 281, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "l1", BaseRef: "main", Labels: label(labels...)}
+		out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: action, Repository: repo("onedr0p/labelled"), PullRequest: pr}))
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		return out
+	}
+	// review records how the worker ended its review of the head, and takes
+	// the head's job off the queue as the worker's finishing it would.
+	review := func(status, skipReason string) {
+		t.Helper()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, skip_reason, finished_at)
+				SELECT account_id, id, head_sha, $3, $4, now() FROM pull_requests WHERE repository_id = $1 AND number = $2`,
+				rid, 281, status, skipReason); err != nil {
+				return err
+			}
+			rows, err := tx.Query(ctx, `SELECT id FROM river_job WHERE kind = 'review' AND args->>'number' = '281' AND finalized_at IS NULL`)
+			if err != nil {
+				return err
+			}
+			ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+			if err != nil {
+				return err
+			}
+			for _, id := range ids {
+				if _, err := svc.queue.JobCancelTx(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `DELETE FROM reviews WHERE pull_request_id IN
+				(SELECT id FROM pull_requests WHERE repository_id = $1 AND number = 281)`, rid)
+			return err
+		})
+	})
+
+	if out := dispatch("opened", "skip-review"); out != (Outcome{Status: Skipped, Reason: reasonFilter}) {
+		t.Fatalf("opened under the label = %+v; want it filtered", out)
+	}
+	if out := dispatch("labeled", "skip-review", "bug"); out != (Outcome{Status: Skipped, Reason: reasonFilter}) {
+		t.Fatalf("labeled under the label = %+v; want it filtered", out)
+	}
+	var labels string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT labels::text FROM pull_requests WHERE repository_id = $1 AND number = 281`, rid).Scan(&labels)
+	}); err != nil || !strings.Contains(labels, "bug") {
+		t.Fatalf("labels = %s, %v; want the filtered label change recorded", labels, err)
+	}
+	if out := dispatch("unlabeled", "bug"); out != (Outcome{Status: Enqueued, Job: "review"}) {
+		t.Fatalf("unlabeled = %+v; want a review queued", out)
+	}
+	var trigger string
+	if err := st.App().QueryRow(ctx, `SELECT args->>'trigger' FROM river_job WHERE kind = 'review' AND args->>'number' = '281'`).Scan(&trigger); err != nil || trigger != "unlabeled" {
+		t.Fatalf("trigger = %q, %v; want unlabeled", trigger, err)
+	}
+	if out := dispatch("labeled", "bug", "area/ci"); out != (Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "review"}) {
+		t.Fatalf("labeled with a review to come = %+v; want a duplicate", out)
+	}
+	// The poll the label change provokes finds the same review to come.
+	if out := dispatch(ActionPoll, "bug", "area/ci"); out != (Outcome{Status: Skipped, Reason: reasonDuplicate, Job: "review"}) {
+		t.Fatalf("poll with a label change's review to come = %+v; want a duplicate", out)
+	}
+	// The skip a label can lift leaves the head open to the next change.
+	review("skipped", "filtered")
+	if out := dispatch("unlabeled", "bug"); out.Status != Enqueued {
+		t.Fatalf("unlabeled after a filtered skip = %+v; want a review queued", out)
+	}
+	tests := []struct{ name, status, skipReason string }{
+		{"a skip a label does not lift", "skipped", "only_skipped_paths"},
+		{"a cancellation", "canceled", ""},
+		{"a review", "completed", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `DELETE FROM reviews WHERE pull_request_id IN
+					(SELECT id FROM pull_requests WHERE repository_id = $1 AND number = 281)`, rid)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			review(tt.status, tt.skipReason)
+			if out := dispatch("labeled", "bug", "area/ci"); out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
+				t.Fatalf("labeled = %+v; want the head settled", out)
+			}
+		})
 	}
 }
