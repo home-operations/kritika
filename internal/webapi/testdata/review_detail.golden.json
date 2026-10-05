@@ -21,6 +21,7 @@
       "threshold": 5,
       "passed": false,
       "reason": "The unchecked error stands.",
+      "risk": "medium",
       "model": "acme/judge"
     },
     "pull": {

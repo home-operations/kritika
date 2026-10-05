@@ -80,10 +80,13 @@ type Review struct {
 
 // Confidence is how the repository's reviews are judged: the model that
 // scores a reviewed pull request, a "<provider>/<model>" of a provider its
-// account may use, and the score it must reach. Both replace the admin's.
+// account may use, and the score it must reach, which both replace the
+// admin's, and the highest risk a change may carry and still be approved,
+// which may only lower the admin's.
 type Confidence struct {
 	Model     configfile.ModelRef `yaml:"model,omitempty"`
 	Threshold *int                `yaml:"threshold,omitempty"`
+	Risk      review.Risk         `yaml:"risk,omitempty"`
 }
 
 // Trigger narrows which pull requests get a review: a filter ANDed with

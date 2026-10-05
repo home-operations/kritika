@@ -331,7 +331,10 @@ type Confidence struct {
 	Threshold int    `json:"threshold"`
 	Passed    bool   `json:"passed"`
 	Reason    string `json:"reason"`
-	Model     string `json:"model"`
+	// Risk is how much a mistake in the change would cost: low, medium,
+	// high or critical.
+	Risk  review.Risk `json:"risk"`
+	Model string      `json:"model"`
 }
 
 // Followup is one @-mention of the bot and what came of it.

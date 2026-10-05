@@ -257,6 +257,7 @@ Kubernetes: `>=1.25.0-0`
 | config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
 | config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
 | config.confidenceModel | string | `""` | The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set. |
+| config.confidenceRisk | string | `""` | The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set. |
 | config.confidenceThreshold | string | `""` | The score a pull request must reach for its commit status to pass, 0 to 5; 5 unless set. |
 | config.diffRetention | string | `""` | How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set. |
 | config.embeddingDims | string | `""` | The embedding's dimensions, which the model must produce. |

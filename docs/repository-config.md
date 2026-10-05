@@ -90,7 +90,7 @@ context:
   `.PriorHeadURL`, `.Prior`, the last review's findings this review did
   not report again, each with `.Resolved`, and the dismissed ones each with
   `.Dismissed` and `.DismissReason`, `.Sources`, `.Incomplete`, `.Confidence`, nil unless the review was
-  scored, with its `.Score`, `.Threshold`, `.Passed`, `.Reason` and `.Model`, and `.WebURL` and `.PullURL`, the
+  scored, with its `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`, and `.WebURL` and `.PullURL`, the
   dashboard's origin and the pull request's page on it, where the built-in
   template's re-run badge points). The inline template's dot is
   one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Category`, `.Title`,
@@ -114,6 +114,8 @@ context:
   reviewed pull request from 0 to 5, a `<provider>/<model>` held to the
   same providers as `review.model`, and the score its commit status needs
   to pass; each replaces the admin's, the threshold in either direction.
+  `confidence.risk` is the highest risk a change may be rated and still be
+  approved, and may only lower the admin's; a higher one is dropped.
   See [the configuration](configuration.md#repository-settings-and-repositories)
   for how a score is reached.
 - `trigger.filterExpr`: a filter expression ANDed with the admin's own. It is
@@ -155,7 +157,7 @@ model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
 `trigger.forks`, `trigger.settle`, `trigger.limit`, `trigger.lines`,
-`review.incremental`, `limits` and `runner`
+`review.incremental`, `confidence.instructions`, `limits` and `runner`
 are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
 

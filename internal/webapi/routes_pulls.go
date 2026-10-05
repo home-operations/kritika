@@ -155,7 +155,7 @@ func reviewItem(v store.ReviewRow) Review {
 		out.DurationMs = &ms
 	}
 	if c := v.Confidence; c != nil {
-		out.Confidence = &Confidence{Score: c.Score, Threshold: c.Threshold, Passed: c.Passed(), Reason: c.Reason, Model: c.Model}
+		out.Confidence = &Confidence{Score: c.Score, Threshold: c.Threshold, Passed: c.Passed(), Reason: c.Reason, Risk: c.Risk, Model: c.Model}
 	}
 	return out
 }

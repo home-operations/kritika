@@ -418,7 +418,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
 	if tool == "confidence" {
-		return answer(`{"score":5,"reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
+		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
@@ -1647,7 +1647,7 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	if err := json.Unmarshal([]byte(confidence), &got); err != nil {
 		t.Fatalf("confidence = %s, %v", confidence, err)
 	}
-	if want := (review.Confidence{Score: 3, Threshold: 4, Reason: "Nothing else stands out.", Model: "reviewer"}); got != want {
+	if want := (review.Confidence{Score: 3, Threshold: 4, Reason: "Nothing else stands out.", Risk: review.RiskMedium, Model: "reviewer"}); got != want {
 		t.Fatalf("confidence = %+v, want %+v", got, want)
 	}
 	if calls != 1 || charged != 1 {

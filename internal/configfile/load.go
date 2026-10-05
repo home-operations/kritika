@@ -22,6 +22,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // nameRe bounds connection and provider names to what is safe in a URL
@@ -473,6 +474,9 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	}
 	if th := r.Confidence.Threshold; th != nil && !ValidConfidence(*th) {
 		return fmt.Errorf("configfile: %s%s must be between 0 and %d, got %d", where, keyThreshold, MaxConfidence, *th)
+	}
+	if risk := r.Confidence.Risk; risk != nil && !risk.Valid() {
+		return fmt.Errorf("configfile: %s%s must be %s, got %q", where, keyRisk, review.RiskLevels, *risk)
 	}
 	if r.Trigger.Settle != nil && *r.Trigger.Settle < 0 {
 		return fmt.Errorf("configfile: %strigger.settle must not be negative", where)

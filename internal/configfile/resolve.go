@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // Account returns the running account name on forge.
@@ -76,7 +78,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed},
-		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold},
+		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow},
 		Providers:   f.providerNames(a),
 	}
 	s.apply(&f.Defaults.Overrides)
@@ -174,6 +176,12 @@ func (s *Settings) apply(o *Overrides) {
 	}
 	if o.Confidence.Threshold != nil {
 		s.Confidence.Threshold = *o.Confidence.Threshold
+	}
+	if o.Confidence.Risk != nil {
+		s.Confidence.Risk = *o.Confidence.Risk
+	}
+	if o.Confidence.Instructions != nil {
+		s.Confidence.Instructions = *o.Confidence.Instructions
 	}
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)

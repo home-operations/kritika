@@ -1,6 +1,7 @@
 package review
 
 import (
+	"cmp"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,7 @@ func TestParseConfidence(t *testing.T) {
 		raw        string
 		counts     Counts
 		wantScore  int
+		wantRisk   Risk
 		wantReason string
 		wantErr    string
 	}{
@@ -23,6 +25,8 @@ func TestParseConfidence(t *testing.T) {
 		{name: "a long reason is cut", raw: `{"score": 4, "reason": "` + strings.Repeat("x", 600) + `"}`, wantScore: 4, wantReason: strings.Repeat("x", 500) + " …"},
 		{name: "a reference to another repository does not link", raw: `{"score": 4, "reason": "See up/stream#12."}`, wantScore: 4,
 			wantReason: RedirectReferences("See up/stream#12.", "o/r")},
+		{name: "the risk it gives", raw: `{"score": 5, "risk": "medium", "reason": "ok"}`, wantScore: 5, wantRisk: RiskMedium, wantReason: "ok"},
+		{name: "a risk that is no level is the highest", raw: `{"score": 5, "risk": "none", "reason": "ok"}`, wantScore: 5, wantReason: "ok"},
 		{name: "a score past the scale", raw: `{"score": 6, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
 		{name: "a negative score", raw: `{"score": -1, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
 		{name: "no score", raw: `{"reason": "ok"}`, wantErr: "no score from 0 to 5"},
@@ -30,15 +34,16 @@ func TestParseConfidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score, reason, err := ParseConfidence(tt.raw, "o/r", tt.counts)
+			score, risk, reason, err := ParseConfidence(tt.raw, "o/r", tt.counts)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)
 				}
 				return
 			}
-			if err != nil || score != tt.wantScore || reason != tt.wantReason {
-				t.Fatalf("ParseConfidence = %d, %q, %v; want %d, %q", score, reason, err, tt.wantScore, tt.wantReason)
+			if err != nil || score != tt.wantScore || reason != tt.wantReason || risk != cmp.Or(tt.wantRisk, RiskCritical) {
+				t.Fatalf("ParseConfidence = %d, %s, %q, %v; want %d, %s, %q", score, risk, reason, err, tt.wantScore,
+					cmp.Or(tt.wantRisk, RiskCritical), tt.wantReason)
 			}
 		})
 	}
@@ -63,7 +68,7 @@ func TestBuildConfidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, tt.findings)
+			msg := BuildConfidence(in, tt.findings, ConfidenceSystem)
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
@@ -76,5 +81,34 @@ func TestBuildConfidence(t *testing.T) {
 func TestConfidencePassed(t *testing.T) {
 	if (Confidence{Score: 4, Threshold: 5}).Passed() || !(Confidence{Score: 5, Threshold: 5}).Passed() || !(Confidence{Score: 3, Threshold: 0}).Passed() {
 		t.Fatal("Passed must be true exactly when the score reaches the threshold")
+	}
+}
+
+func TestRiskWithin(t *testing.T) {
+	tests := []struct {
+		risk, ceiling Risk
+		want          bool
+	}{
+		{RiskLow, RiskLow, true},
+		{RiskMedium, RiskLow, false},
+		{RiskHigh, RiskCritical, true},
+		{RiskCritical, RiskHigh, false},
+		{"", RiskCritical, false},
+		{"none", RiskCritical, false},
+	}
+	for _, tt := range tests {
+		if got := tt.risk.Within(tt.ceiling); got != tt.want {
+			t.Errorf("%q within %q = %v, want %v", tt.risk, tt.ceiling, got, tt.want)
+		}
+	}
+}
+
+func TestConfidenceSystemPrompt(t *testing.T) {
+	if got := ConfidenceSystemPrompt("  \n"); got != ConfidenceSystem {
+		t.Fatalf("blank guidance changed the prompt:\n%s", got)
+	}
+	got := ConfidenceSystemPrompt("Image bumps are low.\n")
+	if !strings.HasPrefix(got, ConfidenceSystem+"\n\n") || !strings.HasSuffix(got, "\n\nImage bumps are low.") {
+		t.Fatalf("the guidance does not follow the prompt:\n%s", got)
 	}
 }

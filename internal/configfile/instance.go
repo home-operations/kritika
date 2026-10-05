@@ -6,11 +6,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // The environment may set some of the file's keys: one model provider, the
-// review and fallback models, feedback, the confidence model and
-// threshold, forks and settle every account and repository inherits, and
+// review and fallback models, feedback, the confidence model, threshold
+// and risk, forks and settle every account and repository inherits, and
 // the embedder. Each wins over the file's.
 
 // Environment variable prefixes of the keys the environment may set.
@@ -109,6 +111,9 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 				return fmt.Errorf("configfile: environment variable %s must be a whole number, got %q", env, value)
 			}
 			d.Confidence.Threshold, path = &n, keyThreshold
+		case confidenceEnvPrefix + "RISK":
+			risk := review.Risk(value)
+			d.Confidence.Risk, path = &risk, keyRisk
 		case triggerEnvPrefix + "FORKS":
 			b, err := strconv.ParseBool(value)
 			if err != nil {
@@ -167,8 +172,8 @@ type FileLayer struct {
 	Review    FileValue
 	Fallback  FileValue
 	// Defaults are the other settings it writes that the environment may
-	// set too: feedback, the confidence model and threshold, forks and
-	// settle, in that order, by their policy keys.
+	// set too: feedback, the confidence model, threshold and risk, forks
+	// and settle, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -235,6 +240,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyFeedback, deref(d.Review.Feedback), d.Review.Feedback != nil},
 		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
+		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
 		{keyForks, strconv.FormatBool(d.Trigger.Forks != nil && *d.Trigger.Forks), d.Trigger.Forks != nil},
 		{keySettle, durationValue(d.Trigger.Settle), d.Trigger.Settle != nil},
 	} {

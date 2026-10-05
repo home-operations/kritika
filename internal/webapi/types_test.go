@@ -30,7 +30,7 @@ var goldenReview = Review{
 	ID: "rev-1", Status: store.ReviewCompleted, Trigger: "push", Scope: review.ScopeIncremental,
 	Model: "acme/large", HeadSHA: "abc123", CostUSD: 0.42, Tokens: TokenCounts{Input: 1000, Output: 200}, DurationMs: new(int64(90000)),
 	CreatedAt: t0, FinishedAt: &t1, SkipReason: string(repoconfig.SkipFiltered), Error: "",
-	Confidence: &Confidence{Score: 3, Threshold: 5, Reason: "The unchecked error stands.", Model: "acme/judge"},
+	Confidence: &Confidence{Score: 3, Threshold: 5, Reason: "The unchecked error stands.", Risk: review.RiskMedium, Model: "acme/judge"},
 }
 
 var goldenJob = Job{
@@ -56,7 +56,7 @@ var goldenRepo = Repository{
 var goldenRepoSettings = RepoSettings{
 	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
-	Confidence: configfile.Confidence{Model: "openrouter/acme-judge", Threshold: 5},
+	Confidence: configfile.Confidence{Model: "openrouter/acme-judge", Threshold: 5, Risk: review.RiskLow, Instructions: "Image bumps are low."},
 	Review: configfile.Review{
 		RequireSuggestedFix: true,
 		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
