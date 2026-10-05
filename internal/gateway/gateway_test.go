@@ -68,6 +68,19 @@ func (s *stepperFunc) Step(context.Context, model.StepRequest) (model.StepRespon
 	return model.StepResponse{Model: "m", Text: "ok"}, nil
 }
 
+// TestStepStopsAtItsBudget: a step whose budget ran out while the provider
+// failed is not tried again, whatever retries are left.
+func TestStepStopsAtItsBudget(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	s := &stepperFunc{errs: []error{&openai.Error{StatusCode: http.StatusBadGateway}, &openai.Error{StatusCode: http.StatusBadGateway}}}
+	waits := 0
+	wait := func(context.Context, time.Duration) bool { waits++; cancel(); return true }
+	_, attempts, err := step(ctx, s, model.StepRequest{Model: "m"}, 5, wait, func(error) {})
+	if err == nil || attempts != 2 || waits != 1 {
+		t.Fatalf("step = %d attempts, %d waits, %v; want the second attempt to be the last once the budget is gone", attempts, waits, err)
+	}
+}
+
 func TestStepRetries(t *testing.T) {
 	transient := &openai.Error{StatusCode: http.StatusBadGateway}
 	final := &openai.Error{StatusCode: http.StatusBadRequest}

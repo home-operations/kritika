@@ -494,3 +494,26 @@ func TestOpenAISessionHeader(t *testing.T) {
 		})
 	}
 }
+
+// TestRequestTimeoutOverrides: a client built with its own request timeout
+// gives up on a stalled server by it, not by StepTimeout; and the gateway's
+// budgets nest, so the runner always outlasts the gateway, which outlasts
+// one provider request.
+func TestRequestTimeoutOverrides(t *testing.T) {
+	if GatewayRequestTimeout <= GatewayStepBudget || GatewayStepBudget <= StepTimeout {
+		t.Fatalf("timeouts do not nest: request %s, budget %s, step %s", GatewayRequestTimeout, GatewayStepBudget, StepTimeout)
+	}
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	s, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL, APIKey: "k", RequestTimeout: 50 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = s.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+	if err == nil || !Transient(err) || time.Since(start) > StepTimeout/2 {
+		t.Fatalf("err = %v after %s, want a transient timeout well before StepTimeout", err, time.Since(start))
+	}
+}
