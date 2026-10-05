@@ -90,11 +90,9 @@ type Confidence struct {
 }
 
 // Trigger narrows which pull requests get a review: include and exclude
-// lists of its own, which a pull request must pass beside the admin's, and
-// path globs added to the admin's.
+// lists of its own, which a pull request must pass beside the admin's.
 type Trigger struct {
 	configfile.Filters `yaml:",inline"`
-	Ignore             []string `yaml:"ignore,omitempty"`
 }
 
 // File is the decoded content of .kritika.yaml: the keys the
@@ -111,6 +109,8 @@ type File struct {
 	Rules []configfile.Rule `yaml:"rules,omitempty"`
 	// Context names files that explain the code, added after the admin's.
 	Context []configfile.ContextFile `yaml:"context,omitempty"`
+	// Ignore are path globs added to the admin's.
+	Ignore []string `yaml:"ignore,omitempty"`
 }
 
 // Parse decodes data as .kritika.yaml. Unknown fields, invalid glob patterns
@@ -130,9 +130,9 @@ func Parse(data []byte) (File, error) {
 		return File{}, fmt.Errorf("repoconfig: parse: %w", err)
 	}
 
-	for i, g := range f.Trigger.Ignore {
+	for i, g := range f.Ignore {
 		if !configfile.ValidGlob(g) {
-			return File{}, fmt.Errorf("repoconfig: trigger.ignore[%d] %q is not a valid glob", i, g)
+			return File{}, fmt.Errorf("repoconfig: ignore[%d] %q is not a valid glob", i, g)
 		}
 	}
 	for i, c := range f.Context {

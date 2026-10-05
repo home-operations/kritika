@@ -47,7 +47,7 @@ func TestMerge(t *testing.T) {
 		{name: "no file"},
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
-			doc: "enabled: false\ntrigger: { exclude: [{ expr: pr.draft }], ignore: [gen/**, vendor/**] }\n" +
+			doc: "enabled: false\ntrigger: { exclude: [{ expr: pr.draft }] }\nignore: [gen/**, vendor/**]\n" +
 				"rules: [{ id: repo-style, file: .kritika/rules.md }, { id: sql, file: .kritika/sql.md, paths: ['**/*.sql'] }]\n" +
 				"comments:\n  finding: .kritika/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
@@ -239,7 +239,7 @@ func TestMergedCheck(t *testing.T) {
 		{"an exclusion wins over an inclusion", "trigger:\n  include: [{ expr: pr.open }]\n  exclude: [{ name: deps, expr: 'pr.labels.exists(l, l.name == \"deps\")' }]\n",
 			[]string{"main.go"}, SkipFiltered, false, "deps"},
 		{"filter that fails to evaluate skips", "trigger:\n  include: [{ expr: 'pr.number == 1 || pr.labels[9].name == \"x\"' }]\n", []string{"main.go"}, SkipFiltered, true, `pr.number == 1 || pr.labels[9].name == "x"`},
-		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", []string{"docs/a.md"}, SkipOnlyPaths, false, ""},
+		{"only ignored paths", "ignore: [docs/**]\n", []string{"docs/a.md"}, SkipOnlyPaths, false, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

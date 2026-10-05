@@ -223,6 +223,10 @@ type Overrides struct {
 	// replacing that rule where it stands.
 	Rules   []Rule        `yaml:"rules,omitempty"`
 	Context []ContextFile `yaml:"context,omitempty"`
+	// Ignore are globs of the paths kritika leaves out of a review's
+	// context and of the index; a pull request that changes nothing else
+	// is skipped. They add to the broader scope's.
+	Ignore []string `yaml:"ignore,omitempty"`
 }
 
 // ReviewSpec sets how a review is done at one scope: its models, a role
@@ -279,7 +283,6 @@ const (
 // condition with a name already listed replacing that one where it stands.
 type TriggerSpec struct {
 	Filters `yaml:",inline"`
-	Ignore  []string `yaml:"ignore,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle *time.Duration `yaml:"settle,omitempty"`

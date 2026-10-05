@@ -29,16 +29,15 @@ limits:
 
 repositories:
   home-operations/flate:
+    ignore:
+      - "**/testdata/**"
     trigger:
-      ignore:
-        - "**/testdata/**"
       settle: 30s
   home-operations/kopiur:
     trigger:
       exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
   home-operations/charts-mirror:
-    trigger:
-      ignore: ["charts/**"]
+    ignore: ["charts/**"]
   onedr0p/*:
     review:
       model: local/claude-opus-5

@@ -183,6 +183,7 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Confidence.Instructions != nil {
 		s.Confidence.Instructions = *o.Confidence.Instructions
 	}
+	s.Ignore = append(s.Ignore, o.Ignore...)
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)
 	s.Review = s.Review.overlay(o)
@@ -191,7 +192,6 @@ func (s *Settings) apply(o *Overrides) {
 // trigger lays one scope's trigger keys over s.
 func (s *Settings) trigger(o *Overrides) {
 	s.Filters = s.Filters.with(o.Trigger.Filters)
-	s.Ignore = append(s.Ignore, o.Trigger.Ignore...)
 	if o.Trigger.Settle != nil {
 		s.Settle = *o.Trigger.Settle
 	}

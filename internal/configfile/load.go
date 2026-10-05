@@ -478,9 +478,9 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if r.Trigger.Lines != nil && *r.Trigger.Lines < 0 {
 		return fmt.Errorf("configfile: %strigger.lines must not be negative", where)
 	}
-	for gi, g := range r.Trigger.Ignore {
+	for gi, g := range r.Ignore {
 		if !ValidGlob(g) {
-			return fmt.Errorf("configfile: %strigger.ignore[%d] %q is not a valid glob", where, gi, g)
+			return fmt.Errorf("configfile: %signore[%d] %q is not a valid glob", where, gi, g)
 		}
 	}
 	for _, c := range []struct {

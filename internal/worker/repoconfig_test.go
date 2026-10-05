@@ -71,7 +71,7 @@ func TestEffective(t *testing.T) {
 			templates: adminDefaults, strict: true,
 		},
 		{
-			name: "ignore globs add to the admin's", doc: "trigger: { ignore: [gen/**, vendor/**] }\n",
+			name: "ignore globs add to the admin's", doc: "ignore: [gen/**, vendor/**]\n",
 			files: adminFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"},
 			repoFiles: append(adminPaths, repoconfig.FileName), templates: adminDefaults, strict: true,
 		},
@@ -148,8 +148,8 @@ func TestEffectiveSkip(t *testing.T) {
 		{"filtered", "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
 		{"filter allows", "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n", "normal", []string{"main.go"}, ""},
 		{"filter that fails to evaluate skips", "trigger:\n  include: [{ expr: 'pr.number > 0' }]\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
-		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
-		{"a path outside the ignore globs", "trigger: { ignore: [docs/**] }\n", "", []string{"docs/a.md", "main.go"}, ""},
+		{"only ignored paths", "ignore: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
+		{"a path outside the ignore globs", "ignore: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

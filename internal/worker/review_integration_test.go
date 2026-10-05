@@ -1430,7 +1430,7 @@ func checkRepoConfig(
 	cfgBase := commit("configure kritika", map[string]string{
 		".kritika.yaml": `trigger:
   exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
-  ignore: ["docs/**", ".kritika.yaml"]
+ignore: ["docs/**", ".kritika.yaml"]
 rules:
   - { id: todos, file: .kritika/rules.md }
   - { id: no-panics, rule: Return an error rather than panic. }
