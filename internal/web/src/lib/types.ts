@@ -233,11 +233,19 @@ export interface ReviewBlock {
 // with nits kept to the summary, or only bugs, risks and breaking changes.
 export type Feedback = 'detailed' | 'standard' | 'minimal';
 
+// What narrows when a skill is offered: a changed path matching one of
+// paths, and one of the when conditions holding.
+export interface SkillScope {
+  paths?: string[];
+  when?: { name: string; expr: string }[];
+}
+
 export interface RepoSettings {
   enabled: boolean;
   models: Models;
   filters: Filters;
   ignore: string[];
+  skills: { paths: string[]; scope: Record<string, SkillScope> };
   settleSeconds: number;
   maxAutoReviews: number;
   maxDeltaFiles: number;

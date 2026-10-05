@@ -134,11 +134,14 @@ type AgentRunRow struct {
 	ToolCalls map[string]int
 	Timeline  []TimelineStep
 	Sources   []string
-	Usage     model.Usage
-	CostUSD   float64
-	Model     string
-	Error     string
-	CreatedAt time.Time
+	// SkillsOffered are the repository skills the agent could load, and
+	// SkillsOpened the ones it did.
+	SkillsOffered, SkillsOpened []string
+	Usage                       model.Usage
+	CostUSD                     float64
+	Model                       string
+	Error                       string
+	CreatedAt                   time.Time
 }
 
 // FindAgentRun returns the agent run of a runner run, or ErrNotFound.
@@ -146,9 +149,10 @@ func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunR
 	var a AgentRunRow
 	var result, calls, timeline, sources []byte
 	err := tx.QueryRow(ctx, `SELECT stop_reason, result, steps, tool_calls, timeline, sources, input_tokens, cache_read_tokens,
-		cache_write_tokens, output_tokens, cost_usd::float8, model, error, created_at FROM agent_runs WHERE runner_run_id = $1`, runnerRunID).
+		cache_write_tokens, output_tokens, cost_usd::float8, model, error, created_at, skills_offered, skills_opened
+		FROM agent_runs WHERE runner_run_id = $1`, runnerRunID).
 		Scan(&a.StopReason, &result, &a.Steps, &calls, &timeline, &sources, &a.Usage.Input, &a.Usage.CacheRead,
-			&a.Usage.CacheWrite, &a.Usage.Output, &a.CostUSD, &a.Model, &a.Error, &a.CreatedAt)
+			&a.Usage.CacheWrite, &a.Usage.Output, &a.CostUSD, &a.Model, &a.Error, &a.CreatedAt, &a.SkillsOffered, &a.SkillsOpened)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}

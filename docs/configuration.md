@@ -316,7 +316,7 @@ one. They come in five groups:
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
   `tokens`, `timeout`, `commands` and `commandTimeout`.
 
-`enabled`, `rules`, `context`, `ignore` and `limits` sit beside them.
+`enabled`, `rules`, `context`, `skills`, `ignore` and `limits` sit beside them.
 `ignore` lists globs of the paths kritika never looks at: they are left out
 of a review's context and of the index, on top of kritika's own (vendored
 trees, lockfiles and generated code), and a pull request that changes
@@ -387,6 +387,10 @@ rules:
   - id: renovate
     rule: Say what the update breaks, from the release notes in the body.
     when: [{ expr: pr.headRef.startsWith("renovate/") }]
+skills:
+  scope:
+    review-renovate-pr:
+      when: [{ expr: pr.headRef.startsWith("renovate/") }]
 repositories:
   org-1/*:
     review: { model: org-1-key/vendor/large-model }
@@ -408,7 +412,7 @@ The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
 `review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
 `confidence.threshold`, `confidence.risk`, `trigger.include`,
-`trigger.exclude`, `comments`, `rules`, `context` and `ignore`; see
+`trigger.exclude`, `comments`, `rules`, `context`, `skills` and `ignore`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
 
@@ -442,7 +446,8 @@ A value applies in this order: kritika's default, the file's root,
 `owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
 value replaces the broader one's, except `ignore` globs, which add
 up, `rules`, which add up by id, and `trigger.include` and
-`trigger.exclude`, which add up by name.
+`trigger.exclude`, which add up by name. Of `skills`, `skills.paths`
+replaces the broader one's and `skills.scope` adds up by skill name.
 
 `trigger.include` and `trigger.exclude` decide which pull requests are
 reviewed: one is reviewed when one `include` condition holds, or there are

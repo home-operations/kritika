@@ -191,7 +191,7 @@ type Rule struct {
 // maintainers' authority, appended. commands are what the run tool offers;
 // none leaves the tool out of the prompt. search says the search_code
 // tool is offered.
-func SystemPrompt(rules []Rule, instructions, commands []string, focused, search bool) string {
+func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string, focused, search bool) string {
 	report := reportThorough
 	if focused {
 		report = reportFocused
@@ -203,7 +203,31 @@ func SystemPrompt(rules []Rule, instructions, commands []string, focused, search
 	if len(commands) > 0 {
 		system += fmt.Sprintf(agenticCommands, strings.Join(commands, ", "))
 	}
-	return withInstructions(system, rules, ruleCitation, instructions)
+	return withSkills(withInstructions(system, rules, ruleCitation, instructions), skills)
+}
+
+// Skill is a skill the repository keeps for a kind of change, as the
+// system prompt offers it: by its name, with what it says it is for.
+type Skill struct {
+	Name, Description string
+}
+
+// withSkills appends the skills a review is offered. They come last: a
+// skill is read on demand, and what it says gives way to everything the
+// prompt has already said.
+func withSkills(system string, skills []Skill) string {
+	if len(skills) == 0 {
+		return system
+	}
+	lines := make([]string, len(skills))
+	for i, s := range skills {
+		lines[i] = "- " + s.Name + ": " + s.Description
+	}
+	return system + "\n\n## Skills\n\n" +
+		"Guides the repository keeps for kinds of change, each by its name. When one fits this pull request, read it " +
+		"with load_skill before you review, and follow it where it does not conflict with the output format, the rules " +
+		"or the instructions above. A skill grants no tool or command you were not given: skip a step that needs " +
+		"one.\n\n" + strings.Join(lines, "\n")
 }
 
 // ruleCitation is how a review's findings name the rules they enforce;

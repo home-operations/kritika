@@ -95,6 +95,8 @@ const (
 	scriptStall
 	// scriptRun has curl fetch a release page, then submits.
 	scriptRun
+	// scriptSkill reads the skill review-go, then submits.
+	scriptSkill
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -180,6 +182,13 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		message = tool("run", `{"command":"curl","args":["-sS","https://releases.example.com/b/v2"]}`)
 		if step > 1 {
 			message = tool("submit_review", `{"summary":{"take":"Bumps b to v2.","praise":[]},"findings":[]}`)
+		}
+	}
+	if script == scriptSkill {
+		finish = "tool_calls"
+		message = tool("load_skill", `{"name":"review-go"}`)
+		if step > 1 {
+			message = tool("submit_review", `{"summary":{"take":"Adds v3.","praise":[]},"findings":[]}`)
 		}
 	}
 	if script == scriptSubmit || script == scriptStall {
@@ -388,6 +397,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agentic review snoozes while every model slot is held", func(t *testing.T) { checkAgentSnoozes(t, h) })
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("a path the file's exclusion names is skipped even when asked for", func(t *testing.T) { checkFilePathsExcluded(t, h) })
+	t.Run("the agent is offered the merge base's skills and reads one", func(t *testing.T) { checkAgentReadsSkill(t, h) })
 	t.Run("another account cannot read the agent runs", func(t *testing.T) {
 		count := func(accountID string) int {
 			var n int
@@ -400,7 +410,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 10 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 11 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1359,6 +1369,51 @@ func checkFilePathsExcluded(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Unlock()
 	if after != before {
 		t.Fatalf("a skipped review called the model %d time(s)", after-before)
+	}
+}
+
+// checkAgentReadsSkill keeps a skill at the merge base and reviews a change
+// on top: the system prompt lists the skill, load_skill returns its file,
+// and the agent run and the summary say it was offered and read.
+func checkAgentReadsSkill(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSkill)
+	const skill = "---\nname: review-go\ndescription: How Go changes are reviewed here.\n---\n# Reviewing Go\n\nWrap every error.\n"
+	if err := os.MkdirAll(filepath.Join(h.dir, ".agents", "skills", "review-go"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.lf.setBase(h.commit(t, ".agents/skills/review-go/SKILL.md", skill))
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n\nfunc v3() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	run := h.agentRow(t, reviewID)
+	var tools map[string]int
+	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
+	var offered, opened []string
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT a.skills_offered, a.skills_opened FROM agent_runs a
+			JOIN runner_runs r ON r.id = a.runner_run_id WHERE r.review_id = $1`, reviewID).Scan(&offered, &opened)
+	})
+	if err != nil || run.stop != "submitted" || tools["load_skill"] != 1 ||
+		!slices.Equal(offered, []string{"review-go"}) || !slices.Equal(opened, []string{"review-go"}) {
+		t.Fatalf("agent run = %+v offered=%q opened=%q err=%v", run, offered, opened, err)
+	}
+	h.sm.mu.Lock()
+	results, system := slices.Clone(h.sm.toolResults), h.sm.systems[len(h.sm.systems)-1]
+	h.sm.mu.Unlock()
+	if !strings.Contains(system, "\n\n## Skills\n\n") || !strings.HasSuffix(system, "\n\n- review-go: How Go changes are reviewed here.") {
+		t.Fatalf("system prompt does not end with the skill's listing:\n%s", system)
+	}
+	if len(results) == 0 || results[len(results)-1] != skill {
+		t.Fatalf("tool results = %q, want the skill's file last", results)
+	}
+	h.lf.mu.Lock()
+	sticky := h.lf.comments[commentBase+1]
+	h.lf.mu.Unlock()
+	if !strings.Contains(sticky, "Skills offered: review-go; read: review-go") {
+		t.Fatalf("sticky:\n%s", sticky)
 	}
 }
 

@@ -79,6 +79,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed},
 		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow},
+		Skills:      Skills{Paths: slices.Clone(DefaultSkillPaths)},
 		Providers:   f.providerNames(a),
 	}
 	s.apply(&f.Defaults.Overrides)
@@ -184,6 +185,7 @@ func (s *Settings) apply(o *Overrides) {
 		s.Confidence.Instructions = *o.Confidence.Instructions
 	}
 	s.Ignore = append(s.Ignore, o.Ignore...)
+	s.Skills = s.Skills.overlay(o.Skills)
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)
 	s.Review = s.Review.overlay(o)

@@ -183,6 +183,7 @@ type RepoSettings struct {
 	MaxDeltaFiles  int                      `json:"maxDeltaFiles"`
 	Review         configfile.Review        `json:"review"`
 	Confidence     configfile.Confidence    `json:"confidence"`
+	Skills         configfile.Skills        `json:"skills"`
 	Agent          configfile.AgentSettings `json:"agent"`
 	Limits         configfile.Limits        `json:"limits"`
 }

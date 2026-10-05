@@ -104,6 +104,9 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if note := p.judge(job, res, diff); note != "" {
 		notes = append(notes, note)
 	}
+	if note := skillsNote(run.SkillsOffered, run.SkillsOpened); note != "" {
+		notes = append(notes, note)
+	}
 	// Scoring had its own time; the write-back gets a whole bound after it.
 	ctx, cancel = detach(job)
 	defer cancel()
@@ -145,6 +148,20 @@ func (p *publishPhase) countAutoReview(ctx context.Context) (string, error) {
 	}
 	p.logger.Info("automatic reviews paused", "after", p.settings.MaxAutoReviews)
 	return review.AutoPausedNote(strings.TrimSuffix(login, "[bot]"), p.settings.MaxAutoReviews), nil
+}
+
+// skillsNote is what the summary states about the repository's skills: the
+// ones the review was offered and, of those, the ones it read. "" when it
+// was offered none.
+func skillsNote(offered, opened []string) string {
+	if len(offered) == 0 {
+		return ""
+	}
+	read := "none read"
+	if len(opened) > 0 {
+		read = "read: " + strings.Join(opened, ", ")
+	}
+	return fmt.Sprintf("Skills offered: %s; %s", strings.Join(offered, ", "), read)
 }
 
 // skipDescription is how the commit status states a skip: a repository's

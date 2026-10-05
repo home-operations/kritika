@@ -103,6 +103,33 @@ func TestSkipDescription(t *testing.T) {
 	}
 }
 
+func TestSkillsNote(t *testing.T) {
+	tests := []struct {
+		name            string
+		offered, opened []string
+		want            string
+	}{
+		{name: "none offered"},
+		{name: "none offered, as the runner writes it", offered: []string{}, opened: []string{}},
+		{name: "offered and none read", offered: []string{"review-renovate-pr", "go-style"}, want: "Skills offered: review-renovate-pr, go-style; none read"},
+		{
+			name: "offered and one read", offered: []string{"review-renovate-pr", "go-style"}, opened: []string{"review-renovate-pr"},
+			want: "Skills offered: review-renovate-pr, go-style; read: review-renovate-pr",
+		},
+		{
+			name: "each read, in the order read", offered: []string{"review-renovate-pr", "go-style"}, opened: []string{"go-style", "review-renovate-pr"},
+			want: "Skills offered: review-renovate-pr, go-style; read: go-style, review-renovate-pr",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := skillsNote(tt.offered, tt.opened); got != tt.want {
+				t.Errorf("skillsNote(%q, %q) = %q, want %q", tt.offered, tt.opened, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolvedThreads(t *testing.T) {
 	prior := []priorFinding{
 		{Path: "a.go", Title: "Unchecked error", commentID: 11},

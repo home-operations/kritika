@@ -48,6 +48,11 @@ rules:
     when: [{ expr: pr.headRef.startsWith("renovate/") }]
 context:
   - { path: ARCHITECTURE.md, description: how the services fit together }
+skills:
+  scope:
+    review-renovate-pr:
+      when: [{ expr: pr.headRef.startsWith("renovate/") }]
+    migrations: { paths: ["db/migrations/**"] }
 ```
 
 - `enabled: false`: stops reviews, follow-ups and indexing for the
@@ -163,6 +168,45 @@ context:
   `description` and optional `paths` globs, added after the admin's. The
   review is pointed at each file to read it with its own tools. A file
   with `paths` applies only when a changed path matches one of them.
+- `skills`: the [Agent Skills](https://agentskills.io) the repository
+  keeps for its reviews. A skill is a folder holding a `SKILL.md`: YAML
+  frontmatter with a `name` (lowercase letters, digits and hyphens, at
+  most 64 characters; the folder's name when unset) and a `description`,
+  then instructions, with any files it needs beside it. Each folder
+  directly under `.agents/skills` and `.claude/skills` that holds a
+  `SKILL.md` is one, with nothing to configure. Skills are read from the
+  merge base, as this file and the rules are, so a pull request cannot
+  add or rewrite a skill to steer its own review. The system prompt
+  lists only each skill's name and description; the review reads a
+  skill's instructions, or a file in its folder, with its `load_skill`
+  tool when the skill fits the pull request, from the merge base too.
+  - `skills.paths`: the directories whose folders are skills, replacing
+    the admin's. `paths: []` looks nowhere, which turns skills off for
+    the repository.
+  - `skills.scope.<name>`: narrows when the skill of that name is
+    offered, added to the admin's scopes, a skill named in both taking
+    this file's. Its `paths` are globs, one of which a changed path must
+    match; its `when` is a list of conditions as a rule's `when` takes
+    them, one of which must hold. With both, both must.
+
+  At most 50 skills are read, a description is at most 1024 characters,
+  and the names and descriptions listed take at most 4 KiB of the
+  prompt. A skill past a bound, or whose `SKILL.md` has no frontmatter,
+  no description or a name another skill has, is left out and noted
+  rather than failing the review. `allowed-tools` and every other
+  frontmatter key is ignored: a skill guides a review and grants it no
+  tool or command, and the review skips a step that needs one it was not
+  given. The review's summary carries a note of the skills it was offered
+  and the ones it read, such as
+  `Skills offered: review-renovate-pr, go-style; read: review-renovate-pr`,
+  and each read shows in its transcript. Follow-up answers do not use
+  skills.
+
+  A rule with a `file` is always in the prompt, whole, and findings cite
+  it by id. A `context` entry is a pointer to one file, with a
+  description written in the configuration. A skill carries its own
+  description, costs the prompt only that until the review reads it, and
+  is not cited by findings.
 
 A review also adds to its instructions the repository's agent files: the
 `AGENTS.md` of the root and of each directory above a changed path, or a

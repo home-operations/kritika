@@ -111,6 +111,9 @@ type File struct {
 	Context []configfile.ContextFile `yaml:"context,omitempty"`
 	// Ignore are path globs added to the admin's.
 	Ignore []string `yaml:"ignore,omitempty"`
+	// Skills replace the directories the admin has skills looked for in,
+	// and add to the admin's scopes.
+	Skills configfile.SkillsSpec `yaml:"skills,omitempty"`
 }
 
 // Parse decodes data as .kritika.yaml. Unknown fields, invalid glob patterns
@@ -141,6 +144,13 @@ func Parse(data []byte) (File, error) {
 		}
 	}
 	if err := configfile.CheckRules(f.Rules); err != nil {
+		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
+	var skillPaths []string
+	if f.Skills.Paths != nil {
+		skillPaths = *f.Skills.Paths
+	}
+	if err := configfile.CheckSkills(skillPaths, f.Skills.Scope); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {

@@ -151,6 +151,9 @@ func (w *Review) agentPrompt(
 			return err
 		}
 		p.Rules = repoconfig.RulesFor(eff.Review.Rules, vars)
+		if sk := eff.Skills; len(sk.Paths) > 0 {
+			p.Skills = &runner.Skills{Paths: sk.Paths, Scope: sk.Scope, Off: repoconfig.SkillsOff(sk.Scope, vars)}
+		}
 		// The conditions only the diff can judge are the runner's; it
 		// judges them as the review's trigger, and a review someone asked
 		// for passes the admin's lists whatever they say.

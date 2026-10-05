@@ -69,6 +69,7 @@ const (
 // was left out.
 type promptInputs struct {
 	rules        []review.Rule
+	skills       []repoconfig.Skill
 	instructions []string
 	references   []review.Reference
 	notes        []string
@@ -86,8 +87,14 @@ func (in promptInputs) ruleIDs() []string {
 // newPromptInputs selects, for a change of the changed paths, the spec's
 // rules, whose when conditions the worker has already judged, the context files
 // and the agent files of the changed directories.
-func newPromptInputs(p Spec, files repoconfig.Files, changed []string) promptInputs {
+func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
 	var in promptInputs
+	if sk := p.Prompt.Skills; sk != nil {
+		var left int
+		if in.skills, left = repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed); left > 0 {
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, left))
+		}
+	}
 	var truncated bool
 	if in.instructions, truncated = repoconfig.Instructions(files, repoconfig.AgentFiles(files, changed)); truncated {
 		in.notes = append(in.notes, noteInstructionsTruncated)
@@ -140,7 +147,7 @@ func (a agentPrompt) notes() []string {
 // context includes the similar code the gateway found. commands are what
 // the run tool offers, and search says search_code is offered.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
-	system := review.SystemPrompt(in.rules, in.instructions, commands, p.Prompt.Focused, search)
+	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, p.Prompt.Focused, search)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
@@ -249,6 +256,7 @@ func reviewAgent(
 type agentTools struct {
 	run    *agent.RunTool
 	search *searchTool
+	skills *skillTool
 }
 
 // extra lists the tools to offer.
@@ -259,6 +267,9 @@ func (t agentTools) extra() []agent.Tool {
 	}
 	if t.search != nil {
 		out = append(out, t.search)
+	}
+	if t.skills != nil {
+		out = append(out, t.skills)
 	}
 	return out
 }
@@ -298,6 +309,10 @@ func runAgentic(
 	if tools.run != nil {
 		sources = tools.run.Sources()
 	}
+	offered, opened := []string{}, []string{}
+	if tools.skills != nil {
+		offered, opened = tools.skills.names(), tools.skills.Opened()
+	}
 	if cerr := ctx.Err(); cerr != nil {
 		// The run was cancelled, deleted or ran out of Job time: what the
 		// agent spent so far is still spent, so the row is written on a
@@ -309,6 +324,7 @@ func runAgentic(
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
 		defer cancel()
 		rec, err := newAgentRecord(res, timeline, sources, secrets)
+		rec.skillsOffered, rec.skillsOpened = offered, opened
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -320,6 +336,7 @@ func runAgentic(
 	if err != nil {
 		return err
 	}
+	rec.skillsOffered, rec.skillsOpened = offered, opened
 	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
 	return writeAgentRun(ctx, st, p, rec, "done")
@@ -337,6 +354,9 @@ type agentRecord struct {
 	toolCalls, timeline, sources []byte
 	usage                        model.Usage
 	costUSD                      float64
+	// skillsOffered are the skills the agent could load, and skillsOpened
+	// the ones it did.
+	skillsOffered, skillsOpened []string
 	// model answered the run's last step; empty when no step was answered,
 	// and the worker then names the model the run was granted.
 	model string
@@ -374,11 +394,13 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 	return st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
-				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources)
-			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14 FROM runner_runs WHERE id = $1`,
+				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
+				skills_offered, skills_opened)
+			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16
+			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources)
+			rec.sources, rec.skillsOffered, rec.skillsOpened)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}
