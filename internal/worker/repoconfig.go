@@ -148,10 +148,11 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 	}
 }
 
-// recordSkip records the skip for reason and says so on the head commit,
-// unless it is the skip the head's latest review already is: the same
-// job judging again, a retry, or a label change that left the head where
-// it was. A re-run someone asked for is recorded all the same.
+// recordSkip records the skip for reason and says so on the head commit.
+// A skip the head's latest review already is, the same job judging again,
+// a retry, or a label change that left the head where it was, is not
+// recorded a second time; only its status is said again. A re-run someone
+// asked for is recorded all the same.
 func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) error {
 	if e.args.Trigger != jobs.TriggerManual {
 		var repeat bool
@@ -164,6 +165,13 @@ func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) erro
 		}
 		if repeat {
 			e.logger.Info("review still skipped", "reason", reason)
+			// The skip stands, but the condition that decides it may be
+			// another one now, and the status names it.
+			e.skip = reason
+			state, desc := e.status(store.ReviewSkipped, "")
+			if err := e.client.SetStatus(ctx, e.owner, e.repo, e.args.HeadSHA, state, desc); err != nil {
+				e.logger.Warn("commit status not set", "error", err)
+			}
 			return nil
 		}
 	}
