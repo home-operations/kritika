@@ -28,6 +28,7 @@
       reviewsToday: sum((t) => t.usage.reviewsToday),
       tokens: sum((t) => t.usage.tokens),
       costUsd: sum((t) => t.usage.costUsd),
+      wants: WANTS.map((w) => ({ label: w.label, n: sum((t) => t.attention[w.key]) })).filter((w) => w.n > 0),
     };
   }
 </script>
@@ -42,8 +43,9 @@
         {@const all = totals(list)}
         <section class="tiles" aria-label="Across all accounts">
           <div class="tile">
-            <span class="tile-label">Accounts</span>
-            <span class="tile-value">{wholeNumber(list.length)}</span>
+            <span class="tile-label">Needs attention</span>
+            <span class="tile-value">{wholeNumber(all.wants.reduce((n, w) => n + w.n, 0))}</span>
+            <span class="small muted">{all.wants.map((w) => `${wholeNumber(w.n)} ${w.label}`).join(' · ') || 'no open pull request wants a look'}</span>
           </div>
           <div class="tile">
             <span class="tile-label">Repositories</span>
