@@ -2,22 +2,29 @@ package configfile
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
 // The environment may set some of the file's keys: one model provider, the
-// review and fallback models, feedback, forks and settle every account and
-// repository inherits, and the embedder. Each wins over the file's.
+// review and fallback models, feedback, the confidence model and
+// threshold, forks and settle every account and repository inherits, and
+// the embedder. Each wins over the file's.
 
 // Environment variable prefixes of the keys the environment may set.
 const (
-	providerEnvPrefix  = "KRITIKA_PROVIDERS_"
-	reviewEnvPrefix    = "KRITIKA_REVIEW_"
-	triggerEnvPrefix   = "KRITIKA_TRIGGER_"
-	embeddingEnvPrefix = "KRITIKA_EMBEDDING_"
+	providerEnvPrefix   = "KRITIKA_PROVIDERS_"
+	reviewEnvPrefix     = "KRITIKA_REVIEW_"
+	confidenceEnvPrefix = "KRITIKA_CONFIDENCE_"
+	triggerEnvPrefix    = "KRITIKA_TRIGGER_"
+	embeddingEnvPrefix  = "KRITIKA_EMBEDDING_"
 )
+
+// settingEnvPrefixes start the variables that set the file's own
+// repository settings.
+var settingEnvPrefixes = []string{reviewEnvPrefix, confidenceEnvPrefix, triggerEnvPrefix}
 
 // reviewWorkersEnv shares reviewEnvPrefix and is no key of the file: it is
 // how many review jobs a replica runs at once (internal/config).
@@ -74,13 +81,13 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 	return name, nil
 }
 
-// overlayDefaultsEnv sets the file's own review and trigger keys from
-// KRITIKA_REVIEW_* and KRITIKA_TRIGGER_*, recording each key it sets in
-// from.
+// overlayDefaultsEnv sets the file's own review, confidence and trigger
+// keys from KRITIKA_REVIEW_*, KRITIKA_CONFIDENCE_* and KRITIKA_TRIGGER_*,
+// recording each key it sets in from.
 func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) error {
 	for _, kv := range environ {
 		env, value, _ := strings.Cut(kv, "=")
-		if env == reviewWorkersEnv || (!strings.HasPrefix(env, reviewEnvPrefix) && !strings.HasPrefix(env, triggerEnvPrefix)) {
+		if env == reviewWorkersEnv || !slices.ContainsFunc(settingEnvPrefixes, func(p string) bool { return strings.HasPrefix(env, p) }) {
 			continue
 		}
 		var path string
@@ -93,6 +100,15 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 			d.Review.Fallback, path = &ref, keyFallback
 		case reviewEnvPrefix + "FEEDBACK":
 			d.Review.Feedback, path = &value, keyFeedback
+		case confidenceEnvPrefix + "MODEL":
+			ref := ModelRef(value)
+			d.Confidence.Model, path = &ref, keyScorer
+		case confidenceEnvPrefix + "THRESHOLD":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("configfile: environment variable %s must be a whole number, got %q", env, value)
+			}
+			d.Confidence.Threshold, path = &n, keyThreshold
 		case triggerEnvPrefix + "FORKS":
 			b, err := strconv.ParseBool(value)
 			if err != nil {
@@ -151,8 +167,8 @@ type FileLayer struct {
 	Review    FileValue
 	Fallback  FileValue
 	// Defaults are the other settings it writes that the environment may
-	// set too: feedback, forks and settle, in that order, by their policy
-	// keys.
+	// set too: feedback, the confidence model and threshold, forks and
+	// settle, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -217,6 +233,8 @@ func (f *File) FileLayer() FileLayer {
 		set        bool
 	}{
 		{keyFeedback, deref(d.Review.Feedback), d.Review.Feedback != nil},
+		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
+		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyForks, strconv.FormatBool(d.Trigger.Forks != nil && *d.Trigger.Forks), d.Trigger.Forks != nil},
 		{keySettle, durationValue(d.Trigger.Settle), d.Trigger.Settle != nil},
 	} {
@@ -230,11 +248,13 @@ func (f *File) FileLayer() FileLayer {
 	return out
 }
 
-func deref(s *string) string {
-	if s == nil {
-		return ""
+// deref is *p, the zero value for nil.
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
 	}
-	return *s
+	return *p
 }
 
 func durationValue(d *time.Duration) string {

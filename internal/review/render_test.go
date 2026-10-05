@@ -101,6 +101,37 @@ func TestRenderSummaryDefault(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryConfidence: a scored review states its score under the
+// findings count, with the threshold it missed, and an unscored one says
+// nothing of it.
+func TestRenderSummaryConfidence(t *testing.T) {
+	tests := []struct {
+		name       string
+		confidence *Confidence
+		want       string
+	}{
+		{
+			name: "a score that passes", confidence: &Confidence{Score: 5, Threshold: 5, Reason: "Nothing stands against it."},
+			want: "1 nit\n\n**Confidence 5/5**: Nothing stands against it.\n\n## Findings\n",
+		},
+		{
+			name: "a score under the threshold", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
+			want: "1 nit\n\n**Confidence 2/5**, below the 4 this repository asks for: The nil map write stands.\n\n## Findings\n",
+		},
+		{name: "no score", want: "1 nit\n\n## Findings\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := sampleData()
+			data.Confidence = tt.confidence
+			body, notes := RenderSummary(t.Context(), Templates{}, data)
+			if len(notes) != 0 || !strings.Contains(body, tt.want) || strings.Contains(body, "\n\n\n") {
+				t.Fatalf("notes = %v, want %q in:\n%s", notes, tt.want, body)
+			}
+		})
+	}
+}
+
 // TestRenderSummaryLinks renders what the worker adds once it knows the
 // forge: commit links, a thread per finding, the last review's findings
 // and the ones off the diff, and no praise for a bot's pull request.

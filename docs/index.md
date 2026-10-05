@@ -49,6 +49,9 @@ flowchart LR
   answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request;
   resolving the thread on the forge does the same.
+- **A confidence score, opt-in.** A second model scores each reviewed pull
+  request from 0 to 5, and the commit status fails under the threshold a
+  repository sets, so it can be a required check.
 - **Approvals, opt-in.** A repository or the instance can have a review that
   finds nothing blocking or important approve the pull request, and a later
   review that does withdraw it.

@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
@@ -34,6 +35,8 @@ type Review struct {
 	river.WorkerDefaults[jobs.ReviewArgs]
 	Base
 	Executor executor.Executor
+	// Steppers reach the model that scores a review's confidence.
+	Steppers *adapter.Steppers
 	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
 	// long its run token outlives the Job's deadline.
 	GatewayURL      string
@@ -230,8 +233,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	patchID := prep.patchID
 	phase := &publishPhase{
-		w: w, account: account, settings: prep.eff.Settings, client: client, pr: pr,
-		reviewID: reviewID, runID: runID, trigger: args.Trigger, logger: logger,
+		w: w, file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
+		reviewID: reviewID, runID: runID, jobID: job.ID, lease: admitted.lease, trigger: args.Trigger, logger: logger,
 		parse: review.ParseOptions{
 			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Focused: prep.eff.Review.Focused(), Rules: prep.ruleIDs,
 			Repository: pr.repository,
@@ -315,9 +318,20 @@ func (w *Review) afterRun(
 		if _, err := w.endReview(ctx, args.AccountID, reviewID, end); err != nil {
 			return prepared{}, "", err
 		}
+		var carried *review.Confidence
+		if pack.SkipReason == runner.SkipUnchangedPatch {
+			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+				var err error
+				carried, _, err = carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence)
+				return err
+			})
+			if err != nil {
+				return prepared{}, "", err
+			}
+		}
 		owner, repo := pr.ownerRepo()
-		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusSuccess,
-			"kritika: skipped ("+skipDescription(pack.SkipReason, eff.MaxChangedLines)+")"); err != nil {
+		state, desc := skipVerdict(carried, skipDescription(pack.SkipReason, eff.MaxChangedLines))
+		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
 		return prepared{}, store.ReviewSkipped, nil
@@ -365,7 +379,10 @@ type earlyEnd struct {
 	accountKey, mergeBase, forgePatch string
 	// skip is why the review was skipped: the repository's .kritika.yaml
 	// did (a repoconfig.SkipReason), or a bot's patch was unchanged.
-	skip    string
+	skip string
+	// carried is the confidence an unchanged patch keeps from its last
+	// review, nil when the repository asks for no score.
+	carried *review.Confidence
 	started time.Time
 	logger  *slog.Logger
 	// client reports the end on the head commit, under owner/repo; nil
@@ -412,7 +429,8 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 		if e.skip != "" {
 			reason = skipDescription(e.skip, 0)
 		}
-		return forge.StatusSuccess, "kritika: skipped (" + reason + ")"
+		state, desc := skipVerdict(e.carried, reason)
+		return state, "kritika: " + desc
 	}
 	return "", ""
 }
@@ -422,12 +440,25 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 // stays the backstop for what the forge cannot tell. A manual re-run is
 // never skipped. It returns the forge patch id the review records, and
 // whether it ended the review, with the error of recording that.
-func (w *Review) skipUnchangedBot(ctx context.Context, e earlyEnd, client forge.Client, owner, repo string) (string, bool, error) {
+func (w *Review) skipUnchangedBot(
+	ctx context.Context, e earlyEnd, client forge.Client, owner, repo string, want configfile.Confidence,
+) (string, bool, error) {
 	if !e.pr.authorIsBot || e.args.Trigger == jobs.TriggerManual {
 		return "", false, nil
 	}
 	patch, unchanged := w.botPatch(ctx, e.logger, client, owner, repo, e.args.AccountID, e.pr, e.mergeBase)
 	if !unchanged {
+		return patch, false, nil
+	}
+	var skippable bool
+	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+		var err error
+		e.carried, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", want)
+		return err
+	}); err != nil {
+		return "", true, err
+	}
+	if !skippable {
 		return patch, false, nil
 	}
 	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", review.ShortSHA(patch))
@@ -511,7 +542,7 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
-	forgePatch, done, err := w.skipUnchangedBot(ctx, e, client, owner, repo)
+	forgePatch, done, err := w.skipUnchangedBot(ctx, e, client, owner, repo, eff.Confidence)
 	if done {
 		return begun{}, true, err
 	}

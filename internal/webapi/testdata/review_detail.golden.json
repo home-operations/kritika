@@ -16,6 +16,13 @@
     "finishedAt": "2026-09-01T12:01:30Z",
     "skipReason": "filtered",
     "error": "",
+    "confidence": {
+      "score": 3,
+      "threshold": 5,
+      "passed": false,
+      "reason": "The unchecked error stands.",
+      "model": "acme/judge"
+    },
     "pull": {
       "repository": "alpha/one",
       "number": 7,

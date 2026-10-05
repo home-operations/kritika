@@ -1,6 +1,6 @@
 <script lang="ts">
   // The facts about a review run, each with its name: trigger, scope, model,
-  // head, cost, tokens, duration. Shared by the pull request page and
+  // confidence, head, cost, tokens, duration. Shared by the pull request page and
   // the review page.
   import type { Review } from '../types';
   import { duration, tokens, usd, wholeNumber, shortSha } from '../format';
@@ -11,6 +11,14 @@
   <div><dt>Trigger</dt><dd>{r.trigger}</dd></div>
   <div><dt>Scope</dt><dd>{r.scope}{#if scopeReason}&nbsp;<span class="muted">({scopeReason})</span>{/if}</dd></div>
   {#if r.model}<div><dt>Model</dt><dd class="mono">{r.model}</dd></div>{/if}
+  {#if r.confidence}
+    <div>
+      <dt>Confidence</dt>
+      <dd title="{r.confidence.reason} ({r.confidence.model})">
+        {r.confidence.score}/5{#if !r.confidence.passed}&nbsp;<span class="muted">(below {r.confidence.threshold})</span>{/if}
+      </dd>
+    </div>
+  {/if}
   <div><dt>Head</dt><dd class="mono" title={r.headSha}>{shortSha(r.headSha)}</dd></div>
   <div><dt>Cost</dt><dd>{usd(r.costUsd)}</dd></div>
   <div>

@@ -25,12 +25,16 @@ import (
 // caller should surface, the error.
 type publishPhase struct {
 	w        *Review
+	file     *configfile.File
 	account  *configfile.Account
 	settings configfile.Settings
 	client   forge.Client
 	pr       *pullRequest
 	reviewID string
 	runID    string
+	jobID    int64
+	// lease is the job's slot on the review model, nil when it holds none.
+	lease *store.Lease
 	// trigger is why the review ran; one a human asked for does not
 	// count towards the pull request's automatic reviews.
 	trigger string
@@ -52,16 +56,20 @@ type publishPhase struct {
 	// statusReported is set once incomplete has written the head's commit
 	// status with its reason, which the job's ending then leaves alone.
 	statusReported bool
+	// confidence is the score judge got, nil when the repository asks for
+	// none or, with unscored set, when the scorer did not answer.
+	confidence *review.Confidence
+	unscored   bool
 }
 
 // run publishes what the runner's agent submitted; the run's usage is
 // already recorded. An agent that stopped without submitting fails the
 // review, and the sticky comment says this head was not fully reviewed so
 // an earlier verdict does not stand in for it.
-func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
+func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	// The agent has already answered, so publishing runs to the end even if
 	// the job's ctx ends meanwhile.
-	ctx, cancel := detach(ctx)
+	ctx, cancel := detach(job)
 	defer cancel()
 	if p.agent == nil {
 		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
@@ -93,6 +101,12 @@ func (p *publishPhase) run(ctx context.Context) (store.ReviewStatus, error) {
 	if res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed); dismissed > 0 {
 		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
 	}
+	if note := p.judge(job, res, diff); note != "" {
+		notes = append(notes, note)
+	}
+	// Scoring had its own time; the write-back gets a whole bound after it.
+	ctx, cancel = detach(job)
+	defer cancel()
 	if note, err := p.countAutoReview(ctx); err != nil {
 		return store.ReviewFailed, err
 	} else if note != "" {
@@ -256,7 +270,7 @@ func (p *publishPhase) writeBack(
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: res.Counts(), Notes: notes, Unanchored: unanchored,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
-		WebURL: web, PullURL: pull,
+		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}
 	if data.Incremental {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
@@ -299,11 +313,8 @@ func (p *publishPhase) writeBack(
 			p.logger.Warn("summary not linked to its inline comments", "error", err)
 		}
 	}
-	desc := "no findings"
-	if n := len(res.Findings); n > 0 {
-		desc = fmt.Sprintf("%d finding(s)", n)
-	}
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusSuccess, "kritika: "+desc); err != nil {
+	state, desc := p.verdict(len(res.Findings))
+	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, state, "kritika: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	if p.settings.Review.Approve {
@@ -507,7 +518,7 @@ func (p *publishPhase) persist(
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return store.RecordReviewResult(ctx, tx, store.ReviewResult{
 			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: res, Inline: inline, Model: modelName,
-			CommentID: commentID,
+			CommentID: commentID, Confidence: p.confidence,
 		})
 	})
 }

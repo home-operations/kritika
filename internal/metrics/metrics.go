@@ -76,7 +76,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}),
 		transcripts: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_transcript_writes_total",
-			Help: "Model calls recorded for the transcript view, by kind (agent_step, followup) and outcome (ok, error).",
+			Help: "Model calls recorded for the transcript view, by kind (agent_step, followup, confidence) and outcome (ok, error).",
 		}, []string{lblKind, lblOutcome}),
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",

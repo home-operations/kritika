@@ -17,8 +17,9 @@ type ModelCallKind = transcript.Kind
 
 // Model call kinds, as model_calls.kind spells them.
 const (
-	ModelCallAgentStep = transcript.KindAgentStep
-	ModelCallFollowUp  = transcript.KindFollowUp
+	ModelCallAgentStep  = transcript.KindAgentStep
+	ModelCallFollowUp   = transcript.KindFollowUp
+	ModelCallConfidence = transcript.KindConfidence
 )
 
 // ModelCall is one row of model_calls. ReviewID, RunnerRunID and

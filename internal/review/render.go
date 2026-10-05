@@ -65,6 +65,9 @@ type RenderData struct {
 	// the runner's record rather than the model's answer, as SourceLinks
 	// gives them.
 	Sources []string
+	// Confidence is the score a second model gave the pull request, nil
+	// when the repository asks for none or the scorer did not answer.
+	Confidence *Confidence
 	// WebURL is the dashboard's origin, without a trailing slash, and
 	// PullURL the pull request's page on it, where an admin can re-run
 	// the review; both "" when the dashboard has no public URL. The

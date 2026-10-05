@@ -235,18 +235,21 @@ type InlinePosted struct {
 }
 
 // ReviewResult is what a published review records: its findings, each with
-// whether it is inline on the forge, the summary, the model that answered
-// and the sticky comment's id.
+// whether it is inline on the forge, the summary, the model that answered,
+// the sticky comment's id and, where the review was scored, its
+// confidence.
 type ReviewResult struct {
 	AccountID, ReviewID, PullRequestID string
 	Result                             review.Result
 	Inline                             []InlinePosted
 	Model                              string
 	CommentID                          int64
+	Confidence                         *review.Confidence
 }
 
 // RecordReviewResult persists a published review: its findings, the sticky
-// comment's id for the pull request, and the review's model and summary.
+// comment's id for the pull request, and the review's model, summary and
+// confidence.
 func RecordReviewResult(ctx context.Context, tx pgx.Tx, r ReviewResult) error {
 	for i, f := range r.Result.Findings {
 		if _, err := tx.Exec(ctx, `INSERT INTO findings
@@ -268,7 +271,14 @@ func RecordReviewResult(ctx context.Context, tx pgx.Tx, r ReviewResult) error {
 	if err != nil {
 		return fmt.Errorf("store: encode summary: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3 WHERE id = $1`, r.ReviewID, r.Model, summary); err != nil {
+	var confidence []byte
+	if r.Confidence != nil {
+		if confidence, err = json.Marshal(r.Confidence); err != nil {
+			return fmt.Errorf("store: encode confidence: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3, confidence = $4 WHERE id = $1`,
+		r.ReviewID, r.Model, summary, confidence); err != nil {
 		return fmt.Errorf("store: record review model: %w", err)
 	}
 	return nil

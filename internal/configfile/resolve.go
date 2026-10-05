@@ -76,6 +76,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
 		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed},
+		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold},
 		Providers:   f.providerNames(a),
 	}
 	s.apply(&f.Defaults.Overrides)
@@ -167,6 +168,12 @@ func (s *Settings) apply(o *Overrides) {
 	}
 	if o.Review.Incremental != nil {
 		s.Incremental.MaxDeltaFiles = *o.Review.Incremental
+	}
+	if o.Confidence.Model != nil {
+		s.Confidence.Model = *o.Confidence.Model
+	}
+	if o.Confidence.Threshold != nil {
+		s.Confidence.Threshold = *o.Confidence.Threshold
 	}
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)

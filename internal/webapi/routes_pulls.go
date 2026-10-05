@@ -154,6 +154,9 @@ func reviewItem(v store.ReviewRow) Review {
 		ms := v.FinishedAt.Sub(v.CreatedAt).Milliseconds()
 		out.DurationMs = &ms
 	}
+	if c := v.Confidence; c != nil {
+		out.Confidence = &Confidence{Score: c.Score, Threshold: c.Threshold, Passed: c.Passed(), Reason: c.Reason, Model: c.Model}
+	}
 	return out
 }
 

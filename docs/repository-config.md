@@ -89,7 +89,8 @@ context:
   lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
   `.PriorHeadURL`, `.Prior`, the last review's findings this review did
   not report again, each with `.Resolved`, and the dismissed ones each with
-  `.Dismissed` and `.DismissReason`, `.Sources`, `.Incomplete`, and `.WebURL` and `.PullURL`, the
+  `.Dismissed` and `.DismissReason`, `.Sources`, `.Incomplete`, `.Confidence`, nil unless the review was
+  scored, with its `.Score`, `.Threshold`, `.Passed`, `.Reason` and `.Model`, and `.WebURL` and `.PullURL`, the
   dashboard's origin and the pull request's page on it, where the built-in
   template's re-run badge points). The inline template's dot is
   one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Category`, `.Title`,
@@ -109,6 +110,12 @@ context:
   admin's, in either direction: a repository turns it on where the
   instance leaves it off. Off unless
   set.
+- `confidence.model` / `confidence.threshold`: the model that scores a
+  reviewed pull request from 0 to 5, a `<provider>/<model>` held to the
+  same providers as `review.model`, and the score its commit status needs
+  to pass; each replaces the admin's, the threshold in either direction.
+  See [the configuration](configuration.md#repository-settings-and-repositories)
+  for how a score is reached.
 - `trigger.filterExpr`: a filter expression ANDed with the admin's own. It is
   compiled and smoke-tested against a sample pull request when the file is
   parsed, so a broken expression is rejected rather than silently skipping

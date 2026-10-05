@@ -45,9 +45,10 @@ strategy:
 # which each description names. A value is a plain value, rendered
 # through `tpl`, or, for a secret, a map with the variable's `valueFrom`
 # (a Secret key). The variables that stand in for the configuration
-# file's sections (auth*, apps*, providers*, embedding*, and the review
-# and trigger settings reviewModel, reviewFallback, reviewFeedback,
-# triggerForks and triggerSettle) win over the file. The variables the chart derives from its other values
+# file's sections (auth*, apps*, providers*, embedding*, and the review,
+# confidence and trigger settings reviewModel, reviewFallback,
+# reviewFeedback, confidenceModel, confidenceThreshold, triggerForks and
+# triggerSettle) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
 # refuses them, as it refuses a KRITIKA_* variable under `env`.
@@ -186,6 +187,13 @@ config:
   reviewFallback: ""
   # -- How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.
   reviewFeedback: ""
+  # -- The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set.
+  confidenceModel: ""
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- The score a pull request must reach for its commit status to pass, 0 to 5; 5 unless set.
+  confidenceThreshold: ""
   # @schema
   # type: [boolean, string]
   # @schema

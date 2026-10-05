@@ -9,9 +9,10 @@ import (
 
 // Usage roles, matching the usage table's CHECK.
 const (
-	RoleReview    = "review"
-	RoleEmbedding = "embedding"
-	RoleFollowUp  = "followup"
+	RoleReview     = "review"
+	RoleEmbedding  = "embedding"
+	RoleFollowUp   = "followup"
+	RoleConfidence = "confidence"
 )
 
 // Usage is one model call charged to an account, and to the review it

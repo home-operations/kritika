@@ -303,10 +303,11 @@ review: { model: opencode/glm-5.3, fallback: zen/qwen3.8-max }
 The repository settings are written at the file's root and apply to every
 repository, and `repositories` holds the entries that change them for
 some: `owner/*` for every repository of an account, and `owner/name` for
-one. They come in four groups:
+one. They come in five groups:
 
 - `review`: what a review runs on and what it says: `model`, `fallback`,
   `feedback`, `fixes`, `approve` and `incremental`.
+- `confidence`: how a review is judged: `model` and `threshold`.
 - `trigger`: which pull requests are reviewed, and when: `filterExpr`,
   `forks`, `settle`, `ignore`, `limit` and `lines`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
@@ -324,6 +325,22 @@ the same step goes to the fallback, with that provider's own `retries`,
 and the review carries on there. The step's usage is recorded under the
 model that answered. A follow-up uses a fallback on its own provider
 alone.
+
+With a `confidence.model`, a second model scores every reviewed pull
+request from 0 to 5: how ready it is to merge, from the diff and the
+findings the review reported. A different vendor's model than the review's
+makes it a second opinion. The pull request's commit status fails when the
+score is under `confidence.threshold`, 5 unless set, so the status can be a
+required check. The findings set the most a pull request can score, however
+the scorer reads them: 2 with a blocking finding, 3 with an important one;
+nits take nothing off. A review the scorer did not answer for reports an
+error on the commit, not a pass. With no `confidence.model` nothing is
+scored, and a review that ran reports success whatever it found. A
+dismissed finding stops counting at the next review, which a push or
+`@<app slug> review` starts. A bot's rebase that leaves its patch
+unchanged is still skipped, and keeps the score its last review got. The
+scorer's call counts towards the account's `tokensPerMonth`, and shows in
+the review's transcript.
 
 ```yaml
 review:
@@ -353,7 +370,8 @@ repositories:
 
 The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
-`review.feedback`, `review.fixes`, `review.approve`, `trigger.filterExpr`,
+`review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
+`confidence.threshold`, `trigger.filterExpr`,
 `trigger.ignore`, `comments`, `rules` and `context`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
@@ -409,6 +427,8 @@ the environment:
 | `KRITIKA_REVIEW_MODEL`             | `review.model`                                                                        |
 | `KRITIKA_REVIEW_FALLBACK`          | `review.fallback`                                                                     |
 | `KRITIKA_REVIEW_FEEDBACK`          | `review.feedback`                                                                     |
+| `KRITIKA_CONFIDENCE_MODEL`         | `confidence.model`                                                                    |
+| `KRITIKA_CONFIDENCE_THRESHOLD`     | `confidence.threshold`, a whole number from 0 to 5                                    |
 | `KRITIKA_TRIGGER_FORKS`            | `trigger.forks`, `true` or `false`                                                    |
 | `KRITIKA_TRIGGER_SETTLE`           | `trigger.settle`, a duration such as `30s`                                            |
 | `KRITIKA_EMBEDDING_MODEL`          | `embedding.model`                                                                     |

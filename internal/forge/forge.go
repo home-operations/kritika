@@ -70,18 +70,21 @@ type InlineComment struct {
 	Body      string
 }
 
-// StatusState is the outcome a commit status reports. kritika never reports
-// failure for a review that ran: a review informs, it does not block.
-// StatusError is the one exception, for a review that reached no verdict:
-// canceled, timed out, or ended by an agent that never submitted a valid
-// review. That is not a finding to weigh, and a success would read as one.
-// StatusPending stands from a review's start until its outcome replaces it.
+// StatusState is the outcome a commit status reports. A review that ran
+// reports success whatever it found: a review informs, it does not block.
+// StatusFailure is for a repository that asks for more, a confidence score
+// its pull request did not reach. StatusError is for a review that reached
+// no verdict: canceled, timed out, ended by an agent that never submitted a
+// valid review, or left unscored where a score was asked for. That is not
+// a finding to weigh, and a success would read as one. StatusPending
+// stands from a review's start until its outcome replaces it.
 type StatusState string
 
 // States kritika reports.
 const (
 	StatusPending StatusState = "pending"
 	StatusSuccess StatusState = "success"
+	StatusFailure StatusState = "failure"
 	StatusError   StatusState = "error"
 )
 

@@ -78,6 +78,14 @@ type Review struct {
 	Approve  *bool               `yaml:"approve,omitempty"`
 }
 
+// Confidence is how the repository's reviews are judged: the model that
+// scores a reviewed pull request, a "<provider>/<model>" of a provider its
+// account may use, and the score it must reach. Both replace the admin's.
+type Confidence struct {
+	Model     configfile.ModelRef `yaml:"model,omitempty"`
+	Threshold *int                `yaml:"threshold,omitempty"`
+}
+
 // Trigger narrows which pull requests get a review: a filter ANDed with
 // the admin's, and path globs added to the admin's.
 type Trigger struct {
@@ -89,10 +97,11 @@ type Trigger struct {
 // configuration's own settings and repository entries take, without the
 // admin's own. Nothing in it is a secret or a reference to one.
 type File struct {
-	Enabled  *bool    `yaml:"enabled,omitempty"`
-	Review   Review   `yaml:"review,omitempty"`
-	Trigger  Trigger  `yaml:"trigger,omitempty"`
-	Comments Comments `yaml:"comments,omitempty"`
+	Enabled    *bool      `yaml:"enabled,omitempty"`
+	Review     Review     `yaml:"review,omitempty"`
+	Confidence Confidence `yaml:"confidence,omitempty"`
+	Trigger    Trigger    `yaml:"trigger,omitempty"`
+	Comments   Comments   `yaml:"comments,omitempty"`
 	// Rules are checks added after the admin's; one may not replace an
 	// admin's rule.
 	Rules []configfile.Rule `yaml:"rules,omitempty"`
