@@ -62,14 +62,15 @@ func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) error {
 	return nil
 }
 
-// HeadSkipped reports whether a review of the pull request's head was
-// skipped for reason.
+// HeadSkipped reports whether the latest review of the pull request's
+// head was skipped for reason.
 func HeadSkipped(ctx context.Context, tx pgx.Tx, pullRequestID, headSHA, reason string) (bool, error) {
 	var skipped bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews
-		WHERE pull_request_id = $1 AND head_sha = $2 AND status = $3 AND skip_reason = $4)`,
-		pullRequestID, headSHA, ReviewSkipped, reason).Scan(&skipped); err != nil {
-		return false, fmt.Errorf("store: read skips of the head: %w", err)
+	err := tx.QueryRow(ctx, `SELECT status = $3 AND skip_reason = $4 FROM reviews
+		WHERE pull_request_id = $1 AND head_sha = $2 ORDER BY created_at DESC LIMIT 1`,
+		pullRequestID, headSHA, ReviewSkipped, reason).Scan(&skipped)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("store: read the head's latest review: %w", err)
 	}
 	return skipped, nil
 }

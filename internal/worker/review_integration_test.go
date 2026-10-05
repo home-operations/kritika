@@ -85,6 +85,8 @@ type localForge struct {
 	threads map[int64]forge.Comment
 	inline  []forge.InlineComment
 	status  string
+	// onStatus, when set, runs once as a commit status is set.
+	onStatus func()
 	// approvals are the heads the bot's standing approvals cover, and
 	// dismissals how often they were withdrawn.
 	approvals  []string
@@ -370,8 +372,13 @@ func (l *localForge) ThreadURL(owner, repo string, number int, id int64) string 
 
 func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.StatusState, desc string) error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.status = string(state) + ": " + desc
+	hook := l.onStatus
+	l.onStatus = nil
+	l.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	return nil
 }
 
@@ -1527,36 +1534,84 @@ approve: true
 		t.Fatalf("status = %q", forgeStatus)
 	}
 	checkLabelRepeat(ctx, t, appStore, insertOnly, accountID, labelledHead)
+
+	// The label comes off while the job that skipped the head under it is
+	// still finishing: the job judges the head again, and reviews it.
+	movedHead := commit("movedHead", map[string]string{"main.go": "package main\n\nfunc g() {}\n"})
+	lf.mu.Lock()
+	lf.onStatus = func() {
+		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE pull_requests SET labels = '[]' WHERE number = 6`)
+			return err
+		}); err != nil {
+			t.Error(err)
+		}
+	}
+	lf.mu.Unlock()
+	dispatchPR(6, movedHead, false, "skip-review")
+	checkStatuses(ctx, t, appStore, accountID, movedHead, "skipped", "completed")
 }
 
 // checkLabelRepeat asserts that a label change the filter still excludes
-// the head under is the skip the head has, not one more.
+// the head under is the skip the head has, not one more, unless a later
+// review of the head ended otherwise.
 func checkLabelRepeat(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, head string) {
 	t.Helper()
-	res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
-		AccountID: accountID, RepositoryID: configfile.RepositoryID(accountID, "onedr0p/home-ops"), Number: 4, HeadSHA: head, Trigger: "labeled", Request: "label-change",
-	}, nil)
-	if err != nil || res.UniqueSkippedAsDuplicate {
-		t.Fatalf("insert = %+v, %v", res, err)
-	}
-	deadline := time.Now().Add(20 * time.Second)
-	for state := ""; state != "completed"; time.Sleep(100 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the label change's job is %s, want completed", state)
+	labeled := func(request string) {
+		t.Helper()
+		res, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
+			AccountID: accountID, RepositoryID: configfile.RepositoryID(accountID, "onedr0p/home-ops"), Number: 4, HeadSHA: head,
+			Trigger: "labeled", Request: request,
+		}, nil)
+		if err != nil || res.UniqueSkippedAsDuplicate {
+			t.Fatalf("insert = %+v, %v", res, err)
 		}
-		if err := appStore.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, res.Job.ID).Scan(&state); err != nil {
-			t.Fatal(err)
+		deadline := time.Now().Add(20 * time.Second)
+		for state := ""; state != "completed"; time.Sleep(100 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the label change's job is %s, want completed", state)
+			}
+			if err := appStore.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, res.Job.ID).Scan(&state); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
-	var skips int
+	labeled("first")
+	checkStatuses(ctx, t, appStore, accountID, head, "skipped")
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, head).Scan(&skips)
+		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, finished_at)
+			SELECT account_id, id, head_sha, 'failed', now() FROM pull_requests WHERE number = 4`)
+		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if skips != 1 {
-		t.Fatalf("%d reviews of the labelled head, want the one skip", skips)
+	labeled("second")
+	checkStatuses(ctx, t, appStore, accountID, head, "skipped", "failed", "skipped")
+}
+
+// checkStatuses waits for the head's reviews to be the ones of want, oldest
+// first.
+func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, accountID, head string, want ...string) {
+	t.Helper()
+	var got []string
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `SELECT status FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL ORDER BY created_at`, head)
+			if err != nil {
+				return err
+			}
+			got, err = pgx.CollectRows(rows, pgx.RowTo[string])
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if slices.Equal(got, want) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
+	t.Fatalf("reviews of %s = %v, want %v", head, got, want)
 }
 
 // checkWithdrawn asserts what a review with an important finding does

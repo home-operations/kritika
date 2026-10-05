@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -87,42 +88,67 @@ func settleLeft(trigger string, settle time.Duration, created, now time.Time) ti
 // skipByRepo ends a review the merge-base .kritika.yaml disables or filters
 // out before a runner is spent on it, with a success status saying why. It
 // reports whether it ended the review, with the error of recording that.
+//
+// A label change that reaches ingest while this job is still to finish
+// queues nothing, the job being the head's review to come; one that lands
+// after the job read the labels would then go unjudged, so a skip whose
+// labels moved under it is judged again.
 func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bool, error) {
-	var vars map[string]any
-	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-		var err error
-		vars, err = filterVars(ctx, tx, e.pr.id, e.args.Trigger)
-		return err
-	}); err != nil {
-		return true, err
-	}
-	// With no changed paths yet, only enabled and the filter can skip.
-	reason, err := eff.Check(vars, nil)
-	if err != nil {
-		e.logger.Warn("repository filter failed to evaluate", "error", err)
-	}
-	if reason == "" {
-		return false, nil
-	}
-	// A label change that leaves the head skipped as it was is the same
-	// skip, not a second one: its row and status stand.
-	if jobs.LabelChange(e.args.Trigger) {
-		var repeat bool
+	for again := false; ; again = true {
+		var judged repoconfig.PullRequest
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 			var err error
-			repeat, err = store.HeadSkipped(ctx, tx, e.pr.id, e.args.HeadSHA, string(reason))
+			judged, err = loadFilterPR(ctx, tx, e.pr.id)
 			return err
 		}); err != nil {
 			return true, err
 		}
+		judged.Event = e.args.Trigger
+		vars, err := judged.Vars()
+		if err != nil {
+			return true, err
+		}
+		// With no changed paths yet, only enabled and the filter can skip.
+		reason, err := eff.Check(vars, nil)
+		if err != nil {
+			e.logger.Warn("repository filter failed to evaluate", "error", err)
+		}
+		if reason == "" {
+			return false, nil
+		}
+		// A label change that leaves the head skipped as it was is the same
+		// skip, not a second one: its row and status stand.
+		repeat := false
+		if again || jobs.LabelChange(e.args.Trigger) {
+			if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+				var err error
+				repeat, err = store.HeadSkipped(ctx, tx, e.pr.id, e.args.HeadSHA, string(reason))
+				return err
+			}); err != nil {
+				return true, err
+			}
+		}
 		if repeat {
 			e.logger.Info("review still skipped after a label change", "reason", reason)
+		} else {
+			e.logger.Info("review skipped before its runner", "reason", reason)
+			e.skip = string(reason)
+			if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
+				return true, err
+			}
+		}
+		var now repoconfig.PullRequest
+		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+			var err error
+			now, err = loadFilterPR(ctx, tx, e.pr.id)
+			return err
+		}); err != nil {
+			return true, err
+		}
+		if bytes.Equal(now.Labels, judged.Labels) {
 			return true, nil
 		}
 	}
-	e.logger.Info("review skipped before its runner", "reason", reason)
-	e.skip = string(reason)
-	return true, w.end(ctx, e, store.ReviewSkipped, "")
 }
 
 // filterVars rebuilds the filter's pr variable for a review started by
