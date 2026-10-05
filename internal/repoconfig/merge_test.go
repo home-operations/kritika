@@ -80,12 +80,14 @@ func TestMerge(t *testing.T) {
 		{name: "a rule without an id", doc: "rules: [{ rule: Never log a token. }]\n", wantErr: `rules[0].id "" must be`},
 		{
 			name: "a rule may say when it applies",
-			doc:  "rules: [{ id: renovate, rule: Say what breaks., whenExpr: 'pr.headRef.startsWith(\"renovate/\")' }]\n",
+			doc:  "rules: [{ id: renovate, rule: Say what breaks., when: [{ expr: 'pr.headRef.startsWith(\"renovate/\")' }] }]\n",
 			want: func(s *configfile.Settings) {
-				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "renovate", Rule: "Say what breaks.", WhenExpr: `pr.headRef.startsWith("renovate/")`})
+				s.Review.Rules = append(s.Review.Rules, configfile.Rule{
+					ID: "renovate", Rule: "Say what breaks.", When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}},
+				})
 			},
 		},
-		{name: "a rule whose whenExpr fails the smoke test", doc: "rules: [{ id: a, rule: x, whenExpr: 'pr.labels[5].name == \"x\"' }]\n", wantErr: "rules[0].whenExpr: smoke test"},
+		{name: "a rule whose condition fails the smoke test", doc: "rules: [{ id: a, rule: x, when: [{ expr: 'pr.labels[5].name == \"x\"' }] }]\n", wantErr: "rules[0].when[0]: smoke test"},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
 			name: "presentation replaces the admin's", doc: "comments: { inline: false, summary: .kritika/summary.tmpl }\n",

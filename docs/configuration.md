@@ -28,8 +28,8 @@ one of these prefixes that names no key is refused at startup rather than
 ignored.
 
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`,
-or is the `expr` of a condition: `roleMappingExpr`, a rule's `whenExpr`,
-and each item of `trigger.include` and `trigger.exclude`.
+or is the `expr` of a condition: `roleMappingExpr`, and each item of a
+rule's `when` and of `trigger.include` and `trigger.exclude`.
 
 kritika reads the file and its variables once, at startup: a change takes a
 restart, and the chart rolls the pods when its `configFile` changes.
@@ -386,7 +386,7 @@ rules:
   - { id: no-tokens, rule: "Never log a token, key or password." }
   - id: renovate
     rule: Say what the update breaks, from the release notes in the body.
-    whenExpr: pr.headRef.startsWith("renovate/")
+    when: [{ expr: pr.headRef.startsWith("renovate/") }]
 repositories:
   org-1/*:
     review: { model: org-1-key/vendor/large-model }

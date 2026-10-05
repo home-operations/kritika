@@ -12,14 +12,22 @@ import (
 // findings cite it by and narrower scopes replace it by. The check is
 // Rule's text or the content of File, a repository file read from the merge
 // base, exactly one of them. With Paths it applies only when a changed path
-// matches one of them, and with WhenExpr, a CEL expression over the pull
-// request as a filter sees it, only when that is true.
+// matches one of them, and with When only to a pull request one of those
+// conditions holds for.
 type Rule struct {
-	ID       string   `yaml:"id" json:"id"`
-	Rule     string   `yaml:"rule,omitempty" json:"rule,omitempty"`
-	File     string   `yaml:"file,omitempty" json:"file,omitempty"`
-	Paths    []string `yaml:"paths,omitempty" json:"paths,omitempty"`
-	WhenExpr string   `yaml:"whenExpr,omitempty" json:"whenExpr,omitempty"`
+	ID    string   `yaml:"id" json:"id"`
+	Rule  string   `yaml:"rule,omitempty" json:"rule,omitempty"`
+	File  string   `yaml:"file,omitempty" json:"file,omitempty"`
+	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
+	When  []When   `yaml:"when,omitempty" json:"when,omitempty"`
+}
+
+// When is one condition on the pull requests a rule applies to: Expr, CEL
+// over pr as a trigger condition sees it before the diff is fetched. Name,
+// when set, says what the condition is for.
+type When struct {
+	Name string `yaml:"name,omitempty" json:"name"`
+	Expr string `yaml:"expr" json:"expr"`
 }
 
 // MaxRuleChars bounds one rule's text.
@@ -30,9 +38,9 @@ var ruleIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // CheckRules rejects a list of rules with an id that is not valid or is
 // listed twice, neither or both of a rule and a file, an overlong rule, a
-// file outside the repository, a glob that is not valid, or a whenExpr
-// that does not compile or fails against a sample pull request. The error
-// starts with the rule's place in the list, as rules[i].
+// file outside the repository, a glob that is not valid, or a when
+// condition that does not compile or fails against a sample pull request.
+// The error starts with the rule's place in the list, as rules[i].
 func CheckRules(rules []Rule) error {
 	for i, r := range rules {
 		if !ruleIDRe.MatchString(r.ID) {
@@ -58,13 +66,30 @@ func CheckRules(rules []Rule) error {
 				return fmt.Errorf("rules[%d].paths[%d] %q is not a valid glob", i, j, g)
 			}
 		}
-		prg, err := compileFilter(r.WhenExpr)
-		if err != nil {
-			return fmt.Errorf("rules[%d].whenExpr: %w", i, err)
+		if err := checkWhen(r.When); err != nil {
+			return fmt.Errorf("rules[%d].%w", i, err)
 		}
-		// A rule is judged before the diff is fetched.
-		if prg != nil && prg.Uses(linesVar) {
-			return fmt.Errorf("rules[%d].whenExpr: pr.%s is known to a trigger condition alone", i, linesVar)
+	}
+	return nil
+}
+
+// checkWhen rejects a rule's conditions with no expression, a name given
+// twice, or an expression that does not compile, fails against a sample
+// pull request or reads pr.lines: a rule is judged before the diff is
+// fetched. The error starts with the condition's place, as when[i].
+func checkWhen(when []When) error {
+	for i, w := range when {
+		if w.Name != "" && slices.ContainsFunc(when[:i], func(o When) bool { return o.Name == w.Name }) {
+			return fmt.Errorf("when[%d]: name %q is given twice", i, w.Name)
+		}
+		prg, err := compileFilter(w.Expr)
+		switch {
+		case err != nil:
+			return fmt.Errorf("when[%d]: %w", i, err)
+		case prg == nil:
+			return fmt.Errorf("when[%d]: expr is required", i)
+		case prg.Uses(linesVar):
+			return fmt.Errorf("when[%d]: pr.%s is known to a trigger condition alone", i, linesVar)
 		}
 	}
 	return nil

@@ -45,7 +45,7 @@ rules:
   - { id: house-style, file: .kritika/review.md }
   - id: renovate
     rule: Say what the update breaks, from the release notes in the body.
-    whenExpr: pr.headRef.startsWith("renovate/")
+    when: [{ expr: pr.headRef.startsWith("renovate/") }]
 context:
   - { path: ARCHITECTURE.md, description: how the services fit together }
 ```
@@ -148,11 +148,12 @@ context:
   read from the same merge-base tree, whose content is the check; optional `paths`
   globs apply it only when a changed path matches one, so checks for one
   part of the repository do not spend the room on changes elsewhere. An
-  optional `whenExpr`, a CEL expression over the `pr` that a
-  `trigger.include` condition sees, applies it only to a pull request it is true of, such as
-  `pr.headRef.startsWith("renovate/")` for Renovate's; it is compiled and
-  smoke-tested like a condition, and a rule whose `whenExpr` fails to
-  evaluate is left out. A rule whose `id` an admin's rule has is
+  optional `when`, a list of conditions as `trigger.include` takes them,
+  each an `expr` with an optional `name`, applies it only to a pull request
+  one of them holds for, such as
+  `pr.headRef.startsWith("renovate/")` for Renovate's; each is compiled and
+  smoke-tested like a trigger condition, and one that fails to evaluate
+  does not hold. A rule whose `id` an admin's rule has is
   dropped, and the review's summary says so. The rules a change matches
   are listed by id in the system prompt (and a follow-up's), a file rule
   under a heading of its own, within 16 KiB of rule text and 32 KiB of
@@ -180,7 +181,7 @@ parse.
 ## Include and exclude recipes
 
 The `expr` of a `trigger.include` or `trigger.exclude` condition, like a
-rule's `whenExpr`, is a [CEL](https://cel.dev) expression over `pr`, which has the pull request's `number`, `title`,
+rule's `when` conditions, is a [CEL](https://cel.dev) expression over `pr`, which has the pull request's `number`, `title`,
 `body`, `author`, `state`, `open`, `merged`, `draft`, `fork`, `headRef`,
 `headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`
 and a `color`), and `event`, what started the review: `opened`,
@@ -190,7 +191,7 @@ added or removed) or `manual` (a re-run from the dashboard).
 
 A trigger condition also has `pr.lines`, the lines the pull request's diff
 adds and removes, paths the `ignore` globs match left out. It is for
-trigger conditions only: a rule's `whenExpr` may not use it.
+trigger conditions only: a rule's `when` conditions may not use it.
 
 A condition's `paths` are globs, as on a rule: it holds when a changed
 path matches one of them. With an `expr` too, both must hold. An

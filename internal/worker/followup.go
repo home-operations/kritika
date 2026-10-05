@@ -549,7 +549,7 @@ type reviewRecord struct {
 	// files among them.
 	files repoconfig.Files
 	// vars is the pull request as a filter sees it, with the event of the
-	// review, which the rules' whenExpr are judged against.
+	// review, which the rules' when conditions are judged against.
 	vars map[string]any
 }
 

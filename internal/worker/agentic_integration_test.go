@@ -74,8 +74,8 @@ repositories:
       commands: [curl]
       commandTimeout: 5s
     rules:
-      - { id: into-main, rule: Keep main releasable., whenExpr: 'pr.baseRef == "main"' }
-      - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
+      - { id: into-main, rule: Keep main releasable., when: [{ expr: 'pr.baseRef == "main"' }] }
+      - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
 `
 
 // agentJobTimeout is the harness client's JobTimeout.
@@ -972,7 +972,7 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	h.checkNoSecrets(t, `review_id = $1`, reviewID)
 }
 
-// checkAgentRules checks the runner was given the rules whose whenExpr
+// checkAgentRules checks the runner was given the rules whose conditions
 // the worker found true of the pull request, and only those.
 func checkAgentRules(t *testing.T, system string) {
 	t.Helper()

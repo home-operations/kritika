@@ -304,7 +304,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
 		{a + "/findings?repo=wa/one&severity=blocking&status=open", `"title":"nil deref"`},
-		{a + "/rules", `"path":"docs/rules-of-webapi-a.md","description":"","paths":[],"whenExpr":"","source":"repository","repositories":["wa/one"]`},
+		{a + "/rules", `"path":"docs/rules-of-webapi-a.md","description":"","paths":[],"when":[],"source":"repository","repositories":["wa/one"]`},
 		{a + "/followups?repo=wa/one", fmt.Sprintf(`"commentId":%d`, followupComment)},
 		{a + fmt.Sprintf("/followups/%d/transcript", followupComment), `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},

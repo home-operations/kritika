@@ -231,6 +231,7 @@ var goldens = map[string]any{
 	},
 	"rule": Rule{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},
+		When:   []configfile.When{},
 		Source: RuleFromEntry, Repositories: []string{"alpha/one"}, Findings: 3, Addressed: 1,
 	},
 	"job": goldenJob,

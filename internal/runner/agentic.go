@@ -84,7 +84,7 @@ func (in promptInputs) ruleIDs() []string {
 }
 
 // newPromptInputs selects, for a change of the changed paths, the spec's
-// rules, whose whenExpr the worker has already judged, the context files
+// rules, whose when conditions the worker has already judged, the context files
 // and the agent files of the changed directories.
 func newPromptInputs(p Spec, files repoconfig.Files, changed []string) promptInputs {
 	var in promptInputs

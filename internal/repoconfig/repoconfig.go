@@ -300,22 +300,24 @@ func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []
 	return out, left
 }
 
-// RulesFor is the rules whose whenExpr, if any, is true of vars, the
-// filter's pr variable, in order. One that does not compile or evaluate is
-// left out, as it could not say the rule applies.
+// RulesFor is the rules that apply to the pull request with the filter
+// variables vars, in order: each without when conditions, and each one of
+// whose conditions holds. A condition that does not compile or evaluate
+// does not hold, as it could not say the rule applies.
 func RulesFor(rules []configfile.Rule, vars map[string]any) []configfile.Rule {
+	holds := func(w configfile.When) bool {
+		prg, err := prfilter.Compile(w.Expr)
+		if err != nil {
+			return false
+		}
+		ok, err := prg.Eval(vars)
+		return err == nil && ok
+	}
 	var out []configfile.Rule
 	for _, r := range rules {
-		if r.WhenExpr != "" {
-			prg, err := prfilter.Compile(r.WhenExpr)
-			if err != nil {
-				continue
-			}
-			if ok, err := prg.Eval(vars); err != nil || !ok {
-				continue
-			}
+		if len(r.When) == 0 || slices.ContainsFunc(r.When, holds) {
+			out = append(out, r)
 		}
-		out = append(out, r)
 	}
 	return out
 }
