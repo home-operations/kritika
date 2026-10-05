@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -87,26 +91,81 @@ func settleLeft(trigger string, settle time.Duration, created, now time.Time) ti
 // skipByRepo ends a review the merge-base .kritika.yaml disables or filters
 // out before a runner is spent on it, with a success status saying why. It
 // reports whether it ended the review, with the error of recording that.
-func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bool, error) {
-	var vars map[string]any
-	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-		var err error
-		vars, err = filterVars(ctx, tx, e.pr.id, e.args.Trigger)
-		return err
-	}); err != nil {
-		return true, err
+//
+// A label change that reaches ingest while this job is still to finish
+// queues nothing, the job being the head's review to come; one that lands
+// after the job read the labels would then go unjudged. So a skip is final
+// only once the labels are seen unchanged in the transaction that
+// completes the job, under the pull request's row lock that ingest's own
+// write waits on; labels that moved are judged again.
+func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], eff *Effective) (bool, error) {
+	for {
+		var judged repoconfig.PullRequest
+		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+			var err error
+			judged, err = loadFilterPR(ctx, tx, e.pr.id)
+			return err
+		}); err != nil {
+			return true, err
+		}
+		judged.Event = e.args.Trigger
+		vars, err := judged.Vars()
+		if err != nil {
+			return true, err
+		}
+		// With no changed paths yet, only enabled and the filter can skip.
+		reason, err := eff.Check(vars, nil)
+		if err != nil {
+			e.logger.Warn("repository filter failed to evaluate", "error", err)
+		}
+		if reason == "" {
+			return false, nil
+		}
+		if err := w.recordSkip(ctx, e, string(reason)); err != nil {
+			return true, err
+		}
+		moved := false
+		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+			var labels json.RawMessage
+			if err := tx.QueryRow(ctx, `SELECT labels FROM pull_requests WHERE id = $1 FOR UPDATE`, e.pr.id).Scan(&labels); err != nil {
+				return fmt.Errorf("worker: read the pull request's labels: %w", err)
+			}
+			if moved = !bytes.Equal(labels, judged.Labels); moved {
+				return nil
+			}
+			_, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+			return err
+		}); err != nil {
+			return true, err
+		}
+		if !moved {
+			return true, nil
+		}
 	}
-	// With no changed paths yet, only enabled and the filter can skip.
-	reason, err := eff.Check(vars, nil)
-	if err != nil {
-		e.logger.Warn("repository filter failed to evaluate", "error", err)
-	}
-	if reason == "" {
-		return false, nil
+}
+
+// recordSkip records the skip for reason and says so on the head commit,
+// unless it is the skip the head's latest review already is: the same
+// job judging again, a retry, or a label change that left the head where
+// it was. A re-run someone asked for is recorded all the same.
+func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) error {
+	if e.args.Trigger != jobs.TriggerManual {
+		var repeat bool
+		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+			var err error
+			repeat, err = store.HeadSkipped(ctx, tx, e.pr.id, e.args.HeadSHA, reason)
+			return err
+		}); err != nil {
+			return err
+		}
+		if repeat {
+			e.logger.Info("review still skipped", "reason", reason)
+			return nil
+		}
 	}
 	e.logger.Info("review skipped before its runner", "reason", reason)
-	e.skip = string(reason)
-	return true, w.end(ctx, e, store.ReviewSkipped, "")
+	e.skip = reason
+	return w.end(ctx, e, store.ReviewSkipped, "")
 }
 
 // filterVars rebuilds the filter's pr variable for a review started by

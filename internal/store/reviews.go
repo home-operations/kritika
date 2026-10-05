@@ -62,6 +62,19 @@ func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) error {
 	return nil
 }
 
+// HeadSkipped reports whether the latest review of the pull request's
+// head was skipped for reason.
+func HeadSkipped(ctx context.Context, tx pgx.Tx, pullRequestID, headSHA, reason string) (bool, error) {
+	var skipped bool
+	err := tx.QueryRow(ctx, `SELECT status = $3 AND skip_reason = $4 FROM reviews
+		WHERE pull_request_id = $1 AND head_sha = $2 ORDER BY created_at DESC LIMIT 1`,
+		pullRequestID, headSHA, ReviewSkipped, reason).Scan(&skipped)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("store: read the head's latest review: %w", err)
+	}
+	return skipped, nil
+}
+
 // ReviewEnd is how a review ends: its terminal status and what the row
 // records with it. An empty PatchID or SkipReason keeps what the row has.
 type ReviewEnd struct {
