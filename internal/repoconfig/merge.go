@@ -27,8 +27,7 @@ type Merged struct {
 // none, over the admin's settings op. The file narrows what an admin allows
 // (enabled, filter, ignore), appends its context files and rules to the
 // admin's, may only turn review.fixes on, and replaces the models,
-// the feedback level, how the review comments, whether it approves and
-// whether it reads agent files. A model must be one of a provider
+// the feedback level, how the review comments and whether it approves. A model must be one of a provider
 // op.Providers names. A value it may not take is dropped, and Dropped says
 // so. A file that does not parse is ignored as a whole: op stands, and the
 // error says why.
@@ -69,9 +68,6 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	}
 	if f.Review.Approve != nil {
 		m.Review.Approve = *f.Review.Approve
-	}
-	if f.AgentFiles != nil {
-		m.Review.AgentFiles = *f.AgentFiles
 	}
 	switch {
 	case f.Review.Feedback == "":

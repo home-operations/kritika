@@ -58,9 +58,8 @@ var goldenRepoSettings = RepoSettings{
 	Review: configfile.Review{
 		RequireSuggestedFix: true,
 		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
-		Context:    []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
-		Feedback:   configfile.FeedbackStandard,
-		AgentFiles: true,
+		Context:  []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
+		Feedback: configfile.FeedbackStandard,
 	},
 	Agent: configfile.AgentSettings{
 		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, Timeout: 20 * time.Minute, Commands: []string{"go"},

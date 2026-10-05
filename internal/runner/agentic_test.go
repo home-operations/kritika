@@ -46,18 +46,14 @@ func TestAgentPrompt(t *testing.T) {
 	}
 	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritika/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
 	tests := []struct {
-		name         string
-		scope        review.Scope
-		instructions []string
-		rules        []configfile.Rule
-		active       []review.Rule
-		strict       bool
-		focused      bool
-		agentFiles   bool
+		name    string
+		scope   review.Scope
+		rules   []configfile.Rule
+		active  []review.Rule
+		strict  bool
+		focused bool
 	}{
 		{name: "strictness", scope: review.ScopeFull, strict: true},
-		{name: "the root's AGENTS.md is the instructions", agentFiles: true,
-			scope: review.ScopeFull, instructions: []string{"Agent notes."}, strict: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 		{
@@ -75,7 +71,7 @@ func TestAgentPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Rules, s.AgentFiles = tt.strict, tt.focused, tt.rules, tt.agentFiles
+			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Rules = tt.strict, tt.focused, tt.rules
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
@@ -87,7 +83,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false)
 			system, user, strict := prompt.system, prompt.user, prompt.strict
-			if want := review.SystemPrompt(tt.active, tt.instructions, nil, tt.focused, false); system != want {
+			if want := review.SystemPrompt(tt.active, []string{"Agent notes."}, nil, tt.focused, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -137,7 +133,6 @@ func ruleIDs(rules []review.Rule) []string {
 // TestPromptInputsNotes: the notes say what the prompt's budgets cut.
 func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
-	s.AgentFiles = true
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
 	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxInstructionBytes+1)}
 	in := newPromptInputs(s, files, []string{"main.go"})

@@ -65,7 +65,6 @@ var Policies = []Policy{
 	{Key: "comments", Scopes: everyScope},
 	{Key: "rules", Scopes: everyScope},
 	{Key: "context", Scopes: everyScope},
-	{Key: "agentFiles", Scopes: everyScope},
 	{Key: keySteps, Scopes: everyScope},
 	{Key: keyOutput, Scopes: everyScope},
 	{Key: "agent.tokens", Scopes: everyScope},

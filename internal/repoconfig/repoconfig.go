@@ -98,9 +98,6 @@ type File struct {
 	Rules []configfile.Rule `yaml:"rules,omitempty"`
 	// Context names files that explain the code, added after the admin's.
 	Context []configfile.ContextFile `yaml:"context,omitempty"`
-	// AgentFiles replaces the admin's: whether AGENTS.md and CLAUDE.md
-	// files join the instructions.
-	AgentFiles *bool `yaml:"agentFiles,omitempty"`
 }
 
 // Parse decodes data as .kritika.yaml. Unknown fields, invalid glob patterns

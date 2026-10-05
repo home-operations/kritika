@@ -219,11 +219,7 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 		files = repoconfig.Files{}
 	}
 	maps.Copy(files, f.ruleFiles)
-	var agent []string
-	if f.settings.Review.AgentFiles {
-		agent = repoconfig.AgentFiles(files, rec.changed)
-	}
-	instructions, _ := repoconfig.Instructions(files, agent)
+	instructions, _ := repoconfig.Instructions(files, repoconfig.AgentFiles(files, rec.changed))
 	rules, _ := repoconfig.ActiveRules(repoconfig.RulesFor(f.settings.Review.Rules, rec.vars), files, rec.changed)
 	system := review.FollowUpSystemPrompt(rules, instructions)
 	msg := review.BuildFollowUp(review.Input{

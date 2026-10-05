@@ -211,7 +211,6 @@ export interface ReviewBlock {
   approve: boolean;
   context: ContextFile[];
   feedback: Feedback;
-  agentFiles: boolean;
 }
 
 // How much a review says: anything a maintainer could act on, the same

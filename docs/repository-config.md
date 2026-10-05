@@ -137,11 +137,11 @@ context:
   `description` and optional `paths` globs, added after the admin's. The
   review is pointed at each file to read it with its own tools. A file
   with `paths` applies only when a changed path matches one of them.
-- `agentFiles: false`: leaves the repository's agent files out. Unless
-  set, a review adds to its instructions the `AGENTS.md` of the root and
-  of each directory above a changed path, or a directory's `CLAUDE.md`
-  where it has no `AGENTS.md`, read from the merge base, within 32 KiB. They follow the rules in the
-  prompt.
+
+A review also adds to its instructions the repository's agent files: the
+`AGENTS.md` of the root and of each directory above a changed path, or a
+directory's `CLAUDE.md` where it has no `AGENTS.md`, read from the merge
+base, within 32 KiB. They follow the rules in the prompt.
 
 A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for

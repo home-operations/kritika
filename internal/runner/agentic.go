@@ -87,15 +87,11 @@ func (in promptInputs) ruleIDs() []string {
 
 // newPromptInputs selects, for a change of the changed paths, the spec's
 // rules, whose whenExpr the worker has already judged, the context files
-// and, when the spec asks, the agent files of the changed directories.
+// and the agent files of the changed directories.
 func newPromptInputs(p Spec, files repoconfig.Files, changed []string) promptInputs {
 	var in promptInputs
-	var agentFiles []string
-	if p.AgentFiles {
-		agentFiles = repoconfig.AgentFiles(files, changed)
-	}
 	var truncated bool
-	if in.instructions, truncated = repoconfig.Instructions(files, agentFiles); truncated {
+	if in.instructions, truncated = repoconfig.Instructions(files, repoconfig.AgentFiles(files, changed)); truncated {
 		in.notes = append(in.notes, noteInstructionsTruncated)
 	}
 	var left int

@@ -674,13 +674,13 @@ func TestReviewPresentation(t *testing.T) {
 		return f
 	}
 	f := parse(t, "", "  acme/x: {}\n")
-	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.Feedback != FeedbackDetailed || !s.Review.AgentFiles {
-		t.Fatalf("review = %+v, want every finding inline, from a detailed review that reads agent files", s.Review)
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.Feedback != FeedbackDetailed {
+		t.Fatalf("review = %+v, want every finding inline, from a detailed review", s.Review)
 	}
-	f = parse(t, "comments: { inline: false }, review: { feedback: minimal }, agentFiles: false",
+	f = parse(t, "comments: { inline: false }, review: { feedback: minimal }",
 		"  acme/x: { comments: { inline: true } }\n  acme/y: { review: { feedback: standard } }\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.Feedback != FeedbackMinimal || s.Review.AgentFiles {
-		t.Fatalf("review = %+v, want the account's feedback and agent files with the repository's inline comments", s.Review)
+	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.Feedback != FeedbackMinimal {
+		t.Fatalf("review = %+v, want the account's feedback with the repository's inline comments", s.Review)
 	}
 	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Feedback != FeedbackStandard {
 		t.Fatalf("review = %+v, want the repository's feedback over the account's", s.Review)
