@@ -4,9 +4,9 @@
   // cell that names something wrong leading to where the account shows it.
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource, live, pollJobs } from '../resource.svelte';
   import { tokens, usd, wholeNumber } from '../format';
-  import type { AccountSummary } from '../types';
+  import type { AccountSummary, InstanceQueue, JobState } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
@@ -19,6 +19,26 @@
     void res.load();
   });
   $effect(() => live((e) => e.kind !== 'model_call', () => void res.load()));
+
+  // The queue is its own fetch: the page stands without it, and only the
+  // one tile waits on it.
+  const queue = new Resource(() => getJSON<InstanceQueue>('/api/v1/queue'));
+  $effect(() => {
+    void queue.load();
+  });
+  $effect(() => live((e) => e.kind !== 'model_call', () => void queue.load()));
+  $effect(() => pollJobs(() => void queue.load()));
+
+  const WAITING: readonly JobState[] = ['available', 'scheduled', 'retryable', 'pending'];
+  function work(q: InstanceQueue) {
+    const capped = q.slots.filter((s) => s.slots > 0);
+    return {
+      running: q.jobs.filter((j) => j.state === 'running').length,
+      waiting: q.jobs.filter((j) => WAITING.includes(j.state)).length,
+      held: capped.reduce((n, s) => n + s.held, 0),
+      slots: capped.reduce((n, s) => n + s.slots, 0),
+    };
+  }
 
   function totals(list: AccountSummary[]) {
     const sum = (f: (t: AccountSummary) => number) => list.reduce((n, t) => n + f(t), 0);
@@ -47,6 +67,15 @@
             <span class="tile-value">{wholeNumber(all.wants.reduce((n, w) => n + w.n, 0))}</span>
             <span class="small muted">{all.wants.map((w) => `${wholeNumber(w.n)} ${w.label}`).join(' · ') || 'no open pull request wants a look'}</span>
           </div>
+          {#if queue.data}
+            {@const w = work(queue.data)}
+            <!-- One account has no instance queue tab, so its own queue is the page to open. -->
+            <a class="tile" href={href(list.length === 1 ? { name: 'queue', slug: list[0]!.slug } : { name: 'instanceQueue' })}>
+              <span class="tile-label">Running now</span>
+              <span class="tile-value">{wholeNumber(w.running)}</span>
+              <span class="small muted">{wholeNumber(w.waiting)} waiting{w.slots ? ` · ${wholeNumber(w.held)} of ${wholeNumber(w.slots)} model slots busy` : ''}</span>
+            </a>
+          {/if}
           <div class="tile">
             <span class="tile-label">Repositories</span>
             <span class="tile-value">{wholeNumber(all.repositories)}</span>

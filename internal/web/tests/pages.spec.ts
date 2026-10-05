@@ -49,6 +49,29 @@ test.describe('overview', () => {
     await expect(wants).toContainText('2 failed · 4 blocking');
   });
 
+  test('a tile says what runs and waits now and how busy the model slots are, and opens the queue', async ({ page }) => {
+    const j = g.instanceQueue.jobs[0]!;
+    const q = { jobs: [{ ...j, id: 1, state: 'running' }, { ...j, id: 2, state: 'available' }, j, { ...j, id: 3, state: 'discarded' }], slots: [...g.instanceQueue.slots, { ...g.instanceQueue.slots[0]!, account: 'beta', held: 1, slots: 0 }] };
+    await g.mockApi(page, [[/\/api\/v1\/queue$/, q], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const tile = page.getByRole('link', { name: /Running now/ });
+    await expect(tile.locator('.tile-value')).toHaveText('1');
+    await expect(tile).toContainText('2 waiting · 2 of 2 model slots busy');
+    await expect(tile).toHaveAttribute('href', `#/a/${g.accountSummary.slug}/queue`);
+
+    await g.mockApi(page, [[/\/api\/v1\/queue$/, q], [/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, slug: 'beta' }]], ...g.defaultApi()]);
+    await page.reload();
+    await expect(tile).toHaveAttribute('href', '#/queue');
+  });
+
+  test('the overview stands without the queue: only its tile is missing', async ({ page }) => {
+    await page.route('**/api/v1/queue', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify(g.golden('error')) }));
+    await page.goto('/#/');
+    await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(1);
+    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.tile')).toHaveCount(5);
+    await expect(page.getByText('Running now')).toHaveCount(0);
+  });
+
   test('the attention tile says so when nothing wants a look', async ({ page }) => {
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, blocking: 0, paused: 0 } }]], ...g.defaultApi()]);
     await page.goto('/#/');

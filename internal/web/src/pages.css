@@ -433,8 +433,15 @@ kbd {
 }
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
+}
+a.tile {
+  color: inherit;
+  text-decoration: none;
+}
+a.tile:hover {
+  background: var(--panel-alt);
 }
 .tile {
   background: var(--panel);
