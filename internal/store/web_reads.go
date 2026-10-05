@@ -177,7 +177,7 @@ func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName stri
 	}); err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE created_at >= now() - interval '7 days'`).
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE status = 'completed' AND created_at >= now() - interval '7 days'`).
 		Scan(&s.Reviews7d); err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
