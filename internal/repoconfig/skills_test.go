@@ -85,6 +85,18 @@ func TestParseSkill(t *testing.T) {
 	}
 }
 
+// TestParseSkillCountsCharacters: the description's bound is in
+// characters, so one in a script of multibyte characters fits as one in
+// ASCII does.
+func TestParseSkillCountsCharacters(t *testing.T) {
+	for n, wantErr := range map[int]bool{MaxSkillDescription: false, MaxSkillDescription + 1: true} {
+		_, err := ParseSkill(".agents/skills/go", []byte("---\ndescription: "+strings.Repeat("語", n)+"\n---\n"))
+		if (err != nil) != wantErr {
+			t.Errorf("a description of %d characters: err = %v, want an error %v", n, err, wantErr)
+		}
+	}
+}
+
 func TestOfferedSkills(t *testing.T) {
 	t.Parallel()
 	found := []Skill{{Name: "review-go", Description: "Go."}, {Name: "db", Description: "Migrations."}, {Name: "renovate", Description: "Bumps."}}

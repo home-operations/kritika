@@ -144,7 +144,8 @@ func (s *skillTool) Run(_ context.Context, input json.RawMessage) (string, error
 }
 
 // names lists the skills the tool offers, and Opened the ones it has
-// returned, each in the order first seen.
+// returned, each in the order first seen, never nil: the run's row takes
+// no NULL for either.
 func (s *skillTool) names() []string {
 	out := make([]string, len(s.skills))
 	for i, o := range s.skills {
@@ -156,5 +157,5 @@ func (s *skillTool) names() []string {
 func (s *skillTool) Opened() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return slices.Clone(s.opened)
+	return append([]string{}, s.opened...)
 }

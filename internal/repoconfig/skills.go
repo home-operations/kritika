@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 
@@ -67,7 +68,7 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 		return Skill{}, fmt.Errorf("name %q must be lowercase letters, digits and hyphens, at most 64 characters", s.Name)
 	case s.Description == "":
 		return Skill{}, errors.New("description is required")
-	case len(s.Description) > MaxSkillDescription:
+	case utf8.RuneCountInString(s.Description) > MaxSkillDescription:
 		return Skill{}, fmt.Errorf("description is over %d characters", MaxSkillDescription)
 	}
 	return s, nil

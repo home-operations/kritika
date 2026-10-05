@@ -130,8 +130,9 @@ func TestSkillTool(t *testing.T) {
 	if got := tool.names(); !slices.Equal(got, []string{"review-go", "migrations"}) {
 		t.Fatalf("names = %q", got)
 	}
-	if got := tool.Opened(); len(got) != 0 {
-		t.Fatalf("opened before any call = %q", got)
+	// Not nil either: the run's row takes no NULL for the list.
+	if got := tool.Opened(); got == nil || len(got) != 0 {
+		t.Fatalf("opened before any call = %#v, want an empty list", got)
 	}
 	tests := []struct {
 		name    string
