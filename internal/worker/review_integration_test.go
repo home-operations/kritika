@@ -1435,8 +1435,8 @@ rules:
   - { id: todos, file: .kritika/rules.md }
   - { id: no-panics, rule: Return an error rather than panic. }
   - { id: sql-placeholders, rule: Use query placeholders., paths: ["**/*.sql"] }
-  - { id: into-main, rule: Keep main releasable., whenExpr: 'pr.baseRef == "main"' }
-  - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
+  - { id: into-main, rule: Keep main releasable., when: [{ expr: 'pr.baseRef == "main"' }] }
+  - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
 comments:
   summary: ".kritika/summary.md.tmpl"
 confidence: { model: test/reviewer, threshold: 4 }
@@ -1500,7 +1500,7 @@ review:
 		!strings.HasSuffix(system, "\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
 		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
 	}
-	// Only the rules whose paths the change matches and whose whenExpr the
+	// Only the rules whose paths the change matches and whose conditions the
 	// pull request meets, the file rule under its own heading.
 	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
 		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.\n\n## Repository instructions") ||

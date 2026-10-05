@@ -144,16 +144,20 @@ func TestRulesFor(t *testing.T) {
 	t.Parallel()
 	rules := []configfile.Rule{
 		{ID: "any", Rule: "Check errors."},
-		{ID: "renovate", Rule: "Say what breaks.", WhenExpr: `pr.headRef.startsWith("renovate/")`},
-		{ID: "broken", Rule: "Never applies.", WhenExpr: "pr.draft &&"},
-		{ID: "missing", Rule: "Never applies.", WhenExpr: "pr.nope"},
+		{ID: "renovate", Rule: "Say what breaks.", When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}},
+		{ID: "broken", Rule: "Never applies.", When: []configfile.When{{Expr: "pr.draft &&"}}},
+		{ID: "missing", Rule: "Never applies.", When: []configfile.When{{Expr: "pr.nope"}}},
+		{ID: "either", Rule: "Applies to both bots.", When: []configfile.When{
+			{Name: "broken", Expr: "pr.nope"}, {Name: "deps", Expr: `pr.headRef.startsWith("deps/")`}, {Expr: `pr.headRef.startsWith("renovate/")`},
+		}},
 	}
 	for _, tt := range []struct {
 		headRef string
 		want    []string
 	}{
 		{"feat/x", []string{"any"}},
-		{"renovate/go-1.x", []string{"any", "renovate"}},
+		{"renovate/go-1.x", []string{"any", "renovate", "either"}},
+		{"deps/go-1.x", []string{"any", "either"}},
 	} {
 		var got []string
 		for _, r := range RulesFor(rules, map[string]any{"headRef": tt.headRef}) {

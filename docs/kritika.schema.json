@@ -122,9 +122,22 @@
             "description": "Apply the rule only when a changed path matches one of these.",
             "items": { "$ref": "#/$defs/glob" }
           },
-          "whenExpr": {
-            "type": "string",
-            "description": "A CEL expression over pr, as a trigger.include or trigger.exclude expression sees it, without pr.lines; the rule applies only when it is true."
+          "when": {
+            "type": "array",
+            "description": "Conditions on the pull request: the rule applies only when one of them holds.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["expr"],
+              "properties": {
+                "name": { "type": "string", "description": "What the condition is for." },
+                "expr": {
+                  "type": "string",
+                  "pattern": "\\S",
+                  "description": "A CEL expression over pr, as a trigger.include or trigger.exclude expression sees it, without pr.lines."
+                }
+              }
+            }
           }
         }
       }

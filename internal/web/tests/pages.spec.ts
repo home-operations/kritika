@@ -679,14 +679,15 @@ test.describe('rules', () => {
   test('lists each rule reviews check, where it is set and which repositories read it', async ({ page }) => {
     const file: Rule = { ...g.rule, kind: 'context', id: '', text: '', path: 'db/schema.sql', description: 'the schema', source: 'repository' };
     const fileRule: Rule = { ...g.rule, id: 'house-style', text: '', path: '.kritika/review.md', source: 'repository' };
-    const renovate: Rule = { ...g.rule, id: 'renovate', text: 'Say what the update breaks.', paths: [], whenExpr: 'pr.headRef.startsWith("renovate/")' };
+    const renovate: Rule = { ...g.rule, id: 'renovate', text: 'Say what the update breaks.', paths: [], when: [{ name: '', expr: 'pr.headRef.startsWith("renovate/")' }, { name: 'deps', expr: 'pr.headRef.startsWith("deps/")' }] };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), [file, g.rule, fileRule, renovate]], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
     const r = g.rule;
     const rows = page.locator('.rule-table tbody tr');
     await expect(rows).toHaveCount(4);
-    // A rule with a whenExpr shows it in place of every change.
-    await expect(rows.nth(2).locator('.rule-when code')).toHaveText(renovate.whenExpr);
+    // A rule with conditions shows them in place of every change.
+    await expect(rows.nth(2).locator('.rule-when code')).toHaveText(renovate.when.map((w) => w.expr));
+    await expect(rows.nth(2).locator('.rule-when').nth(1)).toContainText('or deps:');
     await expect(rows.nth(2)).not.toContainText('every change');
     // A file rule names its file over its id.
     await expect(rows.nth(1).locator('.rule-path')).toHaveText(fileRule.path);

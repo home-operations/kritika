@@ -707,17 +707,17 @@ const (
 // request as the findings list counts them, and how many of those were
 // addressed.
 type Rule struct {
-	Kind         RuleKind   `json:"kind"`
-	ID           string     `json:"id"`
-	Text         string     `json:"text"`
-	Path         string     `json:"path"`
-	Description  string     `json:"description"`
-	Paths        []string   `json:"paths"`
-	WhenExpr     string     `json:"whenExpr"`
-	Source       RuleSource `json:"source"`
-	Repositories []string   `json:"repositories"`
-	Findings     int        `json:"findings"`
-	Addressed    int        `json:"addressed"`
+	Kind         RuleKind          `json:"kind"`
+	ID           string            `json:"id"`
+	Text         string            `json:"text"`
+	Path         string            `json:"path"`
+	Description  string            `json:"description"`
+	Paths        []string          `json:"paths"`
+	When         []configfile.When `json:"when"`
+	Source       RuleSource        `json:"source"`
+	Repositories []string          `json:"repositories"`
+	Findings     int               `json:"findings"`
+	Addressed    int               `json:"addressed"`
 }
 
 // AnalyticsTotals is what the account's reviews came to over a window:

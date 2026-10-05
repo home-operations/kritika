@@ -60,7 +60,7 @@
           (!tokens.repo || r.repositories.includes(tokens.repo)) &&
           (!tokens.kind || r.kind === tokens.kind) &&
           (!tokens.source || r.source === tokens.source) &&
-          (!needle || has(r.path) || has(r.description) || has(r.id) || has(r.text) || has(r.whenExpr)),
+          (!needle || has(r.path) || has(r.description) || has(r.id) || has(r.text) || r.when.some((w) => has(w.name) || has(w.expr))),
       )
       .sort((a, b) => KINDS[a.kind].order - KINDS[b.kind].order);
   }
@@ -113,7 +113,7 @@
                 </tr>
               </thead>
               <tbody>
-                {#each rows as r (`${r.kind}\u0000${r.id}\u0000${r.path}\u0000${r.source}\u0000${r.description}\u0000${r.text}\u0000${r.paths.join()}\u0000${r.whenExpr}\u0000${r.repositories.join()}`)}
+                {#each rows as r (`${r.kind}\u0000${r.id}\u0000${r.path}\u0000${r.source}\u0000${r.description}\u0000${r.text}\u0000${r.paths.join()}\u0000${r.when.map((w) => `${w.name}\u0001${w.expr}`).join()}\u0000${r.repositories.join()}`)}
                   {@const k = KINDS[r.kind]}
                   <tr>
                     <td class="wrap">
@@ -140,12 +140,12 @@
                     <td>
                       {#if r.paths.length}
                         <span class="rule-globs">{#each r.paths as p (p)}<code>{p}</code>{/each}</span>
-                      {:else if !r.whenExpr}<span class="muted small">every change</span>{/if}
-                      {#if r.whenExpr}
-                        <span class="rule-when" title="Applies only to a pull request this is true of"
-                          ><span class="small muted">when</span> <code>{r.whenExpr}</code></span
+                      {:else if !r.when.length}<span class="muted small">every change</span>{/if}
+                      {#each r.when as w, i (i)}
+                        <span class="rule-when" title="Applies only to a pull request one of these is true of"
+                          ><span class="small muted">{i ? 'or' : 'when'}{w.name ? ` ${w.name}:` : ''}</span> <code>{w.expr}</code></span
                         >
-                      {/if}
+                      {/each}
                     </td>
                     <td class="small" class:mono={r.source === 'repository'}>{SOURCES[r.source] ?? r.source}</td>
                     <td class="wrap" title={r.repositories.join('\n')}>

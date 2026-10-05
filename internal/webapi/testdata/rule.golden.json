@@ -5,7 +5,7 @@
   "path": "",
   "description": "",
   "paths": ["**/*.go"],
-  "whenExpr": "",
+  "when": [],
   "source": "entry",
   "repositories": ["alpha/one"],
   "findings": 3,
