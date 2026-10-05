@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.25](https://github.com/home-operations/kritika/compare/0.0.24...0.0.25) (2026-10-05)
+
+
+### Bug Fixes
+
+* **web:** call the settings' automatic choices Auto and the menu link Settings ([#513](https://github.com/home-operations/kritika/issues/513)) ([a0d1481](https://github.com/home-operations/kritika/commit/a0d1481405b8c51135258f90c13df02dfbb9011d))
+* **web:** keep the tab strips from scrolling vertically ([#515](https://github.com/home-operations/kritika/issues/515)) ([cff1249](https://github.com/home-operations/kritika/commit/cff1249d727b75918e1fda6adf37e3d03d9dfed9))
+
 ## [0.0.24](https://github.com/home-operations/kritika/compare/0.0.23...0.0.24) (2026-10-05)
 
 
