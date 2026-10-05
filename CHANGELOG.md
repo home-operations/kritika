@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.26](https://github.com/home-operations/kritika/compare/0.0.25...0.0.26) (2026-10-05)
+
+
+### Features
+
+* **ingest:** start a review when a label change lets one through ([#517](https://github.com/home-operations/kritika/issues/517)) ([b95c996](https://github.com/home-operations/kritika/commit/b95c9965ec7b82f26c09a4672d440cd782628862))
+* **worker:** record a label change's repeated skip once ([#516](https://github.com/home-operations/kritika/issues/516)) ([53004e2](https://github.com/home-operations/kritika/commit/53004e2e230ac6548542fe1243291ffd2d26cdbe))
+
 ## [0.0.25](https://github.com/home-operations/kritika/compare/0.0.24...0.0.25) (2026-10-05)
 
 
