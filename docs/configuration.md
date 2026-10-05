@@ -359,7 +359,9 @@ approved, `low` unless set. It bears on approvals alone, never on the commit
 status: a risky change that scores well passes its check and waits for a
 person. With `review.approve` on, a pull request is approved when its
 score reaches `confidence.threshold` and its risk is within
-`confidence.risk`, so one threshold decides the check and the approval. `confidence.instructions` is plain guidance to the scorer on rating
+`confidence.risk`, so one threshold decides the check and the approval.
+A bot's unchanged rebase, skipped with the score it carries, has that
+score decide its approval the same way. `confidence.instructions` is plain guidance to the scorer on rating
 risk in your code, such as "Renovate patch bumps of container images are
 low" or "anything under `db/migrations` is critical"; it refines the table
 above and changes nothing else about the score. It is the admin's alone, so

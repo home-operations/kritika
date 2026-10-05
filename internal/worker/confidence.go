@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -198,4 +199,19 @@ func skipVerdict(carried *review.Confidence, reason string) (forge.StatusState, 
 	default:
 		return forge.StatusFailure, fmt.Sprintf("confidence %d/%d, below %d, %s", carried.Score, review.MaxConfidence, carried.Threshold, desc)
 	}
+}
+
+// carryApproval applies the verdict an unchanged patch carries to
+// kritika's approval, where the repository has it approve: the skip
+// reviewed nothing, but the threshold or the risk ceiling may have moved
+// since the score was given, and an approval must not outlive them. The
+// head is the one the skip was just decided for.
+func carryApproval(
+	ctx context.Context, logger *slog.Logger, client forge.Client, pr *pullRequest, settings configfile.Settings, carried *review.Confidence,
+) {
+	if carried == nil || !settings.Review.Approve {
+		return
+	}
+	p := &publishPhase{client: client, pr: pr, settings: settings, confidence: carried, logger: logger}
+	p.approve(ctx, review.Counts{}, true)
 }

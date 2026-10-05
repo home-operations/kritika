@@ -334,6 +334,7 @@ func (w *Review) afterRun(
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
+		carryApproval(ctx, logger, client, pr, eff.Settings, carried)
 		return prepared{}, store.ReviewSkipped, nil
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
@@ -441,7 +442,7 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 // never skipped. It returns the forge patch id the review records, and
 // whether it ended the review, with the error of recording that.
 func (w *Review) skipUnchangedBot(
-	ctx context.Context, e earlyEnd, client forge.Client, owner, repo string, want configfile.Confidence,
+	ctx context.Context, e earlyEnd, client forge.Client, owner, repo string, settings configfile.Settings,
 ) (string, bool, error) {
 	if !e.pr.authorIsBot || e.args.Trigger == jobs.TriggerManual {
 		return "", false, nil
@@ -453,7 +454,7 @@ func (w *Review) skipUnchangedBot(
 	var skippable bool
 	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		var err error
-		e.carried, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", want)
+		e.carried, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", settings.Confidence)
 		return err
 	}); err != nil {
 		return "", true, err
@@ -463,7 +464,11 @@ func (w *Review) skipUnchangedBot(
 	}
 	e.logger.Info("review skipped before its runner: bot patch unchanged", "forge_patch_id", review.ShortSHA(patch))
 	e.forgePatch, e.skip = patch, runner.SkipUnchangedPatch
-	return patch, true, w.end(ctx, e, store.ReviewSkipped, "")
+	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
+		return patch, true, err
+	}
+	carryApproval(ctx, e.logger, client, e.pr, settings, e.carried)
+	return patch, true, nil
 }
 
 // begun is a review job past everything before its admission: its pull
@@ -542,7 +547,7 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
-	forgePatch, done, err := w.skipUnchangedBot(ctx, e, client, owner, repo, eff.Confidence)
+	forgePatch, done, err := w.skipUnchangedBot(ctx, e, client, owner, repo, eff.Settings)
 	if done {
 		return begun{}, true, err
 	}

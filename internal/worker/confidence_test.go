@@ -1,8 +1,10 @@
 package worker
 
 import (
+	"log/slog"
 	"testing"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
 )
@@ -55,6 +57,44 @@ func TestSkipVerdict(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if state, desc := skipVerdict(tt.carried, "why"); state != tt.wantState || desc != tt.wantDesc {
 				t.Fatalf("skipVerdict = %s %q, want %s %q", state, desc, tt.wantState, tt.wantDesc)
+			}
+		})
+	}
+}
+
+// TestCarryApproval: an unchanged patch's carried score is held to the
+// threshold and the risk ceiling asked for now, and decides kritika's
+// approval only where the repository has it approve.
+func TestCarryApproval(t *testing.T) {
+	settings := func(approve bool, threshold int) configfile.Settings {
+		return configfile.Settings{
+			Review:     configfile.Review{Approve: approve},
+			Confidence: configfile.Confidence{Model: "p/judge", Threshold: threshold, Risk: review.RiskLow},
+		}
+	}
+	carried := func(threshold int) *review.Confidence {
+		return &review.Confidence{Score: 4, Threshold: threshold, Risk: review.RiskLow}
+	}
+	tests := []struct {
+		name                string
+		settings            configfile.Settings
+		carried             *review.Confidence
+		approved, dismissed string
+	}{
+		{name: "nothing carried", settings: settings(true, 4)},
+		{name: "approvals off", settings: settings(false, 4), carried: carried(4)},
+		{name: "a score that still passes approves the new head", settings: settings(true, 4), carried: carried(4),
+			approved: "o/r#7@abcdef1234: kritika: confidence 4/5 with low risk at abcdef1."},
+		{name: "a threshold raised since withdraws", settings: settings(true, 5), carried: carried(5),
+			dismissed: "o/r#7: kritika: confidence 4/5 is below the threshold of 5 at abcdef1."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &approvalForge{}
+			carryApproval(t.Context(), slog.New(slog.DiscardHandler), f, &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"},
+				tt.settings, tt.carried)
+			if f.approved != tt.approved || f.dismissed != tt.dismissed {
+				t.Fatalf("approved %q dismissed %q, want %q and %q", f.approved, f.dismissed, tt.approved, tt.dismissed)
 			}
 		})
 	}
