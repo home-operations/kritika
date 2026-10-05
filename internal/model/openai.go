@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -53,6 +54,10 @@ type OpenAIConfig struct {
 	// leaves it at zero: the gateway owns retrying, with the provider's
 	// retries, and the SDK's own would multiply its attempts.
 	Retries int
+	// RequestTimeout bounds one request; zero is StepTimeout, a
+	// provider's. The runner's client of the gateway allows the gateway's
+	// whole step budget.
+	RequestTimeout time.Duration
 }
 
 // sessionHeader carries StepRequest.Session to OpenCode.
@@ -84,7 +89,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
 	opts = append(opts, option.WithHeader("User-Agent", userAgent()), option.WithMaxRetries(cfg.Retries),
-		option.WithRequestTimeout(StepTimeout))
+		option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, StepTimeout)))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}

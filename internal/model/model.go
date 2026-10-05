@@ -228,12 +228,24 @@ type Embedder interface {
 	Embed(ctx context.Context, inputs []string) (vectors [][]float32, tokens int64, err error)
 }
 
-// StepTimeout bounds one request for a step, long enough for a step's whole
-// output from a slow model. A provider that takes the request and never
-// answers fails the step as a timeout, which is Transient, so the gateway's
-// retries and its fallback provider still get their turn inside the run's
-// deadline. A variable for the tests.
+// StepTimeout bounds one request to a provider for a step, long enough for
+// a step's whole output from a slow model. A provider that takes the
+// request and never answers fails the step as a timeout, which is
+// Transient, so the gateway's retries and its fallback provider still get
+// their turn. A variable for the tests.
 var StepTimeout = 5 * time.Minute
+
+// GatewayStepBudget bounds what the gateway spends on one step, its
+// provider's attempts, their backoff and the fallback's together: two
+// provider timeouts and the waits between. GatewayRequestTimeout bounds the
+// runner's request to the gateway for that step: the budget and a minute
+// for the answer to arrive, so a provider that stalls is the gateway's to
+// give up on, retry or replace, and never the runner's to cut off first.
+// Variables for the tests.
+var (
+	GatewayStepBudget     = 2*StepTimeout + 2*time.Minute
+	GatewayRequestTimeout = GatewayStepBudget + time.Minute
+)
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
 // provider's default endpoint; client may be nil. The adapter sends each
