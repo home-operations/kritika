@@ -238,13 +238,15 @@ var StepTimeout = 5 * time.Minute
 // GatewayStepBudget bounds what the gateway spends on one step, its
 // provider's attempts, their backoff and the fallback's together: two
 // provider timeouts and the waits between. GatewayRequestTimeout bounds the
-// runner's request to the gateway for that step: the budget and a minute
-// for the answer to arrive, so a provider that stalls is the gateway's to
-// give up on, retry or replace, and never the runner's to cut off first.
-// Variables for the tests.
+// runner's request to the gateway for that step: the budget, then the time
+// the gateway may take to charge and record an answered step, each bounded
+// at two minutes on a context of its own, before it writes the answer. So
+// a provider that stalls is the gateway's to give up on, retry or replace,
+// and never the runner's to cut off first, and an answered step is never
+// abandoned while the gateway settles it. Variables for the tests.
 var (
 	GatewayStepBudget     = 2*StepTimeout + 2*time.Minute
-	GatewayRequestTimeout = GatewayStepBudget + time.Minute
+	GatewayRequestTimeout = GatewayStepBudget + 5*time.Minute
 )
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
