@@ -40,11 +40,13 @@ const (
 
 // The keys the environment sets as well (instance.go).
 const (
-	keyModel    = "review.model"
-	keyFallback = "review.fallback"
-	keyFeedback = "review.feedback"
-	keyForks    = "trigger.forks"
-	keySettle   = "trigger.settle"
+	keyModel     = "review.model"
+	keyFallback  = "review.fallback"
+	keyFeedback  = "review.feedback"
+	keyScorer    = "confidence.model"
+	keyThreshold = "confidence.threshold"
+	keyForks     = "trigger.forks"
+	keySettle    = "trigger.settle"
 )
 
 // Policies is the table.
@@ -56,6 +58,8 @@ var Policies = []Policy{
 	{Key: "review.fixes", Scopes: everyScope},
 	{Key: "review.approve", Scopes: everyScope},
 	{Key: keyIncremental, Scopes: everyScope},
+	{Key: keyScorer, Scopes: everyScope},
+	{Key: keyThreshold, Scopes: everyScope},
 	{Key: "trigger.filterExpr", Scopes: everyScope},
 	{Key: keyForks, Scopes: everyScope},
 	{Key: keySettle, Scopes: everyScope},

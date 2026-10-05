@@ -12,6 +12,10 @@
 {{ else -}}
 **No findings**
 {{ end }}
+{{ if .Confidence -}}
+**Confidence {{ .Confidence.Score }}/5**{{ if not .Confidence.Passed }}, below the {{ .Confidence.Threshold }} this repository asks for{{ end }}{{ if .Confidence.Reason }}: {{ .Confidence.Reason }}{{ end }}
+
+{{ end -}}
 {{ if and .Incremental .PriorHeadSHA -}}
 _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .PriorHeadSHA }}`]({{ .PriorHeadURL }}){{ else }}`{{ trunc 7 .PriorHeadSHA }}`{{ end }}._
 

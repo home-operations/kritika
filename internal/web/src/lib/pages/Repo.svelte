@@ -57,6 +57,8 @@
   const settingRows: Row[] = [
     { label: 'Review model', key: 'review.model', value: (s) => s.models.review || '—', mono: true },
     { label: 'Fallback model', key: 'review.fallback', value: (s) => s.models.fallback || '—', mono: true },
+    { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },
+    { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
     { label: 'Filter', key: 'trigger.filterExpr', value: (s) => s.filter || '—', mono: true },
     { label: 'Forks', key: 'trigger.forks', value: (s) => (s.forks ? 'reviewed' : 'skipped') },
     { label: 'Ignore', key: 'trigger.ignore', value: (s) => list(s.ignore), mono: true },

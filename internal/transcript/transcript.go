@@ -20,14 +20,15 @@ type Kind string
 
 // Model call kinds.
 const (
-	KindAgentStep Kind = "agent_step"
-	KindFollowUp  Kind = "followup"
+	KindAgentStep  Kind = "agent_step"
+	KindFollowUp   Kind = "followup"
+	KindConfidence Kind = "confidence"
 )
 
 // Valid reports whether k is a model call kind.
 func (k Kind) Valid() bool {
 	switch k {
-	case KindAgentStep, KindFollowUp:
+	case KindAgentStep, KindFollowUp, KindConfidence:
 		return true
 	}
 	return false

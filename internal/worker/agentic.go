@@ -155,9 +155,15 @@ func (w *Review) agentPrompt(
 			// A review someone asked for is never too large.
 			p.MaxChangedLines = eff.MaxChangedLines
 		}
-		if pr.dedupesBotPatch(trigger) {
-			p.UnchangedPatchID, err = lastPatchID(ctx, tx, pr.id, reviewID)
+		if !pr.dedupesBotPatch(trigger) {
+			return nil
 		}
+		// A patch whose last review left no score to carry is reviewed
+		// again where a score is asked for.
+		if _, skippable, err := carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence); err != nil || !skippable {
+			return err
+		}
+		p.UnchangedPatchID, err = lastPatchID(ctx, tx, pr.id, reviewID)
 		return err
 	})
 	if err != nil {

@@ -52,7 +52,14 @@
       "createdAt": "2026-09-01T12:00:00Z",
       "finishedAt": "2026-09-01T12:01:30Z",
       "skipReason": "filtered",
-      "error": ""
+      "error": "",
+      "confidence": {
+        "score": 3,
+        "threshold": 5,
+        "passed": false,
+        "reason": "The unchecked error stands.",
+        "model": "acme/judge"
+      }
     }
   ],
   "followups": [

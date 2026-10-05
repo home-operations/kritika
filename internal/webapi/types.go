@@ -182,6 +182,7 @@ type RepoSettings struct {
 	MaxChangedLines int                      `json:"maxChangedLines"`
 	MaxDeltaFiles   int                      `json:"maxDeltaFiles"`
 	Review          configfile.Review        `json:"review"`
+	Confidence      configfile.Confidence    `json:"confidence"`
 	Agent           configfile.AgentSettings `json:"agent"`
 	Limits          configfile.Limits        `json:"limits"`
 }
@@ -319,6 +320,18 @@ type Review struct {
 	// runner's unchanged_patch or too_large.
 	SkipReason string `json:"skipReason"`
 	Error      string `json:"error"`
+	// Confidence is null for a review that was not scored.
+	Confidence *Confidence `json:"confidence"`
+}
+
+// Confidence is the score a second model gave a reviewed pull request, out
+// of 5, against the threshold its repository set.
+type Confidence struct {
+	Score     int    `json:"score"`
+	Threshold int    `json:"threshold"`
+	Passed    bool   `json:"passed"`
+	Reason    string `json:"reason"`
+	Model     string `json:"model"`
 }
 
 // Followup is one @-mention of the bot and what came of it.

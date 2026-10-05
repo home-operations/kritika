@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // ProviderType selects the model adapter a provider uses.
@@ -213,11 +214,12 @@ type Defaults struct {
 type Overrides struct {
 	// Enabled is where a repository starts, on or off, until an admin turns
 	// it on or off in the dashboard. A repository entry may not set it.
-	Enabled  *bool        `yaml:"enabled,omitempty"`
-	Review   ReviewSpec   `yaml:"review,omitempty"`
-	Trigger  TriggerSpec  `yaml:"trigger,omitempty"`
-	Comments CommentsSpec `yaml:"comments,omitempty"`
-	Agent    Agent        `yaml:"agent,omitempty"`
+	Enabled    *bool          `yaml:"enabled,omitempty"`
+	Review     ReviewSpec     `yaml:"review,omitempty"`
+	Confidence ConfidenceSpec `yaml:"confidence,omitempty"`
+	Trigger    TriggerSpec    `yaml:"trigger,omitempty"`
+	Comments   CommentsSpec   `yaml:"comments,omitempty"`
+	Agent      Agent          `yaml:"agent,omitempty"`
 	// Rules add to the broader scope's, one with an id already listed
 	// replacing that rule where it stands.
 	Rules   []Rule        `yaml:"rules,omitempty"`
@@ -239,6 +241,32 @@ type ReviewSpec struct {
 	Approve     *bool     `yaml:"approve,omitempty"`
 	Incremental *int      `yaml:"incremental,omitempty"`
 }
+
+// ConfidenceSpec sets how a review is judged at one scope: the model that
+// scores the reviewed pull request, a model written here, even empty,
+// replacing the broader scope's, and the score the pull request must
+// reach.
+type ConfidenceSpec struct {
+	Model     *ModelRef `yaml:"model,omitempty"`
+	Threshold *int      `yaml:"threshold,omitempty"`
+}
+
+// Confidence is how a repository's reviews are judged, as resolved. With no
+// Model nothing is scored.
+type Confidence struct {
+	Model ModelRef `json:"model"`
+	// Threshold is the score, out of MaxConfidence, a pull request must
+	// reach for its commit status to pass.
+	Threshold int `json:"threshold"`
+}
+
+// MaxConfidence is the highest score, and DefaultConfidenceThreshold the
+// threshold no scope sets: a pull request passes only when nothing stands
+// against it.
+const (
+	MaxConfidence              = review.MaxConfidence
+	DefaultConfidenceThreshold = MaxConfidence
+)
 
 // TriggerSpec sets which pull requests get a review, and when, at one
 // scope.
@@ -682,6 +710,7 @@ type Settings struct {
 	Agent           AgentSettings
 	Incremental     IncrementalSettings
 	Review          Review
+	Confidence      Confidence
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.

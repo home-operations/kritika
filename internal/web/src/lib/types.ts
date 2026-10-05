@@ -84,7 +84,7 @@ export type JobState =
 // Why a job's last attempt failed, where the server can tell; '' otherwise.
 export type JobCause = 'forge_unavailable';
 export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call';
-export type TranscriptKind = 'agent_step' | 'followup';
+export type TranscriptKind = 'agent_step' | 'followup' | 'confidence';
 export type MessageRole = 'user' | 'assistant';
 
 export interface MonthUsage {
@@ -228,6 +228,7 @@ export interface RepoSettings {
   maxChangedLines: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
+  confidence: { model: string; threshold: number };
   agent: AgentLimits;
   limits: Limits;
 }
@@ -354,6 +355,18 @@ export interface Review {
   finishedAt: string | null;
   skipReason: SkipReason;
   error: string;
+  // confidence is null for a review that was not scored.
+  confidence: Confidence | null;
+}
+
+// Confidence is the score a second model gave a reviewed pull request, out
+// of 5, against the threshold its repository set.
+export interface Confidence {
+  score: number;
+  threshold: number;
+  passed: boolean;
+  reason: string;
+  model: string;
 }
 
 export interface Followup {

@@ -115,6 +115,20 @@ func TestMerge(t *testing.T) {
 				`.kritika.yaml: review.fallback "p" was dropped; allowed: a model of own, p`,
 			},
 		},
+		{
+			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, threshold: 0 }\n",
+			want: func(s *configfile.Settings) {
+				s.Confidence = configfile.Confidence{Model: "own/judge", Threshold: 0}
+			},
+		},
+		{
+			name: "a confidence model of another provider and a threshold off the scale are dropped",
+			doc:  "confidence: { model: q/judge, threshold: 6 }\n",
+			dropped: []string{
+				`.kritika.yaml: confidence.threshold 6 was dropped; allowed: 0 to 5`,
+				`.kritika.yaml: confidence.model "q/judge" was dropped; allowed: a model of own, p`,
+			},
+		},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
 		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},

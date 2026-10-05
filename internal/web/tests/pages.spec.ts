@@ -802,6 +802,7 @@ test.describe('review', () => {
     const r = g.reviewDetail.review;
     const fact = (name: string) => page.locator('.page-head .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
     await expect(fact('Scope')).toHaveText(new RegExp(`^${r.scope}\\s\\(${r.scopeReason}\\)$`));
+    await expect(fact('Confidence')).toHaveText(new RegExp(`^${r.confidence!.score}/5\\s\\(below ${r.confidence!.threshold}\\)$`));
     await expect(fact('Model')).toHaveText(r.model);
 
     for (const [tab, text] of [

@@ -31,6 +31,23 @@
         }
       }
     },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How a review is judged: a second model scores the reviewed pull request from 0 to 5.",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/model",
+          "description": "The model that scores a reviewed pull request, replacing the admin's."
+        },
+        "threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "The score a pull request must reach for its commit status to pass, replacing the admin's."
+        }
+      }
+    },
     "trigger": {
       "type": "object",
       "additionalProperties": false,

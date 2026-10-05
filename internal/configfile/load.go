@@ -74,7 +74,9 @@ func Load(name string) (*File, error) {
 
 // overlayPrefixes start the environment variables that overlay the file;
 // their values are part of the configuration, and so of its hash.
-var overlayPrefixes = []string{authEnvPrefix, connectionEnvPrefix, providerEnvPrefix, reviewEnvPrefix, triggerEnvPrefix, embeddingEnvPrefix}
+var overlayPrefixes = []string{
+	authEnvPrefix, connectionEnvPrefix, providerEnvPrefix, reviewEnvPrefix, confidenceEnvPrefix, triggerEnvPrefix, embeddingEnvPrefix,
+}
 
 // configHash identifies a configuration: the file's bytes, the overlay
 // variables that change what it says, and the values of the secrets it
@@ -464,6 +466,14 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if err := f.checkModels(where+"review", t, r.Review); err != nil {
 		return err
 	}
+	if ref := r.Confidence.Model; ref != nil && *ref != "" {
+		if err := f.checkModelRef(where+keyScorer, t, *ref); err != nil {
+			return err
+		}
+	}
+	if th := r.Confidence.Threshold; th != nil && !ValidConfidence(*th) {
+		return fmt.Errorf("configfile: %s%s must be between 0 and %d, got %d", where, keyThreshold, MaxConfidence, *th)
+	}
 	if r.Trigger.Settle != nil && *r.Trigger.Settle < 0 {
 		return fmt.Errorf("configfile: %strigger.settle must not be negative", where)
 	}
@@ -572,6 +582,9 @@ func (c ContextFile) Check() error {
 
 // ValidGlob reports whether g is a doublestar glob a setting may take.
 func ValidGlob(g string) bool { return strings.TrimSpace(g) != "" && doublestar.ValidatePattern(g) }
+
+// ValidConfidence reports whether n is a confidence score.
+func ValidConfidence(n int) bool { return n >= 0 && n <= MaxConfidence }
 
 // ValidFeedback reports whether s is a feedback level.
 func ValidFeedback(s string) bool {

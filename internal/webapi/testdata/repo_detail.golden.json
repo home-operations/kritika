@@ -48,6 +48,10 @@
       ],
       "feedback": "standard"
     },
+    "confidence": {
+      "model": "openrouter/acme-judge",
+      "threshold": 5
+    },
     "agent": {
       "maxSteps": 60,
       "maxToolOutputBytes": 32768,
@@ -100,6 +104,10 @@
           }
         ],
         "feedback": "standard"
+      },
+      "confidence": {
+        "model": "openrouter/acme-judge",
+        "threshold": 5
       },
       "agent": {
         "maxSteps": 60,

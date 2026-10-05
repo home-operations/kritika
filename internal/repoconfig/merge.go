@@ -27,7 +27,8 @@ type Merged struct {
 // none, over the admin's settings op. The file narrows what an admin allows
 // (enabled, filter, ignore), appends its context files and rules to the
 // admin's, may only turn review.fixes on, and replaces the models,
-// the feedback level, how the review comments and whether it approves. A model must be one of a provider
+// the feedback level, the confidence threshold, how the review comments
+// and whether it approves. A model must be one of a provider
 // op.Providers names. A value it may not take is dropped, and Dropped says
 // so. A file that does not parse is ignored as a whole: op stands, and the
 // error says why.
@@ -88,6 +89,13 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		}
 		m.Review.Rules = append(m.Review.Rules, r)
 	}
+	switch th := f.Confidence.Threshold; {
+	case th == nil:
+	case configfile.ValidConfidence(*th):
+		m.Confidence.Threshold = *th
+	default:
+		m.drop("confidence.threshold", strconv.Itoa(*th), "0 to "+strconv.Itoa(configfile.MaxConfidence))
+	}
 	m.choose(&f, op.Providers)
 	return m, nil
 }
@@ -101,6 +109,7 @@ func (m *Merged) choose(f *File, providers []string) {
 	}{
 		{"review.model", f.Review.Model, &m.Models.Review},
 		{"review.fallback", f.Review.Fallback, &m.Models.Fallback},
+		{"confidence.model", f.Confidence.Model, &m.Confidence.Model},
 	} {
 		if c.want == "" {
 			continue

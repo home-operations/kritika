@@ -383,8 +383,8 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 
 // fakeCompleter answers a review's first step by submitting one finding on
 // the first added line of main.go and one that cannot be anchored, and a
-// follow-up with a fixed reply, as the forced tool call a model.Structured
-// makes.
+// follow-up with a fixed reply or a confidence call with a full score, as
+// the forced tool call a model.Structured makes.
 type fakeCompleter struct {
 	mu       sync.Mutex
 	calls    int
@@ -416,6 +416,9 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	}
 	if isReply {
 		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
+	}
+	if tool == "confidence" {
+		return answer(`{"score":5,"reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
@@ -1090,7 +1093,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 	t.Cleanup(gw.Close)
 	river.AddWorker(workers, &Review{
-		Base: wb, Executor: exec, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour,
+		Base: wb, Executor: exec, Steppers: steppers, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour,
 		// A stopped run's runner never started here, so no agent row comes.
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
@@ -1432,6 +1435,7 @@ rules:
   - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
 comments:
   summary: ".kritika/summary.md.tmpl"
+confidence: { model: test/reviewer, threshold: 4 }
 review:
   approve: true
 `,
@@ -1483,8 +1487,9 @@ review:
 	if status, _, _ := waitReview(codeHead); status != "completed" {
 		t.Fatalf("status = %s, want completed", status)
 	}
+	// The review's own prompt is the one before its confidence call's.
 	fc.mu.Lock()
-	system := fc.systems[len(fc.systems)-1]
+	system := fc.systems[len(fc.systems)-2]
 	fc.mu.Unlock()
 	// The root's AGENTS.md is the instructions; web/ is untouched.
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") ||
@@ -1521,6 +1526,7 @@ review:
 		t.Fatalf("sticky comment for PR 3 = %q", sticky)
 	}
 	checkWithdrawn(t, lf)
+	checkConfidence(ctx, t, appStore, lf, fc, accountID, codeHead)
 
 	// The same kind of change carrying the label the filter excludes.
 	labelledHead := commit("labelledHead", map[string]string{"main.go": "package main\n\nfunc e() {}\n"})
@@ -1613,6 +1619,46 @@ func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, acc
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("reviews of %s = %v, want %v", head, got, want)
+}
+
+// checkConfidence asserts what a review does where the merge-base
+// .kritika.yaml asks for a confidence score its important finding keeps
+// the pull request under: the score is held to that finding's ceiling,
+// recorded with its call and its cost, and fails the commit status.
+func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID, head string) {
+	t.Helper()
+	fc.mu.Lock()
+	scorer := fc.systems[len(fc.systems)-1]
+	fc.mu.Unlock()
+	if scorer != review.ConfidenceSystem {
+		t.Fatalf("the last call was not the confidence model's:\n%s", scorer)
+	}
+	var confidence string
+	var calls, charged int
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT v.confidence::text,
+				(SELECT count(*) FROM model_calls m WHERE m.review_id = v.id AND m.kind = 'confidence'),
+				(SELECT count(*) FROM usage u WHERE u.review_id = v.id AND u.role = 'confidence' AND u.model = 'reviewer')
+			FROM reviews v WHERE v.head_sha = $1 AND v.status = 'completed'`, head).Scan(&confidence, &calls, &charged)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var got review.Confidence
+	if err := json.Unmarshal([]byte(confidence), &got); err != nil {
+		t.Fatalf("confidence = %s, %v", confidence, err)
+	}
+	if want := (review.Confidence{Score: 3, Threshold: 4, Reason: "Nothing else stands out.", Model: "reviewer"}); got != want {
+		t.Fatalf("confidence = %+v, want %+v", got, want)
+	}
+	if calls != 1 || charged != 1 {
+		t.Fatalf("%d confidence call(s) recorded and %d charged, want one of each", calls, charged)
+	}
+	lf.mu.Lock()
+	status := lf.status
+	lf.mu.Unlock()
+	if status != "failure: kritika: confidence 3/5, below 4, 1 finding(s)" {
+		t.Fatalf("status = %q", status)
+	}
 }
 
 // checkWithdrawn asserts what a review with an important finding does
