@@ -500,7 +500,7 @@ func (w *Review) begin(
 		logger.Info("review snoozed until its settle time is over", "for", wait.Round(time.Second))
 		return begun{}, true, river.JobSnooze(wait)
 	}
-	if done, err := w.skipByRepo(ctx, e, &eff); done {
+	if done, err := w.skipByRepo(ctx, e, job, &eff); done {
 		return begun{}, true, err
 	}
 	if eff.Models.Review != settings.Models.Review {

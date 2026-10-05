@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -91,10 +94,12 @@ func settleLeft(trigger string, settle time.Duration, created, now time.Time) ti
 //
 // A label change that reaches ingest while this job is still to finish
 // queues nothing, the job being the head's review to come; one that lands
-// after the job read the labels would then go unjudged, so a skip whose
-// labels moved under it is judged again.
-func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bool, error) {
-	for again := false; ; again = true {
+// after the job read the labels would then go unjudged. So a skip is final
+// only once the labels are seen unchanged in the transaction that
+// completes the job, under the pull request's row lock that ingest's own
+// write waits on; labels that moved are judged again.
+func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], eff *Effective) (bool, error) {
+	for {
 		var judged repoconfig.PullRequest
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 			var err error
@@ -116,39 +121,51 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, eff *Effective) (bo
 		if reason == "" {
 			return false, nil
 		}
-		// A label change that leaves the head skipped as it was is the same
-		// skip, not a second one: its row and status stand.
-		repeat := false
-		if again || jobs.LabelChange(e.args.Trigger) {
-			if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-				var err error
-				repeat, err = store.HeadSkipped(ctx, tx, e.pr.id, e.args.HeadSHA, string(reason))
-				return err
-			}); err != nil {
-				return true, err
-			}
+		if err := w.recordSkip(ctx, e, string(reason)); err != nil {
+			return true, err
 		}
-		if repeat {
-			e.logger.Info("review still skipped after a label change", "reason", reason)
-		} else {
-			e.logger.Info("review skipped before its runner", "reason", reason)
-			e.skip = string(reason)
-			if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
-				return true, err
-			}
-		}
-		var now repoconfig.PullRequest
+		moved := false
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-			var err error
-			now, err = loadFilterPR(ctx, tx, e.pr.id)
+			var labels json.RawMessage
+			if err := tx.QueryRow(ctx, `SELECT labels FROM pull_requests WHERE id = $1 FOR UPDATE`, e.pr.id).Scan(&labels); err != nil {
+				return fmt.Errorf("worker: read the pull request's labels: %w", err)
+			}
+			if moved = !bytes.Equal(labels, judged.Labels); moved {
+				return nil
+			}
+			_, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 			return err
 		}); err != nil {
 			return true, err
 		}
-		if bytes.Equal(now.Labels, judged.Labels) {
+		if !moved {
 			return true, nil
 		}
 	}
+}
+
+// recordSkip records the skip for reason and says so on the head commit,
+// unless it is the skip the head's latest review already is: the same
+// job judging again, a retry, or a label change that left the head where
+// it was. A re-run someone asked for is recorded all the same.
+func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) error {
+	if e.args.Trigger != jobs.TriggerManual {
+		var repeat bool
+		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
+			var err error
+			repeat, err = store.HeadSkipped(ctx, tx, e.pr.id, e.args.HeadSHA, reason)
+			return err
+		}); err != nil {
+			return err
+		}
+		if repeat {
+			e.logger.Info("review still skipped", "reason", reason)
+			return nil
+		}
+	}
+	e.logger.Info("review skipped before its runner", "reason", reason)
+	e.skip = reason
+	return w.end(ctx, e, store.ReviewSkipped, "")
 }
 
 // filterVars rebuilds the filter's pr variable for a review started by
