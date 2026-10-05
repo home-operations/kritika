@@ -27,8 +27,9 @@ secret came from from its own environment. A variable under
 one of these prefixes that names no key is refused at startup rather than
 ignored.
 
-A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
-`trigger.filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
+A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`,
+or is the `expr` of a condition: `roleMappingExpr`, a rule's `whenExpr`,
+and each item of `trigger.include` and `trigger.exclude`.
 
 kritika reads the file and its variables once, at startup: a change takes a
 restart, and the chart rolls the pods when its `configFile` changes.
@@ -309,8 +310,8 @@ one. They come in five groups:
   `feedback`, `fixes`, `approve` and `incremental`.
 - `confidence`: how a review is judged: `model`, `threshold`, `risk` and
   `instructions`.
-- `trigger`: which pull requests are reviewed, and when: `filterExpr`,
-  `forks`, `settle`, `ignore`, `limit` and `lines`.
+- `trigger`: which pull requests are reviewed, and when: `include`,
+  `exclude`, `settle`, `ignore`, `limit` and `lines`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
   `tokens`, `timeout`, `commands` and `commandTimeout`.
@@ -374,6 +375,9 @@ review:
   feedback: detailed
 trigger:
   settle: 30s
+  exclude:
+    - expr: pr.draft
+    - { name: forks, expr: pr.fork }
 rules:
   - { id: no-tokens, rule: "Never log a token, key or password." }
   - id: renovate
@@ -390,14 +394,17 @@ repositories:
         }
   org-1/repo-1:
     review: { feedback: minimal }
+    trigger:
+      include:
+        - expr: pr.baseRef == "main"
     agent: { commands: [gh, curl] }
 ```
 
 The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
 `review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
-`confidence.threshold`, `confidence.risk`, `trigger.filterExpr`,
-`trigger.ignore`, `comments`, `rules` and `context`; see
+`confidence.threshold`, `confidence.risk`, `trigger.include`,
+`trigger.exclude`, `trigger.ignore`, `comments`, `rules` and `context`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
 
@@ -426,9 +433,6 @@ own:
   to run; a larger one is skipped before any model is called, and the
   commit status says so. Unlimited unless set. `@<app slug> review` reviews
   it anyway.
-- `trigger.forks: true`: reviews pull requests from forks without being asked; by
-  default one is reviewed only when a maintainer comments
-  `@<app slug> review`.
 - `review.incremental`: how many files may change since the last
   review before a re-review covers the whole pull request again. A re-run
   at the head the last review saw always covers the whole pull request.
@@ -438,7 +442,42 @@ own:
 A value applies in this order: kritika's default, the file's root,
 `owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
 value replaces the broader one's, except `trigger.ignore` globs, which add
-up, and `rules`, which add up by id.
+up, `rules`, which add up by id, and `trigger.include` and
+`trigger.exclude`, which add up by name.
+
+`trigger.include` and `trigger.exclude` decide which pull requests are
+reviewed: one is reviewed when one `include` condition holds, or there are
+none, and no `exclude` condition holds. Each item is `{ expr }`, a CEL
+expression over the pull request
+([the `pr` variable](repository-config.md#include-and-exclude-recipes)),
+with an optional `name`:
+
+```yaml
+trigger:
+  include:
+    - expr: pr.baseRef == "main"
+  exclude:
+    - expr: pr.draft
+    - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
+```
+
+The lists add up across the root, `owner/*` and `owner/name`, and a named
+condition replaces the broader scope's of that name where it stands. A
+name may not be given twice in one list. A repository's `.kritika.yaml`
+has lists of its own, passed beside the admin's: a pull request must pass
+both, and a condition in the file under a name an admin's has is dropped.
+An expression is compiled and smoke-tested against a sample pull request
+at startup, so a broken one fails startup.
+
+A pull request from a fork is reviewed like any other unless excluded:
+
+```yaml
+trigger:
+  exclude: [{ name: forks, expr: pr.fork }]
+```
+
+One the filter keeps out is still reviewed when a maintainer comments
+`@<app slug> review`.
 
 The provider, some of the root's settings and the embedder can come from
 the environment:
@@ -456,7 +495,6 @@ the environment:
 | `KRITIKA_CONFIDENCE_MODEL`         | `confidence.model`                                                                    |
 | `KRITIKA_CONFIDENCE_THRESHOLD`     | `confidence.threshold`, a whole number from 0 to 5                                    |
 | `KRITIKA_CONFIDENCE_RISK`          | `confidence.risk`, `low`, `medium`, `high` or `critical`                              |
-| `KRITIKA_TRIGGER_FORKS`            | `trigger.forks`, `true` or `false`                                                    |
 | `KRITIKA_TRIGGER_SETTLE`           | `trigger.settle`, a duration such as `30s`                                            |
 | `KRITIKA_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
 | `KRITIKA_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |

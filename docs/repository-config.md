@@ -31,7 +31,9 @@ review:
   model: openrouter/anthropic/claude-opus-5.5
   feedback: standard
 trigger:
-  filterExpr: "!pr.draft"
+  exclude:
+    - expr: pr.draft
+    - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
   ignore: ["web/src/generated/**", "docs/**"]
 comments: { inline: true }
 rules:
@@ -122,10 +124,17 @@ context:
   approved, and may only lower the admin's; a higher one is dropped.
   See [the configuration](configuration.md#repository-settings-and-repositories)
   for how a score is reached.
-- `trigger.filterExpr`: a filter expression ANDed with the admin's own. It is
-  compiled and smoke-tested against a sample pull request when the file is
-  parsed, so a broken expression is rejected rather than silently skipping
-  every review. A review it filters out ends before any runner starts.
+- `trigger.include` / `trigger.exclude`: conditions on the pull request,
+  each `{ expr }` with an optional `name`. A pull request is reviewed when
+  one `include` holds, or there are none, and no `exclude` holds. The
+  lists are passed beside the admin's own: a pull request must pass both.
+  A condition under a name one of the admin's has is dropped, and the
+  review's summary says so. Each expression is compiled and smoke-tested
+  against a sample pull request when the file is parsed, so a broken one
+  is rejected rather than silently skipping every review. A review the
+  lists keep out ends before any runner starts, and its commit status
+  names the exclusion that held when it has a name. See
+  [the recipes](#include-and-exclude-recipes).
 - `trigger.ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
   ignored, by these, the admin's globs or kritika's defaults (vendored
@@ -136,10 +145,10 @@ context:
   read from the same merge-base tree, whose content is the check; optional `paths`
   globs apply it only when a changed path matches one, so checks for one
   part of the repository do not spend the room on changes elsewhere. An
-  optional `whenExpr`, a CEL expression over the `pr` that `filterExpr`
-  sees, applies it only to a pull request it is true of, such as
+  optional `whenExpr`, a CEL expression over the `pr` that a
+  `trigger.include` condition sees, applies it only to a pull request it is true of, such as
   `pr.headRef.startsWith("renovate/")` for Renovate's; it is compiled and
-  smoke-tested like `filterExpr`, and a rule whose `whenExpr` fails to
+  smoke-tested like a condition, and a rule whose `whenExpr` fails to
   evaluate is left out. A rule whose `id` an admin's rule has is
   dropped, and the review's summary says so. The rules a change matches
   are listed by id in the system prompt (and a follow-up's), a file rule
@@ -160,15 +169,15 @@ A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
-`trigger.forks`, `trigger.settle`, `trigger.limit`, `trigger.lines`,
+`trigger.settle`, `trigger.limit`, `trigger.lines`,
 `review.incremental`, `confidence.instructions`, `limits` and `runner`
 are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
 
-## `filterExpr` recipes
+## Include and exclude recipes
 
-`trigger.filterExpr`, like a rule's `whenExpr`, is a [CEL](https://cel.dev)
-expression over `pr`, which has the pull request's `number`, `title`,
+The `expr` of a `trigger.include` or `trigger.exclude` condition, like a
+rule's `whenExpr`, is a [CEL](https://cel.dev) expression over `pr`, which has the pull request's `number`, `title`,
 `body`, `author`, `state`, `open`, `merged`, `draft`, `fork`, `headRef`,
 `headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`
 and a `color`), and `event`, what started the review: `opened`,
@@ -177,20 +186,63 @@ kritika found without its webhook), `labeled` or `unlabeled` (a label
 added or removed) or `manual` (a re-run from the dashboard).
 
 A label change starts a review only of a head that has none yet: one the
-filter kept out, or whose review failed. So removing `skip-review`, or
-adding the label a filter asks for, has the pull request reviewed without
-waiting for its next push.
+lists kept out, or whose review failed. So removing `skip-review`, or
+adding the label a condition asks for, has the pull request reviewed
+without waiting for its next push.
 
-Some filters, each the whole `filterExpr` value:
+Some conditions, each under `trigger`:
 
-- Skip drafts: `!pr.draft`
+- Skip drafts:
+
+  ```yaml
+  exclude:
+    - expr: pr.draft
+  ```
+
 - Skip anything labelled `skip-review`:
-  `!pr.labels.exists(l, l.name == "skip-review")`
-- Skip Renovate's pull requests: `!pr.author.startsWith("renovate")`
-- Review only pull requests into `main`: `pr.baseRef == "main"`
-- Skip when the description asks to: `!pr.body.contains("[skip-review]")`
+
+  ```yaml
+  exclude:
+    - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
+  ```
+
+- Skip Renovate's pull requests:
+
+  ```yaml
+  exclude:
+    - expr: pr.author.startsWith("renovate")
+  ```
+
+- Skip pull requests from forks:
+
+  ```yaml
+  exclude:
+    - { name: forks, expr: pr.fork }
+  ```
+
+- Skip when the description asks to:
+
+  ```yaml
+  exclude:
+    - expr: pr.body.contains("[skip-review]")
+  ```
+
+- Review only pull requests into `main`:
+
+  ```yaml
+  include:
+    - expr: pr.baseRef == "main"
+  ```
+
 - Review when a pull request opens or is re-run, not on every push:
-  `pr.event in ["opened", "reopened", "ready_for_review", "manual"]`
+
+  ```yaml
+  include:
+    - expr: pr.event in ["opened", "reopened", "ready_for_review", "manual"]
+  ```
+
+A named exclusion shows in the skipped review's commit status:
+`kritika: skipped (filtered by .kritika.yaml: skip-label)`.
 
 ## Limits
 

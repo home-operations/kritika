@@ -283,7 +283,6 @@ Kubernetes: `>=1.25.0-0`
 | config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
 | config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
 | config.transcriptRetention | string | `""` | How long a review's full model transcript is kept, at least 24h; 720h unless set. |
-| config.triggerForks | string | `""` | Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`. |
 | config.triggerSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
 | config.webUrl | required | `""` | Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name. |
 | configFile | optional | `{}` | The configuration file, as YAML: what is reviewed and how, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |

@@ -74,17 +74,16 @@ func TestLoadFull(t *testing.T) {
 			repo     string
 			enabled  bool
 			review   ModelRef
-			forks    bool
 			conc     int
 			perDay   int
 			settle   time.Duration
-			filterOK map[string]any // a PR the effective filter must accept
-			filterNo map[string]any // a PR the effective filter must reject
+			filterOK map[string]any   // a PR the effective filter must accept
+			filterNo []map[string]any // PRs the effective filter must reject
 		}{
 			{
 				name: "unlisted repo inherits account", account: ho, repo: "home-operations/other",
-				enabled: true, review: "openrouter/openai/gpt-6-sol", forks: false, conc: 3, perDay: 200,
-				filterOK: SamplePR(), filterNo: with(SamplePR(), "draft", true),
+				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
+				filterOK: SamplePR(), filterNo: []map[string]any{with(SamplePR(), "draft", true)},
 			},
 			{
 				name: "listed repo applies its own settle", account: ho, repo: "home-operations/flate",
@@ -93,17 +92,17 @@ func TestLoadFull(t *testing.T) {
 				filterOK: SamplePR(),
 			},
 			{
-				name: "repo filter replaces account filter", account: ho, repo: "home-operations/kopiur",
+				name: "repo exclusion adds to the inherited one", account: ho, repo: "home-operations/kopiur",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
-				filterOK: SamplePR(), filterNo: with(SamplePR(), "labels", []any{map[string]any{"name": "skip-review", "color": "0"}}),
+				filterOK: SamplePR(), filterNo: []map[string]any{with(SamplePR(), "draft", true), with(SamplePR(), "labels", []any{map[string]any{"name": "skip-review", "color": "0"}})},
 			},
 			{
 				name: "listed repo inherits enabled", account: ho, repo: "home-operations/charts-mirror",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
 			},
 			{
-				name: "account overrides review model and forks", account: od, repo: "onedr0p/home-ops",
-				enabled: true, review: "local/claude-opus-5", forks: true, conc: 3,
+				name: "account overrides review model", account: od, repo: "onedr0p/home-ops",
+				enabled: true, review: "local/claude-opus-5", conc: 3,
 				settle:   2 * time.Minute,
 				filterOK: SamplePR(),
 			},
@@ -111,7 +110,7 @@ func TestLoadFull(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				s := f.Settings(tt.account, tt.repo)
-				if s.Enabled != tt.enabled || s.Models.Review != tt.review || s.Forks != tt.forks ||
+				if s.Enabled != tt.enabled || s.Models.Review != tt.review ||
 					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay ||
 					s.Settle != tt.settle {
 					t.Fatalf("Settings = %+v", s)
@@ -120,13 +119,13 @@ func TestLoadFull(t *testing.T) {
 					t.Fatalf("fallback should inherit from defaults, got %q", s.Models.Fallback)
 				}
 				if tt.filterOK != nil {
-					if ok, err := s.Filter.Eval(tt.filterOK); err != nil || !ok {
-						t.Fatalf("filter should accept: ok=%v err=%v", ok, err)
+					if skip, by, err := s.Filters.Skips(tt.filterOK); err != nil || skip {
+						t.Fatalf("filter should accept: by=%v err=%v", by, err)
 					}
 				}
-				if tt.filterNo != nil {
-					if ok, err := s.Filter.Eval(tt.filterNo); err != nil || ok {
-						t.Fatalf("filter should reject: ok=%v err=%v", ok, err)
+				for _, pr := range tt.filterNo {
+					if skip, _, err := s.Filters.Skips(pr); err != nil || !skip {
+						t.Fatalf("filter should reject %v: skip=%v err=%v", pr, skip, err)
 					}
 				}
 			})
@@ -252,6 +251,15 @@ func TestDefaultIgnore(t *testing.T) {
 	}
 }
 
+// filterExprs lists the expressions of fs, in order.
+func filterExprs(fs []Filter) string {
+	exprs := make([]string, len(fs))
+	for i, f := range fs {
+		exprs[i] = f.Expr
+	}
+	return strings.Join(exprs, ", ")
+}
+
 func TestFilterOnBody(t *testing.T) {
 	prg, err := compileFilter(`pr.body.contains("[skip-review]")`)
 	if err != nil {
@@ -286,7 +294,7 @@ apps:
 }
 
 // acme is minimal with entries, lines of the repositories map, such as
-// "  acme/*: { trigger: { forks: true } }\n".
+// "  acme/*: { trigger: { settle: 1m } }\n".
 func acme(entries string) string {
 	if entries == "" {
 		return minimal
@@ -518,9 +526,21 @@ func TestParseRejects(t *testing.T) {
 		{"negative settle repository", acme("  acme/x: { trigger: { settle: -1s } }\n"), "repositories.acme/x.trigger.settle must not be negative"},
 		{"indexing role removed", "review:\n  indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", acme("  acme/x: { trigger: { ignore: ['['] } }\n"), "not a valid glob"},
-		{"filter syntax error", "trigger:\n  filterExpr: 'pr.draft &&'\n" + minimal, "configfile: trigger.filterExpr"},
-		{"filter fails smoke test", "trigger:\n  filterExpr: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
-		{"repository filter error", acme("  acme/x: { trigger: { filterExpr: 'pr.title' } }\n"), "repositories.acme/x.trigger.filterExpr"},
+		{"include syntax error", "trigger:\n  include: [{ expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.include[0]"},
+		{"exclude syntax error", "trigger:\n  exclude: [{ expr: 'true' }, { expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.exclude[1]"},
+		{"include with no expression", "trigger:\n  include: [{ name: empty }]\n" + minimal, "configfile: trigger.include[0]: expr is required"},
+		{"exclude with a blank expression", "trigger:\n  exclude: [{ name: empty, expr: ' ' }]\n" + minimal, "configfile: trigger.exclude[0]: expr is required"},
+		{"include name given twice", "trigger:\n  include: [{ name: a, expr: 'true' }, { name: a, expr: 'true' }]\n" + minimal,
+			`configfile: trigger.include[1]: name "a" is given twice`},
+		{"exclude name given twice", "trigger:\n  exclude: [{ name: a, expr: 'true' }, { name: a, expr: 'true' }]\n" + minimal,
+			`configfile: trigger.exclude[1]: name "a" is given twice`},
+		{"include as a bare expression", "trigger:\n  include: 'true'\n" + minimal, "cannot unmarshal"},
+		{"include fails smoke test", "trigger:\n  include: [{ expr: 'pr.labels[5].name == \"x\"' }]\n" + minimal, "smoke test"},
+		{"repository include error", acme("  acme/x: { trigger: { include: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/x.trigger.include[0]"},
+		{"repository exclude error", acme("  acme/x: { trigger: { exclude: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/x.trigger.exclude[0]"},
+		{"owner exclude error", acme("  acme/*: { trigger: { exclude: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/*.trigger.exclude[0]"},
+		{"a single filter expression", "trigger:\n  filterExpr: 'true'\n" + minimal, "field filterExpr not found"},
+		{"a forks switch", "trigger:\n  forks: true\n" + minimal, "field forks not found"},
 		{"a repository key without an owner", acme("  x: {}\n"), "keyed owner/* or owner/name"},
 		{"a repository key too deep", acme("  acme/x/y: {}\n"), "keyed owner/* or owner/name"},
 		{"duplicate repository", acme("  acme/x: {}\n  ACME/x: {}\n"), "duplicates repositories.ACME/x"},
@@ -585,7 +605,8 @@ func TestScopePrecedence(t *testing.T) {
   p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
 review: { model: p/big, fallback: p/small, incremental: 3 }
 trigger:
-  filterExpr: "!pr.draft"
+  include: [{ name: bots, expr: 'pr.author.startsWith("renovate")' }]
+  exclude: [{ name: drafts, expr: pr.draft }]
   settle: 2m
   limit: 4
   lines: 500
@@ -616,7 +637,7 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
 		f := parse(t, doc("", "", ""))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Filter == nil || s.Settle != 2*time.Minute || s.MaxAutoReviews != 4 || s.MaxChangedLines != 500 || s.Agent.MaxSteps != 9 ||
+		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.Settle != 2*time.Minute || s.MaxAutoReviews != 4 || s.MaxChangedLines != 500 || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)
@@ -624,9 +645,11 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 
 	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
-		f := parse(t, doc("tokensPerMonth: 0", `trigger: { filterExpr: "", settle: 0s }, review: { fallback: "" }`, `comments: { summary: "" }`))
+		f := parse(t, doc("tokensPerMonth: 0", `trigger: { include: [{ name: bots, expr: "true" }, { expr: pr.open }], exclude: [{ name: drafts, expr: "false" }, { expr: pr.fork }], settle: 0s }, review: { fallback: "" }`, `comments: { summary: "" }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
+		// A condition under a broader scope's name replaces it where it
+		// stands, and one without a name is added.
+		if filterExprs(s.Filters.Include) != "true, pr.open" || filterExprs(s.Filters.Exclude) != "false, pr.fork" || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
 			t.Fatalf("cleared settings = %+v", s)
 		}
@@ -637,9 +660,9 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
 		f := parse(t, doc("", `agent: { steps: 7 }, review: { fixes: true }, trigger: { ignore: ["account/**"] }`,
-			`review: { model: p/small }, trigger: { forks: true, ignore: ["repo/**"] }, agent: { tokens: 500 }`))
+			`review: { model: p/small }, trigger: { ignore: ["repo/**"] }, agent: { tokens: 500 }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
+		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" {
 			t.Fatalf("settings = %+v", s)
 		}
 		if !s.Review.RequireSuggestedFix || !reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) {

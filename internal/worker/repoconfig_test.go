@@ -14,19 +14,18 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
-	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 )
 
 func adminSettings(t *testing.T) configfile.Settings {
 	t.Helper()
-	filter, err := prfilter.Compile("!pr.draft")
-	if err != nil {
+	filters := configfile.Filters{Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}}}
+	if err := filters.Compile(); err != nil {
 		t.Fatal(err)
 	}
 	return configfile.Settings{
-		Enabled: true, Filter: filter, Ignore: []string{"vendor/**"},
+		Enabled: true, Filters: filters, Ignore: []string{"vendor/**"},
 		Review: configfile.Review{
 			Rules: []configfile.Rule{{ID: "ops", File: "ops/rules.md"}}, RequireSuggestedFix: true,
 			Templates: configfile.ReviewTemplates{Summary: "ops/summary.tmpl", Inline: "ops/inline.tmpl"},
@@ -67,7 +66,7 @@ func TestEffective(t *testing.T) {
 			repoFiles: append(adminPaths, repoconfig.FileName), templates: adminDefaults, strict: true,
 		},
 		{
-			name: "filter is kept apart to be ANDed", doc: "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
+			name: "the file's conditions are kept apart from the admin's", doc: "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n", files: adminFiles,
 			enabled: true, inRepoFilter: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			templates: adminDefaults, strict: true,
 		},
@@ -111,8 +110,8 @@ func TestEffective(t *testing.T) {
 				doc = []byte(tt.doc)
 			}
 			e, notes := effective(settings, doc)
-			if e.Enabled != tt.enabled || (e.InRepoFilter != nil) != tt.inRepoFilter || e.Filter != settings.Filter {
-				t.Fatalf("enabled=%v inRepoFilter=%v admin filter kept=%v", e.Enabled, e.InRepoFilter != nil, e.Filter == settings.Filter)
+			if e.Enabled != tt.enabled || !e.InRepoFilters.Empty() != tt.inRepoFilter || !reflect.DeepEqual(e.Filters, settings.Filters) {
+				t.Fatalf("enabled=%v inRepoFilters=%v admin filters=%v", e.Enabled, e.InRepoFilters, e.Filters)
 			}
 			if !slices.Equal(e.Ignore, tt.ignore) {
 				t.Fatalf("ignore=%v", e.Ignore)
@@ -146,16 +145,16 @@ func TestEffectiveSkip(t *testing.T) {
 	}{
 		{"nothing to skip", "", "", []string{"main.go"}, ""},
 		{"disabled", "enabled: false\n", "", []string{"main.go"}, repoconfig.SkipDisabled},
-		{"filtered", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
-		{"filter allows", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
-		{"filter that fails to evaluate skips", "trigger:\n  filterExpr: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"filtered", "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"filter allows", "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n", "normal", []string{"main.go"}, ""},
+		{"filter that fails to evaluate skips", "trigger:\n  include: [{ expr: 'pr.number > 0' }]\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
 		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
 		{"a path outside the ignore globs", "trigger: { ignore: [docs/**] }\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e, _ := effective(configfile.Settings{Enabled: true}, []byte(tt.doc))
-			got, _ := e.Check(vars(tt.body), tt.changed)
+			got, _, _ := e.Check(vars(tt.body), tt.changed)
 			if got != tt.want {
 				t.Fatalf("skip = %q, want %q", got, tt.want)
 			}

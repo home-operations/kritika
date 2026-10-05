@@ -3,7 +3,7 @@
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
-  import type { ConfigSource, Page, Pull, RepoDetail, RepoSettings } from '../types';
+  import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -43,6 +43,7 @@
   );
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
+  const conditions = (cs: Condition[]) => list(cs.map((c) => (c.name ? `${c.name}: ${c.expr}` : c.expr)));
   const yes = (b: boolean) => (b ? 'yes' : 'no');
   const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 
@@ -61,8 +62,8 @@
     { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
     { label: 'Approve up to risk', key: 'confidence.risk', value: (s) => s.confidence.risk },
     { label: 'Risk instructions', key: 'confidence.instructions', value: (s) => s.confidence.instructions || '—' },
-    { label: 'Filter', key: 'trigger.filterExpr', value: (s) => s.filter || '—', mono: true },
-    { label: 'Forks', key: 'trigger.forks', value: (s) => (s.forks ? 'reviewed' : 'skipped') },
+    { label: 'Include', key: 'trigger.include', value: (s) => conditions(s.filters.include), mono: true },
+    { label: 'Exclude', key: 'trigger.exclude', value: (s) => conditions(s.filters.exclude), mono: true },
     { label: 'Ignore', key: 'trigger.ignore', value: (s) => list(s.ignore), mono: true },
     { label: 'Settle', key: 'trigger.settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
     { label: 'Max automatic reviews', key: 'trigger.limit', value: (s) => unlimited(s.maxAutoReviews) },
@@ -190,7 +191,8 @@
                 <span class="muted small">(merge base of <a href={href({ name: 'review', slug, id: rc.reviewId })}>the last review</a>)</span>
               </dd>
               {#if rc.found}
-                <dt>Filter</dt><dd class="mono">{rc.filter || '—'} <span class="muted small">(ANDed with the admin's)</span></dd>
+                <dt>Include</dt><dd class="mono">{conditions(rc.filters.include)} <span class="muted small">(beside the admin's)</span></dd>
+                <dt>Exclude</dt><dd class="mono">{conditions(rc.filters.exclude)} <span class="muted small">(beside the admin's)</span></dd>
               {/if}
             </dl>
             {#if !rc.found}

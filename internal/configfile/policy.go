@@ -46,7 +46,6 @@ const (
 	keyScorer    = "confidence.model"
 	keyThreshold = "confidence.threshold"
 	keyRisk      = "confidence.risk"
-	keyForks     = "trigger.forks"
 	keySettle    = "trigger.settle"
 )
 
@@ -63,8 +62,8 @@ var Policies = []Policy{
 	{Key: keyThreshold, Scopes: everyScope},
 	{Key: keyRisk, Scopes: everyScope},
 	{Key: "confidence.instructions", Scopes: everyScope},
-	{Key: "trigger.filterExpr", Scopes: everyScope},
-	{Key: keyForks, Scopes: everyScope},
+	{Key: "trigger.include", Scopes: everyScope},
+	{Key: "trigger.exclude", Scopes: everyScope},
 	{Key: keySettle, Scopes: everyScope},
 	{Key: "trigger.ignore", Scopes: everyScope},
 	{Key: "trigger.limit", Scopes: everyScope},

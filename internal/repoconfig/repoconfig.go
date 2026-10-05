@@ -89,11 +89,12 @@ type Confidence struct {
 	Risk      review.Risk         `yaml:"risk,omitempty"`
 }
 
-// Trigger narrows which pull requests get a review: a filter ANDed with
-// the admin's, and path globs added to the admin's.
+// Trigger narrows which pull requests get a review: include and exclude
+// lists of its own, which a pull request must pass beside the admin's, and
+// path globs added to the admin's.
 type Trigger struct {
-	FilterExpr string   `yaml:"filterExpr,omitempty"`
-	Ignore     []string `yaml:"ignore,omitempty"`
+	configfile.Filters `yaml:",inline"`
+	Ignore             []string `yaml:"ignore,omitempty"`
 }
 
 // File is the decoded content of .kritika.yaml: the keys the
@@ -117,50 +118,42 @@ type File struct {
 // configfile.SamplePR are rejected, as is any referenced path (a rule's
 // file, a template or a context file) that is absolute or escapes the
 // repository via "..". An empty document is valid (the file is optional) and yields a zero
-// File with no filter.
-func Parse(data []byte) (File, *prfilter.Program, error) {
+// File. The file's filters come back compiled.
+func Parse(data []byte) (File, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	var f File
 	if err := dec.Decode(&f); err != nil {
 		if errors.Is(err, io.EOF) {
-			return File{}, nil, nil
+			return File{}, nil
 		}
-		return File{}, nil, fmt.Errorf("repoconfig: parse: %w", err)
+		return File{}, fmt.Errorf("repoconfig: parse: %w", err)
 	}
 
 	for i, g := range f.Trigger.Ignore {
 		if !configfile.ValidGlob(g) {
-			return File{}, nil, fmt.Errorf("repoconfig: trigger.ignore[%d] %q is not a valid glob", i, g)
+			return File{}, fmt.Errorf("repoconfig: trigger.ignore[%d] %q is not a valid glob", i, g)
 		}
 	}
 	for i, c := range f.Context {
 		if err := c.Check(); err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: context[%d]: %w", i, err)
+			return File{}, fmt.Errorf("repoconfig: context[%d]: %w", i, err)
 		}
 	}
 	if err := configfile.CheckRules(f.Rules); err != nil {
-		return File{}, nil, fmt.Errorf("repoconfig: %w", err)
+		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
-			return File{}, nil, err
+			return File{}, err
 		}
 	}
 
-	var prg *prfilter.Program
-	if strings.TrimSpace(f.Trigger.FilterExpr) != "" {
-		var err error
-		prg, err = prfilter.Compile(f.Trigger.FilterExpr)
-		if err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: trigger.filterExpr: %w", err)
-		}
-		if _, err := prg.Eval(configfile.SamplePR()); err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: trigger.filterExpr: smoke test against a sample pull request: %w", err)
-		}
+	if err := f.Trigger.Compile(); err != nil {
+		return File{}, fmt.Errorf("repoconfig: trigger.%w", err)
 	}
 
-	return f, prg, nil
+	return f, nil
 }
 
 // validateRefPath rejects a referenced path that is absolute or escapes

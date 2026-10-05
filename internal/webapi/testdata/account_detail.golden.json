@@ -22,7 +22,15 @@
     "reviewsPerDay": 50,
     "tokensPerMonth": 1000000
   },
-  "filter": "!pr.draft",
+  "filters": {
+    "include": [],
+    "exclude": [
+      {
+        "name": "drafts",
+        "expr": "pr.draft"
+      }
+    ]
+  },
   "usage": {
     "tokens": 5000,
     "costUsd": 1.5,

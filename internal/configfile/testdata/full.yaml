@@ -23,8 +23,7 @@ review:
   model: openrouter/openai/gpt-6-sol
   fallback: local/claude-sonnet-5
 trigger:
-  filterExpr: "!pr.draft"
-  forks: false
+  exclude: [{ name: drafts, expr: pr.draft }]
 limits:
   concurrency: 3
 
@@ -36,7 +35,7 @@ repositories:
       settle: 30s
   home-operations/kopiur:
     trigger:
-      filterExpr: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
+      exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
   home-operations/charts-mirror:
     trigger:
       ignore: ["charts/**"]
@@ -44,7 +43,6 @@ repositories:
     review:
       model: local/claude-opus-5
     trigger:
-      forks: true
       settle: 2m
 
 accounts:

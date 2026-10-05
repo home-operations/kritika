@@ -54,7 +54,10 @@ var goldenRepo = Repository{
 }
 
 var goldenRepoSettings = RepoSettings{
-	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large"}, Filter: "true", Forks: false,
+	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large"}, Filters: configfile.Filters{
+		Include: []configfile.Filter{{Expr: `pr.author.startsWith("renovate")`}, {Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
+		Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
+	},
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
 	Confidence: configfile.Confidence{Model: "openrouter/acme-judge", Threshold: 5, Risk: review.RiskLow, Instructions: "Image bumps are low."},
 	Review: configfile.Review{
@@ -111,7 +114,7 @@ var goldens = map[string]any{
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		},
 		Models: configfile.Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
-		Limits: configfile.Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filter: "!pr.draft",
+		Limits: configfile.Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filters: configfile.Filters{Include: []configfile.Filter{}, Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}}},
 		Usage: goldenSummary.Usage, LastPolledAt: &t1,
 	},
 	"repository":       goldenRepo,
@@ -120,7 +123,7 @@ var goldens = map[string]any{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
-			"trigger.forks": configfile.SourceAccount, "review.model": configfile.SourceDefaults, "trigger.settle": configfile.SourceDefault,
+			"trigger.exclude": configfile.SourceAccount, "review.model": configfile.SourceDefaults, "trigger.settle": configfile.SourceDefault,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,
@@ -129,7 +132,7 @@ var goldens = map[string]any{
 				s.Models.Review = "openrouter/acme-small"
 				return s
 			}(),
-			Filter:  "!pr.draft",
+			Filters: configfile.Filters{Include: []configfile.Filter{}, Exclude: []configfile.Filter{{Name: "skip-label", Expr: `pr.labels.exists(l, l.name == "skip-review")`}}},
 			Dropped: []string{`.kritika.yaml: review.model "q/big" was dropped; allowed: a model of openrouter`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},

@@ -381,6 +381,9 @@ type earlyEnd struct {
 	// skip is why the review was skipped: the repository's .kritika.yaml
 	// did (a repoconfig.SkipReason), or a bot's patch was unchanged.
 	skip string
+	// filter is the name of the exclusion that filtered the review out, ""
+	// for one without a name or a review no inclusion let in.
+	filter string
 	// carried is the confidence an unchanged patch keeps from its last
 	// review, nil when the repository asks for no score.
 	carried *review.Confidence
@@ -429,6 +432,9 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 		// reason is the error it records.
 		if e.skip != "" {
 			reason = skipDescription(e.skip, 0)
+		}
+		if e.filter != "" {
+			reason += ": " + e.filter
 		}
 		state, desc := skipVerdict(e.carried, reason)
 		return state, "kritika: " + desc

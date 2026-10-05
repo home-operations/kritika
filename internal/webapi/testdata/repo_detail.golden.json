@@ -24,8 +24,24 @@
       "review": "openrouter/acme-large",
       "fallback": ""
     },
-    "filter": "true",
-    "forks": false,
+    "filters": {
+      "include": [
+        {
+          "name": "",
+          "expr": "pr.author.startsWith(\"renovate\")"
+        },
+        {
+          "name": "wanted",
+          "expr": "pr.labels.exists(l, l.name == \"needs-review\")"
+        }
+      ],
+      "exclude": [
+        {
+          "name": "drafts",
+          "expr": "pr.draft"
+        }
+      ]
+    },
     "ignore": ["vendor/**"],
     "settleSeconds": 30,
     "maxAutoReviews": 0,
@@ -70,7 +86,7 @@
   },
   "sources": {
     "review.model": "defaults",
-    "trigger.forks": "account",
+    "trigger.exclude": "account",
     "trigger.settle": "default"
   },
   "repoConfig": {
@@ -83,8 +99,24 @@
         "review": "openrouter/acme-small",
         "fallback": ""
       },
-      "filter": "true",
-      "forks": false,
+      "filters": {
+        "include": [
+          {
+            "name": "",
+            "expr": "pr.author.startsWith(\"renovate\")"
+          },
+          {
+            "name": "wanted",
+            "expr": "pr.labels.exists(l, l.name == \"needs-review\")"
+          }
+        ],
+        "exclude": [
+          {
+            "name": "drafts",
+            "expr": "pr.draft"
+          }
+        ]
+      },
       "ignore": ["vendor/**"],
       "settleSeconds": 30,
       "maxAutoReviews": 0,
@@ -127,7 +159,15 @@
         "tokensPerMonth": 0
       }
     },
-    "filter": "!pr.draft",
+    "filters": {
+      "include": [],
+      "exclude": [
+        {
+          "name": "skip-label",
+          "expr": "pr.labels.exists(l, l.name == \"skip-review\")"
+        }
+      ]
+    },
     "dropped": [".kritika.yaml: review.model \"q/big\" was dropped; allowed: a model of openrouter"]
   },
   "indexRuns": [

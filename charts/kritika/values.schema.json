@@ -8,7 +8,7 @@
       "type": "object"
     },
     "config": {
-      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, embedding*, and the review,\nconfidence and trigger settings reviewModel, reviewFallback,\nreviewFeedback, confidenceModel, confidenceThreshold, confidenceRisk,\ntriggerForks and triggerSettle) win over the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
+      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, embedding*, and the review,\nconfidence and trigger settings reviewModel, reviewFallback,\nreviewFeedback, confidenceModel, confidenceThreshold, confidenceRisk\nand triggerSettle) win over the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
       "properties": {
         "appsAccounts": {
           "default": "",
@@ -337,16 +337,6 @@
           "description": "How long a review's full model transcript is kept, at least 24h; 720h unless set.",
           "title": "transcriptRetention",
           "type": "string"
-        },
-        "triggerForks": {
-          "default": "",
-          "description": "Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@\u003capp slug\u003e review`.",
-          "required": [],
-          "title": "triggerForks",
-          "type": [
-            "boolean",
-            "string"
-          ]
         },
         "triggerSettle": {
           "default": "",

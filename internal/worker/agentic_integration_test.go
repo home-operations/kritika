@@ -985,7 +985,7 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	before := h.sm.requests
 	h.sm.mu.Unlock()
-	base := h.commit(t, ".kritika.yaml", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n")
+	base := h.commit(t, ".kritika.yaml", "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n")
 	h.lf.setBase(base)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc f() {}\n")
 	h.lf.mu.Lock()

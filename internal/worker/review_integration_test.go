@@ -1429,7 +1429,7 @@ func checkRepoConfig(
 	}
 	cfgBase := commit("configure kritika", map[string]string{
 		".kritika.yaml": `trigger:
-  filterExpr: '!pr.labels.exists(l, l.name == "skip-review")'
+  exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
   ignore: ["docs/**", ".kritika.yaml"]
 rules:
   - { id: todos, file: .kritika/rules.md }
@@ -1541,7 +1541,7 @@ review:
 	lf.mu.Lock()
 	forgeStatus := lf.status
 	lf.mu.Unlock()
-	if forgeStatus != "success: kritika: skipped (filtered by .kritika.yaml)" {
+	if forgeStatus != "success: kritika: skipped (filtered by .kritika.yaml: skip-label)" {
 		t.Fatalf("status = %q", forgeStatus)
 	}
 	checkLabelRepeat(ctx, t, appStore, insertOnly, accountID, labelledHead)

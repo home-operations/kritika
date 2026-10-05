@@ -114,12 +114,16 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 			return true, err
 		}
 		// With no changed paths yet, only enabled and the filter can skip.
-		reason, err := eff.Check(vars, nil)
+		reason, by, err := eff.Check(vars, nil)
 		if err != nil {
-			e.logger.Warn("repository filter failed to evaluate", "error", err)
+			e.logger.Warn("repository filter failed to evaluate", "filter", by.Label(), "error", err)
 		}
 		if reason == "" {
 			return false, nil
+		}
+		e.filter = ""
+		if by != nil {
+			e.filter = by.Name
 		}
 		if err := w.recordSkip(ctx, e, string(reason)); err != nil {
 			return true, err

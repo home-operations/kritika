@@ -107,9 +107,9 @@ Register a GitHub App under the account whose repositories kritika reviews
 Then generate a private key and note the App's client ID. Comments mention
 the bot as `@<app slug>`, and only someone with write access gets an
 answer. `@<app slug> review` queues a review of the pull request's head
-instead of asking a question: a pull request from a fork is not reviewed on
-its own, since its code comes from outside the organization, and this is
-how a maintainer gets it one. `@<app slug> dismiss <reason>`, as a reply in
+instead of asking a question: this is how a maintainer gets a review of a
+pull request `trigger.include` and `trigger.exclude` keep out, such as one
+from a fork where forks are excluded. `@<app slug> dismiss <reason>`, as a reply in
 one of kritika's finding threads, dismisses that finding: its thread is
 resolved, later reviews of the pull request are told not to raise it
 again, and the dashboard lists it dismissed with the reason. Resolving

@@ -105,7 +105,7 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 		{"retries that are not a number", "KRITIKA_PROVIDERS_RETRIES", "some", "KRITIKA_PROVIDERS_RETRIES must be a whole number"},
 		{"retries past the bound", "KRITIKA_PROVIDERS_RETRIES", "6", "providers.openrouter.retries must be between 0 and 5"},
 		{"an unknown trigger key", "KRITIKA_TRIGGER_FILTER", "true", "KRITIKA_TRIGGER_FILTER names no setting"},
-		{"forks that are not a bool", "KRITIKA_TRIGGER_FORKS", "sometimes", "KRITIKA_TRIGGER_FORKS must be true or false"},
+		{"a trigger key the environment does not set", "KRITIKA_TRIGGER_FORKS", "true", "KRITIKA_TRIGGER_FORKS names no setting"},
 		{"a settle that is not a duration", "KRITIKA_TRIGGER_SETTLE", "soon", "KRITIKA_TRIGGER_SETTLE"},
 		{"an unknown embedding key", "KRITIKA_EMBEDDING_URL", "x", "KRITIKA_EMBEDDING_URL names no embedding setting"},
 		{"dims that are not a number", "KRITIKA_EMBEDDING_DIMS", "many", "KRITIKA_EMBEDDING_DIMS must be a whole number"},
@@ -159,7 +159,7 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 }
 
 // TestFileReviewDefaults: the file and the environment set the defaults'
-// feedback, forks and settle, which accounts inherit with the defaults' or
+// feedback, limit and settle, which accounts inherit with the defaults' or
 // the environment's source. mode is no longer a setting in either.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
@@ -168,25 +168,24 @@ func TestFileReviewDefaults(t *testing.T) {
 	withDefaults := func(reviewKeys, rootKeys string) []byte {
 		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
 	}
-	f, err := Parse(withDefaults(", feedback: minimal", "trigger: { forks: true }\n"))
+	f, err := Parse(withDefaults(", feedback: minimal", "trigger: { limit: 3 }\n"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if !s.Forks || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal {
-		t.Fatalf("settings = forks %v settle %s feedback %s; want the file's and the environment's",
-			s.Forks, s.Settle, s.Review.Feedback)
+	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal {
+		t.Fatalf("settings = limit %d settle %s feedback %s; want the file's and the environment's",
+			s.MaxAutoReviews, s.Settle, s.Review.Feedback)
 	}
 	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{"trigger.forks": SourceDefaults, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults} {
+	for key, want := range map[string]Source{"trigger.limit": SourceDefaults, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
 		{"review.feedback", FileValue{Value: "minimal", Source: SourceFile}},
-		{"trigger.forks", FileValue{Value: "true", Source: SourceFile}},
 		{"trigger.settle", FileValue{Value: "45s", Source: SourceEnv}},
 	}
 	if got := f.FileLayer().Defaults; !slices.Equal(got, want) {

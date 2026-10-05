@@ -156,8 +156,8 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 }
 
 // apply lays one scope's overrides over s: a field the scope writes
-// replaces s's, its ignore globs are added to s's, and its rules to s's by
-// id.
+// replaces s's, its ignore globs are added to s's, its rules to s's by id
+// and its filters to s's by name.
 func (s *Settings) apply(o *Overrides) {
 	if o.Enabled != nil {
 		s.Enabled = *o.Enabled
@@ -190,12 +190,7 @@ func (s *Settings) apply(o *Overrides) {
 
 // trigger lays one scope's trigger keys over s.
 func (s *Settings) trigger(o *Overrides) {
-	if o.Trigger.FilterExpr != nil {
-		s.Filter = o.filter
-	}
-	if o.Trigger.Forks != nil {
-		s.Forks = *o.Trigger.Forks
-	}
+	s.Filters = s.Filters.with(o.Trigger.Filters)
 	s.Ignore = append(s.Ignore, o.Trigger.Ignore...)
 	if o.Trigger.Settle != nil {
 		s.Settle = *o.Trigger.Settle

@@ -73,12 +73,15 @@ func TestEarlyEndStatus(t *testing.T) {
 		name      string
 		status    store.ReviewStatus
 		skip      string
+		filter    string
 		reason    string
 		wantState forge.StatusState
 		want      string
 	}{
 		{name: "the repository's filter", status: store.ReviewSkipped, skip: string(repoconfig.SkipFiltered),
 			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered by " + repoconfig.FileName + ")"},
+		{name: "an exclusion with a name", status: store.ReviewSkipped, skip: string(repoconfig.SkipFiltered), filter: "skip-label",
+			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered by " + repoconfig.FileName + ": skip-label)"},
 		{name: "a bot's unchanged patch", status: store.ReviewSkipped, skip: runner.SkipUnchangedPatch,
 			wantState: forge.StatusSuccess, want: "kritika: skipped (patch unchanged since the last review)"},
 		{name: "an admission's own reason", status: store.ReviewSkipped, reason: "no review model is configured for this repository",
@@ -89,7 +92,7 @@ func TestEarlyEndStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state, desc := earlyEnd{skip: tt.skip}.status(tt.status, tt.reason)
+			state, desc := earlyEnd{skip: tt.skip, filter: tt.filter}.status(tt.status, tt.reason)
 			if state != tt.wantState || desc != tt.want {
 				t.Errorf("status = %q %q, want %q %q", state, desc, tt.wantState, tt.want)
 			}

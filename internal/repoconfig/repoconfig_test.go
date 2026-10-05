@@ -20,8 +20,12 @@ func TestParse_Invalid(t *testing.T) {
 		{"unknown key", "foo: bar\n"},
 		{"bad ignore glob", "trigger:\n  ignore:\n    - \"[\"\n"},
 		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
-		{"bad filter syntax", "trigger:\n  filterExpr: \"pr.draft &&\"\n"},
-		{"filter not bool", "trigger:\n  filterExpr: \"pr.title\"\n"},
+		{"bad include syntax", "trigger:\n  include: [{ expr: \"pr.draft &&\" }]\n"},
+		{"exclude not bool", "trigger:\n  exclude: [{ expr: \"pr.title\" }]\n"},
+		{"exclude without an expression", "trigger:\n  exclude: [{ name: a }]\n"},
+		{"include name given twice", "trigger:\n  include: [{ name: a, expr: \"true\" }, { name: a, expr: \"true\" }]\n"},
+		{"a single filter expression", "trigger:\n  filterExpr: \"true\"\n"},
+		{"forks are the admin's to exclude", "trigger:\n  forks: false\n"},
 		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]\n"},
 		{"rule file escapes repo", "rules: [{ id: a, file: ../x }]\n"},
 		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},
@@ -32,7 +36,7 @@ func TestParse_Invalid(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if _, _, err := Parse([]byte(c.yaml)); err == nil {
+			if _, err := Parse([]byte(c.yaml)); err == nil {
 				t.Fatalf("Parse(%q) = nil error, want error", c.yaml)
 			}
 		})
@@ -44,12 +48,9 @@ func TestParse_Valid(t *testing.T) {
 
 	t.Run("empty doc", func(t *testing.T) {
 		t.Parallel()
-		f, prg, err := Parse(nil)
+		f, err := Parse(nil)
 		if err != nil {
 			t.Fatalf("Parse(nil): %v", err)
-		}
-		if prg != nil {
-			t.Fatalf("Parse(nil) program = %v, want nil", prg)
 		}
 		if !reflect.DeepEqual(f, File{}) {
 			t.Fatalf("Parse(nil) file = %+v, want zero value", f)
@@ -60,7 +61,8 @@ func TestParse_Valid(t *testing.T) {
 		t.Parallel()
 		doc := []byte(`enabled: true
 trigger:
-  filterExpr: '!pr.draft'
+  include: [{ name: wanted, expr: 'pr.labels.exists(l, l.name == "needs-review")' }, { expr: pr.open }]
+  exclude: [{ expr: pr.draft }]
   ignore:
     - "**/*.md"
 rules:
@@ -72,18 +74,19 @@ comments:
   summary: docs/summary.tmpl
   finding: docs/inline.tmpl
 `)
-		f, prg, err := Parse(doc)
+		f, err := Parse(doc)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
-		}
-		if prg == nil {
-			t.Fatal("Parse: program = nil, want a compiled filter")
 		}
 		if f.Enabled == nil || !*f.Enabled {
 			t.Fatalf("Enabled = %v, want true", f.Enabled)
 		}
-		if f.Trigger.FilterExpr != "!pr.draft" {
-			t.Fatalf("FilterExpr = %q, want %q", f.Trigger.FilterExpr, "!pr.draft")
+		if len(f.Trigger.Include) != 2 || f.Trigger.Include[0].Name != "wanted" || f.Trigger.Include[1].Expr != "pr.open" ||
+			len(f.Trigger.Exclude) != 1 || f.Trigger.Exclude[0].Expr != "pr.draft" {
+			t.Fatalf("Trigger = %+v, want two inclusions and the exclusion pr.draft", f.Trigger)
+		}
+		if skip, by, err := f.Trigger.Skips(configfile.SamplePR()); err != nil || skip {
+			t.Fatalf("the conditions came back uncompiled or keep the sample out: %v, %v", by, err)
 		}
 		if !slices.Equal(f.Trigger.Ignore, []string{"**/*.md"}) {
 			t.Fatalf("Ignore = %v", f.Trigger.Ignore)

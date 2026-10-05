@@ -22,7 +22,6 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/model"
-	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -224,8 +223,6 @@ type Overrides struct {
 	// replacing that rule where it stands.
 	Rules   []Rule        `yaml:"rules,omitempty"`
 	Context []ContextFile `yaml:"context,omitempty"`
-
-	filter *prfilter.Program
 }
 
 // ReviewSpec sets how a review is done at one scope: its models, a role
@@ -278,12 +275,11 @@ const (
 )
 
 // TriggerSpec sets which pull requests get a review, and when, at one
-// scope.
+// scope. Its include and exclude lists add to the broader scope's, a
+// condition with a name already listed replacing that one where it stands.
 type TriggerSpec struct {
-	// FilterExpr is CEL over pr; a key whose value is CEL ends in Expr.
-	FilterExpr *string  `yaml:"filterExpr,omitempty"`
-	Forks      *bool    `yaml:"forks,omitempty"`
-	Ignore     []string `yaml:"ignore,omitempty"`
+	Filters `yaml:",inline"`
+	Ignore  []string `yaml:"ignore,omitempty"`
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle *time.Duration `yaml:"settle,omitempty"`
@@ -703,8 +699,9 @@ func (f *File) Hash() string { return f.hash }
 type Settings struct {
 	Enabled bool
 	Models  Models
-	Filter  *prfilter.Program
-	Forks   bool
+	// Filters are the admin's conditions on which pull requests are
+	// reviewed, compiled, the broadest scope's first.
+	Filters Filters
 	Limits  Limits
 	// Ignore is DefaultIgnore plus the repository's own globs. The in-repo
 	// file's globs are unioned in by the caller that has the checkout.

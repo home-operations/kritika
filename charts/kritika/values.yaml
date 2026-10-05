@@ -47,8 +47,8 @@ strategy:
 # (a Secret key). The variables that stand in for the configuration
 # file's sections (auth*, apps*, providers*, embedding*, and the review,
 # confidence and trigger settings reviewModel, reviewFallback,
-# reviewFeedback, confidenceModel, confidenceThreshold, confidenceRisk,
-# triggerForks and triggerSettle) win over the file. The variables the chart derives from its other values
+# reviewFeedback, confidenceModel, confidenceThreshold, confidenceRisk
+# and triggerSettle) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
 # refuses them, as it refuses a KRITIKA_* variable under `env`.
@@ -196,11 +196,6 @@ config:
   confidenceThreshold: ""
   # -- The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set.
   confidenceRisk: ""
-  # @schema
-  # type: [boolean, string]
-  # @schema
-  # -- Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`.
-  triggerForks: ""
   # -- How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set.
   triggerSettle: ""
   # -- The embedding model, `<provider>/<model>`; set it to index each repository for similar code.
