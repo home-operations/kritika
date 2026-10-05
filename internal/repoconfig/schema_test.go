@@ -33,6 +33,8 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"review", []string{"properties", "review"}, yamlKeys[Review]()},
 		{"confidence", []string{"properties", "confidence"}, yamlKeys[Confidence]()},
 		{"trigger", []string{"properties", "trigger"}, yamlKeys[Trigger]()},
+		{"include", []string{"properties", "trigger", "properties", "include", "items"}, yamlKeys[configfile.Filter]()},
+		{"exclude", []string{"properties", "trigger", "properties", "exclude", "items"}, yamlKeys[configfile.Filter]()},
 		{"comments", []string{"properties", "comments"}, yamlKeys[Comments]()},
 		{"context", []string{"properties", "context", "items"}, yamlKeys[configfile.ContextFile]()},
 		{"rules", []string{"properties", "rules", "items"}, yamlKeys[configfile.Rule]()},
@@ -49,6 +51,9 @@ func TestSchemaMatchesFile(t *testing.T) {
 					node = n[i]
 				}
 			}
+			if ref, ok := node.(map[string]any)["$ref"].(string); ok {
+				node = schema["$defs"].(map[string]any)[strings.TrimPrefix(ref, "#/$defs/")]
+			}
 			props, _ := node.(map[string]any)["properties"].(map[string]any)
 			got := slices.Sorted(maps.Keys(props))
 			slices.Sort(tt.want)
@@ -60,15 +65,7 @@ func TestSchemaMatchesFile(t *testing.T) {
 }
 
 // yamlKeys lists the keys T decodes from.
-func yamlKeys[T any]() []string {
-	var out []string
-	for f := range reflect.TypeFor[T]().Fields() {
-		if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name != "" && name != "-" {
-			out = append(out, name)
-		}
-	}
-	return out
-}
+func yamlKeys[T any]() []string { return leafKeys(reflect.TypeFor[T](), "", false) }
 
 // TestFileKeysAreSettings checks the keys .kritika.yaml takes are settings
 // an admin writes too, spelled the same.
@@ -77,7 +74,7 @@ func TestFileKeysAreSettings(t *testing.T) {
 	for _, p := range configfile.Policies {
 		keys = append(keys, p.Key)
 	}
-	for _, key := range leafKeys(reflect.TypeFor[File](), "") {
+	for _, key := range leafKeys(reflect.TypeFor[File](), "", true) {
 		if !slices.ContainsFunc(keys, func(k string) bool { return key == k || strings.HasPrefix(key, k+".") }) {
 			t.Errorf("the file takes %s, which is no setting an admin writes", key)
 		}
@@ -87,17 +84,22 @@ func TestFileKeysAreSettings(t *testing.T) {
 	}
 }
 
-// leafKeys lists the dotted keys of the settings t decodes, not looking
-// into lists.
-func leafKeys(t reflect.Type, prefix string) []string {
+// leafKeys lists the keys t decodes from, an inline block's among them:
+// dotted down to the settings when nested, not looking into lists, and t's
+// own otherwise.
+func leafKeys(t reflect.Type, prefix string, nested bool) []string {
 	var out []string
 	for f := range t.Fields() {
-		name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		name, opts, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if opts == "inline" {
+			out = append(out, leafKeys(f.Type, prefix, nested)...)
+			continue
+		}
 		if name == "" || name == "-" {
 			continue
 		}
-		if f.Type.Kind() == reflect.Struct {
-			out = append(out, leafKeys(f.Type, prefix+name+".")...)
+		if nested && f.Type.Kind() == reflect.Struct {
+			out = append(out, leafKeys(f.Type, prefix+name+".", nested)...)
 			continue
 		}
 		out = append(out, prefix+name)

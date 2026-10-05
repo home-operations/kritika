@@ -203,7 +203,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	settings := t.file.Settings(t.account, "")
 	d := AccountDetail{
 		Slug:   t.account.Slug(),
-		Models: settings.Models, Limits: settings.Limits, Filter: filterSource(settings),
+		Models: settings.Models, Limits: settings.Limits, Filters: filters(settings.Filters),
 		Usage: monthUsage(month, settings.Limits), LastPolledAt: polled,
 	}
 	if in := t.file.ConnectionFor(t.account); in != nil {
@@ -224,11 +224,9 @@ func connection(in *configfile.Connection) Connection {
 	}
 }
 
-func filterSource(s configfile.Settings) string {
-	if s.Filter == nil {
-		return ""
-	}
-	return s.Filter.Source()
+// filters is fs for the API, its lists never null.
+func filters(fs configfile.Filters) configfile.Filters {
+	return configfile.Filters{Include: nonNil(slices.Clone(fs.Include)), Exclude: nonNil(slices.Clone(fs.Exclude))}
 }
 
 func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountScope) error {
@@ -332,10 +330,7 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 	m, err := repoconfig.Merge(doc, settings)
 	out := &RepoConfig{
 		ReviewID: row.ReviewID, Commit: row.Commit, Found: row.Doc != nil, Settings: repoSettings(m.Settings),
-		Dropped: nonNil(m.Dropped),
-	}
-	if m.InRepoFilter != nil {
-		out.Filter = m.InRepoFilter.Source()
+		Dropped: nonNil(m.Dropped), Filters: filters(m.InRepoFilters),
 	}
 	if err != nil {
 		out.Ignored = err.Error()
@@ -349,7 +344,7 @@ func repoSettings(s configfile.Settings) RepoSettings {
 	review := s.Review
 	review.Context = nonNil(review.Context)
 	return RepoSettings{
-		Enabled: s.Enabled, Models: s.Models, Filter: filterSource(s), Forks: s.Forks,
+		Enabled: s.Enabled, Models: s.Models, Filters: filters(s.Filters),
 		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxAutoReviews: s.MaxAutoReviews,
 		MaxChangedLines: s.MaxChangedLines,
 		MaxDeltaFiles:   s.Incremental.MaxDeltaFiles,

@@ -127,8 +127,10 @@ type AccountDetail struct {
 	Connection Connection        `json:"connection"`
 	Models     configfile.Models `json:"models"`
 	Limits     configfile.Limits `json:"limits"`
-	Filter     string            `json:"filter"`
-	Usage      MonthUsage        `json:"usage"`
+	// Filters are the conditions that decide which pull requests are
+	// reviewed.
+	Filters configfile.Filters `json:"filters"`
+	Usage   MonthUsage         `json:"usage"`
 	// LastPolledAt is when kritika last polled the account for pull
 	// requests, null when it never has: what stands in for a webhook that
 	// does not arrive.
@@ -174,8 +176,7 @@ type Repository struct {
 type RepoSettings struct {
 	Enabled         bool                     `json:"enabled"`
 	Models          configfile.Models        `json:"models"`
-	Filter          string                   `json:"filter"`
-	Forks           bool                     `json:"forks"`
+	Filters         configfile.Filters       `json:"filters"`
 	Ignore          []string                 `json:"ignore"`
 	SettleSeconds   int64                    `json:"settleSeconds"`
 	MaxAutoReviews  int                      `json:"maxAutoReviews"`
@@ -197,8 +198,8 @@ type RepoConfig struct {
 	Found bool `json:"found"`
 	// Settings are the repository's settings with the file applied.
 	Settings RepoSettings `json:"settings"`
-	// Filter is the file's own filter, ANDed with the admin's.
-	Filter string `json:"filter"`
+	// Filters are the file's own conditions, passed beside the admin's.
+	Filters configfile.Filters `json:"filters"`
 	// Dropped are the file's values outside the admin's bounds; the
 	// admin's value applies for each.
 	Dropped []string `json:"dropped"`

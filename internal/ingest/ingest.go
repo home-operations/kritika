@@ -29,7 +29,7 @@ type Request struct {
 type Outcome struct {
 	// Status is enqueued, recorded, skipped or ignored.
 	Status string
-	// Reason explains a skip or ignore, such as filter, fork, disabled,
+	// Reason explains a skip or ignore, such as filter, disabled,
 	// duplicate, not-default-branch, no-mention or action, and for an
 	// installation event is its action.
 	Reason string

@@ -371,11 +371,14 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   // The golden file chose another review model; the admin's is shown beside it.
   await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
   await expect(settings).toContainText(`(.kritika.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
-  await expect(settings).toContainText('Forks skipped (account)');
+  const conditions = (cs: { name: string; expr: string }[]) => cs.map((c) => (c.name ? `${c.name}: ${c.expr}` : c.expr)).join(', ') || '—';
+  await expect(settings).toContainText(`Include ${conditions(rc.settings.filters.include)}`);
+  await expect(settings).toContainText(`Exclude ${conditions(rc.settings.filters.exclude)} (account)`);
   await expect(settings).toContainText('Settle 30s (default)');
   await expect(settings).toContainText(`Feedback ${g.repoDetail.settings.review.feedback} (default)`);
   const file = page.locator('#repo-file').locator('../..');
-  await expect(file).toContainText(rc.filter);
+  await expect(file).toContainText(`Include${conditions(rc.filters.include)} (beside the admin's)`);
+  await expect(file).toContainText(`Exclude${conditions(rc.filters.exclude)} (beside the admin's)`);
   await expect(file).toContainText(rc.dropped[0]!);
   await expect(file.getByRole('link', { name: 'the last review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/${rc.reviewId}`);
 });

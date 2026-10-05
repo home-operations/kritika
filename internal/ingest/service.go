@@ -38,7 +38,6 @@ const (
 	reasonDuplicate    = "duplicate"
 	reasonNotIndexed   = "not-indexed"
 	reasonFilter       = "filter"
-	reasonFork         = "fork"
 	reasonReviewed     = "reviewed"
 	reasonStale        = "stale"
 	reasonPaused       = "paused"
@@ -135,10 +134,6 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
 	settings := req.File.Settings(req.Account, ev.Repository.FullName)
-	// A fork's pull request is recorded but not reviewed unless the
-	// settings review forks: a maintainer asks for its review with
-	// "@<bot> review", which needs the pull request known.
-	fork := pr.Fork && !settings.Forks
 	runs, err := s.runs(ctx, req)
 	if err != nil {
 		return Outcome{}, err
@@ -146,21 +141,24 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	// The filter says what is reviewed, not what is recorded: an action
 	// that records only is not judged by it, or a draft's edit would leave
 	// the row behind under a filter that skips drafts. A label change it
-	// keeps out is recorded all the same, the labels being what it judges.
-	labels := jobs.LabelChange(ev.Action)
+	// keeps out is recorded all the same, the labels being what it judges,
+	// and so is a fork's pull request: a maintainer asks for the review of
+	// one the filter keeps out with "@<bot> review", which needs the pull
+	// request known.
+	recorded := jobs.LabelChange(ev.Action) || pr.Fork
 	filtered := false
 	switch {
 	case !runs:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
-	case review && !fork && settings.Filter != nil:
-		ok, err := settings.Filter.Eval(pr.FilterVars(ev.Action))
+	case review:
+		skip, by, err := settings.Filters.Skips(pr.FilterVars(ev.Action))
 		if err != nil {
-			return Outcome{}, fmt.Errorf("ingest: filter: %w", err)
+			return Outcome{}, fmt.Errorf("ingest: filter %s: %w", by.Label(), err)
 		}
-		if !ok && !labels {
+		if skip && !recorded {
 			return Outcome{Status: Skipped, Reason: reasonFilter}, nil
 		}
-		filtered = !ok
+		filtered = skip
 	}
 
 	labelVars, err := json.Marshal(pr.LabelVars())
@@ -186,9 +184,6 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		case !applied:
 			out = Outcome{Status: Skipped, Reason: reasonStale}
 			return nil
-		case fork:
-			out = Outcome{Status: Skipped, Reason: reasonFork}
-			return nil
 		case !review:
 			out = Outcome{Status: Skipped, Reason: ev.Action}
 			return nil
@@ -211,7 +206,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 			out = Outcome{Status: Skipped, Reason: reasonPaused}
 			return nil
 		}
-		if labels {
+		if jobs.LabelChange(ev.Action) {
 			out, err = s.labelChange(ctx, tx, req, rid, pr)
 			return err
 		}

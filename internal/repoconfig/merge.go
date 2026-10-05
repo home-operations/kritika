@@ -9,15 +9,14 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
-	"github.com/home-operations/kritika/internal/prfilter"
 )
 
 // Merged is the admin's settings with the merge-base FileName applied.
 type Merged struct {
 	configfile.Settings
-	// InRepoFilter is the file's own filter, ANDed with the admin's,
-	// which ingest has already applied; nil when it sets none.
-	InRepoFilter *prfilter.Program
+	// InRepoFilters are the file's own conditions, passed beside the
+	// admin's, which ingest has already applied.
+	InRepoFilters configfile.Filters
 	// Dropped says which of the file's values fell outside the admin's
 	// bounds; the admin's value applies for each.
 	Dropped []string
@@ -25,7 +24,9 @@ type Merged struct {
 
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the admin's settings op. The file narrows what an admin allows
-// (enabled, filter, ignore), appends its context files and rules to the
+// (enabled, ignore, and include and exclude lists of its own, with no
+// condition under an admin's name),
+// appends its context files and rules to the
 // admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
 // the feedback level, the confidence threshold, how the review comments
 // and whether it approves. A model must be one of a provider
@@ -40,14 +41,15 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if doc == nil {
 		return m, nil
 	}
-	f, prg, err := Parse(doc)
+	f, err := Parse(doc)
 	if err != nil {
 		return m, err
 	}
 	if f.Enabled != nil && !*f.Enabled {
 		m.Enabled = false
 	}
-	m.InRepoFilter = prg
+	m.InRepoFilters.Include = m.own("include", f.Trigger.Include, op.Filters)
+	m.InRepoFilters.Exclude = m.own("exclude", f.Trigger.Exclude, op.Filters)
 	for _, g := range f.Trigger.Ignore {
 		if !slices.Contains(m.Ignore, g) {
 			m.Ignore = append(m.Ignore, g)
@@ -129,6 +131,22 @@ func (m *Merged) choose(f *File, providers []string) {
 	}
 }
 
+// own is the file's conditions of one list it may keep: all but those
+// under a name one of the admin's conditions has, which are dropped with a
+// note, so a pull request cannot pass off its own condition as the
+// admin's.
+func (m *Merged) own(list string, conditions []configfile.Filter, admin configfile.Filters) []configfile.Filter {
+	var out []configfile.Filter
+	for _, c := range conditions {
+		if c.Name != "" && admin.Named(c.Name) {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: trigger.%s %s was dropped: an admin's condition has that name", FileName, list, c.Name))
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // drop notes a value the file may not take.
 func (m *Merged) drop(field, value, allowed string) {
 	m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s %s was dropped; allowed: %s", FileName, field, value, allowed))
@@ -176,23 +194,21 @@ func (r SkipReason) Description() string {
 }
 
 // Check returns why m skips a review of a pull request with the filter
-// variables vars that changes changed, or "" when it does not. A filter
-// that fails to evaluate skips, since the file may only narrow; the error
-// is returned for the log.
-func (m *Merged) Check(vars map[string]any, changed []string) (SkipReason, error) {
+// variables vars that changes changed, or "" when it does not, and for a
+// filtered one the condition that decided: the exclusion that holds, or
+// nil when no inclusion does. A filter that fails to evaluate skips, since
+// the file may only narrow; the error is returned for the log.
+func (m *Merged) Check(vars map[string]any, changed []string) (reason SkipReason, by *configfile.Filter, err error) {
 	if !m.Enabled {
-		return SkipDisabled, nil
+		return SkipDisabled, nil, nil
 	}
-	if m.InRepoFilter != nil {
-		ok, err := m.InRepoFilter.Eval(vars)
-		if err != nil || !ok {
-			return SkipFiltered, err
-		}
+	if skip, by, err := m.InRepoFilters.Skips(vars); skip {
+		return SkipFiltered, by, err
 	}
 	if AllIgnored(m.Ignore, changed) {
-		return SkipOnlyPaths, nil
+		return SkipOnlyPaths, nil, nil
 	}
-	return "", nil
+	return "", nil, nil
 }
 
 // PullRequest is what a filter sees of a pull request, and what a review

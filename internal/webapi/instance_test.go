@@ -59,7 +59,7 @@ func TestInstanceSettingsFileLayer(t *testing.T) {
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritika:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
 review: { fallback: gw/small }
-trigger: { forks: true }
+trigger: { settle: 45s }
 embedding: { model: gw/e1, dims: 8 }
 `))
 	if err != nil {
@@ -73,7 +73,7 @@ embedding: { model: gw/e1, dims: 8 }
 		"providers gw":    {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
 		"review model":    {"review", "model", "gw/big", configfile.SourceEnv},
 		"review fallback": {"review", "fallback", "gw/small", configfile.SourceFile},
-		"trigger forks":   {"trigger", "forks", "true", configfile.SourceFile},
+		"trigger settle":  {"trigger", "settle", "45s", configfile.SourceFile},
 		"embedding gw/e1": {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},
 	} {
 		if rows[key] != want {

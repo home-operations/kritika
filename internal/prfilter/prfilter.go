@@ -1,5 +1,6 @@
 // Package prfilter compiles and evaluates a CEL boolean expression that decides
-// which pull requests kritika reviews (the `filter` setting in the configuration file).
+// which pull requests kritika reviews (a condition of the configuration's
+// trigger.include and trigger.exclude lists).
 //
 // The expression sees a single variable, pr — a map of the PR's fields. The
 // caller supplies that map (ingest builds it from the webhook's pull request,

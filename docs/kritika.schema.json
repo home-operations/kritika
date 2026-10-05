@@ -57,9 +57,15 @@
       "additionalProperties": false,
       "description": "Which pull requests get a review.",
       "properties": {
-        "filterExpr": {
-          "type": "string",
-          "description": "A CEL expression over pr, ANDed with the admin's filter."
+        "include": {
+          "type": "array",
+          "description": "Conditions that let a pull request in: it is reviewed when any of them holds, or the list is empty, and no exclude condition does. It must pass the admin's lists as well.",
+          "items": { "$ref": "#/$defs/condition" }
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Conditions that keep a pull request out: it is skipped when any of them holds, whatever include says. A skip names the condition that held when it has a name.",
+          "items": { "$ref": "#/$defs/condition" }
         },
         "ignore": {
           "type": "array",
@@ -118,7 +124,7 @@
           },
           "whenExpr": {
             "type": "string",
-            "description": "A CEL expression over pr, as trigger.filterExpr sees it; the rule applies only when it is true."
+            "description": "A CEL expression over pr, as a trigger.include or trigger.exclude expression sees it; the rule applies only when it is true."
           }
         }
       }
@@ -143,6 +149,24 @@
     }
   },
   "$defs": {
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expr"],
+      "description": "One condition on a pull request, in trigger.include or trigger.exclude.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "What the condition is called where a skip names it, unique in its list; it may not be one an admin's condition has."
+        },
+        "expr": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "A CEL expression over pr that says whether the condition holds."
+        }
+      }
+    },
     "model": {
       "type": "string",
       "pattern": "^[^/]+/.+$",

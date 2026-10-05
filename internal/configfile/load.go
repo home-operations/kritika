@@ -194,8 +194,8 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 	if err := f.resolveEmbedding(); err != nil {
 		return err
 	}
-	if err := f.Defaults.compile(); err != nil {
-		return fmt.Errorf("configfile: trigger.filterExpr: %w", err)
+	if err := f.Defaults.Trigger.Compile(); err != nil {
+		return fmt.Errorf("configfile: trigger.%w", err)
 	}
 	for i := range f.Connections {
 		if err := f.Connections[i].resolve("apps."+f.Connections[i].Name, s); err != nil {
@@ -291,8 +291,8 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Ac
 
 // resolve reads the account's secret references and compiles its filters.
 func (a *Account) resolve(s *secrets) error {
-	if err := a.compile(); err != nil {
-		return fmt.Errorf("configfile: %s.trigger.filterExpr: %w", a.pattern, err)
+	if err := a.Trigger.Compile(); err != nil {
+		return fmt.Errorf("configfile: %s.trigger.%w", a.pattern, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
@@ -304,8 +304,8 @@ func (a *Account) resolve(s *secrets) error {
 		a.Providers[name] = p
 	}
 	for ri := range a.Repositories {
-		if err := a.Repositories[ri].compile(); err != nil {
-			return fmt.Errorf("configfile: %s.trigger.filterExpr: %w", a.Repositories[ri].where, err)
+		if err := a.Repositories[ri].Trigger.Compile(); err != nil {
+			return fmt.Errorf("configfile: %s.trigger.%w", a.Repositories[ri].where, err)
 		}
 	}
 	return nil
@@ -448,15 +448,6 @@ func (f *File) validateAccount(a *Account) error {
 		}
 	}
 	return nil
-}
-
-// compile compiles the filter the scope writes, if any; an empty one
-// compiles to no restriction.
-func (o *Overrides) compile() (err error) {
-	if o.Trigger.FilterExpr != nil {
-		o.filter, err = compileFilter(*o.Trigger.FilterExpr)
-	}
-	return err
 }
 
 // validateOverrides checks the settings one scope writes, named in errors

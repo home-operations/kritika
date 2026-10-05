@@ -18,7 +18,11 @@ func adminSettings() configfile.Settings {
 		Enabled: true, Ignore: []string{"vendor/**"}, Settle: 2 * time.Minute,
 		Models:     configfile.Models{Review: "p/big"},
 		Confidence: configfile.Confidence{Threshold: 5, Risk: review.RiskMedium},
-		Agent:      configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
+		Filters: configfile.Filters{
+			Include: []configfile.Filter{{Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
+			Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
+		},
+		Agent: configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
 		Review: configfile.Review{
 			RequireSuggestedFix: true,
 			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
@@ -31,17 +35,19 @@ func adminSettings() configfile.Settings {
 func TestMerge(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		doc     string
-		want    func(*configfile.Settings)
-		filter  bool
+		name string
+		doc  string
+		want func(*configfile.Settings)
+		// include and exclude are the labels of the file's own conditions.
+		include []string
+		exclude []string
 		dropped []string
 		wantErr string
 	}{
 		{name: "no file"},
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
-			doc: "enabled: false\ntrigger: { filterExpr: '!pr.draft', ignore: [gen/**, vendor/**] }\n" +
+			doc: "enabled: false\ntrigger: { exclude: [{ expr: pr.draft }], ignore: [gen/**, vendor/**] }\n" +
 				"rules: [{ id: repo-style, file: .kritika/rules.md }, { id: sql, file: .kritika/sql.md, paths: ['**/*.sql'] }]\n" +
 				"comments:\n  finding: .kritika/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
@@ -50,7 +56,7 @@ func TestMerge(t *testing.T) {
 					configfile.Rule{ID: "sql", File: ".kritika/sql.md", Paths: []string{"**/*.sql"}})
 				s.Review.Templates.Inline = ".kritika/inline.tmpl"
 			},
-			filter: true,
+			exclude: []string{"pr.draft"},
 		},
 		{
 			name: "an admin's file rule stays as the admin wrote it", doc: "rules: [{ id: house-style, file: docs/rules.md, paths: ['**/*.sql'] }]\n",
@@ -142,6 +148,25 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{name: "the risk instructions are the admin's alone", doc: "confidence: { instructions: all low }\n", wantErr: "field instructions not found"},
+		{
+			name: "an inclusion under an admin's name is dropped", include: []string{"mine", "pr.open"},
+			doc:     "trigger: { include: [{ name: wanted, expr: 'true' }, { name: mine, expr: 'true' }, { expr: pr.open }] }\n",
+			dropped: []string{`.kritika.yaml: trigger.include wanted was dropped: an admin's condition has that name`},
+		},
+		{
+			name: "an exclusion under an admin's name is dropped", exclude: []string{"mine", "pr.fork"},
+			doc:     "trigger: { exclude: [{ name: drafts, expr: 'false' }, { name: mine, expr: 'false' }, { expr: pr.fork }] }\n",
+			dropped: []string{`.kritika.yaml: trigger.exclude drafts was dropped: an admin's condition has that name`},
+		},
+		{
+			name: "a name of the admin's other list is dropped too", include: []string{"mine"}, exclude: []string{"mine"},
+			doc: "trigger: { include: [{ name: drafts, expr: 'true' }, { name: mine, expr: 'true' }], " +
+				"exclude: [{ name: mine, expr: 'false' }, { name: wanted, expr: 'false' }] }\n",
+			dropped: []string{
+				`.kritika.yaml: trigger.include drafts was dropped: an admin's condition has that name`,
+				`.kritika.yaml: trigger.exclude wanted was dropped: an admin's condition has that name`,
+			},
+		},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
 		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},
@@ -166,14 +191,24 @@ func TestMerge(t *testing.T) {
 			if !reflect.DeepEqual(m.Settings, want) {
 				t.Fatalf("settings = %+v\nwant       %+v", m.Settings, want)
 			}
-			if (m.InRepoFilter != nil) != tt.filter || !slices.Equal(m.Dropped, tt.dropped) {
-				t.Fatalf("filter=%v dropped=%q", m.InRepoFilter != nil, m.Dropped)
+			if !slices.Equal(labels(m.InRepoFilters.Include), tt.include) || !slices.Equal(labels(m.InRepoFilters.Exclude), tt.exclude) ||
+				!slices.Equal(m.Dropped, tt.dropped) {
+				t.Fatalf("filters=%v dropped=%q", m.InRepoFilters, m.Dropped)
 			}
 			if !reflect.DeepEqual(op, adminSettings()) {
 				t.Fatal("Merge changed the admin's settings")
 			}
 		})
 	}
+}
+
+// labels lists what the conditions fs are called.
+func labels(fs []configfile.Filter) []string {
+	out := make([]string, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, f.Label())
+	}
+	return out
 }
 
 func TestMergedCheck(t *testing.T) {
@@ -189,13 +224,22 @@ func TestMergedCheck(t *testing.T) {
 		changed []string
 		want    SkipReason
 		wantErr bool
+		// filter is the label of the exclusion that held, or of a condition
+		// that failed to evaluate.
+		filter string
 	}{
-		{"nothing to skip", "", []string{"main.go"}, "", false},
-		{"disabled", "enabled: false\n", []string{"main.go"}, SkipDisabled, false},
-		{"filtered", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", []string{"main.go"}, SkipFiltered, false},
-		{"filter allows", "trigger:\n  filterExpr: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"'\n", []string{"main.go"}, "", false},
-		{"filter that fails to evaluate skips", "trigger:\n  filterExpr: 'pr.number == 1 || pr.labels[9].name == \"x\"'\n", []string{"main.go"}, SkipFiltered, true},
-		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", []string{"docs/a.md"}, SkipOnlyPaths, false},
+		{"nothing to skip", "", []string{"main.go"}, "", false, ""},
+		{"disabled", "enabled: false\n", []string{"main.go"}, SkipDisabled, false, ""},
+		{"the exclusion that holds is named", "trigger:\n  exclude: [{ expr: 'false' }, { name: marker, expr: 'pr.body.contains(\"[skip-review]\")' }]\n",
+			[]string{"main.go"}, SkipFiltered, false, "marker"},
+		{"an exclusion without a name", "trigger:\n  exclude: [{ expr: 'pr.body.contains(\"[skip-review]\")' }]\n", []string{"main.go"}, SkipFiltered, false, `pr.body.contains("[skip-review]")`},
+		{"no exclusion holds", "trigger:\n  exclude: [{ name: drafts, expr: pr.draft }]\n", []string{"main.go"}, "", false, ""},
+		{"no inclusion holds", "trigger:\n  include: [{ name: drafts, expr: pr.draft }, { expr: 'pr.number == 4' }]\n", []string{"main.go"}, SkipFiltered, false, ""},
+		{"an inclusion holds", "trigger:\n  include: [{ expr: pr.draft }, { expr: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"' }]\n", []string{"main.go"}, "", false, ""},
+		{"an exclusion wins over an inclusion", "trigger:\n  include: [{ expr: pr.open }]\n  exclude: [{ name: deps, expr: 'pr.labels.exists(l, l.name == \"deps\")' }]\n",
+			[]string{"main.go"}, SkipFiltered, false, "deps"},
+		{"filter that fails to evaluate skips", "trigger:\n  include: [{ expr: 'pr.number == 1 || pr.labels[9].name == \"x\"' }]\n", []string{"main.go"}, SkipFiltered, true, `pr.number == 1 || pr.labels[9].name == "x"`},
+		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", []string{"docs/a.md"}, SkipOnlyPaths, false, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -204,9 +248,13 @@ func TestMergedCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := m.Check(vars, tt.changed)
-			if got != tt.want || (err != nil) != tt.wantErr {
-				t.Fatalf("Check = %q, %v; want %q", got, err, tt.want)
+			got, by, err := m.Check(vars, tt.changed)
+			var filter string
+			if by != nil {
+				filter = by.Label()
+			}
+			if got != tt.want || (err != nil) != tt.wantErr || filter != tt.filter {
+				t.Fatalf("Check = %q, %q, %v; want %q, %q", got, filter, err, tt.want, tt.filter)
 			}
 		})
 	}

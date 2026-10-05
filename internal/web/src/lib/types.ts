@@ -149,12 +149,25 @@ export interface Limits {
   tokensPerMonth: number;
 }
 
+// One condition on a pull request, CEL over pr; name is '' when it has none.
+export interface Condition {
+  name: string;
+  expr: string;
+}
+
+// A pull request is reviewed when one of include holds, or there are none,
+// and none of exclude does.
+export interface Filters {
+  include: Condition[];
+  exclude: Condition[];
+}
+
 export interface AccountDetail {
   slug: string;
   connection: Connection;
   models: Models;
   limits: Limits;
-  filter: string;
+  filters: Filters;
   usage: MonthUsage;
   // lastPolledAt is when kritika last polled the account for pull requests,
   // null when it never has.
@@ -220,8 +233,7 @@ export type Feedback = 'detailed' | 'standard' | 'minimal';
 export interface RepoSettings {
   enabled: boolean;
   models: Models;
-  filter: string;
-  forks: boolean;
+  filters: Filters;
   ignore: string[];
   settleSeconds: number;
   maxAutoReviews: number;
@@ -253,7 +265,7 @@ export interface RepoConfig {
   commit: string;
   found: boolean;
   settings: RepoSettings;
-  filter: string;
+  filters: Filters;
   dropped: string[];
   ignored?: string;
 }

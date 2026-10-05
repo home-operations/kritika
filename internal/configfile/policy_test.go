@@ -37,17 +37,17 @@ func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, "trigger: { settle: 2m }\nagent: { steps: 9 }\n"+
-		acme("  acme/*: { trigger: { forks: true } }\n  acme/x: { trigger: { settle: 0s, filterExpr: \"true\" } }\n"))
+		acme("  acme/*: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }\n  acme/x: { trigger: { settle: 0s, include: [{ expr: \"true\" }] } }\n"))
 	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
-		"trigger.settle": SourceAccount, "trigger.forks": SourceAccount, "agent.steps": SourceDefaults, "enabled": SourceDefault, "trigger.filterExpr": SourceAccount,
+		"trigger.settle": SourceAccount, "trigger.exclude": SourceAccount, "agent.steps": SourceDefaults, "enabled": SourceDefault, "trigger.include": SourceAccount,
 		"agent.tokens": SourceDefault, "review.model": SourceDefault, "trigger.ignore": SourceDefault,
 	} {
 		if s[key] != want {
 			t.Errorf("%s from %s, want %s", key, s[key], want)
 		}
 	}
-	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["trigger.settle"] != SourceDefaults || s["trigger.forks"] != SourceDefault {
+	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["trigger.settle"] != SourceDefaults || s["trigger.exclude"] != SourceDefault {
 		t.Fatalf("an account without an entry = %v", s)
 	}
 }

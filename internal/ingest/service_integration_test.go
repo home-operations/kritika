@@ -31,10 +31,11 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML+`repositories:
-  onedr0p/*: { trigger: { filterExpr: "!pr.draft" } }
+  onedr0p/*: { trigger: { exclude: [{ name: drafts, expr: pr.draft }] } }
   onedr0p/settle: { trigger: { settle: 60s } }
-  onedr0p/opened-only: { trigger: { filterExpr: 'pr.event == "opened"' } }
-  onedr0p/labelled: { trigger: { filterExpr: '!pr.labels.exists(l, l.name == "skip-review")' } }
+  onedr0p/opened-only: { trigger: { include: [{ expr: 'pr.event == "opened"' }] } }
+  onedr0p/labelled: { trigger: { exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }] } }
+  onedr0p/no-forks: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }
 `)
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
@@ -122,8 +123,10 @@ func TestDispatchPullRequest(t *testing.T) {
 		draft.Draft = true
 		draft.HeadSHA = "ccc"
 		fork := *pr
+		// A fork's pull request the filter keeps out is recorded, so it
+		// takes a number of its own.
 		fork.Fork = true
-		fork.HeadSHA = "ddd"
+		fork.Number, fork.HeadSHA = 72, "ddd"
 		tests := []struct {
 			name   string
 			action string
@@ -132,7 +135,7 @@ func TestDispatchPullRequest(t *testing.T) {
 			reason string
 		}{
 			{"draft filtered", "opened", "onedr0p/home-ops", &draft, "filter"},
-			{"fork off by default", "opened", "onedr0p/home-ops", &fork, "fork"},
+			{"fork excluded", "opened", "onedr0p/no-forks", &fork, "filter"},
 			{"disabled repository", "opened", "onedr0p/disabled", pr, "disabled"},
 			{"filtered on the event", "synchronize", "onedr0p/opened-only", pr, "filter"},
 		}
@@ -168,26 +171,42 @@ func TestDispatchPullRequest(t *testing.T) {
 	})
 }
 
-// TestDispatchForkRecorded: a fork's pull request is recorded, so a
-// maintainer can ask for its review, but no review is queued for it.
+// TestDispatchForkRecorded: a fork's pull request is queued for review
+// like any other, and one the filter keeps out is recorded all the same, so
+// a maintainer can ask for its review.
 func TestDispatchForkRecorded(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
-	fork := &webhook.PullRequest{Number: 70, Title: "t", Author: "someone", State: "open", HeadRef: "f", HeadSHA: "eee", BaseRef: "main", Fork: true}
-	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/home-ops"), PullRequest: fork}))
-	if err != nil || out != (Outcome{Status: Skipped, Reason: reasonFork}) {
-		t.Fatalf("out = %+v, %v; want skipped as a fork", out, err)
+	tests := []struct {
+		name   string
+		repo   string
+		number int
+		head   string
+		want   Outcome
+		jobs   int
+	}{
+		{"no fork exclusion", "onedr0p/home-ops", 70, "eee", Outcome{Status: Enqueued, Job: "review"}, 1},
+		{"forks excluded", "onedr0p/no-forks", 71, "fff", Outcome{Status: Skipped, Reason: reasonFilter}, 0},
 	}
-	var isFork bool
-	var jobs int
-	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT fork FROM pull_requests WHERE number = 70`).Scan(&isFork); err != nil {
-			return err
-		}
-		return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND (args->>'number')::int = 70`).Scan(&jobs)
-	}); err != nil || !isFork || jobs != 0 {
-		t.Fatalf("fork = %v, review jobs = %d, %v; want the pull request recorded as a fork and no review queued", isFork, jobs, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fork := &webhook.PullRequest{Number: tt.number, Title: "t", Author: "someone", State: "open", HeadRef: "f", HeadSHA: tt.head, BaseRef: "main", Fork: true}
+			out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo(tt.repo), PullRequest: fork}))
+			if err != nil || out != tt.want {
+				t.Fatalf("out = %+v, %v; want %+v", out, err, tt.want)
+			}
+			var isFork bool
+			var jobs int
+			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+				if err := tx.QueryRow(ctx, `SELECT fork FROM pull_requests WHERE number = $1`, tt.number).Scan(&isFork); err != nil {
+					return err
+				}
+				return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'review' AND (args->>'number')::int = $1`, tt.number).Scan(&jobs)
+			}); err != nil || !isFork || jobs != tt.jobs {
+				t.Fatalf("fork = %v, review jobs = %d, %v; want the pull request recorded as a fork with %d review(s) queued", isFork, jobs, err, tt.jobs)
+			}
+		})
 	}
 }
 
