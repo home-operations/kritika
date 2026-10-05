@@ -399,7 +399,7 @@ export interface ReviewInfo extends Review {
   mergeBaseSha: string;
   patchId: string;
   priorReviewId: string | null;
-  // newestReviewId is the pull request's newest review, null when this is it.
+  // newestReviewId is the pull request's newest review that was not skipped, null when none is newer than this.
   newestReviewId: string | null;
   cancelRequestedAt: string | null;
 }

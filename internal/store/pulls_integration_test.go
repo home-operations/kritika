@@ -129,7 +129,7 @@ func TestReviewSkipReason(t *testing.T) {
 }
 
 // TestNewestReviewID checks that a review names the pull request's newest
-// review, and that the newest names none.
+// review, that the newest names none, and that a skipped one is never it.
 func TestNewestReviewID(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -147,6 +147,10 @@ func TestNewestReviewID(t *testing.T) {
 				RETURNING id`, first, i+1).Scan(&ids[i]); err != nil {
 				return err
 			}
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
+			SELECT account_id, pull_request_id, 'abc', 'skipped', created_at + interval '3 minutes' FROM reviews WHERE id = $1`, first); err != nil {
+			return err
 		}
 		for i, id := range []string{first, ids[0], ids[1]} {
 			var err error
