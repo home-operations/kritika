@@ -157,31 +157,63 @@ func TestAgentSkip(t *testing.T) {
 	// Three lines change in main.go and two in docs/a.md.
 	const diff = "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,3 @@\n-a\n+A\n+B\n c\n" +
 		"diff --git a/docs/a.md b/docs/a.md\n--- a/docs/a.md\n+++ b/docs/a.md\n@@ -1,2 +1,2 @@\n-x\n+X\n y\n"
+	both := []string{"main.go", "docs/a.md"}
+	large := configfile.Filters{Exclude: []configfile.Filter{{Name: "too-large", Expr: "pr.lines > 4"}}}
+	docs := configfile.Filters{Exclude: []configfile.Filter{{Name: "docs", Paths: []string{"docs/**"}}}}
+	filtered := string(repoconfig.SkipFiltered)
 	tests := []struct {
-		name     string
-		ignore   []string
-		changed  []string
-		patchID  string
-		maxLines int
-		want     string
+		name    string
+		ignore  []string
+		changed []string
+		patchID string
+		filters []configfile.Filters
+		// labels replace the pull request's when set.
+		labels     string
+		want       string
+		wantDetail string
+		wantErr    bool
 	}{
 		{name: "reviewed", changed: []string{"main.go"}, patchID: "p2"},
 		{name: "unchanged bot patch", changed: []string{"main.go"}, patchID: "p1", want: SkipUnchangedPatch},
 		{name: "only ignored paths", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
 			want: string(repoconfig.SkipOnlyPaths)},
 		{name: "a path the ignore globs do not cover", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md", "main.go"}, patchID: "p2"},
-		{name: "more changed lines than allowed", changed: []string{"main.go", "docs/a.md"}, patchID: "p2", maxLines: 4, want: SkipTooLarge},
-		{name: "ignored paths do not count toward the limit", ignore: []string{"**/*.md"}, changed: []string{"main.go", "docs/a.md"},
-			patchID: "p2", maxLines: 4},
-		{name: "exactly the allowed lines", changed: []string{"main.go", "docs/a.md"}, patchID: "p2", maxLines: 5},
-		{name: "an unchanged bot patch is skipped as such first", changed: []string{"main.go"}, patchID: "p1", maxLines: 1, want: SkipUnchangedPatch},
+		{name: "more changed lines than an exclusion allows", changed: both, patchID: "p2", filters: []configfile.Filters{large},
+			want: filtered, wantDetail: "too-large"},
+		{name: "ignored paths do not count toward pr.lines", ignore: []string{"**/*.md"}, changed: both, patchID: "p2",
+			filters: []configfile.Filters{large}},
+		{name: "exactly the lines an exclusion allows", changed: both, patchID: "p2",
+			filters: []configfile.Filters{{Exclude: []configfile.Filter{{Name: "too-large", Expr: "pr.lines > 5"}}}}},
+		{name: "an exclusion by paths", changed: both, patchID: "p2", filters: []configfile.Filters{docs}, want: filtered, wantDetail: "docs"},
+		{name: "an exclusion whose paths nothing changed matches", changed: []string{"main.go"}, patchID: "p2", filters: []configfile.Filters{docs}},
+		{name: "an exclusion without a name", changed: both, patchID: "p2",
+			filters: []configfile.Filters{{Exclude: []configfile.Filter{{Paths: []string{"docs/**"}}}}}, want: filtered},
+		{name: "the second lists skip", changed: both, patchID: "p2",
+			filters: []configfile.Filters{{Exclude: []configfile.Filter{{Name: "huge", Expr: "pr.lines > 100"}}}, docs}, want: filtered, wantDetail: "docs"},
+		{name: "an inclusion by paths holds", changed: both, patchID: "p2",
+			filters: []configfile.Filters{{Include: []configfile.Filter{{Name: "source", Paths: []string{"*.go"}}}}}},
+		{name: "no inclusion by paths holds", changed: both, patchID: "p2",
+			filters: []configfile.Filters{{Include: []configfile.Filter{{Name: "source", Paths: []string{"src/**"}}}}}, want: filtered},
+		{name: "an unchanged bot patch is skipped as such first", changed: both, patchID: "p1", filters: []configfile.Filters{large, docs},
+			want: SkipUnchangedPatch},
+		{name: "only ignored paths are skipped as such first", ignore: []string{"**/*.md"}, changed: []string{"docs/a.md"}, patchID: "p2",
+			filters: []configfile.Filters{docs}, want: string(repoconfig.SkipOnlyPaths)},
+		// The expression passes the smoke test, the sample having a label,
+		// and fails on a pull request with none.
+		{name: "a condition that fails to evaluate", changed: both, patchID: "p2", labels: "[]",
+			filters: []configfile.Filters{{Exclude: []configfile.Filter{{Name: "broken", Expr: `pr.labels[0].name == "x"`, Paths: []string{"docs/**"}}}}},
+			want:    filtered, wantDetail: "broken", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.UnchangedPatchID, s.Prompt.MaxChangedLines, s.Ignore = "p1", tt.maxLines, tt.ignore
-			if got := agentSkip(s, tt.changed, tt.patchID, diff); got != tt.want {
-				t.Fatalf("agentSkip = %q, want %q", got, tt.want)
+			s.Prompt.UnchangedPatchID, s.Prompt.Filters, s.Ignore = "p1", tt.filters, tt.ignore
+			if tt.labels != "" {
+				s.Prompt.PullRequest.Labels = []byte(tt.labels)
+			}
+			got, detail, err := agentSkip(s, tt.changed, tt.patchID, diff)
+			if got != tt.want || detail != tt.wantDetail || (err != nil) != tt.wantErr {
+				t.Fatalf("agentSkip = %q, %q, %v; want %q, %q, error %v", got, detail, err, tt.want, tt.wantDetail, tt.wantErr)
 			}
 		})
 	}

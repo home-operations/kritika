@@ -1541,7 +1541,7 @@ review:
 	lf.mu.Lock()
 	forgeStatus := lf.status
 	lf.mu.Unlock()
-	if forgeStatus != "success: kritika: skipped (filtered by .kritika.yaml: skip-label)" {
+	if forgeStatus != "success: kritika: skipped (filtered: skip-label)" {
 		t.Fatalf("status = %q", forgeStatus)
 	}
 	checkLabelRepeat(ctx, t, appStore, insertOnly, accountID, labelledHead)

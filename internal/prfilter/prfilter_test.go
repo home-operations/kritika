@@ -147,3 +147,34 @@ func TestEval_CostBounded(t *testing.T) {
 		t.Fatalf("cheap expression must not hit the cost limit: %v", err)
 	}
 }
+
+func TestUses(t *testing.T) {
+	tests := []struct {
+		expr string
+		want bool
+	}{
+		{`pr.lines > 100`, true},
+		{`pr.draft || pr.lines > 100`, true},
+		{`has(pr.lines) && pr.draft`, true},
+		{`pr["lines"] > 100`, true},
+		{`pr[pr.title] == 1`, true},
+		{`"lines" in pr`, true},
+		{`[pr].exists(p, p.lines > 100)`, true},
+		{`pr == pr`, true},
+		{`pr.draft`, false},
+		{`pr.title.contains("lines")`, false},
+		{`pr.labels.exists(l, l.name == "lines")`, false},
+		{`pr["title"] == "x"`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.expr, func(t *testing.T) {
+			p, err := Compile(tt.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := p.Uses("lines"); got != tt.want {
+				t.Fatalf("Uses(lines) = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

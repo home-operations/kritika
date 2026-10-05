@@ -151,9 +151,15 @@ func (w *Review) agentPrompt(
 			return err
 		}
 		p.Rules = repoconfig.RulesFor(eff.Review.Rules, vars)
-		if trigger != jobs.TriggerManual {
-			// A review someone asked for is never too large.
-			p.MaxChangedLines = eff.MaxChangedLines
+		// The conditions only the diff can judge are the runner's; it
+		// judges them as the review's trigger, and a review someone asked
+		// for passes the admin's lists whatever they say.
+		p.PullRequest.Event = trigger
+		if trigger != jobs.TriggerManual && eff.Filters.NeedsDiff() {
+			p.Filters = append(p.Filters, eff.Filters)
+		}
+		if eff.InRepoFilters.NeedsDiff() {
+			p.Filters = append(p.Filters, eff.InRepoFilters)
 		}
 		if !pr.dedupesBotPatch(trigger) {
 			return nil

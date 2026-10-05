@@ -289,10 +289,6 @@ type TriggerSpec struct {
 	// Limit pauses a pull request's automatic reviews once that many have
 	// completed, until someone resumes them; zero never pauses.
 	Limit *int `yaml:"limit,omitempty"`
-	// Lines skips an automatic review of a pull request whose diff, ignored
-	// paths left out, adds and removes more lines than this; zero reviews
-	// any size. A review someone asks for still runs.
-	Lines *int `yaml:"lines,omitempty"`
 }
 
 // Tool is a command-line tool a runner pod mounts from an image, read-only,
@@ -714,13 +710,10 @@ type Settings struct {
 	// MaxAutoReviews pauses a pull request's automatic reviews once that
 	// many have completed; zero never pauses.
 	MaxAutoReviews int
-	// MaxChangedLines skips an automatic review whose diff changes more
-	// lines than this, ignored paths left out; zero reviews any size.
-	MaxChangedLines int
-	Agent           AgentSettings
-	Incremental     IncrementalSettings
-	Review          Review
-	Confidence      Confidence
+	Agent          AgentSettings
+	Incremental    IncrementalSettings
+	Review         Review
+	Confidence     Confidence
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.

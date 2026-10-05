@@ -259,7 +259,7 @@ func TestMergedCheck(t *testing.T) {
 		})
 	}
 	for r, want := range map[SkipReason]string{
-		SkipDisabled: "disabled in .kritika.yaml", SkipFiltered: "filtered by .kritika.yaml", SkipOnlyPaths: "only ignored paths changed",
+		SkipDisabled: "disabled in .kritika.yaml", SkipFiltered: "filtered", SkipOnlyPaths: "only ignored paths changed",
 	} {
 		if !r.Valid() || r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)

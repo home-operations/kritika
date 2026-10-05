@@ -186,7 +186,7 @@ func (r SkipReason) Description() string {
 	case SkipDisabled:
 		return "disabled in " + FileName
 	case SkipFiltered:
-		return "filtered by " + FileName
+		return "filtered"
 	case SkipOnlyPaths:
 		return "only ignored paths changed"
 	}
@@ -196,13 +196,14 @@ func (r SkipReason) Description() string {
 // Check returns why m skips a review of a pull request with the filter
 // variables vars that changes changed, or "" when it does not, and for a
 // filtered one the condition that decided: the exclusion that holds, or
-// nil when no inclusion does. A filter that fails to evaluate skips, since
-// the file may only narrow; the error is returned for the log.
+// nil when no inclusion does. Its conditions that need the diff are the
+// runner's to judge. A filter that fails to evaluate skips, since the file
+// may only narrow; the error is returned for the log.
 func (m *Merged) Check(vars map[string]any, changed []string) (reason SkipReason, by *configfile.Filter, err error) {
 	if !m.Enabled {
 		return SkipDisabled, nil, nil
 	}
-	if skip, by, err := m.InRepoFilters.Skips(vars); skip {
+	if skip, by, err := m.InRepoFilters.Skips(vars, nil); skip {
 		return SkipFiltered, by, err
 	}
 	if AllIgnored(m.Ignore, changed) {

@@ -36,6 +36,9 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
   onedr0p/opened-only: { trigger: { include: [{ expr: 'pr.event == "opened"' }] } }
   onedr0p/labelled: { trigger: { exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }] } }
   onedr0p/no-forks: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }
+  onedr0p/no-locks: { trigger: { exclude: [{ name: locks, paths: ["**/*.lock"] }, { name: too-large, expr: pr.lines > 2000 }] } }
+  onedr0p/source-only: { trigger: { include: [{ name: source, paths: ["src/**"] }] } }
+  onedr0p/bots-or-source: { trigger: { include: [{ name: bots, expr: 'pr.author.startsWith("renovate")' }, { name: source, paths: ["src/**"] }] } }
 `)
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
@@ -169,6 +172,33 @@ func TestDispatchPullRequest(t *testing.T) {
 			t.Fatalf("state = %q, merged = %v, closed at %v; want closed and merged at %v", state, isMerged, at, closedAt)
 		}
 	})
+}
+
+// TestDispatchLeavesDiffConditions: a condition only the diff can judge
+// keeps no pull request out at ingest, an inclusion among them standing in
+// for the ones that do not hold yet.
+func TestDispatchLeavesDiffConditions(t *testing.T) {
+	svc, _, f := setupService(t)
+	ctx := context.Background()
+	tests := []struct {
+		name   string
+		repo   string
+		number int
+		head   string
+	}{
+		{"an exclude with paths", "onedr0p/no-locks", 81, "d01"},
+		{"an include with paths alone", "onedr0p/source-only", 82, "d02"},
+		{"an include that fails beside one with paths", "onedr0p/bots-or-source", 83, "d03"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := &webhook.PullRequest{Number: tt.number, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: tt.head, BaseRef: "main"}
+			out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo(tt.repo), PullRequest: pr}))
+			if err != nil || out != (Outcome{Status: Enqueued, Job: "review"}) {
+				t.Fatalf("out = %+v, %v; want it enqueued", out, err)
+			}
+		})
+	}
 }
 
 // TestDispatchForkRecorded: a fork's pull request is queued for review

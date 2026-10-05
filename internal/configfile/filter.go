@@ -4,33 +4,45 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
+	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/prfilter"
 )
 
-// Filter is one condition on a pull request, CEL over pr, in a list that
-// includes or excludes pull requests. Name, when set, says which condition
-// decided, and lets a narrower scope replace it.
+// Filter is one condition on a pull request in a list that includes or
+// excludes pull requests: Expr, CEL over pr, Paths, globs one of which a
+// changed path must match, or both, when both must hold. Name, when set,
+// says which condition decided, and lets a narrower scope replace it.
 type Filter struct {
-	Name string `yaml:"name,omitempty" json:"name"`
-	Expr string `yaml:"expr" json:"expr"`
+	Name  string   `yaml:"name,omitempty" json:"name"`
+	Expr  string   `yaml:"expr,omitempty" json:"expr"`
+	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 
 	prg *prfilter.Program
 }
 
 // Label is what the condition is called where one is named: its name, or
-// its expression without one.
-func (f Filter) Label() string { return cmp.Or(f.Name, f.Expr) }
+// without one its expression, or its globs.
+func (f Filter) Label() string { return cmp.Or(f.Name, f.Expr, strings.Join(f.Paths, ", ")) }
 
-// Compile compiles the condition and smoke-tests it against SamplePR, so
-// one that type-checks but fails at runtime (a field of the wrong type, a
-// non-boolean result) is caught when it is read rather than on the first
-// pull request.
+// Compile checks the condition's globs, compiles its expression and
+// smoke-tests it against SamplePR, so one that type-checks but fails at
+// runtime (a field of the wrong type, a non-boolean result) is caught when
+// it is read rather than on the first pull request.
 func (f *Filter) Compile() error {
+	if strings.TrimSpace(f.Expr) == "" && len(f.Paths) == 0 {
+		return errors.New("expr or paths is required")
+	}
+	for i, g := range f.Paths {
+		if !ValidGlob(g) {
+			return fmt.Errorf("paths[%d] %q is not a valid glob", i, g)
+		}
+	}
 	if strings.TrimSpace(f.Expr) == "" {
-		return errors.New("expr is required")
+		return nil
 	}
 	prg, err := prfilter.Compile(f.Expr)
 	if err != nil {
@@ -42,6 +54,34 @@ func (f *Filter) Compile() error {
 	f.prg = prg
 	return nil
 }
+
+// Diff is what a condition judges of a pull request once its diff is
+// fetched: the lines it adds and removes, ignored paths left out, which an
+// expression reads as pr.lines, and the paths it changes.
+type Diff struct {
+	Lines   int
+	Changed []string
+}
+
+// needsDiff reports whether the condition, compiled, cannot be judged
+// before the pull request's diff is fetched.
+func (f Filter) needsDiff() bool {
+	return len(f.Paths) > 0 || (f.prg != nil && f.prg.Uses(linesVar))
+}
+
+// holds reports whether vars, and for a condition with globs the changed
+// paths of d, meet the condition.
+func (f Filter) holds(vars map[string]any, d *Diff) (bool, error) {
+	if f.prg != nil {
+		if ok, err := f.prg.Eval(vars); err != nil || !ok {
+			return false, err
+		}
+	}
+	return len(f.Paths) == 0 || slices.ContainsFunc(d.Changed, func(c string) bool { return chunk.Ignored(f.Paths, c) }), nil
+}
+
+// linesVar is the pr field only a fetched diff gives.
+const linesVar = "lines"
 
 // Filters decide whether a pull request is reviewed: it is when one of
 // Include holds, or Include is empty, and none of Exclude does.
@@ -75,14 +115,31 @@ func (fs *Filters) Compile() error {
 // variables vars from being reviewed, and the condition that decided: the
 // exclusion that holds, or nil when it is that no inclusion does. A
 // condition that fails to evaluate skips, and is returned with its error.
-func (fs Filters) Skips(vars map[string]any) (bool, *Filter, error) {
+//
+// d is the pull request's diff, nil before it is fetched. Then a condition
+// that needs it is left for later: such an exclusion does not yet hold,
+// and such an inclusion may, so the pull request is not kept out for want
+// of an inclusion while one is still to be judged.
+func (fs Filters) Skips(vars map[string]any, d *Diff) (bool, *Filter, error) {
+	if d != nil {
+		vars = maps.Clone(vars)
+		vars[linesVar] = d.Lines
+	}
 	for i := range fs.Exclude {
-		if ok, err := fs.Exclude[i].prg.Eval(vars); err != nil || ok {
+		if d == nil && fs.Exclude[i].needsDiff() {
+			continue
+		}
+		if ok, err := fs.Exclude[i].holds(vars, d); err != nil || ok {
 			return true, &fs.Exclude[i], err
 		}
 	}
+	pending := false
 	for i := range fs.Include {
-		ok, err := fs.Include[i].prg.Eval(vars)
+		if d == nil && fs.Include[i].needsDiff() {
+			pending = true
+			continue
+		}
+		ok, err := fs.Include[i].holds(vars, d)
 		if err != nil {
 			return true, &fs.Include[i], err
 		}
@@ -90,7 +147,13 @@ func (fs Filters) Skips(vars map[string]any) (bool, *Filter, error) {
 			return false, nil, nil
 		}
 	}
-	return len(fs.Include) > 0, nil, nil
+	return len(fs.Include) > 0 && !pending, nil, nil
+}
+
+// NeedsDiff reports whether one of fs's conditions, compiled, cannot be
+// judged before the pull request's diff is fetched.
+func (fs Filters) NeedsDiff() bool {
+	return slices.ContainsFunc(fs.Include, Filter.needsDiff) || slices.ContainsFunc(fs.Exclude, Filter.needsDiff)
 }
 
 // Empty reports whether fs hold no condition.

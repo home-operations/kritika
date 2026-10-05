@@ -147,17 +147,18 @@ func (p *publishPhase) countAutoReview(ctx context.Context) (string, error) {
 	return review.AutoPausedNote(strings.TrimSuffix(login, "[bot]"), p.settings.MaxAutoReviews), nil
 }
 
-// skipDescription is how the commit status states a skip the runner
-// decided: a repository's own reason, a bot's unchanged patch, or a diff
-// over the repository's maxChangedLines.
-func skipDescription(reason string, maxChangedLines int) string {
-	switch reason {
-	case runner.SkipUnchangedPatch:
+// skipDescription is how the commit status states a skip: a repository's
+// own reason or a bot's unchanged patch, and for a filtered one the name of
+// the condition that decided, "" for none.
+func skipDescription(reason, filter string) string {
+	if reason == runner.SkipUnchangedPatch {
 		return "patch unchanged since the last review"
-	case runner.SkipTooLarge:
-		return fmt.Sprintf("more than %d changed lines", maxChangedLines)
 	}
-	return repoconfig.SkipReason(reason).Description()
+	desc := repoconfig.SkipReason(reason).Description()
+	if filter != "" {
+		desc += ": " + filter
+	}
+	return desc
 }
 
 // incomplete replaces the sticky comment with one saying why this head was

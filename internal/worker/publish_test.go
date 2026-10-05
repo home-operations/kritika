@@ -85,17 +85,19 @@ func TestSkipDescription(t *testing.T) {
 	tests := []struct {
 		name   string
 		reason string
+		filter string
 		want   string
 	}{
 		{name: "the runner's unchanged patch", reason: runner.SkipUnchangedPatch, want: "patch unchanged since the last review"},
-		{name: "the runner's too large diff", reason: runner.SkipTooLarge, want: "more than 800 changed lines"},
+		{name: "filtered", reason: string(repoconfig.SkipFiltered), want: "filtered"},
+		{name: "filtered by a named condition", reason: string(repoconfig.SkipFiltered), filter: "too-large", want: "filtered: too-large"},
 		{name: "a repository skip reason", reason: string(repoconfig.SkipOnlyPaths), want: repoconfig.SkipOnlyPaths.Description()},
 		{name: "disabled", reason: string(repoconfig.SkipDisabled), want: "disabled in " + repoconfig.FileName},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := skipDescription(tt.reason, 800); got != tt.want {
-				t.Errorf("skipDescription(%q) = %q, want %q", tt.reason, got, tt.want)
+			if got := skipDescription(tt.reason, tt.filter); got != tt.want {
+				t.Errorf("skipDescription(%q, %q) = %q, want %q", tt.reason, tt.filter, got, tt.want)
 			}
 		})
 	}

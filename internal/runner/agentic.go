@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -47,13 +48,10 @@ type packView struct {
 	Scope     review.Scope
 }
 
-// Skip reasons the runner decides beyond repoconfig's: a bot's pull request
-// whose patch id equals its last prepared review's, and a diff that changes
-// more lines than the repository's maxChangedLines.
-const (
-	SkipUnchangedPatch = "unchanged_patch"
-	SkipTooLarge       = "too_large"
-)
+// SkipUnchangedPatch is the skip reason the runner decides beyond
+// repoconfig's: a bot's pull request whose patch id equals its last
+// prepared review's.
+const SkipUnchangedPatch = "unchanged_patch"
 
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
@@ -157,18 +155,38 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 }
 
 // agentSkip returns why the worker will skip this review whatever the
-// agent finds, or "": decided before the agent runs, so a skipped review
-// spends nothing.
-func agentSkip(p Spec, changed []string, patchID, diff string) string {
+// agent finds, or "", and for a filtered one the name of the exclusion
+// that decided: settled before the agent runs, so a skipped review spends
+// nothing. A condition that fails to evaluate skips; the error is
+// returned for the log. The conditions see the pull request as the spec
+// carries it, its body cut to MaxBodyBytes.
+func agentSkip(p Spec, changed []string, patchID, diff string) (reason, detail string, err error) {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
-		return SkipUnchangedPatch
+		return SkipUnchangedPatch, "", nil
 	case repoconfig.AllIgnored(p.Ignore, changed):
-		return string(repoconfig.SkipOnlyPaths)
-	case p.Prompt.MaxChangedLines > 0 && contextpack.ChangedLines(diff, p.Ignore) > p.Prompt.MaxChangedLines:
-		return SkipTooLarge
+		return string(repoconfig.SkipOnlyPaths), "", nil
+	case len(p.Prompt.Filters) == 0:
+		return "", "", nil
 	}
-	return ""
+	vars, err := p.Prompt.PullRequest.Vars()
+	if err != nil {
+		return "", "", err
+	}
+	d := &configfile.Diff{Lines: contextpack.ChangedLines(diff, p.Ignore), Changed: changed}
+	for i := range p.Prompt.Filters {
+		fs := &p.Prompt.Filters[i]
+		if err := fs.Compile(); err != nil {
+			return "", "", fmt.Errorf("runner: filters: %w", err)
+		}
+		if skip, by, err := fs.Skips(vars, d); skip {
+			if by != nil {
+				detail = by.Name
+			}
+			return string(repoconfig.SkipFiltered), detail, err
+		}
+	}
+	return "", "", nil
 }
 
 // limits are the agent loop's bounds, defaults filled in.

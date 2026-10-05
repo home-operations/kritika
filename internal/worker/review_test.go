@@ -79,9 +79,9 @@ func TestEarlyEndStatus(t *testing.T) {
 		want      string
 	}{
 		{name: "the repository's filter", status: store.ReviewSkipped, skip: string(repoconfig.SkipFiltered),
-			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered by " + repoconfig.FileName + ")"},
+			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered)"},
 		{name: "an exclusion with a name", status: store.ReviewSkipped, skip: string(repoconfig.SkipFiltered), filter: "skip-label",
-			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered by " + repoconfig.FileName + ": skip-label)"},
+			wantState: forge.StatusSuccess, want: "kritika: skipped (filtered: skip-label)"},
 		{name: "a bot's unchanged patch", status: store.ReviewSkipped, skip: runner.SkipUnchangedPatch,
 			wantState: forge.StatusSuccess, want: "kritika: skipped (patch unchanged since the last review)"},
 		{name: "an admission's own reason", status: store.ReviewSkipped, reason: "no review model is configured for this repository",

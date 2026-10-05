@@ -124,7 +124,13 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	// the prompt was given. A skipped review spends nothing on a model.
 	scope, scopeReason := review.DecideScope(p.PriorHead != "", p.PriorHead == p.Head, priorHead != nil,
 		len(deltaPaths), p.Prompt.MaxDeltaFiles)
-	skip := agentSkip(p, res.Changed, res.PatchID, res.Diff)
+	skip, skipDetail, err := agentSkip(p, res.Changed, res.PatchID, res.Diff)
+	switch {
+	case skip == "" && err != nil:
+		return err
+	case err != nil:
+		logger.Warn("filter failed to evaluate; the review is skipped", "filter", skipDetail, "error", err)
+	}
 	in := newPromptInputs(p, files, res.Changed)
 	notes = append(notes, in.notes...)
 	var tools agentTools
@@ -183,10 +189,10 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		// and cannot invent one, and the policy only opens its own run.
 		_, err := tx.Exec(ctx, `
 			INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files, repo_notes,
-				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids)
-			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM runner_runs WHERE id = $1`,
+				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail)
+			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM runner_runs WHERE id = $1`,
 			p.RunID, p.Head, p.Base, res.PatchID, packDiff, res.Changed, stagesJSON, filesJSON, notes,
-			priorHead, packDelta, deltaPaths, string(scope), scopeReason, skip, in.ruleIDs())
+			priorHead, packDelta, deltaPaths, string(scope), scopeReason, skip, in.ruleIDs(), skipDetail)
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}

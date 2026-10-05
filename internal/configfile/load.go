@@ -475,9 +475,6 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: %strigger.limit must not be negative", where)
 	}
-	if r.Trigger.Lines != nil && *r.Trigger.Lines < 0 {
-		return fmt.Errorf("configfile: %strigger.lines must not be negative", where)
-	}
 	for gi, g := range r.Ignore {
 		if !ValidGlob(g) {
 			return fmt.Errorf("configfile: %signore[%d] %q is not a valid glob", where, gi, g)
@@ -681,8 +678,9 @@ func compileFilter(expr string) (*prfilter.Program, error) {
 }
 
 // SamplePR is the pull request every filter is evaluated against at load. It
-// is also the documented shape of the `pr` variable: every key here is always
-// present at runtime.
+// is also the documented shape of the `pr` variable: every key here is
+// present at runtime, lines for a trigger condition alone, which is then
+// judged once the diff is fetched.
 func SamplePR() map[string]any {
 	return map[string]any{
 		"event":     "opened",
@@ -701,6 +699,7 @@ func SamplePR() map[string]any {
 		"createdAt": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		"labels":    []any{map[string]any{"name": "sample", "color": "ffffff"}},
 		"body":      "sample body",
+		linesVar:    10,
 	}
 }
 
