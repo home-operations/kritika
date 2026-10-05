@@ -446,6 +446,22 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, s
 	return out, nil
 }
 
+// PullRequest implements forge.Client.
+func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int) (forge.OpenPullRequest, error) {
+	pr, resp, err := c.api.PullRequests.Get(ctx, owner, repo, number)
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return forge.OpenPullRequest{}, fmt.Errorf("github: pull request %d of %s/%s: %w", number, owner, repo, fs.ErrNotExist)
+	}
+	if err != nil {
+		return forge.OpenPullRequest{}, fmt.Errorf("github: pull request %d of %s/%s: %w", number, owner, repo, err)
+	}
+	out := openPullRequest(pr)
+	if pr.ClosedAt != nil {
+		out.ClosedAt = &pr.ClosedAt.Time
+	}
+	return out, nil
+}
+
 func openPullRequest(pr *gh.PullRequest) forge.OpenPullRequest {
 	head, base := pr.GetHead(), pr.GetBase()
 	out := forge.OpenPullRequest{

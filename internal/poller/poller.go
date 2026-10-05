@@ -1,7 +1,8 @@
 // Package poller backstops missed webhooks: on the leader, every interval
-// and per account, it lists the open pull requests updated since the last
-// poll and hands them to the ingest dispatcher as if a webhook had
-// delivered them. Review jobs are unique on the head SHA, so a head the
+// and per account, it lists the open pull requests, hands those updated
+// since the last poll to the ingest dispatcher as if a webhook had
+// delivered them, and closes the ones kritika holds open that the forge no
+// longer lists. Review jobs are unique on the head SHA, so a head the
 // webhook already enqueued is skipped as a duplicate, never reviewed twice.
 // An account's first poll records the pull requests last updated before
 // kritika knew the account as a baseline instead of reviewing them: no
@@ -14,8 +15,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -40,6 +44,12 @@ type Poller struct {
 	// Reach lists, by lowercased account login, the repositories a
 	// connection's App reaches; nil registers none.
 	Reach func(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error)
+
+	// unknown are the pull requests held open that the forge did not know
+	// when asked, by "owner/name#number": asked once per process, so they
+	// neither cost a request every poll nor use up the poll's checks.
+	mu      sync.Mutex
+	unknown map[string]bool
 }
 
 // pollOffRecheck is how often Run looks again at a file that turns
@@ -197,12 +207,21 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 				skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
 			}
 		}
-		prs, err := client.ListOpenPullRequests(ctx, owner, name, since)
+		// Every open pull request is listed, not only those updated since
+		// the last poll: the ones kritika holds open and the forge no
+		// longer lists have closed.
+		prs, err := client.ListOpenPullRequests(ctx, owner, name, time.Time{})
 		if err != nil {
 			skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
 			continue
 		}
+		if err := p.closeMissed(ctx, file, account, in, client, r, prs); err != nil {
+			skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
+		}
 		for _, pr := range prs {
+			if pr.UpdatedAt.Before(since) {
+				continue
+			}
 			action := ingest.ActionPoll
 			if state.Polled == nil && !pr.UpdatedAt.After(state.Known) {
 				action = ingest.ActionBaseline
@@ -231,6 +250,79 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		return store.RecordPoll(ctx, tx, account.ID(), started)
 	})
 	return handled, err
+}
+
+// maxCloseChecks bounds how many pull requests one poll of a repository
+// asks the forge about one by one; the rest wait for the next poll.
+const maxCloseChecks = 50
+
+// closeMissed records as closed the pull requests of repository r that
+// kritika holds open and listed, the forge's open ones, does not have: a
+// closed event that was never delivered would otherwise leave one open for
+// good. Each is asked for by number, so one opened since the listing is
+// left as it is, and one the forge no longer knows is left for a person,
+// and not asked for again while the process runs.
+func (p *Poller) closeMissed(
+	ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection, client forge.Client,
+	r store.PollRepo, listed []forge.OpenPullRequest,
+) error {
+	var held []int
+	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		held, err = store.OpenPullRequests(ctx, tx, configfile.RepositoryID(account.ID(), r.Name))
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	owner, name, _ := strings.Cut(r.Name, "/")
+	checks := 0
+	for _, number := range held {
+		key := fmt.Sprintf("%s#%d", r.Name, number)
+		if slices.ContainsFunc(listed, func(pr forge.OpenPullRequest) bool { return pr.Number == number }) || p.isUnknown(key) {
+			continue
+		}
+		if checks++; checks > maxCloseChecks {
+			break
+		}
+		pr, err := client.PullRequest(ctx, owner, name, number)
+		if errors.Is(err, fs.ErrNotExist) {
+			p.Logger.Warn("pull request held open is unknown to the forge", "connection", in.Name, "repository", r.Name, "pr", number)
+			p.markUnknown(key)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if pr.State != "closed" {
+			continue
+		}
+		ev := webhook.Event{
+			Kind: webhook.KindPullRequest, Action: "closed", Delivery: fmt.Sprintf("poll-closed-%d", number),
+			Repository: &webhook.Repository{FullName: r.Name, DefaultBranch: pr.DefaultBranch, RepoTraits: r.Traits},
+			Account:    owner, PullRequest: &pr.PullRequest,
+		}
+		if _, err := p.Dispatcher.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: ev}); err != nil {
+			return err
+		}
+		p.Logger.Info("pull request closed without its event", "connection", in.Name, "repository", r.Name, "pr", number, "merged", pr.Merged)
+	}
+	return nil
+}
+
+func (p *Poller) isUnknown(key string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.unknown[key]
+}
+
+func (p *Poller) markUnknown(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.unknown == nil {
+		p.unknown = map[string]bool{}
+	}
+	p.unknown[key] = true
 }
 
 // reactionWindow is how long after its latest review a pull request's

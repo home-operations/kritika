@@ -153,10 +153,14 @@ which the Configuration page's GitHub Apps panel marks `unsigned`.
 
 When the forge cannot reach the listener, polling alone still reviews:
 every `KRITIKA_POLL_INTERVAL` (10 minutes unless set, `0s` turns it off), the
-leader lists the open pull requests updated since the last poll. It is a
-backstop, not a substitute:
+leader lists the open pull requests and reviews those updated since the
+last poll. It is a backstop, not a substitute:
 
 - a review waits for the next poll;
+- a pull request kritika holds open that the forge no longer lists is
+  asked for by number and recorded closed, so a `closed` event that was
+  never delivered does not leave it open for good; at most 50 are asked
+  for per repository and poll;
 - no mention is answered, since the poller does not read comments;
 - the index catches up with the default branch at the next poll, not on
   each push: while no webhook has reached an App within
@@ -164,7 +168,8 @@ backstop, not a substitute:
   default branches;
 - only repositories kritika already knows, from the configuration or an
   earlier event, are polled;
-- each poll costs the App about one request per repository polled, so
+- each poll costs the App about one request per repository polled, one
+  more per hundred open pull requests, so
   the interval bounds how many repositories a connection can poll within
   GitHub's rate limit, and a poll that outlasts its interval is cut there
   and the rest covered by the next.

@@ -410,6 +410,15 @@ func TestListInlineReactions(t *testing.T) {
 	}
 }
 
+// openPullsJSON is a listing of two open pull requests, the newer one from
+// a fork and a bot.
+const openPullsJSON = `[
+	{"number":2,"title":"new","state":"open","updated_at":"2026-09-24T22:00:00Z","user":{"login":"x[bot]","type":"Bot"},
+	 "head":{"ref":"f","sha":"h2","repo":{"full_name":"fork/r"}},"base":{"ref":"main","sha":"b2","repo":{"full_name":"o/r","default_branch":"main"}},
+	 "labels":[{"name":"l"}]},
+	{"number":1,"title":"old","state":"open","updated_at":"2026-09-24T10:00:00Z","user":{"login":"u"},
+	 "head":{"ref":"g","sha":"h1","repo":{"full_name":"o/r"}},"base":{"ref":"main","sha":"b1","repo":{"full_name":"o/r"}}}]`
+
 func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/issues/comments/1", 200, `{"id":1,"body":"hi","user":{"login":"u","type":"User"},"created_at":"2026-09-24T20:00:00Z"}`)
@@ -417,12 +426,7 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	f.reply("GET /api/v3/repos/o/r/issues/7/comments", 200, `[{"id":1,"body":"a","user":{"login":"u"}},{"id":2,"body":"b","user":{"login":"v"}}]`)
 	f.reply("GET /api/v3/repos/o/r/pulls/7/comments", 200, `[{"id":3,"body":"c","path":"a.go","line":1,"user":{"login":"u"}}]`)
 	f.reply("GET /api/v3/repos/o/r/collaborators/u/permission", 200, `{"permission":"write","role_name":"maintain"}`)
-	f.reply("GET /api/v3/repos/o/r/pulls", 200, `[
-		{"number":2,"title":"new","state":"open","updated_at":"2026-09-24T22:00:00Z","user":{"login":"x[bot]","type":"Bot"},
-		 "head":{"ref":"f","sha":"h2","repo":{"full_name":"fork/r"}},"base":{"ref":"main","sha":"b2","repo":{"full_name":"o/r","default_branch":"main"}},
-		 "labels":[{"name":"l"}]},
-		{"number":1,"title":"old","state":"open","updated_at":"2026-09-24T10:00:00Z","user":{"login":"u"},
-		 "head":{"ref":"g","sha":"h1","repo":{"full_name":"o/r"}},"base":{"ref":"main","sha":"b1","repo":{"full_name":"o/r"}}}]`)
+	f.reply("GET /api/v3/repos/o/r/pulls", 200, openPullsJSON)
 
 	cm, err := c.GetComment(t.Context(), "o", "r", 1, false)
 	if err != nil || cm.Author != "u" || cm.AuthorIsBot || cm.CreatedAt.IsZero() {
@@ -452,6 +456,29 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	pr := prs[0]
 	if !pr.Fork || !pr.AuthorIsBot || pr.HeadSHA != "h2" || pr.DefaultBranch != "main" || len(pr.Labels) != 1 {
 		t.Fatalf("open PR = %+v", pr)
+	}
+}
+
+// TestPullRequestByNumber: the zero time lists every open pull request,
+// and one asked for by number comes back as it stands, closed included, a
+// missing one as fs.ErrNotExist.
+func TestPullRequestByNumber(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/pulls", 200, openPullsJSON)
+	if all, err := c.ListOpenPullRequests(t.Context(), "o", "r", time.Time{}); err != nil || len(all) != 2 {
+		t.Fatalf("ListOpenPullRequests(zero) = %+v, %v; want every open pull request", all, err)
+	}
+	f.reply("GET /api/v3/repos/o/r/pulls/9", 200, `{"number":9,"state":"closed","merged":true,"closed_at":"2026-10-02T08:59:24Z",
+		"head":{"ref":"f","sha":"h9","repo":{"full_name":"o/r"}},"base":{"ref":"main","repo":{"full_name":"o/r","default_branch":"main"}},
+		"user":{"login":"u","type":"User"}}`)
+	f.reply("GET /api/v3/repos/o/r/pulls/10", 404, `{"message":"Not Found"}`)
+	closed, err := c.PullRequest(t.Context(), "o", "r", 9)
+	if err != nil || closed.State != "closed" || !closed.Merged || closed.ClosedAt == nil ||
+		!closed.ClosedAt.Equal(time.Date(2026, 10, 2, 8, 59, 24, 0, time.UTC)) {
+		t.Fatalf("PullRequest(9) = %+v, %v; want it closed and merged at 08:59:24", closed, err)
+	}
+	if _, err := c.PullRequest(t.Context(), "o", "r", 10); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("PullRequest(10) = %v, want fs.ErrNotExist", err)
 	}
 }
 

@@ -19,9 +19,9 @@ type Clients interface {
 	For(ctx context.Context, in *configfile.Connection, repo string) (Client, error)
 }
 
-// OpenPullRequest is a pull request as the forge lists it, in the same
-// shape the webhook parser produces so the poller can dispatch it as an
-// event.
+// OpenPullRequest is a pull request as the forge lists or returns it, in
+// the same shape the webhook parser produces so the poller can dispatch it
+// as an event.
 type OpenPullRequest struct {
 	webhook.PullRequest
 	DefaultBranch string
@@ -222,8 +222,11 @@ type Client interface {
 	// conversation, left to its people unless one of them asked.
 	ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error)
 	// ListOpenPullRequests returns the open pull requests updated since a
-	// time, most recently updated first.
+	// time, most recently updated first; the zero time lists them all.
 	ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]OpenPullRequest, error)
+	// PullRequest returns one pull request as it stands, open or closed. A
+	// missing one is fs.ErrNotExist.
+	PullRequest(ctx context.Context, owner, repo string, number int) (OpenPullRequest, error)
 }
 
 // CanWrite reports whether a permission level allows pushing.

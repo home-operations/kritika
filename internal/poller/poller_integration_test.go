@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
+	"github.com/home-operations/kritika/internal/webhook"
 )
 
 const configYAML = `
@@ -38,13 +40,45 @@ repositories:
   onedr0p/home-ops: {}
 `
 
+// baseForge is what every fake forge here answers a pull request the
+// poller asks for by number with: the forge does not know it.
+type baseForge struct{ forge.Client }
+
+func (baseForge) PullRequest(context.Context, string, string, int) (forge.OpenPullRequest, error) {
+	return forge.OpenPullRequest{}, fs.ErrNotExist
+}
+
+// The reactions of reviews other suites left on the shared database are
+// read with the poll; a fake with no comments answers them.
+func (baseForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
+	return nil, nil
+}
+
+func (baseForge) ListConversation(context.Context, string, string, int) ([]forge.Comment, error) {
+	return nil, nil
+}
+
 // listForge answers only the listing call; the poller needs nothing else.
 type listForge struct {
-	forge.Client
+	baseForge
 
 	mu     sync.Mutex
 	prs    []forge.OpenPullRequest
 	sinces []time.Time
+	// byNumber are the pull requests the forge returns by number, open or
+	// closed, and asked the numbers it was asked for.
+	byNumber map[int]forge.OpenPullRequest
+	asked    []int
+}
+
+func (f *listForge) PullRequest(_ context.Context, _, _ string, number int) (forge.OpenPullRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, number)
+	if pr, ok := f.byNumber[number]; ok {
+		return pr, nil
+	}
+	return forge.OpenPullRequest{}, fs.ErrNotExist
 }
 
 func (f *listForge) ListOpenPullRequests(_ context.Context, _, _ string, since time.Time) ([]forge.OpenPullRequest, error) {
@@ -145,10 +179,11 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 		t.Fatalf("rows: err=%v head=%s polled=%v", err, head, polledAt)
 	}
 
-	// The forge lists only what changed since the first poll. Same head
-	// again: ingest sees a duplicate, no second job.
+	// The pull request moved again since the first poll, with the same
+	// head: ingest sees a duplicate, no second job.
 	lf.mu.Lock()
 	lf.prs = lf.prs[:1]
+	lf.prs[0].UpdatedAt = time.Now()
 	lf.mu.Unlock()
 	if n, err := p.Poll(ctx, file, account, in); err != nil || n != 1 {
 		t.Fatalf("second poll: n=%d err=%v", n, err)
@@ -159,8 +194,10 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	lf.mu.Lock()
 	sinces := lf.sinces
 	lf.mu.Unlock()
-	if len(sinces) != 2 || sinces[0].After(before.Add(-23*time.Hour)) || sinces[1].Before(before) {
-		t.Fatalf("since values: first should be the lookback floor, second the first poll's start; got %v (before=%v)", sinces, before)
+	// The forge is asked for every open pull request each time, and the
+	// poller keeps the ones updated since the last poll itself.
+	if len(sinces) != 2 || !sinces[0].IsZero() || !sinces[1].IsZero() {
+		t.Fatalf("since values = %v, want every listing asked for all open pull requests", sinces)
 	}
 
 	// A closed pull request from the forge is recorded by ingest, not
@@ -168,6 +205,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	lf.mu.Lock()
 	lf.prs[0].State = "closed"
 	lf.prs[0].HeadSHA = "def456"
+	lf.prs[0].UpdatedAt = time.Now()
 	lf.mu.Unlock()
 	if n, err := p.Poll(ctx, file, account, in); err != nil || n != 1 {
 		t.Fatalf("third poll: n=%d err=%v", n, err)
@@ -220,7 +258,7 @@ func checkBaseline(ctx context.Context, t *testing.T, st *store.Store, accountID
 // tipForge answers the listing with nothing and the branch tip with tip,
 // counting the tip calls.
 type tipForge struct {
-	forge.Client
+	baseForge
 	tip   string
 	calls int
 }
@@ -411,7 +449,7 @@ func TestSyncRepositories(t *testing.T) {
 // reactionForge lists no open pull requests, and the inline comments of
 // the pull requests it has them for.
 type reactionForge struct {
-	forge.Client
+	baseForge
 
 	mu     sync.Mutex
 	inline map[int][]forge.Comment
@@ -529,7 +567,7 @@ func TestPollerReadsReactions(t *testing.T) {
 // listing of the one named failing, and has no inline comments to read
 // reactions from.
 type skipForge struct {
-	forge.Client
+	baseForge
 	failing string
 }
 
@@ -619,7 +657,7 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 // stallForge lists nothing until its context ends, and counts the polls
 // that reached it.
 type stallForge struct {
-	forge.Client
+	baseForge
 	polls atomic.Int32
 }
 
@@ -685,5 +723,96 @@ func TestPollerRunCutsAPollAtItsInterval(t *testing.T) {
 	}
 	if polled != 0 {
 		t.Fatal("poll state recorded although the poll was cut")
+	}
+}
+
+// TestPollerClosesAPullRequestWhoseEventWasMissed: a pull request kritika
+// holds open that the forge no longer lists as open is asked for by number
+// and recorded closed, merged or not; one the forge still has open, and one
+// it does not know, are left as they are.
+func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	in := file.ConnectionFor(account)
+	svc := ingest.NewService(st, queue)
+	open := func(number int) forge.OpenPullRequest {
+		return forge.OpenPullRequest{
+			Number: number, Title: "t", Author: "onedr0p", State: "open", HeadRef: "f", HeadSHA: fmt.Sprintf("c%d", number), BaseRef: "main",
+			DefaultBranch: "main",
+		}
+	}
+	numbers := []int{931, 932, 933, 934}
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number = ANY($1)`, numbers)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range numbers {
+		pr := open(n)
+		if _, err := svc.Dispatch(ctx, ingest.Request{File: file, Account: account, Event: webhook.Event{
+			Kind: webhook.KindPullRequest, Action: "opened", Account: "onedr0p",
+			Repository: &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"}, PullRequest: &pr.PullRequest,
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	closedAt := time.Date(2026, 10, 2, 8, 59, 24, 0, time.UTC)
+	merged, closed := open(931), open(932)
+	merged.State, merged.Merged, merged.ClosedAt = "closed", true, &closedAt
+	closed.State, closed.ClosedAt = "closed", &closedAt
+	// 933 is still open on the forge though the listing lacks it, as one
+	// opened since the listing would be; 934 the forge does not know.
+	lf := &listForge{byNumber: map[int]forge.OpenPullRequest{931: merged, 932: closed, 933: open(933)}}
+	p := &Poller{
+		Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Dispatcher: svc, Logger: slog.New(slog.DiscardHandler),
+	}
+	if _, err := p.Poll(ctx, file, account, in); err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	// The one the forge did not know is not asked for again, so it cannot
+	// use up a poll's checks for good; the others are asked each poll.
+	lf.mu.Lock()
+	lf.asked = nil
+	lf.mu.Unlock()
+	if _, err := p.Poll(ctx, file, account, in); err != nil {
+		t.Fatalf("second Poll: %v", err)
+	}
+	lf.mu.Lock()
+	asked := lf.asked
+	lf.mu.Unlock()
+	if !slices.Equal(asked, []int{933}) {
+		t.Fatalf("second poll asked for %v, want only the pull request still open on the forge", asked)
+	}
+	type row struct {
+		state    string
+		merged   bool
+		closedAt *time.Time
+	}
+	want := map[int]row{931: {"closed", true, &closedAt}, 932: {"closed", false, &closedAt}, 933: {"open", false, nil}, 934: {"open", false, nil}}
+	for _, n := range numbers {
+		var got row
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT state, merged, closed_at FROM pull_requests WHERE number = $1`, n).
+				Scan(&got.state, &got.merged, &got.closedAt)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		w := want[n]
+		if got.state != w.state || got.merged != w.merged || (got.closedAt == nil) != (w.closedAt == nil) ||
+			(got.closedAt != nil && !got.closedAt.Equal(*w.closedAt)) {
+			t.Errorf("#%d = %+v, want %+v", n, got, w)
+		}
 	}
 }
