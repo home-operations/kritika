@@ -323,6 +323,39 @@ func TestWriteBackCalls(t *testing.T) {
 	}
 }
 
+// TestChangesRequested: a reviewer stands where their latest approval,
+// request for changes or dismissal left them; a comment after it changes
+// nothing, and the bot's own reviews do not count.
+func TestChangesRequested(t *testing.T) {
+	tests := []struct {
+		name    string
+		reviews string
+		want    bool
+	}{
+		{name: "no reviews", reviews: `[]`},
+		{name: "a request for changes stands through a later comment", want: true, reviews: `[
+			{"id":1,"user":{"login":"human"},"state":"CHANGES_REQUESTED"},
+			{"id":2,"user":{"login":"human"},"state":"COMMENTED"},
+			{"id":3,"user":{"login":"other"},"state":"APPROVED"}]`},
+		{name: "a later approval lifts it", reviews: `[
+			{"id":1,"user":{"login":"human"},"state":"CHANGES_REQUESTED"},
+			{"id":2,"user":{"login":"human"},"state":"APPROVED"}]`},
+		{name: "a dismissed one does not stand", reviews: `[{"id":1,"user":{"login":"human"},"state":"DISMISSED"}]`},
+		{name: "the bot's own does not count", reviews: `[{"id":1,"user":{"login":"kritika[bot]"},"state":"CHANGES_REQUESTED"}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			c.login = "kritika[bot]"
+			f.reply("GET /api/v3/repos/o/r/pulls/7/reviews", 200, tt.reviews)
+			got, err := c.ChangesRequested(t.Context(), "o", "r", 7)
+			if err != nil || got != tt.want {
+				t.Fatalf("ChangesRequested = %v, %v; want %v", got, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestApproveAndDismissApprovals(t *testing.T) {
 	f, c := newFakeAPI(t)
 	c.login = "kritika[bot]"

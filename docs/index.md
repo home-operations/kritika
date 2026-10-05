@@ -54,7 +54,8 @@ flowchart LR
   repository sets, so it can be a required check.
 - **Approvals, opt-in.** A repository or the instance can have a review that
   finds nothing blocking or important approve the pull request, and a later
-  review that does withdraw it.
+  review that does withdraw it. With a confidence score, a pull request is
+  approved when its score and the risk of its change allow it.
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through kritika's

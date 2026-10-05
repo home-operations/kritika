@@ -348,6 +348,10 @@ func (l *localForge) Approve(_ context.Context, _, _ string, _ int, headSHA, _ s
 	return true, nil
 }
 
+func (l *localForge) ChangesRequested(context.Context, string, string, int) (bool, error) {
+	return false, nil
+}
+
 func (l *localForge) DismissApprovals(context.Context, string, string, int, string) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

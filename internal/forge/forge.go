@@ -184,6 +184,9 @@ type Client interface {
 	// bot's approval of that head already stands, and reports whether one
 	// was posted.
 	Approve(ctx context.Context, owner, repo string, number int, headSHA, body string) (bool, error)
+	// ChangesRequested reports whether a reviewer other than the bot
+	// stands as requesting changes on the pull request.
+	ChangesRequested(ctx context.Context, owner, repo string, number int) (bool, error)
 	// DismissApprovals dismisses each of the bot's standing approvals of
 	// the pull request with message, and returns how many it dismissed.
 	DismissApprovals(ctx context.Context, owner, repo string, number int, message string) (int, error)
