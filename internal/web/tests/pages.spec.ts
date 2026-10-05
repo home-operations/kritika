@@ -955,6 +955,13 @@ test('a skipped review says why, on its own page and on the pull request', async
   await expect(page.locator('.page-head .meta-line')).toContainText('skipped: patch unchanged since the last review');
 });
 
+test('a skipped review with no reason of its own says what it recorded on the pull request', async ({ page }) => {
+  const skipped = { ...g.pullDetail.reviews[0]!, status: 'skipped' as const, skipReason: '' as const, error: 'the pull request is closed' };
+  await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [skipped] }], ...g.defaultApi()]);
+  await page.goto(`/${T}/pulls/alpha/one/7`);
+  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: the pull request is closed');
+});
+
 test('pull detail says what its unfinished review job waits on, and nothing of one that simply runs', async ({ page }) => {
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/pulls/alpha/one/7`);

@@ -83,7 +83,7 @@
             <span><strong>{p.author}</strong> wants to merge <span class="mono">{p.headRef}</span> into <span class="mono">{p.baseRef}</span></span>
             <span>at <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, last synchronized <Time iso={p.updatedAt} /></span>
             {#if newest?.status === 'skipped'}
-              <span>not reviewed{#if newest.skipReason}: {skipText[newest.skipReason]}{/if}</span>
+              <span>not reviewed{#if newest.skipReason}: {skipText[newest.skipReason]}{:else if newest.error}: {newest.error}{/if}</span>
             {/if}
             {#each p.labels as l (l.name)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
             {#if forgeUrl}
