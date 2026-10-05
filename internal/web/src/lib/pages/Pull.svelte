@@ -27,8 +27,10 @@
   const res = new Resource(() =>
     getJSON<PullDetail>(`${accountApi(slug)}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`),
   );
-  // The newest review in full: what it said leads the page.
-  const latestId = $derived(res.data?.reviews[0]?.id);
+  // A skipped review said nothing: the header says the newest was skipped,
+  // and the page leads with and lists only the others.
+  const reviews = $derived(res.data?.reviews.filter((r) => r.status !== 'skipped') ?? []);
+  const latestId = $derived(reviews[0]?.id);
   const latest = new Resource(() => getJSON<ReviewDetail>(`${accountApi(slug)}/reviews/${encodeURIComponent(latestId ?? '')}`));
   $effect(() => {
     void res.load();
@@ -69,6 +71,7 @@
         {@const p = d.pull}
         {@const forgeUrl = safeHref(p.url)}
         {@const life = lifecycle(p)}
+        {@const newest = d.reviews[0]}
         <header class="page-head">
           <p class="crumbs">
             <a href={href({ name: 'pulls', slug })}>Pull requests</a> /
@@ -78,7 +81,10 @@
           <p class="meta-line">
             <span class="lifecycle-badge tone-{life.tone}"><Icon path={life.icon} size={13} /> {life.label}</span>
             <span><strong>{p.author}</strong> wants to merge <span class="mono">{p.headRef}</span> into <span class="mono">{p.baseRef}</span></span>
-            <span>at <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, updated <Time iso={p.updatedAt} /></span>
+            <span>at <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, last synchronized <Time iso={p.updatedAt} /></span>
+            {#if newest?.status === 'skipped'}
+              <span>not reviewed{#if newest.skipReason}: {skipText[newest.skipReason]}{/if}</span>
+            {/if}
             {#each p.labels as l (l.name)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
             {#if forgeUrl}
               <a class="external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
@@ -126,10 +132,10 @@
           </p>
         {/if}
 
-        {#if d.reviews.length === 0}
+        {#if reviews.length === 0}
           <p class="state-msg">Not reviewed yet.</p>
         {:else}
-          {@const r = d.reviews[0]!}
+          {@const r = reviews[0]!}
           <section class="panel" aria-labelledby="pull-latest">
             <header class="panel-head">
               <h2 id="pull-latest">Latest review</h2>
@@ -139,7 +145,6 @@
               <p class="meta-line">
                 <ReviewStatusTile status={r.status} />
                 <span>started <Time iso={r.createdAt} /></span>
-                {#if r.status === 'skipped' && r.skipReason}<span>skipped: {skipText[r.skipReason]}</span>{/if}
               </p>
               {#if r.error}<p class="error-text">{r.error}</p>{/if}
               {#if latest.data && latest.data.review.id === r.id}
@@ -172,13 +177,12 @@
           <section class="panel" aria-labelledby="pull-reviews">
             <header class="panel-head"><h2 id="pull-reviews">Review history</h2></header>
             <ol class="timeline">
-              {#each d.reviews as r (r.id)}
+              {#each reviews as r (r.id)}
                 <li class="timeline-item">
                   <a class="timeline-link" href={href({ name: 'review', slug, id: r.id })}>
                     <span class="timeline-top">
                       <ReviewStatusTile status={r.status} />
                       <Time iso={r.createdAt} />
-                      {#if r.status === 'skipped' && r.skipReason}<span class="small muted">skipped: {skipText[r.skipReason]}</span>{/if}
                     </span>
                     <ReviewMeta {r} />
                     {#if r.error}<span class="error-text">{r.error}</span>{/if}

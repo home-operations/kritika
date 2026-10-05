@@ -756,10 +756,10 @@ test.describe('rules', () => {
 });
 
 test('pull detail leads with its latest review, then the history and follow-ups with a transcript', async ({ page }) => {
-  // The history also holds an earlier review that was skipped, which is the
-  // only kind whose skip reason is shown.
+  // A newer review that was skipped is the header's to tell of: the latest
+  // review and the history are of the reviews that were not.
   const first = g.pullDetail.reviews[0]!;
-  await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [first, { ...first, id: 'rev-0', status: 'skipped' }] }], ...g.defaultApi()]);
+  await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [{ ...first, id: 'rev-2', status: 'skipped', skipReason: 'filtered' }, first] }], ...g.defaultApi()]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
   const p = g.pullDetail.pull;
@@ -770,9 +770,10 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line} Thread`]);
   await expect(latest.getByRole('link', { name: 'Thread' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
   await expect(latest.getByRole('link', { name: 'Open the review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/rev-1`);
-  await expect(page.locator('.timeline-item').first()).toContainText('$0.42');
-  await expect(page.locator('.timeline-item').first()).not.toContainText('excluded by filter');
-  await expect(page.locator('.timeline-item').nth(1)).toContainText('excluded by filter');
+  await expect(page.locator('.page-head .meta-line')).toContainText('last synchronized');
+  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: excluded by filter');
+  await expect(page.locator('.timeline-item')).toHaveCount(1);
+  await expect(page.locator('.timeline-item')).toContainText('$0.42');
   await expect(page.locator('.followup')).toContainText(g.followup.author);
   await page.getByRole('button', { name: 'Transcript' }).click();
   await expect(page.locator('.followup .turn')).toHaveCount(g.transcript.turns.length);
@@ -948,7 +949,8 @@ test('a skipped review says why, on its own page and on the pull request', async
     ...g.defaultApi(),
   ]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
-  await expect(page.locator('.latest-review')).toContainText('skipped: more changed lines than the repository allows');
+  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: more changed lines than the repository allows');
+  await expect(page.getByText('Not reviewed yet.')).toBeVisible();
   await page.goto(`/${T}/reviews/rev-1`);
   await expect(page.locator('.page-head .meta-line')).toContainText('skipped: patch unchanged since the last review');
 });
