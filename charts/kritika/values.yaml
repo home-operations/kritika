@@ -45,8 +45,9 @@ strategy:
 # which each description names. A value is a plain value, rendered
 # through `tpl`, or, for a secret, a map with the variable's `valueFrom`
 # (a Secret key). The variables that stand in for the configuration
-# file's sections (auth*, apps*, providers*, defaults*, embedding*) win
-# over the file. The variables the chart derives from its other values
+# file's sections (auth*, apps*, providers*, embedding*, and the review
+# and trigger settings reviewModel, reviewFallback, reviewFeedback,
+# triggerForks and triggerSettle) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
 # refuses them, as it refuses a KRITIKA_* variable under `env`.
@@ -159,8 +160,8 @@ config:
   appsWebhookSecret: ""
 
   # One model provider (a `providers` entry), which replaces the file's of
-  # the same name whole or is added to them, the default models every
-  # repository gets (`defaults`), and the embedder (`embedding`) that
+  # the same name whole or is added to them, the `review` and `trigger`
+  # settings every repository gets, and the embedder (`embedding`) that
   # builds each repository's similar-code index.
 
   # -- The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set.
@@ -180,18 +181,18 @@ config:
   # -- The provider's API key, from a Secret; set it to declare the provider here.
   providersApiKey: ""
   # -- The model every review runs on unless a repository names another, `<provider>/<model>`.
-  defaultsModelsReview: ""
+  reviewModel: ""
   # -- The model a review falls back to when the review model fails.
-  defaultsModelsFallback: ""
+  reviewFallback: ""
   # -- How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.
-  defaultsFeedback: ""
+  reviewFeedback: ""
   # @schema
   # type: [boolean, string]
   # @schema
   # -- Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`.
-  defaultsForks: ""
+  triggerForks: ""
   # -- How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set.
-  defaultsSettle: ""
+  triggerSettle: ""
   # -- The embedding model, `<provider>/<model>`; set it to index each repository for similar code.
   embeddingModel: ""
   # @schema
@@ -202,11 +203,11 @@ config:
 
 # The configuration file (docs/configuration.md) holds what is reviewed and
 # how: sign-in (`auth`), the GitHub `apps`, the instance's `providers`,
-# `embedding` and `egress`, the `defaults` every repository gets, the
-# `repositories` entries keyed `owner/*` or `owner/name`, and the
-# `accounts` with their limits and providers. It is either inline as
-# `configFile`, rendered into a chart-managed ConfigMap, or an existing
-# ConfigMap with a `config.yaml` key. Secret material never goes in the
+# `embedding` and `egress`, the settings every repository gets (`review`,
+# `trigger`, `comments`, `agent`), the `repositories` entries keyed
+# `owner/*` or `owner/name`, and the `accounts` with their limits and
+# providers. It is either inline as `configFile`, rendered into a
+# chart-managed ConfigMap, or an existing ConfigMap with a `config.yaml` key. Secret material never goes in the
 # file: it names environment variables, `{ env: NAME }`, which `env` and
 # `envFrom` below set from existing Secrets. kritika reads the file at
 # startup: the pods carry a checksum of `configFile`, so a change to it
@@ -224,8 +225,8 @@ configFile: {}
 #     webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
 # providers:
 #   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
-# defaults:
-#   models: { review: openrouter/vendor/large-model }
+# review:
+#   model: openrouter/vendor/large-model
 
 # -- Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `configFile`. A change to it takes a restart.
 existingConfigMap: ""

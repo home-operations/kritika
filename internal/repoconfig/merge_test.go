@@ -39,9 +39,9 @@ func TestMerge(t *testing.T) {
 		{name: "no file"},
 		{
 			name: "the file narrows, appends file rules and replaces presentation",
-			doc: "enabled: false\nfilterExpr: '!pr.draft'\nignore: [gen/**, vendor/**]\n" +
+			doc: "enabled: false\ntrigger: { filterExpr: '!pr.draft', ignore: [gen/**, vendor/**] }\n" +
 				"rules: [{ id: repo-style, file: .kritika/rules.md }, { id: sql, file: .kritika/sql.md, paths: ['**/*.sql'] }]\n" +
-				"comments:\n  inlineTemplate: .kritika/inline.tmpl\n",
+				"comments:\n  finding: .kritika/inline.tmpl\n",
 			want: func(s *configfile.Settings) {
 				s.Enabled, s.Ignore = false, []string{"vendor/**", "gen/**"}
 				s.Review.Rules = append(s.Review.Rules, configfile.Rule{ID: "repo-style", File: ".kritika/rules.md"},
@@ -80,45 +80,45 @@ func TestMerge(t *testing.T) {
 		{name: "a rule whose whenExpr fails the smoke test", doc: "rules: [{ id: a, rule: x, whenExpr: 'pr.labels[5].name == \"x\"' }]\n", wantErr: "rules[0].whenExpr: smoke test"},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the admin's", doc: "comments: { inline: false, summaryTemplate: .kritika/summary.tmpl }\nagentFiles: false\n",
+			name: "presentation replaces the admin's", doc: "comments: { inline: false, summary: .kritika/summary.tmpl }\nagentFiles: false\n",
 			want: func(s *configfile.Settings) {
 				s.Review.InlineComments, s.Review.AgentFiles, s.Review.Templates.Summary = false, false, ".kritika/summary.tmpl"
 			},
 		},
 		{
-			name: "feedback replaces the admin's", doc: "feedback: minimal\n",
+			name: "feedback replaces the admin's", doc: "review: { feedback: minimal }\n",
 			want: func(s *configfile.Settings) { s.Review.Feedback = configfile.FeedbackMinimal },
 		},
 		{
-			name: "an unknown feedback level is dropped", doc: "feedback: exhaustive\n",
-			dropped: []string{`.kritika.yaml: feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
+			name: "an unknown feedback level is dropped", doc: "review: { feedback: exhaustive }\n",
+			dropped: []string{`.kritika.yaml: review.feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
 		},
 		{
-			name: "approve replaces the admin's", doc: "approve: true\n",
+			name: "approve replaces the admin's", doc: "review: { approve: true }\n",
 			want: func(s *configfile.Settings) { s.Review.Approve = true },
 		},
 		{
-			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n",
-			dropped: []string{".kritika.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
+			name: "review.fixes may only turn on", doc: "review: { fixes: false }\n",
+			dropped: []string{".kritika.yaml: review.fixes false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
 			name: "a model of a provider the account may use",
-			doc:  "models: { review: own/small, fallback: p/big }\n",
+			doc:  "review: { model: own/small, fallback: p/big }\n",
 			want: func(s *configfile.Settings) {
 				s.Models = configfile.Models{Review: "own/small", Fallback: "p/big"}
 			},
 		},
 		{
-			name: "a model of another provider, or no model, is dropped", doc: "models: { review: q/big, fallback: p }\n",
+			name: "a model of another provider, or no model, is dropped", doc: "review: { model: q/big, fallback: p }\n",
 			dropped: []string{
-				`.kritika.yaml: models.review "q/big" was dropped; allowed: a model of own, p`,
-				`.kritika.yaml: models.fallback "p" was dropped; allowed: a model of own, p`,
+				`.kritika.yaml: review.model "q/big" was dropped; allowed: a model of own, p`,
+				`.kritika.yaml: review.fallback "p" was dropped; allowed: a model of own, p`,
 			},
 		},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
-		{name: "agent limits are the admin's alone", doc: "agent: { maxSteps: 5 }\n", wantErr: "field agent not found"},
-		{name: "settle is the admin's alone", doc: "settle: 1m\n", wantErr: "field settle not found"},
-		{name: "a secret reference does not decode", doc: "models: { review: { env: KEY } }\n", wantErr: "cannot unmarshal"},
+		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
+		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},
+		{name: "a secret reference does not decode", doc: "review: { model: { env: KEY } }\n", wantErr: "cannot unmarshal"},
 		{name: "a file that does not parse leaves the admin's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}
 	for _, tt := range tests {
@@ -165,10 +165,10 @@ func TestMergedCheck(t *testing.T) {
 	}{
 		{"nothing to skip", "", []string{"main.go"}, "", false},
 		{"disabled", "enabled: false\n", []string{"main.go"}, SkipDisabled, false},
-		{"filtered", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", []string{"main.go"}, SkipFiltered, false},
-		{"filter allows", "filterExpr: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"'\n", []string{"main.go"}, "", false},
-		{"filter that fails to evaluate skips", "filterExpr: 'pr.number == 1 || pr.labels[9].name == \"x\"'\n", []string{"main.go"}, SkipFiltered, true},
-		{"only ignored paths", "ignore: [docs/**]\n", []string{"docs/a.md"}, SkipOnlyPaths, false},
+		{"filtered", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", []string{"main.go"}, SkipFiltered, false},
+		{"filter allows", "trigger:\n  filterExpr: 'pr.number == 3 && pr.open && pr.labels[0].name == \"deps\"'\n", []string{"main.go"}, "", false},
+		{"filter that fails to evaluate skips", "trigger:\n  filterExpr: 'pr.number == 1 || pr.labels[9].name == \"x\"'\n", []string{"main.go"}, SkipFiltered, true},
+		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", []string{"docs/a.md"}, SkipOnlyPaths, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

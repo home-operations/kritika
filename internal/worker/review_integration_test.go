@@ -55,11 +55,10 @@ providers:
     type: openai
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
-defaults:
-  models:
-    review: test/reviewer
-  limits:
-    concurrency: 1
+review:
+  model: test/reviewer
+limits:
+  concurrency: 1
 embedding: { model: test/fake-embed, dims: 8 }
 apps:
   bot-ross:
@@ -1422,8 +1421,9 @@ func checkRepoConfig(
 		return h.String()
 	}
 	cfgBase := commit("configure kritika", map[string]string{
-		".kritika.yaml": `filterExpr: '!pr.labels.exists(l, l.name == "skip-review")'
-ignore: ["docs/**", ".kritika.yaml"]
+		".kritika.yaml": `trigger:
+  filterExpr: '!pr.labels.exists(l, l.name == "skip-review")'
+  ignore: ["docs/**", ".kritika.yaml"]
 rules:
   - { id: todos, file: .kritika/rules.md }
   - { id: no-panics, rule: Return an error rather than panic. }
@@ -1431,8 +1431,9 @@ rules:
   - { id: into-main, rule: Keep main releasable., whenExpr: 'pr.baseRef == "main"' }
   - { id: renovate, rule: Say what the update breaks., whenExpr: 'pr.headRef.startsWith("renovate/")' }
 comments:
-  summaryTemplate: ".kritika/summary.md.tmpl"
-approve: true
+  summary: ".kritika/summary.md.tmpl"
+review:
+  approve: true
 `,
 		".kritika/rules.md":        "Flag every TODO left in code.\n",
 		".kritika/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",

@@ -40,7 +40,7 @@ Review quality is measured offline: `mise run bench-mine` builds a corpus
 of pull requests whose lines a later fix commit changed, and `mise run
 bench` (with `OPENROUTER_API_KEY`) runs them through the service's own
 fetch, context and prompt code as one-step agentic reviews, what
-`agent.maxSteps: 1` sends: the agentic system prompt, the read-only tools
+`agent.steps: 1` sends: the agentic system prompt, the read-only tools
 over the head commit and a `submit_review` the one step is told to make. Stage 4, the
 similar-code index, needs a database and is left out. Each case runs with
 the diff alone and with the context stages, reporting recall on the

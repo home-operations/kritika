@@ -172,7 +172,7 @@ func TestHashAndConnectionLookup(t *testing.T) {
 	}
 	// The environment overlay is part of the configuration, so a replica
 	// with another one does not hash alike.
-	t.Setenv("KRITIKA_DEFAULTS_SETTLE", "90s")
+	t.Setenv("KRITIKA_TRIGGER_SETTLE", "90s")
 	if g, err := load(t, fixture(t)); err != nil || g.Hash() == f.Hash() {
 		t.Fatalf("hash unchanged by an overlay variable: %v", err)
 	}
@@ -286,7 +286,7 @@ apps:
 }
 
 // acme is minimal with entries, lines of the repositories map, such as
-// "  acme/*: { forks: true }\n".
+// "  acme/*: { trigger: { forks: true } }\n".
 func acme(entries string) string {
 	if entries == "" {
 		return minimal
@@ -313,11 +313,11 @@ func TestEnabledDefault(t *testing.T) {
 		name, doc string
 		want      map[string]bool
 	}{
-		{"on unless turned off", acme("  acme/listed: { settle: 1m }\n"),
+		{"on unless turned off", acme("  acme/listed: { trigger: { settle: 1m } }\n"),
 			map[string]bool{"acme/new": true, "acme/listed": true}},
-		{"off at the defaults", "defaults: { enabled: false }\n" + acme("  acme/listed: {}\n"),
+		{"off at the defaults", "enabled: false\n" + acme("  acme/listed: {}\n"),
 			map[string]bool{"acme/new": false, "acme/listed": false}},
-		{"owner/* over the defaults", "defaults: { enabled: false }\n" + acme("  acme/*: { enabled: true }\n"),
+		{"owner/* over the defaults", "enabled: false\n" + acme("  acme/*: { enabled: true }\n"),
 			map[string]bool{"acme/new": true}},
 		{"off at owner/*", acme("  acme/*: { enabled: false }\n  acme/listed: {}\n"),
 			map[string]bool{"acme/new": false, "acme/listed": false}},
@@ -350,7 +350,7 @@ func TestRuns(t *testing.T) {
 		{"a source repository turned off", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{}, false},
 		{"a fork", acme(""), "acme/copy", fork, false},
 		{"a fork owner/* turns on", acme("  acme/*: { enabled: true }\n"), "acme/copy", fork, false},
-		{"a fork with an entry", acme("  acme/copy: { settle: 1m }\n"), "acme/copy", fork, false},
+		{"a fork with an entry", acme("  acme/copy: { trigger: { settle: 1m } }\n"), "acme/copy", fork, false},
 		{"an archived repository", acme(""), "acme/old", archived, false},
 		{"a repository an admin turned off", acme("  acme/*: { enabled: true }\n"), "acme/app", RepoTraits{TurnedOn: new(false)}, false},
 		{"a repository an admin turned on", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{TurnedOn: new(true)}, true},
@@ -423,7 +423,7 @@ func TestAccountProviders(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	withOwn := minimal + "accounts:\n  acme:\n    providers:\n" +
 		"      own: { type: openai, baseUrl: http://llm.internal:4000/v1, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" +
-		"repositories:\n  acme/*: { models: { review: own/big } }\n"
+		"repositories:\n  acme/*: { review: { model: own/big } }\n"
 	f, err := loadBytes(t, []byte(withOwn))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -439,7 +439,7 @@ func TestAccountProviders(t *testing.T) {
 		{"a name a model reference cannot carry", strings.Replace(withOwn, "      own:", "      Own:", 1), "a provider name must be lowercase"},
 		{"a name the instance already uses", "providers:\n  own: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }\n" + withOwn,
 			"the instance declares a provider by that name"},
-		{"the defaults naming an account's provider", "defaults:\n  models: { review: own/big }\n" + withOwn, "not declared under providers"},
+		{"the defaults naming an account's provider", "review: { model: own/big }\n" + withOwn, "not declared under providers"},
 		{"an invalid provider", strings.Replace(withOwn, "type: openai", "type: gemini", 1), "accounts.acme.providers.own.type must be"},
 	}
 	for _, tt := range refused {
@@ -495,36 +495,39 @@ func TestParseRejects(t *testing.T) {
 		{"relative base url", "providers:\n  p:\n    type: openai\n    baseUrl: gw.example.com/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal,
 			"must be an absolute URL"},
 		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
-		{"model without provider", "defaults:\n  models:\n    review: gpt\n" + minimal, "<provider>/<model>"},
-		{"model referencing undeclared provider", "defaults:\n  models:\n    review: nope/gpt\n" + minimal, "not declared under providers"},
-		{"owner/* model referencing undeclared provider", acme("  acme/*: { models: { review: nope/gpt } }\n"), "not declared under providers"},
-		{"negative limit", "defaults:\n  limits:\n    reviewsPerDay: -1\n" + minimal, "must not be negative"},
+		{"model without provider", "review:\n  model: gpt\n" + minimal, "<provider>/<model>"},
+		{"model referencing undeclared provider", "review:\n  model: nope/gpt\n" + minimal, "not declared under providers"},
+		{"owner/* model referencing undeclared provider", acme("  acme/*: { review: { model: nope/gpt } }\n"), "not declared under providers"},
+		{"negative limit", "limits:\n  reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative account limit", acmeAccount("    limits: { tokensPerMonth: -1 }\n"), "accounts.acme.limits: limits must not be negative"},
-		{"negative settle default", "defaults:\n  settle: -1s\n" + minimal, "defaults.settle must not be negative"},
-		{"negative maxAutoReviews", acme("  acme/x: { maxAutoReviews: -1 }\n"), "repositories.acme/x.maxAutoReviews must not be negative"},
-		{"negative maxChangedLines", acme("  acme/x: { maxChangedLines: -1 }\n"), "repositories.acme/x.maxChangedLines must not be negative"},
-		{"unknown feedback", "defaults:\n  feedback: exhaustive\n" + minimal, "defaults.feedback must be detailed, standard or minimal"},
-		{"context without a description", "defaults:\n  context: [{ path: db/schema.sql }]\n" + minimal, "defaults.context[0]: description is required"},
-		{"context outside the repository", "defaults:\n  context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
-		{"context with a bad glob", "defaults:\n  context: [{ path: x, description: x, paths: ['['] }]\n" + minimal, "paths[0] \"[\" is not a valid glob"},
-		{"rule with a bad id", "defaults:\n  rules: [{ id: Wrap_Errors, rule: x }]\n" + minimal, `defaults.rules[0].id "Wrap_Errors" must be`},
+		{"negative settle default", "trigger:\n  settle: -1s\n" + minimal, "configfile: trigger.settle must not be negative"},
+		{"negative trigger limit", acme("  acme/x: { trigger: { limit: -1 } }\n"), "repositories.acme/x.trigger.limit must not be negative"},
+		{"negative trigger lines", acme("  acme/x: { trigger: { lines: -1 } }\n"), "repositories.acme/x.trigger.lines must not be negative"},
+		{"unknown feedback", "review:\n  feedback: exhaustive\n" + minimal, "configfile: review.feedback must be detailed, standard or minimal"},
+		{"context without a description", "context: [{ path: db/schema.sql }]\n" + minimal, "configfile: context[0]: description is required"},
+		{"context outside the repository", "context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
+		{"context with a bad glob", "context: [{ path: x, description: x, paths: ['['] }]\n" + minimal, "paths[0] \"[\" is not a valid glob"},
+		{"rule with a bad id", "rules: [{ id: Wrap_Errors, rule: x }]\n" + minimal, `configfile: rules[0].id "Wrap_Errors" must be`},
 		{"rule listed twice", acme("  acme/*: { rules: [{ id: a, rule: x }, { id: a, rule: y }] }\n"), `repositories.acme/*.rules[1].id "a" is listed twice`},
 		{"blank rule", acme("  acme/x: { rules: [{ id: a, rule: ' ' }] }\n"), "repositories.acme/x.rules[0]: set one of rule or file"},
-		{"overlong rule", "defaults:\n  rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
-		{"rule with a bad glob", "defaults:\n  rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
+		{"overlong rule", "rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
+		{"rule with a bad glob", "rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
 		{"rule whenExpr syntax error", acme("  acme/x: { rules: [{ id: a, rule: x, whenExpr: 'pr.draft &&' }] }\n"), "repositories.acme/x.rules[0].whenExpr"},
-		{"rule whenExpr not a bool", "defaults:\n  rules: [{ id: a, rule: x, whenExpr: pr.title }]\n" + minimal, "defaults.rules[0].whenExpr"},
-		{"negative settle at owner/*", acme("  acme/*: { settle: -1s }\n"), "repositories.acme/*.settle must not be negative"},
-		{"negative settle repository", acme("  acme/x: { settle: -1s }\n"), "repositories.acme/x.settle must not be negative"},
-		{"indexing role removed", "defaults:\n  models:\n    indexing: p/m\n" + minimal, "field indexing not found"},
-		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
-		{"filter syntax error", "defaults:\n  filterExpr: 'pr.draft &&'\n" + minimal, "defaults.filterExpr"},
-		{"filter fails smoke test", "defaults:\n  filterExpr: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
-		{"repository filter error", acme("  acme/x: { filterExpr: 'pr.title' }\n"), "repositories.acme/x.filterExpr"},
+		{"rule whenExpr not a bool", "rules: [{ id: a, rule: x, whenExpr: pr.title }]\n" + minimal, "configfile: rules[0].whenExpr"},
+		{"negative settle at owner/*", acme("  acme/*: { trigger: { settle: -1s } }\n"), "repositories.acme/*.trigger.settle must not be negative"},
+		{"negative settle repository", acme("  acme/x: { trigger: { settle: -1s } }\n"), "repositories.acme/x.trigger.settle must not be negative"},
+		{"indexing role removed", "review:\n  indexing: p/m\n" + minimal, "field indexing not found"},
+		{"bad ignore glob", acme("  acme/x: { trigger: { ignore: ['['] } }\n"), "not a valid glob"},
+		{"filter syntax error", "trigger:\n  filterExpr: 'pr.draft &&'\n" + minimal, "configfile: trigger.filterExpr"},
+		{"filter fails smoke test", "trigger:\n  filterExpr: 'pr.labels[5].name == \"x\"'\n" + minimal, "smoke test"},
+		{"repository filter error", acme("  acme/x: { trigger: { filterExpr: 'pr.title' } }\n"), "repositories.acme/x.trigger.filterExpr"},
 		{"a repository key without an owner", acme("  x: {}\n"), "keyed owner/* or owner/name"},
 		{"a repository key too deep", acme("  acme/x/y: {}\n"), "keyed owner/* or owner/name"},
 		{"duplicate repository", acme("  acme/x: {}\n  ACME/x: {}\n"), "duplicates repositories.ACME/x"},
 		{"a repository entry that says where it starts", acme("  acme/x: { enabled: false }\n"), "repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
+		{"a defaults wrapper", "defaults: { enabled: false }\n" + minimal, "field defaults not found"},
+		{"a models block at the root", "models: { review: p/m }\n" + minimal, "field models not found"},
+		{"a flat settle on an entry", acme("  acme/x: { settle: 1m }\n"), "field settle not found"},
 		{"a file key that moved to the environment", "polling: { interval: 5m }\n" + minimal, "field polling not found"},
 	}
 	for _, tt := range tests {
@@ -580,18 +583,17 @@ func TestScopePrecedence(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	const head = `providers:
   p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
-defaults:
-  models: { review: p/big, fallback: p/small }
+review: { model: p/big, fallback: p/small, incremental: 3 }
+trigger:
   filterExpr: "!pr.draft"
   settle: 2m
-  maxAutoReviews: 4
-  maxChangedLines: 500
+  limit: 4
+  lines: 500
   ignore: ["defaults/**"]
-  agent: { maxSteps: 9 }
-  incremental: { maxDeltaFiles: 3 }
-  rules: [{ id: ops, file: ops/rules.md }]
-  comments: { summaryTemplate: ops/summary.tmpl }
-  limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
+agent: { steps: 9 }
+rules: [{ id: ops, file: ops/rules.md }]
+comments: { summary: ops/summary.tmpl }
+limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 `
 	// doc gives acme's owner/* and acme/x entries the flow keys owner and
 	// repo, and its accounts entry limits when there are any.
@@ -622,7 +624,7 @@ defaults:
 	})
 
 	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
-		f := parse(t, doc("tokensPerMonth: 0", `filterExpr: "", settle: 0s, models: { fallback: "" }`, `comments: { summaryTemplate: "" }`))
+		f := parse(t, doc("tokensPerMonth: 0", `trigger: { filterExpr: "", settle: 0s }, review: { fallback: "" }`, `comments: { summary: "" }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Filter != nil || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
@@ -634,8 +636,8 @@ defaults:
 	})
 
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
-		f := parse(t, doc("", `agent: { maxSteps: 7 }, requireSuggestedFix: true, ignore: ["account/**"]`,
-			`models: { review: p/small }, forks: true, agent: { maxTokens: 500 }, ignore: ["repo/**"]`))
+		f := parse(t, doc("", `agent: { steps: 7 }, review: { fixes: true }, trigger: { ignore: ["account/**"] }`,
+			`review: { model: p/small }, trigger: { forks: true, ignore: ["repo/**"] }, agent: { tokens: 500 }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" || !s.Forks {
 			t.Fatalf("settings = %+v", s)
@@ -675,15 +677,15 @@ func TestReviewPresentation(t *testing.T) {
 	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.Feedback != FeedbackDetailed || !s.Review.AgentFiles {
 		t.Fatalf("review = %+v, want every finding inline, from a detailed review that reads agent files", s.Review)
 	}
-	f = parse(t, "comments: { inline: false }, feedback: minimal, agentFiles: false",
-		"  acme/x: { comments: { inline: true } }\n  acme/y: { feedback: standard }\n")
+	f = parse(t, "comments: { inline: false }, review: { feedback: minimal }, agentFiles: false",
+		"  acme/x: { comments: { inline: true } }\n  acme/y: { review: { feedback: standard } }\n")
 	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.Feedback != FeedbackMinimal || s.Review.AgentFiles {
 		t.Fatalf("review = %+v, want the account's feedback and agent files with the repository's inline comments", s.Review)
 	}
 	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Feedback != FeedbackStandard {
 		t.Fatalf("review = %+v, want the repository's feedback over the account's", s.Review)
 	}
-	f = parse(t, "approve: true", "  acme/x: { approve: false }\n  acme/y: {}\n")
+	f = parse(t, "review: { approve: true }", "  acme/x: { review: { approve: false } }\n  acme/y: {}\n")
 	if s := f.Settings(&f.Accounts[0], "acme/x"); s.Review.Approve {
 		t.Fatalf("review = %+v, want the repository's approve over the account's", s.Review)
 	}
@@ -709,7 +711,7 @@ func TestSettingsProviders(t *testing.T) {
 func TestRulesAddUp(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, "defaults:\n  rules: [{ id: a, rule: A }, { id: b, rule: B }]\n"+
+	f := mustLoad(t, "rules: [{ id: a, rule: A }, { id: b, rule: B }]\n"+
 		acme("  acme/*: { rules: [{ id: c, rule: C }] }\n  acme/x: { rules: [{ id: a, rule: A2, paths: ['**/*.go'] }] }\n"))
 	for repo, want := range map[string][]Rule{
 		"acme/x":        {{ID: "a", Rule: "A2", Paths: []string{"**/*.go"}}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
@@ -757,10 +759,10 @@ func TestRepositoryAgentReview(t *testing.T) {
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo(`{
-      agent: { maxSteps: 12, maxToolOutputBytes: 4096, maxTokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
-      incremental: { maxDeltaFiles: 5 },
-      rules: [{ id: style, file: docs/rules.md }], requireSuggestedFix: true,
-      comments: { summaryTemplate: .kritika/summary.md.tmpl, inlineTemplate: .kritika/inline.md.tmpl } }`)))
+      agent: { steps: 12, output: 4096, tokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
+      review: { incremental: 5, fixes: true },
+      rules: [{ id: style, file: docs/rules.md }],
+      comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl } }`)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -780,7 +782,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 	})
 
 	t.Run("a partial agent block keeps the other defaults", func(t *testing.T) {
-		f, err := loadBytes(t, []byte(withRepo("{ agent: { maxSteps: 7 } }")))
+		f, err := loadBytes(t, []byte(withRepo("{ agent: { steps: 7 } }")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -793,15 +795,15 @@ func TestRepositoryAgentReview(t *testing.T) {
 
 	rejects := []struct{ name, repo, want string }{
 		{"a mode", "{ mode: agentic }", "field mode not found"},
-		{"zero max steps", "{ agent: { maxSteps: 0 } }", "agent.maxSteps must be positive"},
-		{"negative max steps", "{ agent: { maxSteps: -1 } }", "agent.maxSteps must be positive"},
-		{"zero tool output", "{ agent: { maxToolOutputBytes: 0 } }", "agent.maxToolOutputBytes must be positive"},
-		{"zero max tokens", "{ agent: { maxTokens: 0 } }", "agent.maxTokens must be positive"},
-		{"negative max tokens", "{ agent: { maxTokens: -5 } }", "agent.maxTokens must be positive"},
+		{"zero steps", "{ agent: { steps: 0 } }", "agent.steps must be positive"},
+		{"negative steps", "{ agent: { steps: -1 } }", "agent.steps must be positive"},
+		{"zero tool output", "{ agent: { output: 0 } }", "agent.output must be positive"},
+		{"zero tokens", "{ agent: { tokens: 0 } }", "agent.tokens must be positive"},
+		{"negative tokens", "{ agent: { tokens: -5 } }", "agent.tokens must be positive"},
 		{"zero timeout", "{ agent: { timeout: 0s } }", "agent.timeout must be positive"},
-		{"zero delta files", "{ incremental: { maxDeltaFiles: 0 } }", "incremental.maxDeltaFiles must be positive"},
-		{"negative delta files", "{ incremental: { maxDeltaFiles: -3 } }", "incremental.maxDeltaFiles must be positive"},
-		{"unknown agent key", "{ agent: { steps: 3 } }", "field steps not found"},
+		{"zero delta files", "{ review: { incremental: 0 } }", "review.incremental must be positive"},
+		{"negative delta files", "{ review: { incremental: -3 } }", "review.incremental must be positive"},
+		{"unknown agent key", "{ agent: { maxSteps: 3 } }", "field maxSteps not found"},
 		{"zero command timeout", "{ agent: { commandTimeout: 0s } }", "agent.commandTimeout must be at least 1s"},
 		{"sub-second command timeout", "{ agent: { commandTimeout: 500ms } }", "agent.commandTimeout must be at least 1s"},
 		{"command path", "{ agent: { commands: [/usr/bin/curl] } }", "must be a bare command name"},
@@ -809,7 +811,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 		{"empty command", "{ agent: { commands: [''] } }", "must be a bare command name"},
 		{"duplicate command", "{ agent: { commands: [rg, rg] } }", "is listed twice"},
 		{"absolute rule file", "{ rules: [{ id: a, file: /etc/passwd }] }", "must be relative"},
-		{"escaping template path", "{ comments: { summaryTemplate: ../x.tmpl } }", "escapes the repository"},
+		{"escaping template path", "{ comments: { summary: ../x.tmpl } }", "escapes the repository"},
 		{"a rule with a file and text", "{ rules: [{ id: a, rule: Check., file: a.md }] }", "set one of rule or file"},
 	}
 	for _, tt := range rejects {

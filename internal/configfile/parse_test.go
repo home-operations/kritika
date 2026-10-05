@@ -34,11 +34,12 @@ func TestParse(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk")
 	f, err := Parse([]byte(`providers:
   p: { type: openai, apiKey: { env: TEST_KEY } }
-defaults: { models: { review: p/big }, settle: 2m }
+review: { model: p/big }
+trigger: { settle: 2m }
 apps:
 ` + fileApp("acme-bot", "acme") + fileApp("org-bot", "org-2", "Org-3") + `repositories:
-  ORG-2/repo-1: { forks: true }
-  gone/*: { forks: true }
+  ORG-2/repo-1: { trigger: { forks: true } }
+  gone/*: { trigger: { forks: true } }
 accounts:
   ORG-2: { limits: { reviewsPerDay: 5 } }
 `))
@@ -83,7 +84,7 @@ func TestParseRejectsEntries(t *testing.T) {
 			"field sealed not found"},
 		{"a clientId from a file", apps(strings.Replace(fileApp("a", "x"), "clientId: Iv1.a", "clientId: { file: /x }", 1)),
 			"field file not found"},
-		{"a broken owner/* entry", "repositories: { acme/*: { models: { review: nope/x } } }\n", `repositories.acme/*.models.review references provider "nope"`},
+		{"a broken owner/* entry", "repositories: { acme/*: { review: { model: nope/x } } }\n", `repositories.acme/*.review.model references provider "nope"`},
 		{"a repository entry that turns it on or off", "repositories: { acme/x: { enabled: false } }\n",
 			"repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
 		{"a duplicate app", apps(fileApp("a", "x"), fileApp("a", "y")), "already defined"},
@@ -153,7 +154,7 @@ func TestParseAccountProviders(t *testing.T) {
   acme:
     providers: { own: { type: anthropic, apiKey: { env: TEST_KEY } } }
 repositories:
-  acme/*: { models: { review: own/big } }
+  acme/*: { review: { model: own/big } }
 `))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

@@ -37,13 +37,13 @@ flowchart LR
 - **An agent, not one prompt.** Each review is a bounded, read-only tool loop
   over the head commit, optionally with allowlisted commands (`gh`, `curl`,
   `fd`, `jq`, `rg`, `yq`) so it can read a dependency bump's release notes;
-  `agent.maxSteps: 1` makes it one call.
+  `agent.steps: 1` makes it one call.
 - **Fixes you can apply.** A finding offers its fix as a one-click suggestion,
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since
   the last review, an earlier finding it no longer finds has its thread
-  resolved, `settle` folds a burst of force-pushes into one, and
-  `maxAutoReviews` pauses a long-lived pull request's automatic reviews,
+  resolved, `trigger.settle` folds a burst of force-pushes into one, and
+  `trigger.limit` pauses a long-lived pull request's automatic reviews,
   as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
@@ -72,7 +72,7 @@ flowchart LR
 - **[Postgres with CloudNativePG](database.md)**: the database, its three
   roles, connection URIs, failover and backups.
 - **[Configuration file](configuration.md)**: sign-in and role mappings, GitHub
-  Apps, providers, defaults, repository entries and accounts.
+  Apps, providers, the repository settings, repository entries and accounts.
 - **[Repository settings](repository-config.md)**: what a repository's
   `.kritika.yaml` can change.
 - **[Helm chart values](chart-values.md)**: the chart's values, grouped.

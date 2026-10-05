@@ -27,7 +27,7 @@ export function checklist(s: SetupStatus, accounts: AdminAccount[]): ChecklistIt
     {
       label: 'A review model is set',
       done: s.reviewModel !== '',
-      how: 'Set defaults.models.review to a model one of the providers serves.',
+      how: 'Set review.model to a model one of the providers serves.',
     },
     {
       label: 'An embedder is set',

@@ -31,10 +31,10 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML+`repositories:
-  onedr0p/*: { filterExpr: "!pr.draft" }
-  onedr0p/settle: { settle: 60s }
-  onedr0p/opened-only: { filterExpr: 'pr.event == "opened"' }
-  onedr0p/labelled: { filterExpr: '!pr.labels.exists(l, l.name == "skip-review")' }
+  onedr0p/*: { trigger: { filterExpr: "!pr.draft" } }
+  onedr0p/settle: { trigger: { settle: 60s } }
+  onedr0p/opened-only: { trigger: { filterExpr: 'pr.event == "opened"' } }
+  onedr0p/labelled: { trigger: { filterExpr: '!pr.labels.exists(l, l.name == "skip-review")' } }
 `)
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)

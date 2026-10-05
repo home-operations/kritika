@@ -7,17 +7,21 @@ import (
 	"time"
 )
 
-// The environment may set the instance's defaults key by key: one model
-// provider, the review and fallback models, feedback, forks and settle
-// every account and repository inherits, and the embedder. Each wins over
-// the file's.
+// The environment may set some of the file's keys: one model provider, the
+// review and fallback models, feedback, forks and settle every account and
+// repository inherits, and the embedder. Each wins over the file's.
 
-// Environment variable prefixes of the file's instance defaults.
+// Environment variable prefixes of the keys the environment may set.
 const (
 	providerEnvPrefix  = "KRITIKA_PROVIDERS_"
-	defaultsEnvPrefix  = "KRITIKA_DEFAULTS_"
+	reviewEnvPrefix    = "KRITIKA_REVIEW_"
+	triggerEnvPrefix   = "KRITIKA_TRIGGER_"
 	embeddingEnvPrefix = "KRITIKA_EMBEDDING_"
 )
+
+// reviewWorkersEnv shares reviewEnvPrefix and is no key of the file: it is
+// how many review jobs a replica runs at once (internal/config).
+const reviewWorkersEnv = "KRITIKA_REVIEW_WORKERS"
 
 // DefaultEnvProvider names the environment's provider when
 // KRITIKA_PROVIDERS_NAME is unset.
@@ -70,39 +74,39 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 	return name, nil
 }
 
-// overlayDefaultsEnv sets the file's defaults from KRITIKA_DEFAULTS_*,
-// recording each key it sets in from.
+// overlayDefaultsEnv sets the file's own review and trigger keys from
+// KRITIKA_REVIEW_* and KRITIKA_TRIGGER_*, recording each key it sets in
+// from.
 func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) error {
 	for _, kv := range environ {
 		env, value, _ := strings.Cut(kv, "=")
-		key, ok := strings.CutPrefix(env, defaultsEnvPrefix)
-		if !ok {
+		if env == reviewWorkersEnv || (!strings.HasPrefix(env, reviewEnvPrefix) && !strings.HasPrefix(env, triggerEnvPrefix)) {
 			continue
 		}
 		var path string
-		switch key {
-		case "MODELS_REVIEW":
+		switch env {
+		case reviewEnvPrefix + "MODEL":
 			ref := ModelRef(value)
-			d.Models.Review, path = &ref, "models.review"
-		case "MODELS_FALLBACK":
+			d.Review.Model, path = &ref, keyModel
+		case reviewEnvPrefix + "FALLBACK":
 			ref := ModelRef(value)
-			d.Models.Fallback, path = &ref, "models.fallback"
-		case "FEEDBACK":
+			d.Review.Fallback, path = &ref, keyFallback
+		case reviewEnvPrefix + "FEEDBACK":
 			d.Review.Feedback, path = &value, keyFeedback
-		case "FORKS":
+		case triggerEnvPrefix + "FORKS":
 			b, err := strconv.ParseBool(value)
 			if err != nil {
 				return fmt.Errorf("configfile: environment variable %s must be true or false, got %q", env, value)
 			}
-			d.Forks, path = &b, keyForks
-		case "SETTLE":
+			d.Trigger.Forks, path = &b, keyForks
+		case triggerEnvPrefix + "SETTLE":
 			settle, err := time.ParseDuration(value)
 			if err != nil {
 				return fmt.Errorf("configfile: environment variable %s: %w", env, err)
 			}
-			d.Settle, path = &settle, keySettle
+			d.Trigger.Settle, path = &settle, keySettle
 		default:
-			return fmt.Errorf("configfile: environment variable %s names no defaults setting", env)
+			return fmt.Errorf("configfile: environment variable %s names no setting", env)
 		}
 		from[path] = true
 	}
@@ -139,20 +143,21 @@ func overlayEmbeddingEnv(e **Embedding, environ []string, from map[string]bool) 
 	return nil
 }
 
-// FileLayer is what the configuration file and its environment set of the
-// instance's defaults: its providers, default models, other defaults and
-// embedder, each with where it comes from.
+// FileLayer is what the configuration file and its environment set for the
+// instance: its providers, the models and the other settings every
+// repository inherits, and the embedder, each with where it comes from.
 type FileLayer struct {
 	Providers map[string]FileProvider
 	Review    FileValue
 	Fallback  FileValue
-	// Defaults are the other defaults it sets: feedback, forks and
-	// settle, in that order, by their policy keys.
+	// Defaults are the other settings it writes that the environment may
+	// set too: feedback, forks and settle, in that order, by their policy
+	// keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
 
-// FileDefault is one of the defaults the file or the environment sets
+// FileDefault is one of the settings the file or the environment sets
 // other than the models, by its policy key.
 type FileDefault struct {
 	Key string
@@ -166,7 +171,7 @@ type FileProvider struct {
 	Source  Source
 }
 
-// FileValue is a default the file or the environment sets; the zero
+// FileValue is a setting the file or the environment sets; the zero
 // FileValue is none.
 type FileValue struct {
 	Value  string
@@ -180,7 +185,8 @@ type FileEmbedding struct {
 	Source Source
 }
 
-// FileLayer returns f's instance defaults, each with where it comes from.
+// FileLayer returns what f sets for the instance, each with where it comes
+// from.
 func (f *File) FileLayer() FileLayer {
 	source := func(key string) Source {
 		if f.envKeys[key] {
@@ -199,11 +205,11 @@ func (f *File) FileLayer() FileLayer {
 		}
 		out.Providers[name] = FileProvider{Type: p.Type, BaseURL: p.BaseURL, Source: src}
 	}
-	if r := f.Defaults.Models.Review; r != nil {
-		out.Review = FileValue{Value: string(*r), Source: source("models.review")}
+	if r := f.Defaults.Review.Model; r != nil {
+		out.Review = FileValue{Value: string(*r), Source: source(keyModel)}
 	}
-	if r := f.Defaults.Models.Fallback; r != nil {
-		out.Fallback = FileValue{Value: string(*r), Source: source("models.fallback")}
+	if r := f.Defaults.Review.Fallback; r != nil {
+		out.Fallback = FileValue{Value: string(*r), Source: source(keyFallback)}
 	}
 	d := f.Defaults
 	for _, x := range []struct {
@@ -211,8 +217,8 @@ func (f *File) FileLayer() FileLayer {
 		set        bool
 	}{
 		{keyFeedback, deref(d.Review.Feedback), d.Review.Feedback != nil},
-		{keyForks, strconv.FormatBool(d.Forks != nil && *d.Forks), d.Forks != nil},
-		{keySettle, durationValue(d.Settle), d.Settle != nil},
+		{keyForks, strconv.FormatBool(d.Trigger.Forks != nil && *d.Trigger.Forks), d.Trigger.Forks != nil},
+		{keySettle, durationValue(d.Trigger.Settle), d.Trigger.Settle != nil},
 	} {
 		if x.set {
 			out.Defaults = append(out.Defaults, FileDefault{Key: x.key, Value: x.value, Source: source(x.key)})

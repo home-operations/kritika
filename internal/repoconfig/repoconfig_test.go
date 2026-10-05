@@ -18,16 +18,16 @@ func TestParse_Invalid(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ name, yaml string }{
 		{"unknown key", "foo: bar\n"},
-		{"bad ignore glob", "ignore:\n  - \"[\"\n"},
+		{"bad ignore glob", "trigger:\n  ignore:\n    - \"[\"\n"},
 		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
-		{"bad filter syntax", "filterExpr: \"pr.draft &&\"\n"},
-		{"filter not bool", "filterExpr: \"pr.title\"\n"},
+		{"bad filter syntax", "trigger:\n  filterExpr: \"pr.draft &&\"\n"},
+		{"filter not bool", "trigger:\n  filterExpr: \"pr.title\"\n"},
 		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]\n"},
 		{"rule file escapes repo", "rules: [{ id: a, file: ../x }]\n"},
 		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},
 		{"rule with neither", "rules: [{ id: a, paths: [\"**\"] }]\n"},
 		{"file rule with a bad glob", "rules: [{ id: a, file: x.md, paths: [\"[\"] }]\n"},
-		{"the review block is gone", "review:\n  feedback: minimal\n"},
+		{"feedback outside the review block", "feedback: minimal\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -59,16 +59,18 @@ func TestParse_Valid(t *testing.T) {
 	t.Run("all fields", func(t *testing.T) {
 		t.Parallel()
 		doc := []byte(`enabled: true
-filterExpr: '!pr.draft'
-ignore:
-  - "**/*.md"
+trigger:
+  filterExpr: '!pr.draft'
+  ignore:
+    - "**/*.md"
 rules:
   - { id: house-style, file: docs/instructions.md }
   - { id: sql, file: docs/sql.md, paths: ["**/*.sql"] }
-requireSuggestedFix: true
+review:
+  fixes: true
 comments:
-  summaryTemplate: docs/summary.tmpl
-  inlineTemplate: docs/inline.tmpl
+  summary: docs/summary.tmpl
+  finding: docs/inline.tmpl
 `)
 		f, prg, err := Parse(doc)
 		if err != nil {
@@ -80,22 +82,22 @@ comments:
 		if f.Enabled == nil || !*f.Enabled {
 			t.Fatalf("Enabled = %v, want true", f.Enabled)
 		}
-		if f.FilterExpr != "!pr.draft" {
-			t.Fatalf("FilterExpr = %q, want %q", f.FilterExpr, "!pr.draft")
+		if f.Trigger.FilterExpr != "!pr.draft" {
+			t.Fatalf("FilterExpr = %q, want %q", f.Trigger.FilterExpr, "!pr.draft")
 		}
-		if !slices.Equal(f.Ignore, []string{"**/*.md"}) {
-			t.Fatalf("Ignore = %v", f.Ignore)
+		if !slices.Equal(f.Trigger.Ignore, []string{"**/*.md"}) {
+			t.Fatalf("Ignore = %v", f.Trigger.Ignore)
 		}
 		if !reflect.DeepEqual(f.Rules, []configfile.Rule{
 			{ID: "house-style", File: "docs/instructions.md"}, {ID: "sql", File: "docs/sql.md", Paths: []string{"**/*.sql"}},
 		}) {
 			t.Fatalf("Rules = %v", f.Rules)
 		}
-		if f.RequireSuggestedFix == nil || !*f.RequireSuggestedFix {
-			t.Fatalf("RequireSuggestedFix = %v, want true", f.RequireSuggestedFix)
+		if f.Review.Fixes == nil || !*f.Review.Fixes {
+			t.Fatalf("Fixes = %v, want true", f.Review.Fixes)
 		}
-		if f.Comments.SummaryTemplate == nil || *f.Comments.SummaryTemplate != "docs/summary.tmpl" ||
-			f.Comments.InlineTemplate == nil || *f.Comments.InlineTemplate != "docs/inline.tmpl" {
+		if f.Comments.Summary == nil || *f.Comments.Summary != "docs/summary.tmpl" ||
+			f.Comments.Finding == nil || *f.Comments.Finding != "docs/inline.tmpl" {
 			t.Fatalf("Comments = %+v", f.Comments)
 		}
 	})
@@ -164,7 +166,7 @@ func TestFile_Referenced(t *testing.T) {
 	t.Parallel()
 	f := File{
 		Rules:    []configfile.Rule{{ID: "a", File: "docs/a.md"}, {ID: "b", File: "docs/b.md", Paths: []string{"b/**"}}, {ID: "c", Rule: "Check."}},
-		Comments: Comments{SummaryTemplate: new("docs/a.md"), InlineTemplate: new("docs/c.md")},
+		Comments: Comments{Summary: new("docs/a.md"), Finding: new("docs/c.md")},
 	}
 	want := []string{"docs/a.md", "docs/b.md", "docs/c.md"}
 	if got := f.Referenced(); !slices.Equal(got, want) {

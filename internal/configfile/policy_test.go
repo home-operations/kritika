@@ -21,9 +21,9 @@ func TestPoliciesNameSettings(t *testing.T) {
 
 func TestSpecValue(t *testing.T) {
 	steps := 5
-	r := &Repository{Name: "a/b", Agent: Agent{MaxSteps: &steps}}
-	if v, ok := SpecValue(r, "agent.maxSteps"); !ok || *v.(*int) != 5 {
-		t.Fatalf("agent.maxSteps = %v, %v", v, ok)
+	r := &Repository{Name: "a/b", Agent: Agent{Steps: &steps}}
+	if v, ok := SpecValue(r, "agent.steps"); !ok || *v.(*int) != 5 {
+		t.Fatalf("agent.steps = %v, %v", v, ok)
 	}
 	if v, ok := SpecValue(&Account{}, "limits.concurrency"); !ok || v.(*int) != nil {
 		t.Fatalf("limits.concurrency = %v, %v", v, ok)
@@ -36,18 +36,18 @@ func TestSpecValue(t *testing.T) {
 func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, "defaults:\n  settle: 2m\n  agent: { maxSteps: 9 }\n"+
-		acme("  acme/*: { forks: true }\n  acme/x: { settle: 0s, filterExpr: \"true\" }\n"))
+	f := mustLoad(t, "trigger: { settle: 2m }\nagent: { steps: 9 }\n"+
+		acme("  acme/*: { trigger: { forks: true } }\n  acme/x: { trigger: { settle: 0s, filterExpr: \"true\" } }\n"))
 	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
-		"settle": SourceAccount, "forks": SourceAccount, "agent.maxSteps": SourceDefaults, "enabled": SourceDefault, "filterExpr": SourceAccount,
-		"agent.maxTokens": SourceDefault, "models.review": SourceDefault, "ignore": SourceDefault,
+		"trigger.settle": SourceAccount, "trigger.forks": SourceAccount, "agent.steps": SourceDefaults, "enabled": SourceDefault, "trigger.filterExpr": SourceAccount,
+		"agent.tokens": SourceDefault, "review.model": SourceDefault, "trigger.ignore": SourceDefault,
 	} {
 		if s[key] != want {
 			t.Errorf("%s from %s, want %s", key, s[key], want)
 		}
 	}
-	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["settle"] != SourceDefaults || s["forks"] != SourceDefault {
+	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["trigger.settle"] != SourceDefaults || s["trigger.forks"] != SourceDefault {
 		t.Fatalf("an account without an entry = %v", s)
 	}
 }

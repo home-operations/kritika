@@ -30,7 +30,8 @@ func TestSchemaMatchesFile(t *testing.T) {
 		want []string
 	}{
 		{"the file", nil, yamlKeys[File]()},
-		{"models", []string{"properties", "models"}, yamlKeys[Models]()},
+		{"review", []string{"properties", "review"}, yamlKeys[Review]()},
+		{"trigger", []string{"properties", "trigger"}, yamlKeys[Trigger]()},
 		{"comments", []string{"properties", "comments"}, yamlKeys[Comments]()},
 		{"context", []string{"properties", "context", "items"}, yamlKeys[configfile.ContextFile]()},
 		{"rules", []string{"properties", "rules", "items"}, yamlKeys[configfile.Rule]()},

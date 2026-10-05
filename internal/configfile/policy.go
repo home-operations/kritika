@@ -31,46 +31,47 @@ var (
 	accountScopes = []Scope{ScopeDefaults, ScopeAccount}
 )
 
-// The agent limits' keys.
+// The keys validation names in its errors.
 const (
-	keyMaxSteps           = "agent.maxSteps"
-	keyMaxToolOutputBytes = "agent.maxToolOutputBytes"
-	keyMaxTokens          = "agent.maxTokens"
-	keyTimeout            = "agent.timeout"
+	keySteps       = "agent.steps"
+	keyOutput      = "agent.output"
+	keyIncremental = "review.incremental"
 )
 
-// The keys the file's defaults set as well (instance.go).
+// The keys the environment sets as well (instance.go).
 const (
-	keyFeedback = "feedback"
-	keyForks    = "forks"
-	keySettle   = "settle"
+	keyModel    = "review.model"
+	keyFallback = "review.fallback"
+	keyFeedback = "review.feedback"
+	keyForks    = "trigger.forks"
+	keySettle   = "trigger.settle"
 )
 
 // Policies is the table.
 var Policies = []Policy{
 	{Key: "enabled", Scopes: everyScope},
-	{Key: "models.review", Scopes: everyScope},
-	{Key: "models.fallback", Scopes: everyScope},
+	{Key: keyModel, Scopes: everyScope},
+	{Key: keyFallback, Scopes: everyScope},
 	{Key: keyFeedback, Scopes: everyScope},
+	{Key: "review.fixes", Scopes: everyScope},
+	{Key: "review.approve", Scopes: everyScope},
+	{Key: keyIncremental, Scopes: everyScope},
+	{Key: "trigger.filterExpr", Scopes: everyScope},
+	{Key: keyForks, Scopes: everyScope},
+	{Key: keySettle, Scopes: everyScope},
+	{Key: "trigger.ignore", Scopes: everyScope},
+	{Key: "trigger.limit", Scopes: everyScope},
+	{Key: "trigger.lines", Scopes: everyScope},
 	{Key: "comments", Scopes: everyScope},
-	{Key: "requireSuggestedFix", Scopes: everyScope},
-	{Key: "approve", Scopes: everyScope},
-	{Key: "filterExpr", Scopes: everyScope},
-	{Key: "ignore", Scopes: everyScope},
 	{Key: "rules", Scopes: everyScope},
 	{Key: "context", Scopes: everyScope},
 	{Key: "agentFiles", Scopes: everyScope},
-	{Key: keyForks, Scopes: everyScope},
-	{Key: keyMaxSteps, Scopes: everyScope},
-	{Key: keyMaxToolOutputBytes, Scopes: everyScope},
-	{Key: keyMaxTokens, Scopes: everyScope},
-	{Key: keyTimeout, Scopes: everyScope},
+	{Key: keySteps, Scopes: everyScope},
+	{Key: keyOutput, Scopes: everyScope},
+	{Key: "agent.tokens", Scopes: everyScope},
+	{Key: "agent.timeout", Scopes: everyScope},
 	{Key: "agent.commands", Scopes: everyScope},
 	{Key: "agent.commandTimeout", Scopes: everyScope},
-	{Key: keySettle, Scopes: everyScope},
-	{Key: "maxAutoReviews", Scopes: everyScope},
-	{Key: "maxChangedLines", Scopes: everyScope},
-	{Key: "incremental.maxDeltaFiles", Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
 }
 

@@ -1,6 +1,6 @@
 {
   "repoFiles": {
-    ".kritika.yaml": "approve: true\n"
+    ".kritika.yaml": "review: { approve: true }\n"
   },
   "stages": [
     {

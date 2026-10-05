@@ -67,31 +67,31 @@ func TestEffective(t *testing.T) {
 			repoFiles: append(adminPaths, repoconfig.FileName), templates: adminDefaults, strict: true,
 		},
 		{
-			name: "filter is kept apart to be ANDed", doc: "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
+			name: "filter is kept apart to be ANDed", doc: "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", files: adminFiles,
 			enabled: true, inRepoFilter: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			templates: adminDefaults, strict: true,
 		},
 		{
-			name: "ignore globs add to the admin's", doc: "ignore: [gen/**, vendor/**]\n",
+			name: "ignore globs add to the admin's", doc: "trigger: { ignore: [gen/**, vendor/**] }\n",
 			files: adminFiles, enabled: true, ignore: []string{"vendor/**", "gen/**"},
 			repoFiles: append(adminPaths, repoconfig.FileName), templates: adminDefaults, strict: true,
 		},
 		{
-			name: "requireSuggestedFix may only turn on", doc: "requireSuggestedFix: false\n", files: adminFiles,
+			name: "review.fixes may only turn on", doc: "review: { fixes: false }\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			templates: adminDefaults, strict: true,
-			notes: []string{".kritika.yaml: requireSuggestedFix false was dropped; allowed: true, since an admin requires a suggested fix"},
+			notes: []string{".kritika.yaml: review.fixes false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},
 		{
 			name:    "repository file rules follow the admin's, and its summary template replaces the admin's",
-			doc:     "rules: [{ id: repo, file: .kritika/rules.md }]\ncomments:\n  summaryTemplate: .kritika/summary.tmpl\n",
+			doc:     "rules: [{ id: repo, file: .kritika/rules.md }]\ncomments:\n  summary: .kritika/summary.tmpl\n",
 			files:   with(repoconfig.Files{".kritika/rules.md": "repo rules", ".kritika/summary.tmpl": "repo summary"}),
 			enabled: true, ignore: []string{"vendor/**"},
 			repoFiles: []string{"ops/rules.md", ".kritika/rules.md", ".kritika/summary.tmpl", "ops/inline.tmpl", repoconfig.FileName},
 			templates: review.Templates{Summary: "repo summary", Inline: "op inline"}, strict: true,
 		},
 		{
-			name: "a template the runner could not read leaves the built-in one", doc: "comments:\n  summaryTemplate: .kritika/gone.tmpl\n",
+			name: "a template the runner could not read leaves the built-in one", doc: "comments:\n  summary: .kritika/gone.tmpl\n",
 			files: adminFiles, enabled: true, ignore: []string{"vendor/**"},
 			repoFiles: []string{"ops/rules.md", ".kritika/gone.tmpl", "ops/inline.tmpl", repoconfig.FileName},
 			templates: review.Templates{Inline: "op inline"}, strict: true,
@@ -146,11 +146,11 @@ func TestEffectiveSkip(t *testing.T) {
 	}{
 		{"nothing to skip", "", "", []string{"main.go"}, ""},
 		{"disabled", "enabled: false\n", "", []string{"main.go"}, repoconfig.SkipDisabled},
-		{"filtered", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
-		{"filter allows", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
-		{"filter that fails to evaluate skips", "filterExpr: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
-		{"only ignored paths", "ignore: [docs/**]\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
-		{"a path outside the ignore globs", "ignore: [docs/**]\n", "", []string{"docs/a.md", "main.go"}, ""},
+		{"filtered", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "please [skip-review]", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"filter allows", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n", "normal", []string{"main.go"}, ""},
+		{"filter that fails to evaluate skips", "trigger:\n  filterExpr: 'pr.number > 0'\n", "", []string{"main.go"}, repoconfig.SkipFiltered},
+		{"only ignored paths", "trigger: { ignore: [docs/**] }\n", "", []string{"docs/a.md", "docs/b/c.md"}, repoconfig.SkipOnlyPaths},
+		{"a path outside the ignore globs", "trigger: { ignore: [docs/**] }\n", "", []string{"docs/a.md", "main.go"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -273,10 +273,10 @@ func TestFollowUpRepoConfig(t *testing.T) {
 	}{
 		{name: "no file", files: files, model: "p/big", rules: []string{"admin rules"}},
 		{
-			name: "the repository's model and file rules", files: with("models: { review: p/small }\nrules: [{ id: repo, file: .kritika/rules.md }]\n"),
+			name: "the repository's model and file rules", files: with("review: { model: p/small }\nrules: [{ id: repo, file: .kritika/rules.md }]\n"),
 			model: "p/small", rules: []string{"admin rules", "repo rules"},
 		},
-		{name: "a model of a provider the account may not use is dropped", files: with("models: { review: q/huge }\n"), model: "p/big", rules: []string{"admin rules"}},
+		{name: "a model of a provider the account may not use is dropped", files: with("review: { model: q/huge }\n"), model: "p/big", rules: []string{"admin rules"}},
 		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritika.yaml", model: "p/big"},
 	}
 	for _, tt := range tests {

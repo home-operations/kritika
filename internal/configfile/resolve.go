@@ -117,8 +117,8 @@ const (
 	SourceDefault Source = "default"
 	SourceEnv     Source = "env"
 	SourceFile    Source = "file"
-	// SourceDefaults is the file's defaults and SourceAccount an account's
-	// entry or one of its repository entries.
+	// SourceDefaults is the file's own settings, at its root, and
+	// SourceAccount an account's entry or one of its repository entries.
 	SourceDefaults Source = "defaults"
 	SourceAccount  Source = "account"
 )
@@ -153,33 +153,44 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 }
 
 // apply lays one scope's overrides over s: a field the scope writes
-// replaces s's, and its ignore globs are added to s's.
+// replaces s's, its ignore globs are added to s's, and its rules to s's by
+// id.
 func (s *Settings) apply(o *Overrides) {
 	if o.Enabled != nil {
 		s.Enabled = *o.Enabled
 	}
-	s.Models = s.Models.overlay(o.Models)
-	if o.FilterExpr != nil {
+	if o.Review.Model != nil {
+		s.Models.Review = *o.Review.Model
+	}
+	if o.Review.Fallback != nil {
+		s.Models.Fallback = *o.Review.Fallback
+	}
+	if o.Review.Incremental != nil {
+		s.Incremental.MaxDeltaFiles = *o.Review.Incremental
+	}
+	s.trigger(o)
+	s.Agent = s.Agent.overlay(o.Agent)
+	s.Review = s.Review.overlay(o)
+}
+
+// trigger lays one scope's trigger keys over s.
+func (s *Settings) trigger(o *Overrides) {
+	if o.Trigger.FilterExpr != nil {
 		s.Filter = o.filter
 	}
-	if o.Forks != nil {
-		s.Forks = *o.Forks
+	if o.Trigger.Forks != nil {
+		s.Forks = *o.Trigger.Forks
 	}
-	s.Ignore = append(s.Ignore, o.Ignore...)
-	if o.Settle != nil {
-		s.Settle = *o.Settle
+	s.Ignore = append(s.Ignore, o.Trigger.Ignore...)
+	if o.Trigger.Settle != nil {
+		s.Settle = *o.Trigger.Settle
 	}
-	if o.MaxAutoReviews != nil {
-		s.MaxAutoReviews = *o.MaxAutoReviews
+	if o.Trigger.Limit != nil {
+		s.MaxAutoReviews = *o.Trigger.Limit
 	}
-	if o.MaxChangedLines != nil {
-		s.MaxChangedLines = *o.MaxChangedLines
+	if o.Trigger.Lines != nil {
+		s.MaxChangedLines = *o.Trigger.Lines
 	}
-	s.Agent = s.Agent.overlay(o.Agent)
-	if o.Incremental.MaxDeltaFiles != nil {
-		s.Incremental.MaxDeltaFiles = *o.Incremental.MaxDeltaFiles
-	}
-	s.Review = s.Review.overlay(o.Review)
 }
 
 // providerNames is the names of the providers account a may use, sorted.
@@ -188,16 +199,6 @@ func (f *File) providerNames(a *Account) []string {
 	names = append(names, slices.Collect(maps.Keys(a.Providers))...)
 	slices.Sort(names)
 	return names
-}
-
-func (m Models) overlay(o ModelsSpec) Models {
-	if o.Review != nil {
-		m.Review = *o.Review
-	}
-	if o.Fallback != nil {
-		m.Fallback = *o.Fallback
-	}
-	return m
 }
 
 func (l Limits) overlay(o LimitsSpec) Limits {
@@ -213,21 +214,21 @@ func (l Limits) overlay(o LimitsSpec) Limits {
 	return l
 }
 
-func (r Review) overlay(o ReviewSpec) Review {
-	if o.RequireSuggestedFix != nil {
-		r.RequireSuggestedFix = *o.RequireSuggestedFix
+func (r Review) overlay(o *Overrides) Review {
+	if o.Review.Fixes != nil {
+		r.RequireSuggestedFix = *o.Review.Fixes
 	}
-	if o.Comments.SummaryTemplate != nil {
-		r.Templates.Summary = *o.Comments.SummaryTemplate
+	if o.Comments.Summary != nil {
+		r.Templates.Summary = *o.Comments.Summary
 	}
-	if o.Comments.InlineTemplate != nil {
-		r.Templates.Inline = *o.Comments.InlineTemplate
+	if o.Comments.Finding != nil {
+		r.Templates.Inline = *o.Comments.Finding
 	}
 	if o.Comments.Inline != nil {
 		r.InlineComments = *o.Comments.Inline
 	}
-	if o.Approve != nil {
-		r.Approve = *o.Approve
+	if o.Review.Approve != nil {
+		r.Approve = *o.Review.Approve
 	}
 	if o.Context != nil {
 		r.Context = o.Context
@@ -236,21 +237,21 @@ func (r Review) overlay(o ReviewSpec) Review {
 	if o.AgentFiles != nil {
 		r.AgentFiles = *o.AgentFiles
 	}
-	if o.Feedback != nil {
-		r.Feedback = *o.Feedback
+	if o.Review.Feedback != nil {
+		r.Feedback = *o.Review.Feedback
 	}
 	return r
 }
 
 func (a AgentSettings) overlay(o Agent) AgentSettings {
-	if o.MaxSteps != nil {
-		a.MaxSteps = *o.MaxSteps
+	if o.Steps != nil {
+		a.MaxSteps = *o.Steps
 	}
-	if o.MaxToolOutputBytes != nil {
-		a.MaxToolOutputBytes = *o.MaxToolOutputBytes
+	if o.Output != nil {
+		a.MaxToolOutputBytes = *o.Output
 	}
-	if o.MaxTokens != nil {
-		a.MaxTokens = *o.MaxTokens
+	if o.Tokens != nil {
+		a.MaxTokens = *o.Tokens
 	}
 	if o.Timeout != nil {
 		a.Timeout = *o.Timeout

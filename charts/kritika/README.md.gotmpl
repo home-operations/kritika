@@ -38,7 +38,7 @@ config:
   providersApiKey:
     valueFrom:
       secretKeyRef: { name: kritika-openrouter, key: api-key }
-  defaultsModelsReview: openrouter/vendor/large-model
+  reviewModel: openrouter/vendor/large-model
 configFile:
   apps:
     github:
@@ -61,8 +61,8 @@ prefix in camelCase (`pollInterval` is `KRITIKA_POLL_INTERVAL`): `webUrl`,
 the one public URL, with the dashboard at it and the webhook listener
 under it at `/hooks`; logging, the workers, polling, retention and runner
 Jobs' deadline and RuntimeClass; and the variables that stand in for the
-configuration file's sections, sign-in, one app, one provider, the default
-models and the embedder (see
+configuration file's sections, sign-in, one app, one provider, the review
+and trigger settings and the embedder (see
 [the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
 A key left empty sets nothing and kritika's default applies; a secret
 takes a `valueFrom` map, like the admin password above, which is the way
@@ -70,7 +70,8 @@ into a fresh instance. The chart's Ingress or HTTPRoute must route
 `webUrl`'s host.
 
 `configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
-`apps`, model `providers`, the `embedding`, the `defaults`, `repositories`
+`apps`, model `providers`, the `embedding`, the settings every repository
+gets (`review`, `trigger`, `comments`, `agent`), `repositories`
 entries keyed `owner/*` or `owner/name`, and `accounts`, with the
 `config` variables winning over it. kritika reads it at startup: the pods
 carry its checksum, so a change rolls them, and a pod whose file doesn't

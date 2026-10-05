@@ -13,8 +13,7 @@ const fileWithDefaults = `apps:
   acme-bot: { accounts: [acme], clientId: x, privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 providers:
   openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }
-defaults:
-  models: { review: openrouter/big, fallback: openrouter/small }
+review: { model: openrouter/big, fallback: openrouter/small }
 embedding: { model: openrouter/e1, dims: 8 }
 accounts:
   acme: {}
@@ -43,7 +42,7 @@ func TestFileInstanceDefaults(t *testing.T) {
 	if s.Models.Review != "openrouter/big" || s.Models.Fallback != "openrouter/small" {
 		t.Fatalf("models = %+v; want the file's", s.Models)
 	}
-	if src := f.Sources(a, "acme/x"); src["models.review"] != SourceDefaults || src["models.fallback"] != SourceDefaults {
+	if src := f.Sources(a, "acme/x"); src["review.model"] != SourceDefaults || src["review.fallback"] != SourceDefaults {
 		t.Fatalf("sources = %v; want the models from the defaults", src)
 	}
 	if f.Embedding == nil || f.Embedding.Model != "e1" || f.Embedding.APIKeyValue().Value() != "sk-file" || f.Embedding.BaseURL != "https://openrouter.ai/api/v1" {
@@ -69,7 +68,10 @@ func TestFileInstanceDefaults(t *testing.T) {
 func TestInstanceDefaultsEnv(t *testing.T) {
 	setInstanceEnv(t)
 	t.Setenv("KRITIKA_PROVIDERS_API_KEY", "sk-env")
-	t.Setenv("KRITIKA_DEFAULTS_MODELS_REVIEW", "openrouter/env-model")
+	t.Setenv("KRITIKA_REVIEW_MODEL", "openrouter/env-model")
+	// How many review jobs a replica runs shares the prefix and is no
+	// setting of the file.
+	t.Setenv("KRITIKA_REVIEW_WORKERS", "4")
 	t.Setenv("KRITIKA_EMBEDDING_MODEL", "openrouter/e-env")
 	t.Setenv("KRITIKA_EMBEDDING_DIMS", "32")
 	f, err := Parse([]byte(fileWithDefaults))
@@ -83,7 +85,7 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 	if s := f.Settings(a, "acme/x"); s.Models.Review != "openrouter/env-model" || s.Models.Fallback != "openrouter/small" {
 		t.Fatalf("models = %+v; want the environment's review model over the file's fallback", s.Models)
 	}
-	if src := f.Sources(a, "acme/x"); src["models.review"] != SourceEnv || src["models.fallback"] != SourceDefaults {
+	if src := f.Sources(a, "acme/x"); src["review.model"] != SourceEnv || src["review.fallback"] != SourceDefaults {
 		t.Fatalf("sources = %v", src)
 	}
 	// The environment sets the embedder key by key over the file's, on the
@@ -100,9 +102,9 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 		{"an unknown provider key", "KRITIKA_PROVIDERS_MODEL", "x", "KRITIKA_PROVIDERS_MODEL names no provider setting"},
 		{"retries that are not a number", "KRITIKA_PROVIDERS_RETRIES", "some", "KRITIKA_PROVIDERS_RETRIES must be a whole number"},
 		{"retries past the bound", "KRITIKA_PROVIDERS_RETRIES", "6", "providers.openrouter.retries must be between 0 and 5"},
-		{"an unknown defaults key", "KRITIKA_DEFAULTS_FILTER", "true", "KRITIKA_DEFAULTS_FILTER names no defaults setting"},
-		{"forks that are not a bool", "KRITIKA_DEFAULTS_FORKS", "sometimes", "KRITIKA_DEFAULTS_FORKS must be true or false"},
-		{"a settle that is not a duration", "KRITIKA_DEFAULTS_SETTLE", "soon", "KRITIKA_DEFAULTS_SETTLE"},
+		{"an unknown trigger key", "KRITIKA_TRIGGER_FILTER", "true", "KRITIKA_TRIGGER_FILTER names no setting"},
+		{"forks that are not a bool", "KRITIKA_TRIGGER_FORKS", "sometimes", "KRITIKA_TRIGGER_FORKS must be true or false"},
+		{"a settle that is not a duration", "KRITIKA_TRIGGER_SETTLE", "soon", "KRITIKA_TRIGGER_SETTLE"},
 		{"an unknown embedding key", "KRITIKA_EMBEDDING_URL", "x", "KRITIKA_EMBEDDING_URL names no embedding setting"},
 		{"dims that are not a number", "KRITIKA_EMBEDDING_DIMS", "many", "KRITIKA_EMBEDDING_DIMS must be a whole number"},
 		{"a key from a file", "KRITIKA_PROVIDERS_API_KEY_FILE", "/nope", "KRITIKA_PROVIDERS_API_KEY_FILE names no provider setting"},
@@ -148,8 +150,8 @@ func TestProviderRetries(t *testing.T) {
 // the file does not declare is refused.
 func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 	setInstanceEnv(t)
-	_, err := Parse([]byte(strings.Replace(fileWithDefaults, "review: openrouter/big", "review: nowhere/big", 1)))
-	if err == nil || !strings.Contains(err.Error(), "defaults.models.review") {
+	_, err := Parse([]byte(strings.Replace(fileWithDefaults, "model: openrouter/big", "model: nowhere/big", 1)))
+	if err == nil || !strings.Contains(err.Error(), "configfile: review.model") {
 		t.Fatalf("Parse = %v; want the default model refused", err)
 	}
 }
@@ -159,10 +161,12 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 // the environment's source. mode is no longer a setting in either.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
-	t.Setenv("KRITIKA_DEFAULTS_SETTLE", "45s")
-	models := "  models: { review: openrouter/big, fallback: openrouter/small }\n"
-	withDefaults := func(extra string) []byte { return []byte(strings.Replace(fileWithDefaults, models, models+extra, 1)) }
-	f, err := Parse(withDefaults("  forks: true\n  feedback: minimal\n"))
+	t.Setenv("KRITIKA_TRIGGER_SETTLE", "45s")
+	review := "review: { model: openrouter/big, fallback: openrouter/small"
+	withDefaults := func(reviewKeys, rootKeys string) []byte {
+		return []byte(strings.Replace(fileWithDefaults, review+" }\n", review+reviewKeys+" }\n"+rootKeys, 1))
+	}
+	f, err := Parse(withDefaults(", feedback: minimal", "trigger: { forks: true }\n"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -173,24 +177,24 @@ func TestFileReviewDefaults(t *testing.T) {
 			s.Forks, s.Settle, s.Review.Feedback)
 	}
 	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{"forks": SourceDefaults, "settle": SourceEnv, "feedback": SourceDefaults} {
+	for key, want := range map[string]Source{"trigger.forks": SourceDefaults, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
-		{"feedback", FileValue{Value: "minimal", Source: SourceFile}},
-		{"forks", FileValue{Value: "true", Source: SourceFile}},
-		{"settle", FileValue{Value: "45s", Source: SourceEnv}},
+		{"review.feedback", FileValue{Value: "minimal", Source: SourceFile}},
+		{"trigger.forks", FileValue{Value: "true", Source: SourceFile}},
+		{"trigger.settle", FileValue{Value: "45s", Source: SourceEnv}},
 	}
 	if got := f.FileLayer().Defaults; !slices.Equal(got, want) {
 		t.Fatalf("file layer defaults = %+v, want %+v", got, want)
 	}
-	if _, err := Parse(withDefaults("  mode: agentic\n")); err == nil || !strings.Contains(err.Error(), "mode") {
-		t.Fatalf("defaults.mode = %v, want it refused as an unknown key", err)
+	if _, err := Parse(withDefaults("", "mode: agentic\n")); err == nil || !strings.Contains(err.Error(), "mode") {
+		t.Fatalf("mode = %v, want it refused as an unknown key", err)
 	}
-	t.Setenv("KRITIKA_DEFAULTS_MODE", "agentic")
-	if _, err := Parse(withDefaults("")); err == nil || !strings.Contains(err.Error(), "KRITIKA_DEFAULTS_MODE names no defaults setting") {
-		t.Fatalf("KRITIKA_DEFAULTS_MODE = %v, want it refused", err)
+	t.Setenv("KRITIKA_REVIEW_MODE", "agentic")
+	if _, err := Parse(withDefaults("", "")); err == nil || !strings.Contains(err.Error(), "KRITIKA_REVIEW_MODE names no setting") {
+		t.Fatalf("KRITIKA_REVIEW_MODE = %v, want it refused", err)
 	}
 }

@@ -55,10 +55,11 @@ apps:
 // and without their keys.
 func TestInstanceSettingsFileLayer(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-secret")
-	t.Setenv("KRITIKA_DEFAULTS_MODELS_REVIEW", "gw/big")
+	t.Setenv("KRITIKA_REVIEW_MODEL", "gw/big")
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritika:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
-defaults: { models: { fallback: gw/small }, forks: true }
+review: { fallback: gw/small }
+trigger: { forks: true }
 embedding: { model: gw/e1, dims: 8 }
 `))
 	if err != nil {
@@ -69,11 +70,11 @@ embedding: { model: gw/e1, dims: 8 }
 		rows[s.Section+" "+s.Key] = s
 	}
 	for key, want := range map[string]InstanceSetting{
-		"providers gw":             {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
-		"defaults models.review":   {"defaults", "models.review", "gw/big", configfile.SourceEnv},
-		"defaults models.fallback": {"defaults", "models.fallback", "gw/small", configfile.SourceFile},
-		"defaults forks":           {"defaults", "forks", "true", configfile.SourceFile},
-		"embedding gw/e1":          {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},
+		"providers gw":    {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
+		"review model":    {"review", "model", "gw/big", configfile.SourceEnv},
+		"review fallback": {"review", "fallback", "gw/small", configfile.SourceFile},
+		"trigger forks":   {"trigger", "forks", "true", configfile.SourceFile},
+		"embedding gw/e1": {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},
 	} {
 		if rows[key] != want {
 			t.Errorf("%s = %+v, want %+v", key, rows[key], want)

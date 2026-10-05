@@ -42,8 +42,8 @@ providers:
   openrouter:
     type: openrouter
     apiKey: { env: OPENROUTER_API_KEY }
-defaults:
-  models: { review: openrouter/vendor/large-model }
+review:
+  model: openrouter/vendor/large-model
 ```
 
 Add `embedding` to index each repository for similar code, `repositories`

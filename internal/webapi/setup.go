@@ -28,7 +28,7 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 	for _, in := range f.Connections {
 		out.Connections = append(out.Connections, in.Name)
 	}
-	if ref := f.Defaults.Models.Review; ref != nil {
+	if ref := f.Defaults.Review.Model; ref != nil {
 		out.ReviewModel = string(*ref)
 	}
 	out.Embedding = f.Embedding != nil
