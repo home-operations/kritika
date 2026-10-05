@@ -64,7 +64,7 @@
     { label: 'Risk instructions', key: 'confidence.instructions', value: (s) => s.confidence.instructions || '—' },
     { label: 'Include', key: 'trigger.include', value: (s) => conditions(s.filters.include), mono: true },
     { label: 'Exclude', key: 'trigger.exclude', value: (s) => conditions(s.filters.exclude), mono: true },
-    { label: 'Ignore', key: 'trigger.ignore', value: (s) => list(s.ignore), mono: true },
+    { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },
     { label: 'Settle', key: 'trigger.settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
     { label: 'Max automatic reviews', key: 'trigger.limit', value: (s) => unlimited(s.maxAutoReviews) },
     { label: 'Max changed lines', key: 'trigger.lines', value: (s) => unlimited(s.maxChangedLines) },

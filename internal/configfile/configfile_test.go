@@ -525,7 +525,7 @@ func TestParseRejects(t *testing.T) {
 		{"negative settle at owner/*", acme("  acme/*: { trigger: { settle: -1s } }\n"), "repositories.acme/*.trigger.settle must not be negative"},
 		{"negative settle repository", acme("  acme/x: { trigger: { settle: -1s } }\n"), "repositories.acme/x.trigger.settle must not be negative"},
 		{"indexing role removed", "review:\n  indexing: p/m\n" + minimal, "field indexing not found"},
-		{"bad ignore glob", acme("  acme/x: { trigger: { ignore: ['['] } }\n"), "not a valid glob"},
+		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
 		{"include syntax error", "trigger:\n  include: [{ expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.include[0]"},
 		{"exclude syntax error", "trigger:\n  exclude: [{ expr: 'true' }, { expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.exclude[1]"},
 		{"include with no expression", "trigger:\n  include: [{ name: empty }]\n" + minimal, "configfile: trigger.include[0]: expr is required"},
@@ -610,7 +610,7 @@ trigger:
   settle: 2m
   limit: 4
   lines: 500
-  ignore: ["defaults/**"]
+ignore: ["defaults/**"]
 agent: { steps: 9 }
 rules: [{ id: ops, file: ops/rules.md }]
 comments: { summary: ops/summary.tmpl }
@@ -659,8 +659,8 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
-		f := parse(t, doc("", `agent: { steps: 7 }, review: { fixes: true }, trigger: { ignore: ["account/**"] }`,
-			`review: { model: p/small }, trigger: { ignore: ["repo/**"] }, agent: { tokens: 500 }`))
+		f := parse(t, doc("", `agent: { steps: 7 }, review: { fixes: true }, ignore: ["account/**"]`,
+			`review: { model: p/small }, ignore: ["repo/**"], agent: { tokens: 500 }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" {
 			t.Fatalf("settings = %+v", s)

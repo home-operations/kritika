@@ -311,12 +311,16 @@ one. They come in five groups:
 - `confidence`: how a review is judged: `model`, `threshold`, `risk` and
   `instructions`.
 - `trigger`: which pull requests are reviewed, and when: `include`,
-  `exclude`, `settle`, `ignore`, `limit` and `lines`.
+  `exclude`, `settle`, `limit` and `lines`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
   `tokens`, `timeout`, `commands` and `commandTimeout`.
 
-`enabled`, `rules`, `context` and `limits` sit beside them.
+`enabled`, `rules`, `context`, `ignore` and `limits` sit beside them.
+`ignore` lists globs of the paths kritika never looks at: they are left out
+of a review's context and of the index, on top of kritika's own (vendored
+trees, lockfiles and generated code), and a pull request that changes
+nothing else is skipped.
 
 A `review.fallback` on the review model's provider is handed to the provider
 with the request, as OpenRouter's server-side fallback is, and the
@@ -404,7 +408,7 @@ The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
 `review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
 `confidence.threshold`, `confidence.risk`, `trigger.include`,
-`trigger.exclude`, `trigger.ignore`, `comments`, `rules` and `context`; see
+`trigger.exclude`, `comments`, `rules`, `context` and `ignore`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
 
@@ -429,7 +433,7 @@ own:
   `@<app slug> resume` turns its automatic reviews back on, as
   `@<app slug> pause` turns them off at any time.
 - `trigger.lines`: the most lines a pull request's diff may add and
-  remove, paths the `trigger.ignore` globs match left out, for an automatic review
+  remove, paths the `ignore` globs match left out, for an automatic review
   to run; a larger one is skipped before any model is called, and the
   commit status says so. Unlimited unless set. `@<app slug> review` reviews
   it anyway.
@@ -441,7 +445,7 @@ own:
 
 A value applies in this order: kritika's default, the file's root,
 `owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
-value replaces the broader one's, except `trigger.ignore` globs, which add
+value replaces the broader one's, except `ignore` globs, which add
 up, `rules`, which add up by id, and `trigger.include` and
 `trigger.exclude`, which add up by name.
 

@@ -50,7 +50,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	}
 	m.InRepoFilters.Include = m.own("include", f.Trigger.Include, op.Filters)
 	m.InRepoFilters.Exclude = m.own("exclude", f.Trigger.Exclude, op.Filters)
-	for _, g := range f.Trigger.Ignore {
+	for _, g := range f.Ignore {
 		if !slices.Contains(m.Ignore, g) {
 			m.Ignore = append(m.Ignore, g)
 		}

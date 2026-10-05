@@ -66,13 +66,13 @@
           "type": "array",
           "description": "Conditions that keep a pull request out: it is skipped when any of them holds, whatever include says. A skip names the condition that held when it has a name.",
           "items": { "$ref": "#/$defs/condition" }
-        },
-        "ignore": {
-          "type": "array",
-          "description": "Path globs added to the admin's ignore list; a pull request that changes only ignored paths is skipped.",
-          "items": { "$ref": "#/$defs/glob" }
         }
       }
+    },
+    "ignore": {
+      "type": "array",
+      "description": "Globs of paths kritika leaves out of a review's context and of the index, added to the admin's; a pull request that changes only ignored paths is skipped.",
+      "items": { "$ref": "#/$defs/glob" }
     },
     "comments": {
       "type": "object",

@@ -41,7 +41,7 @@ func TestSources(t *testing.T) {
 	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
 		"trigger.settle": SourceAccount, "trigger.exclude": SourceAccount, "agent.steps": SourceDefaults, "enabled": SourceDefault, "trigger.include": SourceAccount,
-		"agent.tokens": SourceDefault, "review.model": SourceDefault, "trigger.ignore": SourceDefault,
+		"agent.tokens": SourceDefault, "review.model": SourceDefault, "ignore": SourceDefault,
 	} {
 		if s[key] != want {
 			t.Errorf("%s from %s, want %s", key, s[key], want)

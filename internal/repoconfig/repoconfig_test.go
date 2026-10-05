@@ -18,7 +18,7 @@ func TestParse_Invalid(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ name, yaml string }{
 		{"unknown key", "foo: bar\n"},
-		{"bad ignore glob", "trigger:\n  ignore:\n    - \"[\"\n"},
+		{"bad ignore glob", "ignore:\n  - \"[\"\n"},
 		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
 		{"bad include syntax", "trigger:\n  include: [{ expr: \"pr.draft &&\" }]\n"},
 		{"exclude not bool", "trigger:\n  exclude: [{ expr: \"pr.title\" }]\n"},
@@ -63,8 +63,8 @@ func TestParse_Valid(t *testing.T) {
 trigger:
   include: [{ name: wanted, expr: 'pr.labels.exists(l, l.name == "needs-review")' }, { expr: pr.open }]
   exclude: [{ expr: pr.draft }]
-  ignore:
-    - "**/*.md"
+ignore:
+  - "**/*.md"
 rules:
   - { id: house-style, file: docs/instructions.md }
   - { id: sql, file: docs/sql.md, paths: ["**/*.sql"] }
@@ -88,8 +88,8 @@ comments:
 		if skip, by, err := f.Trigger.Skips(configfile.SamplePR()); err != nil || skip {
 			t.Fatalf("the conditions came back uncompiled or keep the sample out: %v, %v", by, err)
 		}
-		if !slices.Equal(f.Trigger.Ignore, []string{"**/*.md"}) {
-			t.Fatalf("Ignore = %v", f.Trigger.Ignore)
+		if !slices.Equal(f.Ignore, []string{"**/*.md"}) {
+			t.Fatalf("Ignore = %v", f.Ignore)
 		}
 		if !reflect.DeepEqual(f.Rules, []configfile.Rule{
 			{ID: "house-style", File: "docs/instructions.md"}, {ID: "sql", File: "docs/sql.md", Paths: []string{"**/*.sql"}},

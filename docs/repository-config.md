@@ -34,7 +34,7 @@ trigger:
   exclude:
     - expr: pr.draft
     - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
-  ignore: ["web/src/generated/**", "docs/**"]
+ignore: ["web/src/generated/**", "docs/**"]
 comments: { inline: true }
 rules:
   - {
@@ -135,7 +135,7 @@ context:
   lists keep out ends before any runner starts, and its commit status
   names the exclusion that held when it has a name. See
   [the recipes](#include-and-exclude-recipes).
-- `trigger.ignore`: path globs added to the admin's own ignore list, for
+- `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
   ignored, by these, the admin's globs or kritika's defaults (vendored
   trees, lockfiles and generated code), is skipped.
