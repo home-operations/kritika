@@ -198,9 +198,6 @@ func (s *Settings) trigger(o *Overrides) {
 	if o.Trigger.Limit != nil {
 		s.MaxAutoReviews = *o.Trigger.Limit
 	}
-	if o.Trigger.Lines != nil {
-		s.MaxChangedLines = *o.Trigger.Lines
-	}
 }
 
 // providerNames is the names of the providers account a may use, sorted.

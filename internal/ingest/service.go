@@ -151,7 +151,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 	case !runs:
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, nil
 	case review:
-		skip, by, err := settings.Filters.Skips(pr.FilterVars(ev.Action))
+		skip, by, err := settings.Filters.Skips(pr.FilterVars(ev.Action), nil)
 		if err != nil {
 			return Outcome{}, fmt.Errorf("ingest: filter %s: %w", by.Label(), err)
 		}

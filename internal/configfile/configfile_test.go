@@ -119,12 +119,12 @@ func TestLoadFull(t *testing.T) {
 					t.Fatalf("fallback should inherit from defaults, got %q", s.Models.Fallback)
 				}
 				if tt.filterOK != nil {
-					if skip, by, err := s.Filters.Skips(tt.filterOK); err != nil || skip {
+					if skip, by, err := s.Filters.Skips(tt.filterOK, nil); err != nil || skip {
 						t.Fatalf("filter should accept: by=%v err=%v", by, err)
 					}
 				}
 				for _, pr := range tt.filterNo {
-					if skip, _, err := s.Filters.Skips(pr); err != nil || !skip {
+					if skip, _, err := s.Filters.Skips(pr, nil); err != nil || !skip {
 						t.Fatalf("filter should reject %v: skip=%v err=%v", pr, skip, err)
 					}
 				}
@@ -510,7 +510,8 @@ func TestParseRejects(t *testing.T) {
 		{"negative account limit", acmeAccount("    limits: { tokensPerMonth: -1 }\n"), "accounts.acme.limits: limits must not be negative"},
 		{"negative settle default", "trigger:\n  settle: -1s\n" + minimal, "configfile: trigger.settle must not be negative"},
 		{"negative trigger limit", acme("  acme/x: { trigger: { limit: -1 } }\n"), "repositories.acme/x.trigger.limit must not be negative"},
-		{"negative trigger lines", acme("  acme/x: { trigger: { lines: -1 } }\n"), "repositories.acme/x.trigger.lines must not be negative"},
+		{"trigger.lines is not a key", acme("  acme/x: { trigger: { lines: 500 } }\n"), "field lines not found"},
+		{"trigger condition with a bad glob", acme("  acme/x: { trigger: { include: [{ paths: ['['] }] } }\n"), `include[0]: paths[0] "[" is not a valid glob`},
 		{"unknown feedback", "review:\n  feedback: exhaustive\n" + minimal, "configfile: review.feedback must be detailed, standard or minimal"},
 		{"context without a description", "context: [{ path: db/schema.sql }]\n" + minimal, "configfile: context[0]: description is required"},
 		{"context outside the repository", "context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
@@ -521,6 +522,8 @@ func TestParseRejects(t *testing.T) {
 		{"overlong rule", "rules: [{ id: a, rule: " + strings.Repeat("x", MaxRuleChars+1) + " }]\n" + minimal, "over the 2000 allowed"},
 		{"rule with a bad glob", "rules: [{ id: a, rule: x, paths: ['['] }]\n" + minimal, `rules[0].paths[0] "[" is not a valid glob`},
 		{"rule whenExpr syntax error", acme("  acme/x: { rules: [{ id: a, rule: x, whenExpr: 'pr.draft &&' }] }\n"), "repositories.acme/x.rules[0].whenExpr"},
+		{"rule whenExpr on pr.lines", "rules: [{ id: a, rule: x, whenExpr: pr.lines > 10 }]\n" + minimal,
+			"configfile: rules[0].whenExpr: pr.lines is known to a trigger condition alone"},
 		{"rule whenExpr not a bool", "rules: [{ id: a, rule: x, whenExpr: pr.title }]\n" + minimal, "configfile: rules[0].whenExpr"},
 		{"negative settle at owner/*", acme("  acme/*: { trigger: { settle: -1s } }\n"), "repositories.acme/*.trigger.settle must not be negative"},
 		{"negative settle repository", acme("  acme/x: { trigger: { settle: -1s } }\n"), "repositories.acme/x.trigger.settle must not be negative"},
@@ -528,8 +531,8 @@ func TestParseRejects(t *testing.T) {
 		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
 		{"include syntax error", "trigger:\n  include: [{ expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.include[0]"},
 		{"exclude syntax error", "trigger:\n  exclude: [{ expr: 'true' }, { expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.exclude[1]"},
-		{"include with no expression", "trigger:\n  include: [{ name: empty }]\n" + minimal, "configfile: trigger.include[0]: expr is required"},
-		{"exclude with a blank expression", "trigger:\n  exclude: [{ name: empty, expr: ' ' }]\n" + minimal, "configfile: trigger.exclude[0]: expr is required"},
+		{"include with no expression", "trigger:\n  include: [{ name: empty }]\n" + minimal, "configfile: trigger.include[0]: expr or paths is required"},
+		{"exclude with a blank expression", "trigger:\n  exclude: [{ name: empty, expr: ' ' }]\n" + minimal, "configfile: trigger.exclude[0]: expr or paths is required"},
 		{"include name given twice", "trigger:\n  include: [{ name: a, expr: 'true' }, { name: a, expr: 'true' }]\n" + minimal,
 			`configfile: trigger.include[1]: name "a" is given twice`},
 		{"exclude name given twice", "trigger:\n  exclude: [{ name: a, expr: 'true' }, { name: a, expr: 'true' }]\n" + minimal,
@@ -609,7 +612,6 @@ trigger:
   exclude: [{ name: drafts, expr: pr.draft }]
   settle: 2m
   limit: 4
-  lines: 500
 ignore: ["defaults/**"]
 agent: { steps: 9 }
 rules: [{ id: ops, file: ops/rules.md }]
@@ -637,7 +639,7 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
 		f := parse(t, doc("", "", ""))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.Settle != 2*time.Minute || s.MaxAutoReviews != 4 || s.MaxChangedLines != 500 || s.Agent.MaxSteps != 9 ||
+		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.Settle != 2*time.Minute || s.MaxAutoReviews != 4 || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)

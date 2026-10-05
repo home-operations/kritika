@@ -45,7 +45,6 @@
     "ignore": ["vendor/**"],
     "settleSeconds": 30,
     "maxAutoReviews": 0,
-    "maxChangedLines": 0,
     "maxDeltaFiles": 40,
     "review": {
       "requireSuggestedFix": true,
@@ -120,7 +119,6 @@
       "ignore": ["vendor/**"],
       "settleSeconds": 30,
       "maxAutoReviews": 0,
-      "maxChangedLines": 0,
       "maxDeltaFiles": 40,
       "review": {
         "requireSuggestedFix": true,

@@ -43,7 +43,9 @@
   );
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
-  const conditions = (cs: Condition[]) => list(cs.map((c) => (c.name ? `${c.name}: ${c.expr}` : c.expr)));
+  const tests = (c: Condition) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
+  // Conditions are parted by a semicolon: a condition's globs are already parted by commas.
+  const conditions = (cs: Condition[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
   const yes = (b: boolean) => (b ? 'yes' : 'no');
   const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 
@@ -67,7 +69,6 @@
     { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },
     { label: 'Settle', key: 'trigger.settle', value: (s) => duration(s.settleSeconds * 1000) || '0s' },
     { label: 'Max automatic reviews', key: 'trigger.limit', value: (s) => unlimited(s.maxAutoReviews) },
-    { label: 'Max changed lines', key: 'trigger.lines', value: (s) => unlimited(s.maxChangedLines) },
     { label: 'Max delta files', key: 'review.incremental', value: (s) => wholeNumber(s.maxDeltaFiles) },
     { label: 'Context files', key: 'context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
     { label: 'Require suggested fix', key: 'review.fixes', value: (s) => yes(s.review.requireSuggestedFix) },

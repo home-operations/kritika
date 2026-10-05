@@ -58,8 +58,13 @@ func CheckRules(rules []Rule) error {
 				return fmt.Errorf("rules[%d].paths[%d] %q is not a valid glob", i, j, g)
 			}
 		}
-		if _, err := compileFilter(r.WhenExpr); err != nil {
+		prg, err := compileFilter(r.WhenExpr)
+		if err != nil {
 			return fmt.Errorf("rules[%d].whenExpr: %w", i, err)
+		}
+		// A rule is judged before the diff is fetched.
+		if prg != nil && prg.Uses(linesVar) {
+			return fmt.Errorf("rules[%d].whenExpr: pr.%s is known to a trigger condition alone", i, linesVar)
 		}
 	}
 	return nil

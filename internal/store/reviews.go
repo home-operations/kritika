@@ -190,8 +190,9 @@ func RecordRunnerRun(ctx context.Context, tx pgx.Tx, runID string, r RunnerResul
 type ContextPackRecord struct {
 	PatchID, ScopeReason string
 	Scope                review.Scope
-	// SkipReason is why the runner ran no agent, "" when it did.
-	SkipReason string
+	// SkipReason is why the runner ran no agent, "" when it did, and
+	// SkipDetail the name of the condition that decided a filtered one.
+	SkipReason, SkipDetail string
 	// RuleIDs are the rules the prompt was given; Notes what the summary
 	// states about the repository's files.
 	RuleIDs, Notes []string
@@ -206,11 +207,11 @@ func ReadContextPack(ctx context.Context, tx pgx.Tx, runID string) (ContextPackR
 	var rec ContextPackRecord
 	var scope string
 	var filesJSON, counts []byte
-	err := tx.QueryRow(ctx, `SELECT patch_id, skip_reason, scope, scope_reason, rule_ids, repo_notes, repo_files,
+	err := tx.QueryRow(ctx, `SELECT patch_id, skip_reason, skip_detail, scope, scope_reason, rule_ids, repo_notes, repo_files,
 		(SELECT coalesce(jsonb_object_agg(stage, n), '{}') FROM (SELECT e->>'stage' AS stage, count(*) AS n
 			FROM jsonb_array_elements(stages) AS e GROUP BY 1) AS s)
 		FROM context_packs WHERE runner_run_id = $1`, runID).
-		Scan(&rec.PatchID, &rec.SkipReason, &scope, &rec.ScopeReason, &rec.RuleIDs, &rec.Notes, &filesJSON, &counts)
+		Scan(&rec.PatchID, &rec.SkipReason, &rec.SkipDetail, &scope, &rec.ScopeReason, &rec.RuleIDs, &rec.Notes, &filesJSON, &counts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return rec, ErrNotFound
 	}

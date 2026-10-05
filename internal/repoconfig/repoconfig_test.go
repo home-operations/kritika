@@ -85,7 +85,7 @@ comments:
 			len(f.Trigger.Exclude) != 1 || f.Trigger.Exclude[0].Expr != "pr.draft" {
 			t.Fatalf("Trigger = %+v, want two inclusions and the exclusion pr.draft", f.Trigger)
 		}
-		if skip, by, err := f.Trigger.Skips(configfile.SamplePR()); err != nil || skip {
+		if skip, by, err := f.Trigger.Skips(configfile.SamplePR(), nil); err != nil || skip {
 			t.Fatalf("the conditions came back uncompiled or keep the sample out: %v, %v", by, err)
 		}
 		if !slices.Equal(f.Ignore, []string{"**/*.md"}) {

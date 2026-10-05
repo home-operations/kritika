@@ -164,7 +164,7 @@ func TestEffectiveSkip(t *testing.T) {
 		})
 	}
 	for r, want := range map[repoconfig.SkipReason]string{
-		repoconfig.SkipDisabled: "disabled in .kritika.yaml", repoconfig.SkipFiltered: "filtered by .kritika.yaml", repoconfig.SkipOnlyPaths: "only ignored paths changed",
+		repoconfig.SkipDisabled: "disabled in .kritika.yaml", repoconfig.SkipFiltered: "filtered", repoconfig.SkipOnlyPaths: "only ignored paths changed",
 	} {
 		if r.Description() != want {
 			t.Fatalf("%q.Description() = %q, want %q", r, r.Description(), want)

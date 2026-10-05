@@ -66,7 +66,6 @@ var Policies = []Policy{
 	{Key: "trigger.exclude", Scopes: everyScope},
 	{Key: keySettle, Scopes: everyScope},
 	{Key: "trigger.limit", Scopes: everyScope},
-	{Key: "trigger.lines", Scopes: everyScope},
 	{Key: "comments", Scopes: everyScope},
 	{Key: "rules", Scopes: everyScope},
 	{Key: "context", Scopes: everyScope},

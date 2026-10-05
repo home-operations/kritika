@@ -20,12 +20,15 @@ import (
 	"sync"
 
 	"cel.dev/cel-go/cel"
+	celast "cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/operators"
 	"cel.dev/cel-go/common/types"
 )
 
 // Program is a compiled, type-checked PR-filter expression.
 type Program struct {
 	prg cel.Program
+	ast *celast.AST
 	src string
 }
 
@@ -71,7 +74,28 @@ func Compile(expr string) (*Program, error) {
 	if err != nil {
 		return nil, fmt.Errorf("prfilter: program: %w", err)
 	}
-	return &Program{prg: prg, src: expr}, nil
+	return &Program{prg: prg, ast: ast.NativeRep(), src: expr}, nil
+}
+
+// Uses reports whether the expression reads field of pr, as pr.field,
+// has(pr.field) or pr["field"]. An index whose key is not a literal may
+// read any field, and counts as reading this one.
+func (p *Program) Uses(field string) bool {
+	isPR := func(e celast.Expr) bool { return e.Kind() == celast.IdentKind && e.AsIdent() == "pr" }
+	return len(celast.MatchDescendants(celast.NavigateAST(p.ast), func(e celast.NavigableExpr) bool {
+		switch e.Kind() {
+		case celast.SelectKind:
+			return e.AsSelect().FieldName() == field && isPR(e.AsSelect().Operand())
+		case celast.CallKind:
+			call := e.AsCall()
+			if call.FunctionName() != operators.Index || len(call.Args()) != 2 || !isPR(call.Args()[0]) {
+				return false
+			}
+			key := call.Args()[1]
+			return key.Kind() != celast.LiteralKind || key.AsLiteral().Value() == field
+		}
+		return false
+	})) > 0
 }
 
 // Eval runs the expression against the given pr field map and reports whether

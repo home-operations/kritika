@@ -311,7 +311,7 @@ one. They come in five groups:
 - `confidence`: how a review is judged: `model`, `threshold`, `risk` and
   `instructions`.
 - `trigger`: which pull requests are reviewed, and when: `include`,
-  `exclude`, `settle`, `limit` and `lines`.
+  `exclude`, `settle` and `limit`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
   `tokens`, `timeout`, `commands` and `commandTimeout`.
@@ -432,11 +432,6 @@ own:
   `@<app slug> review` still reviews a paused pull request, and
   `@<app slug> resume` turns its automatic reviews back on, as
   `@<app slug> pause` turns them off at any time.
-- `trigger.lines`: the most lines a pull request's diff may add and
-  remove, paths the `ignore` globs match left out, for an automatic review
-  to run; a larger one is skipped before any model is called, and the
-  commit status says so. Unlimited unless set. `@<app slug> review` reviews
-  it anyway.
 - `review.incremental`: how many files may change since the last
   review before a re-review covers the whole pull request again. A re-run
   at the head the last review saw always covers the whole pull request.
@@ -451,10 +446,11 @@ up, `rules`, which add up by id, and `trigger.include` and
 
 `trigger.include` and `trigger.exclude` decide which pull requests are
 reviewed: one is reviewed when one `include` condition holds, or there are
-none, and no `exclude` condition holds. Each item is `{ expr }`, a CEL
+none, and no `exclude` condition holds. Each item has an `expr`, a CEL
 expression over the pull request
 ([the `pr` variable](repository-config.md#include-and-exclude-recipes)),
-with an optional `name`:
+`paths`, globs that hold when a changed path matches one of them, or
+both, when both must hold, with an optional `name`:
 
 ```yaml
 trigger:
@@ -463,7 +459,23 @@ trigger:
   exclude:
     - expr: pr.draft
     - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
+    - { name: migrations, paths: ["db/migrations/**"] }
 ```
+
+In an expression, `pr.lines` is the lines the pull request's diff adds
+and removes, paths the `ignore` globs match left out. A size limit is an
+exclusion on it:
+
+```yaml
+trigger:
+  exclude: [{ name: too-large, expr: pr.lines > 2000 }]
+```
+
+A condition on the pull request alone is decided at once, and a pull
+request it keeps out leaves no review behind. A condition with `paths` or
+`pr.lines` is decided once the pull request is fetched, before any model
+is called, and a pull request it keeps out shows as a skipped review; its
+commit status names the exclusion that held when it has a name.
 
 The lists add up across the root, `owner/*` and `owner/name`, and a named
 condition replaces the broader scope's of that name where it stands. A
@@ -480,8 +492,9 @@ trigger:
   exclude: [{ name: forks, expr: pr.fork }]
 ```
 
-One the filter keeps out is still reviewed when a maintainer comments
-`@<app slug> review`.
+A review someone asks for, with `@<app slug> review` or a re-run from the
+dashboard, passes the admin's lists whatever they say; a `.kritika.yaml`'s
+lists still apply to it.
 
 The provider, some of the root's settings and the embedder can come from
 the environment:

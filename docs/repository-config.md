@@ -125,15 +125,18 @@ context:
   See [the configuration](configuration.md#repository-settings-and-repositories)
   for how a score is reached.
 - `trigger.include` / `trigger.exclude`: conditions on the pull request,
-  each `{ expr }` with an optional `name`. A pull request is reviewed when
+  each an `expr`, `paths` globs that hold when a changed path matches
+  one, or both, when both must hold, with an optional `name`. A pull request is reviewed when
   one `include` holds, or there are none, and no `exclude` holds. The
   lists are passed beside the admin's own: a pull request must pass both.
   A condition under a name one of the admin's has is dropped, and the
   review's summary says so. Each expression is compiled and smoke-tested
   against a sample pull request when the file is parsed, so a broken one
-  is rejected rather than silently skipping every review. A review the
-  lists keep out ends before any runner starts, and its commit status
-  names the exclusion that held when it has a name. See
+  is rejected rather than silently skipping every review. A condition on
+  the pull request alone is decided before any runner starts; one with
+  `paths` or `pr.lines` is decided once the pull request is fetched,
+  before any model is called. The commit status of a review the lists
+  keep out names the exclusion that held when it has a name. See
   [the recipes](#include-and-exclude-recipes).
 - `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
@@ -169,7 +172,7 @@ A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
-`trigger.settle`, `trigger.limit`, `trigger.lines`,
+`trigger.settle`, `trigger.limit`,
 `review.incremental`, `confidence.instructions`, `limits` and `runner`
 are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
@@ -184,6 +187,16 @@ and a `color`), and `event`, what started the review: `opened`,
 `reopened`, `ready_for_review`, `synchronize` (a push), `poll` (a push
 kritika found without its webhook), `labeled` or `unlabeled` (a label
 added or removed) or `manual` (a re-run from the dashboard).
+
+A trigger condition also has `pr.lines`, the lines the pull request's diff
+adds and removes, paths the `ignore` globs match left out. It is for
+trigger conditions only: a rule's `whenExpr` may not use it.
+
+A condition's `paths` are globs, as on a rule: it holds when a changed
+path matches one of them. With an `expr` too, both must hold. An
+exclusion with `paths` skips a pull request that touches the paths at
+all; `ignore` leaves the paths out of the review, and skips only a pull
+request that changes nothing else.
 
 A label change starts a review only of a head that has none yet: one the
 lists kept out, or whose review failed. So removing `skip-review`, or
@@ -241,8 +254,32 @@ Some conditions, each under `trigger`:
     - expr: pr.event in ["opened", "reopened", "ready_for_review", "manual"]
   ```
 
+- Review only pull requests that touch `src/**`:
+
+  ```yaml
+  include:
+    - { name: source, paths: ["src/**"] }
+  ```
+
+- Skip pull requests over 2000 changed lines:
+
+  ```yaml
+  exclude:
+    - { name: too-large, expr: pr.lines > 2000 }
+  ```
+
+- Never review automatically a pull request touching `db/migrations/**`:
+
+  ```yaml
+  exclude:
+    - { name: migrations, paths: ["db/migrations/**"] }
+  ```
+
+  In the admin's configuration a review someone asks for still runs; in
+  `.kritika.yaml` the exclusion holds for that one too.
+
 A named exclusion shows in the skipped review's commit status:
-`kritika: skipped (filtered by .kritika.yaml: skip-label)`.
+`kritika: skipped (filtered: skip-label)`.
 
 ## Limits
 

@@ -149,10 +149,13 @@ export interface Limits {
   tokensPerMonth: number;
 }
 
-// One condition on a pull request, CEL over pr; name is '' when it has none.
+// One condition on a pull request: expr, CEL over pr, paths, globs one of
+// which a changed path must match, or both. name and expr are '' when it
+// has none, and paths is absent.
 export interface Condition {
   name: string;
   expr: string;
+  paths?: string[];
 }
 
 // A pull request is reviewed when one of include holds, or there are none,
@@ -237,7 +240,6 @@ export interface RepoSettings {
   ignore: string[];
   settleSeconds: number;
   maxAutoReviews: number;
-  maxChangedLines: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
   confidence: { model: string; threshold: number; risk: Risk; instructions: string };

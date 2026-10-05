@@ -330,7 +330,7 @@ func (w *Review) afterRun(
 			}
 		}
 		owner, repo := pr.ownerRepo()
-		state, desc := skipVerdict(carried, skipDescription(pack.SkipReason, eff.MaxChangedLines))
+		state, desc := skipVerdict(carried, skipDescription(pack.SkipReason, pack.SkipDetail))
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
@@ -431,10 +431,7 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 		// A skip with no reason of its own is an admission's, whose
 		// reason is the error it records.
 		if e.skip != "" {
-			reason = skipDescription(e.skip, 0)
-		}
-		if e.filter != "" {
-			reason += ": " + e.filter
+			reason = skipDescription(e.skip, e.filter)
 		}
 		state, desc := skipVerdict(e.carried, reason)
 		return state, "kritika: " + desc
