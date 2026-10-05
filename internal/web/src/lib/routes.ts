@@ -44,7 +44,8 @@ function isReviewTab(v: string | undefined): v is ReviewTab {
   return v !== undefined && (REVIEW_TABS as readonly string[]).includes(v);
 }
 
-export const PULL_OUTCOMES: readonly ReviewStatus[] = ['running', 'prepared', 'completed', 'superseded', 'skipped', 'capped', 'failed', 'canceled'];
+// A pull request's last review is never a skipped one, so skipped is not an outcome to filter by.
+export const PULL_OUTCOMES: readonly ReviewStatus[] = ['running', 'prepared', 'completed', 'superseded', 'capped', 'failed', 'canceled'];
 
 // PullFilter is the pull list's filters, carried in the hash's query so a
 // filtered list can be linked and comes back with Back. A field is present

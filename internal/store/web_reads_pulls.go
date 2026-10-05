@@ -80,6 +80,8 @@ type PullFilter struct {
 	Is           PullIs
 }
 
+// The last review, lr, is the newest that was not skipped: a skipped one
+// said nothing, so what the one before it found still stands.
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged, p.paused,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit,
@@ -91,7 +93,8 @@ const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author,
 		count(f.id) FILTER (WHERE f.severity = 'important') AS important,
 		count(f.id) FILTER (WHERE f.severity = 'nit') AS nit
 		FROM reviews v LEFT JOIN findings f ON f.review_id = v.id
-		WHERE v.id = (SELECT id FROM reviews WHERE pull_request_id = p.id ORDER BY created_at DESC, id DESC LIMIT 1)
+		WHERE v.id = (SELECT id FROM reviews WHERE pull_request_id = p.id AND status <> 'skipped'
+			ORDER BY created_at DESC, id DESC LIMIT 1)
 		GROUP BY v.id) lr ON true`
 
 func scanPull(row pgx.CollectableRow) (PullRow, error) {
@@ -160,8 +163,9 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 }
 
 // Attention counts the account's open pull requests that want a look, by
-// why: the newest review failed, hit a cap or found something blocking, or
-// automatic reviews are paused. One pull request may count under several.
+// why: the newest review that was not skipped failed, hit a cap or found
+// something blocking, or automatic reviews are paused. One pull request
+// may count under several.
 type Attention struct {
 	Failed, Capped, Blocking, Paused int
 }
@@ -173,7 +177,8 @@ func ReadAttention(ctx context.Context, tx pgx.Tx) (Attention, error) {
 			count(*) FILTER (WHERE lr.blocking > 0), count(*) FILTER (WHERE p.paused)
 		FROM pull_requests p LEFT JOIN LATERAL (SELECT v.status,
 			(SELECT count(*) FROM findings f WHERE f.review_id = v.id AND f.severity = 'blocking') AS blocking
-			FROM reviews v WHERE v.pull_request_id = p.id ORDER BY v.created_at DESC, v.id DESC LIMIT 1) lr ON true
+			FROM reviews v WHERE v.pull_request_id = p.id AND v.status <> 'skipped'
+			ORDER BY v.created_at DESC, v.id DESC LIMIT 1) lr ON true
 		WHERE p.state = 'open'`).Scan(&a.Failed, &a.Capped, &a.Blocking, &a.Paused)
 	if err != nil {
 		return a, fmt.Errorf("store: read attention: %w", err)
