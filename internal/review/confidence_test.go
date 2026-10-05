@@ -21,6 +21,8 @@ func TestParseConfidence(t *testing.T) {
 		{name: "a score under the ceiling stands", raw: `{"score": 1, "reason": "ok"}`, counts: Counts{Blocking: 1}, wantScore: 1, wantReason: "ok"},
 		{name: "the reason is one line", raw: `{"score": 4, "reason": " two\n lines "}`, wantScore: 4, wantReason: "two lines"},
 		{name: "a long reason is cut", raw: `{"score": 4, "reason": "` + strings.Repeat("x", 600) + `"}`, wantScore: 4, wantReason: strings.Repeat("x", 500) + " …"},
+		{name: "a reference to another repository does not link", raw: `{"score": 4, "reason": "See up/stream#12."}`, wantScore: 4,
+			wantReason: RedirectReferences("See up/stream#12.", "o/r")},
 		{name: "a score past the scale", raw: `{"score": 6, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
 		{name: "a negative score", raw: `{"score": -1, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
 		{name: "no score", raw: `{"reason": "ok"}`, wantErr: "no score from 0 to 5"},
@@ -28,7 +30,7 @@ func TestParseConfidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score, reason, err := ParseConfidence(tt.raw, tt.counts)
+			score, reason, err := ParseConfidence(tt.raw, "o/r", tt.counts)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)

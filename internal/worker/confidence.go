@@ -78,14 +78,20 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		return review.Confidence{}, err
 	}
 	spec, _ := p.file.Provider(p.account, ref.Provider())
-	completer := model.Structured{Stepper: stepper, OnStep: p.w.recorder().OnStep(ctx, p.logger, store.ModelCall{
+	// The calls are charged as they are made: one the model answered
+	// without the score is billed all the same.
+	record := p.w.recorder().OnStep(ctx, p.logger, store.ModelCall{
 		AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: store.ModelCallConfidence,
-	}, adapter.Mask(p.file, spec))}
+	}, adapter.Mask(p.file, spec))
+	completer := model.Structured{Stepper: stepper, OnStep: func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
+		record(req, resp, err, d)
+		p.charge(ctx, resp)
+	}}
 	req := model.CompletionRequest{
 		System: review.ConfidenceSystem,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
-			Changed: review.ChangedPaths(diff), Diff: diff,
+			Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
 		}, res.Findings),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
@@ -101,20 +107,28 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, call); err != nil {
 		return review.Confidence{}, err
 	}
-	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	score, reason, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
+	if err != nil {
+		return review.Confidence{}, err
+	}
+	return review.Confidence{Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Model: resp.Model}, nil
+}
+
+// charge records what one scoring call spent against the review, where the
+// caps count it; a call the provider did not answer spent nothing.
+func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse) {
+	if resp.Usage.Prompt() == 0 && resp.Usage.Output == 0 {
+		return
+	}
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return store.InsertUsage(ctx, tx, store.Usage{
 			AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID, Role: store.RoleConfidence,
-			Model: resp.Model, Upstream: resp.Upstream, Input: resp.InputTokens, Output: resp.OutputTokens, CostUSD: resp.CostUSD,
+			Model: resp.Model, Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
 		})
 	})
 	if err != nil {
 		p.logger.Error("confidence usage not recorded", "error", err)
 	}
-	score, reason, err := review.ParseConfidence(resp.Raw, res.Counts())
-	if err != nil {
-		return review.Confidence{}, err
-	}
-	return review.Confidence{Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Model: resp.Model}, nil
 }
 
 // verdict is the commit status of a published review with that many
