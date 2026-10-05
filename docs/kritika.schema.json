@@ -10,46 +10,61 @@
       "type": "boolean",
       "description": "false stops reviews, follow-ups and indexing; true cannot turn a disabled repository on."
     },
-    "models": {
+    "review": {
       "type": "object",
       "additionalProperties": false,
+      "description": "How a review is done.",
       "properties": {
-        "review": { "$ref": "#/$defs/model" },
-        "fallback": { "$ref": "#/$defs/model" }
+        "model": { "$ref": "#/$defs/model" },
+        "fallback": { "$ref": "#/$defs/model" },
+        "feedback": {
+          "enum": ["detailed", "standard", "minimal"],
+          "description": "How much the review says: detailed, anything a maintainer could act on, every finding inline; standard, the same with nits kept to the summary; minimal, only bugs, risks and breaking changes."
+        },
+        "fixes": {
+          "type": "boolean",
+          "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
+        },
+        "approve": {
+          "type": "boolean",
+          "description": "true approves a pull request whose review finds nothing blocking or important, and dismisses that approval when a later review does; replaces the admin's."
+        }
       }
     },
-    "feedback": {
-      "enum": ["detailed", "standard", "minimal"],
-      "description": "How much the review says: detailed, anything a maintainer could act on, every finding inline; standard, the same with nits kept to the summary; minimal, only bugs, risks and breaking changes."
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which pull requests get a review.",
+      "properties": {
+        "filterExpr": {
+          "type": "string",
+          "description": "A CEL expression over pr, ANDed with the admin's filter."
+        },
+        "ignore": {
+          "type": "array",
+          "description": "Path globs added to the admin's ignore list; a pull request that changes only ignored paths is skipped.",
+          "items": { "$ref": "#/$defs/glob" }
+        }
+      }
     },
     "comments": {
       "type": "object",
       "additionalProperties": false,
+      "description": "How a review comments.",
       "properties": {
         "inline": {
           "type": "boolean",
           "description": "false posts the summary alone."
         },
-        "summaryTemplate": { "$ref": "#/$defs/path" },
-        "inlineTemplate": { "$ref": "#/$defs/path" }
+        "summary": {
+          "$ref": "#/$defs/path",
+          "description": "A repository file, read from the merge base, that replaces the summary comment's template."
+        },
+        "finding": {
+          "$ref": "#/$defs/path",
+          "description": "A repository file, read from the merge base, that replaces an inline finding's template."
+        }
       }
-    },
-    "requireSuggestedFix": {
-      "type": "boolean",
-      "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
-    },
-    "approve": {
-      "type": "boolean",
-      "description": "true approves a pull request whose review finds nothing blocking or important, and dismisses that approval when a later review does; replaces the admin's."
-    },
-    "filterExpr": {
-      "type": "string",
-      "description": "A CEL expression over pr, ANDed with the admin's filter."
-    },
-    "ignore": {
-      "type": "array",
-      "description": "Path globs added to the admin's ignore list; a pull request that changes only ignored paths is skipped.",
-      "items": { "$ref": "#/$defs/glob" }
     },
     "rules": {
       "type": "array",
@@ -82,7 +97,7 @@
           },
           "whenExpr": {
             "type": "string",
-            "description": "A CEL expression over pr, as filterExpr sees it; the rule applies only when it is true."
+            "description": "A CEL expression over pr, as trigger.filterExpr sees it; the rule applies only when it is true."
           }
         }
       }

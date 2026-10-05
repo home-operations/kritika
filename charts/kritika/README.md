@@ -33,7 +33,7 @@ config:
   providersApiKey:
     valueFrom:
       secretKeyRef: { name: kritika-openrouter, key: api-key }
-  defaultsModelsReview: openrouter/vendor/large-model
+  reviewModel: openrouter/vendor/large-model
 configFile:
   apps:
     github:
@@ -56,8 +56,8 @@ prefix in camelCase (`pollInterval` is `KRITIKA_POLL_INTERVAL`): `webUrl`,
 the one public URL, with the dashboard at it and the webhook listener
 under it at `/hooks`; logging, the workers, polling, retention and runner
 Jobs' deadline and RuntimeClass; and the variables that stand in for the
-configuration file's sections, sign-in, one app, one provider, the default
-models and the embedder (see
+configuration file's sections, sign-in, one app, one provider, the review
+and trigger settings and the embedder (see
 [the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
 A key left empty sets nothing and kritika's default applies; a secret
 takes a `valueFrom` map, like the admin password above, which is the way
@@ -65,7 +65,8 @@ into a fresh instance. The chart's Ingress or HTTPRoute must route
 `webUrl`'s host.
 
 `configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
-`apps`, model `providers`, the `embedding`, the `defaults`, `repositories`
+`apps`, model `providers`, the `embedding`, the settings every repository
+gets (`review`, `trigger`, `comments`, `agent`), `repositories`
 entries keyed `owner/*` or `owner/name`, and `accounts`, with the
 `config` variables winning over it. kritika reads it at startup: the pods
 carry its checksum, so a change rolls them, and a pod whose file doesn't
@@ -255,11 +256,6 @@ Kubernetes: `>=1.25.0-0`
 | config.authOidcRolesClaim | string | `""` | The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`. |
 | config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
 | config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
-| config.defaultsFeedback | string | `""` | How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set. |
-| config.defaultsForks | string | `""` | Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`. |
-| config.defaultsModelsFallback | string | `""` | The model a review falls back to when the review model fails. |
-| config.defaultsModelsReview | string | `""` | The model every review runs on unless a repository names another, `<provider>/<model>`. |
-| config.defaultsSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
 | config.diffRetention | string | `""` | How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set. |
 | config.embeddingDims | string | `""` | The embedding's dimensions, which the model must produce. |
 | config.embeddingModel | string | `""` | The embedding model, `<provider>/<model>`; set it to index each repository for similar code. |
@@ -277,10 +273,15 @@ Kubernetes: `>=1.25.0-0`
 | config.providersName | string | `""` | The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set. |
 | config.providersRetries | string | `""` | How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. |
 | config.providersType | string | `""` | The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those. |
+| config.reviewFallback | string | `""` | The model a review falls back to when the review model fails. |
+| config.reviewFeedback | string | `""` | How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set. |
+| config.reviewModel | string | `""` | The model every review runs on unless a repository names another, `<provider>/<model>`. |
 | config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. |
 | config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
 | config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
 | config.transcriptRetention | string | `""` | How long a review's full model transcript is kept, at least 24h; 720h unless set. |
+| config.triggerForks | string | `""` | Review pull requests from forks without being asked; `false` unless set, when one is reviewed only when a maintainer comments `@<app slug> review`. |
+| config.triggerSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
 | config.webUrl | required | `""` | Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name. |
 | configFile | optional | `{}` | The configuration file, as YAML: what is reviewed and how, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |

@@ -202,7 +202,7 @@ test.describe('configuration page', () => {
     await expect(panel.getByRole('listitem')).toHaveText([
       /A GitHub App is connected Declare the App under apps/,
       /The App reaches a repository Install the App/,
-      /A review model is set Set defaults.models.review/,
+      /A review model is set Set review.model/,
       /An embedder is set \(optional\) Set embedding/,
     ]);
     await expect(panel.locator('li.done')).toHaveCount(0);

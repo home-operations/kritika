@@ -19,29 +19,33 @@ providers:
     baseUrl: http://litellm.ai.svc:4000/v1
     apiKey: { env: TEST_LOCAL_KEY }
 
-defaults:
-  models:
-    review: openrouter/openai/gpt-6-sol
-    fallback: local/claude-sonnet-5
+review:
+  model: openrouter/openai/gpt-6-sol
+  fallback: local/claude-sonnet-5
+trigger:
   filterExpr: "!pr.draft"
   forks: false
-  limits:
-    concurrency: 3
+limits:
+  concurrency: 3
 
 repositories:
   home-operations/flate:
-    ignore:
-      - "**/testdata/**"
-    settle: 30s
+    trigger:
+      ignore:
+        - "**/testdata/**"
+      settle: 30s
   home-operations/kopiur:
-    filterExpr: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
+    trigger:
+      filterExpr: '!pr.draft && !pr.labels.exists(l, l.name == "skip-review")'
   home-operations/charts-mirror:
-    ignore: ["charts/**"]
+    trigger:
+      ignore: ["charts/**"]
   onedr0p/*:
-    models:
-      review: local/claude-opus-5
-    forks: true
-    settle: 2m
+    review:
+      model: local/claude-opus-5
+    trigger:
+      forks: true
+      settle: 2m
 
 accounts:
   home-operations:

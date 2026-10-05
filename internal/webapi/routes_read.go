@@ -466,13 +466,14 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 	for _, m := range []struct {
 		key string
 		v   configfile.FileValue
-	}{{"models.review", layer.Review}, {"models.fallback", layer.Fallback}} {
+	}{{"model", layer.Review}, {"fallback", layer.Fallback}} {
 		if m.v.Value != "" {
-			add("defaults", m.key, m.v.Value, m.v.Source)
+			add("review", m.key, m.v.Value, m.v.Source)
 		}
 	}
 	for _, d := range layer.Defaults {
-		add("defaults", d.Key, d.Value, d.Source)
+		group, key, _ := strings.Cut(d.Key, ".")
+		add(group, key, d.Value, d.Source)
 	}
 	if e := layer.Embedding; e != nil {
 		add("embedding", e.Model, fmt.Sprintf("%d dimensions", e.Dims), e.Source)

@@ -52,11 +52,10 @@ providers:
     type: opencode
     baseUrl: %[1]s/v1
     apiKey: { env: TEST_SECRET }
-defaults:
-  models:
-    review: gateway/agent-model
-  limits:
-    concurrency: 1
+review:
+  model: gateway/agent-model
+limits:
+  concurrency: 1
 apps:
   acme-bot:
     accounts: [acme]
@@ -71,7 +70,7 @@ apps:
 repositories:
   acme/widgets:
     agent:
-      maxSteps: 6
+      steps: 6
       commands: [curl]
       commandTimeout: 5s
     rules:
@@ -377,7 +376,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the runner starts", func(t *testing.T) { checkAgentFiltered(t, h) })
 	t.Run("a runner skip the worker does not repeat still sets the status", func(t *testing.T) { checkRunnerOnlySkip(t, h) })
-	t.Run("a diff over maxChangedLines is skipped unless asked for", func(t *testing.T) { checkTooLarge(t, h) })
+	t.Run("a diff over trigger.lines is skipped unless asked for", func(t *testing.T) { checkTooLarge(t, h) })
 	t.Run("a review outlives the client's job timeout", func(t *testing.T) { checkAgentOutlivesJobTimeout(t, h) })
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
@@ -986,7 +985,7 @@ func checkAgentFiltered(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	before := h.sm.requests
 	h.sm.mu.Unlock()
-	base := h.commit(t, ".kritika.yaml", "filterExpr: '!pr.body.contains(\"[skip-review]\")'\n")
+	base := h.commit(t, ".kritika.yaml", "trigger:\n  filterExpr: '!pr.body.contains(\"[skip-review]\")'\n")
 	h.lf.setBase(base)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc f() {}\n")
 	h.lf.mu.Lock()
@@ -1046,7 +1045,7 @@ func checkAgentOutlivesJobTimeout(t *testing.T, h *agenticHarness) {
 // runner is spent, and the head commit says so.
 func checkAgentProviderMissing(t *testing.T, h *agenticHarness) {
 	missing := *h.file
-	missing.Defaults.Models.Review = new(configfile.ModelRef("nowhere/model"))
+	missing.Defaults.Review.Model = new(configfile.ModelRef("nowhere/model"))
 	h.review.Current.Set(&missing)
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc missing() {}\n")
@@ -1287,7 +1286,7 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	}
 }
 
-// checkTooLarge sets maxChangedLines under what a push changes: the runner
+// checkTooLarge sets trigger.lines under what a push changes: the runner
 // skips the review before any model call and the commit status says so,
 // while a review someone asks for runs the agent anyway.
 func checkTooLarge(t *testing.T, h *agenticHarness) {
@@ -1296,7 +1295,7 @@ func checkTooLarge(t *testing.T, h *agenticHarness) {
 	before := h.sm.requests
 	h.sm.mu.Unlock()
 	limited := *h.file
-	limited.Defaults.MaxChangedLines = new(2)
+	limited.Defaults.Trigger.Lines = new(2)
 	h.review.Current.Set(&limited)
 	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc large() {}\n\nfunc larger() {}\n")

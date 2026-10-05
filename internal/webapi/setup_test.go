@@ -27,7 +27,7 @@ func TestSetupStatus(t *testing.T) {
 		{"a connection alone", conn, with(func(s *SetupStatus) {
 			s.Connections = []string{"acme-bot"}
 		})},
-		{"ready", conn + "defaults: { models: { review: p/x } }\n" + provider, with(func(s *SetupStatus) {
+		{"ready", conn + "review: { model: p/x }\n" + provider, with(func(s *SetupStatus) {
 			s.Connections, s.ReviewModel = []string{"acme-bot"}, "p/x"
 		})},
 	} {

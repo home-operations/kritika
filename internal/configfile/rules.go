@@ -66,18 +66,18 @@ func CheckRules(rules []Rule) error {
 }
 
 // RuleScopes says, by id, which scope writes each rule Settings(a,
-// fullName) runs: the defaults, the account, or its entry for the
+// fullName) runs: the file's own, the account, or its entry for the
 // repository.
 func (f *File) RuleScopes(a *Account, fullName string) map[string]Scope {
 	out := map[string]Scope{}
-	for _, r := range f.Defaults.Review.Rules {
+	for _, r := range f.Defaults.Rules {
 		out[r.ID] = ScopeDefaults
 	}
-	for _, r := range a.Review.Rules {
+	for _, r := range a.Rules {
 		out[r.ID] = ScopeAccount
 	}
 	if e := a.Repository(fullName); e != nil {
-		for _, r := range e.Review.Rules {
+		for _, r := range e.Rules {
 			out[r.ID] = ScopeRepository
 		}
 	}

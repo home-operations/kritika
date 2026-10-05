@@ -168,7 +168,7 @@ func TestBench(t *testing.T) {
 			for _, ch := range selected {
 				cr.Context[ch.Stage]++
 			}
-			// The prompt a review sends when agent.maxSteps is 1: the agentic
+			// The prompt a review sends when agent.steps is 1: the agentic
 			// system prompt, the user message within its budget, the read-only
 			// tools over the head and the submit_review its one step is told to make. Stage 4 needs
 			// an index, which the bench has none of.

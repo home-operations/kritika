@@ -21,17 +21,19 @@ its first line names the schema:
 
 ## What it may set
 
-The file takes the review keys the configuration's `defaults` and
-repository entries take, at its top level. It narrows what an
+The file takes the review keys the configuration file's root and its
+repository entries take, in the same groups. It narrows what an
 admin allows, adds to the review's rules and context, and replaces the
 rest:
 
 ```yaml
-models: { review: openrouter/anthropic/claude-opus-5.5 }
-feedback: standard
+review:
+  model: openrouter/anthropic/claude-opus-5.5
+  feedback: standard
+trigger:
+  filterExpr: "!pr.draft"
+  ignore: ["web/src/generated/**", "docs/**"]
 comments: { inline: true }
-filterExpr: "!pr.draft"
-ignore: ["web/src/generated/**", "docs/**"]
 rules:
   - {
       id: wrap-errors,
@@ -48,16 +50,16 @@ context:
 
 - `enabled: false`: stops reviews, follow-ups and indexing for the
   repository. It cannot turn a disabled repository back on.
-- `models.review` / `models.fallback`: a `<provider>/<model>` of a
+- `review.model` / `review.fallback`: a `<provider>/<model>` of a
   provider the instance or the repository's account declares, used for
   the review and for follow-ups. A model of any other provider is
   dropped; the account's limits bound what a choice can cost. A review
   whose model fails goes on with the fallback, on the same provider or
   another; a follow-up uses a fallback on its own provider alone.
-- `feedback`: how much the review says, replacing the
+- `review.feedback`: how much the review says, replacing the
   admin's.
 
-| `feedback`           | What the review reports                                                                                                                                                                |
+| `review.feedback`    | What the review reports                                                                                                                                                                |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix changes those lines or adds lines after them |
 | `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
@@ -71,7 +73,7 @@ context:
 
 - `comments.inline: false`: posts the summary alone, without inline
   comments.
-- `comments.summaryTemplate` / `comments.inlineTemplate`: paths to Go
+- `comments.summary` / `comments.finding`: paths to Go
   [text/template](https://pkg.go.dev/text/template) templates that replace
   kritika's built-in summary and inline comment templates; an empty path
   restores the built-in one where the admin set a template. They use the
@@ -98,20 +100,20 @@ context:
   call, output size, a deadline), so a template cannot hang or exhaust
   memory; one that exceeds a bound falls back to the default with a note
   in the comment.
-- `requireSuggestedFix: true`: findings must include a suggested fix. The
+- `review.fixes: true`: findings must include a suggested fix. The
   file can turn the requirement on, never off.
-- `approve: true`: a review that finds nothing blocking or important
+- `review.approve: true`: a review that finds nothing blocking or important
   approves the pull request, as a review pinned to the head it saw; nits
   alone do not withhold it. A later review of the same pull request that
   does find something dismisses kritika's approval. It replaces the
   admin's, in either direction: a repository turns it on where the
   instance leaves it off. Off unless
   set.
-- `filterExpr`: a filter expression ANDed with the admin's own. It is
+- `trigger.filterExpr`: a filter expression ANDed with the admin's own. It is
   compiled and smoke-tested against a sample pull request when the file is
   parsed, so a broken expression is rejected rather than silently skipping
   every review. A review it filters out ends before any runner starts.
-- `ignore`: path globs added to the admin's own ignore list, for
+- `trigger.ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
   ignored, by these, the admin's globs or kritika's defaults (vendored
   trees, lockfiles and generated code), is skipped.
@@ -145,13 +147,14 @@ A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
-`settle`, `maxAutoReviews`, `maxChangedLines`, `forks`, `incremental`, `limits` and `runner`
+`trigger.forks`, `trigger.settle`, `trigger.limit`, `trigger.lines`,
+`review.incremental`, `limits` and `runner`
 are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
 
 ## `filterExpr` recipes
 
-`filterExpr`, like a rule's `whenExpr`, is a [CEL](https://cel.dev)
+`trigger.filterExpr`, like a rule's `whenExpr`, is a [CEL](https://cel.dev)
 expression over `pr`, which has the pull request's `number`, `title`,
 `body`, `author`, `state`, `open`, `merged`, `draft`, `fork`, `headRef`,
 `headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`

@@ -56,36 +56,43 @@ const (
 
 // Comments is how the repository's reviews comment: whether findings go
 // inline, and the in-repo files whose contents replace kritika's built-in
-// summary and inline comment templates.
+// summary and finding comment templates.
 type Comments struct {
 	Inline *bool `yaml:"inline,omitempty"`
-	// SummaryTemplate and InlineTemplate replace the admin's; an empty
-	// path restores the built-in template.
-	SummaryTemplate *string `yaml:"summaryTemplate,omitempty"`
-	InlineTemplate  *string `yaml:"inlineTemplate,omitempty"`
+	// Summary and Finding replace the admin's; an empty path restores the
+	// built-in template.
+	Summary *string `yaml:"summary,omitempty"`
+	Finding *string `yaml:"finding,omitempty"`
 }
 
-// Models are the review and fallback models a repository chooses, each a
-// "<provider>/<model>" of a provider its account may use.
-type Models struct {
-	Review   configfile.ModelRef `yaml:"review,omitempty"`
+// Review is how the repository's reviews are done: the review and fallback
+// models, each a "<provider>/<model>" of a provider its account may use,
+// how much a review says, whether a finding must carry a suggested fix,
+// and whether a review that finds nothing blocking or important approves
+// the pull request. Feedback and Approve replace the admin's.
+type Review struct {
+	Model    configfile.ModelRef `yaml:"model,omitempty"`
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
+	Feedback string              `yaml:"feedback,omitempty"`
+	Fixes    *bool               `yaml:"fixes,omitempty"`
+	Approve  *bool               `yaml:"approve,omitempty"`
 }
 
-// File is the decoded content of .kritika.yaml: the review keys the
-// configuration's defaults and repository entries take, without the admin's
-// own. Nothing in it is a secret or a reference to one.
-type File struct {
-	Enabled             *bool    `yaml:"enabled,omitempty"`
-	Models              Models   `yaml:"models,omitempty"`
-	Feedback            string   `yaml:"feedback,omitempty"`
-	Comments            Comments `yaml:"comments,omitempty"`
-	RequireSuggestedFix *bool    `yaml:"requireSuggestedFix,omitempty"`
-	// Approve replaces the admin's: whether a review that finds nothing
-	// blocking or important approves the pull request.
-	Approve    *bool    `yaml:"approve,omitempty"`
+// Trigger narrows which pull requests get a review: a filter ANDed with
+// the admin's, and path globs added to the admin's.
+type Trigger struct {
 	FilterExpr string   `yaml:"filterExpr,omitempty"`
 	Ignore     []string `yaml:"ignore,omitempty"`
+}
+
+// File is the decoded content of .kritika.yaml: the keys the
+// configuration's own settings and repository entries take, without the
+// admin's own. Nothing in it is a secret or a reference to one.
+type File struct {
+	Enabled  *bool    `yaml:"enabled,omitempty"`
+	Review   Review   `yaml:"review,omitempty"`
+	Trigger  Trigger  `yaml:"trigger,omitempty"`
+	Comments Comments `yaml:"comments,omitempty"`
 	// Rules are checks added after the admin's; one may not replace an
 	// admin's rule.
 	Rules []configfile.Rule `yaml:"rules,omitempty"`
@@ -113,9 +120,9 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 		return File{}, nil, fmt.Errorf("repoconfig: parse: %w", err)
 	}
 
-	for i, g := range f.Ignore {
+	for i, g := range f.Trigger.Ignore {
 		if !configfile.ValidGlob(g) {
-			return File{}, nil, fmt.Errorf("repoconfig: ignore[%d] %q is not a valid glob", i, g)
+			return File{}, nil, fmt.Errorf("repoconfig: trigger.ignore[%d] %q is not a valid glob", i, g)
 		}
 	}
 	for i, c := range f.Context {
@@ -133,14 +140,14 @@ func Parse(data []byte) (File, *prfilter.Program, error) {
 	}
 
 	var prg *prfilter.Program
-	if strings.TrimSpace(f.FilterExpr) != "" {
+	if strings.TrimSpace(f.Trigger.FilterExpr) != "" {
 		var err error
-		prg, err = prfilter.Compile(f.FilterExpr)
+		prg, err = prfilter.Compile(f.Trigger.FilterExpr)
 		if err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: filterExpr: %w", err)
+			return File{}, nil, fmt.Errorf("repoconfig: trigger.filterExpr: %w", err)
 		}
 		if _, err := prg.Eval(configfile.SamplePR()); err != nil {
-			return File{}, nil, fmt.Errorf("repoconfig: filterExpr: smoke test against a sample pull request: %w", err)
+			return File{}, nil, fmt.Errorf("repoconfig: trigger.filterExpr: smoke test against a sample pull request: %w", err)
 		}
 	}
 
@@ -159,7 +166,7 @@ func validateRefPath(p string) error {
 }
 
 // Referenced lists the in-repo paths the file names whose contents a
-// review reads: its rules' files first, then the summary and inline
+// review reads: its rules' files first, then the summary and finding
 // templates, deduplicated in the order first seen. Context files are
 // pointers the agent follows with its tools.
 func (f File) Referenced() []string {
@@ -175,7 +182,7 @@ func (f File) Referenced() []string {
 	for _, r := range f.Rules {
 		add(r.File)
 	}
-	for _, t := range []*string{f.Comments.SummaryTemplate, f.Comments.InlineTemplate} {
+	for _, t := range []*string{f.Comments.Summary, f.Comments.Finding} {
 		if t != nil {
 			add(*t)
 		}

@@ -91,7 +91,7 @@ checklist names each step still missing and what to set for it:
 1. **A GitHub App is connected:** declared under `apps`.
 2. **The App reaches a repository:** installed on an account its entry
    under `apps` lists.
-3. **A review model is set:** `defaults.models.review`.
+3. **A review model is set:** `review.model`.
 4. **An embedder is set:** `embedding`, which is optional.
 
 ## Configuration page

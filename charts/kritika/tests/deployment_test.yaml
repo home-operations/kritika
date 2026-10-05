@@ -57,7 +57,7 @@ tests:
     set:
       config:
         embeddingDims: 1024
-        defaultsSettle: "{{ .Release.Name }}-0s"
+        triggerSettle: "{{ .Release.Name }}-0s"
       envFrom:
         - secretRef:
             name: kritika-bot
@@ -75,7 +75,7 @@ tests:
           content: { name: KRITIKA_EMBEDDING_DIMS, value: "1024" }
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_DEFAULTS_SETTLE, value: RELEASE-NAME-0s }
+          content: { name: KRITIKA_TRIGGER_SETTLE, value: RELEASE-NAME-0s }
       - equal:
           path: spec.template.spec.containers[0].env[0].name
           value: KRITIKA_CONFIG_FILE
@@ -107,12 +107,12 @@ tests:
         pollInterval: "{{ .Release.Name }}-0s"
         reviewWorkers: 4
         runnerRuntimeClass: gvisor
-        defaultsForks: false
+        triggerForks: false
         authOidcClientSecret: {}
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_DEFAULTS_FORKS, value: "false" }
+          content: { name: KRITIKA_TRIGGER_FORKS, value: "false" }
       - notContains:
           path: spec.template.spec.containers[0].env
           content:

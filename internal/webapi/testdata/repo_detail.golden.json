@@ -64,9 +64,9 @@
     }
   },
   "sources": {
-    "forks": "account",
-    "models.review": "defaults",
-    "settle": "default"
+    "review.model": "defaults",
+    "trigger.forks": "account",
+    "trigger.settle": "default"
   },
   "repoConfig": {
     "reviewId": "rev-1",
@@ -118,9 +118,7 @@
       }
     },
     "filter": "!pr.draft",
-    "dropped": [
-      ".kritika.yaml: models.review \"q/big\" was dropped; allowed: a model of openrouter"
-    ]
+    "dropped": [".kritika.yaml: review.model \"q/big\" was dropped; allowed: a model of openrouter"]
   },
   "indexRuns": [
     {

@@ -5,7 +5,7 @@ kritika takes its settings from three places, each for what it suits:
 | Where                                                                                                                                               | What                                                                                                                                             | Changed by                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
 | The environment                                                                                                                                     | Process wiring: addresses, the database, logging and `KRITIKA_WEB_URL`                                                                           | a restart                          |
-| The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_DEFAULTS_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the defaults, the repository entries and the accounts | a restart                          |
+| The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_REVIEW_*`, `KRITIKA_TRIGGER_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the repository settings, the repository entries and the accounts | a restart                          |
 | The environment                                                                                                                                     | How kritika runs: polling, onboarding, retention and runner Jobs                                                                                 | a restart                          |
 | The dashboard                                                                                                                                       | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page |
 
@@ -17,7 +17,7 @@ The file is optional: `KRITIKA_CONFIG_FILE` names it, and the chart's
 of the deployment. In the file a secret is `{ env: NAME }`, the variable
 holding it, never the value itself; the chart's `env` and `envFrom` set
 such a variable from an existing Secret. Sign-in, one app, one provider, the
-default models and review settings, and the embedder also have
+review models and some review and trigger settings, and the embedder also have
 variables, and a variable wins over the file, so a small deployment can
 be configured from the environment alone. A variable carries a secret
 itself. The chart's `config` has a key for every `KRITIKA_*` variable, its
@@ -28,7 +28,7 @@ one of these prefixes that names no key is refused at startup rather than
 ignored.
 
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`:
-`filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
+`trigger.filterExpr`, `roleMappingExpr` and a rule's `whenExpr`.
 
 kritika reads the file and its variables once, at startup: a change takes a
 restart, and the chart rolls the pods when its `configFile` changes.
@@ -247,8 +247,8 @@ providers:
     apiKey: { env: LOCAL_LLM_KEY }
     pricing:
       large-model: { input: 0.1, output: 0.4 }
-defaults:
-  models: { review: local/large-model }
+review:
+  model: local/large-model
 embedding:
   model: local/embed-model
   dims: 768
@@ -289,8 +289,7 @@ providers:
     type: opencode
     baseUrl: https://opencode.ai/zen/v1
     apiKey: { env: OPENCODE_API_KEY }
-defaults:
-  models: { review: opencode/glm-5.3, fallback: zen/qwen3.8-max }
+review: { model: opencode/glm-5.3, fallback: zen/qwen3.8-max }
 ```
 
 - Only the models the gateway serves on `/v1/chat/completions` can be
@@ -299,13 +298,24 @@ defaults:
 - A response that reports no cost makes the call cost nothing unless
   `pricing` gives the model's prices, as for a local model.
 
-## `defaults` and `repositories`
+## Repository settings and `repositories`
 
-`defaults` are the settings every repository gets, and `repositories` the
-entries that change them for some: `owner/*` for every repository of an
-account, and `owner/name` for one.
+The repository settings are written at the file's root and apply to every
+repository, and `repositories` holds the entries that change them for
+some: `owner/*` for every repository of an account, and `owner/name` for
+one. They come in four groups:
 
-A `fallback` on the review model's provider is handed to the provider
+- `review`: what a review runs on and what it says: `model`, `fallback`,
+  `feedback`, `fixes`, `approve` and `incremental`.
+- `trigger`: which pull requests are reviewed, and when: `filterExpr`,
+  `forks`, `settle`, `ignore`, `limit` and `lines`.
+- `comments`: what is posted: `inline`, `summary` and `finding`.
+- `agent`: the bounds of a review's tool loop: `steps`, `output`,
+  `tokens`, `timeout`, `commands` and `commandTimeout`.
+
+`enabled`, `rules`, `context`, `agentFiles` and `limits` sit beside them.
+
+A `review.fallback` on the review model's provider is handed to the provider
 with the request, as OpenRouter's server-side fallback is, and the
 provider or the adapter tries it when the review model fails. A fallback
 on another provider is tried by the gateway itself: once a review's step
@@ -316,18 +326,20 @@ model that answered. A follow-up uses a fallback on its own provider
 alone.
 
 ```yaml
-defaults:
-  models: { review: openrouter/vendor/large-model, fallback: openrouter/vendor/small-model }
+review:
+  model: openrouter/vendor/large-model
+  fallback: openrouter/vendor/small-model
   feedback: detailed
+trigger:
   settle: 30s
-  rules:
-    - { id: no-tokens, rule: "Never log a token, key or password." }
-    - id: renovate
-      rule: Say what the update breaks, from the release notes in the body.
-      whenExpr: pr.headRef.startsWith("renovate/")
+rules:
+  - { id: no-tokens, rule: "Never log a token, key or password." }
+  - id: renovate
+    rule: Say what the update breaks, from the release notes in the body.
+    whenExpr: pr.headRef.startsWith("renovate/")
 repositories:
   org-1/*:
-    models: { review: org-1-key/vendor/large-model }
+    review: { model: org-1-key/vendor/large-model }
     rules:
       - {
           id: wrap-errors,
@@ -335,18 +347,21 @@ repositories:
           paths: ["**/*.go"],
         }
   org-1/repo-1:
-    feedback: minimal
+    review: { feedback: minimal }
     agent: { commands: [gh, curl] }
 ```
 
-Each takes the keys a repository's own `.kritika.yaml` takes, at the same
-level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
-`approve`, `filterExpr`, `ignore`, `rules`, `context` and `agentFiles`; see
-[the repository settings](repository-config.md)), and the admin's own:
+The root and each entry take the keys a repository's own `.kritika.yaml`
+takes, in the same groups (`review.model`, `review.fallback`,
+`review.feedback`, `review.fixes`, `review.approve`, `trigger.filterExpr`,
+`trigger.ignore`, `comments`, `rules`, `context` and `agentFiles`; see
+[the `.kritika.yaml` reference](repository-config.md)), and the admin's
+own:
 
-- `agent`: a review's `maxSteps`, `maxToolOutputBytes`, `maxTokens`,
+- `agent`: a review's `steps`, the bytes of `output` one tool call may
+  return, its `tokens`,
   `timeout`, the `commands` its run tool may execute, and their
-  `commandTimeout`. `maxSteps: 1` is the cheapest review: one call, which
+  `commandTimeout`. `steps: 1` is the cheapest review: one call, which
   must submit the findings, over the same prompt. The runner's `-tools` image has `gh`, `curl`,
   `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
@@ -354,34 +369,35 @@ level (`models`, `feedback`, `comments`, `requireSuggestedFix`,
   would print that token or run a program outside the list (`gh auth`,
   `alias`, `config` and `extension`, `fd -x` and `-X`, `rg --pre`), and
   masks the token in a command's output and in the submitted review.
-- `settle`: how long a new head waits before its review starts, so a
+- `trigger.settle`: how long a new head waits before its review starts, so a
   burst of pushes is reviewed once.
-- `maxAutoReviews`: how many automatic reviews a pull request gets before
+- `trigger.limit`: how many automatic reviews a pull request gets before
   kritika pauses them, so a long-lived pull request stops spending on
   every push; unlimited unless set. The summary of the last one says so.
   `@<app slug> review` still reviews a paused pull request, and
   `@<app slug> resume` turns its automatic reviews back on, as
   `@<app slug> pause` turns them off at any time.
-- `maxChangedLines`: the most lines a pull request's diff may add and
-  remove, paths the `ignore` globs match left out, for an automatic review
+- `trigger.lines`: the most lines a pull request's diff may add and
+  remove, paths the `trigger.ignore` globs match left out, for an automatic review
   to run; a larger one is skipped before any model is called, and the
   commit status says so. Unlimited unless set. `@<app slug> review` reviews
   it anyway.
-- `forks: true`: reviews pull requests from forks without being asked; by
+- `trigger.forks: true`: reviews pull requests from forks without being asked; by
   default one is reviewed only when a maintainer comments
   `@<app slug> review`.
-- `incremental.maxDeltaFiles`: how many files may change since the last
+- `review.incremental`: how many files may change since the last
   review before a re-review covers the whole pull request again. A re-run
   at the head the last review saw always covers the whole pull request.
-- `enabled`, at `defaults` and `owner/*` only: where repositories start
+- `enabled`, at the root and `owner/*` only: where repositories start
   (see below).
 
-A value applies in this order: kritika's default, `defaults`, `owner/*`,
-`owner/name`, and the repository's `.kritika.yaml`. A narrower value
-replaces the broader one's, except `ignore` globs, which add up, and
-`rules`, which add up by id.
+A value applies in this order: kritika's default, the file's root,
+`owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
+value replaces the broader one's, except `trigger.ignore` globs, which add
+up, and `rules`, which add up by id.
 
-The same defaults can come from the environment:
+The provider, some of the root's settings and the embedder can come from
+the environment:
 
 | Variable                           | Key                                                                                   |
 | ---------------------------------- | ------------------------------------------------------------------------------------- |
@@ -390,11 +406,11 @@ The same defaults can come from the environment:
 | `KRITIKA_PROVIDERS_BASE_URL`       | `baseUrl`                                                                             |
 | `KRITIKA_PROVIDERS_API_KEY`        | `apiKey`                                                                              |
 | `KRITIKA_PROVIDERS_RETRIES`        | `retries`                                                                             |
-| `KRITIKA_DEFAULTS_MODELS_REVIEW`   | `defaults.models.review`                                                              |
-| `KRITIKA_DEFAULTS_MODELS_FALLBACK` | `defaults.models.fallback`                                                            |
-| `KRITIKA_DEFAULTS_FEEDBACK`        | `defaults.feedback`                                                                   |
-| `KRITIKA_DEFAULTS_FORKS`           | `defaults.forks`, `true` or `false`                                                   |
-| `KRITIKA_DEFAULTS_SETTLE`          | `defaults.settle`, a duration such as `30s`                                           |
+| `KRITIKA_REVIEW_MODEL`             | `review.model`                                                                        |
+| `KRITIKA_REVIEW_FALLBACK`          | `review.fallback`                                                                     |
+| `KRITIKA_REVIEW_FEEDBACK`          | `review.feedback`                                                                     |
+| `KRITIKA_TRIGGER_FORKS`            | `trigger.forks`, `true` or `false`                                                    |
+| `KRITIKA_TRIGGER_SETTLE`           | `trigger.settle`, a duration such as `30s`                                            |
 | `KRITIKA_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
 | `KRITIKA_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
 
@@ -417,7 +433,7 @@ decided in this order:
    chose;
 3. a fork does not run, since an account can reach many forks it never
    meant to review;
-4. any other runs as `enabled` says, at `defaults` or `owner/*`: on unless
+4. any other runs as `enabled` says, at the root or `owner/*`: on unless
    one sets `enabled: false`.
 
 An `owner/name` entry may not set `enabled`: the dashboard owns a
@@ -443,7 +459,7 @@ accounts:
 - `limits`: `concurrency`, how many model calls it runs at once, 2 unless
   set, of which index runs hold all but one while they embed, so a review's
   similar-code lookup always has a slot; `reviewsPerDay`; and
-  `tokensPerMonth`. `defaults.limits` sets every account's.
+  `tokensPerMonth`. The root's `limits` sets every account's.
 - `providers`: its own model keys. A model named `<key name>/<model>` in
   its `owner/*` or `owner/name` entries, or in one of its repositories'
   `.kritika.yaml`, runs on that key and the account pays for it; a key's

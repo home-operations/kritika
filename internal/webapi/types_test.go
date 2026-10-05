@@ -119,7 +119,7 @@ var goldens = map[string]any{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
-			"forks": configfile.SourceAccount, "models.review": configfile.SourceDefaults, "settle": configfile.SourceDefault,
+			"trigger.forks": configfile.SourceAccount, "review.model": configfile.SourceDefaults, "trigger.settle": configfile.SourceDefault,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,
@@ -129,7 +129,7 @@ var goldens = map[string]any{
 				return s
 			}(),
 			Filter:  "!pr.draft",
-			Dropped: []string{`.kritika.yaml: models.review "q/big" was dropped; allowed: a model of openrouter`},
+			Dropped: []string{`.kritika.yaml: review.model "q/big" was dropped; allowed: a model of openrouter`},
 		},
 		IndexRuns: []IndexRun{goldenIndexRun},
 	},
@@ -185,7 +185,7 @@ var goldens = map[string]any{
 	},
 	"review_diff": ReviewDiff{Diff: "diff --git a/a.go b/a.go\n", DeltaDiff: ""},
 	"review_raw": ReviewRaw{
-		RepoFiles: map[string]string{".kritika.yaml": "approve: true\n"},
+		RepoFiles: map[string]string{".kritika.yaml": "review: { approve: true }\n"},
 		Stages: []ContextChunk{{
 			Stage: "definitions", Path: "b.go", Language: "go", Symbol: "F", Kind: "func", Scope: "pkg", StartLine: 1, EndLine: 9,
 			Ref: "F", Text: "func F() {}",

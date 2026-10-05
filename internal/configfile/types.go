@@ -166,13 +166,6 @@ type Models struct {
 	Fallback ModelRef `json:"fallback"`
 }
 
-// ModelsSpec sets the completion roles at one scope. A role written here,
-// even empty, replaces the broader scope's; one left out inherits it.
-type ModelsSpec struct {
-	Review   *ModelRef `yaml:"review,omitempty"`
-	Fallback *ModelRef `yaml:"fallback,omitempty"`
-}
-
 // Limits bound what an account may consume, as resolved. A cap of zero is no
 // cap; Concurrency is never zero once resolved.
 type Limits struct {
@@ -203,23 +196,54 @@ const DefaultConcurrency = 2
 // sets none.
 const DefaultRunnerDeadline = 15 * time.Minute
 
-// Defaults apply to every repository unless an entry overrides them, and
-// Limits to every account unless its entry sets its own.
+// Defaults are the settings the file writes at its root: they apply to
+// every repository unless an entry overrides them, and Limits to every
+// account unless its entry sets its own.
 type Defaults struct {
 	Overrides `yaml:",inline"`
 	Limits    LimitsSpec `yaml:"limits,omitempty"`
 }
 
 // Overrides are the repository settings every admin scope may set: the
-// defaults, an account and a repository entry. A field a narrower scope
+// file's own, an account and a repository entry. A field a narrower scope
 // writes replaces the broader scope's, even when it is empty or zero; a
-// field it leaves out inherits. Ignore globs are unioned instead. The
-// review keys are the ones a .kritika.yaml takes too, at the same level.
+// field it leaves out inherits. Ignore globs are unioned instead, and rules
+// add up by id. The keys are the ones a .kritika.yaml takes too, at the
+// same level, with the admin's own beside them.
 type Overrides struct {
 	// Enabled is where a repository starts, on or off, until an admin turns
 	// it on or off in the dashboard. A repository entry may not set it.
-	Enabled *bool      `yaml:"enabled,omitempty"`
-	Models  ModelsSpec `yaml:"models,omitempty"`
+	Enabled  *bool        `yaml:"enabled,omitempty"`
+	Review   ReviewSpec   `yaml:"review,omitempty"`
+	Trigger  TriggerSpec  `yaml:"trigger,omitempty"`
+	Comments CommentsSpec `yaml:"comments,omitempty"`
+	Agent    Agent        `yaml:"agent,omitempty"`
+	// Rules add to the broader scope's, one with an id already listed
+	// replacing that rule where it stands.
+	Rules      []Rule        `yaml:"rules,omitempty"`
+	Context    []ContextFile `yaml:"context,omitempty"`
+	AgentFiles *bool         `yaml:"agentFiles,omitempty"`
+
+	filter *prfilter.Program
+}
+
+// ReviewSpec sets how a review is done at one scope: its models, a role
+// written here, even empty, replacing the broader scope's, how much it
+// says, whether a finding must carry a suggested fix, whether it approves,
+// and how many files may change since the last review before a re-review
+// covers the whole pull request again.
+type ReviewSpec struct {
+	Model       *ModelRef `yaml:"model,omitempty"`
+	Fallback    *ModelRef `yaml:"fallback,omitempty"`
+	Feedback    *string   `yaml:"feedback,omitempty"`
+	Fixes       *bool     `yaml:"fixes,omitempty"`
+	Approve     *bool     `yaml:"approve,omitempty"`
+	Incremental *int      `yaml:"incremental,omitempty"`
+}
+
+// TriggerSpec sets which pull requests get a review, and when, at one
+// scope.
+type TriggerSpec struct {
 	// FilterExpr is CEL over pr; a key whose value is CEL ends in Expr.
 	FilterExpr *string  `yaml:"filterExpr,omitempty"`
 	Forks      *bool    `yaml:"forks,omitempty"`
@@ -227,18 +251,13 @@ type Overrides struct {
 	// Settle delays a review job for a new head, so a burst of pushes
 	// collapses onto the last one before anything is spent.
 	Settle *time.Duration `yaml:"settle,omitempty"`
-	// MaxAutoReviews pauses a pull request's automatic reviews once that
-	// many have completed, until someone resumes them; zero never pauses.
-	MaxAutoReviews *int `yaml:"maxAutoReviews,omitempty"`
-	// MaxChangedLines skips an automatic review of a pull request whose
-	// diff, ignored paths left out, adds and removes more lines than this;
-	// zero reviews any size. A review someone asks for still runs.
-	MaxChangedLines *int        `yaml:"maxChangedLines,omitempty"`
-	Agent           Agent       `yaml:"agent,omitempty"`
-	Incremental     Incremental `yaml:"incremental,omitempty"`
-	Review          ReviewSpec  `yaml:",inline"`
-
-	filter *prfilter.Program
+	// Limit pauses a pull request's automatic reviews once that many have
+	// completed, until someone resumes them; zero never pauses.
+	Limit *int `yaml:"limit,omitempty"`
+	// Lines skips an automatic review of a pull request whose diff, ignored
+	// paths left out, adds and removes more lines than this; zero reviews
+	// any size. A review someone asks for still runs.
+	Lines *int `yaml:"lines,omitempty"`
 }
 
 // Tool is a command-line tool a runner pod mounts from an image, read-only,
@@ -415,12 +434,13 @@ type RepoTraits struct {
 // Agent bounds a review's agent. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
 type Agent struct {
-	MaxSteps           *int `yaml:"maxSteps,omitempty"`
-	MaxToolOutputBytes *int `yaml:"maxToolOutputBytes,omitempty"`
-	// MaxTokens bounds the prompt plus output tokens one review
-	// may spend across all its steps.
-	MaxTokens *int64         `yaml:"maxTokens,omitempty"`
-	Timeout   *time.Duration `yaml:"timeout,omitempty"`
+	Steps *int `yaml:"steps,omitempty"`
+	// Output bounds one tool result, in bytes.
+	Output *int `yaml:"output,omitempty"`
+	// Tokens bounds the prompt plus output tokens one review may spend
+	// across all its steps.
+	Tokens  *int64         `yaml:"tokens,omitempty"`
+	Timeout *time.Duration `yaml:"timeout,omitempty"`
 	// Commands name the binaries the agent's run tool may execute, such as
 	// curl, fd and rg. The tool is offered only for names the runner image
 	// has on its PATH, so the distroless image offers none.
@@ -471,19 +491,12 @@ var DefaultAgent = AgentSettings{
 	CommandTimeout:     30 * time.Second,
 }
 
-// Incremental tunes incremental re-review.
-type Incremental struct {
-	// MaxDeltaFiles is how many files may change since the last review
-	// before a re-review covers the whole pull request again.
-	MaxDeltaFiles *int `yaml:"maxDeltaFiles,omitempty"`
-}
-
 // IncrementalSettings are the resolved incremental settings.
 type IncrementalSettings struct {
 	MaxDeltaFiles int
 }
 
-// DefaultMaxDeltaFiles applies when a repository sets no maxDeltaFiles.
+// DefaultMaxDeltaFiles applies when a repository sets no review.incremental.
 const DefaultMaxDeltaFiles = 25
 
 // ReviewTemplates name repository files, read from the merge base, that
@@ -546,27 +559,13 @@ func (r Review) Focused() bool { return r.Feedback == FeedbackMinimal }
 // NitsInline reports whether a nit is posted as an inline comment.
 func (r Review) NitsInline() bool { return r.Feedback != FeedbackStandard }
 
-// ReviewSpec sets the review keys at one scope, field by field: a field
-// written here, even empty, replaces the broader scope's. Rules are the
-// exception: they add to the broader scope's, one with an id already
-// listed replacing that rule where it stands.
-type ReviewSpec struct {
-	Feedback            *string       `yaml:"feedback,omitempty"`
-	Comments            CommentsSpec  `yaml:"comments,omitempty"`
-	RequireSuggestedFix *bool         `yaml:"requireSuggestedFix,omitempty"`
-	Approve             *bool         `yaml:"approve,omitempty"`
-	Rules               []Rule        `yaml:"rules,omitempty"`
-	Context             []ContextFile `yaml:"context,omitempty"`
-	AgentFiles          *bool         `yaml:"agentFiles,omitempty"`
-}
-
 // CommentsSpec sets how a review comments at one scope: whether findings
 // go inline, and the repository files that replace the built-in summary
-// and inline templates, where an empty path restores the built-in one.
+// and finding templates, where an empty path restores the built-in one.
 type CommentsSpec struct {
-	Inline          *bool   `yaml:"inline,omitempty"`
-	SummaryTemplate *string `yaml:"summaryTemplate,omitempty"`
-	InlineTemplate  *string `yaml:"inlineTemplate,omitempty"`
+	Inline  *bool   `yaml:"inline,omitempty"`
+	Summary *string `yaml:"summary,omitempty"`
+	Finding *string `yaml:"finding,omitempty"`
 }
 
 // Referenced lists the repository paths the block names whose contents a

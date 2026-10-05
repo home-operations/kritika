@@ -19,9 +19,8 @@ providers:
     type: openai
     baseUrl: https://models.example.com/v1
     apiKey: { env: TEST_SECRET }
-defaults:
-  models:
-    review: gateway/review-model
+review:
+  model: gateway/review-model
 apps:
   acme-bot:
     accounts: [acme]

@@ -817,7 +817,7 @@ export interface SetupStatus {
   // Where each connection's webhook goes, its name appended.
   hooksUrl: string;
   connections: string[];
-  // defaults.models.review, '' when unset.
+  // review.model, '' when unset.
   reviewModel: string;
   embedding: boolean;
 }

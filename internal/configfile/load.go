@@ -44,7 +44,8 @@ type fileDoc struct {
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
 	Embedding *Embedding            `yaml:"embedding,omitempty"`
 	Egress    Egress                `yaml:"egress,omitempty"`
-	Defaults  Defaults              `yaml:"defaults,omitempty"`
+	// Defaults are the repository settings written at the file's root.
+	Defaults Defaults `yaml:",inline"`
 	// Repositories are the owner/* and owner/name entries.
 	Repositories map[string]Overrides  `yaml:"repositories,omitempty"`
 	Accounts     map[string]accountDoc `yaml:"accounts,omitempty"`
@@ -73,7 +74,7 @@ func Load(name string) (*File, error) {
 
 // overlayPrefixes start the environment variables that overlay the file;
 // their values are part of the configuration, and so of its hash.
-var overlayPrefixes = []string{authEnvPrefix, connectionEnvPrefix, providerEnvPrefix, defaultsEnvPrefix, embeddingEnvPrefix}
+var overlayPrefixes = []string{authEnvPrefix, connectionEnvPrefix, providerEnvPrefix, reviewEnvPrefix, triggerEnvPrefix, embeddingEnvPrefix}
 
 // configHash identifies a configuration: the file's bytes, the overlay
 // variables that change what it says, and the values of the secrets it
@@ -85,7 +86,7 @@ func configHash(raw []byte, environ, secretEnv []string) string {
 	var overlay []string
 	for _, kv := range environ {
 		name, _, _ := strings.Cut(kv, "=")
-		if slices.ContainsFunc(overlayPrefixes, func(p string) bool { return strings.HasPrefix(name, p) }) {
+		if name != reviewWorkersEnv && slices.ContainsFunc(overlayPrefixes, func(p string) bool { return strings.HasPrefix(name, p) }) {
 			overlay = append(overlay, kv)
 		}
 	}
@@ -191,7 +192,7 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 		return err
 	}
 	if err := f.Defaults.compile(); err != nil {
-		return fmt.Errorf("configfile: defaults.filterExpr: %w", err)
+		return fmt.Errorf("configfile: trigger.filterExpr: %w", err)
 	}
 	for i := range f.Connections {
 		if err := f.Connections[i].resolve("apps."+f.Connections[i].Name, s); err != nil {
@@ -288,7 +289,7 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Ac
 // resolve reads the account's secret references and compiles its filters.
 func (a *Account) resolve(s *secrets) error {
 	if err := a.compile(); err != nil {
-		return fmt.Errorf("configfile: %s.filterExpr: %w", a.pattern, err)
+		return fmt.Errorf("configfile: %s.trigger.filterExpr: %w", a.pattern, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
@@ -301,7 +302,7 @@ func (a *Account) resolve(s *secrets) error {
 	}
 	for ri := range a.Repositories {
 		if err := a.Repositories[ri].compile(); err != nil {
-			return fmt.Errorf("configfile: %s.filterExpr: %w", a.Repositories[ri].where, err)
+			return fmt.Errorf("configfile: %s.trigger.filterExpr: %w", a.Repositories[ri].where, err)
 		}
 	}
 	return nil
@@ -400,14 +401,14 @@ func (f *File) validateProviders() error {
 	return nil
 }
 
-// validateAccounts checks the defaults and every account's entries,
+// validateAccounts checks the file's own settings and every account's entries,
 // served or not, so an entry is judged when it is written rather than when
 // a connection first serves it.
 func (f *File) validateAccounts(accounts []Account) error {
-	if err := checkLimits("defaults.limits", f.Defaults.Limits); err != nil {
+	if err := checkLimits("limits", f.Defaults.Limits); err != nil {
 		return err
 	}
-	if err := f.validateOverrides("defaults", nil, &f.Defaults.Overrides); err != nil {
+	if err := f.validateOverrides("", nil, &f.Defaults.Overrides); err != nil {
 		return err
 	}
 	for i := range accounts {
@@ -431,7 +432,7 @@ func (f *File) validateAccount(a *Account) error {
 		}
 	}
 	if a.pattern != "" {
-		if err := f.validateOverrides(a.pattern, a, &a.Overrides); err != nil {
+		if err := f.validateOverrides(a.pattern+".", a, &a.Overrides); err != nil {
 			return err
 		}
 	}
@@ -439,7 +440,7 @@ func (f *File) validateAccount(a *Account) error {
 		if r.Enabled != nil {
 			return fmt.Errorf("configfile: %s.enabled: turn a repository on or off in the dashboard", r.where)
 		}
-		if err := f.validateOverrides(r.where, a, &r.Overrides); err != nil {
+		if err := f.validateOverrides(r.where+".", a, &r.Overrides); err != nil {
 			return err
 		}
 	}
@@ -449,95 +450,104 @@ func (f *File) validateAccount(a *Account) error {
 // compile compiles the filter the scope writes, if any; an empty one
 // compiles to no restriction.
 func (o *Overrides) compile() (err error) {
-	if o.FilterExpr != nil {
-		o.filter, err = compileFilter(*o.FilterExpr)
+	if o.Trigger.FilterExpr != nil {
+		o.filter, err = compileFilter(*o.Trigger.FilterExpr)
 	}
 	return err
 }
 
-// validateOverrides checks the settings one scope writes: its models name
-// providers declared for account t (nil for the defaults), and its settle,
-// maxAutoReviews, maxChangedLines, ignore globs, agent, incremental and
-// review keys are in
-// range.
+// validateOverrides checks the settings one scope writes, named in errors
+// under where, "" for the file's own or an entry's name and a dot: its
+// models name providers declared for account t (nil for the file's own),
+// and its trigger, agent, review and comments keys are in range.
 func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
-	if err := f.checkModels(where+".models", t, r.Models); err != nil {
+	if err := f.checkModels(where+"review", t, r.Review); err != nil {
 		return err
 	}
-	if r.Settle != nil && *r.Settle < 0 {
-		return fmt.Errorf("configfile: %s.settle must not be negative", where)
+	if r.Trigger.Settle != nil && *r.Trigger.Settle < 0 {
+		return fmt.Errorf("configfile: %strigger.settle must not be negative", where)
 	}
-	if r.MaxAutoReviews != nil && *r.MaxAutoReviews < 0 {
-		return fmt.Errorf("configfile: %s.maxAutoReviews must not be negative", where)
+	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
+		return fmt.Errorf("configfile: %strigger.limit must not be negative", where)
 	}
-	if r.MaxChangedLines != nil && *r.MaxChangedLines < 0 {
-		return fmt.Errorf("configfile: %s.maxChangedLines must not be negative", where)
+	if r.Trigger.Lines != nil && *r.Trigger.Lines < 0 {
+		return fmt.Errorf("configfile: %strigger.lines must not be negative", where)
 	}
-	for gi, g := range r.Ignore {
+	for gi, g := range r.Trigger.Ignore {
 		if !ValidGlob(g) {
-			return fmt.Errorf("configfile: %s.ignore[%d] %q is not a valid glob", where, gi, g)
+			return fmt.Errorf("configfile: %strigger.ignore[%d] %q is not a valid glob", where, gi, g)
 		}
 	}
 	for _, c := range []struct {
 		name string
 		v    *int
 	}{
-		{keyMaxSteps, r.Agent.MaxSteps},
-		{keyMaxToolOutputBytes, r.Agent.MaxToolOutputBytes},
-		{"incremental.maxDeltaFiles", r.Incremental.MaxDeltaFiles},
+		{keySteps, r.Agent.Steps},
+		{keyOutput, r.Agent.Output},
+		{keyIncremental, r.Review.Incremental},
 	} {
 		if c.v != nil && *c.v <= 0 {
-			return fmt.Errorf("configfile: %s.%s must be positive", where, c.name)
+			return fmt.Errorf("configfile: %s%s must be positive", where, c.name)
 		}
 	}
-	if r.Agent.MaxTokens != nil && *r.Agent.MaxTokens <= 0 {
-		return fmt.Errorf("configfile: %s.agent.maxTokens must be positive", where)
+	if err := validateAgent(where, r.Agent); err != nil {
+		return err
 	}
-	if r.Agent.Timeout != nil && *r.Agent.Timeout <= 0 {
-		return fmt.Errorf("configfile: %s.agent.timeout must be positive", where)
+	return validateReview(where, r)
+}
+
+// validateAgent checks the agent bounds one scope writes beyond its steps
+// and output.
+func validateAgent(where string, a Agent) error {
+	if a.Tokens != nil && *a.Tokens <= 0 {
+		return fmt.Errorf("configfile: %sagent.tokens must be positive", where)
 	}
-	if r.Agent.Timeout != nil && *r.Agent.Timeout > jobtimeout.MaxAgentTimeout {
-		return fmt.Errorf("configfile: %s.agent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",
+	if a.Timeout != nil && *a.Timeout <= 0 {
+		return fmt.Errorf("configfile: %sagent.timeout must be positive", where)
+	}
+	if a.Timeout != nil && *a.Timeout > jobtimeout.MaxAgentTimeout {
+		return fmt.Errorf("configfile: %sagent.timeout must not exceed %s, or River's %s job timeout cap would cut the review short",
 			where, jobtimeout.MaxAgentTimeout, jobtimeout.MaxJobTimeout)
 	}
 	// The job document carries whole seconds.
-	if r.Agent.CommandTimeout != nil && *r.Agent.CommandTimeout < time.Second {
-		return fmt.Errorf("configfile: %s.agent.commandTimeout must be at least 1s", where)
+	if a.CommandTimeout != nil && *a.CommandTimeout < time.Second {
+		return fmt.Errorf("configfile: %sagent.commandTimeout must be at least 1s", where)
 	}
-	for i, c := range r.Agent.Commands {
+	for i, c := range a.Commands {
 		if !commandRe.MatchString(c) {
-			return fmt.Errorf("configfile: %s.agent.commands[%d] %q must be a bare command name, not a path", where, i, c)
+			return fmt.Errorf("configfile: %sagent.commands[%d] %q must be a bare command name, not a path", where, i, c)
 		}
-		if slices.Contains(r.Agent.Commands[:i], c) {
-			return fmt.Errorf("configfile: %s.agent.commands[%d] %q is listed twice", where, i, c)
+		if slices.Contains(a.Commands[:i], c) {
+			return fmt.Errorf("configfile: %sagent.commands[%d] %q is listed twice", where, i, c)
 		}
 	}
-	return validateReview(where, &r.Review)
+	return nil
 }
 
-// validateReview checks the review keys one scope writes: their paths
-// stay inside the repository, and the feedback is a level.
-func validateReview(where string, r *ReviewSpec) error {
-	if fb := r.Feedback; fb != nil && !ValidFeedback(*fb) {
-		return fmt.Errorf("configfile: %s.feedback must be %s, got %q", where, FeedbackLevels, *fb)
+// validateReview checks what one scope writes of a review's feedback,
+// context, rules and comment templates: the feedback is a level, and the
+// paths stay inside the repository.
+func validateReview(where string, r *Overrides) error {
+	if fb := r.Review.Feedback; fb != nil && !ValidFeedback(*fb) {
+		return fmt.Errorf("configfile: %sreview.feedback must be %s, got %q", where, FeedbackLevels, *fb)
 	}
 	for i, c := range r.Context {
 		if err := c.Check(); err != nil {
-			return fmt.Errorf("configfile: %s.context[%d]: %w", where, i, err)
+			return fmt.Errorf("configfile: %scontext[%d]: %w", where, i, err)
 		}
 	}
 	if err := CheckRules(r.Rules); err != nil {
-		return fmt.Errorf("configfile: %s.%w", where, err)
+		return fmt.Errorf("configfile: %s%w", where, err)
 	}
 	for _, t := range []struct {
 		name string
 		path *string
-	}{{"summaryTemplate", r.Comments.SummaryTemplate}, {"inlineTemplate", r.Comments.InlineTemplate}} {
+	}{{"summary", r.Comments.Summary}, {"finding", r.Comments.Finding}} {
 		if t.path == nil || *t.path == "" {
 			continue
 		}
 		if err := CheckRepoPath(*t.path); err != nil {
-			return fmt.Errorf("configfile: %s.comments.%s: %w", where, t.name, err)
+			return fmt.Errorf("configfile: %scomments.%s: %w", where, t.name, err)
 		}
 	}
 	return nil
@@ -605,11 +615,11 @@ func (i *Connection) validate(where string) error {
 	return nil
 }
 
-func (f *File) checkModels(where string, t *Account, m ModelsSpec) error {
+func (f *File) checkModels(where string, t *Account, m ReviewSpec) error {
 	for _, r := range []struct {
 		role string
 		ref  *ModelRef
-	}{{"review", m.Review}, {"fallback", m.Fallback}} {
+	}{{"model", m.Model}, {"fallback", m.Fallback}} {
 		if r.ref == nil || *r.ref == "" {
 			continue
 		}

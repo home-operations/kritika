@@ -26,7 +26,7 @@ type Merged struct {
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the admin's settings op. The file narrows what an admin allows
 // (enabled, filter, ignore), appends its context files and rules to the
-// admin's, may only turn requireSuggestedFix on, and replaces the models,
+// admin's, may only turn review.fixes on, and replaces the models,
 // the feedback level, how the review comments, whether it approves and
 // whether it reads agent files. A model must be one of a provider
 // op.Providers names. A value it may not take is dropped, and Dropped says
@@ -48,37 +48,37 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		m.Enabled = false
 	}
 	m.InRepoFilter = prg
-	for _, g := range f.Ignore {
+	for _, g := range f.Trigger.Ignore {
 		if !slices.Contains(m.Ignore, g) {
 			m.Ignore = append(m.Ignore, g)
 		}
 	}
-	if v := f.RequireSuggestedFix; v != nil && *v {
+	if v := f.Review.Fixes; v != nil && *v {
 		m.Review.RequireSuggestedFix = true
 	} else if v != nil && op.Review.RequireSuggestedFix {
-		m.drop("requireSuggestedFix", "false", "true, since an admin requires a suggested fix")
+		m.drop("review.fixes", "false", "true, since an admin requires a suggested fix")
 	}
-	if f.Comments.SummaryTemplate != nil {
-		m.Review.Templates.Summary = *f.Comments.SummaryTemplate
+	if f.Comments.Summary != nil {
+		m.Review.Templates.Summary = *f.Comments.Summary
 	}
-	if f.Comments.InlineTemplate != nil {
-		m.Review.Templates.Inline = *f.Comments.InlineTemplate
+	if f.Comments.Finding != nil {
+		m.Review.Templates.Inline = *f.Comments.Finding
 	}
 	if f.Comments.Inline != nil {
 		m.Review.InlineComments = *f.Comments.Inline
 	}
-	if f.Approve != nil {
-		m.Review.Approve = *f.Approve
+	if f.Review.Approve != nil {
+		m.Review.Approve = *f.Review.Approve
 	}
 	if f.AgentFiles != nil {
 		m.Review.AgentFiles = *f.AgentFiles
 	}
 	switch {
-	case f.Feedback == "":
-	case configfile.ValidFeedback(f.Feedback):
-		m.Review.Feedback = f.Feedback
+	case f.Review.Feedback == "":
+	case configfile.ValidFeedback(f.Review.Feedback):
+		m.Review.Feedback = f.Review.Feedback
 	default:
-		m.drop("feedback", strconv.Quote(f.Feedback), configfile.FeedbackLevels)
+		m.drop("review.feedback", strconv.Quote(f.Review.Feedback), configfile.FeedbackLevels)
 	}
 	for _, c := range f.Context {
 		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
@@ -103,8 +103,8 @@ func (m *Merged) choose(f *File, providers []string) {
 		want  configfile.ModelRef
 		dst   *configfile.ModelRef
 	}{
-		{"models.review", f.Models.Review, &m.Models.Review},
-		{"models.fallback", f.Models.Fallback, &m.Models.Fallback},
+		{"review.model", f.Review.Model, &m.Models.Review},
+		{"review.fallback", f.Review.Fallback, &m.Models.Fallback},
 	} {
 		if c.want == "" {
 			continue
