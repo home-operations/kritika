@@ -293,6 +293,10 @@ func (l *localForge) Permission(_ context.Context, _, _, login string) (forge.Pe
 	return forge.PermissionRead, nil
 }
 
+func (l *localForge) PullRequest(context.Context, string, string, int) (forge.OpenPullRequest, error) {
+	return forge.OpenPullRequest{}, fs.ErrNotExist
+}
+
 func (l *localForge) ListOpenPullRequests(context.Context, string, string, time.Time) ([]forge.OpenPullRequest, error) {
 	return nil, nil
 }

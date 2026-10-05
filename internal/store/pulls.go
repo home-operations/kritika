@@ -84,6 +84,20 @@ func ClosePullRequest(
 	return nil
 }
 
+// OpenPullRequests lists the numbers of the repository's pull requests
+// held as open, lowest first.
+func OpenPullRequests(ctx context.Context, tx pgx.Tx, repositoryID string) ([]int, error) {
+	rows, err := tx.Query(ctx, `SELECT number FROM pull_requests WHERE repository_id = $1 AND state = 'open' ORDER BY number`, repositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list open pull requests: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[int])
+	if err != nil {
+		return nil, fmt.Errorf("store: list open pull requests: %w", err)
+	}
+	return out, nil
+}
+
 // PullRequestPaused reports whether the pull request's automatic reviews
 // are paused.
 func PullRequestPaused(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (bool, error) {
