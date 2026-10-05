@@ -1018,17 +1018,19 @@ table.data td.wrap {
 }
 
 /* ---- tabs ----------------------------------------------------------------- */
+/* The rule under the tabs is a shadow inside the strip, not a border the
+   tabs reach over: anything of theirs outside it would scroll the strip
+   vertically, which overflow-x makes scrollable both ways. */
 .tabs {
   display: flex;
   gap: 2px;
-  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 -1px 0 var(--border);
   overflow-x: auto;
 }
 .tab {
   padding: 7px 12px;
   color: var(--muted);
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   display: inline-flex;
   gap: 6px;
   align-items: center;
