@@ -3,7 +3,7 @@
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
-  import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings } from '../types';
+  import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings, SkillScope } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -46,6 +46,8 @@
   const tests = (c: Condition) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
   // Conditions are parted by a semicolon: a condition's globs are already parted by commas.
   const conditions = (cs: Condition[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
+  const narrows = (sc: SkillScope) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
+  const scopes = (scope: Record<string, SkillScope>) => Object.entries(scope).map(([name, sc]) => `${name}: ${narrows(sc)}`).join('; ') || '—';
   const yes = (b: boolean) => (b ? 'yes' : 'no');
   const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 
@@ -71,6 +73,8 @@
     { label: 'Max automatic reviews', key: 'trigger.limit', value: (s) => unlimited(s.maxAutoReviews) },
     { label: 'Max delta files', key: 'review.incremental', value: (s) => wholeNumber(s.maxDeltaFiles) },
     { label: 'Context files', key: 'context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
+    { label: 'Skills', key: 'skills.paths', value: (s) => (s.skills.paths.length ? s.skills.paths.join(', ') : 'off'), mono: true },
+    { label: 'Skill scopes', key: 'skills.scope', value: (s) => scopes(s.skills.scope), mono: true },
     { label: 'Require suggested fix', key: 'review.fixes', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
     { label: 'Approve', key: 'review.approve', value: (s) => yes(s.review.approve) },

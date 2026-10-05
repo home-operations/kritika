@@ -223,6 +223,7 @@ type Overrides struct {
 	// replacing that rule where it stands.
 	Rules   []Rule        `yaml:"rules,omitempty"`
 	Context []ContextFile `yaml:"context,omitempty"`
+	Skills  SkillsSpec    `yaml:"skills,omitempty"`
 	// Ignore are globs of the paths kritika leaves out of a review's
 	// context and of the index; a pull request that changes nothing else
 	// is skipped. They add to the broader scope's.
@@ -714,6 +715,7 @@ type Settings struct {
 	Incremental    IncrementalSettings
 	Review         Review
 	Confidence     Confidence
+	Skills         Skills
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.

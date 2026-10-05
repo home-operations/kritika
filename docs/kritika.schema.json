@@ -125,19 +125,7 @@
           "when": {
             "type": "array",
             "description": "Conditions on the pull request: the rule applies only when one of them holds.",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["expr"],
-              "properties": {
-                "name": { "type": "string", "description": "What the condition is for." },
-                "expr": {
-                  "type": "string",
-                  "pattern": "\\S",
-                  "description": "A CEL expression over pr, as a trigger.include or trigger.exclude expression sees it, without pr.lines."
-                }
-              }
-            }
+            "items": { "$ref": "#/$defs/when" }
           }
         }
       }
@@ -156,6 +144,38 @@
             "type": "array",
             "description": "Name the file only when a changed path matches one of these.",
             "items": { "$ref": "#/$defs/glob" }
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The repository's Agent Skills: folders holding a SKILL.md, read from the merge base. A review is offered each one's name and description and reads the skill when it fits.",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "description": "The directories whose folders each hold a skill, replacing the admin's; .agents/skills and .claude/skills when no one sets them, and an empty list turns skills off.",
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "scope": {
+          "type": "object",
+          "description": "Narrows when a skill is offered, by the skill's name; added to the admin's, a skill named in both taking this file's.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "paths": {
+                "type": "array",
+                "description": "Offer the skill only when a changed path matches one of these.",
+                "items": { "$ref": "#/$defs/glob" }
+              },
+              "when": {
+                "type": "array",
+                "description": "Conditions on the pull request: the skill is offered only when one of them holds.",
+                "items": { "$ref": "#/$defs/when" }
+              }
+            }
           }
         }
       }
@@ -182,6 +202,20 @@
           "type": "array",
           "description": "The condition holds only when a changed path matches one of these.",
           "items": { "$ref": "#/$defs/glob" }
+        }
+      }
+    },
+    "when": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expr"],
+      "description": "One condition on a pull request, in a rule's or a skill scope's when.",
+      "properties": {
+        "name": { "type": "string", "description": "What the condition is for." },
+        "expr": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A CEL expression over pr, as a trigger.include or trigger.exclude expression sees it, without pr.lines."
         }
       }
     },

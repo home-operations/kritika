@@ -28,6 +28,10 @@ func adminSettings() configfile.Settings {
 			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
 			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}, {ID: "house-style", File: "docs/rules.md"}},
 		},
+		Skills: configfile.Skills{
+			Paths: []string{".agents/skills", ".claude/skills"},
+			Scope: map[string]configfile.SkillScope{"db": {Paths: []string{"db/**"}}, "go": {Paths: []string{"**/*.go"}}},
+		},
 		Providers: []string{"own", "p"},
 	}
 }
@@ -169,6 +173,31 @@ func TestMerge(t *testing.T) {
 				`.kritika.yaml: trigger.exclude wanted was dropped: an admin's condition has that name`,
 			},
 		},
+		{
+			name: "skill paths replace the admin's", doc: "skills: { paths: [docs/skills] }\n",
+			want: func(s *configfile.Settings) { s.Skills.Paths = []string{"docs/skills"} },
+		},
+		{
+			name: "empty skill paths turn skills off", doc: "skills: { paths: [] }\n",
+			want: func(s *configfile.Settings) { s.Skills.Paths = []string{} },
+		},
+		{
+			name: "skill scopes add to the admin's, the file's taking a name both give",
+			doc:  "skills: { scope: { db: { paths: ['migrations/**'] }, renovate: { when: [{ expr: 'pr.headRef.startsWith(\"renovate/\")' }] } } }\n",
+			want: func(s *configfile.Settings) {
+				s.Skills.Scope["db"] = configfile.SkillScope{Paths: []string{"migrations/**"}}
+				s.Skills.Scope["renovate"] = configfile.SkillScope{When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}}
+			},
+		},
+		{name: "an absolute skill path", doc: "skills: { paths: [/x] }\n", wantErr: `repoconfig: skills.paths[0]: path "/x" must be relative`},
+		{name: "a skill path outside the repository", doc: "skills: { paths: [a, ../x] }\n", wantErr: `skills.paths[1]: path "../x" escapes the repository`},
+		{name: "a skill scope with a bad glob", doc: "skills: { scope: { db: { paths: ['['] } } }\n", wantErr: `repoconfig: skills.scope.db.paths[0] "[" is not a valid glob`},
+		{name: "a skill scope whose condition does not compile", doc: "skills: { scope: { db: { when: [{ expr: 'pr.draft &&' }] } } }\n", wantErr: "skills.scope.db.when[0]"},
+		{
+			name: "a skill scope whose condition reads pr.lines", doc: "skills: { scope: { db: { when: [{ expr: pr.lines > 10 }] } } }\n",
+			wantErr: "skills.scope.db.when[0]: pr.lines is known to a trigger condition alone",
+		},
+		{name: "a skill scope takes no other key", doc: "skills: { scope: { db: { allowed-tools: [x] } } }\n", wantErr: "field allowed-tools not found"},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
 		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},

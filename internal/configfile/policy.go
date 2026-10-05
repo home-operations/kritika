@@ -70,6 +70,8 @@ var Policies = []Policy{
 	{Key: "rules", Scopes: everyScope},
 	{Key: "context", Scopes: everyScope},
 	{Key: "ignore", Scopes: everyScope},
+	{Key: "skills.paths", Scopes: everyScope},
+	{Key: "skills.scope", Scopes: everyScope},
 	{Key: keySteps, Scopes: everyScope},
 	{Key: keyOutput, Scopes: everyScope},
 	{Key: "agent.tokens", Scopes: everyScope},

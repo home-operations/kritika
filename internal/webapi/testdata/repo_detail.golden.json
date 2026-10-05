@@ -69,6 +69,19 @@
       "risk": "low",
       "instructions": "Image bumps are low."
     },
+    "skills": {
+      "paths": [".agents/skills", ".claude/skills"],
+      "scope": {
+        "review-renovate-pr": {
+          "when": [
+            {
+              "name": "",
+              "expr": "pr.headRef.startsWith(\"renovate/\")"
+            }
+          ]
+        }
+      }
+    },
     "agent": {
       "maxSteps": 60,
       "maxToolOutputBytes": 32768,
@@ -142,6 +155,19 @@
         "threshold": 5,
         "risk": "low",
         "instructions": "Image bumps are low."
+      },
+      "skills": {
+        "paths": [".agents/skills", ".claude/skills"],
+        "scope": {
+          "review-renovate-pr": {
+            "when": [
+              {
+                "name": "",
+                "expr": "pr.headRef.startsWith(\"renovate/\")"
+              }
+            ]
+          }
+        }
       },
       "agent": {
         "maxSteps": 60,

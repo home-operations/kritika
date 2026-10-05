@@ -105,6 +105,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	default:
 		m.drop("confidence.risk", strconv.Quote(string(risk)), string(op.Confidence.Risk)+" or lower")
 	}
+	m.Skills = configfile.WithSkills(m.Skills, f.Skills)
 	m.choose(&f, op.Providers)
 	return m, nil
 }

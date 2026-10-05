@@ -23,6 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -131,7 +132,15 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	case err != nil:
 		logger.Warn("filter failed to evaluate; the review is skipped", "filter", skipDetail, "error", err)
 	}
-	in := newPromptInputs(p, files, res.Changed)
+	var found []repoconfig.Skill
+	if sk := p.Prompt.Skills; sk != nil {
+		var skillNotes []string
+		if found, skillNotes, err = discoverSkills(baseTree, sk.Paths); err != nil {
+			return err
+		}
+		notes = append(notes, skillNotes...)
+	}
+	in := newPromptInputs(p, files, found, res.Changed)
 	notes = append(notes, in.notes...)
 	var tools agentTools
 	var prompt agentPrompt
@@ -151,6 +160,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 					gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: res.Changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
 				}
 			}
+		}
+		if len(in.skills) > 0 {
+			tools.skills = &skillTool{base: baseTree, skills: in.skills, maxBytes: p.Agent.limits().MaxToolOutputBytes}
 		}
 		var cleanup func()
 		tools.run, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)

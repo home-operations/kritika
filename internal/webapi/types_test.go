@@ -71,6 +71,10 @@ var goldenRepoSettings = RepoSettings{
 		CommandTimeout: 30 * time.Second,
 	},
 	Limits: configfile.Limits{Concurrency: 2},
+	Skills: configfile.Skills{
+		Paths: []string{".agents/skills", ".claude/skills"},
+		Scope: map[string]configfile.SkillScope{"review-renovate-pr": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}}},
+	},
 }
 
 var goldenIndexRun = IndexRun{

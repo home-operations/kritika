@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 13
+const SpecVersion = 14
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -96,11 +96,24 @@ type Prompt struct {
 	// UnchangedPatchID, when the head's patch id equals it, means the
 	// worker will skip the review, so the agent is not run.
 	UnchangedPatchID string `json:"unchangedPatchId,omitempty"`
+	// Skills are the directories of the merge base the repository's skills
+	// are looked for in, with the scope of those that have one; nil offers
+	// none.
+	Skills *Skills `json:"skills,omitempty"`
 	// Filters are the include and exclude lists with a condition only the
 	// diff can judge, each of which the pull request must pass: the
 	// admin's, which the worker leaves out for a review someone asked
 	// for, and the repository's own.
 	Filters []configfile.Filters `json:"filters,omitempty"`
+}
+
+// Skills is where a review's skills are looked for and which of them it is
+// offered: Scope's paths are judged against the changed paths here, and
+// Off names the skills whose conditions the worker found not to hold.
+type Skills struct {
+	Paths []string                         `json:"paths"`
+	Scope map[string]configfile.SkillScope `json:"scope,omitempty"`
+	Off   []string                         `json:"off,omitempty"`
 }
 
 // Spec is the job document a worker hands a runner: everything the run

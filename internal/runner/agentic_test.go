@@ -77,13 +77,13 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.scope == review.ScopeIncremental {
 				pack.DeltaDiff = agentDiff
 			}
-			in := newPromptInputs(s, files, pack.Changed)
+			in := newPromptInputs(s, files, nil, pack.Changed)
 			if !slices.Equal(in.ruleIDs(), ruleIDs(tt.active)) {
 				t.Fatalf("rule ids = %v, want %v", in.ruleIDs(), ruleIDs(tt.active))
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false)
 			system, user, strict := prompt.system, prompt.user, prompt.strict
-			if want := review.SystemPrompt(tt.active, []string{"Agent notes."}, nil, tt.focused, false); system != want {
+			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, tt.focused, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -115,7 +115,7 @@ func TestAgentPromptPointsAtContext(t *testing.T) {
 	}
 	files := repoconfig.Files{"docs/arch.md": "never inlined"}
 	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}}
-	user := newAgentPrompt(s, newPromptInputs(s, files, pack.Changed), pack, nil, false).user
+	user := newAgentPrompt(s, newPromptInputs(s, files, nil, pack.Changed), pack, nil, false).user
 	if !strings.Contains(user, "### docs/arch.md: how the parts fit\n") || strings.Contains(user, "never inlined") || strings.Contains(user, "schema") {
 		t.Fatalf("user message:\n%s", user)
 	}
@@ -135,7 +135,7 @@ func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
 	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxInstructionBytes+1)}
-	in := newPromptInputs(s, files, []string{"main.go"})
+	in := newPromptInputs(s, files, nil, []string{"main.go"})
 	if want := []string{noteInstructionsTruncated, "1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
 		t.Fatalf("notes = %q, want %q", in.notes, want)
 	}

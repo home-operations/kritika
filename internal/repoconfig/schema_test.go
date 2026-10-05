@@ -38,6 +38,11 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"comments", []string{"properties", "comments"}, yamlKeys[Comments]()},
 		{"context", []string{"properties", "context", "items"}, yamlKeys[configfile.ContextFile]()},
 		{"rules", []string{"properties", "rules", "items"}, yamlKeys[configfile.Rule]()},
+		{"rule when", []string{"properties", "rules", "items", "properties", "when", "items"}, yamlKeys[configfile.When]()},
+		{"skills", []string{"properties", "skills"}, yamlKeys[configfile.SkillsSpec]()},
+		{"skill scope", []string{"properties", "skills", "properties", "scope", "additionalProperties"}, yamlKeys[configfile.SkillScope]()},
+		{"skill scope when", []string{"properties", "skills", "properties", "scope", "additionalProperties", "properties", "when", "items"},
+			yamlKeys[configfile.When]()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

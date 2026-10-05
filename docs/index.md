@@ -63,6 +63,10 @@ flowchart LR
 - **Repository overrides.** A `.kritika.yaml`, read from the merge-base, can
   narrow the admin's settings and bring its own rules, context files and
   comment templates.
+- **Skills.** A review is offered the [Agent Skills](https://agentskills.io)
+  a repository keeps under `.agents/skills` and `.claude/skills`, by name and
+  description, and reads one when it fits the pull request; they are read
+  from the merge-base and grant no tool or command.
 - **Configuration in git.** One YAML file holds the whole configuration, read
   at startup, and a change rolls the pods; secrets stay in Secrets, which reach
   kritika as environment variables.

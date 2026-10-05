@@ -541,6 +541,9 @@ func validateReview(where string, r *Overrides) error {
 	if err := CheckRules(r.Rules); err != nil {
 		return fmt.Errorf("configfile: %s%w", where, err)
 	}
+	if err := CheckSkills(deref(r.Skills.Paths), r.Skills.Scope); err != nil {
+		return fmt.Errorf("configfile: %s%w", where, err)
+	}
 	for _, t := range []struct {
 		name string
 		path *string

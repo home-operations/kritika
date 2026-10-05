@@ -224,6 +224,15 @@ func connection(in *configfile.Connection) Connection {
 	}
 }
 
+// skills is s for the API, its paths and scope never null.
+func skills(s configfile.Skills) configfile.Skills {
+	if s.Scope == nil {
+		s.Scope = map[string]configfile.SkillScope{}
+	}
+	s.Paths = nonNil(s.Paths)
+	return s
+}
+
 // filters is fs for the API, its lists never null.
 func filters(fs configfile.Filters) configfile.Filters {
 	return configfile.Filters{Include: nonNil(slices.Clone(fs.Include)), Exclude: nonNil(slices.Clone(fs.Exclude))}
@@ -347,7 +356,7 @@ func repoSettings(s configfile.Settings) RepoSettings {
 		Enabled: s.Enabled, Models: s.Models, Filters: filters(s.Filters),
 		Ignore: nonNil(slices.Clone(s.Ignore)), SettleSeconds: int64(s.Settle.Seconds()), MaxAutoReviews: s.MaxAutoReviews,
 		MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
-		Review:        review, Confidence: s.Confidence, Agent: s.Agent, Limits: s.Limits,
+		Review:        review, Confidence: s.Confidence, Skills: skills(s.Skills), Agent: s.Agent, Limits: s.Limits,
 	}
 }
 

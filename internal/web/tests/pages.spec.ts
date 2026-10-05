@@ -375,6 +375,10 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   const conditions = (cs: { name: string; expr: string; paths?: string[] }[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
   await expect(settings).toContainText(`Include ${conditions(rc.settings.filters.include)}`);
   await expect(settings).toContainText(`Exclude ${conditions(rc.settings.filters.exclude)} (account)`);
+  const skills = rc.settings.skills;
+  const narrows = (sc: { paths?: string[]; when?: { expr: string }[] }) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
+  await expect(settings).toContainText(`Skills ${skills.paths.join(', ') || 'off'}`);
+  await expect(settings).toContainText(`Skill scopes ${Object.entries(skills.scope).map(([name, sc]) => `${name}: ${narrows(sc)}`).join('; ') || '—'}`);
   await expect(settings).toContainText('Settle 30s (default)');
   await expect(settings).toContainText(`Feedback ${g.repoDetail.settings.review.feedback} (default)`);
   const file = page.locator('#repo-file').locator('../..');
