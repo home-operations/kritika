@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.23](https://github.com/home-operations/kritika/compare/0.0.22...0.0.23) (2026-10-05)
+
+
+### Features
+
+* **web:** say what runs now on the overview ([#502](https://github.com/home-operations/kritika/issues/502)) ([06b3d3a](https://github.com/home-operations/kritika/commit/06b3d3ad5148d56072ca16e3ee0bf6c18ffd4877))
+* **web:** show each account's reviews today against its daily cap ([#504](https://github.com/home-operations/kritika/issues/504)) ([c8b79cb](https://github.com/home-operations/kritika/commit/c8b79cb61ac3d4353662d3f97856ccb955180017))
+* **web:** total what needs attention on the overview ([#501](https://github.com/home-operations/kritika/issues/501)) ([44a6c1d](https://github.com/home-operations/kritika/commit/44a6c1d89fa054d330c66cc0f982c79d6fea0327))
+
+
+### Bug Fixes
+
+* **web:** break a long path after a slash or a hyphen ([#499](https://github.com/home-operations/kritika/issues/499)) ([1855c69](https://github.com/home-operations/kritika/commit/1855c6990364cde5e2e2dc443e1b9dfb38df4dca))
+* **web:** drop the zero minutes from a duration in hours ([#490](https://github.com/home-operations/kritika/issues/490)) ([c783b91](https://github.com/home-operations/kritika/commit/c783b916d3d056633c29acdfd47a0c943a9ade12))
+* **web:** fit the tables of accounts in their cards ([#494](https://github.com/home-operations/kritika/issues/494)) ([75921ac](https://github.com/home-operations/kritika/commit/75921acb31d13db0b9123e8cb737264dac190a35))
+* **web:** give a chart's axis room for its longest label ([#498](https://github.com/home-operations/kritika/issues/498)) ([0ee69d8](https://github.com/home-operations/kritika/commit/0ee69d820ebd80fed3afe4512797b46846bc4ea5))
+* **web:** group the digits of a repository's limits ([#491](https://github.com/home-operations/kritika/issues/491)) ([f857712](https://github.com/home-operations/kritika/commit/f8577126a33d65600cc581c38d253a80ab124bec))
+* **web:** group the digits of counts and of money in tables ([#497](https://github.com/home-operations/kritika/issues/497)) ([23a5c72](https://github.com/home-operations/kritika/commit/23a5c72181e23d365ed5df4b222bda8117b19c58))
+* **web:** keep a job's error readable beside wide columns ([#493](https://github.com/home-operations/kritika/issues/493)) ([99609ba](https://github.com/home-operations/kritika/commit/99609baa1d3d5cce7d5ab8acc7d35b647d16d1ee))
+* **web:** keep a rule readable in the rules table on a phone ([#489](https://github.com/home-operations/kritika/issues/489)) ([b9a44de](https://github.com/home-operations/kritika/commit/b9a44de31081d1fd2a076ea3fe76bdd7eb9e4542))
+* **web:** keep the audit log's rows one height ([#496](https://github.com/home-operations/kritika/issues/496)) ([768b3bb](https://github.com/home-operations/kritika/commit/768b3bbe460967926b7c48718ed189a98f75b9a4))
+* **web:** keep the tabs still when the current one changes ([#485](https://github.com/home-operations/kritika/issues/485)) ([311b60e](https://github.com/home-operations/kritika/commit/311b60ece43d51f980b5f1b24b155d1767c86f17))
+* **web:** leave no empty cell beside this month's tiles on a phone ([#488](https://github.com/home-operations/kritika/issues/488)) ([3ab6b08](https://github.com/home-operations/kritika/commit/3ab6b0842e7627e5ccecab1c3b14feec0306774c))
+* **web:** put whole numbers on the axis of a chart of counts ([#486](https://github.com/home-operations/kritika/issues/486)) ([fa1ed0a](https://github.com/home-operations/kritika/commit/fa1ed0abfeb36fb06250a38dfca749ce4254a2ea))
+* **web:** set a repository's row on one line ([#500](https://github.com/home-operations/kritika/issues/500)) ([0acc72a](https://github.com/home-operations/kritika/commit/0acc72a87583d423976e3ee2737733368391ea8f))
+
 ## [0.0.22](https://github.com/home-operations/kritika/compare/0.0.21...0.0.22) (2026-10-04)
 
 
