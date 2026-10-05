@@ -46,8 +46,7 @@
           "paths": ["**/*.sql"]
         }
       ],
-      "feedback": "standard",
-      "agentFiles": true
+      "feedback": "standard"
     },
     "agent": {
       "maxSteps": 60,
@@ -100,8 +99,7 @@
             "paths": ["**/*.sql"]
           }
         ],
-        "feedback": "standard",
-        "agentFiles": true
+        "feedback": "standard"
       },
       "agent": {
         "maxSteps": 60,

@@ -220,9 +220,8 @@ type Overrides struct {
 	Agent    Agent        `yaml:"agent,omitempty"`
 	// Rules add to the broader scope's, one with an id already listed
 	// replacing that rule where it stands.
-	Rules      []Rule        `yaml:"rules,omitempty"`
-	Context    []ContextFile `yaml:"context,omitempty"`
-	AgentFiles *bool         `yaml:"agentFiles,omitempty"`
+	Rules   []Rule        `yaml:"rules,omitempty"`
+	Context []ContextFile `yaml:"context,omitempty"`
 
 	filter *prfilter.Program
 }
@@ -525,10 +524,6 @@ type Review struct {
 	// Feedback is how much a review says: FeedbackDetailed,
 	// FeedbackStandard or FeedbackMinimal.
 	Feedback string `json:"feedback"`
-	// AgentFiles is true to add the repository's AGENTS.md files, or a
-	// directory's CLAUDE.md where it has none, to the instructions: the
-	// root's and those of the directories a change touches.
-	AgentFiles bool `json:"agentFiles"`
 }
 
 // ContextFile is a repository file that explains the code, named to the

@@ -95,11 +95,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return fmt.Errorf("runner: base tree: %w", err)
 	}
-	var agentChanged []string
-	if p.AgentFiles {
-		agentChanged = res.Changed
-	}
-	files, notes, err := repoFiles(baseTree, p.RepoFiles, agentChanged)
+	files, notes, err := repoFiles(baseTree, p.RepoFiles, res.Changed)
 	if err != nil {
 		return err
 	}

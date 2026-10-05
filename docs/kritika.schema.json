@@ -119,10 +119,6 @@
           }
         }
       }
-    },
-    "agentFiles": {
-      "type": "boolean",
-      "description": "false leaves the repository's AGENTS.md and CLAUDE.md files out of the instructions."
     }
   },
   "$defs": {

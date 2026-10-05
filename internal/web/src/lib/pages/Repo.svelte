@@ -65,7 +65,6 @@
     { label: 'Max changed lines', key: 'trigger.lines', value: (s) => unlimited(s.maxChangedLines) },
     { label: 'Max delta files', key: 'review.incremental', value: (s) => wholeNumber(s.maxDeltaFiles) },
     { label: 'Context files', key: 'context', value: (s) => list(s.review.context.map((c) => c.path)), mono: true },
-    { label: 'AGENTS.md / CLAUDE.md', key: 'agentFiles', value: (s) => (s.review.agentFiles ? 'read' : 'not read') },
     { label: 'Require suggested fix', key: 'review.fixes', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
     { label: 'Approve', key: 'review.approve', value: (s) => yes(s.review.approve) },

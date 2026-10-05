@@ -313,7 +313,7 @@ one. They come in four groups:
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
   `tokens`, `timeout`, `commands` and `commandTimeout`.
 
-`enabled`, `rules`, `context`, `agentFiles` and `limits` sit beside them.
+`enabled`, `rules`, `context` and `limits` sit beside them.
 
 A `review.fallback` on the review model's provider is handed to the provider
 with the request, as OpenRouter's server-side fallback is, and the
@@ -354,7 +354,7 @@ repositories:
 The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
 `review.feedback`, `review.fixes`, `review.approve`, `trigger.filterExpr`,
-`trigger.ignore`, `comments`, `rules`, `context` and `agentFiles`; see
+`trigger.ignore`, `comments`, `rules` and `context`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
 

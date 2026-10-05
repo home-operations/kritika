@@ -20,7 +20,7 @@ func adminSettings() configfile.Settings {
 		Review: configfile.Review{
 			RequireSuggestedFix: true,
 			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
-			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}, {ID: "house-style", File: "docs/rules.md"}}, AgentFiles: true,
+			Rules: []configfile.Rule{{ID: "wrap-errors", Rule: "Wrap errors."}, {ID: "house-style", File: "docs/rules.md"}},
 		},
 		Providers: []string{"own", "p"},
 	}
@@ -80,9 +80,9 @@ func TestMerge(t *testing.T) {
 		{name: "a rule whose whenExpr fails the smoke test", doc: "rules: [{ id: a, rule: x, whenExpr: 'pr.labels[5].name == \"x\"' }]\n", wantErr: "rules[0].whenExpr: smoke test"},
 		{name: "enabled true cannot widen", doc: "enabled: true\n"},
 		{
-			name: "presentation replaces the admin's", doc: "comments: { inline: false, summary: .kritika/summary.tmpl }\nagentFiles: false\n",
+			name: "presentation replaces the admin's", doc: "comments: { inline: false, summary: .kritika/summary.tmpl }\n",
 			want: func(s *configfile.Settings) {
-				s.Review.InlineComments, s.Review.AgentFiles, s.Review.Templates.Summary = false, false, ".kritika/summary.tmpl"
+				s.Review.InlineComments, s.Review.Templates.Summary = false, ".kritika/summary.tmpl"
 			},
 		},
 		{
