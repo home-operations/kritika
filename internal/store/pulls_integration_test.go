@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // TestPausePullRequest checks that automatic reviews pause on request or
@@ -163,5 +165,37 @@ func TestNewestReviewID(t *testing.T) {
 	}
 	if got[2].NewestReviewID != nil {
 		t.Errorf("the newest review names %s as newer", *got[2].NewestReviewID)
+	}
+}
+
+// TestAccountStatsCountCompletedReviews checks that the account's review
+// count is of the reviews that completed, whatever else ended otherwise.
+func TestAccountStatsCountCompletedReviews(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("counted"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "counted")
+	for _, status := range []ReviewStatus{ReviewCompleted, ReviewCompleted, ReviewSkipped, ReviewSuperseded, ReviewFailed} {
+		id := insertReview(t, ctx, s, account)
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			_, err := EndReview(ctx, tx, id, ReviewEnd{Status: status})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertReview(t, ctx, s, account)
+	var stats AccountStats
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		stats, err = ReadAccountStats(ctx, tx, func(string, configfile.RepoTraits) bool { return true })
+		return err
+	}); err != nil {
+		t.Fatalf("ReadAccountStats: %v", err)
+	}
+	if stats.Reviews7d != 2 {
+		t.Errorf("Reviews7d = %d, want the 2 that completed", stats.Reviews7d)
 	}
 }
