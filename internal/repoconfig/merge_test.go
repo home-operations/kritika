@@ -9,14 +9,16 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
 func adminSettings() configfile.Settings {
 	return configfile.Settings{
 		Enabled: true, Ignore: []string{"vendor/**"}, Settle: 2 * time.Minute,
-		Models: configfile.Models{Review: "p/big"},
-		Agent:  configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
+		Models:     configfile.Models{Review: "p/big"},
+		Confidence: configfile.Confidence{Threshold: 5, Risk: review.RiskMedium},
+		Agent:      configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
 		Review: configfile.Review{
 			RequireSuggestedFix: true,
 			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
@@ -118,7 +120,7 @@ func TestMerge(t *testing.T) {
 		{
 			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, threshold: 0 }\n",
 			want: func(s *configfile.Settings) {
-				s.Confidence = configfile.Confidence{Model: "own/judge", Threshold: 0}
+				s.Confidence.Model, s.Confidence.Threshold = "own/judge", 0
 			},
 		},
 		{
@@ -129,6 +131,17 @@ func TestMerge(t *testing.T) {
 				`.kritika.yaml: confidence.model "q/judge" was dropped; allowed: a model of own, p`,
 			},
 		},
+		{
+			name: "confidence.risk may only lower the admin's", doc: "confidence: { risk: low }\n",
+			want: func(s *configfile.Settings) { s.Confidence.Risk = review.RiskLow },
+		},
+		{
+			name: "a confidence.risk above the admin's, or no level, is dropped", doc: "confidence: { risk: critical }\n",
+			dropped: []string{
+				`.kritika.yaml: confidence.risk "critical" was dropped; allowed: medium or lower`,
+			},
+		},
+		{name: "the risk instructions are the admin's alone", doc: "confidence: { instructions: all low }\n", wantErr: "field instructions not found"},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
 		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},

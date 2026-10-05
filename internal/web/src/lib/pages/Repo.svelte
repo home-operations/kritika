@@ -59,6 +59,8 @@
     { label: 'Fallback model', key: 'review.fallback', value: (s) => s.models.fallback || '—', mono: true },
     { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },
     { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
+    { label: 'Approve up to risk', key: 'confidence.risk', value: (s) => s.confidence.risk },
+    { label: 'Risk instructions', key: 'confidence.instructions', value: (s) => s.confidence.instructions || '—' },
     { label: 'Filter', key: 'trigger.filterExpr', value: (s) => s.filter || '—', mono: true },
     { label: 'Forks', key: 'trigger.forks', value: (s) => (s.forks ? 'reviewed' : 'skipped') },
     { label: 'Ignore', key: 'trigger.ignore', value: (s) => list(s.ignore), mono: true },

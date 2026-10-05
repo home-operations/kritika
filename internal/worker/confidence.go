@@ -54,7 +54,7 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 		p.unscored = true
 		return unscoredNote
 	}
-	p.logger.Info("confidence scored", "model", c.Model, "score", c.Score, "threshold", c.Threshold)
+	p.logger.Info("confidence scored", "model", c.Model, "score", c.Score, "threshold", c.Threshold, "risk", c.Risk)
 	p.confidence = &c
 	return ""
 }
@@ -87,12 +87,13 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		record(req, resp, err, d)
 		p.charge(ctx, resp)
 	}}
+	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
 	req := model.CompletionRequest{
-		System: review.ConfidenceSystem,
+		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res.Findings),
+		}, res.Findings, system),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
@@ -107,11 +108,13 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, call); err != nil {
 		return review.Confidence{}, err
 	}
-	score, reason, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
+	score, risk, reason, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
 	if err != nil {
 		return review.Confidence{}, err
 	}
-	return review.Confidence{Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Model: resp.Model}, nil
+	return review.Confidence{
+		Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Risk: risk, Model: resp.Model,
+	}, nil
 }
 
 // charge records what one scoring call spent against the review, where the

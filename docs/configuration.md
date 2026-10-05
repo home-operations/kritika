@@ -307,7 +307,8 @@ one. They come in five groups:
 
 - `review`: what a review runs on and what it says: `model`, `fallback`,
   `feedback`, `fixes`, `approve` and `incremental`.
-- `confidence`: how a review is judged: `model` and `threshold`.
+- `confidence`: how a review is judged: `model`, `threshold`, `risk` and
+  `instructions`.
 - `trigger`: which pull requests are reviewed, and when: `filterExpr`,
   `forks`, `settle`, `ignore`, `limit` and `lines`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
@@ -342,6 +343,26 @@ unchanged is still skipped, and keeps the score its last review got. The
 scorer's call counts towards the account's `tokensPerMonth`, and shows in
 the review's transcript.
 
+The same call rates the change's risk, how much damage it could do if the
+review missed something, from what the change does and not from where its
+files live:
+
+| Risk       | What the change is                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| `low`      | documentation, tests, formatting, and small changes with no effect on behavior that matters |
+| `medium`   | ordinary application or business logic                                                      |
+| `high`     | dependency updates, build or runtime configuration, modules much else depends on            |
+| `critical` | authentication, secrets, billing, data migrations, infrastructure, CI, public interfaces    |
+
+`confidence.risk` is the highest risk a change may be rated and still be
+approved, `low` unless set. It bears on approvals alone, never on the commit
+status: a risky change that scores well passes its check and waits for a
+person. `confidence.instructions` is plain guidance to the scorer on rating
+risk in your code, such as "Renovate patch bumps of container images are
+low" or "anything under `db/migrations` is critical"; it refines the table
+above and changes nothing else about the score. It is the admin's alone, so
+a pull request cannot talk its own risk down.
+
 ```yaml
 review:
   model: openrouter/vendor/large-model
@@ -371,11 +392,12 @@ repositories:
 The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
 `review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
-`confidence.threshold`, `trigger.filterExpr`,
+`confidence.threshold`, `confidence.risk`, `trigger.filterExpr`,
 `trigger.ignore`, `comments`, `rules` and `context`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
 
+- `confidence.instructions`: the guidance on rating risk, above.
 - `agent`: a review's `steps`, the bytes of `output` one tool call may
   return, its `tokens`,
   `timeout`, the `commands` its run tool may execute, and their
@@ -429,6 +451,7 @@ the environment:
 | `KRITIKA_REVIEW_FEEDBACK`          | `review.feedback`                                                                     |
 | `KRITIKA_CONFIDENCE_MODEL`         | `confidence.model`                                                                    |
 | `KRITIKA_CONFIDENCE_THRESHOLD`     | `confidence.threshold`, a whole number from 0 to 5                                    |
+| `KRITIKA_CONFIDENCE_RISK`          | `confidence.risk`, `low`, `medium`, `high` or `critical`                              |
 | `KRITIKA_TRIGGER_FORKS`            | `trigger.forks`, `true` or `false`                                                    |
 | `KRITIKA_TRIGGER_SETTLE`           | `trigger.settle`, a duration such as `30s`                                            |
 | `KRITIKA_EMBEDDING_MODEL`          | `embedding.model`                                                                     |

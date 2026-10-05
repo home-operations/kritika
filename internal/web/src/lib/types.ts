@@ -228,7 +228,7 @@ export interface RepoSettings {
   maxChangedLines: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
-  confidence: { model: string; threshold: number };
+  confidence: { model: string; threshold: number; risk: Risk; instructions: string };
   agent: AgentLimits;
   limits: Limits;
 }
@@ -366,8 +366,12 @@ export interface Confidence {
   threshold: number;
   passed: boolean;
   reason: string;
+  // risk is '' for a review scored before risk was rated.
+  risk: Risk | '';
   model: string;
 }
+
+export type Risk = 'low' | 'medium' | 'high' | 'critical';
 
 export interface Followup {
   id: string;

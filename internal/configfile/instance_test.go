@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // fileWithDefaults is minimal's app with instance defaults: a provider,
@@ -162,9 +164,9 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
 	t.Setenv("KRITIKA_TRIGGER_SETTLE", "45s")
-	review := "review: { model: openrouter/big, fallback: openrouter/small"
+	models := "review: { model: openrouter/big, fallback: openrouter/small"
 	withDefaults := func(reviewKeys, rootKeys string) []byte {
-		return []byte(strings.Replace(fileWithDefaults, review+" }\n", review+reviewKeys+" }\n"+rootKeys, 1))
+		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
 	}
 	f, err := Parse(withDefaults(", feedback: minimal", "trigger: { forks: true }\n"))
 	if err != nil {
@@ -208,8 +210,8 @@ func TestConfidenceSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if c := f.Settings(&f.Accounts[0], "acme/x").Confidence; c != (Confidence{Threshold: DefaultConfidenceThreshold}) {
-		t.Fatalf("confidence = %+v; want no model and the default threshold", c)
+	if c := f.Settings(&f.Accounts[0], "acme/x").Confidence; c != (Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
+		t.Fatalf("confidence = %+v; want no model, the default threshold and the lowest risk", c)
 	}
 	for _, tt := range []struct{ name, doc, env, want string }{
 		{name: "a threshold off the scale", doc: "confidence: { threshold: 6 }\n", want: "configfile: confidence.threshold must be between 0 and 5, got 6"},
@@ -217,21 +219,24 @@ func TestConfidenceSettings(t *testing.T) {
 			want: "repositories.acme/x.confidence.threshold must be between 0 and 5"},
 		{name: "a model of no declared provider", doc: "confidence: { model: nowhere/judge }\n",
 			want: `configfile: confidence.model references provider "nowhere"`},
-		{name: "a threshold in the environment that is no number", env: "high", want: "KRITIKA_CONFIDENCE_THRESHOLD must be a whole number"},
+		{name: "a risk that is no level", doc: "confidence: { risk: none }\n",
+			want: `configfile: confidence.risk must be low, medium, high or critical, got "none"`},
+		{name: "a risk in the environment that is no level", env: "RISK=severe", want: "confidence.risk must be low, medium, high or critical"},
+		{name: "a threshold in the environment that is no number", env: "THRESHOLD=high", want: "KRITIKA_CONFIDENCE_THRESHOLD must be a whole number"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.env != "" {
-				t.Setenv("KRITIKA_CONFIDENCE_THRESHOLD", tt.env)
+			if name, value, ok := strings.Cut(tt.env, "="); ok {
+				t.Setenv("KRITIKA_CONFIDENCE_"+name, value)
 			}
 			if _, err := Parse([]byte(fileWithDefaults + tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
 			}
 		})
 	}
-	doc := fileWithDefaults + `confidence: { model: openrouter/judge }
+	doc := fileWithDefaults + `confidence: { model: openrouter/judge, risk: medium, instructions: "Image bumps are low." }
 repositories:
-  acme/x: { confidence: { threshold: 3 } }
-  acme/y: { confidence: { model: "" } }
+  acme/x: { confidence: { threshold: 3, risk: high } }
+  acme/y: { confidence: { model: "", instructions: "" } }
 `
 	t.Setenv("KRITIKA_CONFIDENCE_THRESHOLD", "4")
 	if f, err = Parse([]byte(doc)); err != nil {
@@ -239,9 +244,9 @@ repositories:
 	}
 	a := &f.Accounts[0]
 	for repo, want := range map[string]Confidence{
-		"acme/z": {Model: "openrouter/judge", Threshold: 4},
-		"acme/x": {Model: "openrouter/judge", Threshold: 3},
-		"acme/y": {Threshold: 4},
+		"acme/z": {Model: "openrouter/judge", Threshold: 4, Risk: review.RiskMedium, Instructions: "Image bumps are low."},
+		"acme/x": {Model: "openrouter/judge", Threshold: 3, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
+		"acme/y": {Threshold: 4, Risk: review.RiskMedium},
 	} {
 		if got := f.Settings(a, repo).Confidence; got != want {
 			t.Errorf("confidence of %s = %+v, want %+v", repo, got, want)

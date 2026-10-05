@@ -111,8 +111,8 @@ func TestRenderSummaryConfidence(t *testing.T) {
 		want       string
 	}{
 		{
-			name: "a score that passes", confidence: &Confidence{Score: 5, Threshold: 5, Reason: "Nothing stands against it."},
-			want: "1 nit\n\n**Confidence 5/5**: Nothing stands against it.\n\n## Findings\n",
+			name: "a score that passes", confidence: &Confidence{Score: 5, Threshold: 5, Risk: RiskLow, Reason: "Nothing stands against it."},
+			want: "1 nit\n\n**Confidence 5/5** · low risk: Nothing stands against it.\n\n## Findings\n",
 		},
 		{
 			name: "a score under the threshold", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},

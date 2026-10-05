@@ -50,7 +50,9 @@
     },
     "confidence": {
       "model": "openrouter/acme-judge",
-      "threshold": 5
+      "threshold": 5,
+      "risk": "low",
+      "instructions": "Image bumps are low."
     },
     "agent": {
       "maxSteps": 60,
@@ -107,7 +109,9 @@
       },
       "confidence": {
         "model": "openrouter/acme-judge",
-        "threshold": 5
+        "threshold": 5,
+        "risk": "low",
+        "instructions": "Image bumps are low."
       },
       "agent": {
         "maxSteps": 60,

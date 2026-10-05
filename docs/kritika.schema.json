@@ -45,6 +45,10 @@
           "minimum": 0,
           "maximum": 5,
           "description": "The score a pull request must reach for its commit status to pass, replacing the admin's."
+        },
+        "risk": {
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "The highest risk a change may be rated and still be approved; it may only lower the admin's."
         }
       }
     },

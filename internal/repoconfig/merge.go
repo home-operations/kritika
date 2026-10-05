@@ -26,7 +26,7 @@ type Merged struct {
 // Merge applies doc, the merge-base FileName or nil when the repository has
 // none, over the admin's settings op. The file narrows what an admin allows
 // (enabled, filter, ignore), appends its context files and rules to the
-// admin's, may only turn review.fixes on, and replaces the models,
+// admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
 // the feedback level, the confidence threshold, how the review comments
 // and whether it approves. A model must be one of a provider
 // op.Providers names. A value it may not take is dropped, and Dropped says
@@ -95,6 +95,13 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		m.Confidence.Threshold = *th
 	default:
 		m.drop("confidence.threshold", strconv.Itoa(*th), "0 to "+strconv.Itoa(configfile.MaxConfidence))
+	}
+	switch risk := f.Confidence.Risk; {
+	case risk == "":
+	case risk.Within(op.Confidence.Risk):
+		m.Confidence.Risk = risk
+	default:
+		m.drop("confidence.risk", strconv.Quote(string(risk)), string(op.Confidence.Risk)+" or lower")
 	}
 	m.choose(&f, op.Providers)
 	return m, nil
