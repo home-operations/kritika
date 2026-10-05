@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -220,7 +219,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
 		return w.failReview(cctx, ended, "", res.Err.Error())
 	}
-	prep, status, err := w.afterRun(ctx, args, account, pr, eff, b.notes, client, reviewID, runID, prior, logger)
+	prep, status, err := w.afterRun(ctx, job, account, pr, eff, b.notes, client, reviewID, runID, prior,
+		spec.Prompt.PullRequest.Labels, logger)
 	if err != nil {
 		// ctx stayed live through afterRun, so a cancel or a timeout that
 		// arrived while it ran surfaces here as a plain error; the review
@@ -261,93 +261,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.failReview(fctx, ended, patchID, errText(perr))
 	}
 	return w.finishReview(fctx, args.AccountID, reviewID, status, patchID, errText(perr))
-}
-
-// prepared is what afterRun hands the publish phase: the patch id, the
-// settings with the repository's .kritika.yaml applied and its templates
-// read, the notes the summary states, whether the review builds on the
-// last completed one, and the ids of the rules the agent was given.
-type prepared struct {
-	patchID   string
-	eff       Effective
-	templates review.Templates
-	notes     []string
-	scope     review.Scope
-	ruleIDs   []string
-}
-
-// afterRun re-checks the head under the account transaction and reads the
-// context pack: the runner decided whether the review is skipped and what
-// it builds on, and read the merge-base repository files. A skipped
-// review ends with a success status saying why. notes are the worker's
-// own on the repository's file. It returns a patch id when the review
-// should go on to publishing, and "" plus the terminal status it recorded
-// otherwise.
-func (w *Review) afterRun(
-	ctx context.Context, args jobs.ReviewArgs, account *configfile.Account, pr *pullRequest, eff Effective, notes []string,
-	client forge.Client, reviewID, runID string, prior priorReview, logger *slog.Logger,
-) (prepared, store.ReviewStatus, error) {
-	var pack store.ContextPackRecord
-	var superseded bool
-	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		var currentHead string
-		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, pr.id).Scan(&currentHead); err != nil {
-			return fmt.Errorf("worker: re-read head: %w", err)
-		}
-		if currentHead != args.HeadSHA {
-			superseded = true
-			return nil
-		}
-		var err error
-		pack, err = store.ReadContextPack(ctx, tx, runID)
-		return err
-	})
-	if err != nil {
-		return prepared{}, "", err
-	}
-	if superseded {
-		logger.Info("review superseded", "patch_id", review.ShortSHA(pack.PatchID))
-		return prepared{}, store.ReviewSuperseded, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSuperseded, pack.PatchID, "")
-	}
-	for stage, n := range pack.StageCounts {
-		w.Metrics.ContextChunks(account.Key(), stage, n)
-	}
-	if pack.SkipReason != "" {
-		logger.Info("review skipped", "reason", pack.SkipReason, "patch_id", review.ShortSHA(pack.PatchID))
-		end := store.ReviewEnd{Status: store.ReviewSkipped, PatchID: pack.PatchID, SkipReason: pack.SkipReason}
-		if _, err := w.endReview(ctx, args.AccountID, reviewID, end); err != nil {
-			return prepared{}, "", err
-		}
-		var carried *review.Confidence
-		if pack.SkipReason == runner.SkipUnchangedPatch {
-			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-				var err error
-				carried, _, err = carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence)
-				return err
-			})
-			if err != nil {
-				return prepared{}, "", err
-			}
-		}
-		owner, repo := pr.ownerRepo()
-		state, desc := skipVerdict(carried, skipDescription(pack.SkipReason, pack.SkipDetail))
-		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
-			logger.Warn("commit status not set", "error", err)
-		}
-		carryApproval(ctx, logger, client, pr, eff.Settings, carried)
-		return prepared{}, store.ReviewSkipped, nil
-	}
-	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, prior.id)
-	})
-	if err != nil {
-		return prepared{}, "", err
-	}
-	logger.Info("review prepared", "patch_id", review.ShortSHA(pack.PatchID), "scope", pack.Scope, "scope_reason", pack.ScopeReason)
-	return prepared{
-		patchID: pack.PatchID, eff: eff, templates: eff.templates(pack.Files), notes: append(slices.Clone(notes), pack.Notes...),
-		scope: pack.Scope, ruleIDs: pack.RuleIDs,
-	}, store.ReviewPrepared, nil
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know

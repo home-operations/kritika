@@ -77,24 +77,31 @@ func Compile(expr string) (*Program, error) {
 	return &Program{prg: prg, ast: ast.NativeRep(), src: expr}, nil
 }
 
-// Uses reports whether the expression reads field of pr, as pr.field,
-// has(pr.field) or pr["field"]. An index whose key is not a literal may
-// read any field, and counts as reading this one.
+// Uses reports whether the expression may read field of pr. It does not
+// only when every mention of pr selects or indexes another field by name:
+// pr used whole (aliased in a list, tested with "in", compared) or indexed
+// by a key that is not a literal may read any field.
 func (p *Program) Uses(field string) bool {
-	isPR := func(e celast.Expr) bool { return e.Kind() == celast.IdentKind && e.AsIdent() == "pr" }
 	return len(celast.MatchDescendants(celast.NavigateAST(p.ast), func(e celast.NavigableExpr) bool {
-		switch e.Kind() {
+		if e.Kind() != celast.IdentKind || e.AsIdent() != "pr" {
+			return false
+		}
+		parent, ok := e.Parent()
+		if !ok {
+			return true
+		}
+		switch parent.Kind() {
 		case celast.SelectKind:
-			return e.AsSelect().FieldName() == field && isPR(e.AsSelect().Operand())
+			return parent.AsSelect().FieldName() == field
 		case celast.CallKind:
-			call := e.AsCall()
-			if call.FunctionName() != operators.Index || len(call.Args()) != 2 || !isPR(call.Args()[0]) {
-				return false
+			call := parent.AsCall()
+			if call.FunctionName() != operators.Index || len(call.Args()) != 2 || call.Args()[0].ID() != e.ID() {
+				return true
 			}
 			key := call.Args()[1]
 			return key.Kind() != celast.LiteralKind || key.AsLiteral().Value() == field
 		}
-		return false
+		return true
 	})) > 0
 }
 

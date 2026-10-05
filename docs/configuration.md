@@ -475,7 +475,8 @@ A condition on the pull request alone is decided at once, and a pull
 request it keeps out leaves no review behind. A condition with `paths` or
 `pr.lines` is decided once the pull request is fetched, before any model
 is called, and a pull request it keeps out shows as a skipped review; its
-commit status names the exclusion that held when it has a name.
+commit status names the exclusion that held when it has a name. The lists
+are then judged with the first 64 KiB of the description.
 
 The lists add up across the root, `owner/*` and `owner/name`, and a named
 condition replaces the broader scope's of that name where it stands. A

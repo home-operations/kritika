@@ -158,7 +158,8 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 // agent finds, or "", and for a filtered one the name of the exclusion
 // that decided: settled before the agent runs, so a skipped review spends
 // nothing. A condition that fails to evaluate skips; the error is
-// returned for the log.
+// returned for the log. The conditions see the pull request as the spec
+// carries it, its body cut to MaxBodyBytes.
 func agentSkip(p Spec, changed []string, patchID, diff string) (reason, detail string, err error) {
 	switch {
 	case p.Prompt.UnchangedPatchID != "" && patchID == p.Prompt.UnchangedPatchID:
