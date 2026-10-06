@@ -13,7 +13,7 @@
 **No findings**
 {{ end }}
 {{ if .Confidence -}}
-**Confidence {{ .Confidence.Score }}/5**{{ if not .Confidence.Passed }}, below the {{ .Confidence.Threshold }} this repository asks for{{ end }}{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ if .Confidence.Reason }}: {{ .Confidence.Reason }}{{ end }}
+**Confidence {{ .Confidence.Score }}/5**{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ if .Confidence.Reason }}: {{ .Confidence.Reason }}{{ end }}
 
 {{ end -}}
 {{ if and .Incremental .PriorHeadSHA -}}
