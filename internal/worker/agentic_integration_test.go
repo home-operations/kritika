@@ -97,6 +97,8 @@ const (
 	scriptRun
 	// scriptSkill reads the skill review-go, then submits.
 	scriptSkill
+	// scriptTruncated submits a review the output cap cut off.
+	scriptTruncated
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -190,6 +192,10 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if step > 1 {
 			message = tool("submit_review", `{"summary":{"take":"Adds v3.","praise":[]},"findings":[]}`)
 		}
+	}
+	if script == scriptTruncated {
+		finish = "length"
+		message = tool("submit_review", `{"summary":{"take":"Adds`)
 	}
 	if script == scriptSubmit || script == scriptStall {
 		finish = "tool_calls"
@@ -381,6 +387,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	h := newAgenticHarness(t)
 	t.Run("the agent greps, reads and submits a finding", func(t *testing.T) { checkAgentSubmits(t, h) })
 	t.Run("an agent that never submits fails the review and says so", func(t *testing.T) { checkAgentNeverSubmits(t, h) })
+	t.Run("a submission the output cap cut off is recorded as truncated", func(t *testing.T) { checkAgentTruncated(t, h) })
 	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
 	t.Run("a key the provider echoes back is masked", func(t *testing.T) { checkAgentKeyMasked(t, h) })
 	t.Run("the merge-base filter skips before the runner starts", func(t *testing.T) { checkAgentFiltered(t, h) })
@@ -410,7 +417,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 11 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 12 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -790,6 +797,19 @@ func checkAgentSnoozes(t *testing.T, h *agenticHarness) {
 	hold(nil)
 	if _, status, errText := h.waitReview(t, next); status != "completed" {
 		t.Fatalf("status = %s (%s), want completed once the slot was free", status, errText)
+	}
+}
+
+func checkAgentTruncated(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptTruncated)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc cut() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "failed" || !strings.HasPrefix(errText, "agent stopped: truncated: submit_review was cut off at the ") {
+		t.Fatalf("status = %s, error = %q", status, errText)
+	}
+	if run := h.agentRow(t, reviewID); run.stop != "truncated" || run.steps != 1 {
+		t.Fatalf("agent run = %+v", run)
 	}
 }
 
