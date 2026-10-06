@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.36](https://github.com/home-operations/kritika/compare/0.0.35...0.0.36) (2026-10-06)
+
+
+### Bug Fixes
+
+* **chart:** let the sign-in client ids come from a Secret ([#579](https://github.com/home-operations/kritika/issues/579)) ([cc826bf](https://github.com/home-operations/kritika/commit/cc826bfb97b45f2905a8befe6d65c795e56b8eea))
+
 ## [0.0.35](https://github.com/home-operations/kritika/compare/0.0.34...0.0.35) (2026-10-06)
 
 
