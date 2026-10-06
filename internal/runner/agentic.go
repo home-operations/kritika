@@ -160,7 +160,8 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 	user, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
-		Incremental: incremental, Dismissed: p.Prompt.Dismissed, References: in.references, BudgetTokens: review.UserBudget(system),
+		Incremental: incremental, Dismissed: p.Prompt.Dismissed, References: in.references,
+		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	})
 	return agentPrompt{
 		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,

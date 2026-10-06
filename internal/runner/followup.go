@@ -63,7 +63,8 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 	pr := p.Prompt.PullRequest
 	user := review.BuildFollowUp(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body, BaseRef: pr.BaseRef,
-		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references, BudgetTokens: review.UserBudget(system),
+		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references,
+		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	}, p.Prompt.Prior, p.Thread)
 	if err := setPhase(ctx, st, p.RunID, "reviewing"); err != nil {
 		return err

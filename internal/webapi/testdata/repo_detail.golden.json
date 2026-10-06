@@ -88,6 +88,7 @@
       "maxSteps": 60,
       "maxToolOutputBytes": 32768,
       "maxTokens": 4000000,
+      "maxPromptTokens": 24000,
       "timeoutSeconds": 1200,
       "commands": ["go"],
       "commandTimeoutSeconds": 30
@@ -177,6 +178,7 @@
         "maxSteps": 60,
         "maxToolOutputBytes": 32768,
         "maxTokens": 4000000,
+        "maxPromptTokens": 24000,
         "timeoutSeconds": 1200,
         "commands": ["go"],
         "commandTimeoutSeconds": 30

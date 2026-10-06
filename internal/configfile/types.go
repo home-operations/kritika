@@ -480,7 +480,11 @@ type Agent struct {
 	Output *int `yaml:"output,omitempty"`
 	// Tokens bounds the prompt plus output tokens one review may spend
 	// across all its steps.
-	Tokens  *int64         `yaml:"tokens,omitempty"`
+	Tokens *int64 `yaml:"tokens,omitempty"`
+	// Prompt bounds, in tokens, the opening prompt of a review, its
+	// confidence score and a follow-up: how much of the diff and context
+	// they start from before tools read the rest.
+	Prompt  *int           `yaml:"prompt,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
 	// Commands name the binaries the agent's run tool may execute, such as
 	// curl, fd and rg. The tool is offered only for names the runner image
@@ -495,6 +499,7 @@ type AgentSettings struct {
 	MaxSteps           int
 	MaxToolOutputBytes int
 	MaxTokens          int64
+	MaxPromptTokens    int
 	Timeout            time.Duration
 	Commands           []string
 	CommandTimeout     time.Duration
@@ -511,12 +516,13 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 		MaxSteps              int      `json:"maxSteps"`
 		MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
 		MaxTokens             int64    `json:"maxTokens"`
+		MaxPromptTokens       int      `json:"maxPromptTokens"`
 		TimeoutSeconds        int64    `json:"timeoutSeconds"`
 		Commands              []string `json:"commands"`
 		CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
 	}{
 		MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens,
-		TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
+		MaxPromptTokens: a.MaxPromptTokens, TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
 		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()),
 	})
 }
@@ -528,9 +534,15 @@ var DefaultAgent = AgentSettings{
 	MaxSteps:           agent.DefaultLimits.MaxSteps,
 	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
 	MaxTokens:          agent.DefaultLimits.MaxTokens,
+	MaxPromptTokens:    review.DefaultBudgetTokens,
 	Timeout:            20 * time.Minute,
 	CommandTimeout:     30 * time.Second,
 }
+
+// MinPromptTokens is the least agent.prompt takes: the system prompt, with
+// its repository instructions, and the pull request's description are paid
+// for out of the same budget, and below it little of the diff would fit.
+const MinPromptTokens = 8_000
 
 // IncrementalSettings are the resolved incremental settings.
 type IncrementalSettings struct {

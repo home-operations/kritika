@@ -68,7 +68,7 @@ func TestBuildConfidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, tt.findings, ConfidenceSystem)
+			msg := BuildConfidence(in, tt.findings, ConfidenceSystem, 0)
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
@@ -110,5 +110,27 @@ func TestConfidenceSystemPrompt(t *testing.T) {
 	got := ConfidenceSystemPrompt("Image bumps are low.\n")
 	if !strings.HasPrefix(got, ConfidenceSystem+"\n\n") || !strings.HasSuffix(got, "\n\nImage bumps are low.") {
 		t.Fatalf("the guidance does not follow the prompt:\n%s", got)
+	}
+}
+
+func TestBuildConfidenceBudget(t *testing.T) {
+	diff := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1,3000 @@\n" +
+		strings.Repeat("+// a line of the large file under review\n", 3000)
+	in := Input{Repository: "o/r", Number: 7, Title: "Add big", Author: "dev", BaseRef: "main", Changed: ChangedPaths(diff), Diff: diff}
+	tests := []struct {
+		name   string
+		budget int
+		kept   bool
+	}{
+		{name: "the default budget leaves the diff out", budget: 0},
+		{name: "the passed budget keeps it", budget: 60_000, kept: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := BuildConfidence(in, nil, ConfidenceSystem, tt.budget)
+			if kept := strings.Contains(msg, "+// a line of the large file under review"); kept != tt.kept {
+				t.Fatalf("diff in the message = %v, want %v", kept, tt.kept)
+			}
+		})
 	}
 }

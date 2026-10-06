@@ -690,3 +690,30 @@ func TestAgentPromptFence(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildLargerBudgetKeepsALargeFile(t *testing.T) {
+	big := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1,3000 @@\n" +
+		strings.Repeat("+// a line of the large file under review\n", 3000)
+	in := Input{Repository: "a/b", Number: 1, Title: "t", Author: "u", BaseRef: "main", Changed: []string{"main.go", "big.go"}, Diff: sampleDiff + big}
+	tests := []struct {
+		name        string
+		budget      int
+		wantOmitted []string
+	}{
+		{name: "the default budget leaves it out", wantOmitted: []string{"big.go"}},
+		{name: "a larger budget keeps it", budget: 60_000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := in
+			in.BudgetTokens = tt.budget
+			msg, omitted, _ := Build(in)
+			if !slices.Equal(omitted, tt.wantOmitted) {
+				t.Fatalf("omitted = %v, want %v", omitted, tt.wantOmitted)
+			}
+			if kept := strings.Contains(msg, "+// a line of the large file under review"); kept != (len(tt.wantOmitted) == 0) {
+				t.Fatalf("large file in the message = %v", kept)
+			}
+		})
+	}
+}

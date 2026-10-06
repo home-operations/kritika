@@ -97,6 +97,7 @@
     { label: 'Max steps', key: 'agent.steps', value: (s) => wholeNumber(s.agent.maxSteps) },
     { label: 'Max tool output', key: 'agent.output', value: (s) => bytes(s.agent.maxToolOutputBytes) },
     { label: 'Max tokens', key: 'agent.tokens', value: (s) => wholeNumber(s.agent.maxTokens) },
+    { label: 'Max prompt tokens', key: 'agent.prompt', value: (s) => wholeNumber(s.agent.maxPromptTokens) },
     { label: 'Timeout', key: 'agent.timeout', value: (s) => duration(s.agent.timeoutSeconds * 1000) },
     { label: 'Commands', key: 'agent.commands', value: (s) => list(s.agent.commands), mono: true },
     { label: 'Command timeout', key: 'agent.commandTimeout', value: (s) => duration(s.agent.commandTimeoutSeconds * 1000) },

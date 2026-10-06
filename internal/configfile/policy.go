@@ -82,6 +82,7 @@ var Policies = []Policy{
 	{Key: keySteps, Scopes: everyScope},
 	{Key: keyOutput, Scopes: everyScope},
 	{Key: "agent.tokens", Scopes: everyScope},
+	{Key: "agent.prompt", Scopes: everyScope},
 	{Key: "agent.timeout", Scopes: everyScope},
 	{Key: "agent.commands", Scopes: everyScope},
 	{Key: "agent.commandTimeout", Scopes: everyScope},

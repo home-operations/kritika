@@ -355,8 +355,8 @@ func (f *followUp) runAgent(
 			Model: &runner.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
 			Agent: &runner.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
-				TimeoutSeconds: int(limits.Timeout / time.Second),
-				Commands:       limits.Commands, CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second),
+				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
+				Commands: limits.Commands, CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second),
 			},
 		},
 		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token},

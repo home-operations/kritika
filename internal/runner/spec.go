@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 16
+const SpecVersion = 17
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -67,7 +67,10 @@ type AgentLimits struct {
 	MaxSteps           int   `json:"maxSteps"`
 	MaxToolOutputBytes int   `json:"maxToolOutputBytes"`
 	MaxTokens          int64 `json:"maxTokens"`
-	TimeoutSeconds     int   `json:"timeoutSeconds,omitempty"`
+	// MaxPromptTokens bounds the agent's opening prompt, the diff and
+	// context it starts from; zero takes review.DefaultBudgetTokens.
+	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
+	TimeoutSeconds  int `json:"timeoutSeconds,omitempty"`
 	// Commands name the binaries the run tool may execute; the runner
 	// offers those it finds on its PATH, and no run tool without any.
 	Commands              []string `json:"commands,omitempty"`

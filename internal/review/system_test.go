@@ -92,13 +92,38 @@ func TestFollowUpSystemPrompt(t *testing.T) {
 }
 
 func TestUserBudget(t *testing.T) {
-	for _, system := range []string{SystemPrompt(nil, nil, nil, nil, false, false, false), SystemPrompt(nil, nil, []string{strings.Repeat("x", 32<<10)}, nil, false, false, false)} {
-		// The system prompt's tokens, rounded up, plus the user budget stay
-		// within the default budget.
-		if got := UserBudget(system); got+(len(system)+3)/4 != DefaultBudgetTokens || got <= 0 {
-			t.Fatalf("UserBudget = %d for a %d byte system prompt", got, len(system))
-		}
+	tests := []struct {
+		name   string
+		budget int
+		want   int
+	}{
+		{name: "zero takes the default", budget: 0, want: DefaultBudgetTokens},
+		{name: "a configured budget", budget: 120_000, want: 120_000},
 	}
+	long := SystemPrompt(nil, nil, []string{strings.Repeat("x", 32<<10)}, nil, false, false, false)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, system := range []string{SystemPrompt(nil, nil, nil, nil, false, false, false), long} {
+				// The system prompt's tokens, rounded up, plus the user budget stay
+				// within the budget.
+				if got := UserBudget(system, tt.budget); got+(len(system)+3)/4 != tt.want || got <= 0 {
+					t.Fatalf("UserBudget = %d for a %d byte system prompt", got, len(system))
+				}
+			}
+		})
+	}
+	// Instructions that take more than a small budget leave the user
+	// message its floor, which Build renders a small diff within.
+	t.Run("long instructions leave a small budget its floor", func(t *testing.T) {
+		got := UserBudget(long, 8_000)
+		if got != minUserBudget {
+			t.Fatalf("UserBudget = %d, want the floor of %d", got, minUserBudget)
+		}
+		msg, omitted, _ := Build(Input{Repository: "a/b", Number: 1, Changed: []string{"main.go"}, Diff: sampleDiff, BudgetTokens: got})
+		if len(omitted) != 0 || !strings.Contains(msg, "+	z := 4") {
+			t.Fatalf("a small diff must fit the floor: omitted %v\n%s", omitted, msg)
+		}
+	})
 }
 
 func TestDecideScope(t *testing.T) {
