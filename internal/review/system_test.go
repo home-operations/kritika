@@ -103,7 +103,10 @@ func TestDecideScope(t *testing.T) {
 		{name: "first review", want: ScopeFull, wantReason: "no completed review to build on", maxDelta: 25},
 		{name: "prior head unreachable", hasPrior: true, deltaFiles: 0, maxDelta: 25, want: ScopeFull, wantReason: "prior head unreachable"},
 		{name: "small delta", hasPrior: true, priorFetched: true, deltaFiles: 3, maxDelta: 25, want: ScopeIncremental},
-		{name: "nothing changed", hasPrior: true, priorFetched: true, deltaFiles: 0, maxDelta: 25, want: ScopeIncremental},
+		{
+			name: "nothing of the change moved", hasPrior: true, priorFetched: true, deltaFiles: 0, maxDelta: 25,
+			want: ScopeFull, wantReason: "the change is as the last review saw it",
+		},
 		{
 			name: "re-run at the reviewed head", hasPrior: true, sameHead: true, priorFetched: true, deltaFiles: 0, maxDelta: 25,
 			want: ScopeFull, wantReason: "re-run at the reviewed head",

@@ -126,10 +126,13 @@ type Spec struct {
 	CloneURL string `json:"cloneUrl"`
 	// Head is the commit under review or to index. Base is the merge-base
 	// for a review and the previously indexed commit for an incremental
-	// index. PriorHead is the head of the last completed review.
-	Head      string `json:"head"`
-	Base      string `json:"base,omitempty"`
-	PriorHead string `json:"priorHead,omitempty"`
+	// index. PriorHead is the head of the last completed review, and
+	// PriorChanged the paths the change touched there, so the delta since
+	// is kept to the change's own paths under a rebase.
+	Head         string   `json:"head"`
+	Base         string   `json:"base,omitempty"`
+	PriorHead    string   `json:"priorHead,omitempty"`
+	PriorChanged []string `json:"priorChanged,omitempty"`
 	// Ignore globs, the admin's and .kritika.yaml's, are skipped by the
 	// context stages, and a review whose every changed path matches one is
 	// skipped.

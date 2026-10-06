@@ -77,7 +77,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return err
 	}
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{
-		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead,
+		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead, PriorChanged: p.PriorChanged,
 	})
 	if err != nil {
 		return err
