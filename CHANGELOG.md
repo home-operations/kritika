@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.31](https://github.com/home-operations/kritika/compare/0.0.30...0.0.31) (2026-10-06)
+
+
+### Features
+
+* **egress:** let "*" in egress.allowHosts allow every host ([#558](https://github.com/home-operations/kritika/issues/558)) ([8672009](https://github.com/home-operations/kritika/commit/867200959c1d8a9b796fd6ac9483a8c5d91f2f79))
+* **runner:** mark the run tool's checkout as a repository with the clone URL as origin ([#559](https://github.com/home-operations/kritika/issues/559)) ([c8ba64b](https://github.com/home-operations/kritika/commit/c8ba64b5710358e12f2e3487a66f26a3911f5494))
+
 ## [0.0.30](https://github.com/home-operations/kritika/compare/0.0.29...0.0.30) (2026-10-06)
 
 
