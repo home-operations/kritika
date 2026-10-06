@@ -98,6 +98,9 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	default:
 		m.drop("confidence.threshold", strconv.Itoa(*th), "0 to "+strconv.Itoa(configfile.MaxConfidence))
 	}
+	if f.Confidence.Gate != nil {
+		m.Confidence.Gate = *f.Confidence.Gate
+	}
 	switch risk := f.Confidence.Risk; {
 	case risk == "":
 	case risk.Within(op.Confidence.Risk):

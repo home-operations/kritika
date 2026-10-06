@@ -178,6 +178,9 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Confidence.Threshold != nil {
 		s.Confidence.Threshold = *o.Confidence.Threshold
 	}
+	if o.Confidence.Gate != nil {
+		s.Confidence.Gate = *o.Confidence.Gate
+	}
 	if o.Confidence.Risk != nil {
 		s.Confidence.Risk = *o.Confidence.Risk
 	}

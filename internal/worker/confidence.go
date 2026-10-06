@@ -136,20 +136,23 @@ func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse) {
 }
 
 // verdict is the commit status of a published review with that many
-// findings: a success saying so, unless the repository asks for a
-// confidence score, when the score decides, and a review left unscored is
-// an error rather than a pass.
+// findings: a success saying so, with the confidence score where the
+// repository asks for one. Where it also gates on the score, the score
+// decides, and a review left unscored is an error rather than a pass.
 func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 	desc := "no findings"
 	if findings > 0 {
 		desc = fmt.Sprintf("%d finding(s)", findings)
 	}
+	gate := p.settings.Confidence.Gate
 	switch c := p.confidence; {
-	case p.unscored:
+	case p.unscored && gate:
 		return forge.StatusError, "confidence not scored, " + desc
+	case p.unscored:
+		return forge.StatusSuccess, "confidence not scored, " + desc
 	case c == nil:
 		return forge.StatusSuccess, desc
-	case c.Passed():
+	case c.Passed() || !gate:
 		return forge.StatusSuccess, fmt.Sprintf("confidence %d/%d, %s", c.Score, review.MaxConfidence, desc)
 	default:
 		return forge.StatusFailure, fmt.Sprintf("confidence %d/%d, below %d, %s", c.Score, review.MaxConfidence, c.Threshold, desc)
@@ -187,14 +190,14 @@ func carriedConfidence(
 }
 
 // skipVerdict is the commit status of a review skipped for reason: a
-// success saying so, unless the skip carries the score its unchanged patch
-// got, which then decides as it did.
-func skipVerdict(carried *review.Confidence, reason string) (forge.StatusState, string) {
+// success saying so, with the score its unchanged patch carries, which
+// decides as it did where the repository gates on it.
+func skipVerdict(carried *review.Confidence, gate bool, reason string) (forge.StatusState, string) {
 	desc := "skipped (" + reason + ")"
 	switch {
 	case carried == nil:
 		return forge.StatusSuccess, desc
-	case carried.Passed():
+	case carried.Passed() || !gate:
 		return forge.StatusSuccess, fmt.Sprintf("confidence %d/%d, %s", carried.Score, review.MaxConfidence, desc)
 	default:
 		return forge.StatusFailure, fmt.Sprintf("confidence %d/%d, below %d, %s", carried.Score, review.MaxConfidence, carried.Threshold, desc)

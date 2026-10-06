@@ -250,7 +250,7 @@ export interface RepoSettings {
   maxAutoReviews: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
-  confidence: { model: string; threshold: number; risk: Risk; instructions: string };
+  confidence: { model: string; threshold: number; gate: boolean; risk: Risk; instructions: string };
   agent: AgentLimits;
   limits: Limits;
 }

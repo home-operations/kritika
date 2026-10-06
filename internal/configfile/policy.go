@@ -33,20 +33,24 @@ var (
 
 // The keys validation names in its errors.
 const (
-	keySteps       = "agent.steps"
-	keyOutput      = "agent.output"
-	keyIncremental = "review.incremental"
+	keySteps  = "agent.steps"
+	keyOutput = "agent.output"
 )
 
 // The keys the environment sets as well (instance.go).
 const (
-	keyModel     = "review.model"
-	keyFallback  = "review.fallback"
-	keyFeedback  = "review.feedback"
-	keyScorer    = "confidence.model"
-	keyThreshold = "confidence.threshold"
-	keyRisk      = "confidence.risk"
-	keySettle    = "trigger.settle"
+	keyModel       = "review.model"
+	keyFallback    = "review.fallback"
+	keyFeedback    = "review.feedback"
+	keyApprove     = "review.approve"
+	keyFixes       = "review.fixes"
+	keyIncremental = "review.incremental"
+	keyScorer      = "confidence.model"
+	keyThreshold   = "confidence.threshold"
+	keyGate        = "confidence.gate"
+	keyRisk        = "confidence.risk"
+	keySettle      = "trigger.settle"
+	keyLimit       = "trigger.limit"
 )
 
 // Policies is the table.
@@ -55,17 +59,18 @@ var Policies = []Policy{
 	{Key: keyModel, Scopes: everyScope},
 	{Key: keyFallback, Scopes: everyScope},
 	{Key: keyFeedback, Scopes: everyScope},
-	{Key: "review.fixes", Scopes: everyScope},
-	{Key: "review.approve", Scopes: everyScope},
+	{Key: keyFixes, Scopes: everyScope},
+	{Key: keyApprove, Scopes: everyScope},
 	{Key: keyIncremental, Scopes: everyScope},
 	{Key: keyScorer, Scopes: everyScope},
 	{Key: keyThreshold, Scopes: everyScope},
+	{Key: keyGate, Scopes: everyScope},
 	{Key: keyRisk, Scopes: everyScope},
 	{Key: "confidence.instructions", Scopes: everyScope},
 	{Key: "trigger.include", Scopes: everyScope},
 	{Key: "trigger.exclude", Scopes: everyScope},
 	{Key: keySettle, Scopes: everyScope},
-	{Key: "trigger.limit", Scopes: everyScope},
+	{Key: keyLimit, Scopes: everyScope},
 	{Key: "comments", Scopes: everyScope},
 	{Key: "rules", Scopes: everyScope},
 	{Key: "context", Scopes: everyScope},

@@ -298,8 +298,10 @@ type earlyEnd struct {
 	// for one without a name or a review no inclusion let in.
 	filter string
 	// carried is the confidence an unchanged patch keeps from its last
-	// review, nil when the repository asks for no score.
+	// review, nil when the repository asks for no score, and gate whether
+	// the repository has it fail the status.
 	carried *review.Confidence
+	gate    bool
 	started time.Time
 	logger  *slog.Logger
 	// client reports the end on the head commit, under owner/repo; nil
@@ -346,7 +348,7 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 		if e.skip != "" {
 			reason = skipDescription(e.skip, e.filter)
 		}
-		state, desc := skipVerdict(e.carried, reason)
+		state, desc := skipVerdict(e.carried, e.gate, reason)
 		return state, "kritika: " + desc
 	}
 	return "", ""
@@ -368,6 +370,7 @@ func (w *Review) skipUnchangedBot(
 		return patch, false, nil
 	}
 	var skippable bool
+	e.gate = settings.Confidence.Gate
 	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		var err error
 		e.carried, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", settings.Confidence)

@@ -47,8 +47,9 @@ strategy:
 # (a Secret key). The variables that stand in for the configuration
 # file's sections (auth*, apps*, providers*, embedding*, and the review,
 # confidence and trigger settings reviewModel, reviewFallback,
-# reviewFeedback, confidenceModel, confidenceThreshold, confidenceRisk
-# and triggerSettle) win over the file. The variables the chart derives from its other values
+# reviewFeedback, reviewApprove, reviewFixes, reviewIncremental,
+# confidenceModel, confidenceThreshold, confidenceGate, confidenceRisk,
+# triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
 # refuses them, as it refuses a KRITIKA_* variable under `env`.
@@ -187,17 +188,42 @@ config:
   reviewFallback: ""
   # -- How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.
   reviewFeedback: ""
+  # @schema
+  # type: [boolean, string]
+  # @schema
+  # -- `true` has a review that finds nothing blocking or important approve the pull request, or, with a confidence model, one whose score and risk allow it, and dismisses that approval when a later review's do not; off unless set.
+  reviewApprove: ""
+  # @schema
+  # type: [boolean, string]
+  # @schema
+  # -- `true` requires a suggested fix on every finding; off unless set.
+  reviewFixes: ""
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set.
+  reviewIncremental: ""
   # -- The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set.
   confidenceModel: ""
   # @schema
   # type: [integer, string]
   # @schema
-  # -- The score a pull request must reach for its commit status to pass, 0 to 5; 5 unless set.
+  # -- The score a pull request must reach to be approved and, with the gate, for its commit status to pass, 0 to 5; 5 unless set.
   confidenceThreshold: ""
+  # @schema
+  # type: [boolean, string]
+  # @schema
+  # -- `true` fails the commit status under the threshold, so it can be a required check; off unless set, when the status reports the score and passes.
+  confidenceGate: ""
   # -- The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set.
   confidenceRisk: ""
   # -- How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set.
   triggerSettle: ""
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- How many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set.
+  triggerLimit: ""
   # -- The embedding model, `<provider>/<model>`; set it to index each repository for similar code.
   embeddingModel: ""
   # @schema

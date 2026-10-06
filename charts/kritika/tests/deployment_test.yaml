@@ -108,11 +108,23 @@ tests:
         reviewWorkers: 4
         runnerRuntimeClass: gvisor
         confidenceThreshold: 0
+        confidenceGate: false
+        reviewApprove: true
+        triggerLimit: 0
         authOidcClientSecret: {}
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_CONFIDENCE_THRESHOLD, value: "0" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_CONFIDENCE_GATE, value: "false" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_REVIEW_APPROVE, value: "true" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_TRIGGER_LIMIT, value: "0" }
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
