@@ -766,7 +766,9 @@ test.describe('rules', () => {
 test('pull detail leads with its latest review, then the history and follow-ups with a transcript', async ({ page }) => {
   // A newer review that was skipped is the header's to tell of: the latest
   // review and the history are of the reviews that were not.
-  const first = g.pullDetail.reviews[0]!;
+  const golden = g.pullDetail.reviews[0]!;
+  // The scorer's reason is prose: a reference to another repository comes linked.
+  const first = { ...golden, confidence: { ...golden.confidence!, reason: `${golden.confidence!.reason} See [up/stream#12](https://redirect.github.com/up/stream/issues/12).` } };
   await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [{ ...first, id: 'rev-2', status: 'skipped', skipReason: 'filtered' }, first] }], ...g.defaultApi()]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
@@ -774,6 +776,10 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   await expect(page.locator('.page-head .meta-line')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
   const latest = page.getByRole('region', { name: 'Latest review' });
   await expect(latest).toContainText(g.reviewDetail.summary!.take);
+  const c = golden.confidence!;
+  await expect(latest.locator('.confidence-line')).toHaveText(`Confidence ${c.score}/5, below the ${c.threshold} this repository asks for\u00a0· ${c.risk} risk: ${c.reason} See up/stream#12.`);
+  await expect(latest.locator('.confidence-line').getByRole('link', { name: 'up/stream#12' })).toHaveAttribute('href', 'https://redirect.github.com/up/stream/issues/12');
+  await expect(latest.locator('.confidence-line')).toHaveAttribute('title', `scored by ${c.model}`);
   const f = g.reviewDetail.findings[0]!;
   await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line} Thread`]);
   await expect(latest.getByRole('link', { name: 'Thread' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
@@ -814,6 +820,7 @@ test.describe('review', () => {
     await expect(fact('Risk')).toHaveText(r.confidence!.risk);
     await expect(fact('Confidence')).toHaveText(new RegExp(`^${r.confidence!.score}/5\\s\\(below ${r.confidence!.threshold}\\)$`));
     await expect(fact('Model')).toHaveText(r.model);
+    await expect(page.locator('.tab-panel .confidence-line')).toContainText(`${r.confidence!.risk} risk: ${r.confidence!.reason}`);
 
     for (const [tab, text] of [
       ['Timeline', g.reviewDetail.runnerRun!.podName],

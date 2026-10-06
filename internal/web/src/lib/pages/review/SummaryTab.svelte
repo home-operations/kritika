@@ -2,6 +2,7 @@
   import type { ReviewDetail, Severity } from '../../types';
   import { SEVERITIES } from '../../format';
   import Markdown from '../../components/Markdown.svelte';
+  import Confidence from '../../components/Confidence.svelte';
   import FindingCard from './FindingCard.svelte';
 
   import { focusWhenShown } from '../../focus';
@@ -23,6 +24,7 @@
     <header class="panel-head"><h2 id="sum-take">Take</h2></header>
     <div class="panel-body">
       {#if d.summary.headline}<p class="headline">{d.summary.headline}</p>{/if}
+      {#if d.review.confidence}<Confidence c={d.review.confidence} />{/if}
       <Markdown text={d.summary.take} />
     </div>
     {#if d.summary.praise.length}
