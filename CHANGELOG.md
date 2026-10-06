@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.0.27](https://github.com/home-operations/kritika/compare/0.0.26...0.0.27) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** give a rule its conditions as a when list ([#530](https://github.com/home-operations/kritika/issues/530))
+* **config:** let a trigger condition judge the diff ([#529](https://github.com/home-operations/kritika/issues/529))
+* **config:** write the ignore globs at the root ([#528](https://github.com/home-operations/kritika/issues/528))
+* **config:** decide which pull requests are reviewed with include and exclude lists ([#526](https://github.com/home-operations/kritika/issues/526))
+* **config:** always read a repository's agent files ([#521](https://github.com/home-operations/kritika/issues/521))
+* **config:** group the repository settings and drop the defaults wrapper ([#520](https://github.com/home-operations/kritika/issues/520))
+
+### Features
+
+* **config:** always read a repository's agent files ([#521](https://github.com/home-operations/kritika/issues/521)) ([549baf7](https://github.com/home-operations/kritika/commit/549baf75e9837435ad0a6838fede85bf92fc55b1))
+* **config:** decide which pull requests are reviewed with include and exclude lists ([#526](https://github.com/home-operations/kritika/issues/526)) ([407509b](https://github.com/home-operations/kritika/commit/407509bd673b052cfaeb04feebf51f70b7f74352))
+* **config:** give a rule its conditions as a when list ([#530](https://github.com/home-operations/kritika/issues/530)) ([649d768](https://github.com/home-operations/kritika/commit/649d768c1535341e1ebf7602f33f0be87701fac5))
+* **config:** group the repository settings and drop the defaults wrapper ([#520](https://github.com/home-operations/kritika/issues/520)) ([68cb910](https://github.com/home-operations/kritika/commit/68cb9108480068f46d9aed58509954b87ea588c0))
+* **config:** let a trigger condition judge the diff ([#529](https://github.com/home-operations/kritika/issues/529)) ([1537e15](https://github.com/home-operations/kritika/commit/1537e151ba750604f464dc726004a506f12b5f82))
+* **config:** write the ignore globs at the root ([#528](https://github.com/home-operations/kritika/issues/528)) ([342b568](https://github.com/home-operations/kritika/commit/342b568ac75f8ad2a2814a3f71403229d912cb77))
+* **review:** approve on the confidence score and the change's risk ([#525](https://github.com/home-operations/kritika/issues/525)) ([93753b6](https://github.com/home-operations/kritika/commit/93753b65a8ee30f4d1995eee9ded24170c19d360))
+* **review:** offer a review the repository's skills ([#531](https://github.com/home-operations/kritika/issues/531)) ([1e8ec5a](https://github.com/home-operations/kritika/commit/1e8ec5a3d59e72eb1f3e2137fb658275180cf331))
+* **review:** rate a reviewed change's risk ([#524](https://github.com/home-operations/kritika/issues/524)) ([81385ea](https://github.com/home-operations/kritika/commit/81385eafe3b703dd5c0ef9d9ec5ff2342a712c8f))
+* **review:** score a reviewed pull request's confidence ([#523](https://github.com/home-operations/kritika/issues/523)) ([8e70d44](https://github.com/home-operations/kritika/commit/8e70d441514a7232ea6bd8525d28bd62f6301f63))
+
+
+### Bug Fixes
+
+* **gateway:** let the runner outwait the gateway's step budget ([#537](https://github.com/home-operations/kritika/issues/537)) ([b5acfc5](https://github.com/home-operations/kritika/commit/b5acfc53c986124964d148881cd071aac6c80347))
+* **poller:** close the pull requests whose closed event was missed ([#533](https://github.com/home-operations/kritika/issues/533)) ([d90a59a](https://github.com/home-operations/kritika/commit/d90a59a42d4f0eb750e6f9e71e998f1c4e2e21d3))
+
+
+### Code Refactoring
+
+* match error types with errors.AsType ([#540](https://github.com/home-operations/kritika/issues/540)) ([0499729](https://github.com/home-operations/kritika/commit/04997297bf8ddf3fe9a00aac9fa77f28daa5015b))
+* **poller:** look the forge's open pull requests up in a set ([#538](https://github.com/home-operations/kritika/issues/538)) ([0ba310a](https://github.com/home-operations/kritika/commit/0ba310a8e4e32ad0861769d538c62ca42c3d5010))
+
 ## [0.0.26](https://github.com/home-operations/kritika/compare/0.0.25...0.0.26) (2026-10-05)
 
 
