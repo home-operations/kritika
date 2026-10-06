@@ -356,8 +356,18 @@ files live:
 | ---------- | ------------------------------------------------------------------------------------------- |
 | `low`      | documentation, tests, formatting, and small changes with no effect on behavior that matters |
 | `medium`   | ordinary application or business logic                                                      |
-| `high`     | dependency updates, build or runtime configuration, modules much else depends on            |
+| `high`     | build or runtime configuration, modules much else depends on                                |
 | `critical` | authentication, secrets, billing, data migrations, infrastructure, CI, public interfaces    |
+
+A dependency update is rated by what the dependency does and how far its
+version moves, not as a class of its own. A move of the version's first
+non-zero component is a major update: 1.x to 2.x, but also 0.1 to 0.2 and
+0.0.1 to 0.0.2, since a version under 1.0 promises nothing from one such
+step to the next. A major update rates at least `high`, and `critical`
+when the dependency is one the critical row names. A minor or patch update
+rates by the dependency: `low` for an application nothing else depends on,
+`medium` for one that other things do, `high` for a module much else
+depends on or that the critical row names.
 
 `confidence.risk` is the highest risk a change may be rated and still be
 approved, `low` unless set. It bears on approvals alone, never on the commit
@@ -367,8 +377,9 @@ score reaches `confidence.threshold` and its risk is within
 `confidence.risk`, so one threshold decides the check and the approval.
 A bot's unchanged rebase, skipped with the score it carries, has that
 score decide its approval the same way. `confidence.instructions` is plain guidance to the scorer on rating
-risk in your code, such as "Renovate patch bumps of container images are
-low" or "anything under `db/migrations` is critical"; it refines the table
+risk in your code, such as "the media apps under `kubernetes/apps/default`
+are low whatever moves" or "anything under `db/migrations` is critical";
+it refines the table
 above and changes nothing else about the score. It is the admin's alone, so
 a pull request cannot talk its own risk down.
 
