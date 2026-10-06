@@ -124,8 +124,9 @@ skills:
   the admin's, in either direction: a repository turns it on where the
   instance leaves it off. Off unless set.
 - `review.diagram: true`: the summary draws the flow the change adds or
-  alters, a request path, a chain of calls or a state machine, as a
-  Mermaid flowchart or sequence diagram the forge renders. The model
+  alters, a request path, a data flow or a state machine, as a Mermaid
+  flowchart or sequence diagram the forge renders, its nodes plain-language
+  steps rather than function names. The model
   leaves it out when the change has no such flow, as for a version bump
   or a documentation change, and kritika keeps only a flowchart, graph
   or sequence diagram under 4 KiB.

@@ -321,8 +321,8 @@ const (
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
 	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
-		"change adds or alters as the head commit has it, naming the real functions, components or services; at most " +
-		"fifteen nodes or messages, every label holding punctuation quoted. Omit it when the change has no flow worth drawing."
+		"change adds or alters as the head commit has it: each node a short plain-language step, not a function name; " +
+		"at most ten nodes or messages, every label holding punctuation quoted. Omit it when the change has no flow worth drawing."
 	describeCategory = "What kind of problem it is. correctness: wrong behaviour, a bug, a broken contract. " +
 		"security: exposure, injection, secrets, unsafe defaults, data loss. performance: cost in time, memory or calls. " +
 		"reliability: error handling, retries, timeouts, concurrency, resource leaks. maintainability: structure, " +

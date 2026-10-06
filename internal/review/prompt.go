@@ -145,10 +145,15 @@ If nothing is worth flagging, return an empty findings list; the take still desc
 // diagram in the summary.
 const summaryDiagram = `
 
-The summary's diagram is a Mermaid flowchart or sequenceDiagram of the flow the change adds or alters, a request path,
-a chain of calls or a state machine that a reviewer would otherwise trace through several functions or files, drawn
-from the head commit with the real names. Leave it out when there is no such flow, as for a version bump, a rename, a
-configuration value, or documentation or tests alone.`
+The summary's diagram is a Mermaid flowchart or sequenceDiagram of the flow the change adds or alters, as you would
+sketch it on a whiteboard to explain the change: where data or a request comes from, what happens to it and where it
+ends up. Label each node with a short plain-language step, such as "Pods list and watch" or "Sum requests per node";
+a type or component name may sit inside the phrase, but a node is never a bare function name or Type::method. Keep the
+qualifiers that matter, such as a guard, a cache or a retry, in the label. Draw an input from outside the change where
+it feeds the flow, and let paths branch and merge rather than forcing one line. Label an edge only when what passes
+along it is not obvious, and leave out helpers that do not change what flows; four to eight nodes is usually enough.
+Leave it out when there is no such flow, as for a version bump, a rename, a configuration value, or documentation or
+tests alone.`
 
 // agenticSees is what a reviewer that works through read-only tools over
 // the head commit sees, and agenticTools how it uses them and answers, by
