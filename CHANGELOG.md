@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.38](https://github.com/home-operations/kritika/compare/0.0.37...0.0.38) (2026-10-06)
+
+
+### Features
+
+* **review:** react to the pull request while reviewing and once reviewed ([#588](https://github.com/home-operations/kritika/issues/588)) ([73380b9](https://github.com/home-operations/kritika/commit/73380b9ae7583eda2867e9026df2908863a75ed9))
+
 ## [0.0.37](https://github.com/home-operations/kritika/compare/0.0.36...0.0.37) (2026-10-06)
 
 
