@@ -74,11 +74,22 @@ type RenderData struct {
 	// Confidence is the score a second model gave the pull request, nil
 	// when the repository asks for none or the scorer did not answer.
 	Confidence *Confidence
+	// Approval is what became of kritika's approval of the head, nil
+	// where the repository does not have it approve.
+	Approval *Approval
 	// WebURL is the dashboard's origin, without a trailing slash, and
 	// PullURL the pull request's page on it, where an admin can re-run
 	// the review; both "" when the dashboard has no public URL. The
 	// default template then leaves the re-run badge out.
 	WebURL, PullURL string
+}
+
+// Approval is whether the reviewed head stands approved by kritika, and
+// the reason, "" where the summary states it already: an approval a
+// confidence score decided says nothing the score's own line does not.
+type Approval struct {
+	Approved bool
+	Reason   string
 }
 
 // footerSubjectRunes is how much of a commit subject the footer shows.

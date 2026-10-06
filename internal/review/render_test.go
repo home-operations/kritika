@@ -169,6 +169,40 @@ func TestRenderSummaryConfidence(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryApproval: a review that may approve says whether it
+// did, under the confidence line when there is one, with the reason the
+// score's line does not state already; one that may not says nothing.
+func TestRenderSummaryApproval(t *testing.T) {
+	tests := []struct {
+		name       string
+		confidence *Confidence
+		approval   *Approval
+		want       string
+	}{
+		{name: "approved on its findings", approval: &Approval{Approved: true, Reason: "nothing blocking or important found"},
+			want: "1 nit\n\n**Approved**: nothing blocking or important found\n\n## Findings\n"},
+		{name: "approved on its score", confidence: &Confidence{Score: 5, Threshold: 4, Risk: RiskLow, Reason: "Clean."}, approval: &Approval{Approved: true},
+			want: "**Confidence 5/5** · low risk: Clean.\n\n**Approved**\n\n## Findings\n"},
+		{name: "withheld", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
+			approval: &Approval{Reason: "confidence 2/5 is below the threshold of 4"},
+			want:     "**Confidence 2/5**: The nil map write stands.\n\n**Not approved**: confidence 2/5 is below the threshold of 4\n\n## Findings\n"},
+		{name: "not asked to approve", want: "1 nit\n\n## Findings\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := sampleData()
+			data.Confidence, data.Approval = tt.confidence, tt.approval
+			body, notes := RenderSummary(t.Context(), Templates{}, data)
+			if len(notes) != 0 || !strings.Contains(body, tt.want) || strings.Contains(body, "\n\n\n") {
+				t.Fatalf("notes = %v, want %q in:\n%s", notes, tt.want, body)
+			}
+			if tt.approval == nil && strings.Contains(body, "pproved") {
+				t.Fatalf("an approval appears unasked:\n%s", body)
+			}
+		})
+	}
+}
+
 // TestRenderSummaryLinks renders what the worker adds once it knows the
 // forge: commit links, a thread per finding, the last review's findings
 // and the ones off the diff, and no praise for a bot's pull request.
