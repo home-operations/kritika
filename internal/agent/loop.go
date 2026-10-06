@@ -98,8 +98,7 @@ type Run struct {
 	Submit model.ToolDef
 	// Validate, if set, checks a Submit input against the contract beyond
 	// its being JSON. A rejected input goes back to the model as the
-	// tool's error, so it can correct it; on a forced step it ends the
-	// Run as no submit, like invalid JSON.
+	// tool's error, so it can correct it, like invalid JSON.
 	Validate func(input json.RawMessage) error
 	Limits   Limits
 	// OnStep, if set, is called after each step completes.
@@ -114,6 +113,17 @@ const nudgeText = "call submit_review"
 // on. It is told rather than forced through tool_choice, which the newest
 // models reject.
 const submitNowText = "Call submit_review now with the summary and findings you have, and call nothing else."
+
+// forcedRetries is how many more steps a model that was told to submit and
+// did not gets, each told again: a rejected submission goes back with its
+// error, prose and other tool calls with onlySubmitText. The steps spent
+// exploring are worth more than one slip at the end; the token budget
+// bounds the retries where the step cap does not.
+const forcedRetries = 2
+
+// onlySubmitText answers a tool call other than submit_review on a step the
+// model was told to submit on; the tool is not run.
+const onlySubmitText = "agent: only submit_review is available now"
 
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
@@ -155,6 +165,17 @@ func (r Run) Do(ctx context.Context) Result {
 
 	result := Result{ToolCalls: map[string]int{}}
 	nudged := false
+	// forcedSteps counts the steps the model was told to submit on; the
+	// Run ends when the retries after the first are spent.
+	forcedSteps := 0
+	forcedEnd := func(lastStep bool) Result {
+		result.Err = fmt.Sprintf("no valid submit_review in the %d step(s) it was told to submit on", forcedSteps)
+		result.Stop = StopNoSubmit
+		if lastStep {
+			result.Stop = StopMaxSteps
+		}
+		return result
+	}
 
 	for step := 0; ; step++ {
 		if err := ctx.Err(); err != nil {
@@ -168,9 +189,10 @@ func (r Run) Do(ctx context.Context) Result {
 			return result
 		}
 
-		lastStep := step == limits.MaxSteps-1
+		lastStep := step >= limits.MaxSteps-1
 		forced := lastStep || total*10 >= limits.MaxTokens*9
 		if forced {
+			forcedSteps++
 			last := &messages[len(messages)-1]
 			if last.Text != "" {
 				last.Text += "\n\n"
@@ -187,17 +209,7 @@ func (r Run) Do(ctx context.Context) Result {
 		}
 
 		start := time.Now()
-		resp, err := r.Stepper.Step(ctx, req)
-		for _, wait := range stepRetryWaits {
-			if err == nil || !model.Transient(err) {
-				break
-			}
-			select {
-			case <-ctx.Done():
-			case <-time.After(wait):
-				resp, err = r.Stepper.Step(ctx, req)
-			}
-		}
+		resp, err := r.step(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {
 				result.Stop = StopCanceled
@@ -223,16 +235,22 @@ func (r Run) Do(ctx context.Context) Result {
 			event.Duration = time.Since(start)
 			r.reportStep(event)
 
-			if lastStep {
-				result.Stop = StopMaxSteps
-				return result
+			text := cmp.Or(resp.Text, noResponseText)
+			if forced {
+				if forcedSteps > forcedRetries {
+					return forcedEnd(lastStep)
+				}
+				// The next step is told to submit again, in the user
+				// message the loop's head completes.
+				messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
+				messages = append(messages, model.Message{Role: model.RoleUser})
+				continue
 			}
 			if nudged {
 				result.Stop = StopNoSubmit
 				return result
 			}
 			nudged = true
-			text := cmp.Or(resp.Text, noResponseText)
 			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
 			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText})
 			continue
@@ -240,7 +258,7 @@ func (r Run) Do(ctx context.Context) Result {
 
 		var toolResults []model.ToolResult
 		var submitted json.RawMessage
-		var submitFailed, truncated bool
+		var truncated bool
 
 		for _, call := range resp.ToolCalls {
 			event.Tools = append(event.Tools, call.Name)
@@ -255,10 +273,6 @@ func (r Run) Do(ctx context.Context) Result {
 						truncated = true
 						break
 					}
-					if forced {
-						submitFailed = true
-						break
-					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
 						Content: textcut.Truncate(fmt.Sprintf("agent: submit_review: %s", err), limits.MaxToolOutputBytes),
@@ -269,25 +283,15 @@ func (r Run) Do(ctx context.Context) Result {
 				break
 			}
 
-			tool, ok := toolsByName[call.Name]
-			if !ok {
-				toolResults = append(toolResults, model.ToolResult{
-					CallID: call.ID, IsError: true,
-					Content: textcut.Truncate(fmt.Sprintf("agent: unknown tool %q", call.Name), limits.MaxToolOutputBytes),
-				})
+			if forced {
+				toolResults = append(toolResults, model.ToolResult{CallID: call.ID, IsError: true, Content: onlySubmitText})
 				continue
 			}
-			out, err := tool.Run(ctx, call.Input)
-			if err != nil {
-				toolResults = append(toolResults, model.ToolResult{
-					CallID: call.ID, IsError: true,
-					Content: textcut.Truncate(err.Error(), limits.MaxToolOutputBytes),
-				})
-				continue
+			res := runTool(ctx, toolsByName[call.Name], call, limits.MaxToolOutputBytes)
+			if !res.IsError {
+				event.OutputBytes += len(res.Content)
 			}
-			out = textcut.Truncate(out, limits.MaxToolOutputBytes)
-			event.OutputBytes += len(out)
-			toolResults = append(toolResults, model.ToolResult{CallID: call.ID, Content: out})
+			toolResults = append(toolResults, res)
 		}
 
 		event.Duration = time.Since(start)
@@ -303,18 +307,46 @@ func (r Run) Do(ctx context.Context) Result {
 			result.Err = fmt.Sprintf("submit_review was cut off at the %d output tokens a step may produce", limits.MaxOutputTokensPerStep)
 			return result
 		}
-		if submitFailed {
-			result.Stop = StopNoSubmit
-			return result
-		}
-		if lastStep {
-			result.Stop = StopMaxSteps
-			return result
+		if forced && forcedSteps > forcedRetries {
+			return forcedEnd(lastStep)
 		}
 
 		messages = append(messages, model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls})
 		messages = append(messages, model.Message{Role: model.RoleUser, ToolResults: toolResults})
 	}
+}
+
+// step sends req, again after each of stepRetryWaits while the failure is
+// transient and ctx lives.
+func (r Run) step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+	resp, err := r.Stepper.Step(ctx, req)
+	for _, wait := range stepRetryWaits {
+		if err == nil || !model.Transient(err) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(wait):
+			resp, err = r.Stepper.Step(ctx, req)
+		}
+	}
+	return resp, err
+}
+
+// runTool runs call on tool, nil for a tool the loop does not offer, and
+// returns its result for the model, cut to maxBytes.
+func runTool(ctx context.Context, tool Tool, call model.ToolCall, maxBytes int) model.ToolResult {
+	if tool == nil {
+		return model.ToolResult{
+			CallID: call.ID, IsError: true,
+			Content: textcut.Truncate(fmt.Sprintf("agent: unknown tool %q", call.Name), maxBytes),
+		}
+	}
+	out, err := tool.Run(ctx, call.Input)
+	if err != nil {
+		return model.ToolResult{CallID: call.ID, IsError: true, Content: textcut.Truncate(err.Error(), maxBytes)}
+	}
+	return model.ToolResult{CallID: call.ID, Content: textcut.Truncate(out, maxBytes)}
 }
 
 func (r Run) reportStep(e StepEvent) {

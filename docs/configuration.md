@@ -436,8 +436,13 @@ own:
 - `agent`: a review's `steps`, the bytes of `output` one tool call may
   return, its `tokens`,
   `timeout`, the `commands` its run tool may execute, and their
-  `commandTimeout`. `steps: 1` is the cheapest review: one call, which
-  must submit the findings, over the same prompt. The runner's `-tools` image has `gh`, `curl`,
+  `commandTimeout`. The last step is told to submit, as is any step once
+  the review has spent nine tenths of its `tokens`; a step told to submit
+  that does not, because the submission was rejected, it answered in
+  prose or it called another tool, which is refused, is told again, up to
+  twice, so the steps spent reading are not lost to one slip at the end.
+  `steps: 1` is the cheapest review: one call, which must submit the
+  findings, over the same prompt. The runner's `-tools` image has `gh`, `curl`,
   `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
   review and public repositories. The run tool refuses the arguments that
