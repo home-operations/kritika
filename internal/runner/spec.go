@@ -93,6 +93,9 @@ type Prompt struct {
 	// MaxDeltaFiles is the incremental re-review threshold.
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`
+	// PriorDiagram is the last completed review's summary diagram, which a
+	// re-review is asked to keep or update; "" when Diagram is off.
+	PriorDiagram string `json:"priorDiagram,omitempty"`
 	// Dismissed are the findings maintainers dismissed on the pull
 	// request, which the review is told not to raise again.
 	Dismissed []review.DismissedFinding `json:"dismissed,omitempty"`

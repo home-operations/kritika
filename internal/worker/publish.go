@@ -101,6 +101,9 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed); dismissed > 0 {
 		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
 	}
+	if p.parse.Diagram {
+		res.Summary.Diagram = carriedDiagram(res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
+	}
 	if note := p.judge(job, res, diff); note != "" {
 		notes = append(notes, note)
 	}

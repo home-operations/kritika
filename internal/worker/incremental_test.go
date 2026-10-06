@@ -47,3 +47,24 @@ func TestAlreadyInline(t *testing.T) {
 		})
 	}
 }
+
+func TestCarriedDiagram(t *testing.T) {
+	const prior, drawn = "flowchart LR\n  A --> B", "flowchart LR\n  A --> C"
+	tests := []struct {
+		name               string
+		drawn, prior, want string
+		incremental        bool
+	}{
+		{name: "a re-review's dropped diagram is carried", prior: prior, incremental: true, want: prior},
+		{name: "a re-review's own diagram stands", drawn: drawn, prior: prior, incremental: true, want: drawn},
+		{name: "a full review's answer stands", prior: prior},
+		{name: "nothing to carry", incremental: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := carriedDiagram(tt.drawn, tt.prior, tt.incremental); got != tt.want {
+				t.Fatalf("carriedDiagram = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

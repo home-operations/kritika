@@ -158,3 +158,45 @@ func TestReReviewLeadOnlyWithADelta(t *testing.T) {
 		t.Fatalf("lead missing or after the delta heading:\n%s", msg)
 	}
 }
+
+// TestBuildIncrementalPriorDiagram checks that a re-review is shown the
+// last review's diagram to keep or update, and only when there is one that
+// fits.
+func TestBuildIncrementalPriorDiagram(t *testing.T) {
+	const (
+		heading = "The last review's summary diagram, of the change at 0123456"
+		src     = "flowchart LR\n  A[Request] --> B[Handler]"
+	)
+	tests := []struct {
+		name    string
+		diagram string
+		budget  int
+		want    bool
+	}{
+		{name: "shown", diagram: src, want: true},
+		{name: "none drawn", diagram: ""},
+		{name: "does not fit", diagram: src + strings.Repeat("\n  B --> C[Step]", 1000), budget: 2000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := incrementalInput()
+			in.Incremental.PriorDiagram, in.BudgetTokens = tt.diagram, tt.budget
+			msg, _, _ := Build(in)
+			if got := strings.Contains(msg, heading); got != tt.want {
+				t.Fatalf("diagram section shown = %v, want %v:\n%s", got, tt.want, msg)
+			}
+			if !tt.want {
+				return
+			}
+			for _, want := range []string{src, "Return this diagram exactly as it is", "or updated when the new commits alter"} {
+				if !strings.Contains(msg, want) {
+					t.Fatalf("missing %q in:\n%s", want, msg)
+				}
+			}
+			if priorAt, diagramAt, contextAt := strings.Index(msg, priorHeading), strings.Index(msg, heading),
+				strings.Index(msg, "Context (not part"); priorAt >= diagramAt || diagramAt >= contextAt {
+				t.Fatalf("want prior findings, diagram, context in that order:\n%s", msg)
+			}
+		})
+	}
+}

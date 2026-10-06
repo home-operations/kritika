@@ -53,10 +53,16 @@ func TestAgentPrompt(t *testing.T) {
 		strict  bool
 		focused bool
 		diagram bool
+		// priorDiagram is the last review's diagram the spec carries.
+		priorDiagram string
 	}{
 		{name: "strictness", scope: review.ScopeFull, strict: true},
 		{name: "a diagram asked for is in the prompt", scope: review.ScopeFull, diagram: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
+		{
+			name: "incremental shows the prior diagram to keep or update", scope: review.ScopeIncremental, diagram: true,
+			priorDiagram: "flowchart LR\n  A[Request] --> B[Handler]",
+		},
 		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 		{
 			name: "a rule scoped to paths the change does not touch is left out", scope: review.ScopeFull,
@@ -74,6 +80,7 @@ func TestAgentPrompt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Diagram, s.Prompt.Rules = tt.strict, tt.focused, tt.diagram, tt.rules
+			s.Prompt.PriorDiagram = tt.priorDiagram
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
@@ -90,7 +97,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			var inc *review.IncrementalInput
 			if tt.scope == review.ScopeIncremental {
-				inc = &review.IncrementalInput{PriorHeadSHA: shaB, DeltaDiff: agentDiff, Prior: s.Prompt.Prior}
+				inc = &review.IncrementalInput{PriorHeadSHA: shaB, DeltaDiff: agentDiff, Prior: s.Prompt.Prior, PriorDiagram: tt.priorDiagram}
 			}
 			want, _, _ := review.Build(review.Input{
 				Repository: "acme/widgets", Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main",
@@ -101,6 +108,9 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			if strict != tt.strict {
 				t.Fatalf("strict = %v, want %v", strict, tt.strict)
+			}
+			if tt.priorDiagram != "" && !strings.Contains(user, tt.priorDiagram) {
+				t.Fatalf("incremental prompt lacks the prior diagram:\n%s", user)
 			}
 			if tt.scope == review.ScopeIncremental && !strings.Contains(user, "earlier finding") {
 				t.Fatalf("incremental prompt lacks the prior findings:\n%s", user)

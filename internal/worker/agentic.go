@@ -137,6 +137,9 @@ func (w *Review) agentPrompt(
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Focused(), Diagram: eff.Review.Diagram,
 		MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings), Dismissed: dismissedFindings(prior.dismissed),
 	}
+	if eff.Review.Diagram {
+		p.PriorDiagram = prior.diagram
+	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
 		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
