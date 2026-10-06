@@ -110,7 +110,7 @@ func TestRenderSummaryDiagram(t *testing.T) {
 	d.Result.Summary.Diagram = "flowchart TD\n  A --> B"
 	body, _ = RenderSummary(t.Context(), Templates{}, d)
 	want := "Solid change with one real bug.\n\n<details open>\n<summary>Flow</summary>\n\n" +
-		"```mermaid\nflowchart TD\n  A --> B\n```\n\n</details>\n\n**What's good**\n"
+		"```mermaid\n%%{init: {'theme': 'neutral'}}%%\nflowchart TD\n  A --> B\n```\n\n</details>\n\n**What's good**\n"
 	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
 		t.Fatalf("missing %q in:\n%s", want, body)
 	}
