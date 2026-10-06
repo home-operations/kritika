@@ -650,7 +650,7 @@ type Account struct {
 
 // Egress is what runner pods may reach through the worker's gateway beyond
 // the forges the connections talk to, which are always allowed. Hosts are
-// exact, or a suffix with a leading "*."; the gateway
+// exact, a suffix with a leading "*.", or "*" for every host; the gateway
 // tunnels TLS to port 443 only. A credential is the token the gateway adds,
 // as a bearer, to a plain http:// request a runner makes to that host, so
 // the runner can use an API at a token's rate limit without holding it.

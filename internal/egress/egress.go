@@ -25,8 +25,9 @@ import (
 // Rules is what the proxy allows and adds.
 type Rules struct {
 	// Hosts are allowed destinations, lowercase, with a leading "*." for a
-	// suffix match. The port is not part of a rule: CONNECT is allowed to
-	// 443 only, and an upgraded request always goes to 443.
+	// suffix match; "*" alone allows every host. The port is not part of a
+	// rule: CONNECT is allowed to 443 only, and an upgraded request always
+	// goes to 443.
 	Hosts []string
 	// Credentials map a host to the Authorization header value an
 	// upgraded request to it carries.
@@ -36,8 +37,13 @@ type Rules struct {
 // Allows reports whether host, without a port, matches a rule.
 func (r Rules) Allows(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if host == "" {
+		return false
+	}
 	for _, rule := range r.Hosts {
 		switch {
+		case rule == "*":
+			return true
 		case strings.HasPrefix(rule, "*."):
 			if strings.HasSuffix(host, rule[1:]) && len(host) > len(rule)-1 {
 				return true

@@ -17,7 +17,8 @@ const (
 )
 
 // validateEgress checks the allowlist entries are bare hostnames and each
-// credential names a host that is allowed, explicitly or implicitly.
+// credential names one host that is allowed, explicitly or implicitly; the
+// gateway looks a credential up by exact host, so a pattern would never apply.
 func (f *File) validateEgress() error {
 	for i, h := range f.Egress.AllowHosts {
 		if err := checkHost(h); err != nil {
@@ -28,6 +29,9 @@ func (f *File) validateEgress() error {
 	for _, host := range slices.Sorted(maps.Keys(f.Egress.credentials)) {
 		if err := checkHost(host); err != nil {
 			return fmt.Errorf("configfile: egress.credentials.%s: %w", host, err)
+		}
+		if strings.HasPrefix(host, "*") {
+			return fmt.Errorf("configfile: egress.credentials.%s: a credential names one host, not a pattern", host)
 		}
 		if !rules.Allows(host) {
 			return fmt.Errorf("configfile: egress.credentials.%s: host is not in egress.allowHosts", host)
@@ -40,11 +44,14 @@ func (f *File) validateEgress() error {
 }
 
 // checkHost accepts a lowercase hostname, optionally with a leading "*.",
-// and nothing else: no scheme, port or path.
+// or "*" alone, and nothing else: no scheme, port or path.
 func checkHost(h string) error {
+	if h == "*" {
+		return nil
+	}
 	bare := strings.TrimPrefix(h, "*.")
 	if bare == "" || strings.ContainsAny(bare, "/:@ ") || strings.HasPrefix(bare, "*") || h != strings.ToLower(h) {
-		return fmt.Errorf("%q must be a lowercase hostname, optionally prefixed with \"*.\"", h)
+		return fmt.Errorf("%q must be a lowercase hostname, optionally prefixed with \"*.\", or \"*\" for every host", h)
 	}
 	return nil
 }

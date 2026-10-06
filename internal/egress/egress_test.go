@@ -23,6 +23,12 @@ func TestRulesAllows(t *testing.T) {
 			t.Errorf("Allows(%q) = %v, want %v", host, got, want)
 		}
 	}
+	any := Rules{Hosts: []string{"*"}}
+	for host, want := range map[string]bool{"evil.example": true, "ghcr.io.": true, "": false} {
+		if got := any.Allows(host); got != want {
+			t.Errorf("any.Allows(%q) = %v, want %v", host, got, want)
+		}
+	}
 }
 
 // upstream is a TLS server the proxy reaches; the proxy's client and dialer
