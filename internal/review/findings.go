@@ -102,10 +102,22 @@ type Summary struct {
 	Headline string   `json:"headline,omitempty"`
 	Take     string   `json:"take"`
 	Praise   []string `json:"praise"`
+	// Diagram is Mermaid source for the flow the change adds or alters,
+	// without fences; "" when the change has no flow worth drawing or the
+	// model's diagram was not one Parse keeps.
+	Diagram string `json:"diagram,omitempty"`
 }
 
 // maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
 const maxPraise = 3
+
+// maxDiagramBytes bounds Summary.Diagram. A diagram over it is dropped
+// rather than cut, since a cut one would not render.
+const maxDiagramBytes = 4 << 10
+
+// diagramKinds are the Mermaid diagram types a summary may draw, by the
+// keyword its source opens with.
+var diagramKinds = []string{"flowchart", "graph", "sequenceDiagram"}
 
 // Finding is one thing the reviewer wants a human to look at, anchored to a
 // line on the head side of the diff, or to the range Line through EndLine.
@@ -252,6 +264,7 @@ const (
 	keyHeadline     = "headline"
 	keyTake         = "take"
 	keyPraise       = "praise"
+	keyDiagram      = "diagram"
 	keyFindings     = "findings"
 	keyPath         = "path"
 	keyLine         = "line"
@@ -304,6 +317,9 @@ const (
 		"the lines, the symbols and the exact change."
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
+	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
+		"change adds or alters as the head commit has it, naming the real functions, components or services; at most " +
+		"fifteen nodes or messages, every label holding punctuation quoted. Omit it when the change has no flow worth drawing."
 	describeCategory = "What kind of problem it is. correctness: wrong behaviour, a bug, a broken contract. " +
 		"security: exposure, injection, secrets, unsafe defaults, data loss. performance: cost in time, memory or calls. " +
 		"reliability: error handling, retries, timeouts, concurrency, resource leaks. maintainability: structure, " +
@@ -348,6 +364,7 @@ func contractSchema(requireFix bool) json.RawMessage {
 						Items:       &jsonSchema{Type: schemaString},
 						MaxItems:    maxPraise,
 					},
+					keyDiagram: {Type: schemaString, Description: describeDiagram},
 				},
 				Required: []string{keyHeadline, keyTake, keyPraise},
 			},
@@ -430,6 +447,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 	}
 	res.Summary.Praise = praise
+	res.Summary.Diagram = diagram(res.Summary.Diagram)
 	kept := make([]Finding, 0, len(res.Findings))
 	var dropped []Dropped
 	for _, f := range res.Findings {
@@ -524,6 +542,22 @@ func stripFences(code string) string {
 		}
 	}
 	return strings.Trim(strings.Join(kept, "\n"), "\n")
+}
+
+// diagram is the model's Mermaid source without its fences, or "" when it
+// does not open with one of diagramKinds or is over maxDiagramBytes: the
+// forge would show a render error, or a diagram too big to read, in its
+// place.
+func diagram(src string) string {
+	src = stripFences(strings.TrimSpace(src))
+	if len(src) > maxDiagramBytes {
+		return ""
+	}
+	first, _, _ := strings.Cut(src, "\n")
+	if kind := strings.Fields(first); len(kind) == 0 || !slices.Contains(diagramKinds, kind[0]) {
+		return ""
+	}
+	return src
 }
 
 // Fingerprint identifies a finding across reviews of the same pull request:

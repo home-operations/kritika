@@ -91,7 +91,8 @@ skills:
   `block` actions are refused, so a template cannot read any file or call
   any other template. The summary template's dot is the review (`.Number`,
   `.HeadSHA`, `.HeadURL`, `.Model`, `.AuthorIsBot`, `.Result.Summary.Headline`, `.Result.Summary.Take`,
-  `.Result.Summary.Praise`, `.Result.Findings`,
+  `.Result.Summary.Praise`, `.Result.Summary.Diagram`, Mermaid source for
+  the flow the change adds or alters, "" when it has none, `.Result.Findings`,
   `.Counts.Blocking`/`.Important`/`.Nit`, `.Unanchored`, the findings on
   lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
   `.PriorHeadURL`, `.Prior`, the last review's findings this review did

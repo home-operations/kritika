@@ -559,7 +559,7 @@ func TestSchemas(t *testing.T) {
 // schemas declare, at the summary and the finding level.
 func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
-		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}},
+		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d"},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
 			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
 	})
@@ -588,6 +588,38 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 			!slices.Equal(keys(got.Findings[0]), props(n.Properties["findings"].Items)) {
 			t.Fatalf("%s properties drifted from the JSON tags: %s", name, raw)
 		}
+	}
+}
+
+func TestParseDiagram(t *testing.T) {
+	flow := "flowchart TD\n  A[\"webhook\"] --> B[worker]"
+	tests := []struct {
+		name, diagram, want string
+	}{
+		{"a flowchart is kept, trimmed", "\n" + flow + "\n", flow},
+		{"its fences are dropped", "```mermaid\n" + flow + "\n```", flow},
+		{"a sequence diagram is kept", "sequenceDiagram\n  A->>B: run", "sequenceDiagram\n  A->>B: run"},
+		{"a graph is kept", "graph LR\n  A --> B", "graph LR\n  A --> B"},
+		{"an unsupported kind is dropped", "pie\n  \"a\": 1", ""},
+		{"an init directive is dropped", "%%{init: {}}%%\n" + flow, ""},
+		{"prose is dropped", "The webhook calls the worker.", ""},
+		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", maxDiagramBytes/10), ""},
+		{"none stays none", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := json.Marshal(Result{Summary: Summary{Take: "t", Diagram: tt.diagram}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, _, err := Parse(string(raw), nil, ParseOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Summary.Diagram != tt.want {
+				t.Fatalf("diagram = %q, want %q", res.Summary.Diagram, tt.want)
+			}
+		})
 	}
 }
 

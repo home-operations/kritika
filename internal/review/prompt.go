@@ -127,7 +127,11 @@ it is sound, and mentions a concern only if it is also a finding: what is worth 
 what is not worth a finding is not worth stating. It does not say what the diff cannot show or what you could not
 verify; the reader knows what a diff is. It does not give a verdict, count the findings or say there are none, and
 does not list what you read or how you read it: kritika states the count and lists the sources itself. Praise lists
-at most three specific things done well, and is empty when nothing stands out. Each
+at most three specific things done well, and is empty when nothing stands out. The diagram is a Mermaid flowchart
+or sequenceDiagram of the flow the change adds or alters, a request path, a chain of calls or a state machine that a
+reviewer would otherwise trace through several functions or files, drawn from the head commit with the real names;
+leave it out when there is no such flow, as for a version bump, a rename, a configuration value, or documentation or
+tests alone. Each
 finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
 be fixed before merging, important for something that should be fixed, nit for optional polish. It has a category
 too, what kind of problem it is: correctness, security, performance, reliability, maintainability or tests, as the
