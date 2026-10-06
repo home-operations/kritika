@@ -83,7 +83,7 @@
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
       <p class="muted small panel-body">
-        The environment is this web process's; sign-in, the GitHub Apps and the instance defaults are the configuration
+        The environment is this web process's; sign-in, the GitHub Apps and the instance settings are the configuration
         file's, or its environment's where a variable sets them.
       </p>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">

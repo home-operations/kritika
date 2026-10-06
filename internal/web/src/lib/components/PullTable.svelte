@@ -93,8 +93,6 @@
           <td>
             {#if p.lastReview}
               <ReviewStatusTile status={p.lastReview.status} title="Last review" />
-            {:else if p.fork}
-              <span class="small muted" title="A pull request from a fork is reviewed when a maintainer comments &quot;@&lt;bot&gt; review&quot; on it">fork, reviewed on request</span>
             {:else}
               <span class="small muted">not reviewed</span>
             {/if}

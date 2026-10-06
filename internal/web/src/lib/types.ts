@@ -255,8 +255,8 @@ export interface RepoSettings {
   limits: Limits;
 }
 
-// defaults is the instance spec's defaults, account an account's entry in
-// it, dashboard the instance spec itself.
+// defaults is a setting written at the configuration file's root, account
+// one written in an account's entry.
 export type ConfigSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'repository';
 
 // One instance-wide setting, read-only in the admin console: a secret
@@ -329,8 +329,7 @@ export interface Pull {
   author: string;
   state: 'open' | 'closed';
   draft: boolean;
-  // fork is whether the head is in another repository: such a pull request
-  // is reviewed when a maintainer asks.
+  // fork is whether the head is in another repository.
   fork: boolean;
   merged: boolean;
   // paused is whether its automatic reviews are paused: a push is recorded,
