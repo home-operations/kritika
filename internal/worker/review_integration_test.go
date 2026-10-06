@@ -172,6 +172,10 @@ func (l *localForge) Issue(_ context.Context, _, _ string, number int) (forge.Is
 func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
 func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
 
+func (l *localForge) CommitSubject(context.Context, string, string, string) (string, error) {
+	return "feat(x): the head commit", nil
+}
+
 func (l *localForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1839,7 +1843,9 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	if resolved != 0 {
 		t.Fatalf("%d thread(s) resolved; the earlier finding is still open", resolved)
 	}
-	if !strings.Contains(sticky, "_Incremental review of the changes since [`"+prior[:7]+"`](local://onedr0p/home-ops/commit/"+prior+")._") ||
+	// The footer counts both reviews and names the head by its subject.
+	if !strings.Contains(sticky, "<sub>Reviews (2) · Last reviewed commit: [\"feat(x): the head commit\"](local://onedr0p/home-ops/commit/") ||
+		strings.Contains(sticky, prior[:7]) || strings.Contains(sticky, "Incremental review") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
 		strings.Contains(sticky, "Earlier findings") {
 		t.Fatalf("sticky comment = %q", sticky)

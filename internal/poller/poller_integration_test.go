@@ -267,6 +267,10 @@ func (f *tipForge) ListOpenPullRequests(context.Context, string, string, time.Ti
 	return nil, nil
 }
 
+func (f *tipForge) CommitSubject(context.Context, string, string, string) (string, error) {
+	return "feat(x): the head commit", nil
+}
+
 func (f *tipForge) BranchTip(context.Context, string, string, string) (string, string, error) {
 	f.calls++
 	return f.tip, "main", nil

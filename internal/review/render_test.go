@@ -19,8 +19,25 @@ func sampleData() RenderData {
 			{Path: "README.md", Line: 2, Severity: SeverityNit, Title: "typo", Explanation: "the the"},
 		},
 	}
-	return RenderData{Number: 42, HeadSHA: "0123456789abcdef", Model: "vendor/model-x", Result: res, Counts: res.Counts(),
+	return RenderData{Number: 42, HeadSHA: "0123456789abcdef", Model: "vendor/model-x", Reviews: 1, Result: res, Counts: res.Counts(),
 		Notes: []string{"1 file(s) were omitted from the diff to fit the context budget"}}
+}
+
+func TestFooterSubject(t *testing.T) {
+	for in, want := range map[string]string{
+		"fix(cache): evict stale entries":                                   "fix(cache): evict stale entries",
+		"  feat: trailing  \n\nbody\n":                                      "feat: trailing",
+		"fix: handle ] correctly":                                           "fix: handle \\] correctly",
+		"[x](https://evil.examp) <i>x</i> *b* `c`":                          "\\[x\\](https://evil.examp) \\<i\\>x\\</i\\> \\*b\\* \\`c\\`",
+		"back\\slash_and_under":                                             "back\\\\slash\\_and\\_under",
+		"fix(cache): evict the widget cache when the backing table changes": "fix(cache): evict the widget cache when...",
+		"feat: ünïcödé subject that runs past forty characters for sure":    "feat: ünïcödé subject that runs past for...",
+		"": "",
+	} {
+		if got := FooterSubject(in); got != want {
+			t.Errorf("FooterSubject(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestRenderSummaryRerunBadge(t *testing.T) {
@@ -77,7 +94,8 @@ func TestRenderSummaryDefault(t *testing.T) {
 		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
-		"<sub>Reviewed `0123456` by kritika with vendor/model-x.</sub>",
+		// Without the head's subject the footer names it by hash.
+		"<sub>Reviews (1) · Last reviewed commit: `0123456` · kritika with vendor/model-x</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
@@ -92,9 +110,13 @@ func TestRenderSummaryDefault(t *testing.T) {
 
 	empty := sampleData()
 	empty.Result.Findings, empty.Counts, empty.Notes, empty.Result.Summary.Praise = nil, Counts{}, nil, nil
-	empty.Incremental, empty.PriorHeadSHA = true, "fedcba9876543210"
+	empty.Incremental, empty.PriorHeadSHA, empty.Reviews = true, "fedcba9876543210", 2
+	empty.HeadSubject = FooterSubject("fix(cache): evict the widget cache when the backing table changes")
 	body, _ = RenderSummary(t.Context(), Templates{}, empty)
-	if !strings.Contains(body, "**No findings**\n\n_Incremental review of the changes since `fedcba9`._\n\n### Summary\n\nSolid change") ||
+	// An incremental review says so in the footer alone, with the subject
+	// cut to fit.
+	if !strings.Contains(body, "**No findings**\n\n### Summary\n\nSolid change") || strings.Contains(body, "Incremental review") ||
+		!strings.Contains(body, "<sub>Reviews (2) · Last reviewed commit: \"fix(cache): evict the widget cache when...\" · kritika with vendor/model-x</sub>") ||
 		strings.Contains(body, "_1 file") || strings.Contains(body, "0 findings") || strings.Contains(body, "Findings\n") ||
 		strings.Contains(body, "\n\n\n") {
 		t.Fatalf("empty body:\n%s", body)
@@ -155,6 +177,7 @@ func TestRenderSummaryLinks(t *testing.T) {
 	d.HeadURL, d.AuthorIsBot = "https://forge.example/o/r/commit/0123456789abcdef", true
 	d.Result.Findings[0].ThreadURL = "https://forge.example/o/r/pull/42#r1"
 	d.Incremental, d.PriorHeadSHA, d.PriorHeadURL = true, "fedcba9876543210", "https://forge.example/o/r/commit/fedcba9876543210"
+	d.Reviews, d.HeadSubject = 3, "fix(cache): evict stale entries"
 	d.Prior = []PriorFinding{
 		{Path: "main.go", Line: 9, Severity: SeverityBlocking, Title: "nil map write", Resolved: true,
 			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r2"},
@@ -167,7 +190,6 @@ func TestRenderSummaryLinks(t *testing.T) {
 		t.Fatalf("notes = %v", notes)
 	}
 	for _, want := range []string{
-		"_Incremental review of the changes since [`fedcba9`](https://forge.example/o/r/commit/fedcba9876543210)._",
 		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1)\n",
 		"- **[nit]** `README.md:2` typo\n",
 		"**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
@@ -175,7 +197,7 @@ func TestRenderSummaryLinks(t *testing.T) {
 			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n" +
 			"- **[important]** `util.go:3` unchecked error · resolved\n" +
 			"- **[nit]** `cache.go:5` terse name · dismissed: house style\n\n</details>\n\n### Summary",
-		"<sub>Reviewed [`0123456`](https://forge.example/o/r/commit/0123456789abcdef) by kritika with vendor/model-x.</sub>",
+		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · kritika with vendor/model-x</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)

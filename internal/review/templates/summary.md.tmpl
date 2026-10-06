@@ -16,10 +16,6 @@
 **Confidence {{ .Confidence.Score }}/5**{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ if .Confidence.Reason }}: {{ .Confidence.Reason }}{{ end }}
 
 {{ end -}}
-{{ if and .Incremental .PriorHeadSHA -}}
-_Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .PriorHeadSHA }}`]({{ .PriorHeadURL }}){{ else }}`{{ trunc 7 .PriorHeadSHA }}`{{ end }}._
-
-{{ end -}}
 {{ if or .Result.Findings .Unanchored .Prior -}}
 ## Findings
 
@@ -86,4 +82,4 @@ _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .Pri
 _{{ . }}._
 {{ end -}}
 {{ end }}
-<sub>Reviewed {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }} by kritika with {{ .Model }}.</sub>
+<sub>Reviews ({{ .Reviews }}) · Last reviewed commit: {{ if .HeadURL }}[{{ if .HeadSubject }}"{{ .HeadSubject }}"{{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}]({{ .HeadURL }}){{ else if .HeadSubject }}"{{ .HeadSubject }}"{{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }} · kritika with {{ .Model }}</sub>
