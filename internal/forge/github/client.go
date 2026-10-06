@@ -447,6 +447,24 @@ func (c *Client) Unreact(ctx context.Context, owner, repo string, from forge.Com
 	return nil
 }
 
+// ReactToPullRequest implements forge.Client. A pull request's own
+// reactions are its issue's.
+func (c *Client) ReactToPullRequest(ctx context.Context, owner, repo string, number int, content string) (int64, error) {
+	r, _, err := c.api.Reactions.CreateIssueReaction(ctx, owner, repo, number, content)
+	if err != nil {
+		return 0, fmt.Errorf("github: react to #%d: %w", number, err)
+	}
+	return r.GetID(), nil
+}
+
+// UnreactToPullRequest implements forge.Client.
+func (c *Client) UnreactToPullRequest(ctx context.Context, owner, repo string, number int, id int64) error {
+	if _, err := c.api.Reactions.DeleteIssueReaction(ctx, owner, repo, number, id); err != nil {
+		return fmt.Errorf("github: remove reaction %d from #%d: %w", id, number, err)
+	}
+	return nil
+}
+
 func conversationComment(cm *gh.IssueComment) forge.Comment {
 	return forge.Comment{
 		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: webhook.IsBot(cm.GetUser().GetType(), cm.GetUser().GetLogin()),

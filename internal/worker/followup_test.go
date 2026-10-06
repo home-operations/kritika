@@ -167,7 +167,8 @@ func TestFollowUpDiffBase(t *testing.T) {
 	}
 }
 
-// reactForge records the reactions the bot leaves and takes off.
+// reactForge records the reactions the bot leaves on comments and takes
+// off.
 type reactForge struct {
 	forge.Client
 	reactErr error
@@ -183,46 +184,21 @@ func (f *reactForge) React(_ context.Context, _, _ string, to forge.Comment, con
 	return to.ID + 1, nil
 }
 
-func (f *reactForge) Unreact(ctx context.Context, _, _ string, _ forge.Comment, id int64) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+func (f *reactForge) Unreact(_ context.Context, _, _ string, _ forge.Comment, id int64) error {
 	f.removed = append(f.removed, id)
 	return nil
 }
 
-func TestFollowUpThinking(t *testing.T) {
+// TestFollowUpUnmark: a retried attempt that finds the reply up ends the
+// marks a killed one left, as answered.
+func TestFollowUpUnmark(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
-	t.Run("the mention is marked until done, even once the job has ended", func(t *testing.T) {
+	for attempt, want := range map[int][]string{1: nil, 2: {forge.ReactionEyes, forge.ReactionDone}} {
 		client := &reactForge{}
-		f := &followUp{client: client, comment: forge.Comment{ID: 7}, logger: logger}
-		ctx, cancel := context.WithCancel(t.Context())
-		done := f.thinking(ctx)
-		if !slices.Equal(client.reacted, []string{forge.ReactionEyes}) || len(client.removed) != 0 {
-			t.Fatalf("reacted = %v, removed = %v; want the eyes left on", client.reacted, client.removed)
+		f := &followUp{client: client, comment: forge.Comment{ID: 7}, logger: logger, attempt: attempt}
+		f.unmark(t.Context())
+		if !slices.Equal(client.reacted, want) || (attempt > 1) != slices.Equal(client.removed, []int64{8}) {
+			t.Fatalf("attempt %d: reacted %v, removed %v", attempt, client.reacted, client.removed)
 		}
-		cancel()
-		done()
-		if !slices.Equal(client.removed, []int64{8}) {
-			t.Fatalf("removed = %v, want the reaction taken off", client.removed)
-		}
-	})
-	t.Run("a retried attempt takes off what a killed one left", func(t *testing.T) {
-		for attempt, want := range map[int][]int64{1: nil, 2: {8}} {
-			client := &reactForge{}
-			f := &followUp{client: client, comment: forge.Comment{ID: 7}, logger: logger, attempt: attempt}
-			f.unmark(t.Context())
-			if !slices.Equal(client.removed, want) {
-				t.Fatalf("attempt %d: removed = %v, want %v", attempt, client.removed, want)
-			}
-		}
-	})
-	t.Run("a refused reaction leaves nothing to take off", func(t *testing.T) {
-		client := &reactForge{reactErr: errors.New("Resource not accessible by integration")}
-		f := &followUp{client: client, comment: forge.Comment{ID: 7}, logger: logger}
-		f.thinking(t.Context())()
-		if len(client.removed) != 0 {
-			t.Fatalf("removed = %v, want nothing", client.removed)
-		}
-	})
+	}
 }

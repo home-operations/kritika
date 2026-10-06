@@ -99,6 +99,9 @@ type localForge struct {
 	// reacted every comment it has reacted to, in order.
 	reactions map[int64]string
 	reacted   []int64
+	// pullReactions are the bot's reactions on each pull request, by
+	// number and content.
+	pullReactions map[int]map[string]bool
 	// publishing, when set, runs once as a review writes its sticky
 	// comment, the first thing publishing does.
 	publishing func()
@@ -336,6 +339,39 @@ func (l *localForge) Unreact(_ context.Context, _, _ string, from forge.Comment,
 	}
 	delete(l.reactions, from.ID)
 	return nil
+}
+
+func (l *localForge) ReactToPullRequest(_ context.Context, _, _ string, number int, content string) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.pullReactions == nil {
+		l.pullReactions = map[int]map[string]bool{}
+	}
+	if l.pullReactions[number] == nil {
+		l.pullReactions[number] = map[string]bool{}
+	}
+	l.pullReactions[number][content] = true
+	return int64(number)*10 + reactionIndex(content), nil
+}
+
+func (l *localForge) UnreactToPullRequest(_ context.Context, _, _ string, number int, id int64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for content, on := range l.pullReactions[number] {
+		if on && id == int64(number)*10+reactionIndex(content) {
+			delete(l.pullReactions[number], content)
+			return nil
+		}
+	}
+	return fmt.Errorf("reaction %d is not on #%d", id, number)
+}
+
+// reactionIndex numbers the reactions the bot leaves, for their fake ids.
+func reactionIndex(content string) int64 {
+	if content == forge.ReactionEyes {
+		return 1
+	}
+	return 2
 }
 
 func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64, _ bool) (bool, error) {
@@ -606,6 +642,14 @@ func checkContextPack(
 	if status != "completed" || patchID == "" || mergeBase != base {
 		t.Fatalf("status=%s patch=%s base=%s", status, patchID, mergeBase)
 	}
+	// The pull request carried the bot's eyes while the review ran, and
+	// carries its thumbs up now that one is posted.
+	waitFor(t, 5*time.Second, "the pull request to be marked as reviewed", func() bool {
+		lf.mu.Lock()
+		defer lf.mu.Unlock()
+		on := lf.pullReactions[1]
+		return on != nil && !on[forge.ReactionEyes] && on[forge.ReactionDone]
+	})
 	checkWriteBack(t, lf, fc)
 	checkReviewRows(ctx, t, appStore, accountID, head)
 	checkReviewTranscript(ctx, t, appStore, accountID, head, fc)
@@ -906,6 +950,40 @@ func checkIndexEmbedFailure(
 	}
 }
 
+// checkOtherReviewRunning: with every review of pull request 1 finished,
+// none is running beside any other; a running one is, except beside
+// itself.
+func checkOtherReviewRunning(ctx context.Context, t *testing.T, b *Base, accountID string) {
+	t.Helper()
+	logger := slog.New(slog.DiscardHandler)
+	var prID, running string
+	err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT id FROM pull_requests WHERE number = 1`).Scan(&prID); err != nil {
+			return err
+		}
+		if b.otherReviewRunning(ctx, logger, accountID, prID, "") {
+			return errors.New("a finished review counts as running")
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status) VALUES ($1, $2, 'other', 'running')
+			RETURNING id`, accountID, prID).Scan(&running); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `DELETE FROM reviews WHERE id = $1`, running)
+			return err
+		})
+	}()
+	if !b.otherReviewRunning(ctx, logger, accountID, prID, "") || b.otherReviewRunning(ctx, logger, accountID, prID, running) {
+		t.Fatal("a running review counts beside another and not beside itself")
+	}
+}
+
 // followUpHelpers post a mention on pull request 1 as the forge would
 // deliver it, wait for its follow-up's status and reason, and read the
 // last comment on the pull request.
@@ -993,13 +1071,12 @@ func checkFollowUps(
 		t.Fatalf("reply id %d not recorded as a bigint", replyID)
 	}
 	checkFollowUpRun(ctx, t, st, accountID, id)
-	// The mention carried the bot's eyes while its agent worked, and loses
-	// them once the reply is up.
-	waitFor(t, 5*time.Second, "the eyes to come off the answered mention", func() bool {
+	// The mention carried the bot's eyes while its agent worked, and carries
+	// the thumbs up once the reply is up.
+	waitFor(t, 5*time.Second, "the answered mention to be marked as answered", func() bool {
 		lf.mu.Lock()
 		defer lf.mu.Unlock()
-		_, on := lf.reactions[id]
-		return slices.Contains(lf.reacted, id) && !on
+		return slices.Contains(lf.reacted, id) && lf.reactions[id] == forge.ReactionDone
 	})
 
 	id = mention("outsider", "@kritika and me?")
@@ -1289,6 +1366,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
+	})
+
+	t.Run("the pull request's eyes stay on while another review of it runs", func(t *testing.T) {
+		checkOtherReviewRunning(ctx, t, &wb, account.ID())
 	})
 
 	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
