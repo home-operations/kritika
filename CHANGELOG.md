@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.30](https://github.com/home-operations/kritika/compare/0.0.29...0.0.30) (2026-10-06)
+
+
+### Features
+
+* **agent:** retry a step the model was told to submit on, instead of ending the run at its first slip ([#555](https://github.com/home-operations/kritika/issues/555)) ([fadf200](https://github.com/home-operations/kritika/commit/fadf20005344887f53efa14cdc5c94333f9d37f9))
+* **config:** gate the commit status on the confidence score only where asked ([#552](https://github.com/home-operations/kritika/issues/552)) ([9e243a3](https://github.com/home-operations/kritika/commit/9e243a38729e0a8ab83b4f61fe2e38097bb6959a))
+
+
+### Bug Fixes
+
+* **store:** let an agent run be recorded as truncated ([#556](https://github.com/home-operations/kritika/issues/556)) ([ae6b441](https://github.com/home-operations/kritika/commit/ae6b44176e47163051a2d3cbef1b403d58d1b421))
+
+
+### Miscellaneous Chores
+
+* **mise:** let the test task take packages, and run the integration task on the integration packages alone ([#553](https://github.com/home-operations/kritika/issues/553)) ([5f11d2c](https://github.com/home-operations/kritika/commit/5f11d2c4eabe5c4ad2b16fbaf8431b9043277ba2))
+
 ## [0.0.29](https://github.com/home-operations/kritika/compare/0.0.28...0.0.29) (2026-10-06)
 
 
