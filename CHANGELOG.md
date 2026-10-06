@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.29](https://github.com/home-operations/kritika/compare/0.0.28...0.0.29) (2026-10-06)
+
+
+### Bug Fixes
+
+* **review:** keep an incremental review's delta to the change's own paths, and look afresh at a rebase that moved none ([#549](https://github.com/home-operations/kritika/issues/549)) ([b176a48](https://github.com/home-operations/kritika/commit/b176a480c3f8b233eda391dac8380d6c71d28e77))
+
 ## [0.0.28](https://github.com/home-operations/kritika/compare/0.0.27...0.0.28) (2026-10-06)
 
 
