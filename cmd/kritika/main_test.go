@@ -92,18 +92,18 @@ func TestApplyConfig(t *testing.T) {
 // the dashboard no way to sign in.
 func TestLoadConfigRefusesNoSignIn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kritika.yaml")
-	if err := os.WriteFile(path, []byte("egress: { allowHosts: [first.example] }\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("egress: { allow: [first.example] }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadConfig(path); !errors.Is(err, errNoSignIn) {
 		t.Fatalf("loadConfig = %v, want errNoSignIn", err)
 	}
 	t.Setenv("TEST_ADMIN_PASSWORD", "pw")
-	if err := os.WriteFile(path, []byte("auth: { admin: { password: { env: TEST_ADMIN_PASSWORD } } }\negress: { allowHosts: [first.example] }\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("auth: { admin: { password: { env: TEST_ADMIN_PASSWORD } } }\negress: { allow: [first.example] }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	f, err := loadConfig(path)
-	if err != nil || len(f.Egress.AllowHosts) != 1 {
+	if err != nil || len(f.Egress.Allow) != 1 {
 		t.Fatalf("loadConfig = %+v, %v", f, err)
 	}
 }

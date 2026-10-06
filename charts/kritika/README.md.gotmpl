@@ -118,16 +118,17 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once an app
-is declared; `egress.allowHosts` in `configFile` adds the rest
-(registries, release APIs; `"*"` allows every host), and `egress.credentials` names hosts the gateway
-adds a bearer token to when a runner sends it a plain `http://` request, so
-the runner never holds the token. The token is a secret reference like any
-other in the file:
+is declared; `egress.allow` in `configFile` adds the rest (registries,
+release APIs; `"*"` allows every host), `egress.deny` refuses hosts whatever
+`allow` says, and `egress.credentials` names hosts the gateway adds a bearer
+token to when a runner sends it a plain `http://` request, so the runner
+never holds the token. The token is a secret reference like any other in
+the file:
 
 ```yaml
 configFile:
   egress:
-    allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
+    allow: [api.github.com, "*.githubusercontent.com", ghcr.io]
     credentials:
       api.github.com: { env: GITHUB_TOKEN }
 env:
@@ -161,12 +162,12 @@ its `PATH`, so an image set in `runner.image` without them offers none.
 repository under review and public repositories, and an app already
 allows `github.com` and `api.github.com` through the gateway. Every other
 host `curl` reaches must pass the gateway too, so add the release hosts
-and registries to `egress.allowHosts`:
+and registries to `egress.allow`:
 
 ```yaml
 configFile:
   egress:
-    allowHosts: ["*.githubusercontent.com"]
+    allow: ["*.githubusercontent.com"]
   repositories:
     org-1/repo-1:
       agent: { commands: [gh, curl, fd, rg] }

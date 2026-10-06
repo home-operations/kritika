@@ -101,8 +101,8 @@ Security notes:
 - Turn on the chart's NetworkPolicy: runner pods then reach the outside
   only through kritika's egress gateway, a forward proxy that allows
   destinations by hostname (github.com and the configuration's
-  `egress.allowHosts`), and never hold the credentials `egress.credentials`
-  lets the gateway add. Every review's model calls go through it too.
+  `egress.allow`, less `egress.deny`), and never hold the credentials
+  `egress.credentials` lets the gateway add. Every review's model calls go through it too.
 - Run runner Jobs under a sandboxed RuntimeClass such as gVisor
   (the chart's `config.runnerRuntimeClass`) where the cluster has one, since the pod
   parses untrusted content.

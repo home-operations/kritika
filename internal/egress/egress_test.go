@@ -14,7 +14,7 @@ import (
 )
 
 func TestRulesAllows(t *testing.T) {
-	r := Rules{Hosts: []string{"api.github.com", "*.githubusercontent.com"}}
+	r := Rules{Allow: []string{"api.github.com", "*.githubusercontent.com"}}
 	for host, want := range map[string]bool{
 		"api.github.com": true, "API.GITHUB.COM": true, "api.github.com.": true,
 		"raw.githubusercontent.com": true, "githubusercontent.com": false, "evil-api.github.com": false, "": false,
@@ -23,11 +23,18 @@ func TestRulesAllows(t *testing.T) {
 			t.Errorf("Allows(%q) = %v, want %v", host, got, want)
 		}
 	}
-	any := Rules{Hosts: []string{"*"}}
-	for host, want := range map[string]bool{"evil.example": true, "ghcr.io.": true, "": false} {
+	any := Rules{Allow: []string{"*"}, Deny: []string{"*.pastebin.com", "transfer.sh"}}
+	for host, want := range map[string]bool{
+		"evil.example": true, "ghcr.io.": true, "": false,
+		"pastebin.com": true, "Paste.Pastebin.com": false, "transfer.sh.": false, "transfer.sh.example": true,
+	} {
 		if got := any.Allows(host); got != want {
 			t.Errorf("any.Allows(%q) = %v, want %v", host, got, want)
 		}
+	}
+	// Deny wins over an Allow entry that names the same host.
+	if (Rules{Allow: []string{"ghcr.io"}, Deny: []string{"ghcr.io"}}).Allows("ghcr.io") {
+		t.Error("a host both allowed and denied must be refused")
 	}
 }
 
@@ -87,7 +94,7 @@ func viaProxy(proxy *httptest.Server) *http.Client {
 
 func TestUpgradeAddsCredentialAndStripsProxyHeaders(t *testing.T) {
 	proxy, outcomes := newProxy(t, Rules{
-		Hosts: []string{"api.github.com"}, Credentials: map[string]string{"api.github.com": "Bearer secret"},
+		Allow: []string{"api.github.com"}, Credentials: map[string]string{"api.github.com": "Bearer secret"},
 	})
 	req, _ := http.NewRequest(http.MethodPost, "http://api.github.com/repos/x/y", strings.NewReader("body"))
 	req.Header.Set("Authorization", "Bearer from-the-pod")
@@ -112,7 +119,7 @@ func TestUpgradeAddsCredentialAndStripsProxyHeaders(t *testing.T) {
 }
 
 func TestUpgradeReturnsRedirectsUnfollowed(t *testing.T) {
-	proxy, _ := newProxy(t, Rules{Hosts: []string{"api.github.com"}})
+	proxy, _ := newProxy(t, Rules{Allow: []string{"api.github.com"}})
 	resp, err := viaProxy(proxy).Get("http://api.github.com/redirect")
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +130,7 @@ func TestUpgradeReturnsRedirectsUnfollowed(t *testing.T) {
 }
 
 func TestRefusals(t *testing.T) {
-	proxy, outcomes := newProxy(t, Rules{Hosts: []string{"api.github.com"}})
+	proxy, outcomes := newProxy(t, Rules{Allow: []string{"api.github.com", "*.example"}, Deny: []string{"evil.example"}})
 	for _, u := range []string{"http://evil.example/", "http://api.github.com:8443/x"} {
 		resp, err := viaProxy(proxy).Get(u)
 		if err != nil {
@@ -146,7 +153,7 @@ func TestRefusals(t *testing.T) {
 }
 
 func TestConnectTunnelsAllowedHosts(t *testing.T) {
-	proxy, outcomes := newProxy(t, Rules{Hosts: []string{"*.github.com"}, Credentials: map[string]string{"api.github.com": "Bearer x"}})
+	proxy, outcomes := newProxy(t, Rules{Allow: []string{"*.github.com"}, Credentials: map[string]string{"api.github.com": "Bearer x"}})
 	resp, err := viaProxy(proxy).Get("https://api.github.com/tunnelled")
 	if err != nil {
 		t.Fatal(err)

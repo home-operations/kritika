@@ -22,25 +22,31 @@ import (
 	"time"
 )
 
-// Rules is what the proxy allows and adds.
+// Rules is what the proxy allows, refuses and adds.
 type Rules struct {
-	// Hosts are allowed destinations, lowercase, with a leading "*." for a
-	// suffix match; "*" alone allows every host. The port is not part of a
-	// rule: CONNECT is allowed to 443 only, and an upgraded request always
-	// goes to 443.
-	Hosts []string
+	// Allow are the destinations a runner may reach and Deny those it may
+	// not, even when Allow matches them. An entry is a lowercase host, a
+	// suffix with a leading "*.", or "*" alone for every host. The port is
+	// not part of a rule: CONNECT is allowed to 443 only, and an upgraded
+	// request always goes to 443.
+	Allow, Deny []string
 	// Credentials map a host to the Authorization header value an
 	// upgraded request to it carries.
 	Credentials map[string]string
 }
 
-// Allows reports whether host, without a port, matches a rule.
+// Allows reports whether host, without a port, matches an Allow entry and
+// no Deny entry.
 func (r Rules) Allows(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	if host == "" {
 		return false
 	}
-	for _, rule := range r.Hosts {
+	return !matches(r.Deny, host) && matches(r.Allow, host)
+}
+
+func matches(rules []string, host string) bool {
+	for _, rule := range rules {
 		switch {
 		case rule == "*":
 			return true

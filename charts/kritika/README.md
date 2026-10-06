@@ -113,16 +113,17 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by hostname only. github.com is always allowed once an app
-is declared; `egress.allowHosts` in `configFile` adds the rest
-(registries, release APIs; `"*"` allows every host), and `egress.credentials` names hosts the gateway
-adds a bearer token to when a runner sends it a plain `http://` request, so
-the runner never holds the token. The token is a secret reference like any
-other in the file:
+is declared; `egress.allow` in `configFile` adds the rest (registries,
+release APIs; `"*"` allows every host), `egress.deny` refuses hosts whatever
+`allow` says, and `egress.credentials` names hosts the gateway adds a bearer
+token to when a runner sends it a plain `http://` request, so the runner
+never holds the token. The token is a secret reference like any other in
+the file:
 
 ```yaml
 configFile:
   egress:
-    allowHosts: [api.github.com, "*.githubusercontent.com", ghcr.io]
+    allow: [api.github.com, "*.githubusercontent.com", ghcr.io]
     credentials:
       api.github.com: { env: GITHUB_TOKEN }
 env:
@@ -156,12 +157,12 @@ its `PATH`, so an image set in `runner.image` without them offers none.
 repository under review and public repositories, and an app already
 allows `github.com` and `api.github.com` through the gateway. Every other
 host `curl` reaches must pass the gateway too, so add the release hosts
-and registries to `egress.allowHosts`:
+and registries to `egress.allow`:
 
 ```yaml
 configFile:
   egress:
-    allowHosts: ["*.githubusercontent.com"]
+    allow: ["*.githubusercontent.com"]
   repositories:
     org-1/repo-1:
       agent: { commands: [gh, curl, fd, rg] }
@@ -401,7 +402,7 @@ Kubernetes: `>=1.25.0-0`
 | runner.tools | list | `[]` | Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIKA_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster. |
 | runner.ttl | string | `"10m"` | How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |
-| service.gatewayPort | int | `8082` | Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allowHosts`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod. |
+| service.gatewayPort | int | `8082` | Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allow` less `egress.deny`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod. |
 | service.metricsPort | int | `8081` | Metrics and probe port. |
 | service.port | int | `8080` | Public port: the webhooks (`POST /hooks/{app}`) and the dashboard. |
 | service.type | string | `"ClusterIP"` | Service type of the public Service. |

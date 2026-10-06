@@ -610,10 +610,23 @@ served.
 ## `egress`
 
 `egress` is what runner pods may reach through kritika's gateway beyond
-`github.com` and `api.github.com`, which an app allows: `allowHosts`,
-exact, `*.`-prefixed, or `"*"` for every host, and `credentials`, a token
-the gateway adds to a plain `http://` request to that host, so the runner
-never holds it.
+`github.com` and `api.github.com`, which an app allows:
+
+```yaml
+egress:
+  allow: ["*"]
+  deny: ["*.pastebin.com"]
+  credentials:
+    api.github.com: { env: GITHUB_TOKEN }
+```
+
+- `allow`: the hosts a runner may reach; an entry is exact, `*.`-prefixed
+  for every host under a domain, or `"*"` for every host.
+- `deny`: hosts refused however `allow` matches them, in the same forms. A
+  deny that cuts off `github.com` or `api.github.com` is rejected while an
+  app is configured.
+- `credentials`: a token the gateway adds to a plain `http://` request to
+  that host, so the runner never holds it; the host must be allowed.
 
 ## How kritika runs
 
