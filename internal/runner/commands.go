@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+
 	"github.com/home-operations/kritika/internal/agent"
 )
 
@@ -62,6 +65,9 @@ func commandTool(
 	}
 	logger.Info("checkout written", "files", stats.Files, "bytes", stats.Bytes, "skipped", stats.Skipped,
 		"truncated", stats.Truncated, "elapsed", time.Since(started).Round(time.Millisecond))
+	if err := markRepository(dir, p.CloneURL); err != nil {
+		logger.Warn("checkout not marked as a repository", "error", err)
+	}
 	note := fmt.Sprintf("The checkout leaves out ignored paths, symlinks and files over %d MiB.", agent.MaxBlobBytes>>20)
 	if stats.Truncated {
 		note += fmt.Sprintf(" It stopped at %d MiB, so the paths that sort last are missing.", agent.MaxCheckoutBytes>>20)
@@ -75,6 +81,18 @@ func commandTool(
 		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note,
 		Mask: Secrets{GitToken: gitToken}.Mask,
 	}), cleanup
+}
+
+// markRepository gives the checkout an empty .git whose origin is the
+// repository's clone URL: no history, but enough for a tool that locates a
+// repository by its working tree, such as flate, to find this one.
+func markRepository(dir, cloneURL string) error {
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		return err
+	}
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{cloneURL}})
+	return err
 }
 
 // commandEnv is the whole environment of a command: PATH, home as HOME,
