@@ -504,6 +504,9 @@ func validateAgent(where string, a Agent) error {
 	if a.Tokens != nil && *a.Tokens <= 0 {
 		return fmt.Errorf("configfile: %sagent.tokens must be positive", where)
 	}
+	if a.Prompt != nil && *a.Prompt < MinPromptTokens {
+		return fmt.Errorf("configfile: %sagent.prompt must be at least %d", where, MinPromptTokens)
+	}
 	if a.Timeout != nil && *a.Timeout <= 0 {
 		return fmt.Errorf("configfile: %sagent.timeout must be positive", where)
 	}

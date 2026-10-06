@@ -13,6 +13,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // fixture sets the variables testdata/full.yaml's secrets name and returns
@@ -666,10 +667,10 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
-		f := parse(t, doc("", `agent: { steps: 7 }, review: { fixes: true }, ignore: ["account/**"]`,
+		f := parse(t, doc("", `agent: { steps: 7, prompt: 30000 }, review: { fixes: true }, ignore: ["account/**"]`,
 			`review: { model: p/small }, ignore: ["repo/**"], agent: { tokens: 500 }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Models.Review != "p/small" {
+		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Agent.MaxPromptTokens != 30_000 || s.Models.Review != "p/small" {
 			t.Fatalf("settings = %+v", s)
 		}
 		if !s.Review.RequireSuggestedFix || !reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) {
@@ -785,11 +786,14 @@ func TestRepositoryAgentReview(t *testing.T) {
 		if DefaultMaxDeltaFiles != 25 {
 			t.Fatalf("DefaultMaxDeltaFiles = %d", DefaultMaxDeltaFiles)
 		}
+		if DefaultAgent.MaxPromptTokens != review.DefaultBudgetTokens {
+			t.Fatalf("DefaultAgent.MaxPromptTokens = %d, want review.DefaultBudgetTokens", DefaultAgent.MaxPromptTokens)
+		}
 	})
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo(`{
-      agent: { steps: 12, output: 4096, tokens: 250000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
+      agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       review: { incremental: 5, fixes: true },
       rules: [{ id: style, file: docs/rules.md }],
       comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl } }`)))
@@ -797,7 +801,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, Timeout: 3 * time.Minute,
+		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, MaxPromptTokens: 120_000, Timeout: 3 * time.Minute,
 			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
 		if !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
 			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
@@ -830,6 +834,8 @@ func TestRepositoryAgentReview(t *testing.T) {
 		{"zero tool output", "{ agent: { output: 0 } }", "agent.output must be positive"},
 		{"zero tokens", "{ agent: { tokens: 0 } }", "agent.tokens must be positive"},
 		{"negative tokens", "{ agent: { tokens: -5 } }", "agent.tokens must be positive"},
+		{"zero prompt", "{ agent: { prompt: 0 } }", "agent.prompt must be at least 8000"},
+		{"a prompt below the minimum", "{ agent: { prompt: 7999 } }", "agent.prompt must be at least 8000"},
 		{"zero timeout", "{ agent: { timeout: 0s } }", "agent.timeout must be positive"},
 		{"zero delta files", "{ review: { incremental: 0 } }", "review.incremental must be positive"},
 		{"negative delta files", "{ review: { incremental: -3 } }", "review.incremental must be positive"},

@@ -286,10 +286,11 @@ func withInstructions(system string, rules []Rule, cite string, instructions []s
 		strings.Join(parts, "\n\n")
 }
 
-// UserBudget is the user message's share of the prompt budget once the
-// system prompt, whose repository instructions vary in size, is paid for.
-func UserBudget(system string) int {
-	return DefaultBudgetTokens - (len(system)+charsPerToken-1)/charsPerToken
+// UserBudget is the user message's share of a prompt budget of budget
+// tokens, DefaultBudgetTokens when zero, once the system prompt, whose
+// repository instructions vary in size, is paid for.
+func UserBudget(system string, budget int) int {
+	return cmp.Or(budget, DefaultBudgetTokens) - (len(system)+charsPerToken-1)/charsPerToken
 }
 
 // Build renders the user message within the budget. When the diff does not

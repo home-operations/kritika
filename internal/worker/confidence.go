@@ -94,7 +94,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res.Findings, system),
+		}, res.Findings, system, p.settings.Agent.MaxPromptTokens),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}

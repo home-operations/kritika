@@ -257,8 +257,8 @@ func (w *Review) agentSpec(
 	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
-		TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
-		Commands:       settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
+		MaxPromptTokens: settings.Agent.MaxPromptTokens, TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
+		Commands: settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
 	}
 	return deadline, notes, nil
 }

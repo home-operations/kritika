@@ -101,7 +101,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			want, _, _ := review.Build(review.Input{
 				Repository: "acme/widgets", Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main",
-				Changed: pack.Changed, Diff: agentDiff, Context: pack.Context, Incremental: inc, BudgetTokens: review.UserBudget(system),
+				Changed: pack.Changed, Diff: agentDiff, Context: pack.Context, Incremental: inc, BudgetTokens: review.UserBudget(system, 0),
 			})
 			if user != want {
 				t.Fatalf("user message:\n%s\nwant:\n%s", user, want)
@@ -483,5 +483,30 @@ func TestSearchTool(t *testing.T) {
 	}
 	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != searchCalls {
 		t.Fatalf("past the limit: err=%v calls=%d", err, calls)
+	}
+}
+
+func TestAgentPromptBudget(t *testing.T) {
+	big := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1,3000 @@\n" +
+		strings.Repeat("+// a line of the large file under review\n", 3000)
+	pack := packView{Diff: agentDiff + big, Changed: []string{"main.go", "big.go"}, Scope: review.ScopeFull}
+	tests := []struct {
+		name  string
+		agent *AgentLimits
+		kept  bool
+	}{
+		{name: "no agent limits take the default budget"},
+		{name: "a zero budget takes the default", agent: &AgentLimits{}},
+		{name: "the configured budget keeps the large file", agent: &AgentLimits{MaxPromptTokens: 60_000}, kept: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := agentPromptSpec()
+			s.Agent = tt.agent
+			prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false)
+			if kept := strings.Contains(prompt.user, "+// a line of the large file under review"); kept != tt.kept {
+				t.Fatalf("large file in the prompt = %v, want %v", kept, tt.kept)
+			}
+		})
 	}
 }

@@ -141,10 +141,11 @@ const (
 	maxConfidenceReason  = 500
 )
 
-// BuildConfidence renders the scorer's user message, sent with system: the
-// pull request and its diff as Build renders them, then the findings the
-// review reported, which the diff gives way to.
-func BuildConfidence(in Input, findings []Finding, system string) string {
+// BuildConfidence renders the scorer's user message, sent with system
+// within a prompt budget of budget tokens (see UserBudget): the pull
+// request and its diff as Build renders them, then the findings the review
+// reported, which the diff gives way to.
+func BuildConfidence(in Input, findings []Finding, system string, budget int) string {
 	var tail strings.Builder
 	if len(findings) == 0 {
 		tail.WriteString("\n\nThe review reported no findings.\n")
@@ -158,7 +159,7 @@ func BuildConfidence(in Input, findings []Finding, system string) string {
 			fmt.Fprintf(&tail, "\n- [%s] %s:%d %s\n  %s\n", f.Severity, f.Path, f.Line, oneLine(f.Title), strings.ReplaceAll(text, "\n", "\n  "))
 		}
 	}
-	in.BudgetTokens = max(UserBudget(system)-tail.Len()/charsPerToken, 2_000)
+	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/charsPerToken, 2_000)
 	msg, _, _ := Build(in)
 	return msg + tail.String()
 }

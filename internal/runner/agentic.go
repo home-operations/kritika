@@ -159,7 +159,8 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 	user, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
-		Incremental: incremental, Dismissed: p.Prompt.Dismissed, References: in.references, BudgetTokens: review.UserBudget(system),
+		Incremental: incremental, Dismissed: p.Prompt.Dismissed, References: in.references,
+		BudgetTokens: review.UserBudget(system, p.Agent.maxPromptTokens()),
 	})
 	return agentPrompt{system: system, user: user, strict: p.Prompt.RequireSuggestedFix, omitted: omitted, contextOmitted: contextOmitted}
 }
@@ -197,6 +198,14 @@ func agentSkip(p Spec, changed []string, patchID, diff string) (reason, detail s
 		}
 	}
 	return "", "", nil
+}
+
+// maxPromptTokens is the review prompt's budget, zero for the default.
+func (a *AgentLimits) maxPromptTokens() int {
+	if a == nil {
+		return 0
+	}
+	return a.MaxPromptTokens
 }
 
 // limits are the agent loop's bounds, defaults filled in.

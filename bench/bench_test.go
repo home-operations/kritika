@@ -175,7 +175,7 @@ func TestBench(t *testing.T) {
 			system := review.SystemPrompt(nil, nil, nil, nil, false, false, false)
 			msg, _, _ := review.Build(review.Input{
 				Repository: c.Repository, Number: c.PR, Title: c.Title, Author: "author", BaseRef: "main",
-				Changed: res.Changed, Diff: res.Diff, Context: selected, BudgetTokens: review.UserBudget(system),
+				Changed: res.Changed, Diff: res.Diff, Context: selected, BudgetTokens: review.UserBudget(system, 0),
 			})
 			cr.PromptChars = len(system) + len(msg)
 			for _, e := range c.Expected {

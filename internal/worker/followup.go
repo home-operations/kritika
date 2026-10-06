@@ -224,7 +224,8 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	system := review.FollowUpSystemPrompt(rules, instructions)
 	msg := review.BuildFollowUp(review.Input{
 		Repository: f.pr.repository, Number: f.pr.number, Title: f.pr.title, Author: f.pr.author, BaseRef: f.pr.baseRef,
-		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context, BudgetTokens: review.UserBudget(system),
+		Body: rec.body, Changed: rec.changed, Diff: rec.diff, Context: rec.context,
+		BudgetTokens: review.UserBudget(system, f.settings.Agent.MaxPromptTokens),
 	}, rec.findings, thread)
 	resp, err := f.complete(ctx, system, msg, rec.id)
 	if err != nil {

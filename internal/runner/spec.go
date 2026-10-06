@@ -60,7 +60,10 @@ type AgentLimits struct {
 	MaxSteps           int   `json:"maxSteps"`
 	MaxToolOutputBytes int   `json:"maxToolOutputBytes"`
 	MaxTokens          int64 `json:"maxTokens"`
-	TimeoutSeconds     int   `json:"timeoutSeconds,omitempty"`
+	// MaxPromptTokens bounds the review's opening prompt, the diff and
+	// context it starts from; zero takes review.DefaultBudgetTokens.
+	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
+	TimeoutSeconds  int `json:"timeoutSeconds,omitempty"`
 	// Commands name the binaries the run tool may execute; the runner
 	// offers those it finds on its PATH, and no run tool without any.
 	Commands              []string `json:"commands,omitempty"`

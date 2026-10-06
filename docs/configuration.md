@@ -314,7 +314,7 @@ one. They come in five groups:
   `exclude`, `settle` and `limit`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
-  `tokens`, `timeout`, `commands` and `commandTimeout`.
+  `tokens`, `prompt`, `timeout`, `commands` and `commandTimeout`.
 
 `enabled`, `rules`, `context`, `skills`, `ignore` and `limits` sit beside them.
 `ignore` lists globs of the paths kritika never looks at: they are left out
@@ -442,7 +442,15 @@ own:
   prose or it called another tool, which is refused, is told again, up to
   twice, so the steps spent reading are not lost to one slip at the end.
   `steps: 1` is the cheapest review: one call, which must submit the
-  findings, over the same prompt. The runner's `-tools` image has `gh`, `curl`,
+  findings, over the same prompt. `prompt` bounds, in tokens, the prompt a
+  review, its confidence score and a follow-up start from: the system
+  prompt, the pull request, as much of the diff as fits, whole files only,
+  and then the context. A file left out is named in the review's notes,
+  and the agent reads it with its tools; the scorer and a follow-up, which
+  have none, never see it. It is 24000 unless set, and at least 8000. A
+  model with a larger context window can take more, so a large file is
+  reviewed from the start; the prompt is spent out of `tokens` on every
+  step. The runner's `-tools` image has `gh`, `curl`,
   `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
   review and public repositories. The run tool refuses the arguments that
