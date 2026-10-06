@@ -14,7 +14,7 @@ import (
 
 // Limits bounds a Run: how many steps it may take, how much of a tool's
 // output it keeps, and the token and per-step output budgets that force an
-// early submit_review.
+// early submission.
 type Limits struct {
 	MaxSteps               int
 	MaxToolOutputBytes     int
@@ -45,7 +45,7 @@ const (
 	StopMaxSteps  StopReason = "max_steps"
 	StopBudget    StopReason = "budget"
 	StopNoSubmit  StopReason = "no_submit"
-	// StopTruncated is a submit_review cut off at the step's output cap.
+	// StopTruncated is a submission cut off at the step's output cap.
 	StopTruncated StopReason = "truncated"
 	StopCanceled  StopReason = "canceled"
 	StopError     StopReason = "error"
@@ -69,7 +69,7 @@ type StepEvent struct {
 // Result is how a Run ended.
 type Result struct {
 	Stop StopReason
-	// Submitted is the submit_review input, set iff Stop == StopSubmitted.
+	// Submitted is the Submit tool's input, set iff Stop == StopSubmitted.
 	Submitted json.RawMessage
 	Steps     int
 	ToolCalls map[string]int
@@ -93,7 +93,8 @@ type Run struct {
 	System  string
 	User    string
 	Tools   []Tool
-	// Submit is the submit_review tool; its schema is the review contract.
+	// Submit is the tool the model answers with, a review's submit_review
+	// or a follow-up's submit_reply; its schema is the answer's contract.
 	// The loop never runs it: a call to Submit ends the Run.
 	Submit model.ToolDef
 	// Validate, if set, checks a Submit input against the contract beyond
@@ -107,12 +108,14 @@ type Run struct {
 
 // nudgeText is appended once, as a user message, after the first turn with
 // no tool call, before a second such turn ends the Run.
-const nudgeText = "call submit_review"
+func (r Run) nudgeText() string { return "call " + r.Submit.Name }
 
 // submitNowText ends the last user message of a step the model must submit
 // on. It is told rather than forced through tool_choice, which the newest
 // models reject.
-const submitNowText = "Call submit_review now with the summary and findings you have, and call nothing else."
+func (r Run) submitNowText() string {
+	return "Call " + r.Submit.Name + " now with what you have, and call nothing else."
+}
 
 // forcedRetries is how many more steps a model that was told to submit and
 // did not gets, each told again: a rejected submission goes back with its
@@ -121,9 +124,9 @@ const submitNowText = "Call submit_review now with the summary and findings you 
 // bounds the retries where the step cap does not.
 const forcedRetries = 2
 
-// onlySubmitText answers a tool call other than submit_review on a step the
-// model was told to submit on; the tool is not run.
-const onlySubmitText = "agent: only submit_review is available now"
+// onlySubmitText answers a tool call other than Submit on a step the model
+// was told to submit on; the tool is not run.
+func (r Run) onlySubmitText() string { return "agent: only " + r.Submit.Name + " is available now" }
 
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
@@ -169,7 +172,7 @@ func (r Run) Do(ctx context.Context) Result {
 	// Run ends when the retries after the first are spent.
 	forcedSteps := 0
 	forcedEnd := func(lastStep bool) Result {
-		result.Err = fmt.Sprintf("no valid submit_review in the %d step(s) it was told to submit on", forcedSteps)
+		result.Err = fmt.Sprintf("no valid %s in the %d step(s) it was told to submit on", r.Submit.Name, forcedSteps)
 		result.Stop = StopNoSubmit
 		if lastStep {
 			result.Stop = StopMaxSteps
@@ -197,7 +200,7 @@ func (r Run) Do(ctx context.Context) Result {
 			if last.Text != "" {
 				last.Text += "\n\n"
 			}
-			last.Text += submitNowText
+			last.Text += r.submitNowText()
 		}
 
 		req := model.StepRequest{
@@ -252,7 +255,7 @@ func (r Run) Do(ctx context.Context) Result {
 			}
 			nudged = true
 			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
-			messages = append(messages, model.Message{Role: model.RoleUser, Text: nudgeText})
+			messages = append(messages, model.Message{Role: model.RoleUser, Text: r.nudgeText()})
 			continue
 		}
 
@@ -275,7 +278,7 @@ func (r Run) Do(ctx context.Context) Result {
 					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
-						Content: textcut.Truncate(fmt.Sprintf("agent: submit_review: %s", err), limits.MaxToolOutputBytes),
+						Content: textcut.Truncate(fmt.Sprintf("agent: %s: %s", r.Submit.Name, err), limits.MaxToolOutputBytes),
 					})
 					continue
 				}
@@ -284,7 +287,7 @@ func (r Run) Do(ctx context.Context) Result {
 			}
 
 			if forced {
-				toolResults = append(toolResults, model.ToolResult{CallID: call.ID, IsError: true, Content: onlySubmitText})
+				toolResults = append(toolResults, model.ToolResult{CallID: call.ID, IsError: true, Content: r.onlySubmitText()})
 				continue
 			}
 			res := runTool(ctx, toolsByName[call.Name], call, limits.MaxToolOutputBytes)
@@ -304,7 +307,7 @@ func (r Run) Do(ctx context.Context) Result {
 		}
 		if truncated {
 			result.Stop = StopTruncated
-			result.Err = fmt.Sprintf("submit_review was cut off at the %d output tokens a step may produce", limits.MaxOutputTokensPerStep)
+			result.Err = fmt.Sprintf("%s was cut off at the %d output tokens a step may produce", r.Submit.Name, limits.MaxOutputTokensPerStep)
 			return result
 		}
 		if forced && forcedSteps > forcedRetries {
