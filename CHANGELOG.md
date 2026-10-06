@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.28](https://github.com/home-operations/kritika/compare/0.0.27...0.0.28) (2026-10-06)
+
+
+### Features
+
+* **web:** list the skills a review was offered and the ones it read ([#545](https://github.com/home-operations/kritika/issues/545)) ([f96ab3f](https://github.com/home-operations/kritika/commit/f96ab3febc3108f37af8b4aef958f7b0f1fa8740))
+* **web:** show a review's confidence, risk and reason on the pull request and its summary ([#544](https://github.com/home-operations/kritika/issues/544)) ([f9ada01](https://github.com/home-operations/kritika/commit/f9ada01e59f56692015a3390310c7dd932f481f8))
+
+
+### Bug Fixes
+
+* **container:** update image docker.io/jdxcode/mise (2026.10.1 → 2026.10.3) ([#547](https://github.com/home-operations/kritika/issues/547)) ([9936d45](https://github.com/home-operations/kritika/commit/9936d45ec68bc75fcae4b77a91a4ea0216ebaab3))
+* **review:** keep the confidence reason off the change itself ([#541](https://github.com/home-operations/kritika/issues/541)) ([3914f49](https://github.com/home-operations/kritika/commit/3914f4934b0a4eb071d528f3276c06e97007c87a))
+* **review:** rate a dependency update by its dependency and the size of the move ([#548](https://github.com/home-operations/kritika/issues/548)) ([83c1a92](https://github.com/home-operations/kritika/commit/83c1a920ed368d1ff7fc033905612423141f35c4))
+* **web:** name the root settings the instance's, and say a fork is reviewed like any other ([#543](https://github.com/home-operations/kritika/issues/543)) ([a7de93b](https://github.com/home-operations/kritika/commit/a7de93b188d9b747bde5f56e5adea15d4162a489))
+
 ## [0.0.27](https://github.com/home-operations/kritika/compare/0.0.26...0.0.27) (2026-10-06)
 
 
