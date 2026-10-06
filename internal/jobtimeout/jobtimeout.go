@@ -12,8 +12,8 @@ import "time"
 // deletes the runner Job when that happens, so a job's timeout must cover
 // everything the worker does around the runner as well as the runner.
 const (
-	// LeaseWaitHeadroom is the time a review may spend taking its model
-	// lease before its runner starts.
+	// LeaseWaitHeadroom is the time a review or a follow-up may spend
+	// taking its model lease before its runner starts.
 	LeaseWaitHeadroom = 15 * time.Minute
 	// PublishHeadroom covers the worker's side of a review after the
 	// runner: reading the agent's run and the pack, and the forge
@@ -26,10 +26,6 @@ const (
 	// AgentFetchHeadroom is the job time a review run keeps for fetching
 	// and the context pack on top of the agent's own timeout.
 	AgentFetchHeadroom = 5 * time.Minute
-	// FollowUpTimeout is the time a follow-up job may spend waiting for a
-	// model lease, calling the model, and writing its reply back to the
-	// forge; unlike Review and Index it has no runner deadline to add to.
-	FollowUpTimeout = 30 * time.Minute
 	// MaxJobTimeout bounds any review or index job, so a runner deadline
 	// set absurdly high cannot hold a worker slot for longer than the
 	// stuck-job rescuer waits.
@@ -41,8 +37,8 @@ const (
 )
 
 // MaxRunnerDeadline is the largest runner.activeDeadlineSeconds an account may
-// set. Past it, either a review's timeout (deadline plus LeaseWaitHeadroom
-// and PublishHeadroom) or an index's timeout (deadline plus
+// set. Past it, either a review's or a follow-up's timeout (deadline plus
+// LeaseWaitHeadroom and PublishHeadroom) or an index's timeout (deadline plus
 // IndexWriteHeadroom) would exceed MaxJobTimeout, and River would cut the
 // runner off before it finishes rather than the deadline doing so.
 const MaxRunnerDeadline = min(MaxJobTimeout-LeaseWaitHeadroom-PublishHeadroom, MaxJobTimeout-IndexWriteHeadroom)

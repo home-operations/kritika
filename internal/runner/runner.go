@@ -2,7 +2,8 @@
 // (and the last reviewed head when there is one), diff them, compute the
 // patch id, decide what the review builds on and whether it is skipped,
 // write a context pack under its own run id, and run the review's agent
-// over it. It works from
+// over it. A follow-up's run answers a comment with the same agent and
+// tools, and an index run chunks a tree. It works from
 // one versioned job document (Spec); its credentials, a git token for one
 // repository and for a review a token for the worker's model gateway,
 // arrive apart from it (Secrets). Its database role can only touch
@@ -46,8 +47,11 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 		<-beating
 	}()
 	run := runReview
-	if spec.Kind == KindIndex {
+	switch spec.Kind {
+	case KindIndex:
 		run = runIndex
+	case KindFollowUp:
+		run = runFollowUp
 	}
 	// The first thing either kind does is fetch through the gateway, which
 	// a runner started with the service may reach before its Service
@@ -145,22 +149,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	var tools agentTools
 	var prompt agentPrompt
 	if skip == "" {
-		// Stage 4, best effort: an instance without an embedder, a
-		// repository without a completed index, or a refused or failed
-		// request leaves it out and the review goes on.
-		if queries := hunkQueries(res.Diff); len(queries) > 0 {
-			out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken,
-				contextpack.SimilarRequest{Queries: queries, Exclude: res.Changed})
-			switch {
-			case err != nil:
-				logger.Warn("similar-code retrieval skipped", "error", err)
-			case out.Indexed:
-				chunks = append(chunks, out.Chunks...)
-				tools.search = &searchTool{
-					gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: res.Changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
-				}
-			}
-		}
+		var similar []contextpack.Chunk
+		similar, tools.search = similarContext(ctx, p, secrets, res, logger)
+		chunks = append(chunks, similar...)
 		if len(in.skills) > 0 {
 			tools.skills = &skillTool{base: baseTree, skills: in.skills, maxBytes: p.Agent.limits().MaxToolOutputBytes}
 		}
@@ -223,6 +214,31 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return nil
 	}
 	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
+}
+
+// similarContext is context stage 4, best effort: the code elsewhere in
+// the repository that resembles the diff's hunks, and the search_code tool
+// over the same index. An instance without an embedder, a repository
+// without a completed index, or a refused or failed request leaves both
+// out and the run goes on.
+func similarContext(
+	ctx context.Context, p Spec, secrets Secrets, res *gitfetch.Result, logger *slog.Logger,
+) ([]contextpack.Chunk, *searchTool) {
+	queries := hunkQueries(res.Diff)
+	if len(queries) == 0 {
+		return nil, nil
+	}
+	out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: res.Changed})
+	if err != nil {
+		logger.Warn("similar-code retrieval skipped", "error", err)
+		return nil, nil
+	}
+	if !out.Indexed {
+		return nil, nil
+	}
+	return out.Chunks, &searchTool{
+		gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: res.Changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
+	}
 }
 
 // notIgnored returns the paths no ignore glob matches, never nil.

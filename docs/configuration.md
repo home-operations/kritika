@@ -206,8 +206,8 @@ minutes counts as a timeout. It is 0 unless set, one attempt, and at most 5; the
 client sends nothing again on its own, so `retries` is every attempt a
 step gets. A routing proxy that picks a model per request is where it
 earns its keep: a step the proxy routed badly is answered on the next
-attempt. Follow-ups do not retry; the embedder's client sends a failed
-request again twice on its own.
+attempt. A follow-up's steps are retried as a review's are; the embedder's
+client sends a failed request again twice on its own.
 
 A step that still fails that way once the provider's `retries` and the
 fallback are spent does not end the review. The runner keeps the
@@ -329,8 +329,7 @@ on another provider is tried by the gateway itself: once a review's step
 has failed on the review model, and its provider's `retries` are spent,
 the same step goes to the fallback, with that provider's own `retries`,
 and the review carries on there. The step's usage is recorded under the
-model that answered. A follow-up uses a fallback on its own provider
-alone.
+model that answered. A follow-up's steps fall back the same way.
 
 With a `confidence.model`, a second model scores every reviewed pull
 request from 0 to 5: how ready it is to merge, from the diff and the

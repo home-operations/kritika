@@ -62,7 +62,7 @@ skills:
   the review and for follow-ups. A model of any other provider is
   dropped; the account's limits bound what a choice can cost. A review
   whose model fails goes on with the fallback, on the same provider or
-  another; a follow-up uses a fallback on its own provider alone.
+  another, and so does a follow-up.
 - `review.feedback`: how much the review says, replacing the
   admin's.
 
@@ -220,8 +220,9 @@ skills:
   `Skills offered: review-renovate-pr, go-style; read: review-renovate-pr`,
   and each read shows in its transcript. A review offered commands through
   the run tool carries a note of the same shape beside it, such as
-  `Commands offered: gh, helm; run: helm`. Follow-up answers do not use
-  skills.
+  `Commands offered: gh, helm; run: helm`. A follow-up is answered by an
+  agent with the review's tools and commands, under the same `agent`
+  limits, in a runner of its own; it is offered no skills.
 
   A rule with a `file` is always in the prompt, whole, and findings cite
   it by id. A `context` entry is a pointer to one file, with a

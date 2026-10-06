@@ -113,12 +113,12 @@ func MarkReviewPrepared(
 	return nil
 }
 
-// ReviewJobID is the River job working the review, 0 when none is
-// recorded.
-func ReviewJobID(ctx context.Context, tx pgx.Tx, reviewID string) (int64, error) {
+// RunnerRunJobID is the River job that started the runner run, 0 when none
+// is recorded.
+func RunnerRunJobID(ctx context.Context, tx pgx.Tx, runID string) (int64, error) {
 	var jobID int64
-	if err := tx.QueryRow(ctx, `SELECT coalesce(river_job_id, 0) FROM reviews WHERE id = $1`, reviewID).Scan(&jobID); err != nil {
-		return 0, fmt.Errorf("store: read review job: %w", err)
+	if err := tx.QueryRow(ctx, `SELECT coalesce(river_job_id, 0) FROM runner_runs WHERE id = $1`, runID).Scan(&jobID); err != nil {
+		return 0, fmt.Errorf("store: read run job: %w", err)
 	}
 	return jobID, nil
 }
@@ -128,19 +128,22 @@ type RunnerKind string
 
 // Runner run kinds, as runner_runs spells them.
 const (
-	RunnerKindReview RunnerKind = "review"
-	RunnerKindIndex  RunnerKind = "index"
+	RunnerKindReview   RunnerKind = "review"
+	RunnerKindIndex    RunnerKind = "index"
+	RunnerKindFollowUp RunnerKind = "followup"
 )
 
 // InsertRunnerRun records a runner run of kind for its parent, a review or
-// an index generation, started by River job jobID, and returns its id.
+// an index generation, started by River job jobID, and returns its id. A
+// follow-up's run has no parent: parentID is "".
 func InsertRunnerRun(ctx context.Context, tx pgx.Tx, accountID string, kind RunnerKind, parentID string, jobID int64) (string, error) {
 	parent := "review_id"
 	if kind == RunnerKindIndex {
 		parent = "index_run_id"
 	}
 	var runID string
-	if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, `+parent+`, kind, river_job_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+	if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, `+parent+`, kind, river_job_id)
+		VALUES ($1, nullif($2, '')::uuid, $3, $4) RETURNING id`,
 		accountID, parentID, string(kind), jobID).Scan(&runID); err != nil {
 		return "", fmt.Errorf("store: insert runner run: %w", err)
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -151,10 +150,8 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	deadline, resources := file.RunnerFor()
 	sup := runSupervision(w.Store, args.AccountID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
-		Labels: map[string]string{
-			"account": account.Key(), "repository": repo.Name, "kind": jobs.QueueIndex,
-		},
-		Annotations: map[string]string{"river-job-id": strconv.FormatInt(job.ID, 10), "head-sha": commit},
+		Labels:      runnerLabels(account.Key(), repo.Name, jobs.QueueIndex, 0),
+		Annotations: runnerAnnotations(job.ID, commit),
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
 			Head: commit, Base: base, Ignore: eff.Ignore,
