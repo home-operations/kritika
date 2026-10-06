@@ -461,10 +461,12 @@ httpRoute:
   httpsRedirect: false
 
 # NetworkPolicies (off by default): one for the service pods (ingress to the
-# webhook and metrics ports; egress to DNS, the forges and models over the
-# egress ports, and Postgres) and one for runner pods (egress only: DNS, the
-# git remote over the egress ports, and Postgres). The Postgres port is
-# allowed to any peer because the database may live in another namespace.
+# webhook and metrics ports, and to the gateway port from runner pods;
+# egress to DNS, the forges and models over the egress ports, Postgres and
+# the API server) and one for runner pods (egress only: DNS, Postgres and
+# the gateway port on the service pods, through which everything else is
+# reached). The Postgres port is allowed to any peer because the database
+# may live in another namespace.
 networkPolicy:
   # -- Create the NetworkPolicies.
   enabled: false
