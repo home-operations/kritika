@@ -434,6 +434,10 @@ func Check(raw json.RawMessage) error {
 	if strings.TrimSpace(res.Summary.Take) == "" {
 		return errors.New("review: summary.take is required: two to four sentences on the change")
 	}
+	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
+		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
+			maxDiagramBytes, strings.Join(diagramKinds, ", "))
+	}
 	return nil
 }
 
@@ -463,7 +467,9 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 	}
 	res.Summary.Praise = praise
-	if res.Summary.Diagram = diagram(res.Summary.Diagram); !opts.Diagram {
+	if opts.Diagram {
+		res.Summary.Diagram = diagram(res.Summary.Diagram)
+	} else {
 		res.Summary.Diagram = ""
 	}
 	kept := make([]Finding, 0, len(res.Findings))
@@ -565,17 +571,49 @@ func stripFences(code string) string {
 // diagram is the model's Mermaid source without its fences, or "" when it
 // does not open with one of diagramKinds or is over maxDiagramBytes: the
 // forge would show a render error, or a diagram too big to read, in its
-// place.
+// place. A titled front matter block and comment lines may precede the
+// kind, as Mermaid allows; diagramHeader says what is refused.
 func diagram(src string) string {
 	src = stripFences(strings.TrimSpace(src))
 	if len(src) > maxDiagramBytes {
 		return ""
 	}
-	first, _, _ := strings.Cut(src, "\n")
-	if kind := strings.Fields(first); len(kind) == 0 || !slices.Contains(diagramKinds, kind[0]) {
+	if kind := strings.Fields(diagramHeader(src)); len(kind) == 0 || !slices.Contains(diagramKinds, kind[0]) {
 		return ""
 	}
 	return src
+}
+
+// diagramHeader is the line of src that names its diagram kind: the first
+// past a leading "---" front matter block and any "%%" comment lines. It is
+// "" when the front matter holds anything but a title, or a directive
+// ("%%{...}%%") appears anywhere, since either can reconfigure the forge's
+// rendering.
+func diagramHeader(src string) string {
+	lines := strings.Split(src, "\n")
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+		end := slices.IndexFunc(lines[1:], func(l string) bool { return strings.TrimSpace(l) == "---" })
+		if end < 0 {
+			return ""
+		}
+		for _, l := range lines[1 : end+1] {
+			if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "title:") {
+				return ""
+			}
+		}
+		lines = lines[end+2:]
+	}
+	var header string
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "%%{") {
+			return ""
+		}
+		if header == "" && t != "" && !strings.HasPrefix(t, "%%") {
+			header = t
+		}
+	}
+	return header
 }
 
 // Fingerprint identifies a finding across reviews of the same pull request:

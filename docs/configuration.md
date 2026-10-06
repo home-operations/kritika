@@ -307,7 +307,7 @@ some: `owner/*` for every repository of an account, and `owner/name` for
 one. They come in five groups:
 
 - `review`: what a review runs on and what it says: `model`, `fallback`,
-  `feedback`, `fixes`, `approve` and `incremental`.
+  `feedback`, `fixes`, `approve`, `incremental` and `diagram`.
 - `confidence`: how a review is judged: `model`, `threshold`, `risk` and
   `instructions`.
 - `trigger`: which pull requests are reviewed, and when: `include`,

@@ -127,7 +127,8 @@ skills:
   alters, a request path, a chain of calls or a state machine, as a
   Mermaid flowchart or sequence diagram the forge renders. The model
   leaves it out when the change has no such flow, as for a version bump
-  or a documentation change, and kritika drops one that would not render.
+  or a documentation change, and kritika keeps only a flowchart, graph
+  or sequence diagram under 4 KiB.
   It replaces the admin's, in either direction. Off unless set, since it
   costs output tokens on every review.
 - `confidence.model` / `confidence.threshold` / `confidence.gate`: the

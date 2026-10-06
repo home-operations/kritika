@@ -78,6 +78,12 @@ func TestCheck(t *testing.T) {
 		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
+		{name: "a flowchart", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B"},"findings":[]}`},
+		{name: "a blank diagram", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":" "},"findings":[]}`},
+		{name: "a diagram of another kind", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"pie\n  \"a\": 1"},"findings":[]}`,
+			wantErr: "summary.diagram must be Mermaid source under 4096 bytes opening with flowchart, graph, sequenceDiagram, or be left out"},
+		{name: "prose as a diagram", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"A calls B."},"findings":[]}`,
+			wantErr: "summary.diagram must be"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -622,8 +628,14 @@ func TestParseDiagram(t *testing.T) {
 		{"its fences are dropped", "```mermaid\n" + flow + "\n```", flow},
 		{"a sequence diagram is kept", "sequenceDiagram\n  A->>B: run", "sequenceDiagram\n  A->>B: run"},
 		{"a graph is kept", "graph LR\n  A --> B", "graph LR\n  A --> B"},
+		{"front matter may precede the kind", "---\ntitle: Webhook flow\n---\n" + flow, "---\ntitle: Webhook flow\n---\n" + flow},
+		{"a comment may precede the kind", "%% request path\n" + flow, "%% request path\n" + flow},
 		{"an unsupported kind is dropped", "pie\n  \"a\": 1", ""},
+		{"unclosed front matter is dropped", "---\ntitle: Webhook flow\n" + flow, ""},
 		{"an init directive is dropped", "%%{init: {}}%%\n" + flow, ""},
+		{"an init directive after a comment is dropped", "%% theme\n%%{init: {}}%%\n" + flow, ""},
+		{"an init directive after the kind is dropped", flow + "\n%%{init: {\"theme\": \"dark\"}}%%", ""},
+		{"front matter that configures is dropped", "---\ntitle: Flow\nconfig:\n  theme: dark\n---\n" + flow, ""},
 		{"prose is dropped", "The webhook calls the worker.", ""},
 		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", maxDiagramBytes/10), ""},
 		{"none stays none", "", ""},
