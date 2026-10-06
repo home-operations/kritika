@@ -26,6 +26,7 @@ func TestParse_Invalid(t *testing.T) {
 		{"include name given twice", "trigger:\n  include: [{ name: a, expr: \"true\" }, { name: a, expr: \"true\" }]\n"},
 		{"a single filter expression", "trigger:\n  filterExpr: \"true\"\n"},
 		{"forks are the admin's to exclude", "trigger:\n  forks: false\n"},
+		{"cost is the admin's to show", "review:\n  cost: true\n"},
 		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]\n"},
 		{"rule file escapes repo", "rules: [{ id: a, file: ../x }]\n"},
 		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},

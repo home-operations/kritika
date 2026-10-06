@@ -111,6 +111,7 @@ tests:
         confidenceGate: false
         reviewApprove: true
         reviewDiagram: true
+        reviewCost: true
         triggerLimit: 0
         authOidcClientSecret: {}
     asserts:
@@ -126,6 +127,9 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_REVIEW_DIAGRAM, value: "true" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_REVIEW_COST, value: "true" }
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_TRIGGER_LIMIT, value: "0" }

@@ -233,6 +233,7 @@ export interface ReviewBlock {
   inlineComments: boolean;
   approve: boolean;
   diagram: boolean;
+  cost: boolean;
   context: ContextFile[];
   feedback: Feedback;
 }

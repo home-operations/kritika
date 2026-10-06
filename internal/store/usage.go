@@ -34,3 +34,15 @@ func InsertUsage(ctx context.Context, tx pgx.Tx, u Usage) error {
 	}
 	return nil
 }
+
+// PullCost is what the pull request's reviews have cost together: every
+// usage row charged to one of them.
+func PullCost(ctx context.Context, tx pgx.Tx, pullRequestID string) (float64, error) {
+	var cost float64
+	err := tx.QueryRow(ctx, `SELECT coalesce(sum(u.cost_usd), 0)::float8 FROM usage u JOIN reviews v ON v.id = u.review_id
+		WHERE v.pull_request_id = $1`, pullRequestID).Scan(&cost)
+	if err != nil {
+		return 0, fmt.Errorf("store: pull cost: %w", err)
+	}
+	return cost, nil
+}

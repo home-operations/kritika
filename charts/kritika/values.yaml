@@ -48,7 +48,7 @@ strategy:
 # file's sections (auth*, apps*, providers*, embedding*, and the review,
 # confidence and trigger settings reviewModel, reviewFallback,
 # reviewFeedback, reviewApprove, reviewFixes, reviewIncremental,
-# reviewDiagram, confidenceModel, confidenceThreshold, confidenceGate,
+# reviewDiagram, reviewCost, confidenceModel, confidenceThreshold, confidenceGate,
 # confidenceRisk, triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
@@ -214,6 +214,11 @@ config:
   # @schema
   # -- `true` has the summary draw the flow the change adds or alters as a Mermaid diagram; off unless set.
   reviewDiagram: ""
+  # @schema
+  # type: [boolean, string]
+  # @schema
+  # -- `true` ends the summary's footer with what the pull request's reviews have cost together; off unless set.
+  reviewCost: ""
   # -- The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set.
   confidenceModel: ""
   # @schema

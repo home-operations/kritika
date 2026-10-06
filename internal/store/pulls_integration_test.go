@@ -267,6 +267,24 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	if m.CostUSD != 167 {
 		t.Errorf("CostUSD = %v, want 167 with the failed review and the follow-up", m.CostUSD)
 	}
+	// A pull request's cost is every review's, however it ended.
+	for reviewID, want := range map[string]float64{confident: 4, failed: 100} {
+		var cost float64
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var prID string
+			if err := tx.QueryRow(ctx, `SELECT pull_request_id FROM reviews WHERE id = $1`, reviewID).Scan(&prID); err != nil {
+				return err
+			}
+			var err error
+			cost, err = PullCost(ctx, tx, prID)
+			return err
+		}); err != nil {
+			t.Fatalf("PullCost: %v", err)
+		}
+		if cost != want {
+			t.Errorf("PullCost = %v, want %v", cost, want)
+		}
+	}
 }
 
 // TestLastReviewIsNotASkippedOne checks that a skipped review newer than

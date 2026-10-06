@@ -95,7 +95,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 		"- **[nit]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
 		// Without the head's subject the footer names it by hash.
-		"<sub>Reviews (1) · Last reviewed commit: `0123456` · kritika with vendor/model-x</sub>",
+		"<sub>Reviews (1) · Last reviewed commit: `0123456` · vendor/model-x</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
@@ -116,7 +116,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 	// An incremental review says so in the footer alone, with the subject
 	// cut to fit.
 	if !strings.Contains(body, "**No findings**\n\n### Summary\n\nSolid change") || strings.Contains(body, "Incremental review") ||
-		!strings.Contains(body, "<sub>Reviews (2) · Last reviewed commit: \"fix(cache): evict the widget cache when...\" · kritika with vendor/model-x</sub>") ||
+		!strings.Contains(body, "<sub>Reviews (2) · Last reviewed commit: \"fix(cache): evict the widget cache when...\" · vendor/model-x</sub>") ||
 		strings.Contains(body, "_1 file") || strings.Contains(body, "0 findings") || strings.Contains(body, "Findings\n") ||
 		strings.Contains(body, "\n\n\n") {
 		t.Fatalf("empty body:\n%s", body)
@@ -166,6 +166,23 @@ func TestRenderSummaryConfidence(t *testing.T) {
 				t.Fatalf("notes = %v, want %q in:\n%s", notes, tt.want, body)
 			}
 		})
+	}
+}
+
+// TestRenderSummaryCost: the footer ends with what the pull request's
+// reviews cost where the repository shows it, and FormatUSD keeps a small
+// amount from reading as free.
+func TestRenderSummaryCost(t *testing.T) {
+	d := sampleData()
+	d.Cost = FormatUSD(1.234)
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "<sub>Reviews (1) · Last reviewed commit: `0123456` · vendor/model-x · $1.23</sub>") {
+		t.Fatalf("footer without the cost:\n%s", body)
+	}
+	for amount, want := range map[float64]string{0: "$0", 0.0042: "$0.0042", 0.01: "$0.01", 12.5: "$12.50"} {
+		if got := FormatUSD(amount); got != want {
+			t.Errorf("FormatUSD(%v) = %q, want %q", amount, got, want)
+		}
 	}
 }
 
@@ -231,7 +248,7 @@ func TestRenderSummaryLinks(t *testing.T) {
 			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n" +
 			"- **[important]** `util.go:3` unchecked error · resolved\n" +
 			"- **[nit]** `cache.go:5` terse name · dismissed: house style\n\n</details>\n\n### Summary",
-		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · kritika with vendor/model-x</sub>",
+		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · vendor/model-x</sub>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
