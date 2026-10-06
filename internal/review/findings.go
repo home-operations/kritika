@@ -249,6 +249,9 @@ type ParseOptions struct {
 	// Focused drops findings of the categories a focused review leaves
 	// out, whatever the model was told.
 	Focused bool
+	// Diagram keeps the summary's diagram; without it the diagram is
+	// dropped, whatever the model sent.
+	Diagram bool
 	// Rules are the ids of the rules the review was given, the only ones a
 	// finding may cite.
 	Rules []string
@@ -327,8 +330,9 @@ const (
 )
 
 // contractSchema is kept minimal on purpose: every extra field is something
-// a model can get wrong.
-func contractSchema(requireFix bool) json.RawMessage {
+// a model can get wrong. diagram adds summary.diagram, which a review is
+// asked for only where the repository opts in.
+func contractSchema(requireFix, diagram bool) json.RawMessage {
 	required := []string{keyPath, keyLine, keySeverity, keyCategory, keyTitle, keyExplanation}
 	fix := "A concrete fix: replacement code or a precise instruction. Markdown allowed, no headings."
 	if requireFix {
@@ -344,29 +348,32 @@ func contractSchema(requireFix bool) json.RawMessage {
 	for i, c := range categories {
 		kinds[i] = string(c)
 	}
+	summary := map[string]*jsonSchema{
+		keyHeadline: {
+			Type:        schemaString,
+			Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
+		},
+		keyTake: {
+			Type:        schemaString,
+			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
+		},
+		keyPraise: {
+			Type:        schemaArray,
+			Description: "Up to three specific things the change does well; empty when nothing stands out.",
+			Items:       &jsonSchema{Type: schemaString},
+			MaxItems:    maxPraise,
+		},
+	}
+	if diagram {
+		summary[keyDiagram] = &jsonSchema{Type: schemaString, Description: describeDiagram}
+	}
 	return jsonSchema{
 		Type: schemaObject,
 		Properties: map[string]*jsonSchema{
 			keySummary: {
-				Type: schemaObject,
-				Properties: map[string]*jsonSchema{
-					keyHeadline: {
-						Type:        schemaString,
-						Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
-					},
-					keyTake: {
-						Type:        schemaString,
-						Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
-					},
-					keyPraise: {
-						Type:        schemaArray,
-						Description: "Up to three specific things the change does well; empty when nothing stands out.",
-						Items:       &jsonSchema{Type: schemaString},
-						MaxItems:    maxPraise,
-					},
-					keyDiagram: {Type: schemaString, Description: describeDiagram},
-				},
-				Required: []string{keyHeadline, keyTake, keyPraise},
+				Type:       schemaObject,
+				Properties: summary,
+				Required:   []string{keyHeadline, keyTake, keyPraise},
 			},
 			keyFindings: {
 				Type: schemaArray,
@@ -395,16 +402,24 @@ func contractSchema(requireFix bool) json.RawMessage {
 	}.mustMarshal()
 }
 
-var (
-	findingsSchema       = contractSchema(false)
-	findingsSchemaStrict = contractSchema(true)
-)
+// contract picks one of the schemas contractSchema builds.
+type contract struct{ strict, diagram bool }
 
-// Schema is the JSON Schema of the answer the model must produce.
-func Schema() json.RawMessage { return slices.Clone(findingsSchema) }
+var contracts = map[contract]json.RawMessage{
+	{false, false}: contractSchema(false, false),
+	{false, true}:  contractSchema(false, true),
+	{true, false}:  contractSchema(true, false),
+	{true, true}:   contractSchema(true, true),
+}
+
+// Schema is the JSON Schema of the answer the model must produce, with
+// summary.diagram when diagram is set.
+func Schema(diagram bool) json.RawMessage { return slices.Clone(contracts[contract{false, diagram}]) }
 
 // SchemaStrict is Schema with suggested_fix required on every finding.
-func SchemaStrict() json.RawMessage { return slices.Clone(findingsSchemaStrict) }
+func SchemaStrict(diagram bool) json.RawMessage {
+	return slices.Clone(contracts[contract{true, diagram}])
+}
 
 // Check says why raw is not a review in the contract's shape: a field of
 // the wrong type, or no summary take. It is what the agent loop answers a
@@ -431,7 +446,8 @@ func Check(raw json.RawMessage) error {
 // its text. A range or a replacement the diff does not wholly cover is
 // cleared rather than the finding dropped, and an insertion becomes a
 // replacement of its line by that line plus the added ones. Kept findings
-// are ordered most severe first, then by path and line.
+// are ordered most severe first, then by path and line. The summary keeps
+// its diagram only when opts ask for one and it is one diagram allows.
 func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Result, []Dropped, error) {
 	var res Result
 	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw)))
@@ -447,7 +463,9 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 	}
 	res.Summary.Praise = praise
-	res.Summary.Diagram = diagram(res.Summary.Diagram)
+	if res.Summary.Diagram = diagram(res.Summary.Diagram); !opts.Diagram {
+		res.Summary.Diagram = ""
+	}
 	kept := make([]Finding, 0, len(res.Findings))
 	var dropped []Dropped
 	for _, f := range res.Findings {

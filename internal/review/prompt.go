@@ -127,11 +127,7 @@ it is sound, and mentions a concern only if it is also a finding: what is worth 
 what is not worth a finding is not worth stating. It does not say what the diff cannot show or what you could not
 verify; the reader knows what a diff is. It does not give a verdict, count the findings or say there are none, and
 does not list what you read or how you read it: kritika states the count and lists the sources itself. Praise lists
-at most three specific things done well, and is empty when nothing stands out. The diagram is a Mermaid flowchart
-or sequenceDiagram of the flow the change adds or alters, a request path, a chain of calls or a state machine that a
-reviewer would otherwise trace through several functions or files, drawn from the head commit with the real names;
-leave it out when there is no such flow, as for a version bump, a rename, a configuration value, or documentation or
-tests alone. Each
+at most three specific things done well, and is empty when nothing stands out. Each
 finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
 be fixed before merging, important for something that should be fixed, nit for optional polish. It has a category
 too, what kind of problem it is: correctness, security, performance, reliability, maintainability or tests, as the
@@ -144,6 +140,15 @@ without fences, indented as the file is; kritika offers them as a one-click sugg
 When the fix is elsewhere or not a code change, describe it in suggested_fix instead. Give every finding with a fix
 an agent_prompt: one plain-text paragraph telling a coding agent what to change, naming the file, lines and symbols.
 If nothing is worth flagging, return an empty findings list; the take still describes the change.`
+
+// summaryDiagram follows systemRules when the repository asks for a
+// diagram in the summary.
+const summaryDiagram = `
+
+The summary's diagram is a Mermaid flowchart or sequenceDiagram of the flow the change adds or alters, a request path,
+a chain of calls or a state machine that a reviewer would otherwise trace through several functions or files, drawn
+from the head commit with the real names. Leave it out when there is no such flow, as for a version bump, a rename, a
+configuration value, or documentation or tests alone.`
 
 // agenticSees is what a reviewer that works through read-only tools over
 // the head commit sees, and agenticTools how it uses them and answers, by
@@ -194,13 +199,17 @@ type Rule struct {
 // which come from the admin and the merge base and so carry the
 // maintainers' authority, appended. commands are what the run tool offers;
 // none leaves the tool out of the prompt. search says the search_code
-// tool is offered.
-func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string, focused, search bool) string {
+// tool is offered, and diagram that the summary carries a diagram.
+func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string, focused, search, diagram bool) string {
 	report := reportThorough
 	if focused {
 		report = reportFocused
 	}
-	system := systemLead + agenticSees + "\n\n" + report + systemRules + agenticTools
+	system := systemLead + agenticSees + "\n\n" + report + systemRules
+	if diagram {
+		system += summaryDiagram
+	}
+	system += agenticTools
 	if search {
 		system += agenticSearch
 	}

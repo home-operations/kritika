@@ -112,6 +112,10 @@ func TestMerge(t *testing.T) {
 			want: func(s *configfile.Settings) { s.Review.Approve = true },
 		},
 		{
+			name: "diagram replaces the admin's", doc: "review: { diagram: true }\n",
+			want: func(s *configfile.Settings) { s.Review.Diagram = true },
+		},
+		{
 			name: "review.fixes may only turn on", doc: "review: { fixes: false }\n",
 			dropped: []string{".kritika.yaml: review.fixes false was dropped; allowed: true, since an admin requires a suggested fix"},
 		},

@@ -426,8 +426,8 @@ repositories:
 
 The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
-`review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
-`confidence.threshold`, `confidence.gate`, `confidence.risk`, `trigger.include`,
+`review.feedback`, `review.fixes`, `review.approve`, `review.diagram`,
+`confidence.model`, `confidence.threshold`, `confidence.gate`, `confidence.risk`, `trigger.include`,
 `trigger.exclude`, `comments`, `rules`, `context`, `skills` and `ignore`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
@@ -542,6 +542,7 @@ the environment:
 | `KRITIKA_REVIEW_APPROVE`           | `review.approve`, `true` or `false`                                                   |
 | `KRITIKA_REVIEW_FIXES`             | `review.fixes`, `true` or `false`                                                     |
 | `KRITIKA_REVIEW_INCREMENTAL`       | `review.incremental`, a whole number of files                                         |
+| `KRITIKA_REVIEW_DIAGRAM`           | `review.diagram`, `true` or `false`                                                   |
 | `KRITIKA_CONFIDENCE_MODEL`         | `confidence.model`                                                                    |
 | `KRITIKA_CONFIDENCE_THRESHOLD`     | `confidence.threshold`, a whole number from 0 to 5                                    |
 | `KRITIKA_CONFIDENCE_GATE`          | `confidence.gate`, `true` or `false`                                                  |

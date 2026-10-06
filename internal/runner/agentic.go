@@ -29,12 +29,13 @@ const submitDescription = "Submit the review and end it. The input is the whole 
 	"each anchored to a line added or changed on the head side of the diff. Call it exactly once, when you are done."
 
 // SubmitTool is the submit_review tool as the agent is offered it: its
-// input is the review contract, strict when a suggested fix is required.
-// The bench sends it too, so it measures what a review sends.
-func SubmitTool(strict bool) model.ToolDef {
-	schema := review.Schema()
+// input is the review contract, strict when a suggested fix is required,
+// with a summary diagram when diagram is set. The bench sends it too, so
+// it measures what a review sends.
+func SubmitTool(strict, diagram bool) model.ToolDef {
+	schema := review.Schema(diagram)
 	if strict {
-		schema = review.SchemaStrict()
+		schema = review.SchemaStrict(diagram)
 	}
 	return model.ToolDef{Name: submitReview, Description: submitDescription, InputSchema: schema}
 }
@@ -147,7 +148,8 @@ func (a agentPrompt) notes() []string {
 // context includes the similar code the gateway found. commands are what
 // the run tool offers, and search says search_code is offered.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
-	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, p.Prompt.Focused, search)
+	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, p.Prompt.Focused, search,
+		p.Prompt.Diagram)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
@@ -228,7 +230,7 @@ func reviewAgent(
 			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
 			agent.ReadDescriptionTool(p.Prompt.PullRequest.Body, issues, limits.MaxToolOutputBytes),
 		}, extra...),
-		Submit:   SubmitTool(strict),
+		Submit:   SubmitTool(strict, p.Prompt.Diagram),
 		Validate: review.Check,
 		Limits:   limits,
 		OnStep: func(e agent.StepEvent) {

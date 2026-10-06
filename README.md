@@ -55,6 +55,9 @@ metrics and development.
   finds nothing blocking or important approve the pull request, and a later
   review that does withdraw it. With a confidence score, a pull request is
   approved when its score and the risk of its change allow it.
+- **Flow diagrams, opt-in.** The summary can draw the flow a change adds or
+  alters as a Mermaid diagram, so a reviewer sees the path before reading
+  the code.
 - **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through

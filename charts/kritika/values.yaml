@@ -48,8 +48,8 @@ strategy:
 # file's sections (auth*, apps*, providers*, embedding*, and the review,
 # confidence and trigger settings reviewModel, reviewFallback,
 # reviewFeedback, reviewApprove, reviewFixes, reviewIncremental,
-# confidenceModel, confidenceThreshold, confidenceGate, confidenceRisk,
-# triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values
+# reviewDiagram, confidenceModel, confidenceThreshold, confidenceGate,
+# confidenceRisk, triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
 # refuses them, as it refuses a KRITIKA_* variable under `env`.
@@ -203,6 +203,11 @@ config:
   # @schema
   # -- How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set.
   reviewIncremental: ""
+  # @schema
+  # type: [boolean, string]
+  # @schema
+  # -- `true` has the summary draw the flow the change adds or alters as a Mermaid diagram; off unless set.
+  reviewDiagram: ""
   # -- The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set.
   confidenceModel: ""
   # @schema

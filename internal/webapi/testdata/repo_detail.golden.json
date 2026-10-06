@@ -54,6 +54,7 @@
       },
       "inlineComments": true,
       "approve": false,
+      "diagram": false,
       "context": [
         {
           "path": "db/schema.sql",
@@ -142,6 +143,7 @@
         },
         "inlineComments": true,
         "approve": false,
+        "diagram": false,
         "context": [
           {
             "path": "db/schema.sql",

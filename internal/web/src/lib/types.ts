@@ -225,6 +225,7 @@ export interface ReviewBlock {
   templates: { summary?: string; inline?: string };
   inlineComments: boolean;
   approve: boolean;
+  diagram: boolean;
   context: ContextFile[];
   feedback: Feedback;
 }

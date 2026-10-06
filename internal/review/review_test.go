@@ -521,10 +521,10 @@ func TestSchemas(t *testing.T) {
 		required []string
 		check    func(t *testing.T, n node)
 	}{
-		{"findings", Schema(), []string{"summary", "findings"}, func(t *testing.T, n node) {
+		{"findings", Schema(false), []string{"summary", "findings"}, func(t *testing.T, n node) {
 			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation"})
 		}},
-		{"strict findings", SchemaStrict(), []string{"summary", "findings"}, func(t *testing.T, n node) {
+		{"strict findings", SchemaStrict(false), []string{"summary", "findings"}, func(t *testing.T, n node) {
 			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation", "suggested_fix"})
 		}},
 		{"follow-up", FollowUpSchema(), []string{"reply"}, func(t *testing.T, n node) {
@@ -545,10 +545,32 @@ func TestSchemas(t *testing.T) {
 			tt.check(t, n)
 		})
 	}
+	t.Run("a diagram is in the contract only when asked for", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			raw  json.RawMessage
+			want bool
+		}{
+			"Schema":            {Schema(false), false},
+			"Schema diagram":    {Schema(true), true},
+			"SchemaStrict":      {SchemaStrict(false), false},
+			"SchemaStrict diag": {SchemaStrict(true), true},
+		} {
+			var n node
+			if err := json.Unmarshal(tt.raw, &n); err != nil {
+				t.Fatal(err)
+			}
+			if _, got := n.Properties["summary"].Properties["diagram"]; got != tt.want {
+				t.Errorf("%s has summary.diagram = %v, want %v", name, got, tt.want)
+			}
+			if slices.Contains(n.Properties["summary"].Required, "diagram") {
+				t.Errorf("%s requires summary.diagram", name)
+			}
+		}
+	})
 	t.Run("callers cannot alter the shared schema", func(t *testing.T) {
-		s := Schema()
+		s := Schema(false)
 		s[0] = 'x'
-		if Schema()[0] != '{' {
+		if Schema(false)[0] != '{' {
 			t.Fatal("Schema returned the shared slice")
 		}
 	})
@@ -579,7 +601,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	}
 	keys := func(m map[string]any) []string { return slices.Sorted(maps.Keys(m)) }
 	props := func(n *node) []string { return slices.Sorted(maps.Keys(n.Properties)) }
-	for name, schema := range map[string]json.RawMessage{"Schema": Schema(), "SchemaStrict": SchemaStrict()} {
+	for name, schema := range map[string]json.RawMessage{"Schema": Schema(true), "SchemaStrict": SchemaStrict(true)} {
 		var n node
 		if err := json.Unmarshal(schema, &n); err != nil {
 			t.Fatal(err)
@@ -606,13 +628,22 @@ func TestParseDiagram(t *testing.T) {
 		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", maxDiagramBytes/10), ""},
 		{"none stays none", "", ""},
 	}
+	t.Run("a diagram not asked for is dropped", func(t *testing.T) {
+		res, _, err := Parse(`{"summary": {"take": "t", "diagram": "flowchart TD\n  A --> B"}, "findings": []}`, nil, ParseOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Summary.Diagram != "" {
+			t.Fatalf("diagram = %q, want none", res.Summary.Diagram)
+		}
+	})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			raw, err := json.Marshal(Result{Summary: Summary{Take: "t", Diagram: tt.diagram}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			res, _, err := Parse(string(raw), nil, ParseOptions{})
+			res, _, err := Parse(string(raw), nil, ParseOptions{Diagram: true})
 			if err != nil {
 				t.Fatal(err)
 			}

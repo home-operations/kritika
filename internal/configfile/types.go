@@ -233,8 +233,9 @@ type Overrides struct {
 // ReviewSpec sets how a review is done at one scope: its models, a role
 // written here, even empty, replacing the broader scope's, how much it
 // says, whether a finding must carry a suggested fix, whether it approves,
-// and how many files may change since the last review before a re-review
-// covers the whole pull request again.
+// how many files may change since the last review before a re-review
+// covers the whole pull request again, and whether the summary draws the
+// change's flow.
 type ReviewSpec struct {
 	Model       *ModelRef `yaml:"model,omitempty"`
 	Fallback    *ModelRef `yaml:"fallback,omitempty"`
@@ -242,6 +243,7 @@ type ReviewSpec struct {
 	Fixes       *bool     `yaml:"fixes,omitempty"`
 	Approve     *bool     `yaml:"approve,omitempty"`
 	Incremental *int      `yaml:"incremental,omitempty"`
+	Diagram     *bool     `yaml:"diagram,omitempty"`
 }
 
 // ConfidenceSpec sets how a review is judged at one scope: the model that
@@ -555,7 +557,11 @@ type Review struct {
 	// blocking or important, or, where a confidence score is asked for,
 	// whose score and risk allow it, and to dismiss that approval when a
 	// later review's do not. Off unless set.
-	Approve bool          `json:"approve"`
+	Approve bool `json:"approve"`
+	// Diagram is true to have the summary draw the flow the change adds
+	// or alters as a Mermaid diagram. Off unless set: it costs output
+	// tokens on every review.
+	Diagram bool          `json:"diagram"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes, the broadest scope's
 	// first. The API serves them from the rules routes, with what each

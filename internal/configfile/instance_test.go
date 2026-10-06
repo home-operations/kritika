@@ -168,6 +168,7 @@ func TestFileReviewDefaults(t *testing.T) {
 	t.Setenv("KRITIKA_TRIGGER_SETTLE", "45s")
 	t.Setenv("KRITIKA_REVIEW_APPROVE", "true")
 	t.Setenv("KRITIKA_REVIEW_FIXES", "true")
+	t.Setenv("KRITIKA_REVIEW_DIAGRAM", "true")
 	t.Setenv("KRITIKA_REVIEW_INCREMENTAL", "7")
 	models := "review: { model: openrouter/big, fallback: openrouter/small"
 	withDefaults := func(reviewKeys, rootKeys string) []byte {
@@ -181,13 +182,14 @@ func TestFileReviewDefaults(t *testing.T) {
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
 	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal || !s.Review.Approve ||
-		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 {
+		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram {
 		t.Fatalf("settings = %+v; want the file's and the environment's", s)
 	}
 	src := f.Sources(a, "acme/x")
 	for key, want := range map[string]Source{
 		"trigger.limit": SourceEnv, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults,
 		"review.approve": SourceEnv, "review.fixes": SourceEnv, "review.incremental": SourceEnv,
+		"review.diagram": SourceEnv,
 	} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
@@ -198,6 +200,7 @@ func TestFileReviewDefaults(t *testing.T) {
 		{"review.approve", FileValue{Value: "true", Source: SourceEnv}},
 		{"review.fixes", FileValue{Value: "true", Source: SourceEnv}},
 		{"review.incremental", FileValue{Value: "7", Source: SourceEnv}},
+		{"review.diagram", FileValue{Value: "true", Source: SourceEnv}},
 		{"trigger.settle", FileValue{Value: "45s", Source: SourceEnv}},
 		{"trigger.limit", FileValue{Value: "3", Source: SourceEnv}},
 	}
@@ -217,6 +220,7 @@ func TestFileReviewDefaults(t *testing.T) {
 	for _, tt := range []struct{ env, value, want string }{
 		{"KRITIKA_REVIEW_APPROVE", "yes please", "KRITIKA_REVIEW_APPROVE must be true or false"},
 		{"KRITIKA_REVIEW_FIXES", "1.5", "KRITIKA_REVIEW_FIXES must be true or false"},
+		{"KRITIKA_REVIEW_DIAGRAM", "sure", "KRITIKA_REVIEW_DIAGRAM must be true or false"},
 		{"KRITIKA_REVIEW_INCREMENTAL", "many", "KRITIKA_REVIEW_INCREMENTAL must be a whole number"},
 		{"KRITIKA_TRIGGER_LIMIT", "-1", "trigger.limit must not be negative"},
 	} {
