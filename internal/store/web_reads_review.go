@@ -306,18 +306,18 @@ func ContextPackInputs(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]co
 // and the call that scored its confidence, in the order they were
 // recorded, not the follow-ups later answered against it.
 func ReviewModelCalls(ctx context.Context, tx pgx.Tx, reviewID string) ([]transcript.StoredRow, error) {
-	return modelCallsWhere(ctx, tx, `review_id = $1::uuid AND kind IN ('agent_step', 'confidence')`, reviewID)
+	return modelCallsWhere(ctx, tx, `review_id = $1::uuid AND kind IN ('agent_step', 'confidence') AND followup_comment_id IS NULL`, reviewID)
 }
 
 // FollowupModelCalls returns the model calls that answered a follow-up
-// comment on one pull request. GitHub numbers conversation and inline
+// comment on one pull request: its agent's steps. GitHub numbers conversation and inline
 // comments apart, so a comment id alone may name two comments, and the pull
 // request pins which one is meant: a call recorded against a
 // review must belong to one of its reviews, and one recorded against no
 // review is kept only when no other pull request of the account has a
 // follow-up with that comment id.
 func FollowupModelCalls(ctx context.Context, tx pgx.Tx, pullRequestID string, commentID int64) ([]transcript.StoredRow, error) {
-	return modelCallsWhere(ctx, tx, `kind = 'followup' AND followup_comment_id = $2 AND (
+	return modelCallsWhere(ctx, tx, `kind IN ('followup', 'agent_step') AND followup_comment_id = $2 AND (
 		review_id IN (SELECT id FROM reviews WHERE pull_request_id = $1::uuid)
 		OR (review_id IS NULL AND NOT EXISTS (SELECT 1 FROM followups
 			WHERE comment_id = $2 AND pull_request_id <> $1::uuid)))`, pullRequestID, commentID)

@@ -64,7 +64,7 @@ func checkReviewTranscript(ctx context.Context, t *testing.T, st *store.Store, a
 }
 
 // checkFollowUpTranscript checks that answering commentID recorded one
-// followup call against the review it followed.
+// agent step, of the follow-up's own run, against the review it followed.
 func checkFollowUpTranscript(ctx context.Context, t *testing.T, st *store.Store, accountID string, commentID int64, fc *fakeCompleter) {
 	t.Helper()
 	fc.mu.Lock()
@@ -77,7 +77,8 @@ func checkFollowUpTranscript(ctx context.Context, t *testing.T, st *store.Store,
 		}
 		return store.FollowupModelCalls(ctx, tx, prID, commentID)
 	})
-	if len(rows) != 1 || rows[0].Kind != store.ModelCallFollowUp || rows[0].ReviewID == "" || rows[0].Messages[0].Text != user ||
+	if len(rows) != 1 || rows[0].Kind != store.ModelCallAgentStep || rows[0].ReviewID == "" || rows[0].RunnerRunID == "" ||
+		rows[0].Messages[0].Text != user ||
 		!strings.Contains(string(rows[0].Response.ToolCalls[0].Input), "Because b is new.") {
 		t.Fatalf("follow-up model calls = %+v", rows)
 	}

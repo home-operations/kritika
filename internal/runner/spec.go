@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 15
+const SpecVersion = 16
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -38,12 +38,19 @@ const (
 	KindReview Kind = "review"
 	// KindIndex chunks a tree into the index staging table.
 	KindIndex Kind = "index"
+	// KindFollowUp fetches head and merge-base, as a review does, and
+	// answers a comment in a pull request thread.
+	KindFollowUp Kind = "followup"
 )
 
 // Valid reports whether k is a kind of run the runner implements.
-func (k Kind) Valid() bool { return k == KindReview || k == KindIndex }
+func (k Kind) Valid() bool { return k == KindReview || k == KindIndex || k == KindFollowUp }
 
-// ModelEndpoint is where a review's model calls go: the worker's gateway,
+// agentic reports whether a run of kind k runs an agent: a review's or a
+// follow-up's.
+func (k Kind) agentic() bool { return k == KindReview || k == KindFollowUp }
+
+// ModelEndpoint is where an agent's model calls go: the worker's gateway,
 // which holds the provider key, picks the provider model and its fallbacks,
 // and counts what the run spends. The run's token for it reaches the pod as
 // a job-scoped secret.
@@ -54,7 +61,7 @@ type ModelEndpoint struct {
 	Model string `json:"model"`
 }
 
-// AgentLimits bound a review's agent. A zero limit takes the agent loop's
+// AgentLimits bound a review's or a follow-up's agent. A zero limit takes the agent loop's
 // default; a zero timeout leaves the tool loop to the Job deadline.
 type AgentLimits struct {
 	MaxSteps           int   `json:"maxSteps"`
@@ -73,7 +80,9 @@ type AgentLimits struct {
 // Prompt is what a review run needs beyond the checkout to write its
 // review prompt and to tell whether the worker will skip the review: the
 // pull request, the review settings with the merge-base .kritika.yaml
-// applied, and the last completed review's findings.
+// applied, and the last completed review's findings. A follow-up's prompt
+// is written from the same pull request, rules, context files and
+// findings.
 type Prompt struct {
 	Repository  string                 `json:"repository"`
 	PullRequest repoconfig.PullRequest `json:"pullRequest"`
@@ -152,6 +161,9 @@ type Spec struct {
 	Agent     *AgentLimits   `json:"agent,omitempty"`
 	Model     *ModelEndpoint `json:"model,omitempty"`
 	Prompt    *Prompt        `json:"prompt,omitempty"`
+	// Thread is the comments a follow-up answers, oldest first, the last
+	// of them the one to answer.
+	Thread []review.Message `json:"thread,omitempty"`
 }
 
 // Validate checks a spec is one this runner can carry out.
@@ -160,7 +172,7 @@ func (s Spec) Validate() error {
 		return fmt.Errorf("runner: spec version %d is not supported (want %d)", s.Version, SpecVersion)
 	}
 	if !s.Kind.Valid() {
-		return fmt.Errorf("runner: spec kind %q is not review or index", s.Kind)
+		return fmt.Errorf("runner: spec kind %q is not review, index or followup", s.Kind)
 	}
 	if s.RunID == "" || s.CloneURL == "" {
 		return errors.New("runner: spec needs runId and cloneUrl")
@@ -168,26 +180,29 @@ func (s Spec) Validate() error {
 	if !gitfetch.IsSHA(s.Head) {
 		return fmt.Errorf("runner: spec head %q is not a commit SHA", s.Head)
 	}
-	if s.Kind == KindReview && s.Base == "" {
-		return errors.New("runner: a review spec needs a base")
+	if s.Kind.agentic() && s.Base == "" {
+		return fmt.Errorf("runner: a %s spec needs a base", s.Kind)
 	}
 	for _, c := range []struct{ name, sha string }{{"base", s.Base}, {"priorHead", s.PriorHead}} {
 		if c.sha != "" && !gitfetch.IsSHA(c.sha) {
 			return fmt.Errorf("runner: spec %s %q is not a commit SHA", c.name, c.sha)
 		}
 	}
-	if s.Kind == KindReview {
+	if s.Kind == KindFollowUp && len(s.Thread) == 0 {
+		return errors.New("runner: a followup spec needs the thread it answers")
+	}
+	if s.Kind.agentic() {
 		if s.Agent == nil {
-			return errors.New("runner: a review spec needs agent limits")
+			return fmt.Errorf("runner: a %s spec needs agent limits", s.Kind)
 		}
 		if s.Model == nil || s.Model.Model == "" || s.Model.GatewayURL == "" {
-			return errors.New("runner: a review spec needs a model and the gateway to reach it through")
+			return fmt.Errorf("runner: a %s spec needs a model and the gateway to reach it through", s.Kind)
 		}
 		if s.Prompt == nil {
-			return errors.New("runner: a review spec needs a prompt")
+			return fmt.Errorf("runner: a %s spec needs a prompt", s.Kind)
 		}
 		if len(s.Agent.Commands) > 0 && s.Agent.CommandTimeoutSeconds <= 0 {
-			return errors.New("runner: a review spec with commands needs a command timeout")
+			return fmt.Errorf("runner: a %s spec with commands needs a command timeout", s.Kind)
 		}
 		for _, c := range s.Agent.Commands {
 			// A name with a separator would make exec.LookPath take it as a path.
@@ -294,8 +309,8 @@ func DecodeSpec(data []byte) (Spec, error) {
 }
 
 // Secrets are a run's credentials, delivered apart from the spec: the git
-// token it fetches with and, for a review, its token for the model
-// gateway.
+// token it fetches with and, for a review or a follow-up, its token for
+// the model gateway.
 type Secrets struct {
 	GitToken     string
 	GatewayToken string

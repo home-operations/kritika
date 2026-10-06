@@ -95,6 +95,10 @@ type localForge struct {
 	permissions map[string]forge.Permission
 	replies     []string
 	resolved    []int64
+	// reactions are the bot's reactions on comments, by comment id, and
+	// reacted every comment it has reacted to, in order.
+	reactions map[int64]string
+	reacted   []int64
 	// publishing, when set, runs once as a review writes its sticky
 	// comment, the first thing publishing does.
 	publishing func()
@@ -313,6 +317,27 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 	return int64(len(l.replies)), nil
 }
 
+func (l *localForge) React(_ context.Context, _, _ string, to forge.Comment, content string) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reactions == nil {
+		l.reactions = map[int64]string{}
+	}
+	l.reactions[to.ID] = content
+	l.reacted = append(l.reacted, to.ID)
+	return to.ID + 1, nil
+}
+
+func (l *localForge) Unreact(_ context.Context, _, _ string, from forge.Comment, id int64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if id != from.ID+1 {
+		return fmt.Errorf("reaction %d is not on comment %d", id, from.ID)
+	}
+	delete(l.reactions, from.ID)
+	return nil
+}
+
 func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64, _ bool) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -395,9 +420,9 @@ func (l *localForge) SetStatus(_ context.Context, _, _, _ string, state forge.St
 }
 
 // fakeCompleter answers a review's first step by submitting one finding on
-// the first added line of main.go and one that cannot be anchored, and a
-// follow-up with a fixed reply or a confidence call with a full score, as
-// the forced tool call a model.Structured makes.
+// the first added line of main.go and one that cannot be anchored, a
+// follow-up's with a fixed reply, and a confidence call with a full score,
+// as the forced tool call a model.Structured makes.
 type fakeCompleter struct {
 	mu       sync.Mutex
 	calls    int
@@ -422,16 +447,15 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
 	f.sessions = append(f.sessions, req.Session)
-	isReply := req.Tools[0].Name == "reply"
 	var diagram string
 	if f.diagram != "" {
 		diagram = `,"diagram":` + strconv.Quote(f.diagram)
 	}
 	f.mu.Unlock()
-	// A review's agent is offered its read-only tools too; it submits at once.
+	// An agent is offered its read-only tools too; it submits at once.
 	tool := req.Tools[0].Name
 	for _, t := range req.Tools {
-		if t.Name == "submit_review" {
+		if t.Name == "submit_review" || t.Name == review.SubmitReply {
 			tool = t.Name
 		}
 	}
@@ -441,7 +465,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 			Usage: usage, Model: req.Model, Upstream: upstream, CostUSD: cost,
 		}
 	}
-	if isReply {
+	if tool == review.SubmitReply {
 		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
 	if tool == "confidence" {
@@ -948,6 +972,10 @@ func checkFollowUps(
 	if want := fmt.Sprintf("followup-%d", id); session != want {
 		t.Fatalf("follow-up session = %q, want %q: the mention is the conversation", session, want)
 	}
+	// The agent is offered a review's tools, and told how it answers.
+	if !strings.Contains(system, "submit_reply") || !strings.Contains(system, "read_file, grep and list_files") {
+		t.Fatalf("follow-up system prompt lacks its tools:\n%s", system)
+	}
 	// The root's AGENTS.md, as the review's runner read it.
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
 		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
@@ -964,10 +992,25 @@ func checkFollowUps(
 	if replyID <= commentBase {
 		t.Fatalf("reply id %d not recorded as a bigint", replyID)
 	}
+	checkFollowUpRun(ctx, t, st, accountID, id)
+	// The mention carried the bot's eyes while its agent worked, and loses
+	// them once the reply is up.
+	waitFor(t, 5*time.Second, "the eyes to come off the answered mention", func() bool {
+		lf.mu.Lock()
+		defer lf.mu.Unlock()
+		_, on := lf.reactions[id]
+		return slices.Contains(lf.reacted, id) && !on
+	})
 
 	id = mention("outsider", "@kritika and me?")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
 		t.Fatalf("outsider: status = %s (%s)", status, reason)
+	}
+	lf.mu.Lock()
+	marked := slices.Contains(lf.reacted, id)
+	lf.mu.Unlock()
+	if marked {
+		t.Fatal("a mention that is not answered was marked as being answered")
 	}
 	id = mention("onedr0p", "no mention here @someoneelse")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "does not mention") {
@@ -999,6 +1042,41 @@ func checkFollowUps(
 	// The mention itself is one comment; no notice follows it.
 	if status != "limited" || after != before+1 {
 		t.Fatalf("second limited mention: status = %s, comments %d -> %d", status, before, after)
+	}
+}
+
+// checkFollowUpRun: the follow-up's agent ran in a runner of its own kind,
+// which submitted the reply, and what it spent is charged as a follow-up's
+// to no review.
+func checkFollowUpRun(ctx context.Context, t *testing.T, st *store.Store, accountID string, commentID int64) {
+	t.Helper()
+	var phase, stop, result string
+	var usage, reviewUsage int
+	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT r.phase, a.stop_reason, a.result::text FROM model_calls m
+			JOIN runner_runs r ON r.id = m.runner_run_id JOIN agent_runs a ON a.runner_run_id = r.id
+			WHERE m.followup_comment_id = $1 AND r.kind = 'followup' AND r.review_id IS NULL AND r.finished_at IS NOT NULL`, commentID).
+			Scan(&phase, &stop, &result); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE review_id IS NULL), count(*) FILTER (WHERE review_id IS NOT NULL)
+			FROM usage WHERE role = 'followup'`).Scan(&usage, &reviewUsage)
+	})
+	if err != nil {
+		t.Fatalf("follow-up run: %v", err)
+	}
+	if phase != "done" || stop != "submitted" || !strings.Contains(result, "Because b is new.") {
+		t.Fatalf("follow-up run: phase = %s, stop = %s, result = %s", phase, stop, result)
+	}
+	if usage != 1 || reviewUsage != 0 {
+		t.Fatalf("follow-up usage rows = %d, of them %d charged to a review; want 1 and 0", usage, reviewUsage)
+	}
+	var tokens int
+	err = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM gateway_tokens WHERE followup_comment_id = $1`, commentID).Scan(&tokens)
+	})
+	if err != nil || tokens != 0 {
+		t.Fatalf("follow-up run tokens left = %d, %v; want them revoked", tokens, err)
 	}
 }
 
@@ -1124,7 +1202,9 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		// A stopped run's runner never started here, so no agent row comes.
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
-	river.AddWorker(workers, &FollowUp{Base: wb, Steppers: steppers})
+	river.AddWorker(workers, &FollowUp{
+		Base: wb, Executor: exec, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
+	})
 	river.AddWorker(workers, &Index{
 		Base: wb, Executor: exec, Embedders: embedders,
 		// A chunk a batch, so a build commits several.

@@ -111,12 +111,13 @@ func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, c
 }
 
 // agentPrompt is what the agent is sent: the system prompt, the first user
-// message, and whether the contract requires a suggested fix. omitted
-// names the diff files, and contextOmitted counts the chunks, the budget
-// left out of the message.
+// message, and the tool it answers with, whose input validate checks.
+// omitted names the diff files, and contextOmitted counts the chunks, the
+// budget left out of the message.
 type agentPrompt struct {
 	system, user   string
-	strict         bool
+	submit         model.ToolDef
+	validate       func(json.RawMessage) error
 	omitted        []string
 	contextOmitted int
 }
@@ -162,7 +163,10 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 		Incremental: incremental, Dismissed: p.Prompt.Dismissed, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.maxPromptTokens()),
 	})
-	return agentPrompt{system: system, user: user, strict: p.Prompt.RequireSuggestedFix, omitted: omitted, contextOmitted: contextOmitted}
+	return agentPrompt{
+		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,
+		omitted: omitted, contextOmitted: contextOmitted,
+	}
 }
 
 // agentSkip returns why the worker will skip this review whatever the
@@ -213,12 +217,13 @@ func (a *AgentLimits) limits() agent.Limits {
 	return agent.Limits{MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens}.WithDefaults()
 }
 
-// reviewAgent runs the tool loop over head, with extra tools beside the
-// read-only ones. A positive timeout bounds it; running out of time ends
-// it as canceled with the timeout in Err.
-func reviewAgent(
+// agentLoop runs the tool loop over head until the agent answers with
+// prompt's submit tool, with extra tools beside the read-only ones. A
+// positive timeout bounds it; running out of time ends it as canceled with
+// the timeout in Err.
+func agentLoop(
 	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, ignore []string, extra []agent.Tool,
-	system, user string, strict bool, timeout time.Duration, logger *slog.Logger,
+	prompt agentPrompt, timeout time.Duration, logger *slog.Logger,
 ) (agent.Result, []store.TimelineStep) {
 	actx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
@@ -233,15 +238,15 @@ func reviewAgent(
 	}
 	timeline := []store.TimelineStep{}
 	res := agent.Run{
-		Stepper: stepper, Model: p.Model.Model, System: system, User: user,
+		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user,
 		Tools: append([]agent.Tool{
 			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
 			agent.GrepTool(tree, limits.MaxToolOutputBytes),
 			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
 			agent.ReadDescriptionTool(p.Prompt.PullRequest.Body, issues, limits.MaxToolOutputBytes),
 		}, extra...),
-		Submit:   SubmitTool(strict, p.Prompt.Diagram),
-		Validate: review.Check,
+		Submit:   prompt.submit,
+		Validate: prompt.validate,
 		Limits:   limits,
 		OnStep: func(e agent.StepEvent) {
 			tools := e.Tools
@@ -315,7 +320,7 @@ func runAgentic(
 	commands := tools.commands()
 	logger.Info("agent started", "model", p.Model.Model, "scope", scope, "prompt_chars", len(prompt.system)+len(prompt.user),
 		"commands", commands, "search", tools.search != nil)
-	res, timeline := reviewAgent(ctx, stepper, p, head, ignore, tools.extra(), prompt.system, prompt.user, prompt.strict,
+	res, timeline := agentLoop(ctx, stepper, p, head, ignore, tools.extra(), prompt,
 		time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
 	sources := []string{}
 	if tools.run != nil {

@@ -268,14 +268,19 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		files  map[string]string
 		reason string
 		model  configfile.ModelRef
-		rules  []string
+		// read are the files the follow-up's runner reads from the merge
+		// base, sorted.
+		read []string
 	}{
-		{name: "no file", files: files, model: "p/big", rules: []string{"admin rules"}},
+		{name: "no file", files: files, model: "p/big", read: []string{"ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"}},
 		{
 			name: "the repository's model and file rules", files: with("review: { model: p/small }\nrules: [{ id: repo, file: .kritika/rules.md }]\n"),
-			model: "p/small", rules: []string{"admin rules", "repo rules"},
+			model: "p/small", read: []string{".kritika.yaml", ".kritika/rules.md", "ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"},
 		},
-		{name: "a model of a provider the account may not use is dropped", files: with("review: { model: q/huge }\n"), model: "p/big", rules: []string{"admin rules"}},
+		{
+			name: "a model of a provider the account may not use is dropped", files: with("review: { model: q/huge }\n"), model: "p/big",
+			read: []string{".kritika.yaml", "ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"},
+		},
 		{name: "disabled", files: with("enabled: false\n"), reason: "disabled in .kritika.yaml", model: "p/big"},
 	}
 	for _, tt := range tests {
@@ -288,13 +293,13 @@ func TestFollowUpRepoConfig(t *testing.T) {
 			if err != nil || reason != tt.reason {
 				t.Fatalf("repoConfig = %q, %v; want %q", reason, err, tt.reason)
 			}
-			active, _ := repoconfig.ActiveRules(f.settings.Review.Rules, f.ruleFiles, nil)
-			var rules []string
-			for _, r := range active {
-				rules = append(rules, r.Text)
+			read := f.eff.repoFiles()
+			slices.Sort(read)
+			if f.settings.Models.Review != tt.model || !slices.Equal(read, tt.read) {
+				t.Fatalf("model = %s, files read = %q", f.settings.Models.Review, read)
 			}
-			if f.settings.Models.Review != tt.model || !slices.Equal(rules, tt.rules) {
-				t.Fatalf("model = %s, rules = %q", f.settings.Models.Review, rules)
+			if tt.reason == "" && f.mergeBase != "base" {
+				t.Fatalf("merge base = %q", f.mergeBase)
 			}
 		})
 	}

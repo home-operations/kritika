@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -44,6 +45,22 @@ func (b *Base) client(ctx context.Context, file *configfile.File, account *confi
 		return nil, river.JobCancel(fmt.Errorf("worker: no connection serves account %s", account.Key()))
 	}
 	return b.Forges.For(ctx, in, repo)
+}
+
+// runnerLabels are put on a runner Job for kubectl and Grafana; pr is 0
+// for a run that is of no pull request.
+func runnerLabels(account, repository, kind string, pr int) map[string]string {
+	labels := map[string]string{"account": account, "repository": repository, "kind": kind}
+	if pr != 0 {
+		labels["pr"] = strconv.Itoa(pr)
+	}
+	return labels
+}
+
+// runnerAnnotations name the River job that started a runner Job and the
+// commit it works on.
+func runnerAnnotations(jobID int64, sha string) map[string]string {
+	return map[string]string{"river-job-id": strconv.FormatInt(jobID, 10), "head-sha": sha}
 }
 
 // releaseTimeout bounds the lease release after the job's context is gone.

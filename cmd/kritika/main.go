@@ -282,7 +282,9 @@ func startWorker(
 		Base: base, Executor: exec, Steppers: steppers,
 		GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL, WebURL: cfg.WebURLParsed(),
 	})
-	river.AddWorker(workers, &worker.FollowUp{Base: base, Steppers: steppers})
+	river.AddWorker(workers, &worker.FollowUp{
+		Base: base, Executor: exec, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
+	})
 	river.AddWorker(workers, &worker.Thread{Base: base})
 	river.AddWorker(workers, &worker.Index{
 		Base: base, Executor: exec, Embedders: embedders,

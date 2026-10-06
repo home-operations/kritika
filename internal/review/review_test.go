@@ -414,12 +414,14 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	in := Input{Repository: "a/b", Number: 1, Title: "t", Author: "u", BaseRef: "main", Changed: []string{"main.go"}, Diff: sampleDiff}
 	findings := []Finding{{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "y changed", Explanation: "why\nit matters"}}
 	thread := []Message{
-		{Author: "kritika[bot]", Body: "## Kritika Review\n\nFine."},
-		{Author: "onedr0p", Body: "@kritika why is y changed?", When: time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)},
+		NewMessage("kritika[bot]", "## Kritika Review\n\nFine.\n", time.Time{}),
+		NewMessage("outsider", strings.Repeat("x", maxMessageChars+1), time.Time{}),
+		NewMessage("onedr0p", "@kritika why is y changed?", time.Date(2026, 9, 24, 21, 0, 0, 0, time.UTC)),
 	}
 	msg := BuildFollowUp(in, findings, thread)
 	for _, want := range []string{"Diff (unified", "+	z := 4", "Findings kritika posted on this pull request (1)", "main.go:11 [important] y changed: why it matters",
-		"--- kritika[bot] ---", "--- onedr0p (2026-09-24 21:00) [answer this] ---", "Reply to the last message from onedr0p."} {
+		"--- kritika[bot] ---\n## Kritika Review\n\nFine.\n", "--- outsider ---\n" + strings.Repeat("x", maxMessageChars) + " …\n",
+		"--- onedr0p (2026-09-24 21:00) [answer this] ---", "Reply to the last message from onedr0p."} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
 		}
@@ -433,6 +435,12 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	}
 	if _, err := ParseFollowUp(`{"reply": ""}`, "me/home"); err == nil {
 		t.Fatal("an empty reply must error")
+	}
+	if err := CheckFollowUp(json.RawMessage(`{"reply": " "}`)); err == nil {
+		t.Fatal("an empty reply must not be accepted as a submission")
+	}
+	if err := CheckFollowUp(json.RawMessage(`{"reply": "Because the base value moved."}`)); err != nil {
+		t.Fatalf("CheckFollowUp = %v", err)
 	}
 	if !strings.HasPrefix(FollowUpBody(reply, "m"), reply) || !strings.Contains(FollowUpBody(reply, "m"), "kritika follow-up with m") {
 		t.Fatal("FollowUpBody")

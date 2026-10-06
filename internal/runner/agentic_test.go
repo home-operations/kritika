@@ -32,6 +32,12 @@ index 111..222 100644
 +func b() {}
 `
 
+// loopPrompt is a review's prompt for s as agentLoop takes it, with the
+// strict contract when strict is set.
+func loopPrompt(s Spec, strict bool) agentPrompt {
+	return agentPrompt{system: "system", user: "user", submit: SubmitTool(strict, s.Prompt.Diagram), validate: review.Check}
+}
+
 func agentPromptSpec() Spec {
 	s := reviewSpec()
 	s.PriorHead = shaB
@@ -91,7 +97,7 @@ func TestAgentPrompt(t *testing.T) {
 				t.Fatalf("rule ids = %v, want %v", in.ruleIDs(), ruleIDs(tt.active))
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false)
-			system, user, strict := prompt.system, prompt.user, prompt.strict
+			system, user := prompt.system, prompt.user
 			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, tt.focused, false, tt.diagram); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
@@ -106,8 +112,8 @@ func TestAgentPrompt(t *testing.T) {
 			if user != want {
 				t.Fatalf("user message:\n%s\nwant:\n%s", user, want)
 			}
-			if strict != tt.strict {
-				t.Fatalf("strict = %v, want %v", strict, tt.strict)
+			if want := SubmitTool(tt.strict, tt.diagram); string(prompt.submit.InputSchema) != string(want.InputSchema) {
+				t.Fatalf("submit schema is not the strict = %v, diagram = %v contract", tt.strict, tt.diagram)
 			}
 			if tt.priorDiagram != "" && !strings.Contains(user, tt.priorDiagram) {
 				t.Fatalf("incremental prompt lacks the prior diagram:\n%s", user)
@@ -284,7 +290,7 @@ func TestReviewAgentReturnsAFlattenedSummaryToTheModel(t *testing.T) {
 		{ToolCalls: []model.ToolCall{call("2", "submit_review", submitted)}},
 	}}
 	logger := slog.New(slog.DiscardHandler)
-	res, _ := reviewAgent(t.Context(), st, agentPromptSpec(), head, nil, nil, "system", "user", false, time.Minute, logger)
+	res, _ := agentLoop(t.Context(), st, agentPromptSpec(), head, nil, nil, loopPrompt(agentPromptSpec(), false), time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 2 || string(res.Submitted) != submitted {
 		t.Fatalf("result = %+v", res)
 	}
@@ -305,7 +311,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Diagram = true
 	logger := slog.New(slog.DiscardHandler)
-	res, timeline := reviewAgent(t.Context(), st, s, head, []string{"vendor/**"}, nil, "system", "user", true, time.Minute, logger)
+	res, timeline := agentLoop(t.Context(), st, s, head, []string{"vendor/**"}, nil, loopPrompt(s, true), time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 3 || res.ToolCalls["grep"] != 1 || res.ToolCalls["read_file"] != 1 ||
 		res.ToolCalls["submit_review"] != 1 || res.CostUSD != 0.5 {
 		t.Fatalf("result = %+v", res)
@@ -352,7 +358,7 @@ func TestReviewAgentOffersTheDescription(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Issues = []review.Issue{{Number: 12, Title: "Add b", Body: "b is missing."}}
 	logger := slog.New(slog.DiscardHandler)
-	res, _ := reviewAgent(t.Context(), st, s, head, nil, nil, "system", "user", false, time.Minute, logger)
+	res, _ := agentLoop(t.Context(), st, s, head, nil, nil, loopPrompt(s, false), time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.ToolCalls["read_description"] != 2 {
 		t.Fatalf("result = %+v", res)
 	}
@@ -368,7 +374,7 @@ func TestReviewAgentTimeout(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	st := blockingStepper{}
 	logger := slog.New(slog.DiscardHandler)
-	res, _ := reviewAgent(t.Context(), st, agentPromptSpec(), head, nil, nil, "s", "u", false, 20*time.Millisecond, logger)
+	res, _ := agentLoop(t.Context(), st, agentPromptSpec(), head, nil, nil, loopPrompt(agentPromptSpec(), false), 20*time.Millisecond, logger)
 	if res.Stop != agent.StopCanceled || !strings.Contains(res.Err, "timeout") {
 		t.Fatalf("result = %+v", res)
 	}

@@ -68,7 +68,7 @@ func TestSystemPromptRules(t *testing.T) {
 		section("A change that breaks one is a finding.")
 	for name, c := range map[string]struct{ got, want string }{
 		"review":    {SystemPrompt(rules, nil, []string{"Check errors."}, nil, false, false, false), review},
-		"follow-up": {FollowUpSystemPrompt(rules, []string{"Check errors."}), followUp},
+		"follow-up": {FollowUpSystemPrompt(rules, []string{"Check errors."}, nil, false), followUp},
 	} {
 		if got := c.got; !strings.Contains(got, c.want) || !strings.HasSuffix(got, "\n\nCheck errors.") {
 			t.Errorf("%s system prompt:\n%s", name, got)
@@ -77,12 +77,17 @@ func TestSystemPromptRules(t *testing.T) {
 }
 
 func TestFollowUpSystemPrompt(t *testing.T) {
-	if got := FollowUpSystemPrompt(nil, nil); got != FollowUpSystem {
-		t.Fatal("without instructions the follow-up system prompt is the built-in one")
+	if got := FollowUpSystemPrompt(nil, nil, nil, false); got != FollowUpSystem {
+		t.Fatal("without instructions or extra tools the follow-up system prompt is the built-in one")
 	}
-	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
+	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}, nil, false); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
 		!strings.HasSuffix(got, "\n\nCheck errors.") {
 		t.Fatalf("follow-up system prompt:\n%s", got)
+	}
+	got := FollowUpSystemPrompt(nil, []string{"Check errors."}, []string{"gh", "helm"}, true)
+	tools := strings.Index(got, "run tool: gh, helm.")
+	if search := strings.Index(got, "search_code"); search < len(FollowUpSystem) || tools < search || tools > strings.Index(got, "## Repository instructions") {
+		t.Fatalf("the search and run tools must follow the built-in prompt, before the instructions:\n%s", got)
 	}
 }
 

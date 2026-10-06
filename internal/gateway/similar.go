@@ -75,12 +75,12 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	var jobID int64
 	err = g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
 		var err error
-		jobID, err = store.ReviewJobID(ctx, tx, c.grant.ReviewID)
+		jobID, err = store.RunnerRunJobID(ctx, tx, c.grant.RunID)
 		return err
 	})
 	if err != nil {
-		c.logger.Error("gateway: review not read", "error", err)
-		refuse(w, http.StatusInternalServerError, "server_error", "the run's review could not be read")
+		c.logger.Error("gateway: run not read", "error", err)
+		refuse(w, http.StatusInternalServerError, "server_error", "the run could not be read")
 		return
 	}
 	reserved := int64(chars)/4 + 1
@@ -88,7 +88,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chunks, tokens, indexed, err := g.similar(ctx, c.file, similarRequest{
-		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.grant.ReviewID, jobID: jobID,
+		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID,
 		slots: c.file.Settings(c.account, "").Limits.Concurrency, queries: req.Queries, exclude: req.Exclude,
 	}, c.logger)
 	cctx, cancel := detach(ctx)

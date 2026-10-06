@@ -89,7 +89,12 @@ Register a GitHub App under the account whose repositories kritika reviews
     replies, and conversation comments.
   - Issues: read-only. GitHub delivers a pull request's conversation
     comments as issue comments, and an App subscribes to those only with
-    this permission.
+    this permission. Read and write is optional and has one use: kritika
+    leaves a 👀 on a mention while it works on the answer, and GitHub
+    documents a reaction to a conversation comment as needing write
+    access to issues. With read-only, a mention in the conversation may
+    be answered without it; one in an inline thread carries it either
+    way, under the pull requests permission.
   - Commit statuses: read and write, for the `Kritika / Review` status.
 - **Organization permissions:** Members: read-only, only for signing in
   with GitHub through this App, whose role mapping reads the
