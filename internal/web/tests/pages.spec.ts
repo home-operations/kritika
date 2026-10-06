@@ -43,7 +43,10 @@ test.describe('overview', () => {
     const tiles = page.getByRole('region', { name: 'Across all accounts' });
     await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
     await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.accountSummary.repositories));
-    await expect(tiles.locator('.tile').filter({ hasText: 'Spend this month' })).toContainText('$3.00');
+    const spend = tiles.locator('.tile').filter({ hasText: 'Spend this month' });
+    await expect(spend.locator('.tile-value')).toHaveText('$3.00');
+    // The per-review figure is a mean over both accounts' reviews, not a sum of their medians.
+    await expect(spend).toContainText('$0.10 per review, mean of 24');
     const wants = tiles.locator('.tile').filter({ hasText: 'Needs attention' });
     await expect(wants.locator('.tile-value')).toHaveText('6');
     await expect(wants).toContainText('2 failed · 4 blocking');
@@ -234,6 +237,21 @@ test("a chart of counts has whole numbers on its axis, and one of cost its cents
   }
   await page.goto(`/${T}/usage`);
   await expect(page.locator('.chart-tick').filter({ hasText: '$' })).toHaveText(['$0', '$0.05', '$0.10']);
+});
+
+test('the spend page says what a review costs this month, median and mean, or that none completed', async ({ page }) => {
+  const a = g.accountSummary;
+  await g.mockApi(page, g.defaultApi());
+  await page.goto(`/${T}/usage`);
+  const tile = page.locator('.stat').filter({ hasText: 'Spend this month' });
+  await expect(tile.locator('.stat-value')).toHaveText('$1.50');
+  await expect(tile.locator('.stat-sub')).toHaveText('$0.08 per review (median) · $0.10 mean of 12');
+
+  const idle = { ...a, usage: { ...a.usage, reviews: 0, reviewCostUsd: 0, medianReviewCostUsd: null } };
+  await g.mockApi(page, [[/\/api\/v1\/accounts$/, [idle]], ...g.defaultApi()]);
+  await page.goto('about:blank');
+  await page.goto(`/${T}/usage`);
+  await expect(tile.locator('.stat-sub')).toHaveText('no review completed this month');
 });
 
 test("a chart's axis has room for its longest label", async ({ page }) => {

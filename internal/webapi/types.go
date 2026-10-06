@@ -48,13 +48,18 @@ type UserSettings struct {
 	Theme    string `json:"theme"`
 }
 
-// MonthUsage is an account's usage against its caps; a zero cap is unset.
+// MonthUsage is an account's usage against its caps (a zero cap is unset),
+// and the reviews that completed this month: their cost together, and the
+// median cost of one, null when none completed.
 type MonthUsage struct {
-	Tokens         int64   `json:"tokens"`
-	CostUSD        float64 `json:"costUsd"`
-	TokensPerMonth int64   `json:"tokensPerMonth"`
-	ReviewsToday   int64   `json:"reviewsToday"`
-	ReviewsPerDay  int     `json:"reviewsPerDay"`
+	Tokens              int64    `json:"tokens"`
+	CostUSD             float64  `json:"costUsd"`
+	TokensPerMonth      int64    `json:"tokensPerMonth"`
+	ReviewsToday        int64    `json:"reviewsToday"`
+	ReviewsPerDay       int      `json:"reviewsPerDay"`
+	Reviews             int64    `json:"reviews"`
+	ReviewCostUSD       float64  `json:"reviewCostUsd"`
+	MedianReviewCostUSD *float64 `json:"medianReviewCostUsd"`
 }
 
 // AccountSummary is one row of the account list. Connection names the
