@@ -193,26 +193,75 @@ func checkRejectedSubmitThenValid(t *testing.T, result Result, _ []StepEvent, sc
 	}
 }
 
-func setupForcedRejectedSubmitStopsNoSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+func setupForcedRejectedSubmitRetried(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{"wrong":"shape"}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}},
 	}}
 	return st, nil, st
 }
 
-func setupForcedInvalidSubmitStopsNoSubmit(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+func checkForcedRejectedSubmitRetried(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	if string(result.Submitted) != validSubmitInput {
+		t.Fatalf("Submitted = %s, want %s", result.Submitted, validSubmitInput)
+	}
+	// The retry carries the validator's message and is told to submit
+	// again.
+	last := scripted.calls[1]
+	results := last.Messages[len(last.Messages)-1].ToolResults
+	if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "verdict is required") || !toldToSubmit(last) {
+		t.Fatalf("retry request = %+v, want the rejection and the submit instruction", last.Messages)
+	}
+}
+
+// setupForcedNeverSubmits answers every forced step with an invalid
+// submission, prose, or a tool call, so the retries run out.
+func setupForcedNeverSubmits(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{not json`)}},
+		{Text: "let me look once more"},
+		{ToolCalls: []model.ToolCall{toolCall("3", "noop", `{}`)}},
 	}}
 	return st, nil, st
 }
 
-func checkForcedInvalidSubmitStopsNoSubmit(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+func checkForcedNeverSubmits(t *testing.T, result Result, events []StepEvent, scripted *scriptedStepper) {
 	if result.Submitted != nil {
 		t.Fatalf("Submitted = %s, want nil", result.Submitted)
 	}
-	if len(scripted.calls) != 1 {
-		t.Fatalf("expected exactly 1 call to the stepper, got %d", len(scripted.calls))
+	if len(scripted.calls) != 1+forcedRetries {
+		t.Fatalf("%d calls to the stepper, want the forced step and %d retries", len(scripted.calls), forcedRetries)
+	}
+	for i, call := range scripted.calls {
+		if !toldToSubmit(call) {
+			t.Fatalf("request %d = %+v, want the submit instruction", i, call.Messages)
+		}
+	}
+	// The tool the model called instead of submitting was refused, not run.
+	if results := scripted.calls[2].Messages[len(scripted.calls[2].Messages)-1].ToolResults; len(results) != 0 {
+		t.Fatalf("the prose step's retry carries tool results: %+v", results)
+	}
+	if events[2].OutputBytes != 0 || !strings.Contains(result.Err, "3 step(s)") {
+		t.Fatalf("event = %+v, err = %q; want the tool refused and the forced steps counted", events[2], result.Err)
+	}
+}
+
+func setupForcedToolCallRefused(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkForcedToolCallRefused(t *testing.T, result Result, events []StepEvent, scripted *scriptedStepper) {
+	if string(result.Submitted) != validSubmitInput {
+		t.Fatalf("Submitted = %s, want %s", result.Submitted, validSubmitInput)
+	}
+	last := scripted.calls[1]
+	results := last.Messages[len(last.Messages)-1].ToolResults
+	if len(results) != 1 || !results[0].IsError || results[0].Content != onlySubmitText || events[0].OutputBytes != 0 {
+		t.Fatalf("retry request = %+v, events = %+v; want the tool refused unrun", last.Messages, events)
 	}
 }
 
@@ -283,6 +332,24 @@ func toldToSubmit(req model.StepRequest) bool {
 	return last.Role == model.RoleUser && strings.HasSuffix(last.Text, submitNowText)
 }
 
+// setupBudgetForcedNeverSubmits crosses the budget's 90% mark on the first
+// step, then never submits while staying under the budget itself.
+func setupBudgetForcedNeverSubmits(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}, Usage: model.Usage{Input: 80, Output: 10}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "noop", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("3", "noop", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("4", "noop", `{}`)}},
+	}}
+	return st, nil, st
+}
+
+func checkBudgetForcedNeverSubmits(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	if len(scripted.calls) != 2+forcedRetries || !strings.Contains(result.Err, "3 step(s)") {
+		t.Fatalf("%d calls, err %q; want a free step, a forced one and %d retries", len(scripted.calls), result.Err, forcedRetries)
+	}
+}
+
 func setupTruncatedSubmitStops(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{"verdict":"app`)}, Stop: model.StopMaxTokens},
@@ -318,15 +385,25 @@ func setupMaxStepsReachedWithoutSubmit(t *testing.T) (model.Stepper, context.Con
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}},
 		{ToolCalls: []model.ToolCall{toolCall("2", "noop", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("3", "noop", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("4", "noop", `{}`)}},
 	}}
 	return st, nil, st
 }
 
-func checkMaxStepsReachedWithoutSubmit(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
-	// The final step must still have been told to submit, even though the
-	// model chose not to.
-	if last := scripted.calls[len(scripted.calls)-1]; !toldToSubmit(last) {
-		t.Fatalf("final request = %+v, want the submit instruction in its last user message", last.Messages)
+func checkMaxStepsReachedWithoutSubmit(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	// The last step and each retry must have been told to submit, even
+	// though the model chose not to; the first, free, step must not.
+	if toldToSubmit(scripted.calls[0]) {
+		t.Fatalf("first request was told to submit: %+v", scripted.calls[0].Messages)
+	}
+	for i, call := range scripted.calls[1:] {
+		if !toldToSubmit(call) {
+			t.Fatalf("request %d = %+v, want the submit instruction in its last user message", i+1, call.Messages)
+		}
+	}
+	if !strings.Contains(result.Err, "3 step(s)") {
+		t.Fatalf("Err = %q, want the forced steps counted", result.Err)
 	}
 }
 
@@ -585,14 +662,25 @@ func TestRun(t *testing.T) {
 		},
 		{
 			// MaxSteps: 1 makes the only step the last step, which forces
-			// submit_review; an invalid submit on a forced step must not
-			// get a second chance.
-			name:      "forced_invalid_submit_stops_no_submit",
+			// submit_review; a forced step that does not submit is retried
+			// until the retries run out, each told to submit again, and a
+			// tool called instead is refused rather than run.
+			name:      "forced_never_submits_stops_after_retries",
+			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
 			limits:    Limits{MaxSteps: 1},
-			setup:     setupForcedInvalidSubmitStopsNoSubmit,
-			wantStop:  StopNoSubmit,
-			wantSteps: 1,
-			check:     checkForcedInvalidSubmitStopsNoSubmit,
+			setup:     setupForcedNeverSubmits,
+			wantStop:  StopMaxSteps,
+			wantSteps: 1 + forcedRetries,
+			check:     checkForcedNeverSubmits,
+		},
+		{
+			name:      "forced_tool_call_refused_then_submit",
+			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
+			limits:    Limits{MaxSteps: 1},
+			setup:     setupForcedToolCallRefused,
+			wantStop:  StopSubmitted,
+			wantSteps: 2,
+			check:     checkForcedToolCallRefused,
 		},
 		{
 			name:      "rejected_submit_then_valid",
@@ -603,13 +691,13 @@ func TestRun(t *testing.T) {
 			check:     checkRejectedSubmitThenValid,
 		},
 		{
-			name:      "forced_rejected_submit_stops_no_submit",
+			name:      "forced_rejected_submit_retried",
 			limits:    Limits{MaxSteps: 1},
 			validate:  rejectVerdict,
-			setup:     setupForcedRejectedSubmitStopsNoSubmit,
-			wantStop:  StopNoSubmit,
-			wantSteps: 1,
-			check:     checkForcedInvalidSubmitStopsNoSubmit,
+			setup:     setupForcedRejectedSubmitRetried,
+			wantStop:  StopSubmitted,
+			wantSteps: 2,
+			check:     checkForcedRejectedSubmitRetried,
 		},
 		{
 			name:      "text_only_twice_stops_no_submit",
@@ -638,6 +726,18 @@ func TestRun(t *testing.T) {
 			check:     checkBudgetTellsToSubmit,
 		},
 		{
+			// Forced by the budget rather than the step cap, the retries
+			// still run out, and the run is no submit: the budget itself
+			// was not reached.
+			name:      "budget_forced_never_submits_stops_no_submit",
+			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
+			limits:    Limits{MaxTokens: 100},
+			setup:     setupBudgetForcedNeverSubmits,
+			wantStop:  StopNoSubmit,
+			wantSteps: 2 + forcedRetries,
+			check:     checkBudgetForcedNeverSubmits,
+		},
+		{
 			// A submission the output cap cut off ends the run at once:
 			// sent back as an error, the model would only be cut off
 			// again.
@@ -662,7 +762,7 @@ func TestRun(t *testing.T) {
 			limits:    Limits{MaxSteps: 2},
 			setup:     setupMaxStepsReachedWithoutSubmit,
 			wantStop:  StopMaxSteps,
-			wantSteps: 2,
+			wantSteps: 2 + forcedRetries,
 			check:     checkMaxStepsReachedWithoutSubmit,
 		},
 		{
