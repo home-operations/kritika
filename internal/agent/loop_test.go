@@ -260,7 +260,7 @@ func checkForcedToolCallRefused(t *testing.T, result Result, events []StepEvent,
 	}
 	last := scripted.calls[1]
 	results := last.Messages[len(last.Messages)-1].ToolResults
-	if len(results) != 1 || !results[0].IsError || results[0].Content != onlySubmitText || events[0].OutputBytes != 0 {
+	if len(results) != 1 || !results[0].IsError || results[0].Content != (Run{Submit: testSubmitDef}).onlySubmitText() || events[0].OutputBytes != 0 {
 		t.Fatalf("retry request = %+v, events = %+v; want the tool refused unrun", last.Messages, events)
 	}
 }
@@ -283,12 +283,12 @@ func checkTextOnlyTwiceStopsNoSubmit(t *testing.T, _ Result, events []StepEvent,
 	last := scripted.calls[len(scripted.calls)-1]
 	found := false
 	for _, m := range last.Messages {
-		if m.Role == model.RoleUser && m.Text == nudgeText {
+		if m.Role == model.RoleUser && m.Text == (Run{Submit: testSubmitDef}).nudgeText() {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("nudge message %q not found in %+v", nudgeText, last.Messages)
+		t.Fatalf("nudge message %q not found in %+v", (Run{Submit: testSubmitDef}).nudgeText(), last.Messages)
 	}
 }
 
@@ -329,7 +329,7 @@ func checkBudgetTellsToSubmit(t *testing.T, _ Result, _ []StepEvent, scripted *s
 // ends with the submit instruction.
 func toldToSubmit(req model.StepRequest) bool {
 	last := req.Messages[len(req.Messages)-1]
-	return last.Role == model.RoleUser && strings.HasSuffix(last.Text, submitNowText)
+	return last.Role == model.RoleUser && strings.HasSuffix(last.Text, (Run{Submit: testSubmitDef}).submitNowText())
 }
 
 // setupBudgetForcedNeverSubmits crosses the budget's 90% mark on the first
