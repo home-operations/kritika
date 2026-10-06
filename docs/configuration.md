@@ -614,19 +614,32 @@ served.
 
 ```yaml
 egress:
-  allow: ["*"]
-  deny: ["*.pastebin.com"]
+  allow: ["*", 10.10.0.5]
+  deny: ["*.pastebin.com", 203.0.113.0/24]
   credentials:
     api.github.com: { env: GITHUB_TOKEN }
 ```
 
-- `allow`: the hosts a runner may reach; an entry is exact, `*.`-prefixed
-  for every host under a domain, or `"*"` for every host.
-- `deny`: hosts refused however `allow` matches them, in the same forms. A
-  deny that cuts off `github.com` or `api.github.com` is rejected while an
-  app is configured.
+- `allow`: the destinations a runner may reach. An entry is a host, exact
+  or `*.`-prefixed for every host under a domain, `"*"` for every host, or
+  an IP address or CIDR.
+- `deny`: destinations refused however `allow` matches them, in the same
+  forms. A deny that cuts off `github.com` or `api.github.com` is rejected
+  while an app is configured.
 - `credentials`: a token the gateway adds to a plain `http://` request to
   that host, so the runner never holds it; the host must be allowed.
+
+A host is checked by name, then resolved once, and the gateway connects to
+an address it checked rather than resolving the name again. An address
+that is not on the public internet (RFC 1918 and other private ranges,
+loopback, link-local, where cloud metadata endpoints live, and so on) is
+refused unless an `allow` address covers it, so `"*"` opens the internet
+and not the cluster or the LAN behind the gateway; a split-horizon name is
+reached at its public address alone. A destination given as an address,
+`https://10.10.0.5/`, is reached only when an `allow` address covers it,
+public or not. The refusal a runner's command sees says why: `host not
+allowed`, `host denied`, `address not allowed`, `address denied`, or that
+the name `resolves to a private address no allow entry covers`.
 
 ## How kritika runs
 

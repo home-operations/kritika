@@ -117,13 +117,15 @@ The kritika serve pods serve a forward proxy on `service.gatewayPort`, and runne
 are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
-destination by hostname only. github.com is always allowed once an app
-is declared; `egress.allow` in `configFile` adds the rest (registries,
-release APIs; `"*"` allows every host), `egress.deny` refuses hosts whatever
-`allow` says, and `egress.credentials` names hosts the gateway adds a bearer
-token to when a runner sends it a plain `http://` request, so the runner
-never holds the token. The token is a secret reference like any other in
-the file:
+destination by name and by the address it resolves to. github.com is
+always allowed once an app is declared; `egress.allow` in `configFile`
+adds the rest (registries, release APIs; `"*"` allows every host on the
+internet, while a private, cluster or link-local address is reached only
+when an `allow` entry names an address or CIDR covering it), `egress.deny`
+refuses hosts and addresses whatever `allow` says, and `egress.credentials`
+names hosts the gateway adds a bearer token to when a runner sends it a
+plain `http://` request, so the runner never holds the token. The token is
+a secret reference like any other in the file:
 
 ```yaml
 configFile:
