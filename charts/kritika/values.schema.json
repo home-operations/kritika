@@ -991,7 +991,7 @@
       "type": "string"
     },
     "networkPolicy": {
-      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports; egress to DNS, the forges and models over the\negress ports, and Postgres) and one for runner pods (egress only: DNS, the\ngit remote over the egress ports, and Postgres). The Postgres port is\nallowed to any peer because the database may live in another namespace.",
+      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports, and to the gateway port from runner pods;\negress to DNS, the forges and models over the egress ports, Postgres and\nthe API server) and one for runner pods (egress only: DNS, Postgres and\nthe gateway port on the service pods, through which everything else is\nreached). The Postgres port is allowed to any peer because the database\nmay live in another namespace.",
       "properties": {
         "allowDNS": {
           "default": true,
