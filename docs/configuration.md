@@ -592,8 +592,9 @@ served.
 
 `egress` is what runner pods may reach through kritika's gateway beyond
 `github.com` and `api.github.com`, which an app allows: `allowHosts`,
-exact or `*.`-prefixed, and `credentials`, a token the gateway adds to a
-plain `http://` request to that host, so the runner never holds it.
+exact, `*.`-prefixed, or `"*"` for every host, and `credentials`, a token
+the gateway adds to a plain `http://` request to that host, so the runner
+never holds it.
 
 ## How kritika runs
 
