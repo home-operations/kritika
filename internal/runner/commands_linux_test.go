@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+
 	"github.com/home-operations/kritika/internal/agent"
 )
 
@@ -99,6 +101,13 @@ func TestCommandTool(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(scratch[0], "checkout", "vendor")); !os.IsNotExist(err) {
 			t.Fatalf("ignored path checked out: %v", err)
+		}
+		repo, err := git.PlainOpen(filepath.Join(scratch[0], "checkout"))
+		if err != nil {
+			t.Fatalf("checkout is not a repository: %v", err)
+		}
+		if origin, err := repo.Remote("origin"); err != nil || !slices.Equal(origin.Config().URLs, []string{s.CloneURL}) {
+			t.Fatalf("origin = %v, %v; want %s", origin, err, s.CloneURL)
 		}
 		cleanup()
 		if _, err := os.Stat(scratch[0]); !os.IsNotExist(err) {

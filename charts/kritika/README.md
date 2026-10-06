@@ -172,9 +172,29 @@ A command runs without a shell, with an environment of `PATH`, its own
 `GH_TOKEN`, and the runner makes itself unreadable to it first,
 so a command cannot read the runner's credentials from `/proc`. The
 `-tools` image has no shell either, and the checkout is written without
-execute bits, so `fd -x` or `rg --pre` can start only the six commands. A
+execute bits, so `fd -x` or `rg --pre` can start only the six commands. The
+checkout carries an empty `.git` whose `origin` is the repository's clone
+URL, no history, so a tool that locates a repository by its working tree,
+such as flate, finds this one. A
 runner still parses untrusted content and runs what the model asks: run
 runner Jobs under a sandboxed RuntimeClass.
+
+`runner.tools` mounts more binaries from their own images, each as a
+read-only image volume put first on the runner's `PATH`; a tool is a
+`name`, a digest-pinned `image`, the `path` of its binaries inside the
+image (`/` unless set) and the `commands` it provides (its name unless
+set), which `agent.commands` may then allow. The binaries must be static
+or link only against glibc, libgcc and libstdc++. It needs Kubernetes 1.33
+or newer:
+
+```yaml
+runner:
+  tools:
+    - name: flate
+      image: ghcr.io/home-operations/flate:0.6.5@sha256:e0e2d2de97539b3141977e8bb3bbb50ea5c5afe89477950e5fa972c9862478da
+configFile:
+  agent: { commands: [gh, flate] }
+```
 
 ### Runner sandbox
 
