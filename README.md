@@ -46,7 +46,8 @@ metrics and development.
   as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread, from an agent with a review's tools that reads the
-  code and looks things up before it answers, or reply `@<bot> dismiss <reason>` in a finding's
+  code and looks things up before it answers; the mention carries the bot's
+  👀 while it works. Or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request;
   resolving the thread on the forge does the same.
 - **A confidence score, opt-in.** A second model scores each reviewed pull

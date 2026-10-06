@@ -95,6 +95,10 @@ type localForge struct {
 	permissions map[string]forge.Permission
 	replies     []string
 	resolved    []int64
+	// reactions are the bot's reactions on comments, by comment id, and
+	// reacted every comment it has reacted to, in order.
+	reactions map[int64]string
+	reacted   []int64
 	// publishing, when set, runs once as a review writes its sticky
 	// comment, the first thing publishing does.
 	publishing func()
@@ -311,6 +315,27 @@ func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.
 	defer l.mu.Unlock()
 	l.replies = append(l.replies, body)
 	return int64(len(l.replies)), nil
+}
+
+func (l *localForge) React(_ context.Context, _, _ string, to forge.Comment, content string) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reactions == nil {
+		l.reactions = map[int64]string{}
+	}
+	l.reactions[to.ID] = content
+	l.reacted = append(l.reacted, to.ID)
+	return to.ID + 1, nil
+}
+
+func (l *localForge) Unreact(_ context.Context, _, _ string, from forge.Comment, id int64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if id != from.ID+1 {
+		return fmt.Errorf("reaction %d is not on comment %d", id, from.ID)
+	}
+	delete(l.reactions, from.ID)
+	return nil
 }
 
 func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64, _ bool) (bool, error) {
@@ -968,10 +993,24 @@ func checkFollowUps(
 		t.Fatalf("reply id %d not recorded as a bigint", replyID)
 	}
 	checkFollowUpRun(ctx, t, st, accountID, id)
+	// The mention carried the bot's eyes while its agent worked, and loses
+	// them once the reply is up.
+	waitFor(t, 5*time.Second, "the eyes to come off the answered mention", func() bool {
+		lf.mu.Lock()
+		defer lf.mu.Unlock()
+		_, on := lf.reactions[id]
+		return slices.Contains(lf.reacted, id) && !on
+	})
 
 	id = mention("outsider", "@kritika and me?")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
 		t.Fatalf("outsider: status = %s (%s)", status, reason)
+	}
+	lf.mu.Lock()
+	marked := slices.Contains(lf.reacted, id)
+	lf.mu.Unlock()
+	if marked {
+		t.Fatal("a mention that is not answered was marked as being answered")
 	}
 	id = mention("onedr0p", "no mention here @someoneelse")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "does not mention") {

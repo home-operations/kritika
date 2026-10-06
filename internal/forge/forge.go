@@ -218,6 +218,12 @@ type Client interface {
 	// ReplyInline posts a reply in inline comment to's thread and returns
 	// its id, 0 when the forge does not say.
 	ReplyInline(ctx context.Context, owner, repo string, number int, to Comment, body string) (int64, error)
+	// React adds the bot's reaction, such as ReactionEyes, to a comment and
+	// returns the reaction's id, which Unreact takes. Reacting again with
+	// the same content returns the reaction already there.
+	React(ctx context.Context, owner, repo string, to Comment, content string) (int64, error)
+	// Unreact removes the bot's reaction id from a comment.
+	Unreact(ctx context.Context, owner, repo string, from Comment, id int64) error
 	// ResolveThread resolves the review thread inline comment id opened,
 	// when it is still open, and reports whether it did. With onlyOwn, a
 	// thread someone else has written in is left open: it is a
@@ -230,6 +236,10 @@ type Client interface {
 	// missing one is fs.ErrNotExist.
 	PullRequest(ctx context.Context, owner, repo string, number int) (OpenPullRequest, error)
 }
+
+// ReactionEyes is the 👀 the bot leaves on a mention while it works on the
+// answer.
+const ReactionEyes = "eyes"
 
 // CanWrite reports whether a permission level allows pushing.
 func CanWrite(permission Permission) bool {

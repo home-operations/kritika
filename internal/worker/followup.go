@@ -141,6 +141,7 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	}
 	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
+		f.unmark(ctx)
 		return true, nil
 	}
 	if f.attempt <= 1 {
@@ -151,7 +152,17 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	f.logger.Info("follow-up already answered on the forge", "reply", id)
+	f.unmark(ctx)
 	return true, f.record(ctx, store.FollowupAnswered, "", id, "")
+}
+
+// unmark takes off the 👀 an earlier attempt left on the mention when it
+// was killed between posting the reply and removing it: the forge hands
+// back the reaction already there, which is then removed.
+func (f *followUp) unmark(ctx context.Context) {
+	if f.attempt > 1 {
+		f.thinking(ctx)()
+	}
 }
 
 // repliedOnForge returns the id of the bot's reply to the comment, by its
@@ -226,6 +237,7 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if err != nil {
 		return store.FollowupFailed, err
 	}
+	defer f.thinking(ctx)()
 	agent, err := f.ask(ctx, thread, rec)
 	if err != nil {
 		return store.FollowupFailed, err
@@ -248,6 +260,27 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
 	}
 	return store.FollowupAnswered, nil
+}
+
+// thinking leaves the bot's 👀 on the mention while its agent works, and
+// returns what takes it off again, once the reply is posted or the attempt
+// has failed. Best effort: a forge that refuses the reaction, as GitHub
+// does on a conversation comment without write access to issues, costs
+// the mention its mark and nothing else.
+func (f *followUp) thinking(ctx context.Context) (done func()) {
+	id, err := f.client.React(ctx, f.owner, f.repo, f.comment, forge.ReactionEyes)
+	if err != nil {
+		f.logger.Info("mention not marked as being answered", "error", err)
+		return func() {}
+	}
+	return func() {
+		// The mark comes off even once the job's ctx has ended.
+		dctx, cancel := detach(ctx)
+		defer cancel()
+		if err := f.client.Unreact(dctx, f.owner, f.repo, f.comment, id); err != nil {
+			f.logger.Warn("mention left marked as being answered", "error", err)
+		}
+	}
 }
 
 // ask has an agent answer the thread's last message in a runner, as a
