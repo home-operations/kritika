@@ -16,6 +16,7 @@
   import { lifecycle } from '../lifecycle';
   import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
   import ReviewMeta from '../components/ReviewMeta.svelte';
+  import Confidence from '../components/Confidence.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
   import Markdown from '../components/Markdown.svelte';
   import Pill from '../components/Pill.svelte';
@@ -147,6 +148,7 @@
                 <span>started <Time iso={r.createdAt} /></span>
               </p>
               {#if r.error}<p class="error-text">{r.error}</p>{/if}
+              {#if r.confidence}<Confidence c={r.confidence} />{/if}
               {#if latest.data && latest.data.review.id === r.id}
                 {@const ld = latest.data}
                 {#if ld.summary}<div class="latest-take"><Markdown text={ld.summary.take} /></div>{/if}

@@ -1083,6 +1083,15 @@ table.data td.wrap {
 .latest-take {
   font-size: 14px;
 }
+.confidence-line {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.confidence-line .md,
+.confidence-line .md p {
+  display: inline;
+  margin: 0;
+}
 .finding-list {
   list-style: none;
   margin: 0;

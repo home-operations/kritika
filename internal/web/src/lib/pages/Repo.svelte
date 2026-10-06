@@ -64,7 +64,11 @@
     { label: 'Fallback model', key: 'review.fallback', value: (s) => s.models.fallback || '—', mono: true },
     { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },
     { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
-    { label: 'Approve up to risk', key: 'confidence.risk', value: (s) => s.confidence.risk },
+    {
+      label: 'Approve up to risk',
+      key: 'confidence.risk',
+      value: (s) => (!s.review.approve ? '—' : s.confidence.model ? s.confidence.risk : 'any: no scorer, so on the findings alone'),
+    },
     { label: 'Risk instructions', key: 'confidence.instructions', value: (s) => s.confidence.instructions || '—' },
     { label: 'Include', key: 'trigger.include', value: (s) => conditions(s.filters.include), mono: true },
     { label: 'Exclude', key: 'trigger.exclude', value: (s) => conditions(s.filters.exclude), mono: true },
