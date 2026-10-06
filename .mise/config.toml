@@ -39,9 +39,18 @@ description = "Scan for known vulnerabilities with govulncheck"
 run = "govulncheck ./..."
 
 [tasks.test]
-description = "Run the unit test suite with the race detector and coverage"
+description = "Run the unit test suite with the race detector and coverage; arguments go to go test, and name packages to narrow it (mise run test -- ./internal/worker/)"
 depends = ["fmt-check", "vet"]
-run = "go test -race ./... -coverprofile cover.out"
+run = """
+# mise appends the arguments to the last line. Every package unless one is
+# named: a package starts with "." or has a "/", a flag's value has neither.
+unit() {
+  pkgs=./...
+  for a in "$@"; do case $a in -*) ;; .*|*/*) pkgs=;; esac; done
+  go test -race $pkgs "$@" -coverprofile cover.out
+}
+unit
+"""
 
 [tasks.fmt]
 description = "Format the code in place"
@@ -80,8 +89,11 @@ export KRITIKA_TEST_SUPER_URL="postgres://postgres:super@127.0.0.1:${port}/kriti
 export KRITIKA_TEST_OWNER_URL="postgres://kritika:owner@127.0.0.1:${port}/kritika?sslmode=disable"
 export KRITIKA_TEST_APP_URL="postgres://kritika_app:app@127.0.0.1:${port}/kritika?sslmode=disable"
 export KRITIKA_TEST_RUNNER_URL="postgres://kritika_runner:runner@127.0.0.1:${port}/kritika?sslmode=disable"
-# -p 1: every integration package shares the one database, so packages must not run concurrently.
-go test -race -tags integration -count=1 -p 1 ./... "$@"
+# Only the packages with integration tests: the rest are the unit suite over
+# again, uncached. -p 1: every integration package shares the one database,
+# so packages must not run concurrently.
+pkgs=$(grep -rl --include='*_test.go' '^//go:build integration' . | xargs -n1 dirname | sort -u)
+go test -race -tags integration -count=1 -p 1 $pkgs "$@"
 """
 
 [tasks.smoke]
