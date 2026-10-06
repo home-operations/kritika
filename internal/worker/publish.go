@@ -201,6 +201,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 	web, pull := p.dashboard(owner, repo)
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
+		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx),
 		Incomplete: reason, Notes: p.repoNotes, WebURL: web, PullURL: pull,
 	})
 	commentID, err := p.upsertSticky(ctx, body)
@@ -302,6 +303,7 @@ func (p *publishPhase) writeBack(
 	web, pull := p.dashboard(owner, repo)
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
+		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: res.Counts(), Notes: notes, Unanchored: unanchored,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
@@ -606,6 +608,31 @@ func (p *publishPhase) persist(
 			CommentID: commentID, Confidence: p.confidence,
 		})
 	})
+}
+
+// headSubject is the head commit's subject line for the sticky comment's
+// footer, cut and escaped for Markdown, "" when the forge would not say:
+// the comment then names the commit by its hash.
+func (p *publishPhase) headSubject(ctx context.Context, owner, repo string) string {
+	subject, err := p.client.CommitSubject(ctx, owner, repo, p.pr.headSHA)
+	if err != nil {
+		p.logger.Warn("head commit subject not read", "error", err)
+	}
+	return review.FooterSubject(subject)
+}
+
+// reviews is how many reviews of the pull request this one makes, counted
+// now rather than when it started, since another head's review may have
+// completed in between.
+func (p *publishPhase) reviews(ctx context.Context) int {
+	var completed int
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE pull_request_id = $1 AND status = 'completed'`, p.pr.id).Scan(&completed)
+	})
+	if err != nil {
+		p.logger.Warn("completed reviews not counted", "error", err)
+	}
+	return completed + 1
 }
 
 // dashboard is the dashboard's origin and the pull request's page on it,

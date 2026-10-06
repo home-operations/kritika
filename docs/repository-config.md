@@ -90,7 +90,10 @@ skills:
   or checksum, and not `set` or `unset`). The `template`, `define` and
   `block` actions are refused, so a template cannot read any file or call
   any other template. The summary template's dot is the review (`.Number`,
-  `.HeadSHA`, `.HeadURL`, `.Model`, `.AuthorIsBot`, `.Result.Summary.Headline`, `.Result.Summary.Take`,
+  `.HeadSHA`, `.HeadURL`, `.HeadSubject`, the head commit's subject line,
+  cut to 40 characters and escaped for Markdown,
+  `.Reviews`, how many reviews of the pull request this one makes, `.Model`,
+  `.AuthorIsBot`, `.Result.Summary.Headline`, `.Result.Summary.Take`,
   `.Result.Summary.Praise`, `.Result.Summary.Diagram`, Mermaid source for
   the flow the change adds or alters, "" unless `review.diagram` is on and
   the change has one, `.Result.Findings`,

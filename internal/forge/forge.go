@@ -154,6 +154,8 @@ type Client interface {
 	// BranchTip returns the commit a branch points at; an empty branch
 	// means the repository's default branch, whose name is also returned.
 	BranchTip(ctx context.Context, owner, repo, branch string) (sha, resolvedBranch string, err error)
+	// CommitSubject returns the first line of commit sha's message.
+	CommitSubject(ctx context.Context, owner, repo, sha string) (string, error)
 	// FileAt returns the content of the file at path in commit ref. A path
 	// that is not a file there is an error wrapping fs.ErrNotExist, and a
 	// file over MaxFileBytes one wrapping ErrFileTooLarge.

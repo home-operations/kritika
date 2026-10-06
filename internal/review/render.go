@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/home-operations/kritika/internal/textcut"
@@ -39,6 +40,11 @@ type RenderData struct {
 	HeadSHA string
 	// HeadURL links the head commit on the forge, "" when unknown.
 	HeadURL string
+	// HeadSubject is the head commit's subject line as FooterSubject cuts
+	// and escapes it, "" when unknown.
+	HeadSubject string
+	// Reviews is how many reviews of the pull request this one makes.
+	Reviews int
 	Model   string
 	// AuthorIsBot is whether a bot opened the pull request; the default
 	// template then leaves out the praise, which a mechanical change
@@ -73,6 +79,29 @@ type RenderData struct {
 	// the review; both "" when the dashboard has no public URL. The
 	// default template then leaves the re-run badge out.
 	WebURL, PullURL string
+}
+
+// footerSubjectRunes is how much of a commit subject the footer shows.
+const footerSubjectRunes = 40
+
+// FooterSubject cuts a commit subject to one line of footerSubjectRunes,
+// marking the cut with an ellipsis, and escapes what Markdown would read
+// as markup, since a pull request's author writes the subject and it
+// lands inside the footer's link text.
+func FooterSubject(subject string) string {
+	subject, _, _ = strings.Cut(subject, "\n")
+	subject = strings.TrimSpace(subject)
+	if runes := []rune(subject); len(runes) > footerSubjectRunes {
+		subject = strings.TrimSpace(string(runes[:footerSubjectRunes])) + "..."
+	}
+	var b strings.Builder
+	for _, r := range subject {
+		if strings.ContainsRune("\\`*_[]<>", r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // PullPageURL is the dashboard page of pull request number of owner/repo

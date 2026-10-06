@@ -119,6 +119,16 @@ func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (str
 	return b.GetCommit().GetSHA(), branch, nil
 }
 
+// CommitSubject implements forge.Client.
+func (c *Client) CommitSubject(ctx context.Context, owner, repo, sha string) (string, error) {
+	rc, _, err := c.api.Repositories.GetCommit(ctx, owner, repo, sha, nil)
+	if err != nil {
+		return "", fmt.Errorf("github: commit %s of %s/%s: %w", sha, owner, repo, err)
+	}
+	subject, _, _ := strings.Cut(rc.GetCommit().GetMessage(), "\n")
+	return strings.TrimSpace(subject), nil
+}
+
 // FileAt implements forge.Client through the contents API, which inlines
 // a file up to forge.MaxFileBytes. A symlink or submodule is not a file.
 func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error) {
