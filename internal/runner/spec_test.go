@@ -36,6 +36,15 @@ func reviewSpec() Spec {
 	}
 }
 
+// followUpSpec is reviewSpec as a follow-up's: the same agent, answering a
+// thread.
+func followUpSpec() Spec {
+	s := reviewSpec()
+	s.Kind = KindFollowUp
+	s.Thread = []review.Message{review.NewMessage("octocat", "@kritika why b?", time.Date(2026, 10, 6, 19, 58, 0, 0, time.UTC))}
+	return s
+}
+
 func TestDecodeSpec(t *testing.T) {
 	encode := func(s Spec) string {
 		b, err := json.Marshal(s)
@@ -51,7 +60,13 @@ func TestDecodeSpec(t *testing.T) {
 	}{
 		{name: "valid review", in: encode(reviewSpec())},
 		{name: "valid index without base", in: encode(Spec{Version: SpecVersion, Kind: KindIndex, RunID: "r", CloneURL: "u", Head: shaA})},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":15`, `"version":16`, 1), wantErr: "version"},
+		{name: "valid follow-up", in: encode(followUpSpec())},
+		{name: "a follow-up without a thread", in: func() string { s := followUpSpec(); s.Thread = nil; return encode(s) }(), wantErr: "thread"},
+		{name: "a follow-up without a base", in: func() string { s := followUpSpec(); s.Base = ""; return encode(s) }(),
+			wantErr: "a followup spec needs a base"},
+		{name: "a follow-up without a prompt", in: func() string { s := followUpSpec(); s.Prompt = nil; return encode(s) }(),
+			wantErr: "a followup spec needs a prompt"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":16`, `"version":17`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},

@@ -15,8 +15,8 @@ kritika indexes a repository, reviews each pull request against that context,
 posts one sticky summary comment plus inline findings and a commit status, and
 answers follow-ups when the bot is @-mentioned. A pull request from a fork is
 reviewed like any other unless the configuration excludes it. One deployment serves any
-number of forge accounts, and every index and review job runs in its own
-Kubernetes Job pod that holds no secrets.
+number of forge accounts, and every index, review and follow-up job runs in
+its own Kubernetes Job pod that holds no secrets.
 
 ```mermaid
 flowchart LR
@@ -46,7 +46,8 @@ flowchart LR
   `trigger.limit` pauses a long-lived pull request's automatic reviews,
   as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
-  answer in the thread, or reply `@<bot> dismiss <reason>` in a finding's
+  answer in the thread, from an agent with a review's tools that reads the
+  code and looks things up before it answers, or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request;
   resolving the thread on the forge does the same.
 - **A confidence score, opt-in.** A second model scores each reviewed pull

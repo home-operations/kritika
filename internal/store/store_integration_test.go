@@ -818,6 +818,32 @@ func changeLast(s string) string {
 	return s[:len(s)-1] + "0"
 }
 
+// checkFollowUpGrant: a follow-up's run has no parent, names the comment it
+// answers, and has no review to name on a pull request not yet reviewed.
+func checkFollowUpGrant(ctx context.Context, t *testing.T, s *Store, alpha string, g GatewayGrant) {
+	t.Helper()
+	fg := GatewayGrant{AccountID: alpha, RepositoryID: g.RepositoryID, FollowupCommentID: 6024351112, Model: g.Model, Budget: 1000}
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		var err error
+		if fg.RunID, err = InsertRunnerRun(ctx, tx, alpha, RunnerKindFollowUp, "", 0); err != nil {
+			return err
+		}
+		return FailRunnerRun(ctx, tx, fg.RunID, "ended by the test")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	followUp, err := s.MintGatewayToken(ctx, fg, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LookupGatewayToken(ctx, followUp); err != nil || got != fg {
+		t.Fatalf("follow-up grant = %+v, %v; want %+v", got, err, fg)
+	}
+	if err := s.RevokeGatewayTokens(ctx, fg.RunID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGatewayTokens(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
@@ -876,6 +902,8 @@ func TestGatewayTokens(t *testing.T) {
 			t.Fatalf("lookup %q = %v, want ErrGatewayToken", bad, err)
 		}
 	}
+
+	checkFollowUpGrant(ctx, t, s, alpha, g)
 
 	expired, err := s.MintGatewayToken(ctx, grant(), time.Now().Add(-time.Minute))
 	if err != nil {

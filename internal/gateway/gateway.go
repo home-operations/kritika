@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,8 +28,8 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// ModelName is the name a review's runner calls its model by; the gateway
-// maps it to the provider model the run was granted.
+// ModelName is the name a runner calls its run's model by; the gateway maps
+// it to the provider model the run was granted.
 const ModelName = "review"
 
 // Drain is how long a stopping gateway lets model steps in flight finish.
@@ -104,6 +105,23 @@ type runCall struct {
 	file    *configfile.File
 	account *configfile.Account
 	logger  *slog.Logger
+}
+
+// role is the usage role c's run spends as.
+func (c runCall) role() string {
+	if c.grant.FollowupCommentID != 0 {
+		return store.RoleFollowUp
+	}
+	return store.RoleReview
+}
+
+// usageReview is the review c's spend is charged to: a follow-up's is
+// charged to none.
+func (c runCall) usageReview() string {
+	if c.grant.FollowupCommentID != 0 {
+		return ""
+	}
+	return c.grant.ReviewID
 }
 
 // admit authenticates r by its run token, finds the run's account in the
@@ -198,8 +216,12 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
 		return
 	}
-	// A run's steps are one conversation, whichever provider answers.
+	// A run's steps are one conversation, whichever provider answers; a
+	// follow-up's is its mention's, which a retried run carries on.
 	req.Model, req.Fallbacks, req.Session = ref.Model(), nil, c.grant.RunID
+	if id := c.grant.FollowupCommentID; id != 0 {
+		req.Session = "followup-" + strconv.FormatInt(id, 10)
+	}
 	fb := configfile.ModelRef(c.grant.Fallback)
 	if fb != "" && fb.Provider() == ref.Provider() {
 		req.Fallbacks = []string{fb.Model()}
@@ -239,9 +261,9 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	took := time.Since(start)
-	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(ref, resp.Model), store.RoleReview, adapter.Outcome(err), resp.Usage.Prompt(),
+	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(ref, resp.Model), c.role(), adapter.Outcome(err), resp.Usage.Prompt(),
 		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD)
-	if cerr := g.charge(ctx, c.grant, c.token, reserved, resp, err == nil); cerr != nil {
+	if cerr := g.charge(ctx, c, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
 		// gets the answer.
 		c.logger.Error("gateway: step not charged", "error", cerr)
@@ -249,7 +271,8 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// Recorded before the runner gets its answer, so the next step's delta
 	// is taken against this one; the recorder bounds how long it waits.
 	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
-		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, Kind: store.ModelCallAgentStep, Duration: took,
+		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
+		Kind: store.ModelCallAgentStep, Duration: took,
 	}, req, resp, err, adapter.Mask(c.file, provider, c.token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
@@ -341,22 +364,22 @@ func sleep(ctx context.Context, d time.Duration) bool {
 }
 
 // charge settles a step's reservation: an answered step's actual spend
-// replaces it and is recorded against the run's review, where the caps
-// count it; a failed step is refunded. The two writes are independent, so
-// a failed usage row still leaves the run's budget charged.
-func (g *Server) charge(
-	ctx context.Context, grant store.GatewayGrant, token string, reserved int64, resp model.StepResponse, answered bool,
-) error {
+// replaces it and is recorded against the run's review, or as a
+// follow-up's, where the caps count it; a failed step is refunded. The two
+// writes are independent, so a failed usage row still leaves the run's
+// budget charged.
+func (g *Server) charge(ctx context.Context, c runCall, reserved int64, resp model.StepResponse, answered bool) error {
 	ctx, cancel := detach(ctx)
 	defer cancel()
 	if !answered {
-		return g.Store.ChargeGatewayToken(ctx, token, -reserved)
+		return g.Store.ChargeGatewayToken(ctx, c.token, -reserved)
 	}
+	grant := c.grant
 	spent := resp.Usage.Prompt() + resp.Usage.Output
-	budgetErr := g.Store.ChargeGatewayToken(ctx, token, spent-reserved)
+	budgetErr := g.Store.ChargeGatewayToken(ctx, c.token, spent-reserved)
 	usageErr := g.Store.WithAccount(ctx, grant.AccountID, func(tx pgx.Tx) error {
 		return store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, ReviewID: grant.ReviewID, Role: store.RoleReview, Model: resp.Model,
+			AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, ReviewID: c.usageReview(), Role: c.role(), Model: resp.Model,
 			Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
 		})
 	})

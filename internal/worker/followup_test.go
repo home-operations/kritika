@@ -146,3 +146,23 @@ func TestDisqualified(t *testing.T) {
 		})
 	}
 }
+
+func TestFollowUpDiffBase(t *testing.T) {
+	tests := []struct {
+		name                        string
+		head, mergeBase, reviewBase string
+		want                        string
+	}{
+		{name: "an open pull request diffs against its merge base", head: "h", mergeBase: "b", reviewBase: "r", want: "b"},
+		{name: "a merged one against what its last review did", head: "h", mergeBase: "h", reviewBase: "r", want: "r"},
+		{name: "a merged one never reviewed has nothing else", head: "h", mergeBase: "h", want: "h"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &followUp{pr: &pullRequest{headSHA: tt.head}, mergeBase: tt.mergeBase}
+			if got := f.diffBase(reviewRecord{mergeBase: tt.reviewBase}); got != tt.want {
+				t.Fatalf("diffBase = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

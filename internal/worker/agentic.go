@@ -190,8 +190,8 @@ func (w *Review) agentPrompt(
 
 // loadAgentRun reads the agent_runs row of a runner run; found is false
 // when the runner wrote none.
-func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run store.AgentRunRow, found bool, err error) {
-	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+func (b *Base) loadAgentRun(ctx context.Context, accountID, runID string) (run store.AgentRunRow, found bool, err error) {
+	err = b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
 		run, err = store.FindAgentRun(ctx, tx, runID)
 		return err
@@ -212,17 +212,18 @@ func (w *Review) loadAgentRun(ctx context.Context, accountID, runID string) (run
 //
 // A run that ended in error may still be writing its row: a deleted runner
 // pod records how its agent stopped while it terminates. await waits for
-// that, until the run settles or agentRowWait passes. ctx's cancellation is
-// not inherited, so a job River cancels still reads the row.
-func (w *Review) readAgentRun(
-	ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool,
+// that, until the run settles or wait, agentRowWait when zero, passes.
+// ctx's cancellation is not inherited, so a job River cancels still reads
+// the row.
+func (b *Base) readAgentRun(
+	ctx context.Context, accountID, runID string, ref configfile.ModelRef, await bool, wait time.Duration,
 ) (*store.AgentRunRow, error) {
-	wait := cmp.Or(w.rowWait, agentRowWait)
+	wait = cmp.Or(wait, agentRowWait)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait+10*time.Second)
 	defer cancel()
-	run, found, err := w.loadAgentRun(ctx, accountID, runID)
+	run, found, err := b.loadAgentRun(ctx, accountID, runID)
 	if err == nil && !found && await {
-		run, found, err = w.awaitAgentRun(ctx, accountID, runID, wait)
+		run, found, err = b.awaitAgentRun(ctx, accountID, runID, wait)
 	}
 	if err != nil || !found {
 		return nil, err
@@ -266,10 +267,10 @@ func (w *Review) agentSpec(
 // revokeGatewayTokens ends the run's token once its runner is done, on a
 // context of its own since the job's may have ended. A token not revoked
 // still expires on its own.
-func (w *Review) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) {
+func (b *Base) revokeGatewayTokens(ctx context.Context, logger *slog.Logger, runID string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	if err := w.Store.RevokeGatewayTokens(rctx, runID); err != nil {
+	if err := b.Store.RevokeGatewayTokens(rctx, runID); err != nil {
 		logger.Warn("gateway token not revoked", "error", err)
 	}
 }
@@ -289,11 +290,11 @@ const agentRowPoll = time.Second
 
 // awaitAgentRun polls for a run's agent_runs row until it appears, the
 // run's phase settles without one, or wait passes.
-func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wait time.Duration) (store.AgentRunRow, bool, error) {
+func (b *Base) awaitAgentRun(ctx context.Context, accountID, runID string, wait time.Duration) (store.AgentRunRow, bool, error) {
 	deadline := time.After(wait)
 	for {
 		var phase string
-		err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
 		})
 		if err != nil {
@@ -301,7 +302,7 @@ func (w *Review) awaitAgentRun(ctx context.Context, accountID, runID string, wai
 		}
 		// The runner writes its agent row before it settles the phase.
 		settled := phase == "done" || phase == "failed"
-		run, found, err := w.loadAgentRun(ctx, accountID, runID)
+		run, found, err := b.loadAgentRun(ctx, accountID, runID)
 		if err != nil || found || settled {
 			return run, found, err
 		}

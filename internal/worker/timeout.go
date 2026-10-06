@@ -14,11 +14,16 @@ import (
 // agent's timeout may lengthen, plus the lease wait and the publish phase
 // around it.
 func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
-	file := w.Current.Get()
-	account, _ := file.AccountByID(job.Args.AccountID)
+	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, job.Args.RepositoryID)
+}
+
+// agentRunTimeout is the timeout of a job that runs an agent in a runner
+// for the repository: a review, or a follow-up.
+func agentRunTimeout(file *configfile.File, accountID, repositoryID string) time.Duration {
+	account, _ := file.AccountByID(accountID)
 	deadline, _ := file.RunnerFor()
 	if account != nil {
-		deadline = agentDeadline(deadline, repoSettings(file, account, job.Args.RepositoryID).Agent.Timeout)
+		deadline = agentDeadline(deadline, repoSettings(file, account, repositoryID).Agent.Timeout)
 	}
 	return min(deadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout)
 }
@@ -30,10 +35,10 @@ func (w *Index) Timeout(*river.Job[jobs.IndexArgs]) time.Duration {
 	return min(deadline+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
 }
 
-// Timeout implements river.Worker: the lease wait, model call and forge
-// write-back a follow-up reply makes, capped like every other job kind.
-func (w *FollowUp) Timeout(*river.Job[jobs.FollowUpArgs]) time.Duration {
-	return jobtimeout.FollowUpTimeout
+// Timeout implements river.Worker: a follow-up's agent runs in a runner as
+// a review's does, around the same lease wait and forge write-back.
+func (w *FollowUp) Timeout(job *river.Job[jobs.FollowUpArgs]) time.Duration {
+	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, job.Args.RepositoryID)
 }
 
 // repoSettings resolves a repository's settings from its id, which a job
