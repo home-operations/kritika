@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.34](https://github.com/home-operations/kritika/compare/0.0.33...0.0.34) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **egress:** egress.allow and egress.deny replace egress.allowHosts ([#568](https://github.com/home-operations/kritika/issues/568))
+
+### Features
+
+* **egress:** address entries, and private addresses refused unless allowed ([#570](https://github.com/home-operations/kritika/issues/570)) ([e389923](https://github.com/home-operations/kritika/commit/e3899238faac3685b6e5029a9be2ff832de9b016))
+* **egress:** egress.allow and egress.deny replace egress.allowHosts ([#568](https://github.com/home-operations/kritika/issues/568)) ([0de6b66](https://github.com/home-operations/kritika/commit/0de6b66fa12bc4bce1560787552864de5bd342fb))
+* **review:** count the reviews and name the head commit in the comment footer ([#574](https://github.com/home-operations/kritika/issues/574)) ([b0a8a8d](https://github.com/home-operations/kritika/commit/b0a8a8d726ead170b47ef765a5ddeec811161883))
+
+
+### Bug Fixes
+
+* **review:** draw summary diagrams as plain-language flows ([#569](https://github.com/home-operations/kritika/issues/569)) ([8d92c81](https://github.com/home-operations/kritika/commit/8d92c818e623fa2e00d5ff3f53a2428f03eeeb80))
+
+
+### Documentation
+
+* **chart:** describe the NetworkPolicies as rendered ([#573](https://github.com/home-operations/kritika/issues/573)) ([9d95fa3](https://github.com/home-operations/kritika/commit/9d95fa3345a446ae1e89ae4719f64d0570d3d06d))
+
 ## [0.0.33](https://github.com/home-operations/kritika/compare/0.0.32...0.0.33) (2026-10-06)
 
 
