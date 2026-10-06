@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -105,15 +107,26 @@ func dropDismissed(findings []review.Finding, dismissed []store.Dismissal) ([]re
 	return kept, len(findings) - len(kept)
 }
 
-// carriedDiagram is the diagram a review's summary keeps: what it drew, or
-// prior when an incremental re-review drew none. The re-review is asked to
-// keep or update the last diagram, but it looks mostly at the commits
-// since and may still drop one that describes the whole change.
-func carriedDiagram(drawn, prior string, incremental bool) string {
-	if drawn == "" && incremental {
-		return prior
+// carriedDiagram is the diagram a review's summary keeps: drawn, what
+// Parse kept of answer's, or prior when an incremental re-review's answer
+// has no diagram at all. The re-review is asked to keep or update the last
+// diagram, but it looks mostly at the commits since, and may not have been
+// shown the last one, so it may still leave out one that describes the
+// whole change. An empty diagram is its answer that the flow is gone, and
+// stands, as a full review's does whatever it is.
+func carriedDiagram(answer json.RawMessage, drawn, prior string, incremental bool) string {
+	if drawn != "" || !incremental {
+		return drawn
 	}
-	return drawn
+	var a struct {
+		Summary struct {
+			Diagram *string `json:"diagram"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(answer)).Decode(&a); err != nil || a.Summary.Diagram != nil {
+		return drawn
+	}
+	return prior
 }
 
 // reviewFindings drops the bookkeeping from prior findings.
