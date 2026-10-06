@@ -370,6 +370,24 @@ tests:
             name: KRITIKA_AUTH_ADMIN_PASSWORD
             valueFrom: { secretKeyRef: { name: kritika-auth, key: password } }
 
+  - it: takes the sign-in client ids from a Secret
+    set:
+      config.authOidcClientId:
+        valueFrom: { secretKeyRef: { name: kritika-oidc, key: client-id } }
+      config.authGithubClientId:
+        valueFrom: { secretKeyRef: { name: kritika-github, key: client-id } }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_AUTH_OIDC_CLIENT_ID
+            valueFrom: { secretKeyRef: { name: kritika-oidc, key: client-id } }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_AUTH_GITHUB_CLIENT_ID
+            valueFrom: { secretKeyRef: { name: kritika-github, key: client-id } }
+
   - it: runs without a configuration file
     set:
       configFile: null

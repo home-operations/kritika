@@ -70,9 +70,13 @@
         },
         "authGithubClientId": {
           "default": "",
-          "description": "Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.",
+          "description": "Client id for signing in with GitHub, inline or from a Secret: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.",
+          "required": [],
           "title": "authGithubClientId",
-          "type": "string"
+          "type": [
+            "string",
+            "object"
+          ]
         },
         "authGithubClientSecret": {
           "default": "",
@@ -92,9 +96,13 @@
         },
         "authOidcClientId": {
           "default": "",
-          "description": "OIDC client id.",
+          "description": "OIDC client id, inline or from a Secret.",
+          "required": [],
           "title": "authOidcClientId",
-          "type": "string"
+          "type": [
+            "string",
+            "object"
+          ]
         },
         "authOidcClientSecret": {
           "default": "",

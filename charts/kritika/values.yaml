@@ -113,7 +113,10 @@ config:
   authOidcName: ""
   # -- OpenID Connect issuer, an https URL; set it to sign in through OIDC.
   authOidcIssuer: ""
-  # -- OIDC client id.
+  # @schema
+  # type: [string, object]
+  # @schema
+  # -- OIDC client id, inline or from a Secret.
   authOidcClientId: ""
   # @schema
   # type: [string, object]
@@ -128,7 +131,10 @@ config:
   authOidcRoleMappingExpr: ""
   # -- Role of an OIDC sign-in the mapping gives none; none unless set.
   authOidcDefaultRole: ""
-  # -- Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.
+  # @schema
+  # type: [string, object]
+  # @schema
+  # -- Client id for signing in with GitHub, inline or from a Secret: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub.
   authGithubClientId: ""
   # @schema
   # type: [string, object]
