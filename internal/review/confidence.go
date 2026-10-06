@@ -159,7 +159,7 @@ func BuildConfidence(in Input, findings []Finding, system string, budget int) st
 			fmt.Fprintf(&tail, "\n- [%s] %s:%d %s\n  %s\n", f.Severity, f.Path, f.Line, oneLine(f.Title), strings.ReplaceAll(text, "\n", "\n  "))
 		}
 	}
-	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/charsPerToken, 2_000)
+	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/charsPerToken, minUserBudget)
 	msg, _, _ := Build(in)
 	return msg + tail.String()
 }

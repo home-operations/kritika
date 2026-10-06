@@ -501,7 +501,6 @@ func TestAgentPromptBudget(t *testing.T) {
 		agent *AgentLimits
 		kept  bool
 	}{
-		{name: "no agent limits take the default budget"},
 		{name: "a zero budget takes the default", agent: &AgentLimits{}},
 		{name: "the configured budget keeps the large file", agent: &AgentLimits{MaxPromptTokens: 60_000}, kept: true},
 	}

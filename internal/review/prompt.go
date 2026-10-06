@@ -286,11 +286,18 @@ func withInstructions(system string, rules []Rule, cite string, instructions []s
 		strings.Join(parts, "\n\n")
 }
 
+// minUserBudget is the least a user message is given, whatever the system
+// prompt and what follows the diff take of the budget: room for the pull
+// request's head and a small diff.
+const minUserBudget = 2_000
+
 // UserBudget is the user message's share of a prompt budget of budget
 // tokens, DefaultBudgetTokens when zero, once the system prompt, whose
-// repository instructions vary in size, is paid for.
+// repository instructions vary in size, is paid for. It is never under
+// minUserBudget: a small budget and long instructions would otherwise
+// leave it nothing, or less.
 func UserBudget(system string, budget int) int {
-	return cmp.Or(budget, DefaultBudgetTokens) - (len(system)+charsPerToken-1)/charsPerToken
+	return max(cmp.Or(budget, DefaultBudgetTokens)-(len(system)+charsPerToken-1)/charsPerToken, minUserBudget)
 }
 
 // Build renders the user message within the budget. When the diff does not

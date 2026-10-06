@@ -445,11 +445,16 @@ own:
   review, its confidence score and a follow-up start from: the system
   prompt, the pull request, as much of the diff as fits, whole files only,
   and then the context. A file left out is named in the review's notes,
-  and the agent reads it with its tools; the scorer and a follow-up, which
-  have none, never see it. It is 24000 unless set, and at least 8000. A
-  model with a larger context window can take more, so a large file is
-  reviewed from the start; the prompt is spent out of `tokens` on every
-  step. The runner's `-tools` image has `gh`, `curl`,
+  and a review's or a follow-up's agent reads it with its tools; the
+  scorer, which has none, never sees it. It is 24000 unless set, and at
+  least 8000. A model with a larger context window can take more, so a
+  large file is reviewed from the start. Every step sends the prompt
+  again and counts it against `tokens`, so a larger `prompt` leaves the
+  agent fewer steps unless `tokens` is raised with it, and one near
+  `tokens` leaves it none. The scorer is sent a prompt of the same size:
+  a `confidence.model` with a smaller context window than the review's
+  refuses one it cannot take, and the review then has no score. The
+  runner's `-tools` image has `gh`, `curl`,
   `fd`, `jq`, `rg` and `yq`; the agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
   review and public repositories. The run tool refuses the arguments that
