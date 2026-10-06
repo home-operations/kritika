@@ -295,7 +295,7 @@ func runAgentic(
 ) error {
 	stepper, err := model.NewOpenAI(model.OpenAIConfig{
 		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
-		Retries: gatewayRetries,
+		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout,
 	})
 	if err != nil {
 		return fmt.Errorf("runner: %w", err)

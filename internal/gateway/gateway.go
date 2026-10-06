@@ -215,10 +215,14 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Now()
-	resp, attempts, err := step(ctx, stepper, req, provider.Retries, sleep, func(err error) {
+	// The step, its retries and its fallback share one budget, inside
+	// which the runner waits for the answer.
+	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
+	defer cancel()
+	resp, attempts, err := step(sctx, stepper, req, provider.Retries, sleep, func(err error) {
 		c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), provider))
 	})
-	if err != nil && ctx.Err() == nil && fb != "" && fb.Provider() != ref.Provider() {
+	if err != nil && sctx.Err() == nil && fb != "" && fb.Provider() != ref.Provider() {
 		// The review model's attempts are spent; a fallback on another
 		// provider gets the same step, with that provider's retries. The
 		// request is provider-neutral, so the conversation carries over.
@@ -227,7 +231,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 				"error", maskProvider(err.Error(), provider))
 			req.Model = fb.Model()
 			var more int
-			resp, more, err = step(ctx, fbStepper, req, fbProvider.Retries, sleep, func(err error) {
+			resp, more, err = step(sctx, fbStepper, req, fbProvider.Retries, sleep, func(err error) {
 				c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), fbProvider))
 			})
 			attempts += more
