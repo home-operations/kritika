@@ -267,10 +267,10 @@ Kubernetes: `>=1.25.0-0`
 | config.appsWebhookSecret | string | `""` | The GitHub App's webhook secret, from a Secret. |
 | config.authAdminPassword | string | `""` | The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down. |
 | config.authAdminUser | string | `""` | The local admin's username; `admin` unless set. |
-| config.authGithubClientId | string | `""` | Client id for signing in with GitHub: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub. |
+| config.authGithubClientId | string | `""` | Client id for signing in with GitHub, inline or from a Secret: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub. |
 | config.authGithubClientSecret | string | `""` | Client secret for signing in with GitHub, from a Secret. |
 | config.authGithubRoleMappingExpr | string | `""` | CEL expression mapping a GitHub sign-in to a kritika role, e.g. `login == "user-1" ? "admin" : ""`. |
-| config.authOidcClientId | string | `""` | OIDC client id. |
+| config.authOidcClientId | string | `""` | OIDC client id, inline or from a Secret. |
 | config.authOidcClientSecret | string | `""` | OIDC client secret, from a Secret. |
 | config.authOidcDefaultRole | string | `""` | Role of an OIDC sign-in the mapping gives none; none unless set. |
 | config.authOidcIssuer | string | `""` | OpenID Connect issuer, an https URL; set it to sign in through OIDC. |
