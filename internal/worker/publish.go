@@ -107,6 +107,9 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if note := skillsNote(run.SkillsOffered, run.SkillsOpened); note != "" {
 		notes = append(notes, note)
 	}
+	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
+		notes = append(notes, note)
+	}
 	// Scoring had its own time; the write-back gets a whole bound after it.
 	ctx, cancel = detach(job)
 	defer cancel()
@@ -162,6 +165,19 @@ func skillsNote(offered, opened []string) string {
 		read = "read: " + strings.Join(opened, ", ")
 	}
 	return fmt.Sprintf("Skills offered: %s; %s", strings.Join(offered, ", "), read)
+}
+
+// commandsNote is the summary's note of the commands the run tool offered
+// and the ones the agent ran, "" when it offered none.
+func commandsNote(offered, ran []string) string {
+	if len(offered) == 0 {
+		return ""
+	}
+	used := "none run"
+	if len(ran) > 0 {
+		used = "run: " + strings.Join(ran, ", ")
+	}
+	return fmt.Sprintf("Commands offered: %s; %s", strings.Join(offered, ", "), used)
 }
 
 // skipDescription is how the commit status states a skip: a repository's

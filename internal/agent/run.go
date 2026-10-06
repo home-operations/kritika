@@ -54,12 +54,13 @@ type RunConfig struct {
 // RunTool executes one allowlisted binary with the model's arguments,
 // directly and without a shell, in a checkout of the head commit, and
 // records as a source the review consulted every http(s) URL curl is given
-// and what each gh call reads.
+// and what each gh call reads, and which commands it ran.
 type RunTool struct {
 	cfg     RunConfig
 	names   []string
 	schema  json.RawMessage
 	sources []string
+	ran     []string
 }
 
 // NewRunTool builds the run tool over c.Commands.
@@ -85,6 +86,10 @@ func (rt *RunTool) Names() []string { return rt.names }
 // Sources are the URLs curl was given and gh read, in first-use order,
 // never nil.
 func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...) }
+
+// Ran are the commands the model ran, each once in first-use order, never
+// nil.
+func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
 
 func (rt *RunTool) Def() model.ToolDef {
 	desc := fmt.Sprintf("Run one of these commands in a checkout of the head commit: %s. The command runs directly, "+
@@ -138,6 +143,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	}
 	if why := refusedArgs(req.Command, req.Args); why != "" {
 		return "", fmt.Errorf("agent: run: %s: %s", req.Command, why)
+	}
+	if !slices.Contains(rt.ran, req.Command) {
+		rt.ran = append(rt.ran, req.Command)
 	}
 	switch req.Command {
 	case "curl":

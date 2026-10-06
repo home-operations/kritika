@@ -171,6 +171,28 @@ func TestRunToolRecordsCurlSources(t *testing.T) {
 	}
 }
 
+// TestRunToolRecordsRan: the commands run are listed once each in first-use
+// order, and one the tool does not offer or refuses is not among them.
+func TestRunToolRecordsRan(t *testing.T) {
+	rt, _ := newTestRunTool(t, false)
+	if got := rt.Ran(); got == nil || len(got) != 0 {
+		t.Fatalf("ran of an unused tool = %#v", got)
+	}
+	for _, input := range []string{
+		`{"command":"rg","args":["x"]}`,
+		`{"command":"curl","args":["https://example.com/"]}`,
+		`{"command":"rg","args":["--pre","cat","y"]}`,
+		`{"command":"fd","args":["x"]}`,
+	} {
+		// The unoffered and the refused calls fail, which the loop reports to
+		// the model; only what ran is recorded.
+		_, _ = rt.Run(t.Context(), json.RawMessage(input))
+	}
+	if got := rt.Ran(); !slices.Equal(got, []string{"rg", "curl"}) {
+		t.Fatalf("ran = %q, want [rg curl]", got)
+	}
+}
+
 // TestRunToolGH: only gh is given its extra environment, what it reads is
 // a source, and the tool steers GitHub lookups to it.
 func TestRefusedArgs(t *testing.T) {

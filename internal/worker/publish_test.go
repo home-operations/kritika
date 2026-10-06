@@ -130,6 +130,29 @@ func TestSkillsNote(t *testing.T) {
 	}
 }
 
+func TestCommandsNote(t *testing.T) {
+	tests := []struct {
+		name         string
+		offered, ran []string
+		want         string
+	}{
+		{name: "none offered"},
+		{name: "none offered, as the runner writes it", offered: []string{}, ran: []string{}},
+		{name: "offered and none run", offered: []string{"gh", "helm"}, want: "Commands offered: gh, helm; none run"},
+		{
+			name: "each run, in the order first run", offered: []string{"gh", "helm", "kubectl"}, ran: []string{"helm", "gh"},
+			want: "Commands offered: gh, helm, kubectl; run: helm, gh",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := commandsNote(tt.offered, tt.ran); got != tt.want {
+				t.Errorf("commandsNote(%q, %q) = %q, want %q", tt.offered, tt.ran, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolvedThreads(t *testing.T) {
 	prior := []priorFinding{
 		{Path: "a.go", Title: "Unchecked error", commentID: 11},

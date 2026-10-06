@@ -169,6 +169,7 @@ var goldens = map[string]any{
 			StopReason: "submitted", Steps: 3, ToolCalls: map[string]int{"grep": 2},
 			Timeline: []TimelineStep{{Index: 0, Tools: []string{"grep"}, DurationMs: 1200, OutputBytes: 300, InputTokens: 100, OutputTokens: 20}},
 			Sources:  []string{"https://docs.example"}, SkillsOffered: []string{"renovate-review", "go-style"}, SkillsOpened: []string{"renovate-review"},
+			CommandsOffered: []string{"gh", "helm"}, CommandsRun: []string{"helm"},
 			Usage:   Usage{Input: 100, CacheRead: 50, CacheWrite: 10, Output: 20},
 			CostUSD: 0.1, Model: "acme/large", Error: "", CreatedAt: t1, Result: json.RawMessage(`{"findings":[]}`),
 		},

@@ -98,6 +98,13 @@
           <span class="small muted">({a.skillsOpened.length ? `read ${a.skillsOpened.join(', ')}` : 'none read'})</span>
         </dd>
       {/if}
+      {#if a.commandsOffered.length}
+        <dt>Commands</dt>
+        <dd>
+          {#each a.commandsOffered as c, i (c)}{i ? ', ' : ''}<span class="mono" class:muted={!a.commandsRun.includes(c)}>{c}</span>{/each}
+          <span class="small muted">({a.commandsRun.length ? `ran ${a.commandsRun.join(', ')}` : 'none run'})</span>
+        </dd>
+      {/if}
       {#if a.sources.length}
         <dt>Sources</dt>
         <dd>
