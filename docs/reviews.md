@@ -29,7 +29,7 @@ someone comments `@<bot> pause`.
 | Findings          | inline comments on the lines they concern, each with its severity, category, explanation, a one-click suggestion where it has a fix, and a prompt for a coding agent |
 | The commit status | `Kritika / Review`, on the head commit                                                                                                                               |
 | Reactions         | 👀 on the pull request while a review runs, 👍 once one is posted; a mention kritika answers gets the same ([permissions](setup.md#register-the-github-app))         |
-| An approval       | with `review.approve` on ([approvals](repository-config.md#what-it-may-set))                                                                                         |
+| An approval       | with `review.approve` on ([approvals](repository-config.md#approvals))                                                                                               |
 
 ### The summary comment
 
@@ -55,7 +55,7 @@ From the top, each part shown only when it has something to say:
 
 The re-run badge at the top opens the pull request's page on the
 dashboard. A repository can replace the comment with its own template
-([`comments.summary`](repository-config.md#what-it-may-set)).
+([`comments.summary`](repository-config.md#comment-templates)).
 
 ### The commit status
 
