@@ -224,6 +224,12 @@ type Client interface {
 	React(ctx context.Context, owner, repo string, to Comment, content string) (int64, error)
 	// Unreact removes the bot's reaction id from a comment.
 	Unreact(ctx context.Context, owner, repo string, from Comment, id int64) error
+	// ReactToPullRequest adds the bot's reaction to the pull request itself
+	// and returns the reaction's id, as React does for a comment.
+	ReactToPullRequest(ctx context.Context, owner, repo string, number int, content string) (int64, error)
+	// UnreactToPullRequest removes the bot's reaction id from the pull
+	// request itself.
+	UnreactToPullRequest(ctx context.Context, owner, repo string, number int, id int64) error
 	// ResolveThread resolves the review thread inline comment id opened,
 	// when it is still open, and reports whether it did. With onlyOwn, a
 	// thread someone else has written in is left open: it is a
@@ -237,9 +243,12 @@ type Client interface {
 	PullRequest(ctx context.Context, owner, repo string, number int) (OpenPullRequest, error)
 }
 
-// ReactionEyes is the 👀 the bot leaves on a mention while it works on the
-// answer.
-const ReactionEyes = "eyes"
+// Reactions the bot leaves on a pull request it reviews and on a mention it
+// answers: the 👀 while it works, the 👍 once it has answered.
+const (
+	ReactionEyes = "eyes"
+	ReactionDone = "+1"
+)
 
 // CanWrite reports whether a permission level allows pushing.
 func CanWrite(permission Permission) bool {

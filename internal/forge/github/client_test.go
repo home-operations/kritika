@@ -559,3 +559,17 @@ func TestReactions(t *testing.T) {
 		}
 	})
 }
+
+// TestPullRequestReactions: a pull request's own reactions are its issue's.
+func TestPullRequestReactions(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("POST /api/v3/repos/o/r/issues/7/reactions", 201, `{"id":78,"content":"+1"}`)
+	f.reply("DELETE /api/v3/repos/o/r/issues/7/reactions/78", 204, ``)
+	id, err := c.ReactToPullRequest(t.Context(), "o", "r", 7, forge.ReactionDone)
+	if err != nil || id != 78 || f.bodies["POST /api/v3/repos/o/r/issues/7/reactions"].(map[string]any)["content"] != "+1" {
+		t.Fatalf("ReactToPullRequest = %d, %v, body %v", id, err, f.bodies["POST /api/v3/repos/o/r/issues/7/reactions"])
+	}
+	if err := c.UnreactToPullRequest(t.Context(), "o", "r", 7, id); err != nil || !f.saw("DELETE /api/v3/repos/o/r/issues/7/reactions/78") {
+		t.Fatalf("UnreactToPullRequest = %v, requests %v", err, f.requests)
+	}
+}

@@ -47,10 +47,12 @@ flowchart LR
   as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an
   answer in the thread, from an agent with a review's tools that reads the
-  code and looks things up before it answers; the mention carries the bot's
-  👀 while it works. Or reply `@<bot> dismiss <reason>` in a finding's
+  code and looks things up before it answers. Or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request;
   resolving the thread on the forge does the same.
+- **Reactions.** The pull request carries the bot's 👀 while a review
+  runs and its 👍 once one is posted, and a mention the bot answers the
+  same, so a list of pull requests shows which have been reviewed.
 - **A confidence score, opt-in.** A second model scores each reviewed pull
   request from 0 to 5; a repository that gates on it has the commit status
   fail under its threshold, so it can be a required check.

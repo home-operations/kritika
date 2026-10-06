@@ -131,6 +131,14 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 			logger.Warn("commit status not set", "error", serr)
 		}
 	}()
+	// The pull request carries the bot's eyes while a review of it runs,
+	// and its thumbs up once one is posted.
+	end, outcome := pullMarks(client, owner, repo, args.Number, logger).start(ctx), store.ReviewStatus("")
+	defer func() {
+		mctx, cancel := detach(ctx)
+		defer cancel()
+		end(outcome == store.ReviewCompleted, w.otherReviewRunning(mctx, logger, args.AccountID, pr.id, reviewID))
+	}()
 	deadline, resources := file.RunnerFor()
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
@@ -240,6 +248,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		agent: agentOutcome,
 	}
 	status, perr := phase.run(ctx)
+	outcome = status
 	// Publishing finishes on a detached ctx, so a clean result stands even
 	// if ctx ended meanwhile: the comment and the commit status already say
 	// so. Only a publish that failed while ctx ended ends as canceled or
