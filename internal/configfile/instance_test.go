@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -159,34 +160,46 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 }
 
 // TestFileReviewDefaults: the file and the environment set the defaults'
-// feedback, limit and settle, which accounts inherit with the defaults' or
-// the environment's source. mode is no longer a setting in either.
+// feedback, approve, limit and settle, which accounts inherit with the
+// defaults' or the environment's source. mode is no longer a setting in
+// either.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
 	t.Setenv("KRITIKA_TRIGGER_SETTLE", "45s")
+	t.Setenv("KRITIKA_REVIEW_APPROVE", "true")
+	t.Setenv("KRITIKA_REVIEW_FIXES", "true")
+	t.Setenv("KRITIKA_REVIEW_INCREMENTAL", "7")
 	models := "review: { model: openrouter/big, fallback: openrouter/small"
 	withDefaults := func(reviewKeys, rootKeys string) []byte {
 		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
 	}
-	f, err := Parse(withDefaults(", feedback: minimal", "trigger: { limit: 3 }\n"))
+	t.Setenv("KRITIKA_TRIGGER_LIMIT", "3")
+	f, err := Parse(withDefaults(", feedback: minimal", ""))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal {
-		t.Fatalf("settings = limit %d settle %s feedback %s; want the file's and the environment's",
-			s.MaxAutoReviews, s.Settle, s.Review.Feedback)
+	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal || !s.Review.Approve ||
+		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 {
+		t.Fatalf("settings = %+v; want the file's and the environment's", s)
 	}
 	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{"trigger.limit": SourceDefaults, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults} {
+	for key, want := range map[string]Source{
+		"trigger.limit": SourceEnv, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults,
+		"review.approve": SourceEnv, "review.fixes": SourceEnv, "review.incremental": SourceEnv,
+	} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
 		{"review.feedback", FileValue{Value: "minimal", Source: SourceFile}},
+		{"review.approve", FileValue{Value: "true", Source: SourceEnv}},
+		{"review.fixes", FileValue{Value: "true", Source: SourceEnv}},
+		{"review.incremental", FileValue{Value: "7", Source: SourceEnv}},
 		{"trigger.settle", FileValue{Value: "45s", Source: SourceEnv}},
+		{"trigger.limit", FileValue{Value: "3", Source: SourceEnv}},
 	}
 	if got := f.FileLayer().Defaults; !slices.Equal(got, want) {
 		t.Fatalf("file layer defaults = %+v, want %+v", got, want)
@@ -197,6 +210,23 @@ func TestFileReviewDefaults(t *testing.T) {
 	t.Setenv("KRITIKA_REVIEW_MODE", "agentic")
 	if _, err := Parse(withDefaults("", "")); err == nil || !strings.Contains(err.Error(), "KRITIKA_REVIEW_MODE names no setting") {
 		t.Fatalf("KRITIKA_REVIEW_MODE = %v, want it refused", err)
+	}
+	if err := os.Unsetenv("KRITIKA_REVIEW_MODE"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ env, value, want string }{
+		{"KRITIKA_REVIEW_APPROVE", "yes please", "KRITIKA_REVIEW_APPROVE must be true or false"},
+		{"KRITIKA_REVIEW_FIXES", "1.5", "KRITIKA_REVIEW_FIXES must be true or false"},
+		{"KRITIKA_REVIEW_INCREMENTAL", "many", "KRITIKA_REVIEW_INCREMENTAL must be a whole number"},
+		{"KRITIKA_TRIGGER_LIMIT", "-1", "trigger.limit must not be negative"},
+	} {
+		t.Setenv(tt.env, tt.value)
+		if _, err := Parse(withDefaults("", "")); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("%s=%s: err = %v, want it to mention %q", tt.env, tt.value, err, tt.want)
+		}
+		if err := os.Unsetenv(tt.env); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -222,6 +252,7 @@ func TestConfidenceSettings(t *testing.T) {
 			want: `configfile: confidence.risk must be low, medium, high or critical, got "none"`},
 		{name: "a risk in the environment that is no level", env: "RISK=severe", want: "confidence.risk must be low, medium, high or critical"},
 		{name: "a threshold in the environment that is no number", env: "THRESHOLD=high", want: "KRITIKA_CONFIDENCE_THRESHOLD must be a whole number"},
+		{name: "a gate in the environment that is no boolean", env: "GATE=maybe", want: "KRITIKA_CONFIDENCE_GATE must be true or false"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if name, value, ok := strings.Cut(tt.env, "="); ok {
@@ -234,24 +265,25 @@ func TestConfidenceSettings(t *testing.T) {
 	}
 	doc := fileWithDefaults + `confidence: { model: openrouter/judge, risk: medium, instructions: "Image bumps are low." }
 repositories:
-  acme/x: { confidence: { threshold: 3, risk: high } }
+  acme/x: { confidence: { threshold: 3, gate: false, risk: high } }
   acme/y: { confidence: { model: "", instructions: "" } }
 `
 	t.Setenv("KRITIKA_CONFIDENCE_THRESHOLD", "4")
+	t.Setenv("KRITIKA_CONFIDENCE_GATE", "true")
 	if f, err = Parse([]byte(doc)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	for repo, want := range map[string]Confidence{
-		"acme/z": {Model: "openrouter/judge", Threshold: 4, Risk: review.RiskMedium, Instructions: "Image bumps are low."},
-		"acme/x": {Model: "openrouter/judge", Threshold: 3, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
-		"acme/y": {Threshold: 4, Risk: review.RiskMedium},
+		"acme/z": {Model: "openrouter/judge", Threshold: 4, Gate: true, Risk: review.RiskMedium, Instructions: "Image bumps are low."},
+		"acme/x": {Model: "openrouter/judge", Threshold: 3, Gate: false, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
+		"acme/y": {Threshold: 4, Gate: true, Risk: review.RiskMedium},
 	} {
 		if got := f.Settings(a, repo).Confidence; got != want {
 			t.Errorf("confidence of %s = %+v, want %+v", repo, got, want)
 		}
 	}
-	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.threshold"] != SourceEnv {
+	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.threshold"] != SourceEnv || src["confidence.gate"] != SourceEnv {
 		t.Fatalf("sources = %v", src)
 	}
 }

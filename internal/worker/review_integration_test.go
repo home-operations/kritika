@@ -1443,7 +1443,7 @@ rules:
   - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
 comments:
   summary: ".kritika/summary.md.tmpl"
-confidence: { model: test/reviewer, threshold: 4 }
+confidence: { model: test/reviewer, threshold: 4, gate: true }
 review:
   approve: true
 `,

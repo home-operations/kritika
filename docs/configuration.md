@@ -335,12 +335,15 @@ alone.
 With a `confidence.model`, a second model scores every reviewed pull
 request from 0 to 5: how ready it is to merge, from the diff and the
 findings the review reported. A different vendor's model than the review's
-makes it a second opinion. The pull request's commit status fails when the
-score is under `confidence.threshold`, 5 unless set, so the status can be a
-required check. The findings set the most a pull request can score, however
+makes it a second opinion. The score is held to `confidence.threshold`, 5
+unless set: it decides approvals (below) and, with `confidence.gate: true`,
+the commit status, which then fails under the threshold so it can be a
+required check. Without the gate, off unless set, the status reports the
+score and passes whatever it is: a score blocks a merge only where someone
+asked it to. The findings set the most a pull request can score, however
 the scorer reads them: 2 with a blocking finding, 3 with an important one;
-nits take nothing off. A review the scorer did not answer for reports an
-error on the commit, not a pass. With no `confidence.model` nothing is
+nits take nothing off. A gated review the scorer did not answer for reports
+an error on the commit, not a pass. With no `confidence.model` nothing is
 scored, and a review that ran reports success whatever it found. A
 dismissed finding stops counting at the next review, which a push or
 `@<app slug> review` starts. A bot's rebase that leaves its patch
@@ -374,7 +377,9 @@ approved, `low` unless set. It bears on approvals alone, never on the commit
 status: a risky change that scores well passes its check and waits for a
 person. With `review.approve` on, a pull request is approved when its
 score reaches `confidence.threshold` and its risk is within
-`confidence.risk`, so one threshold decides the check and the approval.
+`confidence.risk`, so one threshold decides the approval and, where gated,
+the check: a repository can have kritika approve what scores well without
+ever failing a check, or fail the check and leave approving to people.
 A bot's unchanged rebase, skipped with the score it carries, has that
 score decide its approval the same way. `confidence.instructions` is plain guidance to the scorer on rating
 risk in your code, such as "the media apps under `kubernetes/apps/default`
@@ -422,7 +427,7 @@ repositories:
 The root and each entry take the keys a repository's own `.kritika.yaml`
 takes, in the same groups (`review.model`, `review.fallback`,
 `review.feedback`, `review.fixes`, `review.approve`, `confidence.model`,
-`confidence.threshold`, `confidence.risk`, `trigger.include`,
+`confidence.threshold`, `confidence.gate`, `confidence.risk`, `trigger.include`,
 `trigger.exclude`, `comments`, `rules`, `context`, `skills` and `ignore`; see
 [the `.kritika.yaml` reference](repository-config.md)), and the admin's
 own:
@@ -529,10 +534,15 @@ the environment:
 | `KRITIKA_REVIEW_MODEL`             | `review.model`                                                                        |
 | `KRITIKA_REVIEW_FALLBACK`          | `review.fallback`                                                                     |
 | `KRITIKA_REVIEW_FEEDBACK`          | `review.feedback`                                                                     |
+| `KRITIKA_REVIEW_APPROVE`           | `review.approve`, `true` or `false`                                                   |
+| `KRITIKA_REVIEW_FIXES`             | `review.fixes`, `true` or `false`                                                     |
+| `KRITIKA_REVIEW_INCREMENTAL`       | `review.incremental`, a whole number of files                                         |
 | `KRITIKA_CONFIDENCE_MODEL`         | `confidence.model`                                                                    |
 | `KRITIKA_CONFIDENCE_THRESHOLD`     | `confidence.threshold`, a whole number from 0 to 5                                    |
+| `KRITIKA_CONFIDENCE_GATE`          | `confidence.gate`, `true` or `false`                                                  |
 | `KRITIKA_CONFIDENCE_RISK`          | `confidence.risk`, `low`, `medium`, `high` or `critical`                              |
 | `KRITIKA_TRIGGER_SETTLE`           | `trigger.settle`, a duration such as `30s`                                            |
+| `KRITIKA_TRIGGER_LIMIT`            | `trigger.limit`, a whole number of reviews                                            |
 | `KRITIKA_EMBEDDING_MODEL`          | `embedding.model`                                                                     |
 | `KRITIKA_EMBEDDING_DIMS`           | `embedding.dims`                                                                      |
 
@@ -614,6 +624,10 @@ except where noted; a restart changes them.
 | `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set |
 | `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                      |
 | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                       |
+| `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                      |
+| `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                |
+| `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                   |
+| `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                     |
 | `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline; 15m unless set                                                                                                 |
 | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                          |
 | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it           |

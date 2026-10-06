@@ -247,11 +247,13 @@ type ReviewSpec struct {
 // ConfidenceSpec sets how a review is judged at one scope: the model that
 // scores the reviewed pull request, a model written here, even empty,
 // replacing the broader scope's, the score the pull request must reach,
-// the highest risk a change may carry and still be approved, and the
-// admin's guidance to the scorer on rating risk.
+// whether the commit status fails under it, the highest risk a change may
+// carry and still be approved, and the admin's guidance to the scorer on
+// rating risk.
 type ConfidenceSpec struct {
 	Model        *ModelRef    `yaml:"model,omitempty"`
 	Threshold    *int         `yaml:"threshold,omitempty"`
+	Gate         *bool        `yaml:"gate,omitempty"`
 	Risk         *review.Risk `yaml:"risk,omitempty"`
 	Instructions *string      `yaml:"instructions,omitempty"`
 }
@@ -261,8 +263,12 @@ type ConfidenceSpec struct {
 type Confidence struct {
 	Model ModelRef `json:"model"`
 	// Threshold is the score, out of MaxConfidence, a pull request must
-	// reach for its commit status to pass.
+	// reach to be approved and, with Gate, for its commit status to pass.
 	Threshold int `json:"threshold"`
+	// Gate is true to fail the commit status under Threshold, so it can be
+	// a required check. Off unless set: a score never blocks a merge
+	// nobody asked it to, and the status only reports it.
+	Gate bool `json:"gate"`
 	// Risk is the highest risk a change may be rated and still be approved.
 	Risk review.Risk `json:"risk"`
 	// Instructions are the admin's guidance to the scorer on rating risk.

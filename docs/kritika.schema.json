@@ -44,7 +44,11 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 5,
-          "description": "The score a pull request must reach for its commit status to pass, replacing the admin's."
+          "description": "The score a pull request must reach to be approved and, with gate, for its commit status to pass, replacing the admin's."
+        },
+        "gate": {
+          "type": "boolean",
+          "description": "true fails the commit status under the threshold, so it can be a required check; replaces the admin's."
         },
         "risk": {
           "enum": ["low", "medium", "high", "critical"],

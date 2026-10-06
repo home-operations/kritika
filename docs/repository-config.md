@@ -121,10 +121,12 @@ skills:
   that moved while it was reviewed is left to its own review. It replaces
   the admin's, in either direction: a repository turns it on where the
   instance leaves it off. Off unless set.
-- `confidence.model` / `confidence.threshold`: the model that scores a
-  reviewed pull request from 0 to 5, a `<provider>/<model>` held to the
-  same providers as `review.model`, and the score its commit status needs
-  to pass; each replaces the admin's, the threshold in either direction.
+- `confidence.model` / `confidence.threshold` / `confidence.gate`: the
+  model that scores a reviewed pull request from 0 to 5, a
+  `<provider>/<model>` held to the same providers as `review.model`, the
+  score the pull request must reach, and whether its commit status fails
+  under that score (off, the status reports the score and passes); each
+  replaces the admin's, the threshold and the gate in either direction.
   `confidence.risk` is the highest risk a change may be rated and still be
   approved, and may only lower the admin's; a higher one is dropped.
   See [the configuration](configuration.md#repository-settings-and-repositories)

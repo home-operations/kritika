@@ -256,9 +256,10 @@ Kubernetes: `>=1.25.0-0`
 | config.authOidcRolesClaim | string | `""` | The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`. |
 | config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
 | config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
+| config.confidenceGate | string | `""` | `true` fails the commit status under the threshold, so it can be a required check; off unless set, when the status reports the score and passes. |
 | config.confidenceModel | string | `""` | The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set. |
 | config.confidenceRisk | string | `""` | The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set. |
-| config.confidenceThreshold | string | `""` | The score a pull request must reach for its commit status to pass, 0 to 5; 5 unless set. |
+| config.confidenceThreshold | string | `""` | The score a pull request must reach to be approved and, with the gate, for its commit status to pass, 0 to 5; 5 unless set. |
 | config.diffRetention | string | `""` | How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set. |
 | config.embeddingDims | string | `""` | The embedding's dimensions, which the model must produce. |
 | config.embeddingModel | string | `""` | The embedding model, `<provider>/<model>`; set it to index each repository for similar code. |
@@ -276,13 +277,17 @@ Kubernetes: `>=1.25.0-0`
 | config.providersName | string | `""` | The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set. |
 | config.providersRetries | string | `""` | How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. |
 | config.providersType | string | `""` | The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those. |
+| config.reviewApprove | string | `""` | `true` has a review that finds nothing blocking or important approve the pull request, or, with a confidence model, one whose score and risk allow it, and dismisses that approval when a later review's do not; off unless set. |
 | config.reviewFallback | string | `""` | The model a review falls back to when the review model fails. |
 | config.reviewFeedback | string | `""` | How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set. |
+| config.reviewFixes | string | `""` | `true` requires a suggested fix on every finding; off unless set. |
+| config.reviewIncremental | string | `""` | How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set. |
 | config.reviewModel | string | `""` | The model every review runs on unless a repository names another, `<provider>/<model>`. |
 | config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. |
 | config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
 | config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
 | config.transcriptRetention | string | `""` | How long a review's full model transcript is kept, at least 24h; 720h unless set. |
+| config.triggerLimit | string | `""` | How many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. |
 | config.triggerSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
 | config.webUrl | required | `""` | Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name. |
 | configFile | optional | `{}` | The configuration file, as YAML: what is reviewed and how, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |

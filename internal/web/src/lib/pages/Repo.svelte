@@ -65,6 +65,11 @@
     { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },
     { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
     {
+      label: 'Confidence gate',
+      key: 'confidence.gate',
+      value: (s) => (!s.confidence.model ? '—' : s.confidence.gate ? 'yes: the check fails under the threshold' : 'no: the check reports the score'),
+    },
+    {
       label: 'Approve up to risk',
       key: 'confidence.risk',
       value: (s) => (!s.review.approve ? '—' : s.confidence.model ? s.confidence.risk : 'any: no scorer, so on the findings alone'),

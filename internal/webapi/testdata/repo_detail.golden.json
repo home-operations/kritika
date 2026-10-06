@@ -66,6 +66,7 @@
     "confidence": {
       "model": "openrouter/acme-judge",
       "threshold": 5,
+      "gate": false,
       "risk": "low",
       "instructions": "Image bumps are low."
     },
@@ -153,6 +154,7 @@
       "confidence": {
         "model": "openrouter/acme-judge",
         "threshold": 5,
+        "gate": false,
         "risk": "low",
         "instructions": "Image bumps are low."
       },

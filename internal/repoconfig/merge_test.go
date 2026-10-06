@@ -130,9 +130,9 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{
-			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, threshold: 0 }\n",
+			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, threshold: 0, gate: true }\n",
 			want: func(s *configfile.Settings) {
-				s.Confidence.Model, s.Confidence.Threshold = "own/judge", 0
+				s.Confidence.Model, s.Confidence.Threshold, s.Confidence.Gate = "own/judge", 0, true
 			},
 		},
 		{

@@ -8,7 +8,7 @@
       "type": "object"
     },
     "config": {
-      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, embedding*, and the review,\nconfidence and trigger settings reviewModel, reviewFallback,\nreviewFeedback, confidenceModel, confidenceThreshold, confidenceRisk\nand triggerSettle) win over the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
+      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, embedding*, and the review,\nconfidence and trigger settings reviewModel, reviewFallback,\nreviewFeedback, reviewApprove, reviewFixes, reviewIncremental,\nconfidenceModel, confidenceThreshold, confidenceGate, confidenceRisk,\ntriggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
       "properties": {
         "appsAccounts": {
           "default": "",
@@ -148,6 +148,16 @@
           "title": "authSessionTtl",
           "type": "string"
         },
+        "confidenceGate": {
+          "default": "",
+          "description": "`true` fails the commit status under the threshold, so it can be a required check; off unless set, when the status reports the score and passes.",
+          "required": [],
+          "title": "confidenceGate",
+          "type": [
+            "boolean",
+            "string"
+          ]
+        },
         "confidenceModel": {
           "default": "",
           "description": "The model that scores each reviewed pull request from 0 to 5, `\u003cprovider\u003e/\u003cmodel\u003e`; nothing is scored unless set.",
@@ -162,7 +172,7 @@
         },
         "confidenceThreshold": {
           "default": "",
-          "description": "The score a pull request must reach for its commit status to pass, 0 to 5; 5 unless set.",
+          "description": "The score a pull request must reach to be approved and, with the gate, for its commit status to pass, 0 to 5; 5 unless set.",
           "required": [],
           "title": "confidenceThreshold",
           "type": [
@@ -292,6 +302,16 @@
           "title": "providersType",
           "type": "string"
         },
+        "reviewApprove": {
+          "default": "",
+          "description": "`true` has a review that finds nothing blocking or important approve the pull request, or, with a confidence model, one whose score and risk allow it, and dismisses that approval when a later review's do not; off unless set.",
+          "required": [],
+          "title": "reviewApprove",
+          "type": [
+            "boolean",
+            "string"
+          ]
+        },
         "reviewFallback": {
           "default": "",
           "description": "The model a review falls back to when the review model fails.",
@@ -303,6 +323,26 @@
           "description": "How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.",
           "title": "reviewFeedback",
           "type": "string"
+        },
+        "reviewFixes": {
+          "default": "",
+          "description": "`true` requires a suggested fix on every finding; off unless set.",
+          "required": [],
+          "title": "reviewFixes",
+          "type": [
+            "boolean",
+            "string"
+          ]
+        },
+        "reviewIncremental": {
+          "default": "",
+          "description": "How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set.",
+          "required": [],
+          "title": "reviewIncremental",
+          "type": [
+            "integer",
+            "string"
+          ]
         },
         "reviewModel": {
           "default": "",
@@ -337,6 +377,16 @@
           "description": "How long a review's full model transcript is kept, at least 24h; 720h unless set.",
           "title": "transcriptRetention",
           "type": "string"
+        },
+        "triggerLimit": {
+          "default": "",
+          "description": "How many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set.",
+          "required": [],
+          "title": "triggerLimit",
+          "type": [
+            "integer",
+            "string"
+          ]
         },
         "triggerSettle": {
           "default": "",

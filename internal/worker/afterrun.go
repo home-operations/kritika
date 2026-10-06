@@ -96,7 +96,7 @@ func (w *Review) afterRun(
 			}
 		}
 		owner, repo := pr.ownerRepo()
-		state, desc := skipVerdict(carried, skipDescription(pack.SkipReason, pack.SkipDetail))
+		state, desc := skipVerdict(carried, eff.Confidence.Gate, skipDescription(pack.SkipReason, pack.SkipDetail))
 		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
