@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 14
+const SpecVersion = 15
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -93,6 +93,9 @@ type Prompt struct {
 	// MaxDeltaFiles is the incremental re-review threshold.
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`
+	// PriorDiagram is the last completed review's summary diagram, which a
+	// re-review is asked to keep or update; "" when Diagram is off.
+	PriorDiagram string `json:"priorDiagram,omitempty"`
 	// Dismissed are the findings maintainers dismissed on the pull
 	// request, which the review is told not to raise again.
 	Dismissed []review.DismissedFinding `json:"dismissed,omitempty"`

@@ -132,7 +132,10 @@ skills:
   steps rather than function names. The model
   leaves it out when the change has no such flow, as for a version bump
   or a documentation change, and kritika keeps only a flowchart, graph
-  or sequence diagram under 4 KiB.
+  or sequence diagram under 4 KiB. A re-review of the commits since the
+  last review is shown that review's diagram, to return as it is, redrawn
+  where the new commits alter the flow, or empty once the flow is gone;
+  when it answers with no diagram at all, kritika keeps the last one.
   It replaces the admin's, in either direction. Off unless set, since it
   costs output tokens on every review.
 - `confidence.model` / `confidence.threshold` / `confidence.gate`: the

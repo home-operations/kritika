@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/review"
@@ -43,6 +44,35 @@ func TestAlreadyInline(t *testing.T) {
 				if got[i] != tc.wantCarried[i] {
 					t.Fatalf("alreadyInline = %v, want %v", got, tc.wantCarried)
 				}
+			}
+		})
+	}
+}
+
+func TestCarriedDiagram(t *testing.T) {
+	const prior, drawn = "flowchart LR\n  A --> B", "flowchart LR\n  A --> C"
+	const (
+		without = `{"summary":{"take":"t"},"findings":[]}`
+		null    = `{"summary":{"take":"t","diagram":null},"findings":[]}`
+		empty   = `{"summary":{"take":"t","diagram":""},"findings":[]}`
+		with    = `{"summary":{"take":"t","diagram":"flowchart LR\n  A --> C"},"findings":[]}`
+	)
+	tests := []struct {
+		name                       string
+		answer, drawn, prior, want string
+		incremental                bool
+	}{
+		{name: "a re-review that answers with no diagram keeps the last", answer: without, prior: prior, incremental: true, want: prior},
+		{name: "a null diagram is no answer", answer: null, prior: prior, incremental: true, want: prior},
+		{name: "a re-review's empty diagram says the flow is gone", answer: empty, prior: prior, incremental: true},
+		{name: "a re-review's own diagram stands", answer: with, drawn: drawn, prior: prior, incremental: true, want: drawn},
+		{name: "a full review's answer stands", answer: without, prior: prior},
+		{name: "nothing to carry", answer: without, incremental: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := carriedDiagram(json.RawMessage(tt.answer), tt.drawn, tt.prior, tt.incremental); got != tt.want {
+				t.Fatalf("carriedDiagram = %q, want %q", got, tt.want)
 			}
 		})
 	}

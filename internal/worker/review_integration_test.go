@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -403,6 +404,16 @@ type fakeCompleter struct {
 	users    []string
 	systems  []string
 	sessions []string
+	// diagram, when set, is the summary diagram a review submits.
+	diagram string
+}
+
+// draw sets the summary diagram the reviews that follow submit, "" for
+// none.
+func (f *fakeCompleter) draw(diagram string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.diagram = diagram
 }
 
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
@@ -412,6 +423,10 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	f.systems = append(f.systems, req.System)
 	f.sessions = append(f.sessions, req.Session)
 	isReply := req.Tools[0].Name == "reply"
+	var diagram string
+	if f.diagram != "" {
+		diagram = `,"diagram":` + strconv.Quote(f.diagram)
+	}
 	f.mu.Unlock()
 	// A review's agent is offered its read-only tools too; it submits at once.
 	tool := req.Tools[0].Name
@@ -432,7 +447,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	if tool == "confidence" {
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
-	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]},"findings":[
+	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]`+diagram+`},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}]}`,
@@ -1689,7 +1704,9 @@ func checkWithdrawn(t *testing.T, lf *localForge) {
 // checkIncremental reviews a pull request, pushes a commit on top, and then
 // force-pushes it away: the second review is incremental and does not post
 // the repeated finding inline again, the third is full because the head it
-// would build on is gone.
+// would build on is gone. The merge base asks for a summary diagram, which
+// only the first review draws: the second is shown it and keeps it, the
+// third's answer without one stands.
 func checkIncremental(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
 	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
@@ -1736,16 +1753,27 @@ func checkIncremental(
 		return scopeRow(ctx, t, appStore, accountID, head), prompt, newInline
 	}
 
+	const diagram = "flowchart LR\n  A[Request] --> B[Handler]"
+	wantDiagram := func(reviewID, want string) {
+		t.Helper()
+		checkSummaryDiagram(ctx, t, appStore, accountID, reviewID, want)
+	}
+
 	reset()
+	defer lf.setBase(base)
+	base = commitDiagramConfig(t, dir, wt)
 	lf.setBase(base)
+	fc.draw(diagram)
 	first := commit("package main\n\nfunc f1() {}\n")
 	firstRow, prompt, inline := reviewHead(first)
+	fc.draw("")
 	if firstRow.scope != "full" || firstRow.reason != "no completed review to build on" || firstRow.prior != "" || inline != 1 {
 		t.Fatalf("first review = %+v, %d inline comment(s)", firstRow, inline)
 	}
 	if strings.Contains(prompt, "Changed since the last review") {
 		t.Fatalf("a first review has no incremental sections:\n%s", prompt)
 	}
+	wantDiagram(firstRow.id, diagram)
 	if p := postedInline(ctx, t, appStore, accountID, firstRow.id); len(p) != 1 || !p[0].Posted || p[0].ID == 0 {
 		t.Fatalf("posted_inline, forge_comment_id = %+v", p)
 	}
@@ -1760,11 +1788,14 @@ func checkIncremental(
 	for _, want := range []string{
 		"Changed since the last review (" + first[:7], "+func f2() {}",
 		"Findings from the last review (verify each; report again only if still present)", "- main.go:1 [important] first line: look here",
+		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("missing %q in the incremental prompt:\n%s", want, prompt)
 		}
 	}
+	// The second review answered with no diagram at all.
+	wantDiagram(secondRow.id, diagram)
 	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
 		t.Fatalf("a finding carried from the last review keeps posted_inline and its thread %d, got %+v", thread, p)
 	}
@@ -1777,10 +1808,41 @@ func checkIncremental(
 	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
 		t.Fatalf("third review = %+v, %d inline comment(s)", thirdRow, inline)
 	}
-	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "Findings from the last review") {
+	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "Findings from the last review") ||
+		strings.Contains(prompt, "The last review's summary diagram") {
 		t.Fatalf("a full re-review has no incremental sections:\n%s", prompt)
 	}
+	wantDiagram(thirdRow.id, "")
 
+}
+
+// checkSummaryDiagram asserts the diagram a review's stored summary keeps.
+func checkSummaryDiagram(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID, want string) {
+	t.Helper()
+	var got string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT coalesce(summary->>'diagram', '') FROM reviews WHERE id = $1`, reviewID).Scan(&got)
+	}); err != nil || got != want {
+		t.Fatalf("review %s keeps the diagram %q, want %q (err %v)", reviewID, got, want, err)
+	}
+}
+
+// commitDiagramConfig commits a .kritika.yaml that asks for the summary's
+// diagram onto wt's head and returns the commit, a merge base to review
+// against.
+func commitDiagramConfig(t *testing.T, dir string, wt *git.Worktree) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, ".kritika.yaml"), []byte("review: { diagram: true }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add(".kritika.yaml"); err != nil {
+		t.Fatal(err)
+	}
+	h, err := wt.Commit("draw diagrams", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h.String()
 }
 
 type reviewScopeRow struct{ id, scope, reason, prior string }
@@ -1843,8 +1905,10 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	if resolved != 0 {
 		t.Fatalf("%d thread(s) resolved; the earlier finding is still open", resolved)
 	}
-	// The footer counts both reviews and names the head by its subject.
+	// The footer counts both reviews and names the head by its subject,
+	// and the last review's diagram is still drawn.
 	if !strings.Contains(sticky, "<sub>Reviews (2) · Last reviewed commit: [\"feat(x): the head commit\"](local://onedr0p/home-ops/commit/") ||
+		!strings.Contains(sticky, "\nflowchart LR\n  A[Request] --> B[Handler]\n```") ||
 		strings.Contains(sticky, prior[:7]) || strings.Contains(sticky, "Incremental review") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
 		strings.Contains(sticky, "Earlier findings") {

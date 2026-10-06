@@ -152,7 +152,8 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 		p.Prompt.Diagram)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
-		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior}
+		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior,
+			PriorDiagram: p.Prompt.PriorDiagram}
 	}
 	pr := p.Prompt.PullRequest
 	user, omitted, contextOmitted := review.Build(review.Input{

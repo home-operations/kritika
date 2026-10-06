@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -23,6 +25,8 @@ type priorReview struct {
 	changed   []string
 	findings  []priorFinding
 	dismissed []store.Dismissal
+	// diagram is its summary's diagram, "" when it drew none.
+	diagram string
 }
 
 type priorFinding struct {
@@ -36,9 +40,9 @@ type priorFinding struct {
 // findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
 	var p priorReview
-	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger FROM reviews
+	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, coalesce(summary->>'diagram', '') FROM reviews
 		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA, &p.trigger)
+		Scan(&p.id, &p.headSHA, &p.trigger, &p.diagram)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil
 	}
@@ -101,6 +105,28 @@ func dropDismissed(findings []review.Finding, dismissed []store.Dismissal) ([]re
 	}
 	kept := slices.DeleteFunc(slices.Clone(findings), func(f review.Finding) bool { return gone[review.Fingerprint(f)] })
 	return kept, len(findings) - len(kept)
+}
+
+// carriedDiagram is the diagram a review's summary keeps: drawn, what
+// Parse kept of answer's, or prior when an incremental re-review's answer
+// has no diagram at all. The re-review is asked to keep or update the last
+// diagram, but it looks mostly at the commits since, and may not have been
+// shown the last one, so it may still leave out one that describes the
+// whole change. An empty diagram is its answer that the flow is gone, and
+// stands, as a full review's does whatever it is.
+func carriedDiagram(answer json.RawMessage, drawn, prior string, incremental bool) string {
+	if drawn != "" || !incremental {
+		return drawn
+	}
+	var a struct {
+		Summary struct {
+			Diagram *string `json:"diagram"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(answer)).Decode(&a); err != nil || a.Summary.Diagram != nil {
+		return drawn
+	}
+	return prior
 }
 
 // reviewFindings drops the bookkeeping from prior findings.
