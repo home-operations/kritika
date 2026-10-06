@@ -595,9 +595,12 @@ export interface AgentRun {
   timeline: TimelineStep[];
   sources: string[];
   // skillsOffered are the repository skills the agent could read, and
-  // skillsOpened the ones it did.
+  // skillsOpened the ones it did; commandsOffered and commandsRun the same
+  // for the run tool's commands.
   skillsOffered: string[];
   skillsOpened: string[];
+  commandsOffered: string[];
+  commandsRun: string[];
   usage: Usage;
   costUsd: number;
   model: string;

@@ -608,6 +608,14 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	if run.stop != "submitted" || tools["run"] != 1 || run.sources != `["https://releases.example.com/b/v2"]` {
 		t.Fatalf("agent run = %+v", run)
 	}
+	var offered, ran []string
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT a.commands_offered, a.commands_run FROM agent_runs a
+			JOIN runner_runs r ON r.id = a.runner_run_id WHERE r.review_id = $1`, reviewID).Scan(&offered, &ran)
+	})
+	if err != nil || !slices.Equal(offered, []string{"curl"}) || !slices.Equal(ran, []string{"curl"}) {
+		t.Fatalf("commands offered=%q ran=%q err=%v", offered, ran, err)
+	}
 	h.sm.mu.Lock()
 	results, system := h.sm.toolResults, h.sm.systems[len(h.sm.systems)-1]
 	h.sm.mu.Unlock()
@@ -620,7 +628,8 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
-	if !strings.Contains(sticky, "<summary>Sources consulted</summary>\n\n- <https://releases.example.com/b/v2>\n") {
+	if !strings.Contains(sticky, "<summary>Sources consulted</summary>\n\n- <https://releases.example.com/b/v2>\n") ||
+		!strings.Contains(sticky, "\n_Commands offered: curl; run: curl._\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }

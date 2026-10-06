@@ -313,6 +313,10 @@ func runAgentic(
 	if tools.skills != nil {
 		offered, opened = tools.skills.names(), tools.skills.Opened()
 	}
+	offeredCommands, ran := []string{}, []string{}
+	if tools.run != nil {
+		offeredCommands, ran = commands, tools.run.Ran()
+	}
 	if cerr := ctx.Err(); cerr != nil {
 		// The run was cancelled, deleted or ran out of Job time: what the
 		// agent spent so far is still spent, so the row is written on a
@@ -325,6 +329,7 @@ func runAgentic(
 		defer cancel()
 		rec, err := newAgentRecord(res, timeline, sources, secrets)
 		rec.skillsOffered, rec.skillsOpened = offered, opened
+		rec.commandsOffered, rec.commandsRun = offeredCommands, ran
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -337,7 +342,8 @@ func runAgentic(
 		return err
 	}
 	rec.skillsOffered, rec.skillsOpened = offered, opened
-	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "sources", len(sources),
+	rec.commandsOffered, rec.commandsRun = offeredCommands, ran
+	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "commands", ran, "sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
 	return writeAgentRun(ctx, st, p, rec, "done")
 }
@@ -355,8 +361,10 @@ type agentRecord struct {
 	usage                        model.Usage
 	costUSD                      float64
 	// skillsOffered are the skills the agent could load, and skillsOpened
-	// the ones it did.
-	skillsOffered, skillsOpened []string
+	// the ones it did; commandsOffered and commandsRun the same for the
+	// run tool's commands.
+	skillsOffered, skillsOpened  []string
+	commandsOffered, commandsRun []string
 	// model answered the run's last step; empty when no step was answered,
 	// and the worker then names the model the run was granted.
 	model string
@@ -395,12 +403,12 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened)
-			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16
+				skills_offered, skills_opened, commands_offered, commands_run)
+			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18
 			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources, rec.skillsOffered, rec.skillsOpened)
+			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

@@ -201,7 +201,9 @@ skills:
   given. The review's summary carries a note of the skills it was offered
   and the ones it read, such as
   `Skills offered: review-renovate-pr, go-style; read: review-renovate-pr`,
-  and each read shows in its transcript. Follow-up answers do not use
+  and each read shows in its transcript. A review offered commands through
+  the run tool carries a note of the same shape beside it, such as
+  `Commands offered: gh, helm; run: helm`. Follow-up answers do not use
   skills.
 
   A rule with a `file` is always in the prompt, whole, and findings cite

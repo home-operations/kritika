@@ -103,6 +103,8 @@
     "sources": ["https://docs.example"],
     "skillsOffered": ["renovate-review", "go-style"],
     "skillsOpened": ["renovate-review"],
+    "commandsOffered": ["gh", "helm"],
+    "commandsRun": ["helm"],
     "usage": {
       "input": 100,
       "cacheRead": 50,

@@ -837,6 +837,9 @@ test.describe('review', () => {
     const skills = page.locator('.deflist').filter({ hasText: 'Skills' }).getByRole('definition').filter({ hasText: a.skillsOffered[0]! });
     await expect(skills).toHaveText(`${a.skillsOffered.join(', ')} (read ${a.skillsOpened.join(', ')})`);
     await expect(skills.locator('.mono.muted')).toHaveText(a.skillsOffered.filter((s) => !a.skillsOpened.includes(s)));
+    const commands = page.locator('.deflist').filter({ hasText: 'Commands' }).getByRole('definition').filter({ hasText: a.commandsOffered[0]! });
+    await expect(commands).toHaveText(`${a.commandsOffered.join(', ')} (ran ${a.commandsRun.join(', ')})`);
+    await expect(commands.locator('.mono.muted')).toHaveText(a.commandsOffered.filter((c) => !a.commandsRun.includes(c)));
   });
 
   test('a finding says when a later review dropped it or a maintainer dismissed it', async ({ page }) => {
