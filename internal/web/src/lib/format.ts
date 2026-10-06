@@ -88,7 +88,7 @@ export const jobCauseText: Record<JobCause, string> = {
 // skipText says why a skipped review was.
 export const skipText: Record<Exclude<SkipReason, ''>, string> = {
   disabled: 'reviews disabled',
-  filtered: 'excluded by filter',
+  filtered: 'excluded by a trigger condition',
   only_skipped_paths: 'only ignored paths changed',
   unchanged_patch: 'patch unchanged since the last review',
   too_large: 'more changed lines than the repository allows',

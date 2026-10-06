@@ -95,7 +95,7 @@
     default: 'default',
     env: 'environment',
     file: 'config file',
-    defaults: 'defaults',
+    defaults: 'instance',
     account: 'account',
     repository: '.kritika.yaml',
   };

@@ -554,13 +554,13 @@ test.describe('pulls list', () => {
     await expect(page.locator('.lifecycle-badge')).toHaveClass(/tone-merged/);
   });
 
-  test("a fork's pull request not reviewed says it is reviewed on request", async ({ page }) => {
+  test("a fork's pull request not reviewed reads like any other", async ({ page }) => {
     const fork = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), fork: true, lastReview: null };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([fork, { ...g.pull, lastReview: null }])], ...g.defaultApi()]);
     await page.goto(`/${T}/pulls`);
     const rows = page.locator('.pull-rows .pull-row');
-    await expect(rows.nth(0)).toContainText('fork, reviewed on request');
-    await expect(rows.nth(0).getByText('fork, reviewed on request')).toHaveAttribute('title', 'A pull request from a fork is reviewed when a maintainer comments "@<bot> review" on it');
+    await expect(rows.nth(0)).toContainText('not reviewed');
+    await expect(rows.nth(0)).not.toContainText('fork');
     await expect(rows.nth(1)).toContainText('not reviewed');
   });
 
@@ -779,7 +779,7 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   await expect(latest.getByRole('link', { name: 'Thread' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
   await expect(latest.getByRole('link', { name: 'Open the review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/rev-1`);
   await expect(page.locator('.page-head .meta-line')).toContainText('last synchronized');
-  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: excluded by filter');
+  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: excluded by a trigger condition');
   await expect(page.locator('.timeline-item')).toHaveCount(1);
   await expect(page.locator('.timeline-item')).toContainText('$0.42');
   await expect(page.locator('.followup')).toContainText(g.followup.author);
