@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.32](https://github.com/home-operations/kritika/compare/0.0.31...0.0.32) (2026-10-06)
+
+
+### Features
+
+* **review:** draw the change's flow as a mermaid diagram in the summary ([#562](https://github.com/home-operations/kritika/issues/562)) ([0650544](https://github.com/home-operations/kritika/commit/0650544157f29abf86e4edaf8fb8dd4a92eefb99))
+
 ## [0.0.31](https://github.com/home-operations/kritika/compare/0.0.30...0.0.31) (2026-10-06)
 
 
