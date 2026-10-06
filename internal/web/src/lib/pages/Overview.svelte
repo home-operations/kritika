@@ -48,6 +48,8 @@
       reviewsToday: sum((t) => t.usage.reviewsToday),
       tokens: sum((t) => t.usage.tokens),
       costUsd: sum((t) => t.usage.costUsd),
+      reviews: sum((t) => t.usage.reviews),
+      reviewCostUsd: sum((t) => t.usage.reviewCostUsd),
       wants: WANTS.map((w) => ({ label: w.label, n: sum((t) => t.attention[w.key]) })).filter((w) => w.n > 0),
     };
   }
@@ -88,6 +90,8 @@
           <div class="tile">
             <span class="tile-label">Spend this month</span>
             <span class="tile-value">{usd(all.costUsd)}</span>
+            <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
+            <span class="small muted">{all.reviews ? `${usd(all.reviewCostUsd / all.reviews)} per review, mean of ${wholeNumber(all.reviews)}` : 'no review completed this month'}</span>
           </div>
           <div class="tile">
             <span class="tile-label">Tokens this month</span>

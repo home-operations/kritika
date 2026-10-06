@@ -158,6 +158,7 @@ func monthUsage(m store.MonthUsage, l configfile.Limits) MonthUsage {
 	return MonthUsage{
 		Tokens: m.Tokens, CostUSD: m.CostUSD, TokensPerMonth: l.TokensPerMonth,
 		ReviewsToday: m.ReviewsToday, ReviewsPerDay: l.ReviewsPerDay,
+		Reviews: m.Reviews, ReviewCostUSD: m.ReviewCostUSD, MedianReviewCostUSD: m.MedianReviewCostUSD,
 	}
 }
 

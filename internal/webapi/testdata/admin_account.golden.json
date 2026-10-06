@@ -8,7 +8,10 @@
     "costUsd": 1.5,
     "tokensPerMonth": 1000000,
     "reviewsToday": 2,
-    "reviewsPerDay": 50
+    "reviewsPerDay": 50,
+    "reviews": 12,
+    "reviewCostUsd": 1.2,
+    "medianReviewCostUsd": 0.08
   },
   "attention": {
     "failed": 1,

@@ -84,7 +84,13 @@
     <SectionTabs section="analytics" {slug} current="usage" />
     {#if month}
       <section class="stats stats-3" aria-label="This month">
-        <StatTile label="Spend this month" value={usd(month.costUsd)} />
+        <StatTile
+          label="Spend this month"
+          value={usd(month.costUsd)}
+          sub={month.medianReviewCostUsd === null
+            ? 'no review completed this month'
+            : `${usd(month.medianReviewCostUsd)} per review (median) · ${usd(month.reviewCostUsd / month.reviews)} mean of ${wholeNumber(month.reviews)}`}
+        />
         <div class="stat">
           <span class="stat-label">Tokens this month</span>
           <span class="stat-value" title={wholeNumber(month.tokens)}>{tokens(month.tokens)}</span>

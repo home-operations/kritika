@@ -204,6 +204,71 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 	}
 }
 
+// TestMonthUsageCostsTheCompletedReviews checks that the month's review
+// costs are of the reviews that completed, each costing its own usage rows
+// whatever their role, with a follow-up's and a failed review's spend in
+// the month's total only.
+func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("costed"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "costed")
+	charge := func(reviewID, role string, cost float64) {
+		t.Helper()
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var repoID string
+			if err := tx.QueryRow(ctx, `SELECT id FROM repositories LIMIT 1`).Scan(&repoID); err != nil {
+				return err
+			}
+			return InsertUsage(ctx, tx, Usage{AccountID: account, RepositoryID: repoID, ReviewID: reviewID, Role: role, Model: "m", Input: 1, CostUSD: cost})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	end := func(reviewID string, status ReviewStatus) {
+		t.Helper()
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			_, err := EndReview(ctx, tx, reviewID, ReviewEnd{Status: status})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, cost := range []float64{1, 2, 10} {
+		id := insertReview(t, ctx, s, account)
+		charge(id, RoleReview, cost)
+		end(id, ReviewCompleted)
+	}
+	confident := insertReview(t, ctx, s, account)
+	charge(confident, RoleReview, 3)
+	charge(confident, RoleConfidence, 1)
+	end(confident, ReviewCompleted)
+	end(insertReview(t, ctx, s, account), ReviewCompleted)
+	failed := insertReview(t, ctx, s, account)
+	charge(failed, RoleReview, 100)
+	end(failed, ReviewFailed)
+	charge("", RoleFollowUp, 50)
+	var m MonthUsage
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var err error
+		m, err = ReadMonthUsage(ctx, tx)
+		return err
+	}); err != nil {
+		t.Fatalf("ReadMonthUsage: %v", err)
+	}
+	if m.Reviews != 5 || m.ReviewCostUSD != 17 {
+		t.Errorf("Reviews, ReviewCostUSD = %d, %v, want the 5 completed costing 17", m.Reviews, m.ReviewCostUSD)
+	}
+	if m.MedianReviewCostUSD == nil || *m.MedianReviewCostUSD != 2 {
+		t.Errorf("MedianReviewCostUSD = %v, want 2 (of 0, 1, 2, 4, 10)", m.MedianReviewCostUSD)
+	}
+	if m.CostUSD != 167 {
+		t.Errorf("CostUSD = %v, want 167 with the failed review and the follow-up", m.CostUSD)
+	}
+}
+
 // TestLastReviewIsNotASkippedOne checks that a skipped review newer than
 // one with a blocking finding leaves that one the last review of its pull
 // request and of its repository, and its finding in what wants attention.

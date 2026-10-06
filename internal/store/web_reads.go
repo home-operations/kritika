@@ -151,11 +151,17 @@ type AccountStats struct {
 }
 
 // MonthUsage is what an account's caps count: tokens and spend this calendar
-// month and completed reviews today.
+// month and completed reviews today; and what the month's spend bought:
+// the reviews that completed, what they cost together (a review's cost is
+// its own usage rows, which follow-ups and indexing have none of) and the
+// median cost of one, nil when none completed.
 type MonthUsage struct {
-	Tokens       int64
-	CostUSD      float64
-	ReviewsToday int64
+	Tokens              int64
+	CostUSD             float64
+	ReviewsToday        int64
+	Reviews             int64
+	ReviewCostUSD       float64
+	MedianReviewCostUSD *float64
 }
 
 // ReadAccountStats reads the account's counts; a repository counts when
@@ -197,6 +203,16 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	if err != nil {
 		return m, fmt.Errorf("store: month usage: %w", err)
 	}
+	var median *float64
+	err = tx.QueryRow(ctx, `WITH costs AS (
+			SELECT (SELECT coalesce(sum(cost_usd), 0) FROM usage WHERE review_id = v.id) AS cost
+			FROM reviews v WHERE v.status = 'completed' AND v.created_at >= date_trunc('month', now()))
+		SELECT count(*), coalesce(sum(cost), 0)::float8, percentile_cont(0.5) WITHIN GROUP (ORDER BY cost)::float8 FROM costs`).
+		Scan(&m.Reviews, &m.ReviewCostUSD, &median)
+	if err != nil {
+		return m, fmt.Errorf("store: month review costs: %w", err)
+	}
+	m.MedianReviewCostUSD = median
 	return m, nil
 }
 

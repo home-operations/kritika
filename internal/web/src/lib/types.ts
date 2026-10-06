@@ -87,12 +87,18 @@ export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'mo
 export type TranscriptKind = 'agent_step' | 'followup' | 'confidence';
 export type MessageRole = 'user' | 'assistant';
 
+// reviews are the ones that completed this month, reviewCostUsd what they
+// cost together, medianReviewCostUsd the median cost of one, null when none
+// completed.
 export interface MonthUsage {
   tokens: number;
   costUsd: number;
   tokensPerMonth: number;
   reviewsToday: number;
   reviewsPerDay: number;
+  reviews: number;
+  reviewCostUsd: number;
+  medianReviewCostUsd: number | null;
 }
 
 // connection names the connection serving the account. attention and the
