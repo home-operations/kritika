@@ -524,3 +524,38 @@ func TestCommentListingsAreBounded(t *testing.T) {
 		t.Fatalf("ListInline = %+v, %v; want the two oldest", inl, err)
 	}
 }
+
+// TestReactions: a conversation comment and an inline one are reacted to,
+// and the reaction taken off, in their own namespaces.
+func TestReactions(t *testing.T) {
+	tests := []struct {
+		name    string
+		comment forge.Comment
+		path    string
+	}{
+		{name: "conversation comment", comment: forge.Comment{ID: 5}, path: "/api/v3/repos/o/r/issues/comments/5/reactions"},
+		{name: "inline comment", comment: forge.Comment{ID: 6, Inline: true}, path: "/api/v3/repos/o/r/pulls/comments/6/reactions"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			f.reply("POST "+tt.path, 201, `{"id":77,"content":"eyes"}`)
+			f.reply("DELETE "+tt.path+"/77", 204, ``)
+			id, err := c.React(t.Context(), "o", "r", tt.comment, forge.ReactionEyes)
+			if err != nil || id != 77 || f.bodies["POST "+tt.path].(map[string]any)["content"] != "eyes" {
+				t.Fatalf("React = %d, %v, body %v", id, err, f.bodies["POST "+tt.path])
+			}
+			if err := c.Unreact(t.Context(), "o", "r", tt.comment, id); err != nil || !f.saw("DELETE "+tt.path+"/77") {
+				t.Fatalf("Unreact = %v, requests %v", err, f.requests)
+			}
+		})
+	}
+
+	t.Run("a refused reaction is an error", func(t *testing.T) {
+		f, c := newFakeAPI(t)
+		f.reply("POST /api/v3/repos/o/r/issues/comments/5/reactions", 403, `{"message":"Resource not accessible by integration"}`)
+		if _, err := c.React(t.Context(), "o", "r", forge.Comment{ID: 5}, forge.ReactionEyes); err == nil {
+			t.Fatal("React = nil, want the forge's refusal")
+		}
+	})
+}

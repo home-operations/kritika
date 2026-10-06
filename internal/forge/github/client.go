@@ -422,6 +422,31 @@ func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int
 	return cm.GetID(), nil
 }
 
+// React implements forge.Client.
+func (c *Client) React(ctx context.Context, owner, repo string, to forge.Comment, content string) (int64, error) {
+	create := c.api.Reactions.CreateIssueCommentReaction
+	if to.Inline {
+		create = c.api.Reactions.CreatePullRequestCommentReaction
+	}
+	r, _, err := create(ctx, owner, repo, to.ID, content)
+	if err != nil {
+		return 0, fmt.Errorf("github: react to comment %d: %w", to.ID, err)
+	}
+	return r.GetID(), nil
+}
+
+// Unreact implements forge.Client.
+func (c *Client) Unreact(ctx context.Context, owner, repo string, from forge.Comment, id int64) error {
+	remove := c.api.Reactions.DeleteIssueCommentReaction
+	if from.Inline {
+		remove = c.api.Reactions.DeletePullRequestCommentReaction
+	}
+	if _, err := remove(ctx, owner, repo, from.ID, id); err != nil {
+		return fmt.Errorf("github: remove reaction %d from comment %d: %w", id, from.ID, err)
+	}
+	return nil
+}
+
 func conversationComment(cm *gh.IssueComment) forge.Comment {
 	return forge.Comment{
 		ID: cm.GetID(), Author: cm.GetUser().GetLogin(), AuthorIsBot: webhook.IsBot(cm.GetUser().GetType(), cm.GetUser().GetLogin()),
