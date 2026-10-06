@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.33](https://github.com/home-operations/kritika/compare/0.0.32...0.0.33) (2026-10-06)
+
+
+### Features
+
+* **review:** say which commands the run tool offered and the agent ran ([#565](https://github.com/home-operations/kritika/issues/565)) ([0d1a9c8](https://github.com/home-operations/kritika/commit/0d1a9c8c0852fa41e21fdd585b9344971d8fdce1))
+
+
+### Bug Fixes
+
+* **review:** state the confidence score without the threshold it fell short of ([#564](https://github.com/home-operations/kritika/issues/564)) ([ff99778](https://github.com/home-operations/kritika/commit/ff99778ac702788341dda4d83dae746f24e91afc))
+
 ## [0.0.32](https://github.com/home-operations/kritika/compare/0.0.31...0.0.32) (2026-10-06)
 
 
