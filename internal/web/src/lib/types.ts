@@ -594,6 +594,10 @@ export interface AgentRun {
   toolCalls: Record<string, number>;
   timeline: TimelineStep[];
   sources: string[];
+  // skillsOffered are the repository skills the agent could read, and
+  // skillsOpened the ones it did.
+  skillsOffered: string[];
+  skillsOpened: string[];
   usage: Usage;
   costUsd: number;
   model: string;

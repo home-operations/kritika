@@ -101,6 +101,8 @@
       }
     ],
     "sources": ["https://docs.example"],
+    "skillsOffered": ["renovate-review", "go-style"],
+    "skillsOpened": ["renovate-review"],
     "usage": {
       "input": 100,
       "cacheRead": 50,

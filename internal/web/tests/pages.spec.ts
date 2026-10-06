@@ -832,6 +832,11 @@ test.describe('review', () => {
       await expect(page.locator('.tab-panel')).toContainText(text);
     }
     await expect(page.locator('.tab.active')).toHaveText('Usage');
+    await page.locator('.tabs').getByRole('link', { name: 'Timeline', exact: true }).click();
+    const a = g.reviewDetail.agentRun!;
+    const skills = page.locator('.deflist').filter({ hasText: 'Skills' }).getByRole('definition').filter({ hasText: a.skillsOffered[0]! });
+    await expect(skills).toHaveText(`${a.skillsOffered.join(', ')} (read ${a.skillsOpened.join(', ')})`);
+    await expect(skills.locator('.mono.muted')).toHaveText(a.skillsOffered.filter((s) => !a.skillsOpened.includes(s)));
   });
 
   test('a finding says when a later review dropped it or a maintainer dismissed it', async ({ page }) => {

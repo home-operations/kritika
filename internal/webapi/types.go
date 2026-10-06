@@ -479,19 +479,22 @@ type TimelineStep struct {
 }
 
 // AgentRun is a review's tool loop. Result is the submitted
-// review JSON, null unless the agent submitted.
+// review JSON, null unless the agent submitted. SkillsOffered are the
+// repository skills the agent could read, SkillsOpened the ones it did.
 type AgentRun struct {
-	StopReason string          `json:"stopReason"`
-	Steps      int             `json:"steps"`
-	ToolCalls  map[string]int  `json:"toolCalls"`
-	Timeline   []TimelineStep  `json:"timeline"`
-	Sources    []string        `json:"sources"`
-	Usage      Usage           `json:"usage"`
-	CostUSD    float64         `json:"costUsd"`
-	Model      string          `json:"model"`
-	Error      string          `json:"error"`
-	CreatedAt  time.Time       `json:"createdAt"`
-	Result     json.RawMessage `json:"result"`
+	StopReason    string          `json:"stopReason"`
+	Steps         int             `json:"steps"`
+	ToolCalls     map[string]int  `json:"toolCalls"`
+	Timeline      []TimelineStep  `json:"timeline"`
+	Sources       []string        `json:"sources"`
+	SkillsOffered []string        `json:"skillsOffered"`
+	SkillsOpened  []string        `json:"skillsOpened"`
+	Usage         Usage           `json:"usage"`
+	CostUSD       float64         `json:"costUsd"`
+	Model         string          `json:"model"`
+	Error         string          `json:"error"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	Result        json.RawMessage `json:"result"`
 }
 
 // UsageRow is one usage row charged to a review.
