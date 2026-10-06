@@ -444,11 +444,11 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 				}
 				return err
 			})
-			var pgErr *pgconn.PgError
+			pgErr, refused := errors.AsType[*pgconn.PgError](err)
 			switch {
 			case tt.allowed && err != nil:
 				t.Fatalf("a runner must be able to update its %s: %v", tt.name, err)
-			case !tt.allowed && (!errors.As(err, &pgErr) || pgErr.Code != "42501"):
+			case !tt.allowed && (!refused || pgErr.Code != "42501"):
 				t.Fatalf("a runner updating its %s must be refused permission, got %v", tt.name, err)
 			}
 		})
@@ -471,11 +471,11 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 				_, err := tx.Exec(ctx, `INSERT INTO index_packs (runner_run_id, account_id, mode) VALUES ($1, $2, 'full')`, runID, tt.account)
 				return err
 			})
-			var pgErr *pgconn.PgError
+			pgErr, refused := errors.AsType[*pgconn.PgError](err)
 			switch {
 			case tt.allowed && err != nil:
 				t.Fatalf("a runner must be able to write its pack: %v", err)
-			case !tt.allowed && (!errors.As(err, &pgErr) || pgErr.Code != "42501"):
+			case !tt.allowed && (!refused || pgErr.Code != "42501"):
 				t.Fatalf("a pack under another account must be refused, got %v", err)
 			}
 		})
