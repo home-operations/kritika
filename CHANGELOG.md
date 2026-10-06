@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.39](https://github.com/home-operations/kritika/compare/0.0.38...0.0.39) (2026-10-06)
+
+
+### Features
+
+* **dashboard:** say what a review costs under the month's spend ([#590](https://github.com/home-operations/kritika/issues/590)) ([418667b](https://github.com/home-operations/kritika/commit/418667b9d858f1757df051093427fc608358da2a))
+* **review:** end the summary's footer with the pull request's cost ([#593](https://github.com/home-operations/kritika/issues/593)) ([43076f1](https://github.com/home-operations/kritika/commit/43076f1072804823f827e882c72f6452bf2a482d))
+* **review:** say in the summary whether the pull request was approved ([#591](https://github.com/home-operations/kritika/issues/591)) ([c6d9e2a](https://github.com/home-operations/kritika/commit/c6d9e2a6d742bac75bb9b9775b8de76d049e97bf))
+
 ## [0.0.38](https://github.com/home-operations/kritika/compare/0.0.37...0.0.38) (2026-10-06)
 
 
