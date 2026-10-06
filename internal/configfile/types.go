@@ -21,6 +21,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
@@ -656,8 +657,10 @@ type Account struct {
 
 // Egress is what runner pods may reach through the worker's gateway beyond
 // the forges the connections talk to, which are always allowed. Allow and
-// Deny entries are an exact host, a suffix with a leading "*.", or "*" for
-// every host; a denied host is refused however Allow matches it, and the
+// Deny entries are an exact host, a suffix with a leading "*.", "*" for
+// every host, or an IP address or CIDR; a denied destination is refused
+// however Allow matches it, a destination that is not on the public
+// internet is reached only when an Allow address covers it, and the
 // gateway tunnels TLS to port 443 only. A credential is the token the
 // gateway adds, as a bearer, to a plain http:// request a runner makes to
 // that host, so the runner can use an API at a token's rate limit without
@@ -667,6 +670,7 @@ type Egress struct {
 	Deny        []string             `yaml:"deny,omitempty"`
 	Credentials map[string]SecretRef `yaml:"credentials,omitempty"`
 
+	allow, deny egress.List
 	credentials map[string]Secret
 }
 
