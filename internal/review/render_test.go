@@ -101,6 +101,21 @@ func TestRenderSummaryDefault(t *testing.T) {
 	}
 }
 
+func TestRenderSummaryDiagram(t *testing.T) {
+	d := sampleData()
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if strings.Contains(body, "mermaid") {
+		t.Fatalf("a review without a diagram draws none:\n%s", body)
+	}
+	d.Result.Summary.Diagram = "flowchart TD\n  A --> B"
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	want := "Solid change with one real bug.\n\n<details open>\n<summary>Flow</summary>\n\n" +
+		"```mermaid\nflowchart TD\n  A --> B\n```\n\n</details>\n\n**What's good**\n"
+	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
+		t.Fatalf("missing %q in:\n%s", want, body)
+	}
+}
+
 // TestRenderSummaryConfidence: a scored review states its score under the
 // findings count, with the threshold it missed, and an unscored one says
 // nothing of it.

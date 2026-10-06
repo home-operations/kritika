@@ -91,7 +91,9 @@ skills:
   `block` actions are refused, so a template cannot read any file or call
   any other template. The summary template's dot is the review (`.Number`,
   `.HeadSHA`, `.HeadURL`, `.Model`, `.AuthorIsBot`, `.Result.Summary.Headline`, `.Result.Summary.Take`,
-  `.Result.Summary.Praise`, `.Result.Findings`,
+  `.Result.Summary.Praise`, `.Result.Summary.Diagram`, Mermaid source for
+  the flow the change adds or alters, "" unless `review.diagram` is on and
+  the change has one, `.Result.Findings`,
   `.Counts.Blocking`/`.Important`/`.Nit`, `.Unanchored`, the findings on
   lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
   `.PriorHeadURL`, `.Prior`, the last review's findings this review did
@@ -121,6 +123,14 @@ skills:
   that moved while it was reviewed is left to its own review. It replaces
   the admin's, in either direction: a repository turns it on where the
   instance leaves it off. Off unless set.
+- `review.diagram: true`: the summary draws the flow the change adds or
+  alters, a request path, a chain of calls or a state machine, as a
+  Mermaid flowchart or sequence diagram the forge renders. The model
+  leaves it out when the change has no such flow, as for a version bump
+  or a documentation change, and kritika keeps only a flowchart, graph
+  or sequence diagram under 4 KiB.
+  It replaces the admin's, in either direction. Off unless set, since it
+  costs output tokens on every review.
 - `confidence.model` / `confidence.threshold` / `confidence.gate`: the
   model that scores a reviewed pull request from 0 to 5, a
   `<provider>/<model>` held to the same providers as `review.model`, the

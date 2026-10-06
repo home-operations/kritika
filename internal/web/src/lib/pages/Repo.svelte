@@ -87,6 +87,7 @@
     { label: 'Require suggested fix', key: 'review.fixes', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
     { label: 'Approve', key: 'review.approve', value: (s) => yes(s.review.approve) },
+    { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Feedback', key: 'review.feedback', value: (s) => s.review.feedback },
     { label: 'Concurrency', key: 'limits', value: (s) => unlimited(s.limits.concurrency) },
     { label: 'Reviews / day', key: 'limits', value: (s) => unlimited(s.limits.reviewsPerDay) },

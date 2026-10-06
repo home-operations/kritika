@@ -41,7 +41,8 @@
   },
   "summary": {
     "take": "Looks fine.",
-    "praise": ["tests"]
+    "praise": ["tests"],
+    "diagram": "flowchart TD\n  A --\u003e B"
   },
   "findings": [
     {

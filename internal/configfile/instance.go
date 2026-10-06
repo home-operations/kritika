@@ -120,6 +120,12 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 				return fmt.Errorf("configfile: environment variable %s must be a whole number, got %q", env, value)
 			}
 			d.Review.Incremental, path = &n, keyIncremental
+		case reviewEnvPrefix + "DIAGRAM":
+			diagram, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("configfile: environment variable %s must be true or false, got %q", env, value)
+			}
+			d.Review.Diagram, path = &diagram, keyDiagram
 		case confidenceEnvPrefix + "MODEL":
 			ref := ModelRef(value)
 			d.Confidence.Model, path = &ref, keyScorer
@@ -196,7 +202,7 @@ type FileLayer struct {
 	Review    FileValue
 	Fallback  FileValue
 	// Defaults are the other settings it writes that the environment may
-	// set too: feedback, approve, fixes, incremental, the confidence
+	// set too: feedback, approve, fixes, incremental, diagram, the confidence
 	// model, threshold, gate and risk, settle and limit, in that order,
 	// by their policy keys.
 	Defaults  []FileDefault
@@ -266,6 +272,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyApprove, strconv.FormatBool(deref(d.Review.Approve)), d.Review.Approve != nil},
 		{keyFixes, strconv.FormatBool(deref(d.Review.Fixes)), d.Review.Fixes != nil},
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},
+		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
 		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},

@@ -102,10 +102,22 @@ type Summary struct {
 	Headline string   `json:"headline,omitempty"`
 	Take     string   `json:"take"`
 	Praise   []string `json:"praise"`
+	// Diagram is Mermaid source for the flow the change adds or alters,
+	// without fences; "" when the change has no flow worth drawing or the
+	// model's diagram was not one Parse keeps.
+	Diagram string `json:"diagram,omitempty"`
 }
 
 // maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
 const maxPraise = 3
+
+// maxDiagramBytes bounds Summary.Diagram. A diagram over it is dropped
+// rather than cut, since a cut one would not render.
+const maxDiagramBytes = 4 << 10
+
+// diagramKinds are the Mermaid diagram types a summary may draw, by the
+// keyword its source opens with.
+var diagramKinds = []string{"flowchart", "graph", "sequenceDiagram"}
 
 // Finding is one thing the reviewer wants a human to look at, anchored to a
 // line on the head side of the diff, or to the range Line through EndLine.
@@ -237,6 +249,9 @@ type ParseOptions struct {
 	// Focused drops findings of the categories a focused review leaves
 	// out, whatever the model was told.
 	Focused bool
+	// Diagram keeps the summary's diagram; without it the diagram is
+	// dropped, whatever the model sent.
+	Diagram bool
 	// Rules are the ids of the rules the review was given, the only ones a
 	// finding may cite.
 	Rules []string
@@ -252,6 +267,7 @@ const (
 	keyHeadline     = "headline"
 	keyTake         = "take"
 	keyPraise       = "praise"
+	keyDiagram      = "diagram"
 	keyFindings     = "findings"
 	keyPath         = "path"
 	keyLine         = "line"
@@ -304,6 +320,9 @@ const (
 		"the lines, the symbols and the exact change."
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
+	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
+		"change adds or alters as the head commit has it, naming the real functions, components or services; at most " +
+		"fifteen nodes or messages, every label holding punctuation quoted. Omit it when the change has no flow worth drawing."
 	describeCategory = "What kind of problem it is. correctness: wrong behaviour, a bug, a broken contract. " +
 		"security: exposure, injection, secrets, unsafe defaults, data loss. performance: cost in time, memory or calls. " +
 		"reliability: error handling, retries, timeouts, concurrency, resource leaks. maintainability: structure, " +
@@ -311,8 +330,9 @@ const (
 )
 
 // contractSchema is kept minimal on purpose: every extra field is something
-// a model can get wrong.
-func contractSchema(requireFix bool) json.RawMessage {
+// a model can get wrong. diagram adds summary.diagram, which a review is
+// asked for only where the repository opts in.
+func contractSchema(requireFix, diagram bool) json.RawMessage {
 	required := []string{keyPath, keyLine, keySeverity, keyCategory, keyTitle, keyExplanation}
 	fix := "A concrete fix: replacement code or a precise instruction. Markdown allowed, no headings."
 	if requireFix {
@@ -328,28 +348,32 @@ func contractSchema(requireFix bool) json.RawMessage {
 	for i, c := range categories {
 		kinds[i] = string(c)
 	}
+	summary := map[string]*jsonSchema{
+		keyHeadline: {
+			Type:        schemaString,
+			Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
+		},
+		keyTake: {
+			Type:        schemaString,
+			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
+		},
+		keyPraise: {
+			Type:        schemaArray,
+			Description: "Up to three specific things the change does well; empty when nothing stands out.",
+			Items:       &jsonSchema{Type: schemaString},
+			MaxItems:    maxPraise,
+		},
+	}
+	if diagram {
+		summary[keyDiagram] = &jsonSchema{Type: schemaString, Description: describeDiagram}
+	}
 	return jsonSchema{
 		Type: schemaObject,
 		Properties: map[string]*jsonSchema{
 			keySummary: {
-				Type: schemaObject,
-				Properties: map[string]*jsonSchema{
-					keyHeadline: {
-						Type:        schemaString,
-						Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
-					},
-					keyTake: {
-						Type:        schemaString,
-						Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
-					},
-					keyPraise: {
-						Type:        schemaArray,
-						Description: "Up to three specific things the change does well; empty when nothing stands out.",
-						Items:       &jsonSchema{Type: schemaString},
-						MaxItems:    maxPraise,
-					},
-				},
-				Required: []string{keyHeadline, keyTake, keyPraise},
+				Type:       schemaObject,
+				Properties: summary,
+				Required:   []string{keyHeadline, keyTake, keyPraise},
 			},
 			keyFindings: {
 				Type: schemaArray,
@@ -378,16 +402,24 @@ func contractSchema(requireFix bool) json.RawMessage {
 	}.mustMarshal()
 }
 
-var (
-	findingsSchema       = contractSchema(false)
-	findingsSchemaStrict = contractSchema(true)
-)
+// contract picks one of the schemas contractSchema builds.
+type contract struct{ strict, diagram bool }
 
-// Schema is the JSON Schema of the answer the model must produce.
-func Schema() json.RawMessage { return slices.Clone(findingsSchema) }
+var contracts = map[contract]json.RawMessage{
+	{false, false}: contractSchema(false, false),
+	{false, true}:  contractSchema(false, true),
+	{true, false}:  contractSchema(true, false),
+	{true, true}:   contractSchema(true, true),
+}
+
+// Schema is the JSON Schema of the answer the model must produce, with
+// summary.diagram when diagram is set.
+func Schema(diagram bool) json.RawMessage { return slices.Clone(contracts[contract{false, diagram}]) }
 
 // SchemaStrict is Schema with suggested_fix required on every finding.
-func SchemaStrict() json.RawMessage { return slices.Clone(findingsSchemaStrict) }
+func SchemaStrict(diagram bool) json.RawMessage {
+	return slices.Clone(contracts[contract{true, diagram}])
+}
 
 // Check says why raw is not a review in the contract's shape: a field of
 // the wrong type, or no summary take. It is what the agent loop answers a
@@ -402,6 +434,10 @@ func Check(raw json.RawMessage) error {
 	if strings.TrimSpace(res.Summary.Take) == "" {
 		return errors.New("review: summary.take is required: two to four sentences on the change")
 	}
+	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
+		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
+			maxDiagramBytes, strings.Join(diagramKinds, ", "))
+	}
 	return nil
 }
 
@@ -414,7 +450,8 @@ func Check(raw json.RawMessage) error {
 // its text. A range or a replacement the diff does not wholly cover is
 // cleared rather than the finding dropped, and an insertion becomes a
 // replacement of its line by that line plus the added ones. Kept findings
-// are ordered most severe first, then by path and line.
+// are ordered most severe first, then by path and line. The summary keeps
+// its diagram only when opts ask for one and it is one diagram allows.
 func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Result, []Dropped, error) {
 	var res Result
 	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw)))
@@ -430,6 +467,11 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 	}
 	res.Summary.Praise = praise
+	if opts.Diagram {
+		res.Summary.Diagram = diagram(res.Summary.Diagram)
+	} else {
+		res.Summary.Diagram = ""
+	}
 	kept := make([]Finding, 0, len(res.Findings))
 	var dropped []Dropped
 	for _, f := range res.Findings {
@@ -524,6 +566,54 @@ func stripFences(code string) string {
 		}
 	}
 	return strings.Trim(strings.Join(kept, "\n"), "\n")
+}
+
+// diagram is the model's Mermaid source without its fences, or "" when it
+// does not open with one of diagramKinds or is over maxDiagramBytes: the
+// forge would show a render error, or a diagram too big to read, in its
+// place. A titled front matter block and comment lines may precede the
+// kind, as Mermaid allows; diagramHeader says what is refused.
+func diagram(src string) string {
+	src = stripFences(strings.TrimSpace(src))
+	if len(src) > maxDiagramBytes {
+		return ""
+	}
+	if kind := strings.Fields(diagramHeader(src)); len(kind) == 0 || !slices.Contains(diagramKinds, kind[0]) {
+		return ""
+	}
+	return src
+}
+
+// diagramHeader is the line of src that names its diagram kind: the first
+// past a leading "---" front matter block and any "%%" comment lines. It is
+// "" when the front matter holds anything but a title, or a directive
+// ("%%{...}%%") appears anywhere, since either can reconfigure the forge's
+// rendering.
+func diagramHeader(src string) string {
+	lines := strings.Split(src, "\n")
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+		end := slices.IndexFunc(lines[1:], func(l string) bool { return strings.TrimSpace(l) == "---" })
+		if end < 0 {
+			return ""
+		}
+		for _, l := range lines[1 : end+1] {
+			if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "title:") {
+				return ""
+			}
+		}
+		lines = lines[end+2:]
+	}
+	var header string
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "%%{") {
+			return ""
+		}
+		if header == "" && t != "" && !strings.HasPrefix(t, "%%") {
+			header = t
+		}
+	}
+	return header
 }
 
 // Fingerprint identifies a finding across reviews of the same pull request:

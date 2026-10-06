@@ -53,6 +53,16 @@ _Incremental review of the changes since {{ if .PriorHeadURL }}[`{{ trunc 7 .Pri
 ### Summary
 
 {{ .Result.Summary.Take }}
+{{ if .Result.Summary.Diagram }}
+<details open>
+<summary>Flow</summary>
+
+```mermaid
+{{ .Result.Summary.Diagram }}
+```
+
+</details>
+{{ end -}}
 {{ if and .Result.Summary.Praise (not .AuthorIsBot) }}
 **What's good**
 

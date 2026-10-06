@@ -87,6 +87,9 @@ type Prompt struct {
 	// Focused is a focused review's: it reports only what would stop the
 	// review, where a thorough one reports anything actionable.
 	Focused bool `json:"focused,omitempty"`
+	// Diagram asks the review for a Mermaid diagram of the change's flow
+	// in its summary.
+	Diagram bool `json:"diagram,omitempty"`
 	// MaxDeltaFiles is the incremental re-review threshold.
 	MaxDeltaFiles int              `json:"maxDeltaFiles"`
 	Prior         []review.Finding `json:"prior,omitempty"`

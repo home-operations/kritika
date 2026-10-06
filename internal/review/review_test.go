@@ -78,6 +78,12 @@ func TestCheck(t *testing.T) {
 		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
+		{name: "a flowchart", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B"},"findings":[]}`},
+		{name: "a blank diagram", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":" "},"findings":[]}`},
+		{name: "a diagram of another kind", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"pie\n  \"a\": 1"},"findings":[]}`,
+			wantErr: "summary.diagram must be Mermaid source under 4096 bytes opening with flowchart, graph, sequenceDiagram, or be left out"},
+		{name: "prose as a diagram", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"A calls B."},"findings":[]}`,
+			wantErr: "summary.diagram must be"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -521,10 +527,10 @@ func TestSchemas(t *testing.T) {
 		required []string
 		check    func(t *testing.T, n node)
 	}{
-		{"findings", Schema(), []string{"summary", "findings"}, func(t *testing.T, n node) {
+		{"findings", Schema(false), []string{"summary", "findings"}, func(t *testing.T, n node) {
 			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation"})
 		}},
-		{"strict findings", SchemaStrict(), []string{"summary", "findings"}, func(t *testing.T, n node) {
+		{"strict findings", SchemaStrict(false), []string{"summary", "findings"}, func(t *testing.T, n node) {
 			checkContract(t, n, []string{"path", "line", "severity", "category", "title", "explanation", "suggested_fix"})
 		}},
 		{"follow-up", FollowUpSchema(), []string{"reply"}, func(t *testing.T, n node) {
@@ -545,10 +551,32 @@ func TestSchemas(t *testing.T) {
 			tt.check(t, n)
 		})
 	}
+	t.Run("a diagram is in the contract only when asked for", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			raw  json.RawMessage
+			want bool
+		}{
+			"Schema":            {Schema(false), false},
+			"Schema diagram":    {Schema(true), true},
+			"SchemaStrict":      {SchemaStrict(false), false},
+			"SchemaStrict diag": {SchemaStrict(true), true},
+		} {
+			var n node
+			if err := json.Unmarshal(tt.raw, &n); err != nil {
+				t.Fatal(err)
+			}
+			if _, got := n.Properties["summary"].Properties["diagram"]; got != tt.want {
+				t.Errorf("%s has summary.diagram = %v, want %v", name, got, tt.want)
+			}
+			if slices.Contains(n.Properties["summary"].Required, "diagram") {
+				t.Errorf("%s requires summary.diagram", name)
+			}
+		}
+	})
 	t.Run("callers cannot alter the shared schema", func(t *testing.T) {
-		s := Schema()
+		s := Schema(false)
 		s[0] = 'x'
-		if Schema()[0] != '{' {
+		if Schema(false)[0] != '{' {
 			t.Fatal("Schema returned the shared slice")
 		}
 	})
@@ -559,7 +587,7 @@ func TestSchemas(t *testing.T) {
 // schemas declare, at the summary and the finding level.
 func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
-		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}},
+		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d"},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
 			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
 	})
@@ -579,7 +607,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	}
 	keys := func(m map[string]any) []string { return slices.Sorted(maps.Keys(m)) }
 	props := func(n *node) []string { return slices.Sorted(maps.Keys(n.Properties)) }
-	for name, schema := range map[string]json.RawMessage{"Schema": Schema(), "SchemaStrict": SchemaStrict()} {
+	for name, schema := range map[string]json.RawMessage{"Schema": Schema(true), "SchemaStrict": SchemaStrict(true)} {
 		var n node
 		if err := json.Unmarshal(schema, &n); err != nil {
 			t.Fatal(err)
@@ -588,6 +616,53 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 			!slices.Equal(keys(got.Findings[0]), props(n.Properties["findings"].Items)) {
 			t.Fatalf("%s properties drifted from the JSON tags: %s", name, raw)
 		}
+	}
+}
+
+func TestParseDiagram(t *testing.T) {
+	flow := "flowchart TD\n  A[\"webhook\"] --> B[worker]"
+	tests := []struct {
+		name, diagram, want string
+	}{
+		{"a flowchart is kept, trimmed", "\n" + flow + "\n", flow},
+		{"its fences are dropped", "```mermaid\n" + flow + "\n```", flow},
+		{"a sequence diagram is kept", "sequenceDiagram\n  A->>B: run", "sequenceDiagram\n  A->>B: run"},
+		{"a graph is kept", "graph LR\n  A --> B", "graph LR\n  A --> B"},
+		{"front matter may precede the kind", "---\ntitle: Webhook flow\n---\n" + flow, "---\ntitle: Webhook flow\n---\n" + flow},
+		{"a comment may precede the kind", "%% request path\n" + flow, "%% request path\n" + flow},
+		{"an unsupported kind is dropped", "pie\n  \"a\": 1", ""},
+		{"unclosed front matter is dropped", "---\ntitle: Webhook flow\n" + flow, ""},
+		{"an init directive is dropped", "%%{init: {}}%%\n" + flow, ""},
+		{"an init directive after a comment is dropped", "%% theme\n%%{init: {}}%%\n" + flow, ""},
+		{"an init directive after the kind is dropped", flow + "\n%%{init: {\"theme\": \"dark\"}}%%", ""},
+		{"front matter that configures is dropped", "---\ntitle: Flow\nconfig:\n  theme: dark\n---\n" + flow, ""},
+		{"prose is dropped", "The webhook calls the worker.", ""},
+		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", maxDiagramBytes/10), ""},
+		{"none stays none", "", ""},
+	}
+	t.Run("a diagram not asked for is dropped", func(t *testing.T) {
+		res, _, err := Parse(`{"summary": {"take": "t", "diagram": "flowchart TD\n  A --> B"}, "findings": []}`, nil, ParseOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Summary.Diagram != "" {
+			t.Fatalf("diagram = %q, want none", res.Summary.Diagram)
+		}
+	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := json.Marshal(Result{Summary: Summary{Take: "t", Diagram: tt.diagram}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			res, _, err := Parse(string(raw), nil, ParseOptions{Diagram: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Summary.Diagram != tt.want {
+				t.Fatalf("diagram = %q, want %q", res.Summary.Diagram, tt.want)
+			}
+		})
 	}
 }
 

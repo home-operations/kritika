@@ -28,6 +28,10 @@
         "approve": {
           "type": "boolean",
           "description": "true approves a pull request whose review finds nothing blocking or important, and dismisses that approval when a later review does; replaces the admin's."
+        },
+        "diagram": {
+          "type": "boolean",
+          "description": "true has the summary draw the flow the change adds or alters as a Mermaid diagram; replaces the admin's."
         }
       }
     },

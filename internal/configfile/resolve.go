@@ -242,6 +242,9 @@ func (r Review) overlay(o *Overrides) Review {
 	if o.Review.Approve != nil {
 		r.Approve = *o.Review.Approve
 	}
+	if o.Review.Diagram != nil {
+		r.Diagram = *o.Review.Diagram
+	}
 	if o.Context != nil {
 		r.Context = o.Context
 	}

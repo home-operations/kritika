@@ -153,7 +153,7 @@ var goldens = map[string]any{
 			Review: goldenReview, Pull: goldenPullRef, PullState: "open", ScopeReason: "delta",
 			MergeBaseSHA: "base1", PatchID: "patch1", PriorReviewID: new("rev-0"), CancelRequestedAt: nil,
 		},
-		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}},
+		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}, Diagram: "flowchart TD\n  A --> B"},
 		Findings: []Finding{{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",

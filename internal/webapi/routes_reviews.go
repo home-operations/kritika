@@ -118,7 +118,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 		Findings: make([]Finding, len(findings)), Usage: make([]UsageRow, len(usage)),
 	}
 	if v.Summary != nil {
-		d.Summary = &Summary{Headline: v.Summary.Headline, Take: v.Summary.Take, Praise: nonNil(v.Summary.Praise)}
+		d.Summary = &Summary{Headline: v.Summary.Headline, Take: v.Summary.Take, Praise: nonNil(v.Summary.Praise), Diagram: v.Summary.Diagram}
 	}
 	for i, f := range findings {
 		d.Findings[i] = finding(f)

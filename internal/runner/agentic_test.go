@@ -52,8 +52,10 @@ func TestAgentPrompt(t *testing.T) {
 		active  []review.Rule
 		strict  bool
 		focused bool
+		diagram bool
 	}{
 		{name: "strictness", scope: review.ScopeFull, strict: true},
+		{name: "a diagram asked for is in the prompt", scope: review.ScopeFull, diagram: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 		{
@@ -71,7 +73,7 @@ func TestAgentPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Rules = tt.strict, tt.focused, tt.rules
+			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Diagram, s.Prompt.Rules = tt.strict, tt.focused, tt.diagram, tt.rules
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
@@ -83,7 +85,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false)
 			system, user, strict := prompt.system, prompt.user, prompt.strict
-			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, tt.focused, false); system != want {
+			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, tt.focused, false, tt.diagram); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -291,6 +293,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 			Usage: model.Usage{Input: 300, Output: 30}, CostUSD: 0.5},
 	}}
 	s := agentPromptSpec()
+	s.Prompt.Diagram = true
 	logger := slog.New(slog.DiscardHandler)
 	res, timeline := reviewAgent(t.Context(), st, s, head, []string{"vendor/**"}, nil, "system", "user", true, time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 3 || res.ToolCalls["grep"] != 1 || res.ToolCalls["read_file"] != 1 ||
@@ -314,13 +317,14 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 		t.Fatalf("timeline = %s", mustJSON(t, timeline))
 	}
 	// The grep saw main.go but not the ignored vendor file; the strict
-	// contract was offered as submit_review.
+	// contract, with the diagram the spec asks for, was offered as
+	// submit_review.
 	req := st.reqs[1]
 	if out := req.Messages[len(req.Messages)-1].ToolResults[0].Content; !strings.Contains(out, "main.go") || strings.Contains(out, "vendor/") {
 		t.Fatalf("grep output = %q", out)
 	}
 	submit := st.reqs[0].Tools[len(st.reqs[0].Tools)-1]
-	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaStrict()) {
+	if submit.Name != "submit_review" || string(submit.InputSchema) != string(review.SchemaStrict(true)) {
 		t.Fatalf("submit tool = %+v", submit)
 	}
 	if st.reqs[0].Model != "review" || st.reqs[0].System != "system" || st.reqs[0].MaxTokens != agent.DefaultLimits.MaxOutputTokensPerStep {
