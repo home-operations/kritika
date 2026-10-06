@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -275,11 +274,15 @@ func (p *Poller) closeMissed(
 	if err != nil {
 		return err
 	}
+	open := make(map[int]bool, len(listed))
+	for _, pr := range listed {
+		open[pr.Number] = true
+	}
 	owner, name, _ := strings.Cut(r.Name, "/")
 	checks := 0
 	for _, number := range held {
 		key := fmt.Sprintf("%s#%d", r.Name, number)
-		if slices.ContainsFunc(listed, func(pr forge.OpenPullRequest) bool { return pr.Number == number }) || p.isUnknown(key) {
+		if open[number] || p.isUnknown(key) {
 			continue
 		}
 		if checks++; checks > maxCloseChecks {
