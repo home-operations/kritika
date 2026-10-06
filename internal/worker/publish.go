@@ -343,21 +343,22 @@ func (p *publishPhase) writeBack(
 			linked = true
 		}
 	}
-	if linked {
-		// The threads exist only now, so the summary is written a second
-		// time with the links; losing them is not worth failing the review.
-		data.Result = res
-		body, _ = review.RenderSummary(ctx, p.templates, data)
-		if err := p.client.UpdateComment(ctx, owner, repo, commentID, body); err != nil {
-			p.logger.Warn("summary not linked to its inline comments", "error", err)
-		}
-	}
 	state, desc := p.verdict(len(res.Findings))
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, state, "kritika: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	if p.settings.Review.Approve {
-		p.approve(ctx, res.Counts(), p.headCurrent(ctx))
+		data.Approval = p.approve(ctx, res.Counts(), p.headCurrent(ctx))
+	}
+	if linked || data.Approval != nil {
+		// The threads and the approval exist only now, so the summary is
+		// written a second time with the links and the verdict; losing
+		// them is not worth failing the review.
+		data.Result = res
+		body, _ = review.RenderSummary(ctx, p.templates, data)
+		if err := p.client.UpdateComment(ctx, owner, repo, commentID, body); err != nil {
+			p.logger.Warn("summary not rewritten with its threads and approval", "error", err)
+		}
 	}
 	return commentID, onForge, nil
 }
@@ -475,15 +476,16 @@ func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
 // dismisses the approval an earlier review gave, so an approval never
 // outlives the verdict behind it. current says the head is still the pull
 // request's: a head that moved while it was reviewed is left to its own
-// review to approve. All of it is best effort, logged when it fails.
-func (p *publishPhase) approve(ctx context.Context, counts review.Counts, current bool) {
+// review to approve. All of it is best effort, logged when it fails, and
+// what became of it is returned for the summary to state.
+func (p *publishPhase) approve(ctx context.Context, counts review.Counts, current bool) *review.Approval {
 	owner, repo := p.pr.ownerRepo()
 	ok, why := approvable(counts, p.settings.Confidence, p.confidence, p.unscored)
 	if ok {
 		requested, err := p.client.ChangesRequested(ctx, owner, repo, p.pr.number)
 		if err != nil {
 			p.logger.Warn("pull request not approved: its reviews could not be read", "error", err)
-			return
+			return &review.Approval{Reason: "the pull request's reviews could not be read"}
 		}
 		if requested {
 			ok, why = false, "a reviewer has requested changes"
@@ -493,20 +495,30 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 	switch {
 	case ok && !current:
 		p.logger.Info("pull request not approved: its head moved during the review")
+		return &review.Approval{Reason: "the head moved during the review"}
 	case ok:
 		posted, err := p.client.Approve(ctx, owner, repo, p.pr.number, p.pr.headSHA, at)
 		if err != nil {
 			p.logger.Warn("pull request not approved", "error", err)
-		} else if posted {
+			return &review.Approval{Reason: "the approval could not be posted"}
+		}
+		if posted {
 			p.logger.Info("pull request approved")
 		}
+		if p.confidence != nil {
+			why = ""
+		}
+		return &review.Approval{Approved: true, Reason: why}
 	default:
 		n, err := p.client.DismissApprovals(ctx, owner, repo, p.pr.number, at)
 		if err != nil {
 			p.logger.Warn("approval not dismissed", "error", err)
-		} else if n > 0 {
+			return &review.Approval{Reason: why + "; an earlier approval, if one stands, could not be dismissed"}
+		}
+		if n > 0 {
 			p.logger.Info("approval dismissed", "reviews", n, "reason", why)
 		}
+		return &review.Approval{Reason: why}
 	}
 }
 

@@ -102,7 +102,9 @@ skills:
   `.PriorHeadURL`, `.Prior`, the last review's findings this review did
   not report again, each with `.Resolved`, and the dismissed ones each with
   `.Dismissed` and `.DismissReason`, `.Sources`, `.Incomplete`, `.Confidence`, nil unless the review was
-  scored, with its `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`, and `.WebURL` and `.PullURL`, the
+  scored, with its `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`, `.Approval`, nil unless
+  `review.approve` is on, with `.Approved` and `.Reason`, "" where the
+  confidence line states it, and `.WebURL` and `.PullURL`, the
   dashboard's origin and the pull request's page on it, where the built-in
   template's re-run badge points). The inline template's dot is
   one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Category`, `.Title`,
@@ -123,9 +125,11 @@ skills:
   and a review left unscored approves nothing. A later review of the same
   pull request whose verdict no longer allows it dismisses kritika's
   approval, as does a reviewer who stands as requesting changes; a head
-  that moved while it was reviewed is left to its own review. It replaces
-  the admin's, in either direction: a repository turns it on where the
-  instance leaves it off. Off unless set.
+  that moved while it was reviewed is left to its own review. The summary
+  says which way it went, `Approved` or `Not approved` with the reason,
+  except the reason a confidence score decides, which the score's own line
+  states. It replaces the admin's, in either direction: a repository turns
+  it on where the instance leaves it off. Off unless set.
 - `review.diagram: true`: the summary draws the flow the change adds or
   alters, a request path, a data flow or a state machine, as a Mermaid
   flowchart or sequence diagram the forge renders, its nodes plain-language

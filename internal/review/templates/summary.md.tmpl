@@ -16,6 +16,10 @@
 **Confidence {{ .Confidence.Score }}/5**{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ if .Confidence.Reason }}: {{ .Confidence.Reason }}{{ end }}
 
 {{ end -}}
+{{ if .Approval -}}
+**{{ if .Approval.Approved }}Approved{{ else }}Not approved{{ end }}**{{ if .Approval.Reason }}: {{ .Approval.Reason }}{{ end }}
+
+{{ end -}}
 {{ if or .Result.Findings .Unanchored .Prior -}}
 ## Findings
 
