@@ -307,7 +307,7 @@ some: `owner/*` for every repository of an account, and `owner/name` for
 one. They come in five groups:
 
 - `review`: what a review runs on and what it says: `model`, `fallback`,
-  `feedback`, `fixes`, `approve`, `incremental` and `diagram`.
+  `feedback`, `fixes`, `approve`, `incremental`, `diagram` and `cost`.
 - `confidence`: how a review is judged: `model`, `threshold`, `risk` and
   `instructions`.
 - `trigger`: which pull requests are reviewed, and when: `include`,
@@ -432,6 +432,11 @@ takes, in the same groups (`review.model`, `review.fallback`,
 own:
 
 - `confidence.instructions`: the guidance on rating risk, above.
+- `review.cost: true`: the summary's footer ends with what the pull
+  request's reviews have cost together, every model call charged to one of
+  them. Off unless set: the comment is public, on a fork's pull request
+  too, and the figure is the instance's spend; so a repository's own file
+  cannot set it.
 - `agent`: a review's `steps`, the bytes of `output` one tool call may
   return, its `tokens`,
   `timeout`, the `commands` its run tool may execute, and their
@@ -555,6 +560,7 @@ the environment:
 | `KRITIKA_REVIEW_FIXES`             | `review.fixes`, `true` or `false`                                                     |
 | `KRITIKA_REVIEW_INCREMENTAL`       | `review.incremental`, a whole number of files                                         |
 | `KRITIKA_REVIEW_DIAGRAM`           | `review.diagram`, `true` or `false`                                                   |
+| `KRITIKA_REVIEW_COST`              | `review.cost`, `true` or `false`                                                      |
 | `KRITIKA_CONFIDENCE_MODEL`         | `confidence.model`                                                                    |
 | `KRITIKA_CONFIDENCE_THRESHOLD`     | `confidence.threshold`, a whole number from 0 to 5                                    |
 | `KRITIKA_CONFIDENCE_GATE`          | `confidence.gate`, `true` or `false`                                                  |

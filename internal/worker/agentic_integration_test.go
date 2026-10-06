@@ -996,7 +996,7 @@ func checkAgentKeyMasked(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
-	if !strings.Contains(sticky, "kritika with agent-model</sub>") {
+	if !strings.Contains(sticky, " · agent-model</sub>") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 	// The provider refused the step, so nothing was spent.

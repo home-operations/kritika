@@ -204,7 +204,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 	web, pull := p.dashboard(owner, repo)
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx),
+		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		Incomplete: reason, Notes: p.repoNotes, WebURL: web, PullURL: pull,
 	})
 	commentID, err := p.upsertSticky(ctx, body)
@@ -306,7 +306,7 @@ func (p *publishPhase) writeBack(
 	web, pull := p.dashboard(owner, repo)
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx),
+		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: res.Counts(), Notes: notes, Unanchored: unanchored,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
@@ -648,6 +648,26 @@ func (p *publishPhase) reviews(ctx context.Context) int {
 		p.logger.Warn("completed reviews not counted", "error", err)
 	}
 	return completed + 1
+}
+
+// cost is what the pull request's reviews have cost together, this one's
+// calls included, formatted for the footer; "" where the repository does
+// not show it, or it could not be read.
+func (p *publishPhase) cost(ctx context.Context) string {
+	if !p.settings.Review.Cost {
+		return ""
+	}
+	var cost float64
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		cost, err = store.PullCost(ctx, tx, p.pr.id)
+		return err
+	})
+	if err != nil {
+		p.logger.Warn("pull request cost not read", "error", err)
+		return ""
+	}
+	return review.FormatUSD(cost)
 }
 
 // dashboard is the dashboard's origin and the pull request's page on it,

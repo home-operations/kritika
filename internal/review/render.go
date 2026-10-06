@@ -46,6 +46,9 @@ type RenderData struct {
 	// Reviews is how many reviews of the pull request this one makes.
 	Reviews int
 	Model   string
+	// Cost is what the pull request's reviews have cost together, as
+	// FormatUSD writes it, "" where the repository does not show it.
+	Cost string
 	// AuthorIsBot is whether a bot opened the pull request; the default
 	// template then leaves out the praise, which a mechanical change
 	// earns nothing by.
@@ -90,6 +93,18 @@ type RenderData struct {
 type Approval struct {
 	Approved bool
 	Reason   string
+}
+
+// FormatUSD writes an amount in dollars to the cent, and under a cent to
+// the hundredth of one so a small review does not read as free.
+func FormatUSD(amount float64) string {
+	switch {
+	case amount == 0:
+		return "$0"
+	case amount < 0.01:
+		return fmt.Sprintf("$%.4f", amount)
+	}
+	return fmt.Sprintf("$%.2f", amount)
 }
 
 // footerSubjectRunes is how much of a commit subject the footer shows.

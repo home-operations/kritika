@@ -244,7 +244,7 @@ model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
 `trigger.settle`, `trigger.limit`,
-`review.incremental`, `confidence.instructions`, `limits` and `runner`
+`review.incremental`, `review.cost`, `confidence.instructions`, `limits` and `runner`
 are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
 

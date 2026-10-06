@@ -235,8 +235,8 @@ type Overrides struct {
 // written here, even empty, replacing the broader scope's, how much it
 // says, whether a finding must carry a suggested fix, whether it approves,
 // how many files may change since the last review before a re-review
-// covers the whole pull request again, and whether the summary draws the
-// change's flow.
+// covers the whole pull request again, whether the summary draws the
+// change's flow, and whether its footer states the pull request's spend.
 type ReviewSpec struct {
 	Model       *ModelRef `yaml:"model,omitempty"`
 	Fallback    *ModelRef `yaml:"fallback,omitempty"`
@@ -245,6 +245,7 @@ type ReviewSpec struct {
 	Approve     *bool     `yaml:"approve,omitempty"`
 	Incremental *int      `yaml:"incremental,omitempty"`
 	Diagram     *bool     `yaml:"diagram,omitempty"`
+	Cost        *bool     `yaml:"cost,omitempty"`
 }
 
 // ConfidenceSpec sets how a review is judged at one scope: the model that
@@ -574,7 +575,11 @@ type Review struct {
 	// Diagram is true to have the summary draw the flow the change adds
 	// or alters as a Mermaid diagram. Off unless set: it costs output
 	// tokens on every review.
-	Diagram bool          `json:"diagram"`
+	Diagram bool `json:"diagram"`
+	// Cost is true to have the summary's footer state what the pull
+	// request's reviews have cost together. Off unless set: the comment
+	// is public, and the figure is the instance's spend.
+	Cost    bool          `json:"cost"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes, the broadest scope's
 	// first. The API serves them from the rules routes, with what each

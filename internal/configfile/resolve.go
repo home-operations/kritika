@@ -245,6 +245,9 @@ func (r Review) overlay(o *Overrides) Review {
 	if o.Review.Diagram != nil {
 		r.Diagram = *o.Review.Diagram
 	}
+	if o.Review.Cost != nil {
+		r.Cost = *o.Review.Cost
+	}
 	if o.Context != nil {
 		r.Context = o.Context
 	}

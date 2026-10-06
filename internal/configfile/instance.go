@@ -126,6 +126,12 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 				return fmt.Errorf("configfile: environment variable %s must be true or false, got %q", env, value)
 			}
 			d.Review.Diagram, path = &diagram, keyDiagram
+		case reviewEnvPrefix + "COST":
+			cost, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("configfile: environment variable %s must be true or false, got %q", env, value)
+			}
+			d.Review.Cost, path = &cost, keyCost
 		case confidenceEnvPrefix + "MODEL":
 			ref := ModelRef(value)
 			d.Confidence.Model, path = &ref, keyScorer
@@ -273,6 +279,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyFixes, strconv.FormatBool(deref(d.Review.Fixes)), d.Review.Fixes != nil},
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},
 		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
+		{keyCost, strconv.FormatBool(deref(d.Review.Cost)), d.Review.Cost != nil},
 		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},

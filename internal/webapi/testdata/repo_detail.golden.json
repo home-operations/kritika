@@ -55,6 +55,7 @@
       "inlineComments": true,
       "approve": false,
       "diagram": false,
+      "cost": false,
       "context": [
         {
           "path": "db/schema.sql",
@@ -145,6 +146,7 @@
         "inlineComments": true,
         "approve": false,
         "diagram": false,
+        "cost": false,
         "context": [
           {
             "path": "db/schema.sql",

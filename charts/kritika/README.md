@@ -301,6 +301,7 @@ Kubernetes: `>=1.25.0-0`
 | config.providersRetries | string | `""` | How many more times a review's model step is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. |
 | config.providersType | string | `""` | The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those. |
 | config.reviewApprove | string | `""` | `true` has a review that finds nothing blocking or important approve the pull request, or, with a confidence model, one whose score and risk allow it, and dismisses that approval when a later review's do not; off unless set. |
+| config.reviewCost | string | `""` | `true` ends the summary's footer with what the pull request's reviews have cost together; off unless set. |
 | config.reviewDiagram | string | `""` | `true` has the summary draw the flow the change adds or alters as a Mermaid diagram; off unless set. |
 | config.reviewFallback | string | `""` | The model a review falls back to when the review model fails. |
 | config.reviewFeedback | string | `""` | How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set. |
