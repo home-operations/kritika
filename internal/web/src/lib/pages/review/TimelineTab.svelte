@@ -91,6 +91,13 @@
       <dt>Model</dt><dd class="mono">{a.model}</dd>
       <dt>Tokens</dt><dd>{tokens(a.usage.input)} in · {tokens(a.usage.cacheRead)} cache read · {tokens(a.usage.cacheWrite)} cache write · {tokens(a.usage.output)} out</dd>
       <dt>Tool calls</dt><dd class="mono">{Object.entries(a.toolCalls).map(([k, v]) => `${k}×${v}`).join(', ') || '—'}</dd>
+      {#if a.skillsOffered.length}
+        <dt>Skills</dt>
+        <dd>
+          {#each a.skillsOffered as s, i (s)}{i ? ', ' : ''}<span class="mono" class:muted={!a.skillsOpened.includes(s)}>{s}</span>{/each}
+          <span class="small muted">({a.skillsOpened.length ? `read ${a.skillsOpened.join(', ')}` : 'none read'})</span>
+        </dd>
+      {/if}
       {#if a.sources.length}
         <dt>Sources</dt>
         <dd>
