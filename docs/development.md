@@ -5,7 +5,7 @@ Tool versions and tasks live in [`.mise/config.toml`](https://github.com/home-op
 ```sh
 mise install
 mise run build
-mise run test               # unit tests
+mise run test               # unit tests; mise run test -- ./internal/worker/ runs one package's
 mise run test-integration   # Postgres suites against a throwaway VectorChord container
 mise run lint
 mise run smoke              # kritika serve in a kind cluster with CloudNativePG (needs docker, kind, kubectl, helm)
