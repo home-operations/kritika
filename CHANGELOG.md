@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.35](https://github.com/home-operations/kritika/compare/0.0.34...0.0.35) (2026-10-06)
+
+
+### Bug Fixes
+
+* **review:** keep the summary diagram across incremental reviews ([#576](https://github.com/home-operations/kritika/issues/576)) ([9df9a8e](https://github.com/home-operations/kritika/commit/9df9a8e283c497082616e865cf9be5da3773f3df))
+
 ## [0.0.34](https://github.com/home-operations/kritika/compare/0.0.33...0.0.34) (2026-10-06)
 
 
