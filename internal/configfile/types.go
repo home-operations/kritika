@@ -655,13 +655,16 @@ type Account struct {
 }
 
 // Egress is what runner pods may reach through the worker's gateway beyond
-// the forges the connections talk to, which are always allowed. Hosts are
-// exact, a suffix with a leading "*.", or "*" for every host; the gateway
-// tunnels TLS to port 443 only. A credential is the token the gateway adds,
-// as a bearer, to a plain http:// request a runner makes to that host, so
-// the runner can use an API at a token's rate limit without holding it.
+// the forges the connections talk to, which are always allowed. Allow and
+// Deny entries are an exact host, a suffix with a leading "*.", or "*" for
+// every host; a denied host is refused however Allow matches it, and the
+// gateway tunnels TLS to port 443 only. A credential is the token the
+// gateway adds, as a bearer, to a plain http:// request a runner makes to
+// that host, so the runner can use an API at a token's rate limit without
+// holding it.
 type Egress struct {
-	AllowHosts  []string             `yaml:"allowHosts,omitempty"`
+	Allow       []string             `yaml:"allow,omitempty"`
+	Deny        []string             `yaml:"deny,omitempty"`
 	Credentials map[string]SecretRef `yaml:"credentials,omitempty"`
 
 	credentials map[string]Secret

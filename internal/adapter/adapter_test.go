@@ -132,7 +132,7 @@ func TestMask(t *testing.T) {
     baseUrl: https://kritika:url-secret@llm.example/v1
     apiKey: { env: TEST_PROVIDER_KEY }
 egress:
-  allowHosts: [api.example.com]
+  allow: [api.example.com]
   credentials:
     api.example.com: { env: TEST_EGRESS_TOKEN }
 `+minimalFile)
