@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	git "github.com/go-git/go-git/v5"
@@ -44,7 +45,9 @@ type Fetch struct {
 	Head, Base string
 	// Prior, when set, is the full SHA of the head the last review saw. It
 	// is fetched best effort: a force-push may have made it unreachable.
-	Prior string
+	// PriorChanged are the paths the change touched at Prior.
+	Prior        string
+	PriorChanged []string
 }
 
 // Result is the two fetched commits and the diff between them.
@@ -63,7 +66,8 @@ type Result struct {
 	// Prior is the fetched prior head, nil when none was asked for or it
 	// could not be fetched, in which case PriorErr says why. DeltaDiff and
 	// DeltaChanged are the diff from it to head and the paths that diff
-	// touches.
+	// touches, kept to the paths the change touches at either end: what
+	// else moved between the two heads is the base, under a rebase.
 	Prior        *object.Commit
 	PriorErr     error
 	DeltaDiff    string
@@ -131,7 +135,11 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, err)
 	}
-	diff, changed, err := diffCommits(ctx, base, head)
+	changes, err := treeChanges(ctx, base, head)
+	if err != nil {
+		return nil, err
+	}
+	diff, changed, err := renderChanges(ctx, changes)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +153,24 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 		}
 		return res, nil
 	}
-	if res.DeltaDiff, res.DeltaChanged, err = diffCommits(ctx, res.Prior, head); err != nil {
+	// The change's own paths, both names of a rename, at either head.
+	own := make(map[string]bool, 2*len(changes)+len(f.PriorChanged))
+	for _, c := range changes {
+		for _, name := range []string{c.From.Name, c.To.Name} {
+			if name != "" {
+				own[name] = true
+			}
+		}
+	}
+	for _, name := range f.PriorChanged {
+		own[name] = true
+	}
+	delta, err := treeChanges(ctx, res.Prior, head)
+	if err != nil {
+		return nil, err
+	}
+	delta = slices.DeleteFunc(delta, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
+	if res.DeltaDiff, res.DeltaChanged, err = renderChanges(ctx, delta); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -189,19 +214,26 @@ func fetchPrior(ctx context.Context, repo *git.Repository, auth transport.AuthMe
 
 // diffCommits diffs two commits' trees and lists the touched paths,
 // head-side names.
-func diffCommits(ctx context.Context, from, to *object.Commit) (string, []string, error) {
+// treeChanges lists what changed between two commits, renames detected.
+func treeChanges(ctx context.Context, from, to *object.Commit) (object.Changes, error) {
 	fromTree, err := from.Tree()
 	if err != nil {
-		return "", nil, fmt.Errorf("gitfetch: tree of %s: %w", from.Hash, err)
+		return nil, fmt.Errorf("gitfetch: tree of %s: %w", from.Hash, err)
 	}
 	toTree, err := to.Tree()
 	if err != nil {
-		return "", nil, fmt.Errorf("gitfetch: tree of %s: %w", to.Hash, err)
+		return nil, fmt.Errorf("gitfetch: tree of %s: %w", to.Hash, err)
 	}
 	changes, err := object.DiffTreeWithOptions(ctx, fromTree, toTree, object.DefaultDiffTreeOptions)
 	if err != nil {
-		return "", nil, fmt.Errorf("gitfetch: diff: %w", err)
+		return nil, fmt.Errorf("gitfetch: diff: %w", err)
 	}
+	return changes, nil
+}
+
+// renderChanges is the changes as a unified diff, with the paths it
+// touches by their head-side names.
+func renderChanges(ctx context.Context, changes object.Changes) (string, []string, error) {
 	patch, err := changes.PatchContext(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("gitfetch: patch: %w", err)

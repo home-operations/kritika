@@ -1,6 +1,7 @@
 package gitfetch
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,10 +15,12 @@ import (
 
 // repo builds a local repository with a base commit and two head commits:
 // one that changes a file, and a rebase of that same change on top of an
-// unrelated commit, so the patch id can be checked for stability.
+// unrelated commit that edits one file and adds another, so the patch id
+// can be checked for stability and the base's movement told from the
+// change's.
 type repo struct {
-	dir                        string
-	base, head, other, rebased string
+	dir                                 string
+	base, head, other, rebased, renamed string
 }
 
 func build(t *testing.T) repo {
@@ -57,8 +60,14 @@ func build(t *testing.T) repo {
 	if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("rebased"), Create: true, Hash: plumbing.NewHash(out.base)}); err != nil {
 		t.Fatal(err)
 	}
-	out.other = commit("unrelated", map[string]string{"README.md": "hi\nthere\n"})
+	out.other = commit("unrelated", map[string]string{"README.md": "hi\nthere\n", "NOTES.md": "new\n"})
 	out.rebased = commit("change again", map[string]string{"main.go": "package main\n\nfunc a() {}\n\nfunc b() {}\n"})
+	// On top of the rebase, the changed file moves: a rename the delta
+	// since rebased must keep under either of its names.
+	if _, err := wt.Move("main.go", "lib.go"); err != nil {
+		t.Fatal(err)
+	}
+	out.renamed = commit("rename", nil)
 	return out
 }
 
@@ -139,23 +148,29 @@ func allowSHAFetch(t *testing.T, r *git.Repository) {
 func TestRunPriorDelta(t *testing.T) {
 	r := build(t)
 	cases := []struct {
-		name        string
-		prior       string
-		wantPrior   bool
-		wantChanged []string
-		wantInDelta string
+		name            string
+		head, prior     string
+		priorChanged    []string
+		wantPrior       bool
+		wantChanged     []string
+		wantInDelta     string
+		wantHeadChanged string
 	}{
-		// head and rebased carry the same main.go; rebased also changes
-		// README.md, so that is all that changed since head.
-		{name: "reachable prior", prior: r.head, wantPrior: true, wantChanged: []string{"README.md"}, wantInDelta: "+there"},
+		// head and rebased carry the same main.go; README.md moved between
+		// them with the base, which is no change of the pull request's.
+		{name: "rebased, the change as it was", prior: r.head, priorChanged: []string{"main.go"}, wantPrior: true},
+		// The paths the change touched at the prior head count as its own,
+		// even where the head no longer touches them.
+		{name: "rebased, a path the change dropped", prior: r.head, priorChanged: []string{"main.go", "README.md"}, wantPrior: true, wantChanged: []string{"README.md"}, wantInDelta: "+there"},
 		{name: "prior already fetched as the base", prior: r.other, wantPrior: true, wantChanged: []string{"main.go"}, wantInDelta: "+func b() {}"},
+		{name: "the changed file renamed since", head: r.renamed, prior: r.rebased, priorChanged: []string{"main.go"}, wantPrior: true, wantChanged: []string{"lib.go"}, wantInDelta: "lib.go", wantHeadChanged: "lib.go"},
 		{name: "prior is the head", prior: r.rebased, wantPrior: true},
 		{name: "unknown prior", prior: "0123456789abcdef0123456789abcdef01234567"},
 		{name: "no prior"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: r.rebased, Base: r.other, Prior: tc.prior})
+			res, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: cmp.Or(tc.head, r.rebased), Base: r.other, Prior: tc.prior, PriorChanged: tc.priorChanged})
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
@@ -175,8 +190,8 @@ func TestRunPriorDelta(t *testing.T) {
 			if !strings.Contains(res.DeltaDiff, tc.wantInDelta) || (!tc.wantPrior && res.DeltaDiff != "") {
 				t.Fatalf("delta diff = %q", res.DeltaDiff)
 			}
-			if len(res.Changed) != 1 || res.Changed[0] != "main.go" {
-				t.Fatalf("the merge-base diff must not change: %v", res.Changed)
+			if want := cmp.Or(tc.wantHeadChanged, "main.go"); len(res.Changed) != 1 || res.Changed[0] != want {
+				t.Fatalf("the merge-base diff must not change: %v, want %s", res.Changed, want)
 			}
 		})
 	}

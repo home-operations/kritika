@@ -447,9 +447,12 @@ own:
   `@<app slug> review` still reviews a paused pull request, and
   `@<app slug> resume` turns its automatic reviews back on, as
   `@<app slug> pause` turns them off at any time.
-- `review.incremental`: how many files may change since the last
-  review before a re-review covers the whole pull request again. A re-run
-  at the head the last review saw always covers the whole pull request.
+- `review.incremental`: how many files of the change may move since the
+  last review before a re-review covers the whole pull request again.
+  What moves between the two heads outside the change's own paths is the
+  base, under a rebase, and does not count. A re-run at the head the last
+  review saw, or a rebase that leaves the change as it was, always covers
+  the whole pull request.
 - `enabled`, at the root and `owner/*` only: where repositories start
   (see below).
 

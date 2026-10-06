@@ -18,8 +18,11 @@ import (
 // review is told of them apart.
 type priorReview struct {
 	id, headSHA, trigger string
-	findings             []priorFinding
-	dismissed            []store.Dismissal
+	// changed are the paths the change touched at headSHA, as its context
+	// pack recorded them.
+	changed   []string
+	findings  []priorFinding
+	dismissed []store.Dismissal
 }
 
 type priorFinding struct {
@@ -41,6 +44,11 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	}
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load last completed review: %w", err)
+	}
+	err = tx.QueryRow(ctx, `SELECT c.changed_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+		WHERE rr.review_id = $1 ORDER BY c.created_at DESC LIMIT 1`, p.id).Scan(&p.changed)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return priorReview{}, fmt.Errorf("worker: load last completed review's paths: %w", err)
 	}
 	rows, err := tx.Query(ctx, `SELECT path, line, severity, category, title, explanation, suggested_fix, posted_inline,
 		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules FROM findings WHERE review_id = $1 ORDER BY path, line`, p.id)

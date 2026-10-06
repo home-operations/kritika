@@ -14,8 +14,10 @@ const (
 
 // DecideScope says whether a review can build on the last completed one:
 // only when there is one, the head is not the one it reviewed, the runner
-// fetched its head, and fewer than maxDeltaFiles files changed since. A
-// full review says why it is one.
+// fetched its head, and the change moved since in fewer than maxDeltaFiles
+// files, and in at least one: a head that carries the change as the last
+// review saw it, rebased, gets a fresh look rather than a review of
+// nothing. A full review says why it is one.
 func DecideScope(hasPrior, sameHead, priorFetched bool, deltaFiles, maxDeltaFiles int) (Scope, string) {
 	switch {
 	case !hasPrior:
@@ -29,6 +31,8 @@ func DecideScope(hasPrior, sameHead, priorFetched bool, deltaFiles, maxDeltaFile
 		return ScopeFull, "prior head unreachable"
 	case deltaFiles >= maxDeltaFiles:
 		return ScopeFull, fmt.Sprintf("%d files changed since last review", deltaFiles)
+	case deltaFiles == 0:
+		return ScopeFull, "the change is as the last review saw it"
 	}
 	return ScopeIncremental, ""
 }
