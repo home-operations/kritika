@@ -126,6 +126,7 @@ nav:
       - Repository settings: repository-config.md
       - Helm chart values: chart-values.md
   - Using kritika:
+      - Reviews: reviews.md
       - Dashboard: dashboard.md
       - Metrics: metrics.md
   - Development: development.md

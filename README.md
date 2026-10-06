@@ -23,9 +23,7 @@ reviewed like any other unless the configuration excludes it. One deployment ser
 number of forge accounts, and every index, review and follow-up job runs in
 its own Kubernetes Job pod that holds no provider key or App key.
 
-📖 **Docs site: <https://kritika.home-operations.com/>**: setup, the
-configuration file, repository settings, chart values, the dashboard,
-metrics and development.
+📖 **Docs site: <https://kritika.home-operations.com/>**
 
 ## Features
 
@@ -123,6 +121,8 @@ Security notes:
   repositories run
 - [Chart values](charts/kritika/README.md)
 - [`.kritika.yaml` reference](https://kritika.home-operations.com/repository-config/)
+- [Reviews](https://kritika.home-operations.com/reviews/): when a review
+  runs, what it posts, and the commands that steer it
 - [Dashboard](https://kritika.home-operations.com/dashboard/): the setup checklist, the Configuration
   page, repository on/off and actions
 - [Metrics](https://kritika.home-operations.com/metrics/)

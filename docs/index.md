@@ -91,6 +91,8 @@ flowchart LR
 - **[Repository settings](repository-config.md)**: what a repository's
   `.kritika.yaml` can change.
 - **[Helm chart values](chart-values.md)**: the chart's values, grouped.
+- **[Reviews](reviews.md)**: when a review runs, what it posts, and the
+  commands that steer it.
 - **[Dashboard](dashboard.md)**: the setup checklist, the Configuration page,
   repository on/off and actions.
 - **[Metrics](metrics.md)**: what kritika exports to Prometheus.

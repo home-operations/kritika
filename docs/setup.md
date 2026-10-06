@@ -112,21 +112,10 @@ Register a GitHub App under the account whose repositories kritika reviews
   else who installs the App gets reviews.
 
 Then generate a private key and note the App's client ID. Comments mention
-the bot as `@<app slug>`, and only someone with write access gets an
-answer. `@<app slug> review` queues a review of the pull request's head
-instead of asking a question: this is how a maintainer gets a review of a
-pull request `trigger.include` and `trigger.exclude` keep out, such as one
-from a fork where forks are excluded. `@<app slug> dismiss <reason>`, as a reply in
-one of kritika's finding threads, dismisses that finding: its thread is
-resolved, later reviews of the pull request are told not to raise it
-again, and the dashboard lists it dismissed with the reason. Resolving
-one of those threads on GitHub does the same, again only for someone with
-write access, and unresolving it takes the dismissal back.
-`@<app slug> pause` stops the pull request's automatic reviews, and
-`@<app slug> resume` starts them again. Put the private key and the webhook secret
-in a Secret, set a variable from each under `env`, and declare the
-App under `apps` in the configuration file or the environment
-([`apps`](configuration.md#apps)). To
+the bot as `@<app slug>` ([commands](reviews.md#commands)). Put the private
+key and the webhook secret in a Secret, set a variable from each under
+`env`, and declare the App under `apps` in the configuration file or the
+environment ([`apps`](configuration.md#apps)). To
 sign in with GitHub through the same App, generate a client secret on its
 settings page and set it, with the client ID, as the `KRITIKA_AUTH_GITHUB_*`
 variables.
