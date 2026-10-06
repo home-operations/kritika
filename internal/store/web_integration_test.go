@@ -174,8 +174,7 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 		_, err := tx.Exec(ctx, `INSERT INTO model_calls (account_id, kind, model) VALUES ($1, 'followup', 'acme/large')`, beta)
 		return err
 	})
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
 		t.Fatalf("insert into model_calls with a foreign account_id: err = %v, want a 42501 permission-denied error", err)
 	}
 }
@@ -204,8 +203,7 @@ func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 		t.Run(table, func(t *testing.T) {
 			var n int
 			err := runner.app.QueryRow(ctx, `SELECT count(*) FROM `+pgx.Identifier{table}.Sanitize()).Scan(&n)
-			var pgErr *pgconn.PgError
-			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
 				t.Fatalf("runner querying %s: err = %v, want a 42501 permission-denied error", table, err)
 			}
 		})

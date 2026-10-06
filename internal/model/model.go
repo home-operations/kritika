@@ -317,8 +317,8 @@ func Transient(err error) bool {
 	if status != 0 {
 		return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
 	}
-	var netErr net.Error
-	return errors.As(err, &netErr) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
+	_, isNet := errors.AsType[net.Error](err)
+	return isNet || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
 		errors.Is(err, context.DeadlineExceeded)
 }
 
