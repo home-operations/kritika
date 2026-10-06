@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.37](https://github.com/home-operations/kritika/compare/0.0.36...0.0.37) (2026-10-06)
+
+
+### Features
+
+* **agent:** make the review prompt budget configurable ([#582](https://github.com/home-operations/kritika/issues/582)) ([519d306](https://github.com/home-operations/kritika/commit/519d3069bf47bef55c2add4a4cbdc24216c4ba84))
+* **followup:** answer follow-ups with an agent in a runner ([#584](https://github.com/home-operations/kritika/issues/584)) ([df7786f](https://github.com/home-operations/kritika/commit/df7786f67c54ca3d63c195e35bf130bd9fd594b8))
+* **followup:** leave eyes on a mention while its agent works ([#586](https://github.com/home-operations/kritika/issues/586)) ([56d9fa5](https://github.com/home-operations/kritika/commit/56d9fa5d1967284df0307b497aa30e04ac2a60b3))
+
+
+### Code Refactoring
+
+* **agent:** name the submit tool in the loop's own messages ([#583](https://github.com/home-operations/kritika/issues/583)) ([3c1357f](https://github.com/home-operations/kritika/commit/3c1357f7ce3b912ed14f13bbbf2d80bef18b5b30))
+
 ## [0.0.36](https://github.com/home-operations/kritika/compare/0.0.35...0.0.36) (2026-10-06)
 
 
