@@ -12,12 +12,14 @@ examples use.
   ([VectorChord](https://github.com/tensorchord/VectorChord)) and `vector`
   (pgvector, whose types it builds on) extensions must exist before the first
   start, and `vchord` must be in `shared_preload_libraries`.
-- **Three roles**, and kritika refuses to start without the separation:
+- **Three roles**, which the chart requires and kritika checks at start:
     - the **owner** runs migrations and applies the configuration on the
-      leader. It owns the database and must not be a superuser;
+      leader. It owns the database, and kritika refuses one that is a
+      superuser;
     - the **application** role (`database.app.role`, `kritika_app` by
-      default) serves everything else. It must not own the tables, so
-      row-level security applies to it;
+      default) serves everything else. kritika refuses one that owns a
+      table, is a superuser or has `BYPASSRLS`, any of which would turn
+      row-level security off;
     - the **runner** role (`database.runner.role`, `kritika_runner` by
       default) is handed to runner Jobs and can only write its own run.
 - **Direct or session-mode connections** for the owner and application
@@ -220,10 +222,10 @@ the pool, which `kritika_db_pool_empty_acquires_total` counts and
 Both pools set a `statement_timeout` on their sessions: one minute on the
 application pool, so a slow dashboard query cannot hold the connections
 webhooks and jobs need, and ten minutes on the owner pool, for a migration
-that builds an index. The leader's hourly retention sweeps delete and
-empty rows in batches, each its own statement, so a backlog larger than
-one statement could clear is worked off over the sweep rather than rolled
-back.
+that builds an index. The leader's hourly retention sweeps of transcripts
+and stored diffs work in batches, each its own statement, so a backlog
+larger than one statement could clear is worked off over the sweep rather
+than rolled back.
 
 Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the
 Cluster's `monitoring.enablePodMonitor` in favor of one you create
@@ -247,7 +249,8 @@ spec:
 When the primary changes, by a failover or a switchover, kritika's
 connections drop and reconnect on their own. The replica that held the leader
 lock loses it with its owner connection and steps down, and another takes it
-within a few seconds; until then the leader's duties and job fetching pause.
+within one `KRITIKA_LEADER_RETRY_INTERVAL`, 15 seconds unless set; until
+then the leader's duties and job fetching pause.
 No kritika pod restarts.
 
 How fast that happens does not depend on the Cluster's settings. kritika's

@@ -26,7 +26,7 @@ fullnameOverride: ""
 # kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,
 # the job queues, runner Jobs, the gateway and, on the replica holding the
 # leader lock, the leader duties. Runner pods are not part of it: serve
-# creates them as Jobs, one per review and index run.
+# creates them as Jobs, one per review, follow-up and index run.
 # -- Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost.
 replicas: 1
 
@@ -304,8 +304,8 @@ envFrom: []
 # application role must not own the tables (row-level security), the owner
 # role runs migrations and applies configuration on the leader, and the
 # runner role is handed to runner Jobs and can only write its own run. On
-# CloudNativePG, declare `app` and `runner` under `spec.managed.roles` and
-# use the bootstrap owner as `owner`; see the README.
+# CloudNativePG, declare `app` and `runner` as DatabaseRole resources and
+# use the bootstrap owner as `owner`; see the database docs.
 database:
   app:
     # -- (required) Secret holding the application role's connection URI.
@@ -327,17 +327,17 @@ database:
     # -- Name of the runner role, granted only what runner Jobs need.
     role: kritika_runner
 
-# Runner Jobs: one pod per review or index run, created by kritika serve in the
-# release namespace from the release's -tools image, running as a service
-# account with no permissions and a database role that can only touch its own
-# run. The server's Role reaches every Secret in the release namespace, so
-# install kritika into a namespace of its own. Their deadline and RuntimeClass
-# are `config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed
-# RuntimeClass (gVisor, Kata) is advised, since a runner parses untrusted
-# repository content and runs what the model asks.
+# Runner Jobs: one pod per review, follow-up or index run, created by kritika
+# serve in the release namespace from the release's -tools image, running as a
+# service account with no permissions and a database role that can only touch
+# its own run. The server's Role reaches every Secret in the release namespace,
+# so install kritika into a namespace of its own. Their deadline and
+# RuntimeClass are `config.runnerDeadline` and `config.runnerRuntimeClass`; a
+# sandboxed RuntimeClass (gVisor, Kata) is advised, since a runner parses
+# untrusted repository content and runs what the model asks.
 runner:
   # Image for runner Jobs: the release's `-tools` image, which adds curl, fd,
-  # gh, jq, rg and yq for an agentic review's `agent.commands`.
+  # gh, jq, rg and yq for a review's or follow-up's `agent.commands`.
   image:
     # -- Runner image repository.
     repository: ghcr.io/home-operations/kritika

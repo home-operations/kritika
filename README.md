@@ -11,16 +11,17 @@
 </div>
 
 > [!WARNING]
-> kritika is not production ready. It is under active development and has no
-> release yet: configuration, the database schema and the APIs change without
-> notice, and there is no upgrade path from one commit to the next.
+> kritika is early and under active development: configuration and the APIs
+> can still change from one release to the next, so read the
+> [changelog](CHANGELOG.md) before upgrading. Schema changes arrive as
+> migrations the leader applies.
 
 kritika indexes a repository, reviews each pull request against that context,
 posts one sticky summary comment plus inline findings and a commit status, and
 answers follow-ups when the bot is @-mentioned. A pull request from a fork is
 reviewed like any other unless the configuration excludes it. One deployment serves any
 number of forge accounts, and every index, review and follow-up job runs in
-its own Kubernetes Job pod that holds no secrets.
+its own Kubernetes Job pod that holds no provider key or App key.
 
 📖 **Docs site: <https://kritika.home-operations.com/>**: setup, the
 configuration file, repository settings, chart values, the dashboard,
@@ -62,7 +63,7 @@ metrics and development.
 - **Flow diagrams, opt-in.** The summary can draw the flow a change adds or
   alters as a Mermaid diagram, so a reviewer sees the path before reading
   the code.
-- **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
+- **Providers and limits.** OpenRouter, OpenAI, Anthropic and OpenCode adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through
   kritika's gateway.
@@ -82,8 +83,9 @@ metrics and development.
 ## Installing
 
 kritika ships as an OCI Helm chart, `oci://ghcr.io/home-operations/charts/kritika`.
-The chart's [README](charts/kritika/README.md) lists every value and shows the
-CloudNativePG setup for the three database roles. In short: a Postgres with
+The chart's [README](charts/kritika/README.md) lists every value, and
+[Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
+sets up the database and its three roles. In short: a Postgres with
 [VectorChord](https://github.com/tensorchord/VectorChord) (and the pgvector it
 builds on) loaded, with an owner, an application and a runner role; the one
 public URL under `config.webUrl`, which the dashboard and GitHub's webhooks
