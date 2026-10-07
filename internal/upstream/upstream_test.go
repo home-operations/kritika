@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -251,6 +252,26 @@ func TestFetch(t *testing.T) {
 					t.Fatalf("HEAD: %+v", res)
 				}
 			})
+		})
+	}
+}
+
+// TestFetchMissing: a fetch names the paths the tree has nothing under,
+// each with the tree's paths that end in it.
+func TestFetchMissing(t *testing.T) {
+	src := newSource(t)
+	for _, srv := range servers(t, src) {
+		t.Run(srv.name, func(t *testing.T) {
+			dest := filepath.Join(t.TempDir(), "out")
+			req := Request{URL: srv.url, Ref: "main", Paths: []string{"a", "pkg/b", "b.go", "nope"}}
+			res, err := (&Fetcher{Transport: srv.transport, Limits: testLimits}).Fetch(t.Context(), req, dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []MissingPath{{Path: "a", Near: []string{"pkg/a"}}, {Path: "b.go", Near: []string{"pkg/b/b.go"}}, {Path: "nope"}}
+			if files := names(written(t, dest)); !reflect.DeepEqual(res.Missing, want) || !slices.Equal(files, []string{"pkg/b/b.go"}) {
+				t.Fatalf("missing = %+v, written = %q; want %+v", res.Missing, files, want)
+			}
 		})
 	}
 }

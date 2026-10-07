@@ -176,8 +176,12 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	if res.Truncated {
 		b.WriteString(" The writing stopped at this review's limit, so the paths that sort last are missing.")
 	}
-	if res.Files+res.Skipped == 0 && !res.Truncated && len(req.Paths) > 0 {
-		b.WriteString(" No file is under the paths asked for.")
+	for _, m := range res.Missing {
+		fmt.Fprintf(&b, " Nothing is under %s", m.Path)
+		if len(m.Near) > 0 {
+			fmt.Fprintf(&b, "; these paths end in it: %s", strings.Join(m.Near, ", "))
+		}
+		b.WriteString(".")
 	}
 	if req.From == "" {
 		return b.String(), nil

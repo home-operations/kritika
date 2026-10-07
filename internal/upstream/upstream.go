@@ -104,7 +104,20 @@ type Result struct {
 	Diff    string
 	Changed []string
 	DiffCut int
+	// Missing are the Paths the tree has nothing under.
+	Missing []MissingPath
 }
+
+// MissingPath is a path a fetch asked for that the tree has nothing under,
+// with the tree's paths that end in it, at most nearMax: where a path
+// given by its last segments is.
+type MissingPath struct {
+	Path string
+	Near []string
+}
+
+// nearMax bounds MissingPath.Near.
+const nearMax = 5
 
 // Fetcher fetches repositories within its Limits.
 type Fetcher struct {
@@ -198,6 +211,9 @@ func (f *Fetcher) fetch(ctx context.Context, repo *git.Repository, req Request, 
 		return nil, err
 	}
 	res.Skipped = skipped
+	if res.Missing, err = missingPaths(toTree, paths); err != nil {
+		return nil, err
+	}
 	if res.Filtered {
 		if err := backfill(ctx, repo, opts, blobs(files, changes)); err != nil {
 			return nil, f.fetchErr(wire, err)
@@ -381,6 +397,42 @@ func listFiles(tree *object.Tree, paths []string) ([]file, int, error) {
 		}
 		files = append(files, file{name: name, hash: e.Hash})
 	}
+}
+
+// missingPaths are the paths tree has nothing under, each with the tree's
+// paths that end in it. It reads only trees, which a filtered fetch has.
+func missingPaths(tree *object.Tree, paths []string) ([]MissingPath, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	found := make([]bool, len(paths))
+	near := make([][]string, len(paths))
+	w := object.NewTreeWalker(tree, true, nil)
+	defer w.Close()
+	for {
+		name, _, err := w.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("upstream: walk: %w", err)
+		}
+		for i, p := range paths {
+			switch {
+			case name == p || strings.HasPrefix(name, p+"/"):
+				found[i] = true
+			case strings.HasSuffix(name, "/"+p) && len(near[i]) < nearMax:
+				near[i] = append(near[i], name)
+			}
+		}
+	}
+	var out []MissingPath
+	for i, p := range paths {
+		if !found[i] {
+			out = append(out, MissingPath{Path: p, Near: near[i]})
+		}
+	}
+	return out, nil
 }
 
 // blobs are the blobs that writing files and rendering changes read, each
