@@ -429,9 +429,10 @@ a new title.
   `rg` and `yq`. The agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
   review and public repositories. With `gh` or `curl` the agent can also
-  fetch another repository's files with `fetch_repo`, such as the upstream
-  of a dependency on any host. [Runner tools](security.md#runner-tools)
-  says what bounds a command and a fetch.
+  fetch another repository's files, or list its tags, with `fetch_repo`,
+  such as the upstream of a dependency on any host.
+  [Runner tools](security.md#runner-tools) says what bounds a command and
+  a fetch.
 
 ### Environment variables
 

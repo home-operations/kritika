@@ -280,7 +280,7 @@ func TestFetchLimits(t *testing.T) {
 		strings.Contains(res.Diff, "big.bin") || !strings.Contains(res.Diff, "rename to pkg/a/new.go") {
 		t.Fatalf("a changed file over the blob limit is listed but not diffed: %+v, %v", res, err)
 	}
-	if _, err := fetch(testLimits, Request{Ref: "v9"}); err == nil || !strings.Contains(err.Error(), "no such tag or branch") ||
+	if _, err := fetch(testLimits, Request{Ref: "v9"}); !errors.Is(err, ErrNoRef) || !strings.Contains(err.Error(), "no such tag or branch") ||
 		!strings.Contains(err.Error(), "full SHA") {
 		t.Fatalf("an unknown ref: err = %v", err)
 	}

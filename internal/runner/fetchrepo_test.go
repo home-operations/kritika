@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/home-operations/kritika/internal/gittest"
-	"github.com/home-operations/kritika/internal/upstream"
 )
 
 // servedRepo serves, over HTTPS, a repository with two tags: v1, with
@@ -149,15 +149,16 @@ func TestFetchRepoDiffPastBudget(t *testing.T) {
 
 func TestFetchRepoSources(t *testing.T) {
 	tool := &fetchRepoTool{}
-	for _, req := range []upstream.Request{
-		{URL: "https://github.com/a/b.git", Ref: "v2"},
-		{URL: "https://github.com/a/b", Ref: "v2", From: "v1"},
-		{URL: "https://github.com/a/b/", Ref: "v2"},
-		{URL: "https://gitlab.com/g/p.git", Ref: "v2"},
+	for _, read := range [][2]string{
+		{"https://github.com/a/b.git", "tree/v2"},
+		{"https://github.com/a/b", "compare/v1...v2"},
+		{"https://github.com/a/b/", "tree/v2"},
+		{"https://github.com/a/b", "tags"},
+		{"https://gitlab.com/g/p.git", "tree/v2"},
 	} {
-		tool.record(req)
+		tool.record(read[0], read[1])
 	}
-	want := []string{"https://github.com/a/b/tree/v2", "https://github.com/a/b/compare/v1...v2", "https://gitlab.com/g/p"}
+	want := []string{"https://github.com/a/b/tree/v2", "https://github.com/a/b/compare/v1...v2", "https://github.com/a/b/tags", "https://gitlab.com/g/p"}
 	if got := tool.Sources(); !slices.Equal(got, want) {
 		t.Fatalf("sources = %q, want %q", got, want)
 	}
@@ -184,6 +185,77 @@ func TestDirName(t *testing.T) {
 		}
 		if got != tt.want {
 			t.Errorf("dirName(%d, %q, %q) = %q, want %q", tt.n, tt.url, tt.ref, got, tt.want)
+		}
+	}
+}
+
+func TestFetchRepoTags(t *testing.T) {
+	url, tool := servedRepo(t)
+	run := func(in map[string]any) (string, error) {
+		t.Helper()
+		in["url"] = url
+		return tool.Run(t.Context(), fetchInput(t, in))
+	}
+
+	if out, err := run(map[string]any{"tags": ""}); err != nil || out != "The 2 tags of "+url+", newest first:\nv2\nv1" {
+		t.Fatalf("every tag = %q, %v", out, err)
+	}
+	if out, err := run(map[string]any{"tags": "V2"}); err != nil || out != "1 of the 2 tags of "+url+` contain "V2", newest first:`+"\nv2" {
+		t.Fatalf("tags with V2 = %q, %v", out, err)
+	}
+	if out, err := run(map[string]any{"tags": "9.9"}); err != nil || !strings.HasPrefix(out, "None of the 2 tags of "+url+` contain "9.9". The newest: v2, v1.`) {
+		t.Fatalf("no tag with 9.9 = %q, %v", out, err)
+	}
+	if _, err := run(map[string]any{"tags": "", "ref": "v2"}); err == nil || !strings.Contains(err.Error(), "give tags alone") {
+		t.Fatalf("tags with a ref: err = %v", err)
+	}
+	if tool.fetches != 0 || tool.written != 0 {
+		t.Fatalf("a listing counted as a fetch: fetches = %d, written = %d", tool.fetches, tool.written)
+	}
+
+	_, err := run(map[string]any{"ref": "release-2", "paths": []string{"pkg"}})
+	if err == nil || !strings.Contains(err.Error(), "no such tag or branch") || !strings.HasSuffix(err.Error(), ". Tags with 2: v2.") {
+		t.Fatalf("a missing ref with a version: err = %v", err)
+	}
+	if _, err := run(map[string]any{"ref": "v1", "from": "nightly"}); err == nil || !strings.HasSuffix(err.Error(), ". Its newest tags: v2, v1.") {
+		t.Fatalf("a missing ref without one: err = %v", err)
+	}
+
+	if tool.listings != 5 {
+		t.Fatalf("listings = %d, want 5: three asked for and two after a missing ref", tool.listings)
+	}
+
+	tool.listings = listMax
+	if _, err := run(map[string]any{"tags": ""}); err == nil || !strings.Contains(err.Error(), "listed tags 8 times") {
+		t.Fatalf("past the listing count: err = %v", err)
+	}
+	if _, err := run(map[string]any{"ref": "release-2"}); err == nil || !strings.HasSuffix(err.Error(), "a commit's full SHA.") {
+		t.Fatalf("a missing ref past the listing count names no tags: err = %v", err)
+	}
+}
+
+func TestTagList(t *testing.T) {
+	tags := make([]string, 300)
+	for i := range tags {
+		tags[i] = fmt.Sprintf("v1.%d.0", 299-i)
+	}
+	out := tagList("https://x/r", "", tags)
+	if !strings.HasPrefix(out, "The 300 tags of https://x/r, newest first; the first 200, so narrow tags for the rest:\nv1.299.0\n") ||
+		strings.Count(out, "\n") != 200 || !strings.HasSuffix(out, "\nv1.100.0") {
+		t.Fatalf("300 tags = %.120q…", out)
+	}
+	if got := tagList("https://x/r", "", nil); got != "https://x/r has no tags." {
+		t.Fatalf("no tags = %q", got)
+	}
+}
+
+func TestVersionOf(t *testing.T) {
+	for ref, want := range map[string]string{
+		"v0.37.0": "0.37.0", "descheduler-0.37.0": "0.37.0", "gpu-v0.12.1": "0.12.1", "0.0.6": "0.0.6",
+		"main": "", "HEAD": "", strings.Repeat("a1", 20): "",
+	} {
+		if got := versionOf(ref); got != want {
+			t.Errorf("versionOf(%q) = %q, want %q", ref, got, want)
 		}
 	}
 }

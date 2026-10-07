@@ -42,8 +42,9 @@ func TestSystemPrompt(t *testing.T) {
 		fetch > strings.Index(withFetch, "Check errors.") || !strings.Contains(withFetch, "Give paths to fetch only part") {
 		t.Fatalf("fetch_repo must follow the run tool, before the instructions:\n%s", withFetch)
 	}
-	if !strings.Contains(withFetch, "For a version bump, fetch the new version with from set to the old\none") {
-		t.Fatalf("a prompt with fetch_repo must send a version bump to it:\n%s", withFetch)
+	if !strings.Contains(withFetch, "For a version bump, fetch the new version with from set to the old\none") ||
+		!strings.Contains(withFetch, "list them with tags instead of ref rather than guess") {
+		t.Fatalf("a prompt with fetch_repo must send a version bump to it, and an uncertain tag to a listing:\n%s", withFetch)
 	}
 	if strings.Contains(bare, "search_code") {
 		t.Fatalf("a prompt without search mentions search_code:\n%s", bare)

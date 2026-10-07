@@ -47,6 +47,10 @@ const (
 // Limits.WireBytes.
 var ErrTooLarge = errors.New("upstream: the repository sends more than a fetch may take")
 
+// ErrNoRef is what a fetch fails with when the repository has no tag or
+// branch by the name asked for.
+var ErrNoRef = errors.New("upstream: no such tag or branch")
+
 // Request is one fetch.
 type Request struct {
 	// URL is the repository's https:// clone URL.
@@ -309,7 +313,7 @@ func (f *Fetcher) fetchErr(wire *cappedTransport, err error) error {
 	case wire.over():
 		return fmt.Errorf("%w: past %d MiB", ErrTooLarge, f.Limits.WireBytes>>20)
 	case errors.Is(err, git.ErrRemoteRefNotFound) || errors.Is(err, transport.ErrEmptyRemoteRepository):
-		return fmt.Errorf("upstream: no such tag or branch (%w); give one the repository has, or a commit's full SHA", err)
+		return fmt.Errorf("%w (%w); give one the repository has, or a commit's full SHA", ErrNoRef, err)
 	}
 	return fmt.Errorf("upstream: fetch: %w", err)
 }
