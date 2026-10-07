@@ -57,12 +57,12 @@ var goldenRepo = Repository{
 }
 
 var goldenRepoSettings = RepoSettings{
-	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large"}, Filters: configfile.Filters{
+	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large", Effort: "high"}, Filters: configfile.Filters{
 		Include: []configfile.Filter{{Expr: `pr.author.startsWith("renovate")`}, {Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
 		Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
 	},
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
-	Confidence: configfile.Confidence{Model: "openrouter/acme-judge", Threshold: 5, Risk: review.RiskLow, Instructions: "Image bumps are low."},
+	Confidence: configfile.Confidence{Model: "openrouter/acme-judge", Effort: "low", Threshold: 5, Risk: review.RiskLow, Instructions: "Image bumps are low."},
 	Review: configfile.Review{
 		RequireSuggestedFix: true,
 		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
@@ -119,7 +119,7 @@ var goldens = map[string]any{
 			Credentials: CredentialsSet{ClientID: true, PrivateKey: true, WebhookSecret: true},
 			HookPath:    "/hooks/alpha-bot", LastWebhookAt: &t0,
 		},
-		Models: configfile.Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small"},
+		Models: configfile.Models{Review: "openrouter/acme-large", Fallback: "openrouter/acme-small", Effort: "high"},
 		Limits: configfile.Limits{Concurrency: 2, ReviewsPerDay: 50, TokensPerMonth: 1000000}, Filters: configfile.Filters{Include: []configfile.Filter{}, Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}}},
 		Usage: goldenSummary.Usage, LastPolledAt: &t1,
 	},

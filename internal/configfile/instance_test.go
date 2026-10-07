@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -169,33 +170,35 @@ func TestFileReviewDefaults(t *testing.T) {
 	t.Setenv("KRITIKA_REVIEW_APPROVE", "true")
 	t.Setenv("KRITIKA_REVIEW_FIXES", "true")
 	t.Setenv("KRITIKA_REVIEW_COST", "true")
+	t.Setenv("KRITIKA_REVIEW_EFFORT", "low")
 	t.Setenv("KRITIKA_REVIEW_INCREMENTAL", "7")
 	models := "review: { model: openrouter/big, fallback: openrouter/small"
 	withDefaults := func(reviewKeys, rootKeys string) []byte {
 		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
 	}
 	t.Setenv("KRITIKA_TRIGGER_LIMIT", "3")
-	f, err := Parse(withDefaults(", diagram: true", ""))
+	f, err := Parse(withDefaults(", diagram: true, effort: xhigh", ""))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || !s.Review.Approve ||
+	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
 		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost {
-		t.Fatalf("settings = %+v; want the file's and the environment's", s)
+		t.Fatalf("settings = %+v; want the file's and the environment's, the environment's effort over the file's", s)
 	}
 	src := f.Sources(a, "acme/x")
 	for key, want := range map[string]Source{
 		"trigger.limit": SourceEnv, "trigger.settle": SourceEnv,
 		"review.approve": SourceEnv, "review.fixes": SourceEnv, "review.incremental": SourceEnv,
-		"review.diagram": SourceDefaults, "review.cost": SourceEnv,
+		"review.diagram": SourceDefaults, "review.cost": SourceEnv, "review.effort": SourceEnv,
 	} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
+		{"review.effort", FileValue{Value: "low", Source: SourceEnv}},
 		{"review.approve", FileValue{Value: "true", Source: SourceEnv}},
 		{"review.fixes", FileValue{Value: "true", Source: SourceEnv}},
 		{"review.incremental", FileValue{Value: "7", Source: SourceEnv}},
@@ -222,6 +225,7 @@ func TestFileReviewDefaults(t *testing.T) {
 		{"KRITIKA_REVIEW_FIXES", "1.5", "KRITIKA_REVIEW_FIXES must be true or false"},
 		{"KRITIKA_REVIEW_DIAGRAM", "sure", "KRITIKA_REVIEW_DIAGRAM must be true or false"},
 		{"KRITIKA_REVIEW_COST", "sure", "KRITIKA_REVIEW_COST must be true or false"},
+		{"KRITIKA_REVIEW_EFFORT", "turbo", `review.effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`},
 		{"KRITIKA_REVIEW_INCREMENTAL", "many", "KRITIKA_REVIEW_INCREMENTAL must be a whole number"},
 		{"KRITIKA_TRIGGER_LIMIT", "-1", "trigger.limit must not be negative"},
 	} {
@@ -245,7 +249,7 @@ func TestConfidenceSettings(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	if c := f.Settings(&f.Accounts[0], "acme/x").Confidence; c != (Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
-		t.Fatalf("confidence = %+v; want no model, the default threshold and the lowest risk", c)
+		t.Fatalf("confidence = %+v; want no model, the provider's effort, the default threshold and the lowest risk", c)
 	}
 	for _, tt := range []struct{ name, doc, env, want string }{
 		{name: "a threshold off the scale", doc: "confidence: { threshold: 6 }\n", want: "configfile: confidence.threshold must be between 0 and 5, got 6"},
@@ -256,6 +260,9 @@ func TestConfidenceSettings(t *testing.T) {
 		{name: "a risk that is no level", doc: "confidence: { risk: none }\n",
 			want: `configfile: confidence.risk must be low, medium, high or critical, got "none"`},
 		{name: "a risk in the environment that is no level", env: "RISK=severe", want: "confidence.risk must be low, medium, high or critical"},
+		{name: "an effort that is no level", doc: "confidence: { effort: turbo }\n",
+			want: `configfile: confidence.effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`},
+		{name: "an effort in the environment that is no level", env: "EFFORT=turbo", want: "confidence.effort must be none, minimal, low, medium, high, xhigh or max"},
 		{name: "a threshold in the environment that is no number", env: "THRESHOLD=high", want: "KRITIKA_CONFIDENCE_THRESHOLD must be a whole number"},
 		{name: "a gate in the environment that is no boolean", env: "GATE=maybe", want: "KRITIKA_CONFIDENCE_GATE must be true or false"},
 	} {
@@ -268,10 +275,10 @@ func TestConfidenceSettings(t *testing.T) {
 			}
 		})
 	}
-	doc := fileWithDefaults + `confidence: { model: openrouter/judge, risk: medium, instructions: "Image bumps are low." }
+	doc := fileWithDefaults + `confidence: { model: openrouter/judge, effort: low, risk: medium, instructions: "Image bumps are low." }
 repositories:
   acme/x: { confidence: { threshold: 3, gate: false, risk: high } }
-  acme/y: { confidence: { model: "", instructions: "" } }
+  acme/y: { confidence: { model: "", effort: "", instructions: "" } }
 `
 	t.Setenv("KRITIKA_CONFIDENCE_THRESHOLD", "4")
 	t.Setenv("KRITIKA_CONFIDENCE_GATE", "true")
@@ -280,8 +287,9 @@ repositories:
 	}
 	a := &f.Accounts[0]
 	for repo, want := range map[string]Confidence{
-		"acme/z": {Model: "openrouter/judge", Threshold: 4, Gate: true, Risk: review.RiskMedium, Instructions: "Image bumps are low."},
-		"acme/x": {Model: "openrouter/judge", Threshold: 3, Gate: false, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
+		"acme/z": {Model: "openrouter/judge", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium, Instructions: "Image bumps are low."},
+		"acme/x": {Model: "openrouter/judge", Effort: model.EffortLow, Threshold: 3, Gate: false, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
+		// An effort written empty leaves it to the provider.
 		"acme/y": {Threshold: 4, Gate: true, Risk: review.RiskMedium},
 	} {
 		if got := f.Settings(a, repo).Confidence; got != want {

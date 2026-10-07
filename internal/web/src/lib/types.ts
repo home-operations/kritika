@@ -144,9 +144,12 @@ export interface Connection {
   lastUnsignedWebhookAt: string | null;
 }
 
+// effort is how hard the review model reasons, one of the providers'
+// levels; '' leaves it to the provider.
 export interface Models {
   review: string;
   fallback: string;
+  effort: string;
 }
 
 export interface Limits {
@@ -254,7 +257,7 @@ export interface RepoSettings {
   maxAutoReviews: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
-  confidence: { model: string; threshold: number; gate: boolean; risk: Risk; instructions: string };
+  confidence: { model: string; effort: string; threshold: number; gate: boolean; risk: Risk; instructions: string };
   agent: AgentLimits;
   limits: Limits;
 }

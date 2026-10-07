@@ -463,6 +463,14 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 			return err
 		}
 	}
+	for _, e := range []struct {
+		key    string
+		effort *model.Effort
+	}{{keyEffort, r.Review.Effort}, {keyScorerEffort, r.Confidence.Effort}} {
+		if e.effort != nil && *e.effort != "" && !e.effort.Valid() {
+			return fmt.Errorf("configfile: %s%s must be %s, got %q", where, e.key, model.EffortLevels, *e.effort)
+		}
+	}
 	if th := r.Confidence.Threshold; th != nil && !ValidConfidence(*th) {
 		return fmt.Errorf("configfile: %s%s must be between 0 and %d, got %d", where, keyThreshold, MaxConfidence, *th)
 	}

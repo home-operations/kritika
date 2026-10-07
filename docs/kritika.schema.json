@@ -17,6 +17,10 @@
       "properties": {
         "model": { "$ref": "#/$defs/model" },
         "fallback": { "$ref": "#/$defs/model" },
+        "effort": {
+          "$ref": "#/$defs/effort",
+          "description": "How hard the review model, and the fallback that takes its step, reasons; replaces the admin's."
+        },
         "fixes": {
           "type": "boolean",
           "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
@@ -39,6 +43,10 @@
         "model": {
           "$ref": "#/$defs/model",
           "description": "The model that scores a reviewed pull request, replacing the admin's."
+        },
+        "effort": {
+          "$ref": "#/$defs/effort",
+          "description": "How hard the confidence model reasons; replaces the admin's."
         },
         "threshold": {
           "type": "integer",
@@ -227,6 +235,10 @@
       "type": "string",
       "pattern": "^[^/]+/.+$",
       "description": "A <provider>/<model> reference, of a provider the instance or the account declares."
+    },
+    "effort": {
+      "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", ""],
+      "description": "A reasoning effort, lowest first, or \"\" to leave it to the provider. Every provider takes low to max; the Anthropic Messages API has no level under low and gets none and minimal as low."
     },
     "path": {
       "type": "string",
