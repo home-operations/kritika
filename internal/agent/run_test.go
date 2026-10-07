@@ -119,8 +119,10 @@ func TestRunTool(t *testing.T) {
 
 	t.Run("output is capped", func(t *testing.T) {
 		out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["flood","5000"]}`))
-		if err != nil || !strings.HasSuffix(out, "\n[truncated 904 bytes]") || strings.Count(strings.TrimPrefix(out, "exit code 0\n"), "x") != 4096 {
-			t.Fatalf("out = %.80q…, err = %v", out, err)
+		kept := strings.Count(strings.TrimPrefix(out, "exit code 0\n"), "x")
+		if err != nil || len(out) > 4096 || !strings.HasPrefix(out, "exit code 0\n") ||
+			!strings.HasSuffix(out, fmt.Sprintf("\n[truncated %d bytes]", 5000-kept)) {
+			t.Fatalf("out = %d bytes ending %q, err = %v; want at most 4096 with the bytes dropped counted", len(out), out[max(len(out)-40, 0):], err)
 		}
 	})
 

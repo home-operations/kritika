@@ -34,8 +34,8 @@ func TestReadDescriptionTool(t *testing.T) {
 		})
 	}
 	t.Run("the output is capped", func(t *testing.T) {
-		got, err := ReadDescriptionTool(body, nil, 20).Run(t.Context(), nil)
-		if err != nil || !strings.HasPrefix(got, body[:20]+"\n[truncated ") {
+		got, err := ReadDescriptionTool(body, nil, 64).Run(t.Context(), nil)
+		if err != nil || len(got) > 64 || !strings.HasPrefix(got, body[:20]) || !strings.Contains(got, "\n[truncated ") {
 			t.Fatalf("got %q, %v", got, err)
 		}
 	})

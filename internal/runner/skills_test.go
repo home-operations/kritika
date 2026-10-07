@@ -155,10 +155,10 @@ func TestSkillTool(t *testing.T) {
 		{name: "the body", input: `{"name":"migrations"}`, want: skillDoc("name: migrations\ndescription: Migrations.", "Reversible.\n")},
 		{name: "a file inside the folder", input: `{"name":"review-go","file":"checklist.md"}`, want: "- wrap errors\n"},
 		{name: "a path cleaned to inside the folder", input: `{"name":" review-go ","file":"./refs/../checklist.md"}`, want: "- wrap errors\n"},
-		{name: "the folder itself is the body, cut to the limit", input: `{"name":"review-go","file":"."}`, want: goBody[:64] + "\n[cut: the file is longer]"},
+		{name: "the folder itself is the body, cut to the limit", input: `{"name":"review-go","file":"."}`, want: goBody[:38] + "\n[cut: the file is longer]"},
 		{
 			name: "a cut that keeps whole characters", input: `{"name":"review-go","file":"refs/long.md"}`,
-			want: strings.Repeat("é", 32) + "\n[cut: the file is longer]",
+			want: strings.Repeat("é", 19) + "\n[cut: the file is longer]",
 		},
 		{name: "the body again", input: `{"name":"migrations","file":"SKILL.md"}`, want: skillDoc("name: migrations\ndescription: Migrations.", "Reversible.\n")},
 	}
