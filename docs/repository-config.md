@@ -22,9 +22,7 @@ its first line names the schema:
 ## What it may set
 
 The file takes the review keys the configuration file's root and its
-repository entries take, in the same groups. It narrows what an
-admin allows, adds to the review's rules and context, and replaces the
-rest:
+repository entries take, in the same groups:
 
 ```yaml
 review:
@@ -55,217 +53,293 @@ skills:
     migrations: { paths: ["db/migrations/**"] }
 ```
 
-- `enabled: false`: stops reviews, follow-ups and indexing for the
-  repository. It cannot turn a disabled repository back on.
-- `review.model` / `review.fallback`: a `<provider>/<model>` of a
-  provider the instance or the repository's account declares, used for
-  the review and for follow-ups. A model of any other provider is
-  dropped; the account's limits bound what a choice can cost. A review
-  whose model fails goes on with the fallback, on the same provider or
-  another, and so does a follow-up.
-- `review.feedback`: how much the review says, replacing the
-  admin's.
-
-| `review.feedback`    | What the review reports                                                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix changes those lines or adds lines after them |
-| `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
-| `minimal`            | only what would stop the review: correctness, security and reliability findings; a finding of another category is dropped before it is posted                                        |
-
-  Only nits move between levels: with `comments.inline` on, a blocking or
-  important finding a level keeps is posted inline wherever the diff shows
-  its line, and the summary lists every finding posted. Every finding carries a category beside its severity,
-  what kind of problem it is: `correctness`, `security`, `performance`,
-  `reliability`, `maintainability` or `tests`; the comments show it, the
-  dashboard filters by it, and `kritika_findings_total` counts by it.
-
-- `comments.inline: false`: posts the summary alone, without inline
-  comments.
-- `comments.summary` / `comments.finding`: paths to Go
-  [text/template](https://pkg.go.dev/text/template) templates that replace
-  kritika's built-in summary and inline comment templates; an empty path
-  restores the built-in one where the admin set a template. They use the
-  [sprout](https://github.com/go-sprout/sprout) helpers tuppr and chaski
-  expose (std, strings, conversion, encoding, numeric, slices, maps, regex,
-  time, semver and reflect; not env, filesystem, network, random, uniqueid,
-  checksum or crypto, and not `set` or `unset`). The `template`, `define` and
-  `block` actions are refused, so a template cannot read any file or call
-  any other template. The summary template's dot is the review (`.Number`,
-  `.HeadSHA`, `.HeadURL`, `.HeadSubject`, the head commit's subject line,
-  cut to 40 characters and escaped for Markdown,
-  `.Reviews`, how many reviews of the pull request this one makes, `.Model`,
-  `.AuthorIsBot`, `.Result.Summary.Headline`, `.Result.Summary.Take`,
-  `.Result.Summary.Praise`, `.Result.Summary.Diagram`, Mermaid source for
-  the flow the change adds or alters, "" unless `review.diagram` is on and
-  the change has one, `.Result.Findings`,
-  `.Counts.Blocking`/`.Important`/`.Nit`, `.Unanchored`, the findings on
-  lines the diff does not show, `.Notes`, `.Incremental`, `.PriorHeadSHA`,
-  `.PriorHeadURL`, `.Prior`, the last review's findings this review did
-  not report again, each with `.Resolved`, and the dismissed ones each with
-  `.Dismissed` and `.DismissReason`, `.Sources`, `.Incomplete`, `.Confidence`, nil unless the review was
-  scored, with its `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`, `.Approval`, nil unless
-  `review.approve` is on, with `.Approved` and `.Reason`, "" when a
-  confidence score approved it, `.Cost`, what the pull request's reviews
-  have cost, "" unless the admin's `review.cost` is on, and `.WebURL` and
-  `.PullURL`, the dashboard's origin and the pull request's page on it,
-  where the built-in template's re-run badge points). The inline
-  template's dot is one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`,
-  `.Category`, `.Title`, `.Explanation`, `.SuggestedFix`, `.Replacement`,
-  `.AgentPrompt`, `.AgentPromptFence`, a code fence longer than any in the
-  prompt, `.Rules`, the ids of the rules it enforces, `.URL`, a link to the
-  lines at the head commit, and `.ThreadURL`, a link to its inline comment
-  thread once one is posted). Rendering is bounded (loop iterations, bytes
-  per function call, output size, a deadline), so a template cannot hang
-  or exhaust memory; one that exceeds a bound falls back to the default,
-  with a note in the summary.
-- `review.fixes: true`: findings must include a suggested fix. The
-  file can turn the requirement on, never off.
-- `review.approve: true`: a review that finds nothing blocking or important
-  approves the pull request, as a review pinned to the head it saw; nits
-  alone do not withhold it. Where a confidence score is asked for, the
-  score decides instead: the pull request is approved when its score
-  reaches `confidence.threshold` and its risk is within `confidence.risk`,
-  and a review left unscored approves nothing. A later review of the same
-  pull request whose verdict no longer allows it dismisses kritika's
-  approval, as does a reviewer who stands as requesting changes; a head
-  that moved while it was reviewed is left to its own review. The summary
-  says which way it went: `Approved`, or `Not approved` with the reason.
-  It replaces the admin's, in either direction: a repository turns
-  it on where the instance leaves it off. Off unless set.
-- `review.diagram: true`: the summary draws the flow the change adds or
-  alters, a request path, a data flow or a state machine, as a Mermaid
-  flowchart or sequence diagram the forge renders, its nodes plain-language
-  steps rather than function names. The model
-  leaves it out when the change has no such flow, as for a version bump
-  or a documentation change, and kritika keeps only a flowchart, graph
-  or sequence diagram under 4 KiB. A re-review of the commits since the
-  last review is shown that review's diagram, to return as it is, redrawn
-  where the new commits alter the flow, or empty once the flow is gone;
-  when it answers with no diagram at all, kritika keeps the last one.
-  It replaces the admin's, in either direction. Off unless set, since it
-  costs output tokens on every review.
-- `confidence.model` / `confidence.threshold` / `confidence.gate`: the
-  model that scores a reviewed pull request from 0 to 5, a
-  `<provider>/<model>` held to the same providers as `review.model`, the
-  score the pull request must reach, and whether its commit status fails
-  under that score (off, the status reports the score and passes); each
-  replaces the admin's, the threshold and the gate in either direction.
-  `confidence.risk` is the highest risk a change may be rated and still be
-  approved, and may only lower the admin's; a higher one is dropped.
-  See [confidence and risk](configuration.md#confidence-and-risk)
-  for how a score is reached.
-- `trigger.include` / `trigger.exclude`: conditions on the pull request,
-  each an `expr`, `paths` globs that hold when a changed path matches
-  one, or both, when both must hold, with an optional `name`. A pull request is reviewed when
-  one `include` holds, or there are none, and no `exclude` holds. The
-  lists are passed beside the admin's own: a pull request must pass both.
-  A condition under a name one of the admin's has is dropped, and the
-  review's summary says so. Each expression is compiled and smoke-tested
-  against a sample pull request when the file is parsed, so a broken one
-  is rejected rather than silently skipping every review. A condition on
-  the pull request alone is decided before any runner starts; one with
-  `paths` or `pr.lines` is decided once the pull request is fetched,
-  before any model is called. The commit status of a review the lists
-  keep out names the exclusion that held when it has a name. See
-  [the recipes](#include-and-exclude-recipes).
-- `ignore`: path globs added to the admin's own ignore list, for
-  reviews and indexing alike. A pull request whose every changed path is
-  ignored, by these, the admin's globs or kritika's defaults (vendored
-  trees, lockfiles, generated and minified code, source maps and logs), is
-  skipped.
-- `rules`: checks the review makes, added after the admin's. Each has an `id` (lowercase letters,
-  digits and hyphens, at most 64 characters) that findings cite it by,
-  and either the `rule` itself (at most 2000 characters) or a `file`,
-  read from the same merge-base tree, whose content is the check; optional `paths`
-  globs apply it only when a changed path matches one, so checks for one
-  part of the repository do not spend the room on changes elsewhere. An
-  optional `when`, a list of conditions as `trigger.include` takes them,
-  each an `expr` with an optional `name`, applies it only to a pull request
-  one of them holds for, such as
-  `pr.headRef.startsWith("renovate/")` for Renovate's; each is compiled and
-  smoke-tested like a trigger condition, and one that fails to evaluate
-  does not hold. A rule whose `id` an admin's rule has is
-  dropped, and the review's summary says so. The rules a change matches
-  are listed by id in the system prompt (and a follow-up's), a file rule
-  under a heading of its own, within 16 KiB of rule text and 32 KiB of
-  rule files, and a finding lists the ids of the rules it enforces,
-  keeping only ones its review was given.
-- `context`: files that explain the code, each a `path` with a
-  `description` and optional `paths` globs, added after the admin's. The
-  review is pointed at each file to read it with its own tools. A file
-  with `paths` applies only when a changed path matches one of them.
-- `skills`: the [Agent Skills](https://agentskills.io) the repository
-  keeps for its reviews. A skill is a folder holding a `SKILL.md`: YAML
-  frontmatter with a `name` (lowercase letters, digits and hyphens, at
-  most 64 characters; the folder's name when unset) and a `description`,
-  then instructions, with any files it needs beside it. Each folder
-  directly under `.agents/skills` and `.claude/skills` that holds a
-  `SKILL.md` is one, with nothing to configure. Skills are read from the
-  merge base, as this file and the rules are, so a pull request cannot
-  add or rewrite a skill to steer its own review. The system prompt
-  lists only each skill's name and description; the review reads a
-  skill's instructions, or a file in its folder, with its `load_skill`
-  tool when the skill fits the pull request, from the merge base too.
-  - `skills.paths`: the directories whose folders are skills, replacing
-    the admin's. `paths: []` looks nowhere, which turns skills off for
-    the repository.
-  - `skills.scope.<name>`: narrows when the skill of that name is
-    offered, added to the admin's scopes, a skill named in both taking
-    this file's. Its `paths` are globs, one of which a changed path must
-    match; its `when` is a list of conditions as a rule's `when` takes
-    them, one of which must hold. With both, both must.
-
-  At most 50 skills are read, a description is at most 1024 characters,
-  and the names and descriptions listed take at most 4 KiB of the
-  prompt. A skill past a bound, or whose `SKILL.md` has no frontmatter,
-  no description or a name another skill has, is left out and noted
-  rather than failing the review. `allowed-tools` and every other
-  frontmatter key is ignored: a skill guides a review and grants it no
-  tool or command, and the review skips a step that needs one it was not
-  given. The review's summary carries a note of the skills it was offered
-  and the ones it read, such as
-  `Skills offered: review-renovate-pr, go-style; read: review-renovate-pr`,
-  and each read shows in its transcript. A review offered commands through
-  the run tool carries a note of the same shape beside it, such as
-  `Commands offered: gh, helm; run: helm`. A follow-up is answered by an
-  agent with the review's tools and commands, under the same `agent`
-  limits, in a runner of its own; it is offered no skills.
-
-  A rule with a `file` is in the prompt whole wherever it applies, and
-  findings cite it by id. A `context` entry is a pointer to one file, with a
-  description written in the configuration. A skill carries its own
-  description, costs the prompt only that until the review reads it, and
-  is not cited by findings.
-
-A review also adds to its instructions the repository's agent files: the
-`AGENTS.md` of the root and of each directory above a changed path, or a
-directory's `CLAUDE.md` where it has no `AGENTS.md`, read from the merge
-base, within 32 KiB. They follow the rules in the prompt.
+| Key                                                          | What it sets                                                       | Against the admin's value                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
+| `enabled`                                                    | `false` stops reviews, follow-ups and indexing                     | can only turn the repository off                |
+| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                        |
+| [`review.feedback`](#feedback)                               | how much the review says                                           | replaces                                        |
+| `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
+| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows                   | replaces, either way                            |
+| [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                      | replaces, either way                            |
+| [`confidence.*`](#confidence)                                | the score that judges a review                                     | replaces; `risk` may only be lowered            |
+| [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                   | judged beside the admin's lists                 |
+| `comments.inline`                                            | `false` posts the summary alone, without inline comments           | replaces                                        |
+| [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                      | replaces                                        |
+| [`ignore`](#ignored-paths)                                   | paths the review and the index leave out                           | added                                           |
+| [`rules`](#rules)                                            | checks the review makes                                            | added after; one under an admin's id is dropped |
+| [`context`](#context)                                        | files that explain the code                                        | added after                                     |
+| [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
 
 A value the file may not take, such as an unknown feedback level or a
 model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
-`trigger.settle`, `trigger.limit`,
-`review.incremental`, `review.cost`, `confidence.instructions` and `limits`
-are the admin's alone; a file naming one of them, or any other unknown key, does not
-parse.
+`trigger.settle`, `trigger.limit`, `review.incremental`, `review.cost`,
+`confidence.instructions` and `limits` are the admin's alone; a file
+naming one of them, or any other unknown key, does not parse.
+
+### Models
+
+`review.model` and `review.fallback` are each a `<provider>/<model>` of a
+provider the instance or the repository's account declares, used for the
+review and for follow-ups. A model of any other provider is dropped; the
+account's limits bound what a choice can cost. A review whose model fails
+goes on with the fallback, on the same provider or another, and so does a
+follow-up.
+
+### Feedback
+
+| `review.feedback`    | What the review reports                                                                                                                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix changes those lines or adds lines after them |
+| `standard`           | the same review, with nits in the summary rather than inline                                                                                                                                             |
+| `minimal`            | only what would stop the review: correctness, security and reliability findings; a finding of another category is dropped before it is posted                                                            |
+
+Only nits move between levels: with `comments.inline` on, a blocking or
+important finding a level keeps is posted inline wherever the diff shows
+its line, and the summary lists every finding posted.
+
+Every finding carries a category beside its severity, what kind of problem
+it is: `correctness`, `security`, `performance`, `reliability`,
+`maintainability` or `tests`. The comments show it, the dashboard filters
+by it, and `kritika_findings_total` counts by it.
+
+### Approvals
+
+With `review.approve: true`, a review that finds nothing blocking or
+important approves the pull request, as a review pinned to the head it
+saw; nits alone do not withhold it. Off unless set, and it replaces the
+admin's in either direction: a repository turns it on where the instance
+leaves it off.
+
+- **With a confidence score**, the score decides instead: the pull request
+  is approved when its score reaches `confidence.threshold` and its risk
+  is within `confidence.risk`, and a review left unscored approves
+  nothing.
+- **Withdrawn:** a later review of the same pull request whose verdict no
+  longer allows it dismisses kritika's approval, as does a reviewer who
+  stands as requesting changes. A head that moved while it was reviewed is
+  left to its own review.
+- **Reported:** the summary says which way it went: `Approved`, or
+  `Not approved` with the reason.
+
+### Flow diagrams
+
+With `review.diagram: true`, the summary draws the flow the change adds or
+alters, a request path, a data flow or a state machine, as a Mermaid
+flowchart or sequence diagram the forge renders, its nodes plain-language
+steps rather than function names. Off unless set, since it costs output
+tokens on every review, and it replaces the admin's in either direction.
+
+- The model leaves it out when the change has no such flow, as for a
+  version bump or a documentation change.
+- kritika keeps only a flowchart, graph or sequence diagram under 4 KiB.
+- A re-review of the commits since the last review is shown that review's
+  diagram, to return as it is, redrawn where the new commits alter the
+  flow, or empty once the flow is gone; when it answers with no diagram at
+  all, kritika keeps the last one.
+
+### Confidence
+
+| Key                    | What                                                                                                    | Against the admin's value                  |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `confidence.model`     | the model that scores a reviewed pull request from 0 to 5, held to the same providers as `review.model` | replaces                                   |
+| `confidence.threshold` | the score the pull request must reach                                                                   | replaces, either way                       |
+| `confidence.gate`      | `true` fails the commit status under the threshold; off, the status reports the score and passes        | replaces, either way                       |
+| `confidence.risk`      | the highest risk a change may be rated and still be approved                                            | may only lower it; a higher one is dropped |
+
+See [confidence and risk](configuration.md#confidence-and-risk) for how a
+score is reached.
+
+### Trigger conditions
+
+`trigger.include` and `trigger.exclude` are conditions on the pull
+request, each an `expr`, `paths` globs that hold when a changed path
+matches one, or both, when both must hold, with an optional `name`. A pull
+request is reviewed when one `include` holds, or there are none, and no
+`exclude` holds.
+
+- The lists are judged beside the admin's own: a pull request must pass
+  both. A condition under a name one of the admin's has is dropped, and
+  the review's summary says so.
+- Each expression is compiled and smoke-tested against a sample pull
+  request when the file is parsed, so a broken one is rejected rather than
+  silently skipping every review.
+- A condition on the pull request alone is decided before any runner
+  starts; one with `paths` or `pr.lines` is decided once the pull request
+  is fetched, before any model is called. The commit status of a review
+  the lists keep out names the exclusion that held when it has a name.
+
+See [the recipes](#include-and-exclude-recipes).
+
+### Ignored paths
+
+`ignore` adds path globs to the admin's own ignore list, for reviews and
+indexing alike. A pull request whose every changed path is ignored, by
+these, the admin's globs or kritika's defaults (vendored trees, lockfiles,
+generated and minified code, source maps and logs), is skipped.
+
+### Rules
+
+`rules` are checks the review makes, added after the admin's:
+
+| Key     | What                                                                                                                                                                                                                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`    | lowercase letters, digits and hyphens, at most 64 characters; findings cite the rule by it                                                                                                                              |
+| `rule`  | the check itself, at most 2000 characters                                                                                                                                                                               |
+| `file`  | instead of `rule`, a file read from the same merge-base tree whose content is the check                                                                                                                                 |
+| `paths` | optional globs: the rule applies only when a changed path matches one, so checks for one part of the repository do not spend the room on changes elsewhere                                                              |
+| `when`  | optional conditions as `trigger.include` takes them, each an `expr` with an optional `name`; the rule applies only to a pull request one of them holds for, such as `pr.headRef.startsWith("renovate/")` for Renovate's |
+
+- A `when` condition is compiled and smoke-tested like a trigger
+  condition, and one that fails to evaluate does not hold.
+- A rule whose `id` an admin's rule has is dropped, and the review's
+  summary says so.
+- The rules a change matches are listed by id in the system prompt (and a
+  follow-up's), a file rule under a heading of its own, within the
+  [limits](#limits). A finding lists the ids of the rules it enforces,
+  keeping only ones its review was given.
+
+### Context
+
+`context` lists files that explain the code, each a `path` with a
+`description` and optional `paths` globs, added after the admin's. The
+review is pointed at each file to read it with its own tools. A file with
+`paths` applies only when a changed path matches one of them.
+
+### Skills
+
+`skills` are the [Agent Skills](https://agentskills.io) the repository
+keeps for its reviews. A skill is a folder holding a `SKILL.md`: YAML
+frontmatter with a `name` (lowercase letters, digits and hyphens, at most
+64 characters; the folder's name when unset) and a `description`, then
+instructions, with any files it needs beside it. Each folder directly
+under `.agents/skills` and `.claude/skills` that holds a `SKILL.md` is
+one, with nothing to configure.
+
+| Key                   | What                                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills.paths`        | the directories whose folders are skills, replacing the admin's; `paths: []` looks nowhere, which turns skills off for the repository                                                                                                                                     |
+| `skills.scope.<name>` | narrows when the skill of that name is offered: its `paths` are globs, one of which a changed path must match, and its `when` conditions as a rule's, one of which must hold; with both, both must. Added to the admin's scopes, a skill named in both taking this file's |
+
+- **Read from the merge base**, as this file and the rules are, so a pull
+  request cannot add or rewrite a skill to steer its own review.
+- **Offered by name:** the system prompt lists only each skill's name and
+  description; the review reads a skill's instructions, or a file in its
+  folder, with its `load_skill` tool when the skill fits the pull request,
+  from the merge base too.
+- **Left out, not fatal:** a skill past a [limit](#limits), or whose
+  `SKILL.md` has no frontmatter, no description or a name another skill
+  has, is left out and noted rather than failing the review.
+- **No tools granted:** `allowed-tools` and every other frontmatter key is
+  ignored. A skill guides a review and grants it no tool or command, and
+  the review skips a step that needs one it was not given.
+- **Reported:** the review's summary carries a note of the skills it was
+  offered and the ones it read, such as
+  `Skills offered: review-renovate-pr, go-style; read: review-renovate-pr`,
+  and each read shows in its transcript. A review offered commands through
+  the run tool carries a note of the same shape beside it, such as
+  `Commands offered: gh, helm; run: helm`.
+- **Follow-ups** are answered by an agent with the review's tools and
+  commands, under the same `agent` limits, in a runner of its own; it is
+  offered no skills.
+
+Rules, context and skills compared:
+
+|                  | In the prompt                                   | Cited by findings |
+| ---------------- | ----------------------------------------------- | ----------------- |
+| A rule           | whole, wherever it applies                      | yes, by id        |
+| A `context` file | a pointer, with the configuration's description | no                |
+| A skill          | its own description, until the review reads it  | no                |
+
+### Agent files
+
+A review also adds to its instructions the repository's agent files: the
+`AGENTS.md` of the root and of each directory above a changed path, or a
+directory's `CLAUDE.md` where it has no `AGENTS.md`, read from the merge
+base, within the [limits](#limits). They follow the rules in the prompt.
+
+### Comment templates
+
+`comments.summary` and `comments.finding` are paths to Go
+[text/template](https://pkg.go.dev/text/template) templates that replace
+kritika's built-in summary and inline comment templates; an empty path
+restores the built-in one where the admin set a template.
+
+- **Helpers:** the [sprout](https://github.com/go-sprout/sprout) helpers
+  tuppr and chaski expose: std, strings, conversion, encoding, numeric,
+  slices, maps, regex, time, semver and reflect. Not env, filesystem,
+  network, random, uniqueid, checksum or crypto, and not `set` or `unset`.
+- **Refused actions:** `template`, `define` and `block`, so a template
+  cannot read any file or call any other template.
+- **Bounds:** rendering is bounded (loop iterations, bytes per function
+  call, output size, a deadline), so a template cannot hang or exhaust
+  memory; one that exceeds a bound falls back to the default, with a note
+  in the summary.
+
+The summary template's dot is the review:
+
+| Field                                                                        | What                                                                                                                     |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `.Number`                                                                    | the pull request's number                                                                                                |
+| `.HeadSHA`, `.HeadURL`                                                       | the head commit, and a link to it                                                                                        |
+| `.HeadSubject`                                                               | the head commit's subject line, cut to 40 characters and escaped for Markdown                                            |
+| `.Reviews`                                                                   | how many reviews of the pull request this one makes                                                                      |
+| `.Model`                                                                     | the review model                                                                                                         |
+| `.Cost`                                                                      | what the pull request's reviews have cost, "" unless the admin's `review.cost` is on                                     |
+| `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                    |
+| `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
+| `.Result.Summary.Diagram`                                                    | Mermaid source for the flow the change adds or alters, "" unless `review.diagram` is on and the change has one           |
+| `.Result.Findings`                                                           | the findings, each as the inline template sees one                                                                       |
+| `.Counts.Blocking`, `.Counts.Important`, `.Counts.Nit`                       | the findings by severity                                                                                                 |
+| `.Unanchored`                                                                | the findings on lines the diff does not show                                                                             |
+| `.Notes`                                                                     | the review's notes                                                                                                       |
+| `.Incremental`, `.PriorHeadSHA`, `.PriorHeadURL`                             | whether the review covered only what changed since the last one, and that review's head                                  |
+| `.Prior`                                                                     | the last review's findings this review did not report again, each with `.Resolved`, or `.Dismissed` and `.DismissReason` |
+| `.Sources`                                                                   | links to what the review's commands fetched                                                                              |
+| `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
+| `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`                     |
+| `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                     |
+| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, and the pull request's page on it, where the built-in template's re-run badge points             |
+
+The inline template's dot is one finding:
+
+| Field                        | What                                                             |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `.Path`, `.Line`, `.EndLine` | where it is                                                      |
+| `.Severity`, `.Category`     | how much it matters, and what kind of problem it is              |
+| `.Title`, `.Explanation`     | what it is                                                       |
+| `.SuggestedFix`              | the fix, in prose                                                |
+| `.Replacement`               | the lines that replace the finding's, for a one-click suggestion |
+| `.AgentPrompt`               | a prompt a coding agent can apply the fix from                   |
+| `.AgentPromptFence`          | a code fence longer than any in the prompt                       |
+| `.Rules`                     | the ids of the rules it enforces                                 |
+| `.URL`                       | a link to the lines at the head commit                           |
+| `.ThreadURL`                 | a link to its inline comment thread, once one is posted          |
 
 ## Include and exclude recipes
 
 The `expr` of a `trigger.include` or `trigger.exclude` condition, like a
-rule's `when` conditions, is a [CEL](https://cel.dev) expression over `pr`, which has the pull request's `number`, `title`,
-`body`, `author`, `state`, `open`, `merged`, `draft`, `fork`, `headRef`,
-`headSha`, `baseRef`, `url`, `createdAt` and `labels` (each with a `name`
-and a `color`), and `event`, what started the review: `opened`,
-`reopened`, `ready_for_review`, `synchronize` (a push), `poll` (a push
-kritika found without its webhook), `labeled` or `unlabeled` (a label
-added or removed) or `manual` (a re-run from the dashboard or
-`@<bot> review`).
+rule's `when` conditions, is a [CEL](https://cel.dev) expression over
+`pr`:
 
-A trigger condition also has `pr.lines`, the lines the pull request's diff
-adds and removes, paths the `ignore` globs match left out. It is for
-trigger conditions only: a rule's `when` conditions may not use it.
+| Field                                      | What                                                                                                                       |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `number`, `title`, `body`, `author`, `url` | the pull request                                                                                                           |
+| `state`, `open`, `merged`, `draft`, `fork` | its state                                                                                                                  |
+| `headRef`, `headSha`, `baseRef`            | its branches and head commit                                                                                               |
+| `createdAt`                                | when it was opened                                                                                                         |
+| `labels`                                   | its labels, each with a `name` and a `color`                                                                               |
+| `event`                                    | what started the review (below)                                                                                            |
+| `lines`                                    | the lines its diff adds and removes, paths the `ignore` globs match left out; trigger conditions only, not a rule's `when` |
+
+| `event`                                  | What started the review                           |
+| ---------------------------------------- | ------------------------------------------------- |
+| `opened`, `reopened`, `ready_for_review` | the pull request opened, reopened or became ready |
+| `synchronize`                            | a push                                            |
+| `poll`                                   | a push kritika found without its webhook          |
+| `labeled`, `unlabeled`                   | a label added or removed                          |
+| `manual`                                 | a re-run from the dashboard, or `@<bot> review`   |
 
 A condition's `paths` are globs, as on a rule: it holds when a changed
 path matches one of them. With an `expr` too, both must hold. An
@@ -280,78 +354,22 @@ without waiting for its next push.
 
 Some conditions, each under `trigger`:
 
-- Skip drafts:
+| To                                                                    | Write                                                                                     |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Skip drafts                                                           | `exclude: [{ expr: pr.draft }]`                                                           |
+| Skip anything labelled `skip-review`                                  | `exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]`   |
+| Skip Renovate's pull requests                                         | `exclude: [{ expr: pr.author.startsWith("renovate") }]`                                   |
+| Skip pull requests from forks                                         | `exclude: [{ name: forks, expr: pr.fork }]`                                               |
+| Skip when the description asks to                                     | `exclude: [{ expr: 'pr.body.contains("[skip-review]")' }]`                                |
+| Review only pull requests into `main`                                 | `include: [{ expr: pr.baseRef == "main" }]`                                               |
+| Review when a pull request opens or is re-run, not on every push      | `include: [{ expr: 'pr.event in ["opened", "reopened", "ready_for_review", "manual"]' }]` |
+| Review only pull requests that touch `src/**`                         | `include: [{ name: source, paths: ["src/**"] }]`                                          |
+| Skip pull requests over 2000 changed lines                            | `exclude: [{ name: too-large, expr: pr.lines > 2000 }]`                                   |
+| Never review automatically a pull request touching `db/migrations/**` | `exclude: [{ name: migrations, paths: ["db/migrations/**"] }]`                            |
 
-  ```yaml
-  exclude:
-    - expr: pr.draft
-  ```
-
-- Skip anything labelled `skip-review`:
-
-  ```yaml
-  exclude:
-    - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
-  ```
-
-- Skip Renovate's pull requests:
-
-  ```yaml
-  exclude:
-    - expr: pr.author.startsWith("renovate")
-  ```
-
-- Skip pull requests from forks:
-
-  ```yaml
-  exclude:
-    - { name: forks, expr: pr.fork }
-  ```
-
-- Skip when the description asks to:
-
-  ```yaml
-  exclude:
-    - expr: pr.body.contains("[skip-review]")
-  ```
-
-- Review only pull requests into `main`:
-
-  ```yaml
-  include:
-    - expr: pr.baseRef == "main"
-  ```
-
-- Review when a pull request opens or is re-run, not on every push:
-
-  ```yaml
-  include:
-    - expr: pr.event in ["opened", "reopened", "ready_for_review", "manual"]
-  ```
-
-- Review only pull requests that touch `src/**`:
-
-  ```yaml
-  include:
-    - { name: source, paths: ["src/**"] }
-  ```
-
-- Skip pull requests over 2000 changed lines:
-
-  ```yaml
-  exclude:
-    - { name: too-large, expr: pr.lines > 2000 }
-  ```
-
-- Never review automatically a pull request touching `db/migrations/**`:
-
-  ```yaml
-  exclude:
-    - { name: migrations, paths: ["db/migrations/**"] }
-  ```
-
-  In the admin's configuration a review someone asks for still runs; in
-  `.kritika.yaml` the exclusion holds for that one too.
+The last holds only for automatic reviews in the admin's configuration: a
+review someone asks for still runs. In `.kritika.yaml` the exclusion holds
+for that one too.
 
 A named exclusion shows in the skipped review's commit status:
 `kritika: skipped (filtered: skip-label)`.
@@ -359,6 +377,15 @@ A named exclusion shows in the skipped review's commit status:
 ## Limits
 
 A file that fails to parse is ignored as a whole, and noted rather than
-failing the review. Every referenced file, plus `.kritika.yaml` itself, is
-capped at 256 KiB, and 1 MiB in total; a file over either limit is skipped
-and noted rather than failing the review.
+failing the review. Past any other limit, kritika leaves out, or cuts,
+what does not fit, and notes it in the summary:
+
+| What                                             | Limit                                     |
+| ------------------------------------------------ | ----------------------------------------- |
+| `.kritika.yaml`, and each file it references     | 256 KiB                                   |
+| all of them together                             | 1 MiB                                     |
+| the rules in the prompt                          | 16 KiB of rule text, 32 KiB of rule files |
+| skills                                           | 50 read                                   |
+| a skill's description                            | 1024 characters                           |
+| the skills' names and descriptions in the prompt | 4 KiB                                     |
+| agent files                                      | 32 KiB                                    |
