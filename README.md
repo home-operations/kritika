@@ -83,51 +83,52 @@ its own Kubernetes Job pod that holds no provider key or App key.
 kritika ships as an OCI Helm chart, `oci://ghcr.io/home-operations/charts/kritika`.
 The chart's [README](charts/kritika/README.md) lists every value, and
 [Postgres with CloudNativePG](https://kritika.home-operations.com/database/)
-sets up the database and its three roles. In short: a Postgres with
-[VectorChord](https://github.com/tensorchord/VectorChord) (and the pgvector it
-builds on) loaded, with an owner, an application and a runner role; the one
-public URL under `config.webUrl`, which the dashboard and GitHub's webhooks
-share; a way to sign in under `auth`; and the configuration file under
-`configFile`.
-It runs as one Deployment of `kritika serve`, one replica by default, which
-creates a runner Job for each review, follow-up and index run; the chart README's
-Topology section covers when to run two.
+sets up the database and its three roles. In short, it needs:
 
-The [setup guide](https://kritika.home-operations.com/setup/) takes a fresh instance through its GitHub
-App, model key and embedder to its first review; the dashboard's setup
-checklist shows what is still missing.
+- a Postgres with [VectorChord](https://github.com/tensorchord/VectorChord)
+  (and the pgvector it builds on) loaded, with an owner, an application
+  and a runner role;
+- the one public URL under `config.webUrl`, which the dashboard and
+  GitHub's webhooks share;
+- a way to sign in under `auth`;
+- the configuration file under `configFile`.
 
-Security notes:
+It runs as one Deployment of `kritika serve`, one replica by default,
+which creates a runner Job for each review, follow-up and index run; the
+chart README's Topology section covers when to run two.
 
-- Install kritika into a namespace of its own: runner Jobs run in the release
-  namespace, and kritika's Role can create, patch and delete every Secret
-  there, though it can never get or list one.
-- Turn on the chart's NetworkPolicy: runner pods then reach the outside
-  only through kritika's egress gateway, a forward proxy that allows
-  destinations by name and resolved address (github.com and the
+The [setup guide](https://kritika.home-operations.com/setup/) takes a
+fresh instance through its GitHub App, model key and embedder to its first
+review; the dashboard's setup checklist shows what is still missing.
+
+### Security notes
+
+- **Install kritika into a namespace of its own:** runner Jobs run in the
+  release namespace, and kritika's Role can create, patch and delete every
+  Secret there, though it can never get or list one.
+- **Turn on the chart's NetworkPolicy:** runner pods then reach the
+  outside only through kritika's egress gateway, which every review's
+  model calls go through too. It is a forward proxy that allows
+  destinations by name and resolved address: github.com and the
   configuration's `egress.allow`, less `egress.deny`, with private and
-  cluster addresses refused unless allowed), and never hold the
-  credentials `egress.credentials` lets the gateway add. Every review's model calls go through it too.
-- Run runner Jobs under a sandboxed RuntimeClass such as gVisor
-  (the chart's `config.runnerRuntimeClass`) where the cluster has one, since the pod
-  parses untrusted content.
+  cluster addresses refused unless allowed. Runner pods never hold the
+  credentials `egress.credentials` lets the gateway add.
+- **Run runner Jobs under a sandboxed RuntimeClass** such as gVisor (the
+  chart's `config.runnerRuntimeClass`) where the cluster has one, since
+  the pod parses untrusted content.
 
 ## Documentation
 
-- [Setup](https://kritika.home-operations.com/setup/): from install to the first review, the GitHub App,
-  its permissions and its webhook
-- [Configuration](https://kritika.home-operations.com/configuration/): the configuration file, sign-in and
-  role mappings, GitHub Apps, repository entries, accounts and which
-  repositories run
-- [Chart values](charts/kritika/README.md)
-- [`.kritika.yaml` reference](https://kritika.home-operations.com/repository-config/)
-- [Reviews](https://kritika.home-operations.com/reviews/): when a review
-  runs, what it posts, and the commands that steer it
-- [Dashboard](https://kritika.home-operations.com/dashboard/): the setup checklist, the Configuration
-  page, repository on/off and actions
-- [Metrics](https://kritika.home-operations.com/metrics/)
-- [Development](https://kritika.home-operations.com/development/): building, testing, evaluation and the
-  cluster loop
+| Page                                                                                | What it covers                                                                                    |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Setup](https://kritika.home-operations.com/setup/)                                 | from install to the first review: the GitHub App, its permissions and its webhook                 |
+| [Configuration](https://kritika.home-operations.com/configuration/)                 | the configuration file: sign-in, GitHub Apps, providers, repository settings, accounts and egress |
+| [`.kritika.yaml` reference](https://kritika.home-operations.com/repository-config/) | what a repository's own file can change                                                           |
+| [Chart values](charts/kritika/README.md)                                            | every value of the Helm chart                                                                     |
+| [Reviews](https://kritika.home-operations.com/reviews/)                             | when a review runs, what it posts, and the commands that steer it                                 |
+| [Dashboard](https://kritika.home-operations.com/dashboard/)                         | the setup checklist, the Configuration page, repository on/off and actions                        |
+| [Metrics](https://kritika.home-operations.com/metrics/)                             | what kritika exports to Prometheus, and the chart's alerts and Grafana dashboard                  |
+| [Development](https://kritika.home-operations.com/development/)                     | building, testing, evaluation and the cluster loop                                                |
 
 ## License
 

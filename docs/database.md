@@ -207,22 +207,24 @@ log in as, if they are not `kritika_app` and `kritika_runner`.
 ## Connections
 
 Postgres allows 100 connections unless `max_connections` says otherwise.
-Each kritika replica keeps an application pool of up to 16 connections and
-an owner pool of up to 4, plus its `LISTEN` connections, and every runner
-Job opens a pool of its own, of which it uses one or two. Connections open
-on demand, so an idle replica holds few. A `pool_max_conns` in a URI
-replaces that pool's ceiling: raise the application pool's if jobs wait on
-the pool, which `kritika_db_pool_empty_acquires_total` counts and
+Connections open on demand, so an idle replica holds few:
+
+| Connections             | Per        | At most         | `statement_timeout`                                                                      | `application_name` |
+| ----------------------- | ---------- | --------------- | ---------------------------------------------------------------------------------------- | ------------------ |
+| the application pool    | replica    | 16              | one minute, so a slow dashboard query cannot hold the connections webhooks and jobs need | `kritika-app`      |
+| the owner pool          | replica    | 4               | ten minutes, for a migration that builds an index                                        | `kritika-owner`    |
+| the `LISTEN` connection | replica    | 1               |                                                                                          | `kritika-listen`   |
+| a runner's pool         | runner Job | uses one or two |                                                                                          |                    |
+
+A `pool_max_conns` in a URI replaces that pool's ceiling: raise the
+application pool's if jobs wait on the pool, which
+`kritika_db_pool_empty_acquires_total` counts and
 `kritika_db_pool_connections` shows against the ceiling
 ([metrics](metrics.md)), or raise `max_connections` under the Cluster's
-`postgresql.parameters` for more replicas. CNPG's
-`cnpg_backends_total` metric shows what each `application_name`
-(`kritika-app`, `kritika-owner`, `kritika-listen`) holds.
+`postgresql.parameters` for more replicas. CNPG's `cnpg_backends_total`
+metric shows what each `application_name` holds.
 
-Both pools set a `statement_timeout` on their sessions: one minute on the
-application pool, so a slow dashboard query cannot hold the connections
-webhooks and jobs need, and ten minutes on the owner pool, for a migration
-that builds an index. The leader's hourly retention sweeps of transcripts
+The leader's hourly retention sweeps of transcripts
 and stored diffs work in batches, each its own statement, so a backlog
 larger than one statement could clear is worked off over the sweep rather
 than rolled back.
