@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.0.41](https://github.com/home-operations/kritika/compare/0.0.40...0.0.41) (2026-10-07)
+
+
+### Features
+
+* **agent:** send a version bump to gh's compare view, narrowed with --jq ([#635](https://github.com/home-operations/kritika/issues/635)) ([593b7af](https://github.com/home-operations/kritika/commit/593b7af9c25f4711333fc527a3d00335cb054c64))
+* **index:** drop the index of any repository that stops running ([#628](https://github.com/home-operations/kritika/issues/628)) ([5b48d40](https://github.com/home-operations/kritika/commit/5b48d405e7ece3f36ca65539642d353f736d3c9d))
+* **ingest:** disable a repository GitHub deleted, renamed or transferred ([#629](https://github.com/home-operations/kritika/issues/629)) ([d62a7fa](https://github.com/home-operations/kritika/commit/d62a7fa2fe6bae62ac2f107de7bcd108e8c6e7ff))
+* **poller:** disable the repositories an App no longer lists ([#631](https://github.com/home-operations/kritika/issues/631)) ([2520aef](https://github.com/home-operations/kritika/commit/2520aef2690055570c51ebf78b24f1a4cabfa6b4))
+* **review:** a review leaves notes on what it checked for the next one ([#620](https://github.com/home-operations/kritika/issues/620)) ([f27c75d](https://github.com/home-operations/kritika/commit/f27c75deb9cf02a2b95b43f9a2b90b6d4f6b9741))
+* **review:** carry on the last review's conversation on a push ([#624](https://github.com/home-operations/kritika/issues/624)) ([c23957e](https://github.com/home-operations/kritika/commit/c23957e17dd3a5c8dc5daf73935ae4bdf99cf71e))
+* **review:** give the agent fetch_repo to search another repository's files ([#638](https://github.com/home-operations/kritika/issues/638)) ([f02807c](https://github.com/home-operations/kritika/commit/f02807cafbb0fed187bb5bd081f083c2b55c17b2))
+* **review:** hold back a re-review's new findings off the new commits ([#617](https://github.com/home-operations/kritika/issues/617)) ([1bc9e0b](https://github.com/home-operations/kritika/commit/1bc9e0b6b5e1d4187d6302ecee04f2b37f8f53ef))
+* **review:** show a full re-review the last review's findings ([#618](https://github.com/home-operations/kritika/issues/618)) ([a0e17c0](https://github.com/home-operations/kritika/commit/a0e17c0a79038b616b4cf6ca85b7c224767fa5c8))
+* **runner:** keep a review agent's conversation for the next re-review ([#621](https://github.com/home-operations/kritika/issues/621)) ([252dcf0](https://github.com/home-operations/kritika/commit/252dcf049ae2dad0104a804461445508de614599))
+* **upstream:** fetch another repository's files at a ref, filtered to paths ([#636](https://github.com/home-operations/kritika/issues/636)) ([254feed](https://github.com/home-operations/kritika/commit/254feedb785943aab02295a3680c807ef89ad589))
+* **web:** show a review that carried on the one before ([#626](https://github.com/home-operations/kritika/issues/626)) ([0bcc790](https://github.com/home-operations/kritika/commit/0bcc790d37cab86e82824eaede687860600ab31b))
+
+
+### Build System
+
+* **deps:** move to go.yaml.in/yaml/v4 v4.0.0-rc.6 ([#633](https://github.com/home-operations/kritika/issues/633)) ([2378e95](https://github.com/home-operations/kritika/commit/2378e95796d49112c41b527c551f58d669942512))
+* **deps:** upgrade go-git to v6.0.0-beta.1 ([#632](https://github.com/home-operations/kritika/issues/632)) ([b0ee777](https://github.com/home-operations/kritika/commit/b0ee777998e798dc369e5345c5f7b7a74641812e))
+
 ## [0.0.40](https://github.com/home-operations/kritika/compare/0.0.39...0.0.40) (2026-10-07)
 
 
