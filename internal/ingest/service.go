@@ -446,17 +446,40 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 }
 
 // repository records what the forge now says of a repository: that it was
-// created, archived or unarchived.
+// created, archived, unarchived, renamed or transferred. A repository
+// deleted is disabled, and so is the row of the name one renamed or
+// transferred had, as one the App no longer reaches is. That row is the
+// old owner's, which kritika may not serve; a transfer to an account it
+// does not serve never reaches here.
 func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) {
 	ev := req.Event
 	if ev.Repository == nil {
 		return Outcome{Status: Ignored, Reason: reasonNoRepository}, nil
 	}
+	out := Outcome{Status: Recorded, Reason: ev.Action}
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
+		if ev.Action == "deleted" {
+			return store.DisableForgeRepositories(ctx, tx, req.Account.ID(), repoID(req, ev.Repository.FullName))
+		}
 		_, err := ensureRepository(ctx, tx, req, ev.Repository)
 		return err
 	})
-	return Outcome{Status: Recorded, Reason: ev.Action}, err
+	if err != nil || ev.Previous == "" {
+		return out, err
+	}
+	owner, _, _ := strings.Cut(ev.Previous, "/")
+	previous, ok := req.File.Account(req.Account.Forge, owner)
+	if !ok {
+		return out, nil
+	}
+	id := configfile.RepositoryID(previous.ID(), ev.Previous)
+	// A rename that changes only the case keeps its row.
+	if id == repoID(req, ev.Repository.FullName) {
+		return out, nil
+	}
+	return out, s.store.WithAccount(ctx, previous.ID(), func(tx pgx.Tx) error {
+		return store.DisableForgeRepositories(ctx, tx, previous.ID(), id)
+	})
 }
 
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {

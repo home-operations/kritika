@@ -174,6 +174,29 @@ func TestParseGitHubRepositoryTraits(t *testing.T) {
 	}
 }
 
+func TestParseGitHubRepositoryPrevious(t *testing.T) {
+	tests := []struct {
+		name, body, previous string
+	}{
+		{"renamed", `{"action":"renamed","changes":{"repository":{"name":{"from":"old"}}},
+		  "repository":{"full_name":"a/new","owner":{"login":"a"}}}`, "a/old"},
+		{"transferred from a user", `{"action":"transferred","changes":{"owner":{"from":{"user":{"login":"me"}}}},
+		  "repository":{"full_name":"a/b","owner":{"login":"a"}}}`, "me/b"},
+		{"transferred from an organization", `{"action":"transferred","changes":{"owner":{"from":{"organization":{"login":"old-org"}}}},
+		  "repository":{"full_name":"a/b","owner":{"login":"a"}}}`, "old-org/b"},
+		{"deleted", `{"action":"deleted","repository":{"full_name":"a/b","owner":{"login":"a"}}}`, ""},
+		{"archived", `{"action":"archived","repository":{"full_name":"a/b","archived":true,"owner":{"login":"a"}}}`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev, err := Parse(configfile.ForgeGitHub, gh("repository"), []byte(tt.body))
+			if err != nil || ev.Kind != KindRepository || ev.Account != "a" || ev.Repository == nil || ev.Previous != tt.previous {
+				t.Fatalf("event = %+v, %v; want previous %q", ev, err, tt.previous)
+			}
+		})
+	}
+}
+
 func TestParseGitHubReviewThread(t *testing.T) {
 	const repo = `"repository":{"full_name":"a/b","owner":{"login":"a"}}`
 	tests := []struct {

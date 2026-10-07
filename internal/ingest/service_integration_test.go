@@ -772,6 +772,68 @@ func TestDispatchRepository(t *testing.T) {
 	}
 }
 
+// TestDispatchRepositoryMoved: a repository renamed or transferred is
+// recorded under its new name and the row of its old name is disabled,
+// under the old owner's account when kritika serves it, but a rename that
+// changes only the case keeps its row; a repository deleted is disabled.
+func TestDispatchRepositoryMoved(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := context.Background()
+	names := []string{"onedr0p/moving", "onedr0p/moved", "home-operations/moved", "home-operations/adopted"}
+	// The poller's tests share the database and poll every enabled
+	// repository of bot-ross.
+	t.Cleanup(func() {
+		for _, name := range names {
+			owner, _, _ := strings.Cut(name, "/")
+			removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: owner,
+				Installation: &webhook.Installation{Repositories: []string{name}}}
+			_, _ = svc.Dispatch(ctx, request(f, removed))
+		}
+	})
+	enabled := func(name string) bool {
+		t.Helper()
+		owner, _, _ := strings.Cut(name, "/")
+		account, _ := f.Account(configfile.ForgeGitHub, owner)
+		var on bool
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE lower(name) = lower($1)`, name).Scan(&on)
+		}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return on
+	}
+	dispatch := func(action, name, previous string) {
+		t.Helper()
+		owner, _, _ := strings.Cut(name, "/")
+		ev := webhook.Event{Kind: webhook.KindRepository, Action: action, Account: owner, Repository: repo(name), Previous: previous}
+		if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out != (Outcome{Status: Recorded, Reason: action}) {
+			t.Fatalf("Dispatch %s %s = %+v, %v; want recorded", action, name, out, err)
+		}
+	}
+
+	dispatch("created", "onedr0p/moving", "")
+	dispatch("renamed", "onedr0p/moved", "onedr0p/moving")
+	if enabled("onedr0p/moving") || !enabled("onedr0p/moved") {
+		t.Fatal("a rename should disable the old name's row and record the new one")
+	}
+	dispatch("renamed", "onedr0p/Moved", "onedr0p/moved")
+	if !enabled("onedr0p/Moved") {
+		t.Fatal("a rename that changes only the case should keep its row")
+	}
+	dispatch("transferred", "home-operations/moved", "onedr0p/Moved")
+	if enabled("onedr0p/moved") || !enabled("home-operations/moved") {
+		t.Fatal("a transfer should disable the old owner's row and record the new one")
+	}
+	dispatch("transferred", "home-operations/adopted", "stranger/adopted")
+	if !enabled("home-operations/adopted") {
+		t.Fatal("a transfer from an account kritika does not serve should record the new row")
+	}
+	dispatch("deleted", "home-operations/moved", "")
+	if enabled("home-operations/moved") || !enabled("home-operations/adopted") {
+		t.Fatal("a repository deleted should be disabled, and no other")
+	}
+}
+
 func TestRecordDelivery(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := context.Background()
