@@ -33,10 +33,17 @@ func TestMain(m *testing.M) {
 
 // helper is the command: "exit N" exits N, "sleep" outlives any test
 // timeout, "flood N" writes N bytes, "fail-after N" writes N bytes and then
-// an error to stderr, and anything else prints the working directory, the
-// environment and the arguments.
+// an error to stderr, "unknown X" fails as gh does for a command X it lacks
+// and "quote X" prints the same and succeeds, and anything else prints the
+// working directory, the environment and the arguments.
 func helper(args []string) int {
 	switch {
+	case len(args) == 2 && (args[0] == "unknown" || args[0] == "quote"):
+		fmt.Fprintf(os.Stderr, "unknown command %q for \"gh\"\n\nUsage:  gh <command> <subcommand> [flags]\n\nAvailable commands:\n  api\n", args[1])
+		if args[0] == "quote" {
+			return 0
+		}
+		return 1
 	case len(args) == 2 && args[0] == "fail-after":
 		n, _ := strconv.Atoi(args[1])
 		fmt.Print(strings.Repeat("x", n))
@@ -302,6 +309,20 @@ func TestRunToolGH(t *testing.T) {
 	}
 	if got := rt.Sources(); !slices.Equal(got, []string{"https://api.github.com/repos/a/b/compare/v1...v2"}) {
 		t.Fatalf("sources = %q", got)
+	}
+	// gh's list of every command gives way to the call it likely meant;
+	// another command's output is its own.
+	hint, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["unknown","repos/a/b"]}`))
+	if err != nil || hint != `exit code 1`+"\n"+`unknown command "repos/a/b" for gh: its first argument is one of its commands, such as api, `+
+		"release, pr, issue or repo. A REST path is read with api before it: gh api repos/a/b." {
+		t.Fatalf("gh without its command = %q, %v", hint, err)
+	}
+	if out, _ := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["unknown","repos/a/b"]}`)); !strings.Contains(out, "Available commands") {
+		t.Fatalf("rg's output was rewritten: %q", out)
+	}
+	// A call that succeeded printed what it read, which may quote the error.
+	if out, _ := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["quote","repos/a/b"]}`)); !strings.Contains(out, "Available commands") {
+		t.Fatalf("a successful gh call's output was rewritten: %q", out)
 	}
 	// A version bump's diff is fetch_repo's, which the review's prompt
 	// describes: the compare view counts from where the branches split.
