@@ -73,26 +73,35 @@ into a fresh instance. The chart's Ingress or HTTPRoute must route
 `configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
 `apps`, model `providers`, the `embedding`, `egress`, the settings every
 repository gets (`review`, `confidence`, `trigger`, `comments`, `agent`),
-`repositories` entries keyed `owner/*` or `owner/name`, and `accounts`, with the
-`config` variables winning over it. kritika reads it at startup: the pods
-carry its checksum, so a change rolls them, and a pod whose file doesn't
-load never becomes ready while the ones before it keep serving. Secrets
-never go in it: it names environment variables, which `env` and `envFrom`
-set from existing Secrets, the way any Kubernetes container's environment
-is set. The chart refuses a `KRITIKA_*` variable under `env`, naming its
-`config` key, and a `config` key for a variable it derives from its other
-values, such as the addresses or the database. The
+`repositories` entries keyed `owner/*` or `owner/name`, and `accounts`,
+with the `config` variables winning over it.
+
+- kritika reads it at startup: the pods carry its checksum, so a change
+  rolls them, and a pod whose file doesn't load never becomes ready while
+  the ones before it keep serving.
+- Secrets never go in it: it names environment variables, which `env` and
+  `envFrom` set from existing Secrets, the way any Kubernetes container's
+  environment is set.
+- The chart refuses a `KRITIKA_*` variable under `env`, naming its
+  `config` key, and a `config` key for a variable it derives from its
+  other values, such as the addresses or the database.
+
+The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
 covers creating the GitHub App, and the dashboard's setup checklist shows
 what a fresh instance still lacks.
 
 ### Database
 
-kritika separates three Postgres roles and refuses to start otherwise: the
-**owner** (runs migrations and applies configuration on the leader, must not
-be a superuser), the **application** role (`database.app.role`, must not own
-the tables so row-level security applies to it) and the **runner** role
-(`database.runner.role`, handed to runner Jobs, can only write its own run).
+The chart requires three Postgres roles, and kritika checks them at
+start:
+
+| Role        | Values                                                   | What it does                                             | kritika refuses one that                        |
+| ----------- | -------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------- |
+| owner       | `database.owner.existingSecret`                          | runs migrations and applies configuration on the leader  | is a superuser                                  |
+| application | `database.app.existingSecret`, `database.app.role`       | serves everything else, under row-level security         | owns a table, is a superuser or has `BYPASSRLS` |
+| runner      | `database.runner.existingSecret`, `database.runner.role` | is handed to runner Jobs, and can only write its own run |                                                 |
+
 The `vchord` (VectorChord) and `vector` (pgvector, whose types it builds on)
 extensions must exist before the first start, and `vchord` must be in
 `shared_preload_libraries`.
@@ -119,14 +128,16 @@ are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
 a runner pod can then reach nothing but DNS, Postgres and that port: its git
 fetch and every command it runs go through the gateway, which allows a
 destination by name and by the address it resolves to. github.com is
-always allowed once an app is declared; `egress.allow` in `configFile`
-adds the rest (registries, release APIs; `"*"` allows every host on the
-internet, while a private, cluster or link-local address is reached only
-when an `allow` entry names an address or CIDR covering it), `egress.deny`
-refuses hosts and addresses whatever `allow` says, and `egress.credentials`
-names hosts the gateway adds a bearer token to when a runner sends it a
-plain `http://` request, so the runner never holds the token. The token is
-a secret reference like any other in the file:
+always allowed once an app is declared; `egress` in `configFile` sets the
+rest:
+
+| Key                  | What it does                                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `egress.allow`       | allows registries, release APIs and the like; `"*"` allows every host on the internet, while a private, cluster or link-local address is reached only when an entry names an address or CIDR covering it |
+| `egress.deny`        | refuses hosts and addresses whatever `allow` says                                                                                                                                                        |
+| `egress.credentials` | names hosts the gateway adds a bearer token to when a runner sends it a plain `http://` request, so the runner never holds the token                                                                     |
+
+The token is a secret reference like any other in the file:
 
 ```yaml
 configFile:
@@ -140,18 +151,19 @@ env:
       secretKeyRef: { name: kritika-github-token, key: token }
 ```
 
-The same port is a runner's model endpoint. kritika serve mints a
-token for each run, good for that run until `config.gatewayTokenTtl` past
-its Job's deadline and revoked when it ends, and hands it to the pod in
-place of a provider key; the gateway answers each step through the
-account's provider with the key only kritika serve holds, refuses a step
-once the run's token budget or the
-account's `tokensPerMonth` is spent, and records the step's usage. Provider
-endpoints are therefore not in a runner's allowlist. The runner also asks it
-once for the review's similar code: the gateway embeds the diff with the
-instance's embedder and answers from the repository's index, charging the
-embedding to the run. Every review runs through the gateway, so it has no
-switch.
+The same port is a runner's model endpoint, and every review runs through
+it, so it has no switch:
+
+- kritika serve mints a token for each run, good for that run until
+  `config.gatewayTokenTtl` past its Job's deadline and revoked when it
+  ends, and hands it to the pod in place of a provider key.
+- The gateway answers each step through the account's provider with the
+  key only kritika serve holds, refuses a step once the run's token budget
+  or the account's `tokensPerMonth` is spent, and records the step's
+  usage. Provider endpoints are therefore not in a runner's allowlist.
+- The runner also asks it once for the review's similar code: the gateway
+  embeds the diff with the instance's embedder and answers from the
+  repository's index, charging the embedding to the run.
 
 ### Runner tools
 
