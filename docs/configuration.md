@@ -5,7 +5,7 @@ kritika takes its settings from three places, each for what it suits:
 | Where                                                                                                                                               | What                                                                                                                                             | Changed by                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
 | The environment                                                                                                                                     | Process wiring: addresses, the database, logging and `KRITIKA_WEB_URL`                                                                           | a restart                          |
-| The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_REVIEW_*`, `KRITIKA_TRIGGER_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the repository settings, the repository entries and the accounts | a restart                          |
+| The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_REVIEW_*`, `KRITIKA_CONFIDENCE_*`, `KRITIKA_TRIGGER_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the repository settings, the repository entries and the accounts | a restart                          |
 | The environment                                                                                                                                     | How kritika runs: polling, onboarding, retention and runner Jobs                                                                                 | a restart                          |
 | The dashboard                                                                                                                                       | Whether each repository is on or off                                                                                                             | an admin, on the Repositories page |
 
@@ -17,15 +17,16 @@ The file is optional: `KRITIKA_CONFIG_FILE` names it, and the chart's
 of the deployment. In the file a secret is `{ env: NAME }`, the variable
 holding it, never the value itself; the chart's `env` and `envFrom` set
 such a variable from an existing Secret. Sign-in, one app, one provider, the
-review models and some review and trigger settings, and the embedder also have
-variables, and a variable wins over the file, so a small deployment can
-be configured from the environment alone. A variable carries a secret
-itself. The chart's `config` has a key for every `KRITIKA_*` variable, its
-name without the prefix in camelCase (`KRITIKA_AUTH_OIDC_ISSUER` is
-`authOidcIssuer`), a secret's taking a `valueFrom` from a Secret. Once the configuration is read, kritika drops every variable a
+review models, some review, confidence and trigger settings, and the embedder
+also have variables, and a variable wins over the file, so a small deployment
+can be configured from the environment alone. A variable carries a secret
+itself. The chart's `config` has a key for every `KRITIKA_*` variable it does
+not derive from its other values, its name without the prefix in camelCase
+(`KRITIKA_AUTH_OIDC_ISSUER` is `authOidcIssuer`), a secret's taking a
+`valueFrom` from a Secret. Once the configuration is read, kritika removes every variable a
 secret came from from its own environment. A variable under
 one of these prefixes that names no key is refused at startup rather than
-ignored.
+ignored; `KRITIKA_REVIEW_WORKERS`, a process setting, is the one exception.
 
 A key whose value is a [CEL](https://cel.dev) expression ends in `Expr`,
 or is the `expr` of a condition: `roleMappingExpr`, and each item of a
@@ -34,8 +35,7 @@ rule's `when` and of `trigger.include` and `trigger.exclude`.
 kritika reads the file and its variables once, at startup: a change takes a
 restart, and the chart rolls the pods when its `configFile` changes.
 Content that does not load, or that would leave the dashboard no way to
-sign in, fails startup, so a rolling update leaves the pods before it
-serving.
+sign in, fails startup, so a rolling update leaves the old pods serving.
 
 ## `auth`
 
@@ -197,14 +197,15 @@ an optional `baseUrl`, `pricing` and `retries`, and its `apiKey`. A model is nam
 
 `retries` is how many more times a review's model step is tried when the
 provider fails it in a way another attempt may not: a 5xx, a 429, a
-timeout or a cut connection. The gateway waits a second, then twice as
-long each time, up to 30 seconds; it never retries a refusal of the
-request itself, such as a prompt over the model's input limit, or a spent
-budget, and it waits out a `Retry-After` the provider sends when that is
-longer, up to a minute. A request the provider has not answered in five
+timeout or a cut connection. The gateway waits up to a second, then up to
+twice as long each time, to at most 30 seconds; it never retries a refusal
+of the request itself, such as a prompt over the model's input limit, or a
+spent budget, and it waits out a `Retry-After` the provider sends when that
+is longer, up to a minute. A request the provider has not answered in five
 minutes counts as a timeout. It is 0 unless set, one attempt, and at most 5; the provider's
 client sends nothing again on its own, so `retries` is every attempt a
-step gets. A routing proxy that picks a model per request is where it
+step gets. A step's attempts, the waits between them and its fallback
+share 12 minutes, so long timeouts end the retries early. A routing proxy that picks a model per request is where it
 earns its keep: a step the proxy routed badly is answered on the next
 attempt. A follow-up's steps are retried as a review's are; the embedder's
 client sends a failed request again twice on its own.
@@ -308,19 +309,20 @@ one. They come in five groups:
 
 - `review`: what a review runs on and what it says: `model`, `fallback`,
   `feedback`, `fixes`, `approve`, `incremental`, `diagram` and `cost`.
-- `confidence`: how a review is judged: `model`, `threshold`, `risk` and
-  `instructions`.
+- `confidence`: how a review is judged: `model`, `threshold`, `gate`,
+  `risk` and `instructions`.
 - `trigger`: which pull requests are reviewed, and when: `include`,
   `exclude`, `settle` and `limit`.
 - `comments`: what is posted: `inline`, `summary` and `finding`.
 - `agent`: the bounds of a review's tool loop: `steps`, `output`,
   `tokens`, `prompt`, `timeout`, `commands` and `commandTimeout`.
 
-`enabled`, `rules`, `context`, `skills`, `ignore` and `limits` sit beside them.
+`enabled`, `rules`, `context`, `skills` and `ignore` sit beside them, and
+`limits` at the root alone.
 `ignore` lists globs of the paths kritika never looks at: they are left out
 of a review's context and of the index, on top of kritika's own (vendored
-trees, lockfiles and generated code), and a pull request that changes
-nothing else is skipped.
+trees, lockfiles, generated and minified code, source maps and logs), and a
+pull request that changes nothing else is skipped.
 
 A `review.fallback` on the review model's provider is handed to the provider
 with the request, as OpenRouter's server-side fallback is, and the
@@ -346,7 +348,8 @@ an error on the commit, not a pass. With no `confidence.model` nothing is
 scored, and a review that ran reports success whatever it found. A
 dismissed finding stops counting at the next review, which a push or
 `@<app slug> review` starts. A bot's rebase that leaves its patch
-unchanged is still skipped, and keeps the score its last review got. The
+unchanged is skipped when its last review was scored, and keeps that
+score; one whose last review has no score is reviewed again. The
 scorer's call counts towards the account's `tokensPerMonth`, and shows in
 the review's transcript.
 
@@ -356,10 +359,10 @@ files live:
 
 | Risk       | What the change is                                                                          |
 | ---------- | ------------------------------------------------------------------------------------------- |
-| `low`      | documentation, tests, formatting, and small changes with no effect on behavior that matters |
-| `medium`   | ordinary application or business logic                                                      |
-| `high`     | build or runtime configuration, modules much else depends on                                |
-| `critical` | authentication, secrets, billing, data migrations, infrastructure, CI, public interfaces    |
+| `low`      | documentation, tests, formatting, comments, and small changes with no effect on behavior that matters |
+| `medium`   | ordinary application or business logic                                                                |
+| `high`     | build or runtime configuration, modules much else depends on                                          |
+| `critical` | authentication, authorization, secrets, billing, data migrations, infrastructure, CI, public interfaces |
 
 A dependency update is rated by what the dependency does and how far its
 version moves, not as a class of its own. A move of the version's first
@@ -445,7 +448,7 @@ own:
   that does not, because the submission was rejected, it answered in
   prose or it called another tool, which is refused, is told again, up to
   twice, so the steps spent reading are not lost to one slip at the end.
-  `steps: 1` is the cheapest review: one call, which must submit the
+  `steps: 1` is the cheapest review: one step, which must submit the
   findings, over the same prompt. `prompt` bounds, in tokens, the prompt a
   review, its confidence score and a follow-up start from: the system
   prompt, the pull request, as much of the diff as fits, whole files only,
@@ -464,7 +467,8 @@ own:
   with a token minted for the run that can only read the repository under
   review and public repositories. The run tool refuses the arguments that
   would print that token or run a program outside the list (`gh auth`,
-  `alias`, `config` and `extension`, `fd -x` and `-X`, `rg --pre`), and
+  `alias`, `config` and `extension`, `fd -x` and `-X`, `rg --pre` and
+  `--hostname-bin`), and
   masks the token in a command's output and in the submitted review.
 - `trigger.settle`: how long a new head waits before its review starts, so a
   burst of pushes is reviewed once.
@@ -481,14 +485,19 @@ own:
   review saw, or a rebase that leaves the change as it was, always covers
   the whole pull request.
 - `enabled`, at the root and `owner/*` only: where repositories start
-  (see below).
+  (see below). A repository's `.kritika.yaml` can only set
+  `enabled: false`, which turns its own repository off.
 
 A value applies in this order: kritika's default, the file's root,
 `owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
 value replaces the broader one's, except `ignore` globs, which add
 up, `rules`, which add up by id, and `trigger.include` and
 `trigger.exclude`, which add up by name. Of `skills`, `skills.paths`
-replaces the broader one's and `skills.scope` adds up by skill name.
+replaces the broader one's and `skills.scope` adds up by skill name. A
+`.kritika.yaml` is held tighter: its rules and context are added to the
+admin's, a rule under an admin's id is dropped, and `review.fixes`,
+`confidence.risk` and `enabled` move one way only
+([what it may set](repository-config.md#what-it-may-set)).
 
 `trigger.include` and `trigger.exclude` decide which pull requests are
 reviewed: one is reviewed when one `include` condition holds, or there are
@@ -614,7 +623,7 @@ accounts:
 
 - `limits`: `concurrency`, how many model calls it runs at once, 2 unless
   set, of which index runs hold all but one while they embed, so a review's
-  similar-code lookup always has a slot; `reviewsPerDay`; and
+  similar-code lookup has a slot unless `concurrency` is 1; `reviewsPerDay`; and
   `tokensPerMonth`. The root's `limits` sets every account's.
 - `providers`: its own model keys. A model named `<key name>/<model>` in
   its `owner/*` or `owner/name` entries, or in one of its repositories'
@@ -657,13 +666,16 @@ reached at its public address alone. A destination given as an address,
 `https://10.10.0.5/`, is reached only when an `allow` address covers it,
 public or not. The refusal a runner's command sees says why: `host not
 allowed`, `host denied`, `address not allowed`, `address denied`, or that
-the name `resolves to a private address no allow entry covers`.
+the name `resolves to a private address no allow entry covers` or
+`resolves to a denied address`.
 
 ## How kritika runs
 
 These come from the environment rather than the file, each a camelCased
 key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
-except where noted; a restart changes them.
+except where noted; a restart changes them. The chart sets the rest of
+the process's variables, its addresses, database URLs and roles and the
+runner image, from its other values.
 
 | Variable                           | What                                                                                                                                    |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -679,7 +691,7 @@ except where noted; a restart changes them.
 | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                |
 | `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                   |
 | `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                     |
-| `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline; 15m unless set                                                                                                 |
+| `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline, at most 2h; 15m unless set                                                                                     |
 | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                          |
 | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it           |
 | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON; the chart's `runner.resources` renders it                                                            |

@@ -16,7 +16,7 @@ posts one sticky summary comment plus inline findings and a commit status, and
 answers follow-ups when the bot is @-mentioned. A pull request from a fork is
 reviewed like any other unless the configuration excludes it. One deployment serves any
 number of forge accounts, and every index, review and follow-up job runs in
-its own Kubernetes Job pod that holds no secrets.
+its own Kubernetes Job pod that holds no provider key or App key.
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
 - **Flow diagrams, opt-in.** The summary can draw the flow a change adds or
   alters as a Mermaid diagram, so a reviewer sees the path before reading
   the code.
-- **Providers and limits.** OpenRouter, OpenAI and Anthropic adapters, with
+- **Providers and limits.** OpenRouter, OpenAI, Anthropic and OpenCode adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through kritika's
   gateway.

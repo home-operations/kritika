@@ -14,8 +14,11 @@ behavior is explained, followed by the full `values.yaml`.
 
 - **`image`**, **`replicas`**, **`strategy`**, **`resources`** and the pod
   settings: the one Deployment of `kritika serve`.
-- **`config`**: every `KRITIKA_*` variable, keyed by its name without the
-  prefix in camelCase: the public URL the dashboard and GitHub's webhooks
+- **`serviceAccount`**, **`rbac`** and **`podDisruptionBudget`**: its
+  ServiceAccount, the Role that lets it create runner Jobs, and, with more
+  than one replica, the budget that lets a drain take one at a time.
+- **`config`**: every `KRITIKA_*` variable the chart does not derive, keyed
+  by its name without the prefix in camelCase: the public URL the dashboard and GitHub's webhooks
   share, logging, the workers, polling, retention, the runner Jobs'
   deadline and RuntimeClass, and the variables that stand in for the
   configuration file's sections, secrets from existing Secrets. See
@@ -27,12 +30,14 @@ behavior is explained, followed by the full `values.yaml`.
   configuration file names. See [Configuration file](configuration.md).
 - **`database`**: the Postgres host and the owner, application and runner
   roles' Secrets.
-- **`runner`**: the image, TTL, resources and tools of the runner Jobs.
+- **`runner`**: the image, ServiceAccount, TTL, resources and tools of the
+  runner Jobs.
 - **`service`**, **`ingress`** and **`httpRoute`**: the public, metrics and
   gateway ports and how the public one is exposed. The gateway is the egress
   proxy runner pods reach the outside and their model through.
 - **`networkPolicy`**: the policies that confine runner pods to the gateway.
 - **`monitoring`** and the probes: see [Metrics](metrics.md).
+- **`tests`**: the `helm test` pod.
 
 ## values.yaml
 

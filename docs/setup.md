@@ -23,8 +23,8 @@ Install the chart as its [README](https://github.com/home-operations/kritika/blo
   ConfigMap, with the variables its secrets name set from existing Secrets
   under `env` or `envFrom`. It lives in git with the rest of the
   deployment; kritika reads it at startup, and the chart rolls the pods
-  when it changes. A changed Secret does not roll them: restart them after
-  rotating one, or have stakater's Reloader do it with
+  when `configFile` changes. A changed ConfigMap or Secret does not roll
+  them: restart them after changing one, or have stakater's Reloader do it with
   `deploymentAnnotations: { reloader.stakater.com/auto: "true" }`. Runner
   Jobs read their Secret as each one starts.
 
@@ -149,7 +149,9 @@ not the App is installed there.
 
 GitHub keeps the App webhook's recent deliveries with kritika's response:
 204 for a ping, 202 for anything accepted, 401 when the secrets differ or
-the App has none, and 404 when the path names no App. The account
+the App has none, 404 when the path names no App, 400 or 413 for a
+delivery it cannot parse or that is too large, and 500 when it could not
+queue one. The account
 overview's Connection panel shows when its App last had a delivery,
 explains where the webhook goes while none has, and says to set the App's
 webhook secret when its deliveries arrive from GitHub with no signature,
@@ -168,15 +170,14 @@ last poll. It is a backstop, not a substitute:
   asked for by number and recorded closed, so a `closed` event that was
   never delivered does not leave it open for good; at most 50 are asked
   for per repository and poll;
-- no mention is answered, since the poller does not read comments;
+- no mention is answered, since only a webhook delivers one;
 - the index catches up with the default branch at the next poll, not on
   each push: while no webhook has reached an App within
   `KRITIKA_POLL_LOOKBACK`, each poll also checks its indexed repositories'
   default branches;
-- only repositories kritika already knows, from the configuration or an
-  earlier event, are polled;
-- each poll costs the App about one request per repository polled, one
-  more per hundred open pull requests, so
-  the interval bounds how many repositories a connection can poll within
-  GitHub's rate limit, and a poll that outlasts its interval is cut there
-  and the rest covered by the next.
+- each poll costs the App a listing of the repositories it reaches, about
+  one request per repository polled, one more per hundred open pull
+  requests, and a read of the reactions on up to 30 recently reviewed pull
+  requests per account, so the interval bounds how many repositories a
+  connection can poll within GitHub's rate limit, and a poll that outlasts
+  its interval is cut there and the rest covered by the next.

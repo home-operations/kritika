@@ -8,7 +8,7 @@ mise run build
 mise run test               # unit tests; mise run test -- ./internal/worker/ runs one package's
 mise run test-integration   # Postgres suites against a throwaway VectorChord container
 mise run lint
-mise run smoke              # kritika serve in a kind cluster with CloudNativePG (needs docker, kind, kubectl, helm)
+mise run smoke              # kritika serve in a kind cluster with CloudNativePG (needs docker, kind, kubectl, helm, openssl)
 ```
 
 `mise run smoke` is what CI's Serve Smoke job runs: it builds the image,
@@ -22,8 +22,8 @@ built, to skip the build.
 
 ## Docs
 
-This site is MkDocs Material, pinned in `pyproject.toml` and `uv.lock` and run
-through uv, which mise installs. Pages live in `docs/`, and their order in
+This site is MkDocs Material, declared in `pyproject.toml`, pinned in
+`uv.lock` and run through uv, which mise installs. Pages live in `docs/`, and their order in
 `mkdocs.yml`'s `nav`.
 
 ```sh
@@ -32,12 +32,14 @@ mise run docs         # build into site/ with --strict, as CI does
 ```
 
 `--strict` fails the build on a broken link or a page missing from `nav`.
-Pull requests build the site; a push to `main` publishes it to GitHub Pages.
+Pull requests into `main` build the site; a push to `main` publishes it to
+GitHub Pages.
 
 ## Evaluation
 
-Review quality is measured offline: `mise run bench-mine` builds a corpus
-of pull requests whose lines a later fix commit changed, and `mise run
+Review quality is measured offline: `mise run bench-mine` builds a corpus,
+from sibling checkouts of flate and konflate, of pull requests whose lines a
+later fix commit changed, and `mise run
 bench` (with `OPENROUTER_API_KEY`) runs them through the service's own
 fetch, context and prompt code as one-step agentic reviews, what
 `agent.steps: 1` sends: the agentic system prompt, the read-only tools
@@ -67,7 +69,7 @@ deploy` installs `charts/kritika` with them and the freshly pushed image,
 
 ```sh
 mise run deploy     # build, push, apply, wait for rollout
-mise run logs       # follow the pod
+mise run logs       # follow one of the deployment's pods
 mise run undeploy   # delete everything, database included
 ```
 

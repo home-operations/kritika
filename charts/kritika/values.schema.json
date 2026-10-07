@@ -440,7 +440,7 @@
       "type": "object"
     },
     "database": {
-      "description": "Three Postgres connection strings, each from its own Secret. The\napplication role must not own the tables (row-level security), the owner\nrole runs migrations and applies configuration on the leader, and the\nrunner role is handed to runner Jobs and can only write its own run. On\nCloudNativePG, declare `app` and `runner` under `spec.managed.roles` and\nuse the bootstrap owner as `owner`; see the README.",
+      "description": "Three Postgres connection strings, each from its own Secret. The\napplication role must not own the tables (row-level security), the owner\nrole runs migrations and applies configuration on the leader, and the\nrunner role is handed to runner Jobs and can only write its own run. On\nCloudNativePG, declare `app` and `runner` as DatabaseRole resources and\nuse the bootstrap owner as `owner`; see the database docs.",
       "properties": {
         "app": {
           "properties": {
@@ -1190,7 +1190,7 @@
     },
     "replicas": {
       "default": 1,
-      "description": "kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties. Runner pods are not part of it: serve\ncreates them as Jobs, one per review and index run.\nReplicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost.",
+      "description": "kritika runs as one Deployment of `kritika serve`: webhooks, the dashboard,\nthe job queues, runner Jobs, the gateway and, on the replica holding the\nleader lock, the leader duties. Runner pods are not part of it: serve\ncreates them as Jobs, one per review, follow-up and index run.\nReplicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost.",
       "title": "replicas",
       "type": "integer"
     },
@@ -1232,10 +1232,10 @@
       "type": "object"
     },
     "runner": {
-      "description": "Runner Jobs: one pod per review or index run, created by kritika serve in the\nrelease namespace from the release's -tools image, running as a service\naccount with no permissions and a database role that can only touch its own\nrun. The server's Role reaches every Secret in the release namespace, so\ninstall kritika into a namespace of its own. Their deadline and RuntimeClass\nare `config.runnerDeadline` and `config.runnerRuntimeClass`; a sandboxed\nRuntimeClass (gVisor, Kata) is advised, since a runner parses untrusted\nrepository content and runs what the model asks.",
+      "description": "Runner Jobs: one pod per review, follow-up or index run, created by kritika\nserve in the release namespace from the release's -tools image, running as a\nservice account with no permissions and a database role that can only touch\nits own run. The server's Role reaches every Secret in the release namespace,\nso install kritika into a namespace of its own. Their deadline and\nRuntimeClass are `config.runnerDeadline` and `config.runnerRuntimeClass`; a\nsandboxed RuntimeClass (gVisor, Kata) is advised, since a runner parses\nuntrusted repository content and runs what the model asks.",
       "properties": {
         "image": {
-          "description": "Image for runner Jobs: the release's `-tools` image, which adds curl, fd,\ngh, jq, rg and yq for an agentic review's `agent.commands`.",
+          "description": "Image for runner Jobs: the release's `-tools` image, which adds curl, fd,\ngh, jq, rg and yq for a review's or follow-up's `agent.commands`.",
           "properties": {
             "digest": {
               "default": "",

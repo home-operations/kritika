@@ -5,9 +5,11 @@ GitHub or an OIDC provider, and see the accounts you can read, the
 GitHub App serving each and its repositories, live review and conversation state as it
 runs, and, for an admin, the running configuration and the audit log. An
 admin can also queue a re-run of a specific pull request, cancel a review
-in progress, reindex a repository's embeddings, or turn a repository on or
-off. Everything else is set in the [configuration file](configuration.md),
-which the dashboard shows but does not change.
+in progress, reindex a repository's embeddings, turn a repository on or
+off, resync the repositories from GitHub, or uninstall an App from an
+account it does not serve. Everything else is set in the
+[configuration file](configuration.md), which the dashboard shows but does
+not change.
 
 The top bar switches between two scopes, each with its own tabs: the
 instance, and one of the accounts you can read. No tab chooses an account
@@ -42,13 +44,14 @@ An account's tabs are its sections:
   longer reports it, or dismissed, with the reason, once a maintainer
   replied `@<bot> dismiss <reason>` in its thread. A finding kritika posted inline links to its thread
   on GitHub, here and on its review, and one that enforces a written rule
-  names it; `rule:<id>` narrows the list to the findings that cite it, and
-  `category:<kind>` to findings of one kind, which the tab also counts by. Spend has the month so far against the account's
+  names it. Its search narrows the list with `repo:`, `severity:`,
+  `category:`, `status:` (open, addressed or dismissed) and `rule:<id>`,
+  the findings that cite a rule; the tab also counts by category. Spend has the month so far against the account's
   caps, and usage by day, model, repository or role.
 - **Pull requests:** its pull requests and their reviews, the run queue
   and the follow-up questions. The search box takes text, or narrows the
-  list with `repo:owner/name`, `author:login` and `status:` a last review
-  status, and suggests each as you type. An admin can pick pull requests,
+  list with `repo:owner/name`, `author:login`, `status:` a last review
+  status and `is:paused` or `is:blocking`, and suggests each as you type. An admin can pick pull requests,
   by checkbox or with Space on the keyboard's row, and re-run them
   together. Each row counts the reviews that completed and what every
   review of it cost. A pull request's page says when its review is queued or
@@ -97,11 +100,10 @@ checklist names each step still missing and what to set for it:
 ## Configuration page
 
 An admin's Configuration page, a tab of the instance, shows what the instance
-runs and changes none of it: the Setup checklist, the accounts the
-GitHub Apps serve, each instance setting with its source, the Apps with
-the accounts each is installed on, and the admin audit log. When
-the configuration file's latest content was refused, it says why, and a
-banner on every page leads there. The command palette, `Ctrl`/`⌘` `K`,
+runs: the Setup checklist, the accounts the GitHub Apps serve, each
+instance setting with its source, the Apps with the accounts each is
+installed on, and the admin audit log. Its one change is uninstalling an
+App from an account its entry does not list. The command palette, `Ctrl`/`⌘` `K`,
 finds each of those sections, and the navigation beside the page lists
 them while it is open. The palette also opens any page of the instance or
 of an account, and the recently updated pull requests of every account
@@ -123,19 +125,21 @@ that run.
 
 ## Actions
 
-Re-run, cancel, reindex and turning a repository on or off are the only
-changes the dashboard makes. Re-run, cancel and reindex respond
-`202 Accepted`, with a job ID for re-run and reindex, and queue the work
-rather than running it inline. Re-running a pull request with no known
-head, or cancelling a review that is not running, is a `409 Conflict`.
+Re-run, cancel, reindex, turning a repository on or off, resyncing and
+uninstalling an App are the only changes the dashboard makes. Re-run,
+cancel and reindex respond `202 Accepted`, with a job ID for re-run and
+reindex, and queue the work rather than running it inline. Re-running a
+pull request with no known head or one already queued or running,
+reindexing a repository already queued, or cancelling a review that is
+not running, is a `409 Conflict`.
 
 ## Operational notes
 
 - The configuration is read at startup. A file that does not load fails
-  startup, so a rollout that brings one leaves the pods before it
-  serving; one the leader cannot apply to the store raises the
-  `kritika_config_error` gauge until a later attempt
-  succeeds.
+  startup, so a rollout that brings one leaves the old pods serving;
+  one the leader cannot apply to the store raises the
+  `kritika_config_error` gauge, keeps the last applied configuration, and
+  is not tried again before a restart.
 - A secret is read from its variable at startup too: restart the pods
   after rotating one.
 - A role mapping is only as trustworthy as what it reads. Map on groups

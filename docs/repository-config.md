@@ -72,8 +72,9 @@ skills:
 | `standard`           | the same review, with nits in the summary rather than inline                                                                                                                           |
 | `minimal`            | only what would stop the review: correctness, security and reliability findings; a finding of another category is dropped before it is posted                                        |
 
-  A `blocking` finding is always posted inline, and the summary lists
-  every finding. Every finding carries a category beside its severity,
+  Only nits move between levels: with `comments.inline` on, a blocking or
+  important finding a level keeps is posted inline wherever the diff shows
+  its line, and the summary lists every finding posted. Every finding carries a category beside its severity,
   what kind of problem it is: `correctness`, `security`, `performance`,
   `reliability`, `maintainability` or `tests`; the comments show it, the
   dashboard filters by it, and `kritika_findings_total` counts by it.
@@ -86,8 +87,8 @@ skills:
   restores the built-in one where the admin set a template. They use the
   [sprout](https://github.com/go-sprout/sprout) helpers tuppr and chaski
   expose (std, strings, conversion, encoding, numeric, slices, maps, regex,
-  time, semver and reflect; not env, filesystem, network, random, uniqueid
-  or checksum, and not `set` or `unset`). The `template`, `define` and
+  time, semver and reflect; not env, filesystem, network, random, uniqueid,
+  checksum or crypto, and not `set` or `unset`). The `template`, `define` and
   `block` actions are refused, so a template cannot read any file or call
   any other template. The summary template's dot is the review (`.Number`,
   `.HeadSHA`, `.HeadURL`, `.HeadSubject`, the head commit's subject line,
@@ -103,18 +104,20 @@ skills:
   not report again, each with `.Resolved`, and the dismissed ones each with
   `.Dismissed` and `.DismissReason`, `.Sources`, `.Incomplete`, `.Confidence`, nil unless the review was
   scored, with its `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`, `.Approval`, nil unless
-  `review.approve` is on, with `.Approved` and `.Reason`, "" where the
-  confidence line states it, and `.WebURL` and `.PullURL`, the
-  dashboard's origin and the pull request's page on it, where the built-in
-  template's re-run badge points). The inline template's dot is
-  one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`, `.Category`, `.Title`,
-  `.Explanation`, `.SuggestedFix`, `.Replacement`, `.AgentPrompt`, `.Rules`,
-  the ids of the rules it enforces, `.URL`, a link to the lines at the head
-  commit, and `.ThreadURL`, a link to its inline comment thread once one
-  is posted). Rendering is bounded (loop iterations, bytes per function
-  call, output size, a deadline), so a template cannot hang or exhaust
-  memory; one that exceeds a bound falls back to the default with a note
-  in the comment.
+  `review.approve` is on, with `.Approved` and `.Reason`, "" when a
+  confidence score approved it, `.Cost`, what the pull request's reviews
+  have cost, "" unless the admin's `review.cost` is on, and `.WebURL` and
+  `.PullURL`, the dashboard's origin and the pull request's page on it,
+  where the built-in template's re-run badge points). The inline
+  template's dot is one finding (`.Path`, `.Line`, `.EndLine`, `.Severity`,
+  `.Category`, `.Title`, `.Explanation`, `.SuggestedFix`, `.Replacement`,
+  `.AgentPrompt`, `.AgentPromptFence`, a code fence longer than any in the
+  prompt, `.Rules`, the ids of the rules it enforces, `.URL`, a link to the
+  lines at the head commit, and `.ThreadURL`, a link to its inline comment
+  thread once one is posted). Rendering is bounded (loop iterations, bytes
+  per function call, output size, a deadline), so a template cannot hang
+  or exhaust memory; one that exceeds a bound falls back to the default,
+  with a note in the summary.
 - `review.fixes: true`: findings must include a suggested fix. The
   file can turn the requirement on, never off.
 - `review.approve: true`: a review that finds nothing blocking or important
@@ -126,9 +129,8 @@ skills:
   pull request whose verdict no longer allows it dismisses kritika's
   approval, as does a reviewer who stands as requesting changes; a head
   that moved while it was reviewed is left to its own review. The summary
-  says which way it went, `Approved` or `Not approved` with the reason,
-  except the reason a confidence score decides, which the score's own line
-  states. It replaces the admin's, in either direction: a repository turns
+  says which way it went: `Approved`, or `Not approved` with the reason.
+  It replaces the admin's, in either direction: a repository turns
   it on where the instance leaves it off. Off unless set.
 - `review.diagram: true`: the summary draws the flow the change adds or
   alters, a request path, a data flow or a state machine, as a Mermaid
@@ -169,7 +171,8 @@ skills:
 - `ignore`: path globs added to the admin's own ignore list, for
   reviews and indexing alike. A pull request whose every changed path is
   ignored, by these, the admin's globs or kritika's defaults (vendored
-  trees, lockfiles and generated code), is skipped.
+  trees, lockfiles, generated and minified code, source maps and logs), is
+  skipped.
 - `rules`: checks the review makes, added after the admin's. Each has an `id` (lowercase letters,
   digits and hyphens, at most 64 characters) that findings cite it by,
   and either the `rule` itself (at most 2000 characters) or a `file`,
@@ -228,8 +231,8 @@ skills:
   agent with the review's tools and commands, under the same `agent`
   limits, in a runner of its own; it is offered no skills.
 
-  A rule with a `file` is always in the prompt, whole, and findings cite
-  it by id. A `context` entry is a pointer to one file, with a
+  A rule with a `file` is in the prompt whole wherever it applies, and
+  findings cite it by id. A `context` entry is a pointer to one file, with a
   description written in the configuration. A skill carries its own
   description, costs the prompt only that until the review reads it, and
   is not cited by findings.
@@ -244,7 +247,7 @@ model of an undeclared provider, is dropped: the admin's value applies for
 that field, a note in the review's summary says which field was dropped
 and what it may be, and the rest of the file still applies. `agent`,
 `trigger.settle`, `trigger.limit`,
-`review.incremental`, `review.cost`, `confidence.instructions`, `limits` and `runner`
+`review.incremental`, `review.cost`, `confidence.instructions` and `limits`
 are the admin's alone; a file naming one of them, or any other unknown key, does not
 parse.
 
@@ -257,7 +260,8 @@ rule's `when` conditions, is a [CEL](https://cel.dev) expression over `pr`, whic
 and a `color`), and `event`, what started the review: `opened`,
 `reopened`, `ready_for_review`, `synchronize` (a push), `poll` (a push
 kritika found without its webhook), `labeled` or `unlabeled` (a label
-added or removed) or `manual` (a re-run from the dashboard).
+added or removed) or `manual` (a re-run from the dashboard or
+`@<bot> review`).
 
 A trigger condition also has `pr.lines`, the lines the pull request's diff
 adds and removes, paths the `ignore` globs match left out. It is for
