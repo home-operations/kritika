@@ -26,11 +26,11 @@ import (
 )
 
 // source is the repository the tests fetch, as a bare repository under
-// root named repo.git. At v1, an annotated tag, it has a README, a symlink
-// to it, a file over the tests' blob limit and two packages; at v2, a
-// lightweight tag that main also points at, pkg/a/a.go gains a function,
-// pkg/a/old.go is renamed to pkg/a/new.go unchanged, and pkg/b/b.go
-// changes.
+// root named repo.git. At v1, an annotated tag that the annotated tag
+// v1-again names, it has a README, a symlink to it, a file over the
+// tests' blob limit and two packages; at v2, a lightweight tag that main
+// also points at, pkg/a/a.go gains a function, pkg/a/old.go is renamed to
+// pkg/a/new.go unchanged, and pkg/b/b.go and the large file change.
 type source struct {
 	root   string
 	v1, v2 string
@@ -87,7 +87,11 @@ func newSource(t *testing.T) source {
 		t.Fatal(err)
 	}
 	v1 := commit("v1")
-	if _, err := r.CreateTag("v1", v1, &git.CreateTagOptions{Tagger: sig, Message: "v1"}); err != nil {
+	tag, err := r.CreateTag("v1", v1, &git.CreateTagOptions{Tagger: sig, Message: "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.CreateTag("v1-again", tag.Hash(), &git.CreateTagOptions{Tagger: sig, Message: "v1 again"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(work, "pkg/a/old.go")); err != nil {
@@ -97,6 +101,7 @@ func newSource(t *testing.T) source {
 		t.Fatal(err)
 	}
 	write(map[string]string{
+		"big.bin":      strings.Repeat("y", 2048),
 		"pkg/a/a.go":   "package a\n\nfunc A() {}\n\nfunc A2() {}\n",
 		"pkg/a/new.go": old,
 		"pkg/b/b.go":   "package b\n\nfunc B() {}\n",
@@ -267,8 +272,13 @@ func TestFetchLimits(t *testing.T) {
 		t.Fatalf("over the write cap: %+v, %v", res, err)
 	}
 	res, err = fetch(Limits{WireBytes: 1 << 20, WriteBytes: 1 << 20, BlobBytes: 1 << 10, DiffBytes: 200}, Request{Ref: "v2", From: "v1"})
-	if err != nil || res.DiffCut == 0 || len(res.Diff) > 200 || len(res.Changed) != 3 {
+	if err != nil || res.DiffCut < 2 || len(res.Diff) > 200 || len(res.Changed) != 4 {
 		t.Fatalf("over the diff cap: %+v, %v", res, err)
+	}
+	res, err = fetch(testLimits, Request{Ref: "v2", From: "v1"})
+	if err != nil || res.DiffCut != 1 || !slices.Equal(res.Changed, []string{"big.bin", "pkg/a/a.go", "pkg/a/new.go", "pkg/b/b.go"}) ||
+		strings.Contains(res.Diff, "big.bin") || !strings.Contains(res.Diff, "rename to pkg/a/new.go") {
+		t.Fatalf("a changed file over the blob limit is listed but not diffed: %+v, %v", res, err)
 	}
 	if _, err := fetch(testLimits, Request{Ref: "v9"}); err == nil || !strings.Contains(err.Error(), "no such tag or branch") ||
 		!strings.Contains(err.Error(), "full SHA") {
@@ -280,6 +290,19 @@ func TestFetchLimits(t *testing.T) {
 	}
 	if _, err := (&Fetcher{Transport: srv.transport, Limits: testLimits}).Fetch(t.Context(), Request{URL: srv.url, Ref: "v1"}, dest); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("into a directory that exists: err = %v", err)
+	}
+}
+
+func TestFetchTagOfTag(t *testing.T) {
+	src := newSource(t)
+	for _, srv := range servers(t, src) {
+		t.Run(srv.name, func(t *testing.T) {
+			res, err := (&Fetcher{Transport: srv.transport, Limits: testLimits}).Fetch(t.Context(),
+				Request{URL: srv.url, Ref: "v1-again", From: "v1-again", Paths: []string{"README.md"}}, filepath.Join(t.TempDir(), "out"))
+			if err != nil || res.Commit != src.v1 || res.FromCommit != src.v1 || res.Files != 1 {
+				t.Fatalf("fetch = %+v, %v", res, err)
+			}
+		})
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -69,7 +70,8 @@ type Limits struct {
 	// WriteBytes caps the files written. They are written in the tree's
 	// order, so past the cap the paths that sort last are left out.
 	WriteBytes int64
-	// BlobBytes is the largest file written; a larger one is left out.
+	// BlobBytes is the largest file written or diffed; a larger one is
+	// left out of both, and not read.
 	BlobBytes int64
 	// DiffBytes caps the diff: a file whose diff would take it past the
 	// cap is left out of it.
@@ -92,7 +94,8 @@ type Result struct {
 	Truncated bool
 	// Diff is the unified diff from FromCommit to Commit, kept to Paths.
 	// Changed lists every path the diff touches, and DiffCut how many of
-	// those files were left out of Diff to keep it within DiffBytes.
+	// those files Diff leaves out: those over BlobBytes, and those that
+	// would take it past DiffBytes.
 	Diff    string
 	Changed []string
 	DiffCut int
@@ -135,7 +138,15 @@ func (f *Fetcher) fetch(ctx context.Context, repo *git.Repository, req Request, 
 	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: remoteName, URLs: []string{req.URL}}); err != nil {
 		return nil, fmt.Errorf("upstream: remote: %w", err)
 	}
-	wire := &cappedTransport{base: f.transport(), max: f.Limits.WireBytes}
+	base := f.Transport
+	if base == nil {
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		// Nothing reuses t once the fetch is done, and it would keep its
+		// idle connections open until they time out.
+		defer t.CloseIdleConnections()
+		base = t
+	}
+	wire := &cappedTransport{base: base, max: f.Limits.WireBytes}
 	opts := []client.Option{client.WithHTTPClient(&http.Client{Transport: wire})}
 	specs := []config.RefSpec{config.RefSpec(req.Ref + ":" + toRef.String())}
 	if req.From != "" {
@@ -198,21 +209,11 @@ func (f *Fetcher) fetch(ctx context.Context, repo *git.Repository, req Request, 
 		return nil, err
 	}
 	if req.From != "" {
-		if changes, err = object.DetectRenames(changes, nil); err != nil {
-			return nil, fmt.Errorf("upstream: renames: %w", err)
-		}
-		if res.Diff, res.Changed, res.DiffCut, err = render(ctx, changes, f.Limits.DiffBytes); err != nil {
+		if res.Diff, res.Changed, res.DiffCut, err = render(ctx, changes, f.Limits); err != nil {
 			return nil, err
 		}
 	}
 	return res, nil
-}
-
-func (f *Fetcher) transport() http.RoundTripper {
-	if f.Transport != nil {
-		return f.Transport
-	}
-	return http.DefaultTransport.(*http.Transport).Clone()
 }
 
 // fetchErr says why a fetch over wire failed. A ref the server lacks fails
@@ -243,23 +244,20 @@ func fetch(ctx context.Context, repo *git.Repository, opts []client.Option, spec
 	return err
 }
 
-// commitAt is the commit the fetched ref points at, through an annotated
-// tag.
+// commitAt is the commit the fetched ref points at, through any annotated
+// tags, one of which can name another.
 func commitAt(repo *git.Repository, name plumbing.ReferenceName) (*object.Commit, error) {
 	ref, err := repo.Reference(name, true)
 	if err != nil {
 		return nil, fmt.Errorf("upstream: %s: %w", name, err)
 	}
-	if tag, err := repo.TagObject(ref.Hash()); err == nil {
-		c, err := tag.Commit()
-		if err != nil {
-			return nil, fmt.Errorf("upstream: tag %s: %w", tag.Name, err)
-		}
-		return c, nil
+	h := ref.Hash()
+	for tag, err := repo.TagObject(h); err == nil; tag, err = repo.TagObject(h) {
+		h = tag.Target
 	}
-	c, err := repo.CommitObject(ref.Hash())
+	c, err := repo.CommitObject(h)
 	if err != nil {
-		return nil, fmt.Errorf("upstream: commit %s: %w", ref.Hash(), err)
+		return nil, fmt.Errorf("upstream: commit %s: %w", h, err)
 	}
 	return c, nil
 }
@@ -416,21 +414,50 @@ func writeBlob(name string, blob *object.Blob) error {
 	return out.Close()
 }
 
-// render is changes as a unified diff, the paths they touch by their
-// new names, and how many files were left out of the diff to keep it
-// within maxBytes.
-func render(ctx context.Context, changes object.Changes, maxBytes int) (string, []string, int, error) {
-	var b strings.Builder
-	changed := make([]string, 0, len(changes))
-	cut := 0
+// renameLimit is the most deleted or added files whose renames are found
+// by content: go-git scores each deleted file against each added one,
+// reading the added one whole every time. Past it, only exact renames are
+// found.
+const renameLimit = 50
+
+// render is changes, with their renames found, as a unified diff, the
+// paths they touch by their new names, and how many files the diff leaves
+// out: those over l.BlobBytes, which are neither read nor diffed, and those
+// that would take it past l.DiffBytes.
+func render(ctx context.Context, changes object.Changes, l Limits) (string, []string, int, error) {
+	var small, large object.Changes
 	for _, c := range changes {
-		changed = append(changed, cmp.Or(c.To.Name, c.From.Name))
+		from, to, err := c.Files()
+		if err != nil {
+			return "", nil, 0, fmt.Errorf("upstream: diff: %w", err)
+		}
+		if from != nil && from.Size > l.BlobBytes || to != nil && to.Size > l.BlobBytes {
+			large = append(large, c)
+		} else {
+			small = append(small, c)
+		}
+	}
+	opts := *object.DefaultDiffTreeOptions
+	opts.RenameLimit = renameLimit
+	small, err := object.DetectRenames(small, &opts)
+	if err != nil {
+		return "", nil, 0, fmt.Errorf("upstream: renames: %w", err)
+	}
+	all := slices.Concat(small, large)
+	sort.Stable(all)
+	changed := make([]string, len(all))
+	for i, c := range all {
+		changed[i] = cmp.Or(c.To.Name, c.From.Name)
+	}
+	var b strings.Builder
+	cut := len(large)
+	for _, c := range small {
 		patch, err := object.Changes{c}.PatchContext(ctx)
 		if err != nil {
 			return "", nil, 0, fmt.Errorf("upstream: diff: %w", err)
 		}
 		s := patch.String()
-		if b.Len()+len(s) > maxBytes {
+		if b.Len()+len(s) > l.DiffBytes {
 			cut++
 			continue
 		}
