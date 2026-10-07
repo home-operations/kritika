@@ -15,7 +15,8 @@
   },
   "models": {
     "review": "openrouter/acme-large",
-    "fallback": "openrouter/acme-small"
+    "fallback": "openrouter/acme-small",
+    "effort": "high"
   },
   "limits": {
     "concurrency": 2,

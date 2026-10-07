@@ -165,6 +165,9 @@ func (m ModelRef) Model() string {
 type Models struct {
 	Review   ModelRef `json:"review"`
 	Fallback ModelRef `json:"fallback"`
+	// Effort is how hard the review model, and the fallback that takes its
+	// step, reasons; empty leaves it to the provider.
+	Effort model.Effort `json:"effort"`
 }
 
 // Limits bound what an account may consume, as resolved. A cap of zero is no
@@ -232,39 +235,46 @@ type Overrides struct {
 }
 
 // ReviewSpec sets how a review is done at one scope: its models, a role
-// written here, even empty, replacing the broader scope's, whether a
-// finding must carry a suggested fix, whether it approves,
-// how many files may change since the last review before a re-review
-// covers the whole pull request again, whether the summary draws the
-// change's flow, and whether its footer states the pull request's spend.
+// written here, even empty, replacing the broader scope's, how hard they
+// reason, whether a finding must carry a suggested fix, whether it
+// approves, how many files may change since the last review before a
+// re-review covers the whole pull request again, whether the summary
+// draws the change's flow, and whether its footer states the pull
+// request's spend.
 type ReviewSpec struct {
-	Model       *ModelRef `yaml:"model,omitempty"`
-	Fallback    *ModelRef `yaml:"fallback,omitempty"`
-	Fixes       *bool     `yaml:"fixes,omitempty"`
-	Approve     *bool     `yaml:"approve,omitempty"`
-	Incremental *int      `yaml:"incremental,omitempty"`
-	Diagram     *bool     `yaml:"diagram,omitempty"`
-	Cost        *bool     `yaml:"cost,omitempty"`
+	Model    *ModelRef `yaml:"model,omitempty"`
+	Fallback *ModelRef `yaml:"fallback,omitempty"`
+	// Effort is one of model.Efforts; written empty, it leaves the effort
+	// to the provider.
+	Effort      *model.Effort `yaml:"effort,omitempty"`
+	Fixes       *bool         `yaml:"fixes,omitempty"`
+	Approve     *bool         `yaml:"approve,omitempty"`
+	Incremental *int          `yaml:"incremental,omitempty"`
+	Diagram     *bool         `yaml:"diagram,omitempty"`
+	Cost        *bool         `yaml:"cost,omitempty"`
 }
 
 // ConfidenceSpec sets how a review is judged at one scope: the model that
 // scores the reviewed pull request, a model written here, even empty,
-// replacing the broader scope's, the score the pull request must reach,
-// whether the commit status fails under it, the highest risk a change may
-// carry and still be approved, and the admin's guidance to the scorer on
-// rating risk.
+// replacing the broader scope's, how hard it reasons, the score the pull
+// request must reach, whether the commit status fails under it, the
+// highest risk a change may carry and still be approved, and the admin's
+// guidance to the scorer on rating risk.
 type ConfidenceSpec struct {
-	Model        *ModelRef    `yaml:"model,omitempty"`
-	Threshold    *int         `yaml:"threshold,omitempty"`
-	Gate         *bool        `yaml:"gate,omitempty"`
-	Risk         *review.Risk `yaml:"risk,omitempty"`
-	Instructions *string      `yaml:"instructions,omitempty"`
+	Model        *ModelRef     `yaml:"model,omitempty"`
+	Effort       *model.Effort `yaml:"effort,omitempty"`
+	Threshold    *int          `yaml:"threshold,omitempty"`
+	Gate         *bool         `yaml:"gate,omitempty"`
+	Risk         *review.Risk  `yaml:"risk,omitempty"`
+	Instructions *string       `yaml:"instructions,omitempty"`
 }
 
 // Confidence is how a repository's reviews are judged, as resolved. With no
 // Model nothing is scored.
 type Confidence struct {
 	Model ModelRef `json:"model"`
+	// Effort is how hard the model reasons, as Models.Effort.
+	Effort model.Effort `json:"effort"`
 	// Threshold is the score, out of MaxConfidence, a pull request must
 	// reach to be approved and, with Gate, for its commit status to pass.
 	Threshold int `json:"threshold"`

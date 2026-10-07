@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/webhook"
 )
@@ -16,8 +17,8 @@ import (
 func adminSettings() configfile.Settings {
 	return configfile.Settings{
 		Enabled: true, Ignore: []string{"vendor/**"}, Settle: 2 * time.Minute,
-		Models:     configfile.Models{Review: "p/big"},
-		Confidence: configfile.Confidence{Threshold: 5, Risk: review.RiskMedium},
+		Models:     configfile.Models{Review: "p/big", Effort: model.EffortHigh},
+		Confidence: configfile.Confidence{Effort: model.EffortHigh, Threshold: 5, Risk: review.RiskMedium},
 		Filters: configfile.Filters{
 			Include: []configfile.Filter{{Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
 			Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
@@ -115,7 +116,7 @@ func TestMerge(t *testing.T) {
 			name: "a model of a provider the account may use",
 			doc:  "review: { model: own/small, fallback: p/big }\n",
 			want: func(s *configfile.Settings) {
-				s.Models = configfile.Models{Review: "own/small", Fallback: "p/big"}
+				s.Models = configfile.Models{Review: "own/small", Fallback: "p/big", Effort: model.EffortHigh}
 			},
 		},
 		{
@@ -124,6 +125,20 @@ func TestMerge(t *testing.T) {
 				`.kritika.yaml: review.model "q/big" was dropped; allowed: a model of own, p`,
 				`.kritika.yaml: review.fallback "p" was dropped; allowed: a model of own, p`,
 			},
+		},
+		{
+			name: "an effort replaces the admin's", doc: "review: { effort: xhigh }\nconfidence: { effort: minimal }\n",
+			want: func(s *configfile.Settings) {
+				s.Models.Effort, s.Confidence.Effort = model.EffortXHigh, model.EffortMinimal
+			},
+		},
+		{
+			name: "an effort written empty leaves it to the provider", doc: "review: { effort: '' }\n",
+			want: func(s *configfile.Settings) { s.Models.Effort = "" },
+		},
+		{
+			name: "an effort that is no level is dropped", doc: "review: { effort: turbo }\n",
+			dropped: []string{`.kritika.yaml: review.effort "turbo" was dropped; allowed: none, minimal, low, medium, high, xhigh or max`},
 		},
 		{
 			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, threshold: 0, gate: true }\n",

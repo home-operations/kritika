@@ -22,7 +22,8 @@
     "enabled": true,
     "models": {
       "review": "openrouter/acme-large",
-      "fallback": ""
+      "fallback": "",
+      "effort": "high"
     },
     "filters": {
       "include": [
@@ -66,6 +67,7 @@
     },
     "confidence": {
       "model": "openrouter/acme-judge",
+      "effort": "low",
       "threshold": 5,
       "gate": false,
       "risk": "low",
@@ -112,7 +114,8 @@
       "enabled": true,
       "models": {
         "review": "openrouter/acme-small",
-        "fallback": ""
+        "fallback": "",
+        "effort": "high"
       },
       "filters": {
         "include": [
@@ -156,6 +159,7 @@
       },
       "confidence": {
         "model": "openrouter/acme-judge",
+        "effort": "low",
         "threshold": 5,
         "gate": false,
         "risk": "low",

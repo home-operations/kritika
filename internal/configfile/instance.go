@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
 
 // The environment may set some of the file's keys: one model provider, the
-// review and fallback models, the confidence model, threshold
-// and risk, and settle every account and repository inherits, and the
-// embedder. Each wins over the file's.
+// review and fallback models and their effort, the confidence model, its
+// effort, threshold and risk, and settle every account and repository
+// inherits, and the embedder. Each wins over the file's.
 
 // Environment variable prefixes of the keys the environment may set.
 const (
@@ -100,6 +101,9 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 		case reviewEnvPrefix + "FALLBACK":
 			ref := ModelRef(value)
 			d.Review.Fallback, path = &ref, keyFallback
+		case reviewEnvPrefix + "EFFORT":
+			effort := model.Effort(value)
+			d.Review.Effort, path = &effort, keyEffort
 		case reviewEnvPrefix + "APPROVE":
 			approve, err := strconv.ParseBool(value)
 			if err != nil {
@@ -133,6 +137,9 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 		case confidenceEnvPrefix + "MODEL":
 			ref := ModelRef(value)
 			d.Confidence.Model, path = &ref, keyScorer
+		case confidenceEnvPrefix + "EFFORT":
+			effort := model.Effort(value)
+			d.Confidence.Effort, path = &effort, keyScorerEffort
 		case confidenceEnvPrefix + "THRESHOLD":
 			n, err := strconv.Atoi(value)
 			if err != nil {
@@ -206,9 +213,9 @@ type FileLayer struct {
 	Review    FileValue
 	Fallback  FileValue
 	// Defaults are the other settings it writes that the environment may
-	// set too: approve, fixes, incremental, diagram, the confidence
-	// model, threshold, gate and risk, settle and limit, in that order,
-	// by their policy keys.
+	// set too: the review effort, approve, fixes, incremental, diagram,
+	// the confidence model, effort, threshold, gate and risk, settle and
+	// limit, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -272,12 +279,14 @@ func (f *File) FileLayer() FileLayer {
 		key, value string
 		set        bool
 	}{
+		{keyEffort, string(deref(d.Review.Effort)), d.Review.Effort != nil},
 		{keyApprove, strconv.FormatBool(deref(d.Review.Approve)), d.Review.Approve != nil},
 		{keyFixes, strconv.FormatBool(deref(d.Review.Fixes)), d.Review.Fixes != nil},
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},
 		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
 		{keyCost, strconv.FormatBool(deref(d.Review.Cost)), d.Review.Cost != nil},
 		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
+		{keyScorerEffort, string(deref(d.Confidence.Effort)), d.Confidence.Effort != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},
 		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},

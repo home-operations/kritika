@@ -191,6 +191,7 @@ Kubernetes: `>=1.25.0-0`
 | config.authOidcRolesClaim | string | `""` | The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`. |
 | config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
 | config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
+| config.confidenceEffort | string | `""` | How hard the confidence model reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set. |
 | config.confidenceGate | string | `""` | `true` fails the commit status under the threshold, so it can be a required check; off unless set, when the status reports the score and passes. |
 | config.confidenceModel | string | `""` | The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set. |
 | config.confidenceRisk | string | `""` | The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set. |
@@ -215,6 +216,7 @@ Kubernetes: `>=1.25.0-0`
 | config.reviewApprove | string | `""` | `true` has a review that finds nothing blocking or important approve the pull request, or, with a confidence model, one whose score and risk allow it, and dismisses that approval when a later review's do not; off unless set. |
 | config.reviewCost | string | `""` | `true` ends the summary's footer with what the pull request's reviews have cost together; off unless set. |
 | config.reviewDiagram | string | `""` | `true` has the summary draw the flow the change adds or alters as a Mermaid diagram; off unless set. |
+| config.reviewEffort | string | `""` | How hard the review model, and the fallback that takes its step, reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set. |
 | config.reviewFallback | string | `""` | The model a review falls back to when the review model fails. |
 | config.reviewFixes | string | `""` | `true` requires a suggested fix on every finding; off unless set. |
 | config.reviewIncremental | string | `""` | How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set. |

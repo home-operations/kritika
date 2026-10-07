@@ -26,6 +26,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/textcut"
@@ -67,13 +68,15 @@ type Comments struct {
 
 // Review is how the repository's reviews are done: the review and fallback
 // models, each a "<provider>/<model>" of a provider its account may use,
-// whether a finding must carry a suggested fix, whether a review that
-// finds nothing blocking or important approves the pull request, and
-// whether the summary draws the change's flow. Approve and Diagram
-// replace the admin's.
+// how hard they reason, whether a finding must carry a suggested fix,
+// whether a review that finds nothing blocking or important approves the
+// pull request, and whether the summary draws the change's flow. Effort,
+// Approve and Diagram replace the admin's; an Effort written empty leaves
+// it to the provider.
 type Review struct {
 	Model    configfile.ModelRef `yaml:"model,omitempty"`
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
+	Effort   *model.Effort       `yaml:"effort,omitempty"`
 	Fixes    *bool               `yaml:"fixes,omitempty"`
 	Approve  *bool               `yaml:"approve,omitempty"`
 	Diagram  *bool               `yaml:"diagram,omitempty"`
@@ -81,11 +84,13 @@ type Review struct {
 
 // Confidence is how the repository's reviews are judged: the model that
 // scores a reviewed pull request, a "<provider>/<model>" of a provider its
-// account may use, the score it must reach and whether the commit status
-// fails under it, which all replace the admin's, and the highest risk a
-// change may carry and still be approved, which may only lower the admin's.
+// account may use, how hard it reasons, as Review.Effort, the score it
+// must reach and whether the commit status fails under it, which all
+// replace the admin's, and the highest risk a change may carry and still
+// be approved, which may only lower the admin's.
 type Confidence struct {
 	Model     configfile.ModelRef `yaml:"model,omitempty"`
+	Effort    *model.Effort       `yaml:"effort,omitempty"`
 	Threshold *int                `yaml:"threshold,omitempty"`
 	Gate      *bool               `yaml:"gate,omitempty"`
 	Risk      review.Risk         `yaml:"risk,omitempty"`

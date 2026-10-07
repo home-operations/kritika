@@ -169,11 +169,17 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Review.Fallback != nil {
 		s.Models.Fallback = *o.Review.Fallback
 	}
+	if o.Review.Effort != nil {
+		s.Models.Effort = *o.Review.Effort
+	}
 	if o.Review.Incremental != nil {
 		s.Incremental.MaxDeltaFiles = *o.Review.Incremental
 	}
 	if o.Confidence.Model != nil {
 		s.Confidence.Model = *o.Confidence.Model
+	}
+	if o.Confidence.Effort != nil {
+		s.Confidence.Effort = *o.Confidence.Effort
 	}
 	if o.Confidence.Threshold != nil {
 		s.Confidence.Threshold = *o.Confidence.Threshold
