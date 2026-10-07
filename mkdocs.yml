@@ -129,6 +129,7 @@ nav:
       - Helm chart values: chart-values.md
   - Using kritika:
       - Reviews: reviews.md
+      - Confidence and approvals: confidence.md
       - Dashboard: dashboard.md
       - Metrics: metrics.md
   - Development: development.md

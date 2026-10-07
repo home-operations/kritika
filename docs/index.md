@@ -97,6 +97,8 @@ flowchart LR
 - **[Helm chart values](chart-values.md)**: the chart's values, grouped.
 - **[Reviews](reviews.md)**: when a review runs, what it posts, and the
   commands that steer it.
+- **[Confidence and approvals](confidence.md)**: the confidence score, the
+  commit status it can gate, risk, and when kritika approves.
 - **[Dashboard](dashboard.md)**: the setup checklist, the Configuration page,
   repository on/off and actions.
 - **[Metrics](metrics.md)**: what kritika exports to Prometheus.

@@ -124,6 +124,7 @@ runner holds, the gateway and the sandbox.
 | [Security](https://kritika.home-operations.com/security/)                           | hardening an install, what a runner holds, the egress gateway, runner tools and the sandbox |
 | [Chart values](charts/kritika/README.md)                                            | every value of the Helm chart                                                               |
 | [Reviews](https://kritika.home-operations.com/reviews/)                             | when a review runs, what it posts, and the commands that steer it                           |
+| [Confidence and approvals](https://kritika.home-operations.com/confidence/)         | the confidence score, the commit status it can gate, risk, and when kritika approves        |
 | [Dashboard](https://kritika.home-operations.com/dashboard/)                         | the setup checklist, the Configuration page, repository on/off and actions                  |
 | [Metrics](https://kritika.home-operations.com/metrics/)                             | what kritika exports to Prometheus, and the chart's alerts and Grafana dashboard            |
 | [Development](https://kritika.home-operations.com/development/)                     | building, testing, evaluation and the cluster loop                                          |

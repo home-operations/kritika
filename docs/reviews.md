@@ -29,7 +29,7 @@ someone comments `@<bot> pause`.
 | Findings          | inline comments on the lines they concern, each with its severity, category, explanation, a one-click suggestion where it has a fix, and a prompt for a coding agent |
 | The commit status | `Kritika / Review`, on the head commit                                                                                                                               |
 | Reactions         | 👀 on the pull request while a review runs, 👍 once one is posted; a mention kritika answers gets the same ([permissions](setup.md#register-the-github-app))         |
-| An approval       | with `review.approve` on ([approvals](repository-config.md#approvals))                                                                                               |
+| An approval       | with `review.approve` on ([approvals](confidence.md#approvals))                                                                                                      |
 
 ### The summary comment
 

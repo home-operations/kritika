@@ -106,22 +106,11 @@ by it, and `kritika_findings_total` counts by it.
 
 ### Approvals
 
-With `review.approve: true`, a review that finds nothing blocking or
-important approves the pull request, as a review pinned to the head it
-saw; nits alone do not withhold it. Off unless set, and it replaces the
-admin's in either direction: a repository turns it on where the instance
-leaves it off.
-
-- **With a confidence score**, the score decides instead: the pull request
-  is approved when its score reaches `confidence.threshold` and its risk
-  is within `confidence.risk`, and a review left unscored approves
-  nothing.
-- **Withdrawn:** a later review of the same pull request whose verdict no
-  longer allows it dismisses kritika's approval, as does a reviewer who
-  stands as requesting changes. A head that moved while it was reviewed is
-  left to its own review.
-- **Reported:** the summary says which way it went: `Approved`, or
-  `Not approved` with the reason.
+`review.approve: true` has kritika approve a pull request its review
+allows: one with nothing blocking or important, or, with a confidence
+score, one whose score and risk allow it. It replaces the admin's in
+either direction, so a repository can turn it on where the instance
+leaves it off ([approvals](confidence.md#approvals)).
 
 ### Flow diagrams
 
@@ -141,15 +130,11 @@ tokens on every review, and it replaces the admin's in either direction.
 
 ### Confidence
 
-| Key                    | What                                                                                                    | Against the admin's value                  |
-| ---------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `confidence.model`     | the model that scores a reviewed pull request from 0 to 5, held to the same providers as `review.model` | replaces                                   |
-| `confidence.threshold` | the score the pull request must reach                                                                   | replaces, either way                       |
-| `confidence.gate`      | `true` fails the commit status under the threshold; off, the status reports the score and passes        | replaces, either way                       |
-| `confidence.risk`      | the highest risk a change may be rated and still be approved                                            | may only lower it; a higher one is dropped |
-
-See [confidence and risk](configuration.md#confidence-and-risk) for how a
-score is reached.
+`confidence.model`, `confidence.threshold` and `confidence.gate` replace
+the admin's, the threshold and the gate in either direction;
+`confidence.risk` may only lower the admin's, and a higher one is dropped.
+`confidence.instructions` is the admin's alone
+([confidence and approvals](confidence.md)).
 
 ### Trigger conditions
 
