@@ -461,8 +461,11 @@ The Configuration page lists what the file and the environment set under
 
 kritika registers every repository each App reaches, once the
 configuration is applied and again on every poll, and "Resync from GitHub"
-on the Repositories page does the same at once. Whether one runs is
-decided in this order:
+on the Repositories page does the same at once. Each also disables the
+repositories the App no longer reaches, such as one deleted, renamed or
+transferred on GitHub, unless the configuration lists them; a listing that
+fails or comes back empty disables nothing. Whether one runs is decided in
+this order:
 
 1. an archived repository never runs: unarchive it on GitHub, then
    resync;

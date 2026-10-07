@@ -372,7 +372,10 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 // TestSyncRepositories: the repositories a running connection's App reaches
 // are registered on the accounts it serves, with what the forge says of
 // them, and a second sync adds none; an account it does not serve gets
-// nothing, and a listing that fails is logged.
+// nothing. A forge-reported repository the listing no longer has is
+// disabled, but not one the configuration lists, nor one a webhook named
+// while the listing ran, and a listing that fails or comes back empty
+// disables nothing.
 func TestSyncRepositories(t *testing.T) {
 	ctx := context.Background()
 	var logs bytes.Buffer
@@ -441,12 +444,62 @@ func TestSyncRepositories(t *testing.T) {
 		t.Fatalf("a second sync: repositories %q, logs %s; want nothing new", got, logs.String())
 	}
 
+	homeOps := func() bool {
+		t.Helper()
+		var on bool
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/home-ops'`).Scan(&on)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return on
+	}
+	listedBefore := homeOps()
+	logs.Reset()
+	// A webhook names synced-late in a transaction that began before the
+	// listing and writes while it runs.
+	began, write, named := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		named <- st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			close(began)
+			<-write
+			_, _, err := store.EnsureRepository(ctx, tx, account.ID(), store.ReachedRepository{FullName: "onedr0p/synced-late"})
+			return err
+		})
+	}()
+	<-began
+	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+		close(write)
+		if err := <-named; err != nil {
+			return nil, err
+		}
+		return map[string][]store.ReachedRepository{
+			"onedr0p": {{FullName: "onedr0p/synced", DefaultBranch: "main", Traits: &configfile.RepoTraits{}}},
+		}, nil
+	}
+	p.SyncRepositories(ctx)
+	want = "onedr0p/synced:true:main:false,onedr0p/synced-fork:false:main:true,onedr0p/synced-late:true::false"
+	if got := rows(); got != want || !strings.Contains(logs.String(), "disabled=1") || homeOps() != listedBefore {
+		t.Fatalf("a sync without synced-fork: repositories %q, home-ops enabled %v, logs %s; want %q, home-ops as it was",
+			got, homeOps(), logs.String(), want)
+	}
+
+	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+		return map[string][]store.ReachedRepository{"onedr0p": {}}, nil
+	}
+	p.SyncRepositories(ctx)
+	if got := rows(); got != want {
+		t.Fatalf("an empty listing: repositories %q, want %q", got, want)
+	}
 	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
 		return nil, errors.New("github: list App installations: 502")
 	}
 	p.SyncRepositories(ctx)
 	if !strings.Contains(logs.String(), "repositories not synced") || !strings.Contains(logs.String(), "502") {
 		t.Fatalf("a failed listing is not logged: %s", logs.String())
+	}
+	if got := rows(); got != want {
+		t.Fatalf("a failed listing: repositories %q, want %q", got, want)
 	}
 }
 
@@ -607,9 +660,9 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 	}
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
-	if _, err := st.RegisterRepositories(ctx, account.ID(), []store.ReachedRepository{
+	if _, _, err := st.RegisterRepositories(ctx, account.ID(), []store.ReachedRepository{
 		{FullName: "onedr0p/flaky", DefaultBranch: "main", Traits: &configfile.RepoTraits{}},
-	}); err != nil {
+	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	// A webhook reached the connection lately, so no default branch is
