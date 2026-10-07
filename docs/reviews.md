@@ -15,7 +15,7 @@ and the commands that steer it.
 
 Drafts, forks and bots' pull requests are reviewed like any other unless a
 `trigger.exclude` condition keeps them out
-([which pull requests are reviewed](configuration.md#repository-settings-and-repositories)).
+([which pull requests are reviewed](configuration.md#which-pull-requests-are-reviewed)).
 A bot's rebase that leaves its patch unchanged is skipped, unless a
 confidence score is asked for and its last review has none. A pull request
 stops getting automatic reviews after `trigger.limit` of them, or once

@@ -152,7 +152,7 @@ skills:
   replaces the admin's, the threshold and the gate in either direction.
   `confidence.risk` is the highest risk a change may be rated and still be
   approved, and may only lower the admin's; a higher one is dropped.
-  See [the configuration](configuration.md#repository-settings-and-repositories)
+  See [confidence and risk](configuration.md#confidence-and-risk)
   for how a score is reached.
 - `trigger.include` / `trigger.exclude`: conditions on the pull request,
   each an `expr`, `paths` globs that hold when a changed path matches
