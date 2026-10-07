@@ -90,9 +90,11 @@ func (p *Poller) Run(ctx context.Context) {
 // SyncRepositories registers the repositories each running connection's
 // App reaches on the accounts it serves, as a webhook from each would, so
 // they are known, polled and indexed without one: an App installed before
-// kritika started sends no installation event. A connection whose listing
-// fails, or takes longer than reachTimeout, is logged and left for the
-// next poll.
+// kritika started sends no installation event. The forge-reported
+// repositories an account's listing no longer has are disabled, in case
+// the webhook that said so was missed. A connection whose listing fails,
+// or takes longer than reachTimeout, is logged and left for the next poll,
+// and an account whose listing is empty is left as it is.
 func (p *Poller) SyncRepositories(ctx context.Context) {
 	if p.Reach == nil {
 		return
@@ -103,6 +105,7 @@ func (p *Poller) SyncRepositories(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		listedAt := time.Now()
 		reachCtx, cancel := context.WithTimeout(ctx, reachTimeout)
 		reach, err := p.Reach(reachCtx, in)
 		cancel()
@@ -119,13 +122,16 @@ func (p *Poller) SyncRepositories(ctx context.Context) {
 			if len(repos) == 0 {
 				continue
 			}
-			added, err := p.Store.RegisterRepositories(ctx, account.ID(), repos)
+			added, disabled, err := p.Store.RegisterRepositories(ctx, account.ID(), repos, listedAt)
 			if err != nil {
 				p.Logger.Warn("repositories not synced", "connection", in.Name, "account", account.Key(), "error", err)
 				continue
 			}
 			if added > 0 {
 				p.Logger.Info("repositories registered", "connection", in.Name, "account", account.Key(), "added", added)
+			}
+			if disabled > 0 {
+				p.Logger.Info("repositories no longer listed disabled", "connection", in.Name, "account", account.Key(), "disabled", disabled)
 			}
 		}
 	}

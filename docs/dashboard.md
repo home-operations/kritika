@@ -148,8 +148,8 @@ starts ([which repositories run](configuration.md#which-repositories-run)).
 The page lists the repositories that can run, with any fork turned on; its
 Type filter lists the forks, or the archived repositories, instead.
 "Resync from GitHub" lists the repositories the App reaches again, such as
-right after unarchiving one. An account's repository count is of the ones
-that run.
+right after unarchiving one, and disables the ones it no longer reaches.
+An account's repository count is of the ones that run.
 
 ## Actions
 

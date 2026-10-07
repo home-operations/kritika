@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -21,23 +22,42 @@ type ReachedRepository struct {
 
 // RegisterRepositories records the repositories of account accountID that
 // its connection's App reaches, as a webhook from each would, so polling
-// and onboarding know them before any event arrives. It returns how many
-// were new.
-func (s *Store) RegisterRepositories(ctx context.Context, accountID string, repos []ReachedRepository) (int, error) {
-	var added int
-	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+// and onboarding know them before any event arrives. repos is the
+// account's whole listing, taken from listedAt on: the forge-reported
+// repositories it lacks, deleted, renamed, transferred or no longer
+// reached, are disabled as an installation event would, unless named since
+// listedAt, as a webhook may have done after the listing. An empty listing
+// disables nothing, so a bad one never disables a whole account, and the
+// repositories the configuration lists are left alone. It returns how many
+// were new and how many it disabled.
+func (s *Store) RegisterRepositories(
+	ctx context.Context, accountID string, repos []ReachedRepository, listedAt time.Time,
+) (added, disabled int, err error) {
+	if len(repos) == 0 {
+		return 0, 0, nil
+	}
+	err = s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		ids := make([]string, 0, len(repos))
 		for _, r := range repos {
-			_, isNew, err := EnsureRepository(ctx, tx, accountID, r)
+			id, isNew, err := EnsureRepository(ctx, tx, accountID, r)
 			if err != nil {
 				return err
 			}
+			ids = append(ids, id)
 			if isNew {
 				added++
 			}
 		}
+		tag, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+			WHERE account_id = $1 AND managed_by = 'forge' AND enabled AND id <> ALL($2::uuid[]) AND updated_at < $3`,
+			accountID, ids, listedAt)
+		if err != nil {
+			return fmt.Errorf("store: disable repositories no longer listed: %w", err)
+		}
+		disabled = int(tag.RowsAffected())
 		return nil
 	})
-	return added, err
+	return added, disabled, err
 }
 
 // EnsureRepository records repository r of account accountID as the forge
@@ -46,7 +66,9 @@ func (s *Store) RegisterRepositories(ctx context.Context, accountID string, repo
 // spec lists keeps its enabled flag. A DefaultBranch of "" leaves the known
 // one, and so does a nil Traits the known traits. A row enabled again loses
 // the time the index sweep found it stopped: it may run, and stop again,
-// before the next sweep sees it.
+// before the next sweep sees it. updated_at is the time of the write, not
+// of the transaction's start, for RegisterRepositories to leave a row
+// named while a listing ran.
 func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository) (id string, isNew bool, err error) {
 	var archived, fork *bool
 	if r.Traits != nil {
@@ -54,8 +76,8 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 	}
 	// xmax is 0 only on a row the statement inserted, not one it updated.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, archived, fork)
-		VALUES ($1, $2, $3, $4, 'forge', true, coalesce($5, false), coalesce($6, false))
+		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, archived, fork, updated_at)
+		VALUES ($1, $2, $3, $4, 'forge', true, coalesce($5, false), coalesce($6, false), clock_timestamp())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
@@ -64,7 +86,7 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 			stopped_at = CASE WHEN repositories.managed_by = 'forge' AND NOT repositories.enabled THEN NULL ELSE repositories.stopped_at END,
 			archived = coalesce($5, repositories.archived),
 			fork = coalesce($6, repositories.fork),
-			updated_at = now()
+			updated_at = clock_timestamp()
 		RETURNING id, xmax = 0`,
 		configfile.RepositoryID(accountID, r.FullName), accountID, r.FullName, r.DefaultBranch, archived, fork).Scan(&id, &isNew)
 	if err != nil {

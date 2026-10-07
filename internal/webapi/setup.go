@@ -3,6 +3,7 @@ package webapi
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
@@ -37,12 +38,14 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 
 // registerReached records every repository connection r names reaches on
 // an account it serves, so the leader polls them and, with an embedder,
-// indexes them before any webhook names them.
+// indexes them before any webhook names them, and disables the ones an
+// account's listing no longer has, as the leader's sync does.
 func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 	in, app, err := s.connectionApp(r)
 	if err != nil {
 		return err
 	}
+	listedAt := time.Now()
 	accounts, err := app.Reach(r.Context(), in.Accounts)
 	if err != nil {
 		return errForge(err)
@@ -60,7 +63,7 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 				FullName: x.FullName, DefaultBranch: x.DefaultBranch, Traits: &configfile.RepoTraits{Archived: x.Archived, Fork: x.Fork},
 			})
 		}
-		added, err := s.store.RegisterRepositories(r.Context(), acct.ID(), repos)
+		added, _, err := s.store.RegisterRepositories(r.Context(), acct.ID(), repos, listedAt)
 		if err != nil {
 			return err
 		}
