@@ -20,6 +20,8 @@ import (
 // review is told of them apart.
 type priorReview struct {
 	id, headSHA, trigger string
+	// mergeBase is the merge base it was reviewed against.
+	mergeBase string
 	// changed are the paths the change touched at headSHA, as its context
 	// pack recorded them.
 	changed   []string
@@ -42,10 +44,10 @@ type priorFinding struct {
 // findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
 	var p priorReview
-	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, coalesce(summary->>'diagram', ''),
+	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, merge_base_sha, coalesce(summary->>'diagram', ''),
 		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')) FROM reviews
 		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA, &p.trigger, &p.diagram, &p.checked)
+		Scan(&p.id, &p.headSHA, &p.trigger, &p.mergeBase, &p.diagram, &p.checked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil
 	}

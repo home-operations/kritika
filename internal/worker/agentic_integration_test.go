@@ -3,6 +3,8 @@
 package worker
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -419,6 +421,8 @@ func (h *agenticHarness) conversation(t *testing.T, reviewID string) (c agent.Co
 func TestAgenticReviewEndToEnd(t *testing.T) {
 	h := newAgenticHarness(t)
 	t.Run("the agent greps, reads and submits a finding", func(t *testing.T) { checkAgentSubmits(t, h) })
+	t.Run("a push carries on the last review's conversation", func(t *testing.T) { checkAgentCarriesOn(t, h) })
+	t.Run("the gateway serves a run the conversation its token names", func(t *testing.T) { checkGatewayConversation(t, h) })
 	t.Run("an agent that never submits fails the review and says so", func(t *testing.T) { checkAgentNeverSubmits(t, h) })
 	t.Run("a submission the output cap cut off is recorded as truncated", func(t *testing.T) { checkAgentTruncated(t, h) })
 	t.Run("a run superseded after the Job still charges its tokens", func(t *testing.T) { checkAgentSupersededCharges(t, h) })
@@ -450,7 +454,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 12 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 13 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -513,6 +517,143 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	checkAgentRules(t, system)
 	checkAgentTranscript(t, h, reviewID)
 	checkConversationKept(t, h, reviewID, system)
+}
+
+// checkAgentCarriesOn pushes a commit on top of the head checkAgentSubmits
+// reviewed. The review carries on that review's conversation under its
+// session: the provider is sent the earlier conversation whole, as its
+// last step sent it, then the answer to its submission and the turn that
+// says what changed since.
+func checkAgentCarriesOn(t *testing.T, h *agenticHarness) {
+	firstID, _, _ := h.waitReview(t, h.head)
+	_, firstSession, firstRun, found := h.conversation(t, firstID)
+	if !found {
+		t.Fatal("the first review kept no conversation")
+	}
+	h.sm.mu.Lock()
+	first := len(h.sm.bodies)
+	last := h.sm.bodies[first-1]
+	h.sm.mu.Unlock()
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc carried() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	_, session, runID, found := h.conversation(t, reviewID)
+	var continued string
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT coalesce(continued_from::text, '') FROM agent_runs WHERE runner_run_id = $1`, runID).Scan(&continued)
+	}); err != nil || !found || session != firstSession || continued != firstRun {
+		t.Fatalf("carried on %q (want %s), kept %v under session %q (want %q), err %v", continued, firstRun, found, session, firstSession, err)
+	}
+	h.sm.mu.Lock()
+	sent := h.sm.bodies[first]
+	h.sm.mu.Unlock()
+	was, wasTools := chatRequest(t, last)
+	now, nowTools := chatRequest(t, sent)
+	if len(now) != len(was)+3 || !bytes.Equal(wasTools, nowTools) {
+		t.Fatalf("the carried-on step sent %d messages after %d, tools equal %v", len(now), len(was), bytes.Equal(wasTools, nowTools))
+	}
+	for i := range was {
+		if !bytes.Equal(was[i], now[i]) {
+			t.Fatalf("message %d differs from what the last review's last step sent:\n%s\n%s", i, was[i], now[i])
+		}
+	}
+	answer, result, turn := string(now[len(was)]), string(now[len(was)+1]), string(now[len(was)+2])
+	if !strings.Contains(answer, `"name":"submit_review"`) || !strings.Contains(result, `"content":"Submitted."`) ||
+		!strings.Contains(turn, "moved from "+h.head[:7]+" to "+next[:7]) || !strings.Contains(turn, "+func carried() {}") {
+		t.Fatalf("after the earlier conversation:\n%s\n%s\n%s", answer, result, turn)
+	}
+}
+
+// chatRequest is a chat completions request's messages and tools, raw.
+func chatRequest(t *testing.T, body []byte) ([]json.RawMessage, json.RawMessage) {
+	t.Helper()
+	var req struct {
+		Messages []json.RawMessage `json:"messages"`
+		Tools    json.RawMessage   `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	return req.Messages, req.Tools
+}
+
+// checkGatewayConversation asks the gateway for a conversation the way a
+// runner does: it serves the one its token names, kept under the run's
+// model, and nothing for a token that names none, another model, or a
+// conversation holding the provider's key.
+func checkGatewayConversation(t *testing.T, h *agenticHarness) {
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"), Number: 1,
+		HeadSHA: strings.Repeat("d", 40), Trigger: "test"}
+	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = h.st.RevokeGatewayTokens(h.ctx, runID)
+		_ = failRun(h.ctx, h.st, h.account.ID(), runID, "test run")
+	})
+	var kept string
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT c.runner_run_id FROM agent_conversations c JOIN runner_runs r ON r.id = c.runner_run_id
+			WHERE r.account_id = $1 ORDER BY c.created_at DESC LIMIT 1`, h.account.ID()).Scan(&kept)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A conversation the provider's key found its way into.
+	var leaked string
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, h.account.ID()).Scan(&leaked)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.runner.WithRunnerJob(h.ctx, leaked, func(tx pgx.Tx) error {
+		_, err := tx.Exec(h.ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
+			SELECT id, account_id, $2, '{"system":"the key is model-key"}', 10, 'gateway/agent-model' FROM runner_runs WHERE id = $1`, leaked, leaked)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fetch := func(continues, modelRef string) (int, []byte) {
+		t.Helper()
+		token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+			RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: modelRef, Budget: 150,
+			Continues: continues,
+		}, time.Now().Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequestWithContext(h.ctx, http.MethodGet, h.gatewayURL+"/v1/conversation", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, body
+	}
+	status, body := fetch(kept, "gateway/agent-model")
+	var c agent.Conversation
+	if err := json.Unmarshal(body, &c); status != http.StatusOK || err != nil || !strings.HasPrefix(c.System, "You are kritika") || len(c.Messages) == 0 {
+		t.Fatalf("the kept conversation = %d, %v: %.200s", status, err, body)
+	}
+	for name, tc := range map[string]struct{ continues, model string }{
+		"none named":            {"", "gateway/agent-model"},
+		"kept on another model": {kept, "opencode/agent-model"},
+		"holding the key":       {leaked, "gateway/agent-model"},
+	} {
+		if status, body := fetch(tc.continues, tc.model); status != http.StatusNotFound || bytes.Contains(body, []byte("model-key")) {
+			t.Errorf("%s = %d: %s", name, status, body)
+		}
+	}
 }
 
 // checkConversationKept checks the runner of reviewID kept its conversation
@@ -595,25 +736,29 @@ func (h *agenticHarness) modelCalls(t *testing.T, accountID, reviewID string) []
 // conversation, a run's steps are one, and the grant's effort.
 func (h *agenticHarness) checkStepSession(t *testing.T, reviewID, runID, repositoryID string) {
 	t.Helper()
-	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
-		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repositoryID, Model: "opencode/agent-model", Effort: "xhigh",
-		Budget: 150,
-	}, time.Now().Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := model.NewOpenAI(model.OpenAIConfig{BaseURL: h.gatewayURL + "/v1", APIKey: token, ReportsModel: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.Step(h.ctx, model.StepRequest{Model: gateway.ModelName, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}}); err != nil {
-		t.Fatal(err)
-	}
-	h.sm.mu.Lock()
-	session, effort := h.sm.sessions[len(h.sm.sessions)-1], h.sm.efforts[len(h.sm.efforts)-1]
-	h.sm.mu.Unlock()
-	if session != runID || effort != "xhigh" {
-		t.Fatalf("the provider was told session %q at effort %q, want the run %q at the grant's xhigh", session, effort, runID)
+	// A run's steps are its own conversation, unless its token names the
+	// session of one it carries on.
+	for _, carried := range []string{"", "earlier-run"} {
+		token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+			RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repositoryID, Model: "opencode/agent-model", Effort: "xhigh",
+			Budget: 150, Session: carried,
+		}, time.Now().Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := model.NewOpenAI(model.OpenAIConfig{BaseURL: h.gatewayURL + "/v1", APIKey: token, ReportsModel: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Step(h.ctx, model.StepRequest{Model: gateway.ModelName, Messages: []model.Message{{Role: model.RoleUser, Text: "review"}}}); err != nil {
+			t.Fatal(err)
+		}
+		h.sm.mu.Lock()
+		session, effort := h.sm.sessions[len(h.sm.sessions)-1], h.sm.efforts[len(h.sm.efforts)-1]
+		h.sm.mu.Unlock()
+		if want := cmp.Or(carried, runID); session != want || effort != "xhigh" {
+			t.Fatalf("the provider was told session %q at effort %q, want %q at the grant's xhigh", session, effort, want)
+		}
 	}
 }
 

@@ -366,6 +366,26 @@ also leaves notes, which no comment shows, on what it checked beyond the
 diff and found sound, and the next re-review is shown them beside the
 findings.
 
+An incremental re-review carries on the last review's conversation
+instead when it can, so the model keeps what it read and the provider
+serves the earlier part of the conversation from its prompt cache. It is
+told the head moved, shown the diff since, and asked for the whole review
+again. That takes all of these:
+
+- the merge base has not moved since the last review, so the diff since
+  shows everything that changed;
+- the last review's conversation was kept on the same review model less
+  than 25 minutes before, or 4 for an Anthropic model, whose cache lasts
+  5 minutes;
+- it is under 100,000 tokens, past which every step's reading it again
+  costs more than starting afresh, and under a quarter of the review's
+  `agent.tokens`, or what the monthly cap leaves of them;
+- the review would send the same system prompt and tools, and the pull
+  request's title, description and linked issues are as they were.
+
+Otherwise the re-review starts afresh, with the last review's findings
+and notes.
+
 An incremental re-review reports what the new commits brought. A finding
 in the diff that the last review did not make, more than 3 lines from
 every line changed since, is held back: the summary lists it folded away,

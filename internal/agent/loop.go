@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -107,6 +108,58 @@ type Run struct {
 	Limits   Limits
 	// OnStep, if set, is called after each step completes.
 	OnStep func(StepEvent)
+	// Carried, when set, is an earlier Run's conversation this one carries
+	// on, which must have offered this Run's System and tools (see
+	// Carries). User is then the next user turn, which first answers each
+	// call of the conversation's last answer.
+	Carried *Conversation
+}
+
+// Texts a carried conversation's last answer is answered with: its
+// submission was taken, and the calls beside it were never run.
+const (
+	carriedSubmitted = "Submitted."
+	carriedNotRun    = "agent: not run: the answer was submitted in the same turn"
+)
+
+// ToolDefs are the tools as the model is offered them: Tools in order,
+// then Submit.
+func (r Run) ToolDefs() []model.ToolDef {
+	defs := make([]model.ToolDef, 0, len(r.Tools)+1)
+	for _, t := range r.Tools {
+		defs = append(defs, t.Def())
+	}
+	return append(defs, r.Submit)
+}
+
+// Carries reports whether r can carry on c: a provider's cache holds it
+// only for the system prompt and tools it was sent with, byte for byte.
+func (r Run) Carries(c *Conversation) bool {
+	if c == nil || c.System != r.System {
+		return false
+	}
+	had, err := json.Marshal(c.Tools)
+	if err != nil {
+		return false
+	}
+	offered, err := json.Marshal(r.ToolDefs())
+	return err == nil && bytes.Equal(had, offered)
+}
+
+// carriedTurn is the user turn that carries c on with text: a result for
+// each call of the answer c ended with, then text.
+func carriedTurn(c *Conversation, submit, text string) model.Message {
+	turn := model.Message{Role: model.RoleUser, Text: text}
+	if n := len(c.Messages); n > 0 {
+		for _, call := range c.Messages[n-1].ToolCalls {
+			result := model.ToolResult{CallID: call.ID, Content: carriedSubmitted}
+			if call.Name != submit {
+				result.IsError, result.Content = true, carriedNotRun
+			}
+			turn.ToolResults = append(turn.ToolResults, result)
+		}
+	}
+	return turn
 }
 
 // nudgeText is appended once, as a user message, after the first turn with
@@ -158,16 +211,16 @@ func (r Run) checkSubmit(input json.RawMessage) error {
 func (r Run) Do(ctx context.Context) Result {
 	limits := r.Limits.WithDefaults()
 
-	toolDefs := make([]model.ToolDef, 0, len(r.Tools)+1)
+	toolDefs := r.ToolDefs()
 	toolsByName := make(map[string]Tool, len(r.Tools))
-	for _, t := range r.Tools {
-		d := t.Def()
-		toolDefs = append(toolDefs, d)
-		toolsByName[d.Name] = t
+	for i, t := range r.Tools {
+		toolsByName[toolDefs[i].Name] = t
 	}
-	toolDefs = append(toolDefs, r.Submit)
 
 	messages := []model.Message{{Role: model.RoleUser, Text: r.User}}
+	if c := r.Carried; c != nil {
+		messages = append(slices.Clone(c.Messages), carriedTurn(c, r.Submit.Name, r.User))
+	}
 
 	result := Result{ToolCalls: map[string]int{}}
 	nudged := false

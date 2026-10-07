@@ -231,7 +231,9 @@ OpenCode Go and OpenCode Zen are one gateway with an OpenAI-compatible
 chat completions API that routes requests, and caches prompts, by a
 per-conversation header, `x-opencode-session`, and refuses a request
 without one. A provider of type `opencode` sends it: a review's steps
-name their run, and a follow-up names its mention. Its `baseUrl` is Go's,
+name their run, or the run whose conversation they carry on
+([incremental reviews](configuration.md#incremental-reviews)), and a
+follow-up names its mention. Its `baseUrl` is Go's,
 `https://opencode.ai/zen/go/v1`, unless set; Zen is the same type at
 `https://opencode.ai/zen/v1`.
 

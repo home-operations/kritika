@@ -234,13 +234,15 @@ func (b *Base) readAgentRun(
 }
 
 // agentSpec gives spec its agent: the prompt, the gateway and a run
-// token for it, and the agent's bounds. The token is minted last, so an
-// error leaves none behind; the caller revokes it once the run ends. It
-// returns the runner Job's deadline, which the agent's timeout may
-// lengthen, and the prompt's notes.
+// token for it, which lets it carry on cont when that is set, and the
+// agent's bounds. The token is minted last, so an error leaves none
+// behind; the caller revokes it once the run ends. It returns the runner
+// Job's deadline, which the agent's timeout may lengthen, and the
+// prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
-	admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration, client forge.Client, logger *slog.Logger,
+	cont *runner.Continuation, admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
+	client forge.Client, logger *slog.Logger,
 ) (time.Duration, []string, error) {
 	settings := eff.Settings
 	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior, client, logger)
@@ -248,16 +250,20 @@ func (w *Review) agentSpec(
 		return deadline, nil, err
 	}
 	deadline = agentDeadline(deadline, settings.Agent.Timeout)
-	token, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
+	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Effort: string(settings.Models.Effort),
 		Budget: admitted.maxTokens,
-	}, time.Now().Add(deadline+w.GatewayTokenTTL))
+	}
+	if cont != nil {
+		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session
+	}
+	token, err := w.Store.MintGatewayToken(ctx, grant, time.Now().Add(deadline+w.GatewayTokenTTL))
 	if err != nil {
 		return deadline, nil, err
 	}
 	spec.Prompt, secrets.GatewayToken = prompt, token
-	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName}
+	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName, Granted: grant.Model}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		MaxPromptTokens: settings.Agent.MaxPromptTokens, TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
