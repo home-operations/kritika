@@ -62,9 +62,10 @@ From the top, each part shown only when it has something to say:
 5. **Summary**, the review's take, with the change's flow as a Mermaid
    diagram when `review.diagram` is on.
 6. **What's good**, left out on a bot's pull request.
-7. **Sources consulted**, links to what the review's commands fetched, and
-   notes, such as files left out of the prompt or a `.kritika.yaml` value
-   that was dropped.
+7. **Sources consulted**, links to what the review's commands fetched: a
+   command's when it succeeded, and a `fetch_repo` that found files or a
+   diff, not a tag listing. Then notes, such as files left out of the
+   prompt or a `.kritika.yaml` value that was dropped.
 8. The footer: `Reviews (3) · Last reviewed commit: "subject" · <model>`,
    the model as `<model>/<effort>` when a [`review.effort`](models.md#effort)
    is set, ending with the pull request's cost when the admin turns
