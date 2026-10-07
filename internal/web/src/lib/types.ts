@@ -616,6 +616,8 @@ export interface AgentRun {
   createdAt: string;
   // The submitted review JSON; null unless the agent submitted.
   result: unknown;
+  // carriedReviewId is the review whose conversation the agent carried on, null when it started afresh.
+  carriedReviewId: string | null;
 }
 
 export interface UsageRow {
@@ -752,6 +754,8 @@ export interface Turn {
   truncated: boolean;
   createdAt: string;
   runnerRunId: string;
+  // carriedReviewId is the review whose conversation holds the messages before messagesFrom, null when they are earlier turns here.
+  carriedReviewId: string | null;
 }
 
 export interface Transcript {

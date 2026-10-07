@@ -859,6 +859,10 @@ test.describe('review', () => {
     const commands = page.locator('.deflist').filter({ hasText: 'Commands' }).getByRole('definition').filter({ hasText: a.commandsOffered[0]! });
     await expect(commands).toHaveText(`${a.commandsOffered.join(', ')} (ran ${a.commandsRun.join(', ')})`);
     await expect(commands.locator('.mono.muted')).toHaveText(a.commandsOffered.filter((c) => !a.commandsRun.includes(c)));
+    // The golden run carried on the conversation of the review before.
+    const carried = page.locator('.deflist').getByRole('definition').filter({ hasText: 'carried on from' });
+    await expect(carried).toHaveText('carried on from the review before');
+    await expect(carried.getByRole('link')).toHaveAttribute('href', `${T}/reviews/${a.carriedReviewId}/conversation`);
   });
 
   test('a finding says when a later review dropped it or a maintainer dismissed it', async ({ page }) => {
@@ -982,6 +986,24 @@ test.describe('review', () => {
     await expect(turn.locator('pre')).toContainText('"runnerRunId"');
     await page.getByPlaceholder('Filter turns').fill('no-such-text');
     await expect(page.locator('.turn')).toHaveCount(0);
+  });
+
+  test("a review that carried on another's conversation says so and links to it", async ({ page }) => {
+    await page.goto(`/${T}/reviews/rev-1/conversation`);
+    await expect(page.locator('.turn').first()).toBeVisible();
+    await expect(page.locator('.carried-notice')).toHaveCount(0);
+    const turn = g.transcript.turns[0]!;
+    const carried = { ...g.transcript, turns: [{ ...turn, messagesFrom: 5, carriedReviewId: 'rev-0' }, { ...turn, id: 'mc-2', index: 1, step: 1 }] };
+    await g.mockApi(page, [[/\/reviews\/rev-1\/transcript$/, carried], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/conversation`);
+    const note = page.locator('.carried-notice');
+    await expect(note).toHaveText('This review carried on the conversation of the review before; its earlier messages are there, not repeated here.');
+    await note.getByRole('link', { name: 'the review before' }).click();
+    await expect(page).toHaveURL(new RegExp(`${T}/reviews/rev-0/conversation$`));
+    const afresh = { ...g.reviewDetail, agentRun: { ...g.reviewDetail.agentRun!, carriedReviewId: null } };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, afresh], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    await expect(page.locator('.deflist').filter({ hasText: 'Model' })).not.toContainText('carried on from');
   });
 });
 

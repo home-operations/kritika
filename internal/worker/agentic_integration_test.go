@@ -566,6 +566,29 @@ func checkAgentCarriesOn(t *testing.T, h *agenticHarness) {
 		!strings.Contains(turn, "moved from "+h.head[:7]+" to "+next[:7]) || !strings.Contains(turn, "+func carried() {}") {
 		t.Fatalf("after the earlier conversation:\n%s\n%s\n%s", answer, result, turn)
 	}
+	checkCarriedRecord(t, h, reviewID, runID, firstID, len(was)-1)
+}
+
+// checkCarriedRecord checks what the dashboard reads of reviewID, which
+// carried on the conversation of carried, whose last step sent sent
+// messages: its first recorded step holds only what it added to that
+// conversation, the system prompt again, and names carried, as no later
+// step does, and its agent run names carried too.
+func checkCarriedRecord(t *testing.T, h *agenticHarness, reviewID, runID, carried string, sent int) {
+	t.Helper()
+	rows := h.modelCalls(t, h.account.ID(), reviewID)
+	if len(rows) < 2 || rows[0].MessagesFrom != sent || len(rows[0].Messages) != 2 || rows[0].System == nil ||
+		rows[0].CarriedReviewID != carried || rows[1].CarriedReviewID != "" {
+		t.Fatalf("recorded steps = %+v, want the %d messages before the first left to review %s", rows, sent, carried)
+	}
+	var a store.AgentRunRow
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		a, err = store.FindAgentRun(h.ctx, tx, runID)
+		return err
+	}); err != nil || a.CarriedReviewID == nil || *a.CarriedReviewID != carried {
+		t.Fatalf("agent run carried on %v, want %s: %v", a.CarriedReviewID, carried, err)
+	}
 }
 
 // chatRequest is a chat completions request's messages and tools, raw.

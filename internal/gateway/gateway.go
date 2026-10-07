@@ -278,7 +278,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// is taken against this one; the recorder bounds how long it waits.
 	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
-		Kind: store.ModelCallAgentStep, Duration: took,
+		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Duration: took,
 	}, req, resp, err, adapter.Mask(c.file, provider, c.token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;

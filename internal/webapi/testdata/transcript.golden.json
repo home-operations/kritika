@@ -68,7 +68,8 @@
       "error": "",
       "truncated": false,
       "createdAt": "2026-09-01T12:00:00Z",
-      "runnerRunId": "run-1"
+      "runnerRunId": "run-1",
+      "carriedReviewId": null
     }
   ]
 }

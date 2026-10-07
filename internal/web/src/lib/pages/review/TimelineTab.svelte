@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { ReviewDetail, RunnerRun } from '../../types';
+  import { href } from '../../router.svelte';
   import { between, duration, tokens, usd, wholeNumber, bytes } from '../../format';
   import { clock } from '../../time.svelte';
   import Time from '../../components/Time.svelte';
   import ColumnChart from '../../components/ColumnChart.svelte';
 
-  let { d }: { d: ReviewDetail } = $props();
+  let { slug, d }: { slug: string; d: ReviewDetail } = $props();
 
   interface Segment {
     name: string;
@@ -89,6 +90,10 @@
     {/if}
     <dl class="deflist">
       <dt>Model</dt><dd class="mono">{a.model}</dd>
+      {#if a.carriedReviewId}
+        <dt>Conversation</dt>
+        <dd>carried on from <a href={href({ name: 'review', slug, id: a.carriedReviewId, tab: 'conversation' })}>the review before</a></dd>
+      {/if}
       <dt>Tokens</dt><dd>{tokens(a.usage.input)} in · {tokens(a.usage.cacheRead)} cache read · {tokens(a.usage.cacheWrite)} cache write · {tokens(a.usage.output)} out</dd>
       <dt>Tool calls</dt><dd class="mono">{Object.entries(a.toolCalls).map(([k, v]) => `${k}×${v}`).join(', ') || '—'}</dd>
       {#if a.skillsOffered.length}

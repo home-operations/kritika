@@ -97,8 +97,10 @@ type Recorder struct {
 // Record records one model call: c names what made the call and how long
 // it took, req, resp and stepErr are the call itself. An agent step is
 // stored as a delta against what its run has recorded, read in the same
-// transaction as the insert. Everything is masked before it is encoded. A
-// failure is logged and counted, never returned.
+// transaction as the insert, and a run's first step against what the run
+// it carries on recorded: its earlier messages are that run's transcript.
+// Everything is masked before it is encoded. A failure is logged and
+// counted, never returned.
 func (r Recorder) Record(
 	ctx context.Context, logger *slog.Logger, c store.ModelCall, req model.StepRequest, resp model.StepResponse, stepErr error,
 	mask func(string) string,
@@ -112,13 +114,26 @@ func (r Recorder) Record(
 	}
 	err := r.Store.WithAccount(ctx, c.AccountID, func(tx pgx.Tx) error {
 		var prev transcript.State
+		var seeded bool
 		if c.Kind == store.ModelCallAgentStep {
 			var err error
 			if prev, c.Step, err = store.AgentState(ctx, tx, c.RunnerRunID); err != nil {
 				return err
 			}
+			if seeded = c.Step == 0 && c.Carries != ""; seeded {
+				carried, _, err := store.AgentState(ctx, tx, c.Carries)
+				if err != nil {
+					return err
+				}
+				// The system prompt and tools are recorded again, and the run
+				// counts its own bytes against its cap.
+				prev = transcript.State{MessagesEnd: carried.MessagesEnd, MessagesSHA: carried.MessagesSHA}
+			}
 		}
 		row := transcript.Delta(prev, req, mask)
+		if !seeded || row.MessagesFrom == 0 {
+			c.Carries = ""
+		}
 		row.Response = transcript.NewResponse(resp, mask)
 		c.Row = row.Encode()
 		return store.InsertModelCall(ctx, tx, c)

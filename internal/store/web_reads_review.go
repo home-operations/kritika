@@ -144,19 +144,22 @@ type AgentRunRow struct {
 	Model                        string
 	Error                        string
 	CreatedAt                    time.Time
+	// CarriedReviewID is the review whose run's conversation the agent
+	// carried on, nil when it started afresh.
+	CarriedReviewID *string
 }
 
 // FindAgentRun returns the agent run of a runner run, or ErrNotFound.
 func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunRow, error) {
 	var a AgentRunRow
 	var result, calls, timeline, sources []byte
-	err := tx.QueryRow(ctx, `SELECT stop_reason, result, steps, tool_calls, timeline, sources, input_tokens, cache_read_tokens,
-		cache_write_tokens, output_tokens, cost_usd::float8, model, error, created_at, skills_offered, skills_opened,
-		commands_offered, commands_run
-		FROM agent_runs WHERE runner_run_id = $1`, runnerRunID).
+	err := tx.QueryRow(ctx, `SELECT a.stop_reason, a.result, a.steps, a.tool_calls, a.timeline, a.sources, a.input_tokens,
+		a.cache_read_tokens, a.cache_write_tokens, a.output_tokens, a.cost_usd::float8, a.model, a.error, a.created_at,
+		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text
+		FROM agent_runs a LEFT JOIN runner_runs c ON c.id = a.continued_from WHERE a.runner_run_id = $1`, runnerRunID).
 		Scan(&a.StopReason, &result, &a.Steps, &calls, &timeline, &sources, &a.Usage.Input, &a.Usage.CacheRead,
 			&a.Usage.CacheWrite, &a.Usage.Output, &a.CostUSD, &a.Model, &a.Error, &a.CreatedAt, &a.SkillsOffered, &a.SkillsOpened,
-			&a.CommandsOffered, &a.CommandsRun)
+			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -326,7 +329,8 @@ func FollowupModelCalls(ctx context.Context, tx pgx.Tx, pullRequestID string, co
 func modelCallsWhere(ctx context.Context, tx pgx.Tx, where string, args ...any) ([]transcript.StoredRow, error) {
 	rows, err := tx.Query(ctx, `SELECT id, kind, step, coalesce(review_id::text, ''), coalesce(runner_run_id::text, ''),
 		coalesce(followup_comment_id, 0), model, upstream, system, tools, messages_from, messages, response,
-		input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd::float8, duration_ms, error, truncated, created_at
+		input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd::float8, duration_ms, error, truncated, created_at,
+		coalesce((SELECT r.review_id::text FROM runner_runs r WHERE r.id = model_calls.carried_from), '')
 		FROM model_calls WHERE `+where+` ORDER BY created_at, step, id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list model calls: %w", err)

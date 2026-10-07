@@ -174,6 +174,7 @@ var goldens = map[string]any{
 			CommandsOffered: []string{"gh", "helm"}, CommandsRun: []string{"helm"},
 			Usage:   Usage{Input: 100, CacheRead: 50, CacheWrite: 10, Output: 20},
 			CostUSD: 0.1, Model: "acme/large", Error: "", CreatedAt: t1, Result: json.RawMessage(`{"findings":[]}`),
+			CarriedReviewID: new("rev-0"),
 		},
 		Usage: []UsageRow{{Role: "review", Model: "acme/large", Upstream: "acme", InputTokens: 100, OutputTokens: 20, CostUSD: 0.1, CreatedAt: t1}},
 		ContextPack: &ContextPack{

@@ -118,7 +118,8 @@
     "createdAt": "2026-09-01T12:01:30Z",
     "result": {
       "findings": []
-    }
+    },
+    "carriedReviewId": "rev-0"
   },
   "usage": [
     {
