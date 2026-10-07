@@ -150,8 +150,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		accountID: args.AccountID, accountKey: account.Key(), reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
-	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, admitted, &spec, &secrets,
-		deadline, client, logger)
+	provider, _ := file.Provider(account, settings.Models.Review.Provider())
+	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, settings.Models.Review, provider.Type)
+	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, cont, admitted, &spec,
+		&secrets, deadline, client, logger)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}

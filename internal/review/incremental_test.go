@@ -86,6 +86,81 @@ func TestBuildEarlierFindings(t *testing.T) {
 	}
 }
 
+// TestBuildContinuation: a carried-on conversation's next turn says the
+// head moved, gives the diff since under the re-review's bar, repeats the
+// dismissals and asks for the whole review again, its diagram only when
+// the summary draws one.
+func TestBuildContinuation(t *testing.T) {
+	in := ContinueInput{
+		PriorHeadSHA: "0123456789abcdef0123456789abcdef01234567", HeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
+		DeltaDiff: deltaDiff, Dismissed: []DismissedFinding{{Path: "main.go", Line: 3, Severity: SeverityNit, Title: "x", Reason: "intended"}},
+	}
+	msg, omitted := BuildContinuation(in)
+	for _, want := range []string{
+		"The pull request's head moved from 0123456 to fedcba9 since your last review, on the same merge base. Your tools now read fedcba9;",
+		"This is a re-review: the last review set the bar",
+		"Changed since your last review (0123456 to fedcba9, unified;", "-\ty := 3\n+\ty := 5",
+		"Findings a maintainer dismissed on this pull request.", "- main.go:3 [nit] x:  (dismissed: intended)",
+		"call submit_review again with the whole review of the pull request at fedcba9", "with its title unchanged",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("missing %q in:\n%s", want, msg)
+		}
+	}
+	if len(omitted) != 0 || strings.Contains(msg, "diagram") {
+		t.Fatalf("omitted %v, or a diagram asked of a summary without one:\n%s", omitted, msg)
+	}
+	in.Diagram = true
+	if msg, _ := BuildContinuation(in); !strings.HasSuffix(msg, "or as an empty string when the change no longer has a flow to draw.") {
+		t.Fatalf("no diagram asked for:\n%s", msg)
+	}
+	in.DeltaDiff, in.BudgetTokens = deltaDiff+strings.Replace(deltaDiff, "main.go", "big.go", 4)+strings.Repeat("+x\n", 4000), 600
+	msg, omitted = BuildContinuation(in)
+	if len(omitted) != 1 || omitted[0] != "big.go" || !strings.Contains(msg, "[1 file(s) of the diff since your last review were omitted") ||
+		!strings.Contains(msg, "+\ty := 5") {
+		t.Fatalf("omitted %v:\n%s", omitted, msg)
+	}
+}
+
+// TestSameBrief: a carried-on conversation must have opened on the pull
+// request's title, description and linked issues as they are now; the
+// changed files and the diff may have moved since.
+func TestSameBrief(t *testing.T) {
+	then := incrementalInput()
+	then.Body, then.Issues, then.Incremental = "Adds z.", []Issue{{Number: 4, Title: "Add z", Body: "We need z."}}, nil
+	opening, _, _ := Build(then)
+	edit := func(f func(*Input)) Input {
+		in := then
+		f(&in)
+		return in
+	}
+	for _, tc := range []struct {
+		name string
+		now  Input
+		same bool
+	}{
+		{"as it was", then, true},
+		{"another diff and files", edit(func(in *Input) { in.Diff, in.Changed = deltaDiff, []string{"main.go"} }), true},
+		{"a new title", edit(func(in *Input) { in.Title = "t2" }), false},
+		{"a new description", edit(func(in *Input) { in.Body = "Adds z and w." }), false},
+		{"no description now", edit(func(in *Input) { in.Body = "" }), false},
+		{"an issue edited", edit(func(in *Input) { in.Issues = []Issue{{Number: 4, Title: "Add z", Body: "We need z soon."}} }), false},
+		{"no issues now", edit(func(in *Input) { in.Issues = nil }), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SameBrief(opening, tc.now); got != tc.same {
+				t.Fatalf("SameBrief = %v, want %v", got, tc.same)
+			}
+		})
+	}
+	bare := then
+	bare.Body, bare.Issues = "", nil
+	opening, _, _ = Build(bare)
+	if !SameBrief(opening, bare) || SameBrief(opening, then) {
+		t.Fatal("a pull request without a description or issues")
+	}
+}
+
 // TestBuildIncrementalChecked: an incremental re-review is shown the last
 // review's notes after its findings, and none when it left none.
 func TestBuildIncrementalChecked(t *testing.T) {

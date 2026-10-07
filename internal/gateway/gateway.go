@@ -1,12 +1,14 @@
 // Package gateway is the worker's listener for runner pods: the egress
-// proxy they reach the outside through, and the model and similar-code
-// endpoints a review's runner calls with its run token. No provider key
-// enters a runner pod: the gateway reserves each call against the run's
-// budget and checks the account's monthly cap, answers it through the
-// account's provider, and records what it spent where the caps see it.
+// proxy they reach the outside through, and the model, similar-code and
+// conversation endpoints a review's runner calls with its run token. No
+// provider key enters a runner pod: the gateway reserves each call
+// against the run's budget and checks the account's monthly cap, answers
+// it through the account's provider, and records what it spent where the
+// caps see it.
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -79,6 +81,8 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.chat(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/similar":
 		g.similarCode(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/conversation":
+		g.conversation(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -216,10 +220,11 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
 		return
 	}
-	// A run's steps are one conversation, whichever provider answers; a
+	// A run's steps are one conversation, whichever provider answers, and
+	// one that carries on an earlier run's keeps its session; a
 	// follow-up's is its mention's, which a retried run carries on. The
 	// effort is the grant's, as the model is: a runner chooses neither.
-	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, c.grant.RunID, model.Effort(c.grant.Effort)
+	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, cmp.Or(c.grant.Session, c.grant.RunID), model.Effort(c.grant.Effort)
 	if id := c.grant.FollowupCommentID; id != 0 {
 		req.Session = "followup-" + strconv.FormatInt(id, 10)
 	}
@@ -294,6 +299,50 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
+}
+
+// conversation serves a review's run the conversation its token lets it
+// carry on, as the runner that kept it encoded it. That is the text the
+// provider was sent, unmasked, which a cache hit needs, so one that holds
+// the provider's key, credentials in its URL, an egress credential or the
+// run's token is not served, nor one kept under a model other than the
+// run's. Not found refuses the run nothing: it starts afresh.
+func (g *Server) conversation(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	c, ok := g.admit(w, r)
+	if !ok {
+		return
+	}
+	if c.grant.Continues == "" {
+		refuse(w, http.StatusNotFound, "not_found", "the run carries on no conversation")
+		return
+	}
+	var text, kept string
+	err := g.Store.WithAccount(ctx, c.grant.AccountID, func(tx pgx.Tx) error {
+		var err error
+		text, kept, err = store.Conversation(ctx, tx, c.grant.Continues)
+		return err
+	})
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		refuse(w, http.StatusNotFound, "not_found", "the conversation is no longer kept")
+		return
+	case err != nil:
+		c.logger.Error("gateway: conversation not read", "error", err)
+		refuse(w, http.StatusInternalServerError, "server_error", "the conversation could not be read")
+		return
+	case kept != c.grant.Model:
+		refuse(w, http.StatusNotFound, "not_found", "the conversation was kept under another model")
+		return
+	}
+	provider, _ := c.file.Provider(c.account, configfile.ModelRef(c.grant.Model).Provider())
+	if adapter.Mask(c.file, provider, c.token)(text) != text {
+		c.logger.Warn("gateway: conversation not served: it holds a secret", "continues", review.ShortSHA(c.grant.Continues))
+		refuse(w, http.StatusNotFound, "not_found", "the conversation is not served")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(text))
 }
 
 // upstreamStatus is the status and code a step its provider failed is

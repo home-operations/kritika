@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 19
+const SpecVersion = 20
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -59,6 +59,10 @@ type ModelEndpoint struct {
 	GatewayURL string `json:"gatewayUrl"`
 	// Model is the name the gateway knows the run's model by.
 	Model string `json:"model"`
+	// Granted is the provider/model reference the gateway answers a
+	// review's run with, which its runner records with the conversation it
+	// keeps; the runner calls the model only by Model.
+	Granted string `json:"granted,omitempty"`
 }
 
 // AgentLimits bound a review's or a follow-up's agent. A zero limit takes the agent loop's
@@ -123,6 +127,19 @@ type Prompt struct {
 	// admin's, which the worker leaves out for a review someone asked
 	// for, and the repository's own.
 	Filters []configfile.Filters `json:"filters,omitempty"`
+	// Continue, when set, lets an incremental review carry on the last
+	// review's conversation, which the gateway serves the run, if the
+	// review would send it the same system prompt and tools; nil starts
+	// afresh.
+	Continue *Continuation `json:"continue,omitempty"`
+}
+
+// Continuation is the last review's conversation a review may carry on.
+type Continuation struct {
+	// RunID is the run that kept it, and Session the conversation its
+	// steps were sent as, which the gateway sends this run's as too.
+	RunID   string `json:"runId"`
+	Session string `json:"session"`
 }
 
 // Skills is where a review's skills are looked for and which of them it is
@@ -200,6 +217,9 @@ func (s Spec) Validate() error {
 		}
 		if s.Prompt == nil {
 			return fmt.Errorf("runner: a %s spec needs a prompt", s.Kind)
+		}
+		if c := s.Prompt.Continue; c != nil && (c.RunID == "" || c.Session == "") {
+			return fmt.Errorf("runner: a %s spec's continuation needs a run and a session", s.Kind)
 		}
 		if len(s.Agent.Commands) > 0 && s.Agent.CommandTimeoutSeconds <= 0 {
 			return fmt.Errorf("runner: a %s spec with commands needs a command timeout", s.Kind)

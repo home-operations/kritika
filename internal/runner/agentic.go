@@ -113,13 +113,15 @@ func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, c
 // agentPrompt is what the agent is sent: the system prompt, the first user
 // message, and the tool it answers with, whose input validate checks.
 // omitted names the diff files, and contextOmitted counts the chunks, the
-// budget left out of the message.
+// budget left out of the message. carried, when set, is the conversation
+// the agent carries on, and user then its next turn.
 type agentPrompt struct {
 	system, user   string
 	submit         model.ToolDef
 	validate       func(json.RawMessage) error
 	omitted        []string
 	contextOmitted int
+	carried        *agent.Conversation
 }
 
 // noteOmittedPaths is how many omitted paths a note names.
@@ -213,6 +215,23 @@ func (a *AgentLimits) limits() agent.Limits {
 	return agent.Limits{MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens}.WithDefaults()
 }
 
+// offeredTools are every tool the agent is offered: the read-only ones over
+// head, then extra.
+func offeredTools(p Spec, head *object.Tree, ignore []string, extra []agent.Tool) []agent.Tool {
+	limit := p.Agent.limits().MaxToolOutputBytes
+	tree := agent.NewTree(head, ignore)
+	issues := make(map[int]string, len(p.Prompt.Issues))
+	for _, is := range p.Prompt.Issues {
+		issues[is.Number] = is.Body
+	}
+	return append([]agent.Tool{
+		agent.ReadFileTool(tree, limit),
+		agent.GrepTool(tree, limit),
+		agent.ListFilesTool(tree, limit),
+		agent.ReadDescriptionTool(p.Prompt.PullRequest.Body, issues, limit),
+	}, extra...)
+}
+
 // agentLoop runs the tool loop over head until the agent answers with
 // prompt's submit tool, with extra tools beside the read-only ones. A
 // positive timeout bounds it; running out of time ends it as canceled with
@@ -226,24 +245,13 @@ func agentLoop(
 		actx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
-	limits := p.Agent.limits()
-	tree := agent.NewTree(head, ignore)
-	issues := make(map[int]string, len(p.Prompt.Issues))
-	for _, is := range p.Prompt.Issues {
-		issues[is.Number] = is.Body
-	}
 	timeline := []store.TimelineStep{}
 	res := agent.Run{
-		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user,
-		Tools: append([]agent.Tool{
-			agent.ReadFileTool(tree, limits.MaxToolOutputBytes),
-			agent.GrepTool(tree, limits.MaxToolOutputBytes),
-			agent.ListFilesTool(tree, limits.MaxToolOutputBytes),
-			agent.ReadDescriptionTool(p.Prompt.PullRequest.Body, issues, limits.MaxToolOutputBytes),
-		}, extra...),
+		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user, Carried: prompt.carried,
+		Tools:    offeredTools(p, head, ignore, extra),
 		Submit:   prompt.submit,
 		Validate: prompt.validate,
-		Limits:   limits,
+		Limits:   p.Agent.limits(),
 		OnStep: func(e agent.StepEvent) {
 			tools := e.Tools
 			if tools == nil {
@@ -357,9 +365,17 @@ func runAgentic(
 	}
 	rec.skillsOffered, rec.skillsOpened = offered, opened
 	rec.commandsOffered, rec.commandsRun = offeredCommands, ran
+	if prompt.carried != nil {
+		rec.continued = p.Prompt.Continue.RunID
+	}
 	if p.Kind == KindReview && res.Conversation != nil {
-		// The gateway names a run's steps by the run.
-		rec.conversation, rec.tokens, rec.session = keptConversation(res.Conversation, secrets, logger), res.Conversation.Tokens, p.RunID
+		// The gateway names a run's steps by the run, unless its token
+		// names the session of a conversation it may carry on.
+		rec.conversation, rec.tokens, rec.granted = keptConversation(res.Conversation, secrets, logger), res.Conversation.Tokens, p.Model.Granted
+		rec.session = p.RunID
+		if c := p.Prompt.Continue; c != nil {
+			rec.session = c.Session
+		}
 	}
 	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "commands", ran, "sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
@@ -390,10 +406,13 @@ type agentRecord struct {
 	// conversation is the agent's exchange, encoded, which the pull
 	// request's next re-review may carry on, nil when none is kept, with
 	// its size in tokens; session is the conversation its steps were sent
-	// as.
-	conversation []byte
-	tokens       int64
-	session      string
+	// as, and granted the model reference the run was granted.
+	conversation     []byte
+	tokens           int64
+	session, granted string
+	// continued is the run whose conversation the agent carried on, "" for
+	// none.
+	continued string
 }
 
 // keptConversation is the conversation of a review's agent, encoded, that
@@ -452,19 +471,20 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened, commands_offered, commands_run)
-			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18
+				skills_offered, skills_opened, commands_offered, commands_run, continued_from)
+			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
+				nullif($19, '')::uuid
 			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun)
+			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}
 		if rec.conversation != nil {
-			if _, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens)
-				SELECT id, account_id, $2, $3, $4 FROM runner_runs WHERE id = $1`,
-				p.RunID, rec.session, string(rec.conversation), rec.tokens); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
+				SELECT id, account_id, $2, $3, $4, $5 FROM runner_runs WHERE id = $1`,
+				p.RunID, rec.session, string(rec.conversation), rec.tokens, rec.granted); err != nil {
 				return fmt.Errorf("runner: write conversation: %w", err)
 			}
 		}

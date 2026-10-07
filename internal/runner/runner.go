@@ -161,6 +161,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		prompt = newAgentPrompt(p, in, packView{
 			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
 		}, tools.commands(), tools.search != nil)
+		if p.Prompt.Continue != nil && scope == review.ScopeIncremental {
+			prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, headTree, ignore, tools.extra()), res.DeltaDiff, logger)
+		}
 		notes = append(notes, prompt.notes()...)
 	}
 	stagesJSON, err := json.Marshal(chunks)

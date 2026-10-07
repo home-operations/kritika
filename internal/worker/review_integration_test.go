@@ -28,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
@@ -1963,7 +1964,9 @@ func checkIncremental(
 	thread := postedInline(ctx, t, appStore, accountID, firstRow.id)[0].ID
 
 	// The push adds lines 8 and 9; line 3 is further from them than a
-	// new finding may be.
+	// new finding may be. The first review's conversation is older than a
+	// provider caches it, so the second review starts afresh.
+	ageConversation(ctx, t, firstRow.id)
 	second := commit(firstMain + "\nfunc f2() {}\n")
 	fc.find(`{"path":"main.go","line":3,"severity":"important","category":"correctness","title":"far from the push","explanation":"held back"}`)
 	secondRow, prompt, inline := reviewHead(second)
@@ -1999,6 +2002,22 @@ func checkIncremental(
 	checkEarlierPrompt(t, prompt, second)
 	wantDiagram(thirdRow.id, "")
 
+}
+
+// ageConversation makes the conversation reviewID's run kept an hour old,
+// as the owner: no role a service runs as may change one.
+func ageConversation(ctx context.Context, t *testing.T, reviewID string) {
+	t.Helper()
+	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	tag, err := owner.Exec(ctx, `UPDATE agent_conversations SET created_at = now() - interval '1 hour'
+		WHERE runner_run_id IN (SELECT id FROM runner_runs WHERE review_id = $1)`, reviewID)
+	if err != nil || tag.RowsAffected() != 1 {
+		t.Fatalf("aged %d conversations of review %s, want its one: %v", tag.RowsAffected(), reviewID, err)
+	}
 }
 
 // checkEarlierPrompt asserts a full re-review's prompt: the findings and
