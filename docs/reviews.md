@@ -54,8 +54,11 @@ From the top, each part shown only when it has something to say:
 3. **Approved**, or **Not approved** with the reason, when
    `review.approve` is on.
 4. **Findings**, each linking to its lines and its inline thread; **Outside
-   the diff**, findings on lines the diff does not show; and **Earlier
-   findings**, the last review's findings since resolved or dismissed.
+   the diff**, findings on lines the diff does not show; **Held back**, a
+   re-review's new findings away from what changed since the last review
+   ([incremental reviews](configuration.md#incremental-reviews)); and
+   **Earlier findings**, the last review's findings since resolved or
+   dismissed.
 5. **Summary**, the review's take, with the change's flow as a Mermaid
    diagram when `review.diagram` is on.
 6. **What's good**, left out on a bot's pull request.

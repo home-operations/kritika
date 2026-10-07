@@ -128,6 +128,32 @@ func ShownLines(diff string) map[string]map[int]string {
 	return parseDiff(diff).shown
 }
 
+// TouchedLines returns, per head-side path, the head-side lines a unified
+// diff changed: each line it added, and for lines it removed the line that
+// now follows where they were.
+func TouchedLines(diff string) map[string][]int {
+	touched := map[string][]int{}
+	walkDiff(diff, func(l diffLine) {
+		if l.kind != ' ' && l.newPath != "" {
+			touched[l.newPath] = append(touched[l.newPath], l.newLine)
+		}
+	})
+	return touched
+}
+
+// Renames maps the base-side path of each file a unified diff renames and
+// changes to its head-side path. A rename alone has no hunk to say so, and
+// is left out.
+func Renames(diff string) map[string]string {
+	renames := map[string]string{}
+	walkDiff(diff, func(l diffLine) {
+		if l.oldPath != "" && l.newPath != "" && l.oldPath != l.newPath {
+			renames[l.oldPath] = l.newPath
+		}
+	})
+	return renames
+}
+
 func (d *diffLines) show(path string, line int, text string) {
 	if d.shown[path] == nil {
 		d.shown[path] = map[int]string{}

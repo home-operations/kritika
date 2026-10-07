@@ -231,6 +231,17 @@ func TestDiffEdges(t *testing.T) {
 			t.Errorf("ChangedLines(ignore %v) = %d, want %d", tt.ignore, got, tt.want)
 		}
 	}
+	// A removed line touches the head line that now follows it; a deleted
+	// file has no head lines to touch.
+	if touched := TouchedLines(diff); len(touched) != 2 || !slices.Equal(touched["new.go"], []int{1, 2}) ||
+		!slices.Equal(touched["q.sql"], []int{2, 2}) {
+		t.Errorf("touched = %v", touched)
+	}
+	moved := "diff --git a/old.go b/moved.go\nsimilarity index 80%\nrename from old.go\nrename to moved.go\n--- a/old.go\n+++ b/moved.go\n" +
+		"@@ -1,2 +1,2 @@\n a\n-b\n+B\n" + diff
+	if renames := Renames(moved); len(renames) != 1 || renames["old.go"] != "moved.go" {
+		t.Errorf("renames = %v", renames)
+	}
 	h := Hunks(diff)
 	if len(h) != 2 || h[0] != (Hunk{Path: "new.go", Text: "package x\nfunc F() {}\n"}) ||
 		h[1] != (Hunk{Path: "q.sql", Text: "SELECT 1;\n++ new comment\nSELECT 2;\n"}) {

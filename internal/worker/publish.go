@@ -60,6 +60,9 @@ type publishPhase struct {
 	// none or, with unscored set, when the scorer did not answer.
 	confidence *review.Confidence
 	unscored   bool
+	// heldBack are the findings an incremental re-review held back, which
+	// the summary lists apart from its own.
+	heldBack []review.Finding
 }
 
 // run publishes what the runner's agent submitted; the run's usage is
@@ -75,11 +78,14 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
 	}
 	run := *p.agent
-	var diff string
+	var diff, delta string
+	var deltaPaths []string
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		diff, _, _, err = store.ContextPackDiffs(ctx, tx, p.runID)
-		return err
+		if diff, delta, _, err = store.ContextPackDiffs(ctx, tx, p.runID); err != nil || p.scope != review.ScopeIncremental {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT delta_paths FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&deltaPaths)
 	})
 	if err != nil {
 		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
@@ -102,6 +108,14 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	unanchored, dismissedOff = dropDismissed(unanchored, p.prior.dismissed)
 	if dismissed += dismissedOff; dismissed > 0 {
 		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
+	}
+	// Findings outside the diff are never held back: the last review's are
+	// not stored, so a new one cannot be told from one it made.
+	if p.scope == review.ScopeIncremental {
+		held := review.HoldBack(reviewFindings(p.prior.findings), slices.Concat(res.Findings, unanchored), delta, deltaPaths)
+		if res.Findings, p.heldBack = splitHeld(res.Findings, held); len(p.heldBack) > 0 {
+			p.logger.Info("findings held back", "count", len(p.heldBack))
+		}
 	}
 	if p.parse.Diagram {
 		res.Summary.Diagram = carriedDiagram(run.Result, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
@@ -257,6 +271,19 @@ func splitDropped(dropped []review.Dropped) (unanchored []review.Finding, notes 
 	return unanchored, []string{fmt.Sprintf("%d finding(s) were dropped (%s)", total, strings.Join(reasons, ", "))}
 }
 
+// splitHeld splits off the findings held reports held back.
+func splitHeld(findings []review.Finding, held func(review.Finding) bool) (kept, back []review.Finding) {
+	kept = make([]review.Finding, 0, len(findings))
+	for _, f := range findings {
+		if held(f) {
+			back = append(back, f)
+		} else {
+			kept = append(kept, f)
+		}
+	}
+	return kept, back
+}
+
 // writeBack posts the sticky comment (created once, edited after), the
 // inline review, and the commit status. Only the sticky comment is
 // required: the other two are best effort and logged when they fail, so a
@@ -280,6 +307,10 @@ func (p *publishPhase) writeBack(
 		if onForge[i].ID != 0 {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, onForge[i].ID)
 		}
+	}
+	for i := range p.heldBack {
+		f := &p.heldBack[i]
+		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
 	}
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
@@ -312,7 +343,7 @@ func (p *publishPhase) writeBack(
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
-		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored,
+		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}
