@@ -384,7 +384,9 @@ again. That takes all of these:
   request's title, description and linked issues are as they were.
 
 Otherwise the re-review starts afresh, with the last review's findings
-and notes.
+and notes. On the dashboard, a review that carried on names the review
+before on its Timeline, and its Conversation starts where that review's
+left off, linking to it.
 
 An incremental re-review reports what the new commits brought. A finding
 in the diff that the last review did not make, more than 3 lines from

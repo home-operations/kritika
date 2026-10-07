@@ -339,6 +339,10 @@ func runAgentic(
 	if tools.run != nil {
 		offeredCommands, ran = commands, tools.run.Ran()
 	}
+	var continued string
+	if prompt.carried != nil {
+		continued = p.Prompt.Continue.RunID
+	}
 	if cerr := ctx.Err(); cerr != nil {
 		// The run was cancelled, deleted or ran out of Job time: what the
 		// agent spent so far is still spent, so the row is written on a
@@ -351,7 +355,7 @@ func runAgentic(
 		defer cancel()
 		rec, err := newAgentRecord(res, timeline, sources, secrets)
 		rec.skillsOffered, rec.skillsOpened = offered, opened
-		rec.commandsOffered, rec.commandsRun = offeredCommands, ran
+		rec.commandsOffered, rec.commandsRun, rec.continued = offeredCommands, ran, continued
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -364,10 +368,7 @@ func runAgentic(
 		return err
 	}
 	rec.skillsOffered, rec.skillsOpened = offered, opened
-	rec.commandsOffered, rec.commandsRun = offeredCommands, ran
-	if prompt.carried != nil {
-		rec.continued = p.Prompt.Continue.RunID
-	}
+	rec.commandsOffered, rec.commandsRun, rec.continued = offeredCommands, ran, continued
 	if p.Kind == KindReview && res.Conversation != nil {
 		// The gateway names a run's steps by the run, unless its token
 		// names the session of a conversation it may carry on.

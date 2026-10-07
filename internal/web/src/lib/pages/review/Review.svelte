@@ -134,9 +134,9 @@
           {:else if tab === 'diff'}
             <DiffTab {base} {d} />
           {:else if tab === 'conversation'}
-            <ConversationTab {base} {version} />
+            <ConversationTab {base} {version} {slug} />
           {:else if tab === 'timeline'}
-            <TimelineTab {d} />
+            <TimelineTab {slug} {d} />
           {:else if tab === 'raw'}
             <RawTab {base} {d} {version} />
           {:else}

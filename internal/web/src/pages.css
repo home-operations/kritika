@@ -1408,6 +1408,9 @@ table.data td.wrap {
   flex-direction: column;
   gap: 10px;
 }
+.carried-notice {
+  margin-bottom: 10px;
+}
 .conversation-top {
   display: flex;
   flex-direction: column;

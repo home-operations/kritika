@@ -32,6 +32,10 @@ type StoredRow struct {
 	Error             string
 	Truncated         bool
 	CreatedAt         time.Time
+	// CarriedReviewID is the review whose transcript holds the messages
+	// before MessagesFrom, when the row's run carried on its run's
+	// conversation; "" when they are the row's own run's.
+	CarriedReviewID string
 }
 
 // Conversation is a set of model calls as the transcript view shows them:
@@ -68,6 +72,9 @@ type Turn struct {
 	Error             string
 	Truncated         bool
 	CreatedAt         time.Time
+	// CarriedReviewID is the review whose transcript holds the messages
+	// before MessagesFrom, "" when they are earlier turns of this one.
+	CarriedReviewID string
 }
 
 // Rebuild turns rows, in the order they were recorded, into a
@@ -82,6 +89,7 @@ func Rebuild(rows []StoredRow) Conversation {
 			ID: r.ID, Kind: r.Kind, Step: r.Step, RunnerRunID: r.RunnerRunID, FollowupCommentID: r.FollowupCommentID,
 			Model: r.Model, Upstream: r.Upstream, MessagesFrom: r.MessagesFrom, Messages: r.Messages, Response: r.Response,
 			Usage: r.Usage, CostUSD: r.CostUSD, Duration: r.Duration, Error: r.Error, Truncated: r.Truncated, CreatedAt: r.CreatedAt,
+			CarriedReviewID: r.CarriedReviewID,
 		}
 		if r.System != nil {
 			switch {

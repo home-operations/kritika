@@ -148,7 +148,7 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 		StopReason: a.StopReason, Steps: a.Steps, ToolCalls: a.ToolCalls, Timeline: make([]TimelineStep, len(a.Timeline)),
 		Sources: a.Sources, SkillsOffered: nonNil(a.SkillsOffered), SkillsOpened: nonNil(a.SkillsOpened),
 		CommandsOffered: nonNil(a.CommandsOffered), CommandsRun: nonNil(a.CommandsRun), Usage: usageOf(a.Usage),
-		CostUSD: a.CostUSD, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt, Result: a.Result,
+		CostUSD: a.CostUSD, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt, Result: a.Result, CarriedReviewID: a.CarriedReviewID,
 	}
 	for i, st := range a.Timeline {
 		out.Timeline[i] = TimelineStep{
@@ -267,6 +267,9 @@ func transcriptOf(c transcript.Conversation) Transcript {
 		}
 		if t.Tools != nil {
 			turn.Tools = toolDefs(*t.Tools)
+		}
+		if t.CarriedReviewID != "" {
+			turn.CarriedReviewID = &t.CarriedReviewID
 		}
 		for j, m := range t.Messages {
 			msg := Message{Role: m.Role, Text: m.Text, ToolCalls: toolCalls(m.ToolCalls), ToolResults: make([]ToolResult, len(m.ToolResults))}
