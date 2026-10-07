@@ -434,6 +434,43 @@ func TestOpenAIOpenRouterCaching(t *testing.T) {
 	}
 }
 
+// TestOpenAIEffort: the effort goes out as OpenRouter's reasoning object or
+// as the chat completions parameter, and not at all when unset.
+func TestOpenAIEffort(t *testing.T) {
+	body := chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, "")
+	for _, tt := range []struct {
+		name       string
+		openRouter bool
+		effort     Effort
+		wantObject any
+		wantParam  any
+	}{
+		{"openrouter", true, EffortHigh, "high", nil},
+		{"openai", false, EffortMinimal, nil, "minimal"},
+		{"openrouter unset", true, "", nil, nil},
+		{"openai unset", false, "", nil, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, got := fakeProvider(t, http.StatusOK, body)
+			c := newTestOpenAI(t, srv, tt.openRouter, nil)
+			if _, err := c.Step(t.Context(), StepRequest{Model: "acme/large", Messages: []Message{{Role: RoleUser, Text: "hi"}}, Effort: tt.effort}); err != nil {
+				t.Fatalf("Step: %v", err)
+			}
+			if object, param := field(got.body, "reasoning", "effort"), got.body["reasoning_effort"]; object != tt.wantObject || param != tt.wantParam {
+				t.Fatalf("reasoning.effort = %v, reasoning_effort = %v; want %v and %v", object, param, tt.wantObject, tt.wantParam)
+			}
+		})
+	}
+	t.Run("a level that is none is rejected", func(t *testing.T) {
+		srv, _ := fakeProvider(t, http.StatusOK, body)
+		c := newTestOpenAI(t, srv, false, nil)
+		_, err := c.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}, Effort: "turbo"})
+		if err == nil || !strings.Contains(err.Error(), `effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
 func TestAdaptersIdentifyKritika(t *testing.T) {
 	Version = "1.2.3"
 	t.Cleanup(func() { Version = "dev" })

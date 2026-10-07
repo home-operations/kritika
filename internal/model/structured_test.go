@@ -27,7 +27,7 @@ func TestStructuredComplete(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"summary":{"type":"string"}}}`)
 	req := CompletionRequest{
 		System: "sys", User: "review this", Model: "acme/large", Fallbacks: []string{"acme/small"}, Session: "run-1",
-		Schema: schema, SchemaName: "findings", MaxTokens: 4096,
+		Schema: schema, SchemaName: "findings", MaxTokens: 4096, Effort: EffortLow,
 	}
 	usage := Usage{Input: 100, CacheRead: 400, CacheWrite: 50, Output: 30}
 	tests := []struct {
@@ -80,8 +80,8 @@ func TestStructuredComplete(t *testing.T) {
 
 			s := f.got
 			if s.Model != "acme/large" || !slices.Equal(s.Fallbacks, []string{"acme/small"}) || s.Session != "run-1" ||
-				s.MaxTokens != 4096 || s.System != "sys" {
-				t.Fatalf("step request = %+v; model, fallbacks, session, max tokens and system must pass through", s)
+				s.MaxTokens != 4096 || s.Effort != EffortLow || s.System != "sys" {
+				t.Fatalf("step request = %+v; model, fallbacks, session, max tokens, effort and system must pass through", s)
 			}
 			if len(s.Tools) != 1 || s.Tools[0].Name != "findings" || string(s.Tools[0].InputSchema) != string(schema) {
 				t.Fatalf("tools = %+v; want the one schema tool", s.Tools)

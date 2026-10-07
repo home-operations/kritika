@@ -108,6 +108,9 @@ func anthropicParams(req StepRequest) (anthropic.MessageNewParams, error) {
 	if p.MaxTokens <= 0 {
 		p.MaxTokens = defaultAnthropicMaxTokens
 	}
+	if req.Effort != "" {
+		p.OutputConfig = anthropic.OutputConfigParam{Effort: anthropicEffort(req.Effort)}
+	}
 	if req.System != "" {
 		p.System = []anthropic.TextBlockParam{{Text: req.System, CacheControl: anthropic.NewCacheControlEphemeralParam()}}
 	}
@@ -145,6 +148,15 @@ func anthropicParams(req StepRequest) (anthropic.MessageNewParams, error) {
 		p.ToolChoice = anthropic.ToolChoiceUnionParam{OfAuto: &anthropic.ToolChoiceAutoParam{}}
 	}
 	return p, nil
+}
+
+// anthropicEffort is e as the Messages API spells it, whose levels run from
+// low to max: the levels under low are sent as low.
+func anthropicEffort(e Effort) anthropic.OutputConfigEffort {
+	if e == EffortNone || e == EffortMinimal {
+		return anthropic.OutputConfigEffortLow
+	}
+	return anthropic.OutputConfigEffort(e)
 }
 
 // anthropicBlocks maps one message. Tool results lead a user message, as

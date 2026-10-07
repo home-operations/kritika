@@ -31,7 +31,7 @@ func (s Structured) Complete(ctx context.Context, req CompletionRequest) (Comple
 		Model: req.Model, Fallbacks: req.Fallbacks, Session: req.Session, System: req.System,
 		Messages:  []Message{{Role: RoleUser, Text: req.User + "\n\n" + answerWith(req.SchemaName)}},
 		Tools:     []ToolDef{{Name: req.SchemaName, InputSchema: req.Schema}},
-		MaxTokens: req.MaxTokens,
+		MaxTokens: req.MaxTokens, Effort: req.Effort,
 	}
 	start := time.Now()
 	resp, err := s.Stepper.Step(ctx, step)

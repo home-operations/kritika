@@ -136,6 +136,11 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 		if len(req.Fallbacks) > 0 {
 			opts = append(opts, option.WithJSONSet("models", append([]string{req.Model}, req.Fallbacks...)))
 		}
+		if req.Effort != "" {
+			// OpenRouter's own reasoning parameter, which it maps to the
+			// nearest level each model in the list takes.
+			opts = append(opts, option.WithJSONSet("reasoning", map[string]any{"effort": string(req.Effort)}))
+		}
 		resp, err := o.step(ctx, params, req.Model, opts...)
 		if err != nil {
 			return StepResponse{}, fmt.Errorf("model: %s: %w", req.Model, err)
@@ -242,6 +247,9 @@ func (o *OpenAI) params(req StepRequest) (openai.ChatCompletionNewParams, error)
 		} else {
 			p.MaxCompletionTokens = openai.Int(req.MaxTokens)
 		}
+	}
+	if req.Effort != "" && !o.openRouter {
+		p.ReasoningEffort = shared.ReasoningEffort(req.Effort)
 	}
 	if len(req.Tools) == 0 {
 		return p, nil

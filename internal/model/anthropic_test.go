@@ -178,6 +178,28 @@ func TestAnthropicRequest(t *testing.T) {
 	})
 }
 
+// TestAnthropicEffort: the effort goes out as output_config.effort, the
+// levels under low as low, and not at all when unset.
+func TestAnthropicEffort(t *testing.T) {
+	for _, tt := range []struct {
+		effort Effort
+		want   any
+	}{
+		{EffortXHigh, "xhigh"}, {EffortMax, "max"}, {EffortLow, "low"}, {EffortMinimal, "low"}, {EffortNone, "low"}, {"", nil},
+	} {
+		t.Run(string(tt.effort), func(t *testing.T) {
+			srv, got := fakeProvider(t, http.StatusOK, anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", anthropicUsage))
+			c := newTestAnthropic(t, srv, nil)
+			if _, err := c.Step(t.Context(), StepRequest{Model: "acme-large", Messages: []Message{{Role: RoleUser, Text: "hi"}}, Effort: tt.effort}); err != nil {
+				t.Fatalf("Step: %v", err)
+			}
+			if got := field(got.body, "output_config", "effort"); got != tt.want {
+				t.Fatalf("output_config.effort = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAnthropicToolChoice(t *testing.T) {
 	tests := []struct {
 		name   string
