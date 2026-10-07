@@ -8,7 +8,7 @@ a provider the file declares:
 | ------------------ | ----------------------------------------------------------------------------------------------- |
 | `review.model`     | reviews pull requests and answers follow-ups                                                    |
 | `review.fallback`  | takes over a review's or a follow-up's step when the review model fails ([fallback](#fallback)) |
-| `confidence.model` | scores a reviewed pull request ([confidence and risk](configuration.md#confidence-and-risk))    |
+| `confidence.model` | scores a reviewed pull request ([confidence and approvals](confidence.md))                      |
 | `embedding.model`  | builds each repository's similar-code index ([the embedder](#the-embedder))                     |
 
 The review models can differ by repository, in the admin's `repositories`

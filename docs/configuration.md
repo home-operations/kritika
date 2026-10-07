@@ -263,7 +263,7 @@ describes, and these, which are the admin's alone:
 
 | Key                       | What                                                                                                                                                                                                                                                                                |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `confidence.instructions` | guidance to the scorer on rating risk ([confidence and risk](#confidence-and-risk))                                                                                                                                                                                                 |
+| `confidence.instructions` | guidance to the scorer on rating risk ([risk](confidence.md#risk))                                                                                                                                                                                                                  |
 | `review.cost`             | `true` ends the summary's footer with what the pull request's reviews have cost together, every model call charged to one of them. Off unless set: the comment is public, on a fork's pull request too, and the figure is the instance's spend                                      |
 | `review.incremental`      | how many files of the change may move since the last review before a re-review covers the whole pull request again; 25 unless set ([incremental reviews](#incremental-reviews))                                                                                                     |
 | `trigger.settle`          | how long a new head waits before its review starts, so a burst of pushes is reviewed once; no wait unless set                                                                                                                                                                       |
@@ -292,77 +292,11 @@ value replaces the broader one's, except:
 
 ### Confidence and risk
 
-With a `confidence.model`, a second model scores every reviewed pull
-request from 0 to 5: how ready it is to merge, from the diff and the
-findings the review reported. A different vendor's model than the review's
-makes it a second opinion.
-
-| Key                       | Default                 | What                                                                              |
-| ------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
-| `confidence.model`        | none: nothing is scored | the model that scores, a `<provider>/<model>`                                     |
-| `confidence.threshold`    | 5                       | the score approvals need, and a gated commit status                               |
-| `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check |
-| `confidence.risk`         | `low`                   | the highest risk a change may be rated and still be approved                      |
-| `confidence.instructions` |                         | the admin's guidance to the scorer on rating risk in your code                    |
-
-How the score is reached and used:
-
-- The findings set the most a pull request can score, however the scorer
-  reads them: 2 with a blocking finding, 3 with an important one; nits
-  take nothing off.
-- Without the gate, the commit status reports the score and passes
-  whatever it is: a score blocks a merge only where someone asked it to.
-  A gated review the scorer did not answer for reports an error on the
-  commit, not a pass.
-- With no `confidence.model`, a review that ran reports success whatever
-  it found.
-- A dismissed finding stops counting at the next review, which a push or
-  `@<app slug> review` starts.
-- A bot's rebase that leaves its patch unchanged is skipped when its last
-  review was scored, and keeps that score; one whose last review has no
-  score is reviewed again.
-- The scorer's call counts towards the account's `tokensPerMonth`, and
-  shows in the review's transcript. It is sent a prompt of `agent.prompt`
-  tokens: a `confidence.model` with a smaller context window than the
-  review's refuses one it cannot take, and the review then has no score.
-
-The same call rates the change's risk, how much damage it could do if the
-review missed something, from what the change does and not from where its
-files live:
-
-| Risk       | What the change is                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------------------- |
-| `low`      | documentation, tests, formatting, comments, and small changes with no effect on behavior that matters   |
-| `medium`   | ordinary application or business logic                                                                  |
-| `high`     | build or runtime configuration, modules much else depends on                                            |
-| `critical` | authentication, authorization, secrets, billing, data migrations, infrastructure, CI, public interfaces |
-
-A dependency update is rated by what the dependency does and how far its
-version moves, not as a class of its own. A move of the version's first
-non-zero component is a major update: 1.x to 2.x, but also 0.1 to 0.2 and
-0.0.1 to 0.0.2, since a version under 1.0 promises nothing from one such
-step to the next.
-
-| Update         | Risk                                                                                                                                                             |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| major          | at least `high`; `critical` when the dependency is one the critical row names                                                                                    |
-| minor or patch | `low` for an application nothing else depends on, `medium` for one that other things do, `high` for a module much else depends on or that the critical row names |
-
-`confidence.risk` bears on approvals alone, never on the commit status: a
-risky change that scores well passes its check and waits for a person.
-With `review.approve` on, a pull request is approved when its score
-reaches `confidence.threshold` and its risk is within `confidence.risk`,
-so one threshold decides the approval and, where gated, the check: a
-repository can have kritika approve what scores well without ever failing
-a check, or fail the check and leave approving to people. A bot's
-unchanged rebase, skipped with the score it carries, has that score decide
-its approval the same way.
-
-`confidence.instructions` is plain guidance to the scorer on rating risk
-in your code, such as "the media apps under `kubernetes/apps/default` are
-low whatever moves" or "anything under `db/migrations` is critical"; it
-refines the table above and changes nothing else about the score. It is
-the admin's alone, so a pull request cannot talk its own risk down.
+`confidence` sets a second model's score of each reviewed pull request,
+whether the commit status is gated on it, and how risky a change may be
+and still be approved. [Confidence and approvals](confidence.md) describes
+the keys, how a score is reached, the risk tables and how approvals follow
+them.
 
 ### Which pull requests are reviewed
 
