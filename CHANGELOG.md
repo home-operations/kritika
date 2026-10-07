@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.0.40](https://github.com/home-operations/kritika/compare/0.0.39...0.0.40) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** drop review.feedback; every review is detailed ([#606](https://github.com/home-operations/kritika/issues/606))
+
+### Features
+
+* **config:** drop review.feedback; every review is detailed ([#606](https://github.com/home-operations/kritika/issues/606)) ([a2476cb](https://github.com/home-operations/kritika/commit/a2476cb912f9fdb986589dfd48a2761d7e42bbc5))
+* **config:** review.effort and confidence.effort ([#611](https://github.com/home-operations/kritika/issues/611)) ([e59e129](https://github.com/home-operations/kritika/commit/e59e129575c61ad89dca208961aba2b6588f3056))
+* **gateway:** run tokens carry the review's effort ([#613](https://github.com/home-operations/kritika/issues/613)) ([7eb7f30](https://github.com/home-operations/kritika/commit/7eb7f30ebab942d6f4d39692f3c2d06d02ea0e62))
+* **model:** carry a reasoning effort to each provider ([#610](https://github.com/home-operations/kritika/issues/610)) ([e6ffe9c](https://github.com/home-operations/kritika/commit/e6ffe9c73481677ecd68c7aeadddb3b61d9b5891))
+* **review:** name the effort beside the model in the footers ([#616](https://github.com/home-operations/kritika/issues/616)) ([cc83ed7](https://github.com/home-operations/kritika/commit/cc83ed7763102582881c3ee0159eaee5e5494e3a))
+* **web:** show the review and confidence effort on the repository page ([#614](https://github.com/home-operations/kritika/issues/614)) ([59fcb02](https://github.com/home-operations/kritika/commit/59fcb022223856d3005c6b5d748b09fe68aec239))
+
+
+### Bug Fixes
+
+* **review:** count findings outside the diff ([#607](https://github.com/home-operations/kritika/issues/607)) ([3d08929](https://github.com/home-operations/kritika/commit/3d0892968bad1ea4a432dedd5d966054c1f33aa0))
+
+
+### Documentation
+
+* break the configuration page into tables and sections ([#599](https://github.com/home-operations/kritika/issues/599)) ([36c26c6](https://github.com/home-operations/kritika/commit/36c26c63c52ab98a4b9b0bc1c36eba3a629dfc92))
+* correct claims that no longer match the code ([#595](https://github.com/home-operations/kritika/issues/595)) ([e6455fb](https://github.com/home-operations/kritika/commit/e6455fb88db1abc1ee902ae707c9b17efff75a63))
+* describe review.effort and confidence.effort ([#615](https://github.com/home-operations/kritika/issues/615)) ([f849ec9](https://github.com/home-operations/kritika/commit/f849ec94635584465537318f5808e2c0cddaf59d))
+* gather the runner's security model on a Security page ([#602](https://github.com/home-operations/kritika/issues/602)) ([efe70b2](https://github.com/home-operations/kritika/commit/efe70b2d86e79c8ec5f9f9dd28e6d90ee3786927))
+* gather the score, risk and approvals on one page ([#604](https://github.com/home-operations/kritika/issues/604)) ([f4e0e7d](https://github.com/home-operations/kritika/commit/f4e0e7d7d8958964f90ec08352c16b20d9fed207))
+* gather what a review posts and the bot's commands on one page ([#596](https://github.com/home-operations/kritika/issues/596)) ([c99abb2](https://github.com/home-operations/kritika/commit/c99abb243a43e948c3db0f62e180bf73f7c57423))
+* give each .kritika.yaml key its own section and tables ([#600](https://github.com/home-operations/kritika/issues/600)) ([efaf954](https://github.com/home-operations/kritika/commit/efaf9543980484d78d4333bfc39bdc906d719765))
+* move providers, retries and the embedder to a Models page ([#603](https://github.com/home-operations/kritika/issues/603)) ([d76ac7b](https://github.com/home-operations/kritika/commit/d76ac7bd1a6214d0f6136c5cf6cec2fc3adc3023))
+* put setup in the order it is done, with tables ([#598](https://github.com/home-operations/kritika/issues/598)) ([0259c9d](https://github.com/home-operations/kritika/commit/0259c9d865940e89294660fdf0dd5f24a4d03b8a))
+* use tables and lists on the dashboard, database and README pages ([#601](https://github.com/home-operations/kritika/issues/601)) ([06f932b](https://github.com/home-operations/kritika/commit/06f932b4a8cd33177fc17eb39ae3549a79bcf6ef))
+
 ## [0.0.39](https://github.com/home-operations/kritika/compare/0.0.38...0.0.39) (2026-10-06)
 
 
