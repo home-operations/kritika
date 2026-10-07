@@ -67,14 +67,13 @@ type Comments struct {
 
 // Review is how the repository's reviews are done: the review and fallback
 // models, each a "<provider>/<model>" of a provider its account may use,
-// how much a review says, whether a finding must carry a suggested fix,
-// whether a review that finds nothing blocking or important approves the
-// pull request, and whether the summary draws the change's flow.
-// Feedback, Approve and Diagram replace the admin's.
+// whether a finding must carry a suggested fix, whether a review that
+// finds nothing blocking or important approves the pull request, and
+// whether the summary draws the change's flow. Approve and Diagram
+// replace the admin's.
 type Review struct {
 	Model    configfile.ModelRef `yaml:"model,omitempty"`
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
-	Feedback string              `yaml:"feedback,omitempty"`
 	Fixes    *bool               `yaml:"fixes,omitempty"`
 	Approve  *bool               `yaml:"approve,omitempty"`
 	Diagram  *bool               `yaml:"diagram,omitempty"`

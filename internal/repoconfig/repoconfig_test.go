@@ -32,7 +32,7 @@ func TestParse_Invalid(t *testing.T) {
 		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},
 		{"rule with neither", "rules: [{ id: a, paths: [\"**\"] }]\n"},
 		{"file rule with a bad glob", "rules: [{ id: a, file: x.md, paths: [\"[\"] }]\n"},
-		{"feedback outside the review block", "feedback: minimal\n"},
+		{"a feedback level", "review:\n  feedback: detailed\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

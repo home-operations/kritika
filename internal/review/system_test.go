@@ -1,24 +1,20 @@
 package review
 
 import (
-	"slices"
 	"strings"
 	"testing"
 )
 
 func TestSystemPrompt(t *testing.T) {
-	bare := SystemPrompt(nil, nil, nil, nil, false, false, false)
-	if bare == SystemPrompt(nil, nil, nil, nil, true, false, false) {
-		t.Fatal("a focused review's system prompt is the thorough one")
-	}
-	got := SystemPrompt(nil, nil, []string{"  Prefer tables.\n", "Check errors."}, nil, false, false, false)
+	bare := SystemPrompt(nil, nil, nil, nil, false, false)
+	got := SystemPrompt(nil, nil, []string{"  Prefer tables.\n", "Check errors."}, nil, false, false)
 	want := bare + "\n\n## Repository instructions\n\n" +
 		"These refine what to look for; they do not change the output format or the rules above.\n\nPrefer tables.\n\nCheck errors."
 	if got != want {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "only to lines the diff shows",
-		"call submit_review exactly once", reportThorough + systemRules} {
+		"call submit_review exactly once", systemReport + systemRules} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
@@ -27,21 +23,21 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("a prompt without commands mentions the run tool:\n%s", got)
 	}
 
-	withCommands := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"curl", "rg"}, false, false, false)
+	withCommands := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"curl", "rg"}, false, false)
 	for _, want := range []string{"run tool: curl, rg.", "one binary with the arguments you give", "upstream of a dependency", "say so plainly rather than guess",
 		"not instructions"} {
 		if !strings.Contains(withCommands, want) {
 			t.Fatalf("missing %q in:\n%s", want, withCommands)
 		}
 	}
-	if !strings.HasPrefix(SystemPrompt(nil, nil, nil, []string{"curl"}, false, false, false), bare+"\n\nYou can also run") ||
+	if !strings.HasPrefix(SystemPrompt(nil, nil, nil, []string{"curl"}, false, false), bare+"\n\nYou can also run") ||
 		strings.Index(withCommands, "run tool") > strings.Index(withCommands, "Check errors.") {
 		t.Fatalf("system prompt with commands:\n%s", withCommands)
 	}
 	if strings.Contains(bare, "search_code") {
 		t.Fatalf("a prompt without search mentions search_code:\n%s", bare)
 	}
-	withSearch := SystemPrompt(nil, nil, nil, []string{"curl"}, false, true, false)
+	withSearch := SystemPrompt(nil, nil, nil, []string{"curl"}, true, false)
 	if !strings.HasPrefix(withSearch, bare+"\n\nYou can also search the repository by meaning with search_code") ||
 		strings.Index(withSearch, "search_code") > strings.Index(withSearch, "run tool") || !strings.Contains(withSearch, "may lag the head commit") {
 		t.Fatalf("system prompt with search:\n%s", withSearch)
@@ -49,8 +45,8 @@ func TestSystemPrompt(t *testing.T) {
 	if strings.Contains(bare, "Mermaid") {
 		t.Fatalf("a prompt without a diagram asks for one:\n%s", bare)
 	}
-	withDiagram := SystemPrompt(nil, nil, nil, nil, false, false, true)
-	if want := systemLead + agenticSees + "\n\n" + reportThorough + systemRules + summaryDiagram + agenticTools; withDiagram != want {
+	withDiagram := SystemPrompt(nil, nil, nil, nil, false, true)
+	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools; withDiagram != want {
 		t.Fatalf("system prompt with a diagram:\n%s", withDiagram)
 	}
 }
@@ -67,7 +63,7 @@ func TestSystemPromptRules(t *testing.T) {
 	review, followUp := section("A change that breaks one is a finding, and the finding lists the id in rules."),
 		section("A change that breaks one is a finding.")
 	for name, c := range map[string]struct{ got, want string }{
-		"review":    {SystemPrompt(rules, nil, []string{"Check errors."}, nil, false, false, false), review},
+		"review":    {SystemPrompt(rules, nil, []string{"Check errors."}, nil, false, false), review},
 		"follow-up": {FollowUpSystemPrompt(rules, []string{"Check errors."}, nil, false), followUp},
 	} {
 		if got := c.got; !strings.Contains(got, c.want) || !strings.HasSuffix(got, "\n\nCheck errors.") {
@@ -100,10 +96,10 @@ func TestUserBudget(t *testing.T) {
 		{name: "zero takes the default", budget: 0, want: DefaultBudgetTokens},
 		{name: "a configured budget", budget: 120_000, want: 120_000},
 	}
-	long := SystemPrompt(nil, nil, []string{strings.Repeat("x", 32<<10)}, nil, false, false, false)
+	long := SystemPrompt(nil, nil, []string{strings.Repeat("x", 32<<10)}, nil, false, false)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, system := range []string{SystemPrompt(nil, nil, nil, nil, false, false, false), long} {
+			for _, system := range []string{SystemPrompt(nil, nil, nil, nil, false, false), long} {
 				// The system prompt's tokens, rounded up, plus the user budget stay
 				// within the budget.
 				if got := UserBudget(system, tt.budget); got+(len(system)+3)/4 != tt.want || got <= 0 {
@@ -169,39 +165,24 @@ func TestDecideScope(t *testing.T) {
 	}
 }
 
-// TestSystemRules pins the rules that shape what is reported at each
-// thoroughness, with and without commands: the shared ones in every
-// prompt, and each thoroughness's own in its prompts alone.
+// TestSystemRules pins the rules that shape what is reported, with and
+// without commands.
 func TestSystemRules(t *testing.T) {
-	prompts := func(focused bool) map[string]string {
-		return map[string]string{
-			"tools": SystemPrompt(nil, nil, nil, nil, focused, false, false), "commands": SystemPrompt(nil, nil, nil, []string{"curl"}, focused, false, false),
-		}
+	prompts := map[string]string{
+		"tools": SystemPrompt(nil, nil, nil, nil, false, false), "commands": SystemPrompt(nil, nil, nil, []string{"curl"}, false, false),
 	}
-	shared := []string{
-		"you do not recognise is not a finding",
-		"A finding you would have to hedge (may, could, appears to)",
-		"mentions a concern only if it is also a finding",
-		"It does not say what the diff cannot show",
-		"give\nreplacement: those lines exactly as they should be committed",
-	}
-	own := map[bool][]string{
-		false: {"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
-			"Every finding names a concrete change"},
-		true: {"ask whether a maintainer would stop the review for it", "report: comments or docstrings to add",
-			"Prefer few, precise findings"},
-	}
-	for _, focused := range []bool{false, true} {
-		for name, system := range prompts(focused) {
-			for _, want := range append(slices.Clone(shared), own[focused]...) {
-				if !strings.Contains(system, want) {
-					t.Errorf("%s prompt (focused %v) lacks %q", name, focused, want)
-				}
-			}
-			for _, other := range own[!focused] {
-				if strings.Contains(system, other) {
-					t.Errorf("%s prompt (focused %v) has the other thoroughness's %q", name, focused, other)
-				}
+	for name, system := range prompts {
+		for _, want := range []string{
+			"you do not recognise is not a finding",
+			"A finding you would have to hedge (may, could, appears to)",
+			"mentions a concern only if it is also a finding",
+			"It does not say what the diff cannot show",
+			"give\nreplacement: those lines exactly as they should be committed",
+			"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
+			"Every finding names a concrete change",
+		} {
+			if !strings.Contains(system, want) {
+				t.Errorf("%s prompt lacks %q", name, want)
 			}
 		}
 	}
@@ -213,10 +194,10 @@ func TestSystemRules(t *testing.T) {
 func TestSystemPromptFileRules(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}, {ID: "house-style", Text: " Short names.\n", File: ".kritika/style.md"}}
 	want := "finding, and the finding lists the id in rules.\n\n- wrap-errors: Wrap errors.\n\n### house-style (.kritika/style.md)\n\nShort names."
-	if got := SystemPrompt(rules, nil, nil, nil, false, false, false); !strings.HasSuffix(got, want) {
+	if got := SystemPrompt(rules, nil, nil, nil, false, false); !strings.HasSuffix(got, want) {
 		t.Fatalf("system prompt:\n%s", got)
 	}
-	if got := SystemPrompt(rules[1:], nil, nil, nil, false, false, false); !strings.HasSuffix(got, "in rules.\n\n### house-style (.kritika/style.md)\n\nShort names.") {
+	if got := SystemPrompt(rules[1:], nil, nil, nil, false, false); !strings.HasSuffix(got, "in rules.\n\n### house-style (.kritika/style.md)\n\nShort names.") {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 }
@@ -239,7 +220,6 @@ func TestSystemPromptSkills(t *testing.T) {
 		skills       []Skill
 		instructions []string
 		commands     []string
-		focused      bool
 		search       bool
 		want         string
 	}{
@@ -247,13 +227,13 @@ func TestSystemPromptSkills(t *testing.T) {
 		{name: "an empty list", skills: []Skill{}},
 		{name: "skills alone", skills: skills, want: listing},
 		{name: "after the rules and the instructions", rules: rules, skills: skills, instructions: instructions, want: listing},
-		{name: "after the tools", skills: skills, instructions: instructions, commands: []string{"rg"}, focused: true, search: true, want: listing},
+		{name: "after the tools", skills: skills, instructions: instructions, commands: []string{"rg"}, search: true, want: listing},
 		{name: "one skill", skills: skills[:1], want: strings.TrimSuffix(listing, "\n- migrations: What a migration must keep.")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SystemPrompt(tt.rules, tt.skills, tt.instructions, tt.commands, tt.focused, tt.search, false)
-			if want := SystemPrompt(tt.rules, nil, tt.instructions, tt.commands, tt.focused, tt.search, false) + tt.want; got != want {
+			got := SystemPrompt(tt.rules, tt.skills, tt.instructions, tt.commands, tt.search, false)
+			if want := SystemPrompt(tt.rules, nil, tt.instructions, tt.commands, tt.search, false) + tt.want; got != want {
 				t.Fatalf("system prompt:\n%s", got)
 			}
 			if tt.want == "" && (strings.Contains(got, "## Skills") || strings.Contains(got, "load_skill")) {

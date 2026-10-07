@@ -62,8 +62,7 @@
           "description": "the schema",
           "paths": ["**/*.sql"]
         }
-      ],
-      "feedback": "standard"
+      ]
     },
     "confidence": {
       "model": "openrouter/acme-judge",
@@ -153,8 +152,7 @@
             "description": "the schema",
             "paths": ["**/*.sql"]
           }
-        ],
-        "feedback": "standard"
+        ]
       },
       "confidence": {
         "model": "openrouter/acme-judge",

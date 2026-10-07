@@ -11,7 +11,7 @@ import (
 )
 
 // The environment may set some of the file's keys: one model provider, the
-// review and fallback models, feedback, the confidence model, threshold
+// review and fallback models, the confidence model, threshold
 // and risk, and settle every account and repository inherits, and the
 // embedder. Each wins over the file's.
 
@@ -100,8 +100,6 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 		case reviewEnvPrefix + "FALLBACK":
 			ref := ModelRef(value)
 			d.Review.Fallback, path = &ref, keyFallback
-		case reviewEnvPrefix + "FEEDBACK":
-			d.Review.Feedback, path = &value, keyFeedback
 		case reviewEnvPrefix + "APPROVE":
 			approve, err := strconv.ParseBool(value)
 			if err != nil {
@@ -208,7 +206,7 @@ type FileLayer struct {
 	Review    FileValue
 	Fallback  FileValue
 	// Defaults are the other settings it writes that the environment may
-	// set too: feedback, approve, fixes, incremental, diagram, the confidence
+	// set too: approve, fixes, incremental, diagram, the confidence
 	// model, threshold, gate and risk, settle and limit, in that order,
 	// by their policy keys.
 	Defaults  []FileDefault
@@ -274,7 +272,6 @@ func (f *File) FileLayer() FileLayer {
 		key, value string
 		set        bool
 	}{
-		{keyFeedback, deref(d.Review.Feedback), d.Review.Feedback != nil},
 		{keyApprove, strconv.FormatBool(deref(d.Review.Approve)), d.Review.Approve != nil},
 		{keyFixes, strconv.FormatBool(deref(d.Review.Fixes)), d.Review.Fixes != nil},
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},

@@ -160,7 +160,7 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 }
 
 // TestFileReviewDefaults: the file and the environment set the defaults'
-// feedback, approve, limit and settle, which accounts inherit with the
+// diagram, approve, limit and settle, which accounts inherit with the
 // defaults' or the environment's source. mode is no longer a setting in
 // either.
 func TestFileReviewDefaults(t *testing.T) {
@@ -168,7 +168,6 @@ func TestFileReviewDefaults(t *testing.T) {
 	t.Setenv("KRITIKA_TRIGGER_SETTLE", "45s")
 	t.Setenv("KRITIKA_REVIEW_APPROVE", "true")
 	t.Setenv("KRITIKA_REVIEW_FIXES", "true")
-	t.Setenv("KRITIKA_REVIEW_DIAGRAM", "true")
 	t.Setenv("KRITIKA_REVIEW_COST", "true")
 	t.Setenv("KRITIKA_REVIEW_INCREMENTAL", "7")
 	models := "review: { model: openrouter/big, fallback: openrouter/small"
@@ -176,32 +175,31 @@ func TestFileReviewDefaults(t *testing.T) {
 		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
 	}
 	t.Setenv("KRITIKA_TRIGGER_LIMIT", "3")
-	f, err := Parse(withDefaults(", feedback: minimal", ""))
+	f, err := Parse(withDefaults(", diagram: true", ""))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || s.Review.Feedback != FeedbackMinimal || !s.Review.Approve ||
+	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || !s.Review.Approve ||
 		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost {
 		t.Fatalf("settings = %+v; want the file's and the environment's", s)
 	}
 	src := f.Sources(a, "acme/x")
 	for key, want := range map[string]Source{
-		"trigger.limit": SourceEnv, "trigger.settle": SourceEnv, "review.feedback": SourceDefaults,
+		"trigger.limit": SourceEnv, "trigger.settle": SourceEnv,
 		"review.approve": SourceEnv, "review.fixes": SourceEnv, "review.incremental": SourceEnv,
-		"review.diagram": SourceEnv, "review.cost": SourceEnv,
+		"review.diagram": SourceDefaults, "review.cost": SourceEnv,
 	} {
 		if src[key] != want {
 			t.Errorf("source of %s = %s, want %s", key, src[key], want)
 		}
 	}
 	want := []FileDefault{
-		{"review.feedback", FileValue{Value: "minimal", Source: SourceFile}},
 		{"review.approve", FileValue{Value: "true", Source: SourceEnv}},
 		{"review.fixes", FileValue{Value: "true", Source: SourceEnv}},
 		{"review.incremental", FileValue{Value: "7", Source: SourceEnv}},
-		{"review.diagram", FileValue{Value: "true", Source: SourceEnv}},
+		{"review.diagram", FileValue{Value: "true", Source: SourceFile}},
 		{"review.cost", FileValue{Value: "true", Source: SourceEnv}},
 		{"trigger.settle", FileValue{Value: "45s", Source: SourceEnv}},
 		{"trigger.limit", FileValue{Value: "3", Source: SourceEnv}},

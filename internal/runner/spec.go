@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 17
+const SpecVersion = 18
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -96,9 +96,6 @@ type Prompt struct {
 	// matches its paths; a file rule's file is among the spec's RepoFiles.
 	Rules               []configfile.Rule `json:"rules,omitempty"`
 	RequireSuggestedFix bool              `json:"requireSuggestedFix,omitempty"`
-	// Focused is a focused review's: it reports only what would stop the
-	// review, where a thorough one reports anything actionable.
-	Focused bool `json:"focused,omitempty"`
 	// Diagram asks the review for a Mermaid diagram of the change's flow
 	// in its summary.
 	Diagram bool `json:"diagram,omitempty"`

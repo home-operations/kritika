@@ -41,7 +41,6 @@ const (
 const (
 	keyModel       = "review.model"
 	keyFallback    = "review.fallback"
-	keyFeedback    = "review.feedback"
 	keyApprove     = "review.approve"
 	keyFixes       = "review.fixes"
 	keyIncremental = "review.incremental"
@@ -60,7 +59,6 @@ var Policies = []Policy{
 	{Key: "enabled", Scopes: everyScope},
 	{Key: keyModel, Scopes: everyScope},
 	{Key: keyFallback, Scopes: everyScope},
-	{Key: keyFeedback, Scopes: everyScope},
 	{Key: keyFixes, Scopes: everyScope},
 	{Key: keyApprove, Scopes: everyScope},
 	{Key: keyIncremental, Scopes: everyScope},

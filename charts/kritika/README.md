@@ -216,7 +216,6 @@ Kubernetes: `>=1.25.0-0`
 | config.reviewCost | string | `""` | `true` ends the summary's footer with what the pull request's reviews have cost together; off unless set. |
 | config.reviewDiagram | string | `""` | `true` has the summary draw the flow the change adds or alters as a Mermaid diagram; off unless set. |
 | config.reviewFallback | string | `""` | The model a review falls back to when the review model fails. |
-| config.reviewFeedback | string | `""` | How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set. |
 | config.reviewFixes | string | `""` | `true` requires a suggested fix on every finding; off unless set. |
 | config.reviewIncremental | string | `""` | How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set. |
 | config.reviewModel | string | `""` | The model every review runs on unless a repository names another, `<provider>/<model>`. |

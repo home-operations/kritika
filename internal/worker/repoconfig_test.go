@@ -304,30 +304,3 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		})
 	}
 }
-
-func TestPostsInline(t *testing.T) {
-	tests := []struct {
-		name   string
-		review configfile.Review
-		want   map[review.Severity]bool
-	}{
-		{"every finding, detailed", configfile.Review{InlineComments: true, Feedback: configfile.FeedbackDetailed},
-			map[review.Severity]bool{review.SeverityBlocking: true, review.SeverityImportant: true, review.SeverityNit: true}},
-		{"every finding, minimal", configfile.Review{InlineComments: true, Feedback: configfile.FeedbackMinimal},
-			map[review.Severity]bool{review.SeverityBlocking: true, review.SeverityImportant: true, review.SeverityNit: true}},
-		{"nits to the summary, standard", configfile.Review{InlineComments: true, Feedback: configfile.FeedbackStandard},
-			map[review.Severity]bool{review.SeverityBlocking: true, review.SeverityImportant: true, review.SeverityNit: false}},
-		{"none with inline comments off", configfile.Review{Feedback: configfile.FeedbackDetailed},
-			map[review.Severity]bool{review.SeverityBlocking: false, review.SeverityImportant: false, review.SeverityNit: false}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &publishPhase{settings: configfile.Settings{Review: tt.review}}
-			for sev, want := range tt.want {
-				if got := p.postsInline(review.Finding{Severity: sev}); got != want {
-					t.Errorf("postsInline(%s) = %v, want %v", sev, got, want)
-				}
-			}
-		})
-	}
-}

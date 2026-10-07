@@ -513,7 +513,7 @@ func TestParseRejects(t *testing.T) {
 		{"negative trigger limit", acme("  acme/x: { trigger: { limit: -1 } }\n"), "repositories.acme/x.trigger.limit must not be negative"},
 		{"trigger.lines is not a key", acme("  acme/x: { trigger: { lines: 500 } }\n"), "field lines not found"},
 		{"trigger condition with a bad glob", acme("  acme/x: { trigger: { include: [{ paths: ['['] }] } }\n"), `include[0]: paths[0] "[" is not a valid glob`},
-		{"unknown feedback", "review:\n  feedback: exhaustive\n" + minimal, "configfile: review.feedback must be detailed, standard or minimal"},
+		{"a feedback level", "review:\n  feedback: detailed\n" + minimal, "field feedback not found"},
 		{"context without a description", "context: [{ path: db/schema.sql }]\n" + minimal, "configfile: context[0]: description is required"},
 		{"context outside the repository", "context: [{ path: ../x, description: x }]\n" + minimal, "escapes the repository"},
 		{"context with a bad glob", "context: [{ path: x, description: x, paths: ['['] }]\n" + minimal, "paths[0] \"[\" is not a valid glob"},
@@ -690,9 +690,8 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 }
 
-// TestReviewPresentation checks every finding goes inline, from a
-// detailed review, unless a scope sets another feedback level or turns
-// inline comments off.
+// TestReviewPresentation checks every finding goes inline unless a scope
+// turns inline comments off.
 func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -705,16 +704,15 @@ func TestReviewPresentation(t *testing.T) {
 		return f
 	}
 	f := parse(t, "", "  acme/x: {}\n")
-	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || s.Review.Feedback != FeedbackDetailed {
-		t.Fatalf("review = %+v, want every finding inline, from a detailed review", s.Review)
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments {
+		t.Fatalf("review = %+v, want every finding inline", s.Review)
 	}
-	f = parse(t, "comments: { inline: false }, review: { feedback: minimal }",
-		"  acme/x: { comments: { inline: true } }\n  acme/y: { review: { feedback: standard } }\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments || s.Review.Feedback != FeedbackMinimal {
-		t.Fatalf("review = %+v, want the account's feedback with the repository's inline comments", s.Review)
+	f = parse(t, "comments: { inline: false }", "  acme/x: { comments: { inline: true } }\n  acme/y: {}\n")
+	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments {
+		t.Fatalf("review = %+v, want the repository's inline comments over the account's", s.Review)
 	}
-	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Feedback != FeedbackStandard {
-		t.Fatalf("review = %+v, want the repository's feedback over the account's", s.Review)
+	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.InlineComments {
+		t.Fatalf("review = %+v, want the account's inline comments off", s.Review)
 	}
 	f = parse(t, "review: { approve: true }", "  acme/x: { review: { approve: false } }\n  acme/y: {}\n")
 	if s := f.Settings(&f.Accounts[0], "acme/x"); s.Review.Approve {

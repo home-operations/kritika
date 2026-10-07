@@ -172,7 +172,7 @@ func TestBench(t *testing.T) {
 			// system prompt, the user message within its budget, the read-only
 			// tools over the head and the submit_review its one step is told to make. Stage 4 needs
 			// an index, which the bench has none of.
-			system := review.SystemPrompt(nil, nil, nil, nil, false, false, false)
+			system := review.SystemPrompt(nil, nil, nil, nil, false, false)
 			msg, _, _ := review.Build(review.Input{
 				Repository: c.Repository, Number: c.PR, Title: c.Title, Author: "author", BaseRef: "main",
 				Changed: res.Changed, Diff: res.Diff, Context: selected, BudgetTokens: review.UserBudget(system, 0),

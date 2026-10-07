@@ -150,16 +150,6 @@ func TestParse(t *testing.T) {
 			take: "t", dropped: map[string]DropReason{"styled": DropBadCategory, "uncategorised": DropBadCategory},
 		},
 		{
-			name: "a focused review keeps correctness, security and reliability",
-			raw: `{"summary": {"take": "t"}, "findings": [
-			  {"path": "main.go", "line": 11, "severity": "important", "category": "security", "title": "leak", "explanation": "e"},
-			  {"path": "main.go", "line": 12, "severity": "important", "category": "maintainability", "title": "naming", "explanation": "e"},
-			  {"path": "main.go", "line": 13, "severity": "blocking", "category": "tests", "title": "untested", "explanation": "e"}
-			]}`,
-			opts: ParseOptions{Focused: true},
-			take: "t", kept: []string{"main.go:11:leak"}, dropped: map[string]DropReason{"naming": DropOutsideFocus, "untested": DropOutsideFocus},
-		},
-		{
 			name: "a finding without a title or explanation is incomplete",
 			raw: `{"summary": {"take": "t"}, "findings": [
 			  {"path": "main.go", "line": 11, "severity": "nit", "category": "correctness", "title": " ", "explanation": "no title"},
