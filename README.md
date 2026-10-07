@@ -115,17 +115,18 @@ runner holds, the gateway and the sandbox.
 
 ## Documentation
 
-| Page                                                                                | What it covers                                                                                    |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [Setup](https://kritika.home-operations.com/setup/)                                 | from install to the first review: the GitHub App, its permissions and its webhook                 |
-| [Configuration](https://kritika.home-operations.com/configuration/)                 | the configuration file: sign-in, GitHub Apps, providers, repository settings, accounts and egress |
-| [`.kritika.yaml` reference](https://kritika.home-operations.com/repository-config/) | what a repository's own file can change                                                           |
-| [Security](https://kritika.home-operations.com/security/)                           | hardening an install, what a runner holds, the egress gateway, runner tools and the sandbox       |
-| [Chart values](charts/kritika/README.md)                                            | every value of the Helm chart                                                                     |
-| [Reviews](https://kritika.home-operations.com/reviews/)                             | when a review runs, what it posts, and the commands that steer it                                 |
-| [Dashboard](https://kritika.home-operations.com/dashboard/)                         | the setup checklist, the Configuration page, repository on/off and actions                        |
-| [Metrics](https://kritika.home-operations.com/metrics/)                             | what kritika exports to Prometheus, and the chart's alerts and Grafana dashboard                  |
-| [Development](https://kritika.home-operations.com/development/)                     | building, testing, evaluation and the cluster loop                                                |
+| Page                                                                                | What it covers                                                                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [Setup](https://kritika.home-operations.com/setup/)                                 | from install to the first review: the GitHub App, its permissions and its webhook           |
+| [Configuration](https://kritika.home-operations.com/configuration/)                 | the configuration file: sign-in, GitHub Apps, repository settings, accounts and egress      |
+| [Models](https://kritika.home-operations.com/models/)                               | providers and their keys, retries, fallback, the embedder, local models and OpenCode        |
+| [`.kritika.yaml` reference](https://kritika.home-operations.com/repository-config/) | what a repository's own file can change                                                     |
+| [Security](https://kritika.home-operations.com/security/)                           | hardening an install, what a runner holds, the egress gateway, runner tools and the sandbox |
+| [Chart values](charts/kritika/README.md)                                            | every value of the Helm chart                                                               |
+| [Reviews](https://kritika.home-operations.com/reviews/)                             | when a review runs, what it posts, and the commands that steer it                           |
+| [Dashboard](https://kritika.home-operations.com/dashboard/)                         | the setup checklist, the Configuration page, repository on/off and actions                  |
+| [Metrics](https://kritika.home-operations.com/metrics/)                             | what kritika exports to Prometheus, and the chart's alerts and Grafana dashboard            |
+| [Development](https://kritika.home-operations.com/development/)                     | building, testing, evaluation and the cluster loop                                          |
 
 ## License
 

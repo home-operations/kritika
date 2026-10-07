@@ -124,6 +124,7 @@ nav:
       - Security: security.md
   - Configuration:
       - Configuration file: configuration.md
+      - Models: models.md
       - Repository settings: repository-config.md
       - Helm chart values: chart-values.md
   - Using kritika:

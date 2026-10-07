@@ -89,7 +89,9 @@ flowchart LR
 - **[Security](security.md)**: hardening an install, what a runner holds,
   the egress gateway, runner tools and the sandbox.
 - **[Configuration file](configuration.md)**: sign-in and role mappings, GitHub
-  Apps, providers, the repository settings, repository entries and accounts.
+  Apps, the repository settings, repository entries, accounts and egress.
+- **[Models](models.md)**: providers and their keys, retries, fallback, the
+  embedder, local models and OpenCode.
 - **[Repository settings](repository-config.md)**: what a repository's
   `.kritika.yaml` can change.
 - **[Helm chart values](chart-values.md)**: the chart's values, grouped.
