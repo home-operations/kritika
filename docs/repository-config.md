@@ -56,6 +56,7 @@ skills:
 | ------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
 | `enabled`                                                    | `false` stops reviews, follow-ups and indexing                     | can only turn the repository off                |
 | [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                        |
+| [`review.effort`](#models)                                   | how hard they reason                                               | replaces                                        |
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows                   | replaces, either way                            |
 | [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                      | replaces, either way                            |
@@ -85,6 +86,12 @@ account's limits bound what a choice can cost. A review whose model fails
 goes on with the fallback, on the same provider or another, and so does a
 follow-up.
 
+`review.effort` and `confidence.effort` set how hard the review model,
+with its fallback, and the scorer reason, one of `none`, `minimal`, `low`,
+`medium`, `high`, `xhigh` or `max` ([effort](models.md#effort)). Each
+replaces the admin's; `""` restores the provider's default, and a value
+that is no level is dropped.
+
 ### Approvals
 
 `review.approve: true` has kritika approve a pull request its review
@@ -111,8 +118,9 @@ tokens on every review, and it replaces the admin's in either direction.
 
 ### Confidence
 
-`confidence.model`, `confidence.threshold` and `confidence.gate` replace
-the admin's, the threshold and the gate in either direction;
+`confidence.model`, `confidence.effort`, `confidence.threshold` and
+`confidence.gate` replace the admin's, the threshold and the gate in
+either direction;
 `confidence.risk` may only lower the admin's, and a higher one is dropped.
 `confidence.instructions` is the admin's alone
 ([confidence and approvals](confidence.md)).
