@@ -53,26 +53,34 @@ func TestToolsTakeZeroValuesAsLeftOut(t *testing.T) {
 		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			full := withZeroOptionals(t, tt.tool().Def().InputSchema, tt.base)
 			want, wantErr := tt.tool().Run(t.Context(), fetchInput(t, tt.base))
 			if wantErr != nil {
 				t.Fatalf("with the optional properties left out: %v", wantErr)
 			}
-			got, err := tt.tool().Run(t.Context(), fetchInput(t, full))
-			if err != nil || got != want {
-				t.Fatalf("with them as zero values (%v) = %q, %v; left out = %q", full, got, err, want)
+			// A list of strings comes empty or as one empty string, except
+			// run's: an empty argument is one a command reads.
+			for _, blank := range []bool{false, tt.name != "run"} {
+				full := fetchInput(t, withZeroOptionals(t, tt.tool().Def().InputSchema, tt.base, blank))
+				got, err := tt.tool().Run(t.Context(), full)
+				if err != nil || got != want {
+					t.Fatalf("with them as zero values (%s) = %q, %v; left out = %q", full, got, err, want)
+				}
 			}
 		})
 	}
 }
 
 // withZeroOptionals is base with every optional property of schema that it
-// lacks set to its type's zero value.
-func withZeroOptionals(t *testing.T, schema json.RawMessage, base map[string]any) map[string]any {
+// lacks set to its type's zero value, a list of strings to [""] when blank
+// is set.
+func withZeroOptionals(t *testing.T, schema json.RawMessage, base map[string]any, blank bool) map[string]any {
 	t.Helper()
 	var s struct {
 		Properties map[string]struct {
-			Type string `json:"type"`
+			Type  string `json:"type"`
+			Items struct {
+				Type string `json:"type"`
+			} `json:"items"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
@@ -93,6 +101,9 @@ func withZeroOptionals(t *testing.T, schema json.RawMessage, base map[string]any
 			out[name] = false
 		case "array":
 			out[name] = []any{}
+			if blank && p.Items.Type == "string" {
+				out[name] = []any{""}
+			}
 		case "object":
 			out[name] = map[string]any{}
 		default:
