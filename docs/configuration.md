@@ -205,14 +205,14 @@ repository, and `repositories` holds the entries that change them for
 some: `owner/*` for every repository of an account, and `owner/name` for
 one. They come in five groups, with a few keys beside them:
 
-| Group        | Keys                                                                              | What they set                              |
-| ------------ | --------------------------------------------------------------------------------- | ------------------------------------------ |
-| `review`     | `model`, `fallback`, `fixes`, `approve`, `incremental`, `diagram`, `cost`         | what a review runs on and what it says     |
-| `confidence` | `model`, `threshold`, `gate`, `risk`, `instructions`                              | how a review is judged                     |
-| `trigger`    | `include`, `exclude`, `settle`, `limit`                                           | which pull requests are reviewed, and when |
-| `comments`   | `inline`, `summary`, `finding`                                                    | what is posted                             |
-| `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`    | the bounds of a review's tool loop         |
-| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone |                                            |
+| Group        | Keys                                                                                | What they set                              |
+| ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
+| `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost` | what a review runs on and what it says     |
+| `confidence` | `model`, `effort`, `threshold`, `gate`, `risk`, `instructions`                      | how a review is judged                     |
+| `trigger`    | `include`, `exclude`, `settle`, `limit`                                             | which pull requests are reviewed, and when |
+| `comments`   | `inline`, `summary`, `finding`                                                      | what is posted                             |
+| `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`      | the bounds of a review's tool loop         |
+| beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone   |                                            |
 
 `ignore` lists globs of the paths kritika never looks at: they are left out
 of a review's context and of the index, on top of kritika's own (vendored
@@ -401,21 +401,23 @@ request.
 Some of the root's settings can come from the environment; the provider's
 and the embedder's variables are on [Models](models.md#from-the-environment):
 
-| Variable                       | Key                                                      |
-| ------------------------------ | -------------------------------------------------------- |
-| `KRITIKA_REVIEW_MODEL`         | `review.model`                                           |
-| `KRITIKA_REVIEW_FALLBACK`      | `review.fallback`                                        |
-| `KRITIKA_REVIEW_APPROVE`       | `review.approve`, `true` or `false`                      |
-| `KRITIKA_REVIEW_FIXES`         | `review.fixes`, `true` or `false`                        |
-| `KRITIKA_REVIEW_INCREMENTAL`   | `review.incremental`, a whole number of files            |
-| `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                      |
-| `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                         |
-| `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                       |
-| `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5       |
-| `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                     |
-| `KRITIKA_CONFIDENCE_RISK`      | `confidence.risk`, `low`, `medium`, `high` or `critical` |
-| `KRITIKA_TRIGGER_SETTLE`       | `trigger.settle`, a duration such as `30s`               |
-| `KRITIKA_TRIGGER_LIMIT`        | `trigger.limit`, a whole number of reviews               |
+| Variable                       | Key                                                            |
+| ------------------------------ | -------------------------------------------------------------- |
+| `KRITIKA_REVIEW_MODEL`         | `review.model`                                                 |
+| `KRITIKA_REVIEW_FALLBACK`      | `review.fallback`                                              |
+| `KRITIKA_REVIEW_EFFORT`        | `review.effort`, a level or empty ([effort](models.md#effort)) |
+| `KRITIKA_REVIEW_APPROVE`       | `review.approve`, `true` or `false`                            |
+| `KRITIKA_REVIEW_FIXES`         | `review.fixes`, `true` or `false`                              |
+| `KRITIKA_REVIEW_INCREMENTAL`   | `review.incremental`, a whole number of files                  |
+| `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                            |
+| `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                               |
+| `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                             |
+| `KRITIKA_CONFIDENCE_EFFORT`    | `confidence.effort`, a level or empty                          |
+| `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5             |
+| `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                           |
+| `KRITIKA_CONFIDENCE_RISK`      | `confidence.risk`, `low`, `medium`, `high` or `critical`       |
+| `KRITIKA_TRIGGER_SETTLE`       | `trigger.settle`, a duration such as `30s`                     |
+| `KRITIKA_TRIGGER_LIMIT`        | `trigger.limit`, a whole number of reviews                     |
 
 The Configuration page lists what the file and the environment set under
 "Instance settings", with where each comes from.

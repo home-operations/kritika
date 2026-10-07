@@ -14,7 +14,8 @@ a provider the file declares:
 The review models can differ by repository, in the admin's `repositories`
 entries or a repository's own [`.kritika.yaml`](repository-config.md#models),
 which may name only a provider the instance or the repository's account
-declares.
+declares. `review.effort` and `confidence.effort` set how hard each model
+reasons ([effort](#effort)).
 
 ## Providers
 
@@ -122,6 +123,45 @@ review's step has failed on the review model, and its provider's
 provider's own `retries`, and the review carries on there. The step's
 usage is recorded under the model that answered. A follow-up's steps fall
 back the same way.
+
+## Effort
+
+`review.effort` and `confidence.effort` set how hard a model reasons, as
+the providers' reasoning effort: `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh` or `max`, lowest first. `review.effort` is the review
+model's, for reviews and follow-ups alike, and the fallback that takes a
+step reasons as hard; `confidence.effort` is the scorer's. Unset, each is
+the provider's default. The review is where reasoning pays off, and the
+score is a short call that a lower level answers for less:
+
+```yaml
+review:
+  model: openrouter/vendor/large-model
+  effort: high
+confidence:
+  model: openrouter/vendor/small-model
+  effort: low
+```
+
+| Where                 | What it sets                                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| nothing               | the provider's default, for both                                                                                                        |
+| a scope               | its level, like any [repository setting](configuration.md#repository-settings-and-repositories); a `.kritika.yaml` replaces the admin's |
+| a scope, `effort: ""` | the provider's default again, where a broader scope set a level                                                                         |
+
+Each provider type gets the level in its own form:
+
+| Type                 | Sent as                | Notes                                                                                               |
+| -------------------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `openrouter`         | `reasoning.effort`     | OpenRouter maps a level a model lacks to the nearest it takes, for each model in the request's list |
+| `openai`, `opencode` | `reasoning_effort`     | a model that takes no reasoning effort refuses the request; leave its effort unset                  |
+| `anthropic`          | `output_config.effort` | the Messages API runs from `low` to `max`, so `none` and `minimal` go out as `low`; unset as above  |
+
+The environment sets both (`KRITIKA_REVIEW_EFFORT`, `KRITIKA_CONFIDENCE_EFFORT`,
+[environment variables](configuration.md#environment-variables)), as do
+the chart's `reviewEffort` and `confidenceEffort`. The dashboard's
+repository page shows each repository's effective levels beside its
+models.
 
 ## The embedder
 

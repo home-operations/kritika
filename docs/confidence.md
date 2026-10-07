@@ -25,6 +25,7 @@ makes it a second opinion.
 | Key                       | Default                 | What                                                                                       | From a `.kritika.yaml`                     |
 | ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | `confidence.model`        | none: nothing is scored | the model that scores, a `<provider>/<model>` held to the same providers as `review.model` | replaces                                   |
+| `confidence.effort`       | the provider's          | how hard the scorer reasons ([effort](models.md#effort))                                   | replaces                                   |
 | `confidence.threshold`    | 5                       | the score approvals need, and a gated commit status                                        | replaces, either way                       |
 | `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check          | replaces, either way                       |
 | `confidence.risk`         | `low`                   | the highest [risk](#risk) a change may be rated and still be approved                      | may only lower it; a higher one is dropped |
