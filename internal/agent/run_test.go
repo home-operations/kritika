@@ -32,10 +32,18 @@ func TestMain(m *testing.M) {
 }
 
 // helper is the command: "exit N" exits N, "sleep" outlives any test
-// timeout, "flood N" writes N bytes, and anything else prints the working
-// directory, the environment and the arguments.
+// timeout, "flood N" writes N bytes, "fail-after N" writes N bytes and then
+// an error to stderr, and anything else prints the working directory, the
+// environment and the arguments.
 func helper(args []string) int {
 	switch {
+	case len(args) == 2 && args[0] == "fail-after":
+		n, _ := strconv.Atoi(args[1])
+		fmt.Print(strings.Repeat("x", n))
+		// Long enough for the run tool to have read stdout first.
+		time.Sleep(200 * time.Millisecond)
+		fmt.Fprintln(os.Stderr, "failed: the end")
+		return 1
 	case len(args) == 2 && args[0] == "exit":
 		n, _ := strconv.Atoi(args[1])
 		fmt.Println("exiting")
@@ -123,6 +131,24 @@ func TestRunTool(t *testing.T) {
 		if err != nil || len(out) > 4096 || !strings.HasPrefix(out, "exit code 0\n") ||
 			!strings.HasSuffix(out, fmt.Sprintf("\n[truncated %d bytes]", 5000-kept)) {
 			t.Fatalf("out = %d bytes ending %q, err = %v; want at most 4096 with the bytes dropped counted", len(out), out[max(len(out)-40, 0):], err)
+		}
+	})
+
+	t.Run("the end of stderr outlives a cut", func(t *testing.T) {
+		out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["fail-after","8000"]}`))
+		if err != nil || len(out) > 4096 || !strings.HasPrefix(out, "exit code 1\nxxx") ||
+			!strings.HasSuffix(out, "]\n[the end of stderr, from the part cut above:]\nfailed: the end\n") {
+			t.Fatalf("out = %d bytes ending %q, err = %v; want at most 4096 ending in the error", len(out), out[max(len(out)-120, 0):], err)
+		}
+		if n := strings.Count(out, "failed: the end"); n != 1 {
+			t.Fatalf("the error is in the output %d times", n)
+		}
+	})
+
+	t.Run("an uncut output shows its stderr in place", func(t *testing.T) {
+		out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["fail-after","10"]}`))
+		if err != nil || out != "exit code 1\nxxxxxxxxxxfailed: the end\n" {
+			t.Fatalf("out = %q, err = %v", out, err)
 		}
 	})
 
@@ -408,4 +434,39 @@ func symlinkTree(t *testing.T) *object.Tree {
 		t.Fatal(err)
 	}
 	return tree
+}
+
+func TestStderrTail(t *testing.T) {
+	type write struct {
+		stderr bool
+		text   string
+	}
+	for _, tt := range []struct {
+		name   string
+		writes []write
+		want   string
+	}{
+		{"all of stderr fits", []write{{false, "out\n"}, {true, "err\n"}}, ""},
+		{"stderr after a full buffer", []write{{false, "0123456789"}, {true, "failed\n"}}, "failed\n"},
+		{"after a whole line", []write{{true, "line 1\n"}, {false, "0123"}, {true, "line 2\n"}}, "line 2\n"},
+		{"a line cut at the buffer's end", []write{{false, "0123456"}, {true, "TOKEN123\nnext\n"}}, "next\n"},
+		{"a cut line and nothing after", []write{{false, "0123456"}, {true, "TOKEN123"}}, ""},
+		{"a line cut at the tail's start", []write{{false, "0123456789"}, {true, "TOKEN123456789\nab\n"}}, "ab\n"},
+		{"whole lines past the tail's length", []write{{false, "0123456789"}, {true, "1\n2\n3\n4\n5\n6\n7\n"}}, "4\n5\n6\n7\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out := &cappedBuffer{max: 8}
+			errs := &stderrTail{out: out, max: 9, last: '\n'}
+			for _, w := range tt.writes {
+				if w.stderr {
+					_, _ = errs.Write([]byte(w.text))
+				} else {
+					_, _ = out.Write([]byte(w.text))
+				}
+			}
+			if got := errs.String(); got != tt.want {
+				t.Fatalf("end of stderr = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }

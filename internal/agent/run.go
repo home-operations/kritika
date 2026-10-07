@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
@@ -160,8 +161,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
 	defer cancel()
 	out := &cappedBuffer{max: rt.cfg.MaxOutputBytes}
+	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(rt.cfg.Env), rt.cfg.CommandEnv[req.Command]...), out, out
+	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(rt.cfg.Env), rt.cfg.CommandEnv[req.Command]...), out, errs
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
@@ -170,20 +172,35 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	case ctx.Err() != nil:
 		return "", fmt.Errorf("agent: run: %w", ctx.Err())
 	case cctx.Err() != nil:
-		return rt.result(fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, rt.mask(out.String())), out.dropped), nil
+		return rt.result(fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, rt.mask(out.String())), out.dropped, rt.mask(errs.String())), nil
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
 		}
 	}
-	return rt.result(fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), rt.mask(out.String())), out.dropped), nil
+	head := fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), rt.mask(out.String()))
+	return rt.result(head, out.dropped, rt.mask(errs.String())), nil
 }
+
+// A cut output keeps at most MaxOutputBytes/stderrShare of the end of the
+// command's stderr, after stderrLead.
+const (
+	stderrShare = 8
+	stderrLead  = "\n[the end of stderr, from the part cut above:]\n"
+)
 
 // result is a command's result cut to MaxOutputBytes with its note, which
 // counts the bytes the buffer dropped as well, so the loop's own cut to the
-// same limit leaves it whole.
-func (rt *RunTool) result(s string, dropped int) string {
-	return textcut.Cut(s, rt.cfg.MaxOutputBytes, dropped)
+// same limit leaves it whole. stderr is the end of the stderr the buffer
+// dropped, where an error printed after a long output lands: it follows
+// the note, the rest cut shorter to make room, unless it would take more
+// than a quarter of the limit.
+func (rt *RunTool) result(s string, dropped int, stderr string) string {
+	tail := stderrLead + stderr
+	if stderr == "" || len(tail) > rt.cfg.MaxOutputBytes/4 {
+		return textcut.Cut(s, rt.cfg.MaxOutputBytes, dropped)
+	}
+	return textcut.Cut(s, rt.cfg.MaxOutputBytes-len(tail), dropped) + tail
 }
 
 func (rt *RunTool) mask(out string) string {
@@ -271,19 +288,80 @@ func (rt *RunTool) record(args []string) {
 }
 
 // cappedBuffer keeps the first max bytes written to it and counts the
-// rest, so a command's output never grows past what the tool returns.
+// rest, so a command's output never grows past what the tool returns. A
+// command's stdout and stderr write to it from their own goroutines.
 type cappedBuffer struct {
+	mu      sync.Mutex
 	buf     bytes.Buffer
 	max     int
 	dropped int
 }
 
 func (b *cappedBuffer) Write(p []byte) (int, error) {
+	b.write(p)
+	return len(p), nil
+}
+
+// write keeps what of p fits and returns how many of its bytes, the last
+// ones, it dropped.
+func (b *cappedBuffer) write(p []byte) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	keep := min(max(b.max-b.buf.Len(), 0), len(p))
 	b.buf.Write(p[:keep])
 	b.dropped += len(p) - keep
-	return len(p), nil
+	return len(p) - keep
 }
 
 // String is the kept output as valid UTF-8; dropped counts the rest.
 func (b *cappedBuffer) String() string { return strings.ToValidUTF8(b.buf.String(), "�") }
+
+// stderrTail is a command's stderr: written to out with its stdout, and
+// the last max bytes out dropped of it kept besides. Those are always the
+// end of the stream, since out drops everything once it is full.
+type stderrTail struct {
+	out  *cappedBuffer
+	max  int
+	tail []byte
+	// before is the stderr byte just before the tail, and last the last
+	// one written; '\n' stands for the start of the stream.
+	before, last byte
+	started      bool
+}
+
+func (s *stderrTail) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if n := s.out.write(p); n > 0 {
+		if !s.started {
+			s.started, s.before = true, s.last
+			if n < len(p) {
+				s.before = p[len(p)-n-1]
+			}
+		}
+		s.tail = append(s.tail, p[len(p)-n:]...)
+		if over := len(s.tail) - s.max; over > 0 {
+			s.before = s.tail[over-1]
+			s.tail = s.tail[:copy(s.tail, s.tail[over:])]
+		}
+	}
+	s.last = p[len(p)-1]
+	return len(p), nil
+}
+
+// String is the kept end of stderr from its first whole line, as valid
+// UTF-8. A line cut at its start is left out: the mask applied to it
+// recognises only whole credentials, and the start of one cut there would
+// leave the rest of it unmasked.
+func (s *stderrTail) String() string {
+	t := s.tail
+	if s.before != '\n' {
+		i := bytes.IndexByte(t, '\n')
+		if i < 0 {
+			return ""
+		}
+		t = t[i+1:]
+	}
+	return strings.ToValidUTF8(string(t), "�")
+}
