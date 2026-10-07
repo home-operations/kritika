@@ -185,6 +185,8 @@ the same name whole, or is added to the file's when none has that name.
 
 `providers` are the instance's model keys, and `embedding` the embedder
 that builds each repository's similar-code index from one of them.
+[Models](models.md) describes both, with retries, fallback, local models
+and OpenCode.
 
 ```yaml
 providers:
@@ -195,136 +197,6 @@ embedding:
   model: openrouter/voyageai/voyage-code-4
   dims: 1024
 ```
-
-A model is named `<provider>/<model>`, on a provider the file declares. A
-provider takes:
-
-| Key       | What                                                                                              |
-| --------- | ------------------------------------------------------------------------------------------------- |
-| `type`    | `openrouter`, `openai`, `anthropic` or `opencode`                                                 |
-| `apiKey`  | its key, required                                                                                 |
-| `baseUrl` | its API's URL, the type's default unless set                                                      |
-| `pricing` | per model id, the prices of a provider that reports no cost ([local models](#local-models))       |
-| `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries)) |
-
-### Retries
-
-`retries` is how many more times a review's model step is tried when the
-provider fails it in a way another attempt may get past: a 5xx, a 429, a
-timeout or a cut connection.
-
-- The gateway waits up to a second, then up to twice as long each time, to
-  at most 30 seconds, and waits out a longer `Retry-After` the provider
-  sends, up to a minute.
-- It never retries a refusal of the request itself, such as a prompt over
-  the model's input limit, or a spent budget.
-- A request the provider has not answered in five minutes counts as a
-  timeout.
-- The provider's client sends nothing again on its own, so `retries` is
-  every attempt a step gets. A step's attempts, the waits between them and
-  its [fallback](#fallback) share 12 minutes, so long timeouts end the
-  retries early.
-
-A routing proxy that picks a model per request is where it earns its keep:
-a step the proxy routed badly is answered on the next attempt. A
-follow-up's steps are retried as a review's are; the embedder's client
-sends a failed request again twice on its own.
-
-A step that still fails that way once the provider's `retries` and the
-fallback are spent does not end the review. The runner keeps the
-conversation and sends the step again after 30 seconds, then after one,
-two and four minutes, while the agent's `timeout` allows; only a step
-that fails after the last of those ends the review as failed.
-
-### The embedder
-
-| Key             | Default | What                                                                                                                    |
-| --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `model`         |         | a model of an `openrouter` or `openai` provider of the instance, whose endpoint, or the type's default, and key it uses |
-| `dims`          |         | the model's dimension, at most 4000; it must be what the model returns                                                  |
-| `maxBatch`      | 64      | inputs in one request                                                                                                   |
-| `maxBatchChars` | 200,000 | characters in one request                                                                                               |
-| `maxItemChars`  | 16,000  | characters in one input                                                                                                 |
-| `similarFloor`  | 0.5     | the cosine similarity a chunk needs to be offered as similar code                                                       |
-
-With an embedder, a review's prompt carries the index's chunks nearest the
-change, and the agent gets a `search_code` tool over the same index; both
-keep only chunks at or above `similarFloor`. Where useful matches part
-from noise depends on the model and the repository: a small embedder on a
-repository of similar files can score nearly everything above 0.5, and a
-floor of about 0.7 keeps the matches that mean something.
-
-Without an embedder, indexing is off and reviews run without similar code.
-The index holds one model and dimension: a configuration that changes
-either drops every repository's index, and the leader builds each again, a
-few at a time, as `KRITIKA_ONBOARD_WINDOW` paces them. Removing the
-embedder keeps the index, and adding back the same model and dimension
-uses it again.
-
-### Local models
-
-A model served in your own network is a provider of type `openai` whose
-`baseUrl` is the server's OpenAI-compatible API, such as vLLM, Ollama or
-llama.cpp's server, or of type `anthropic` for a server that speaks the
-Anthropic API. It can serve reviews, the embedder, or both:
-
-```yaml
-providers:
-  local:
-    type: openai
-    baseUrl: http://llm.example.svc.cluster.local:8000/v1
-    apiKey: { env: LOCAL_LLM_KEY }
-    pricing:
-      large-model: { input: 0.1, output: 0.4 }
-review:
-  model: local/large-model
-embedding:
-  model: local/embed-model
-  dims: 768
-```
-
-- `apiKey` is required: a server that takes no key still needs a
-  reference, to a variable holding any value.
-- The model must support tool calls: a review works through tools and
-  submits its findings as a call to `submit_review`, which its last step
-  tells it to make, and a follow-up's reply is a tool call too.
-- The kritika pods call the server; a review's runner reaches it only
-  through their gateway. With the chart's `networkPolicy.enabled`,
-  add the server's port to `networkPolicy.egressPorts`, which allows only
-  443 unless set.
-- A server that reports no cost makes every call cost nothing unless
-  `pricing` gives the model's prices, in dollars per million tokens of
-  `input`, `output`, `cacheRead` and `cacheWrite`, keyed by the model's
-  id on the server. Tokens count against an account's `limits` either
-  way.
-
-### OpenCode Go and Zen
-
-OpenCode Go and OpenCode Zen are one gateway with an OpenAI-compatible
-chat completions API that routes requests, and caches prompts, by a
-per-conversation header, `x-opencode-session`, and refuses a request
-without one. A provider of type `opencode` sends it: a review's steps
-name their run, and a follow-up names its mention. Its `baseUrl` is Go's,
-`https://opencode.ai/zen/go/v1`, unless set; Zen is the same type at
-`https://opencode.ai/zen/v1`.
-
-```yaml
-providers:
-  opencode:
-    type: opencode
-    apiKey: { env: OPENCODE_API_KEY }
-  zen:
-    type: opencode
-    baseUrl: https://opencode.ai/zen/v1
-    apiKey: { env: OPENCODE_API_KEY }
-review: { model: opencode/glm-5.3, fallback: zen/qwen3.8-max }
-```
-
-- Only the models the gateway serves on `/v1/chat/completions` can be
-  used; its endpoint tables say which. Models it serves on
-  `/v1/responses` or `/v1/messages` cannot.
-- A response that reports no cost makes the call cost nothing unless
-  `pricing` gives the model's prices, as for a local model.
 
 ## Repository settings and `repositories`
 
@@ -417,18 +289,6 @@ value replaces the broader one's, except:
 | `review.fixes`                       | replaces                                                                 | can only turn it on                                               |
 | `confidence.risk`                    | replaces                                                                 | can only lower it                                                 |
 | `enabled`                            | replaces                                                                 | can only turn it off                                              |
-
-### Fallback
-
-A `review.fallback` on the review model's provider is handed to the
-provider with the request, as OpenRouter's server-side fallback is, and
-the provider or the adapter tries it when the review model fails. A
-fallback on another provider is tried by the gateway itself: once a
-review's step has failed on the review model, and its provider's
-`retries` are spent, the same step goes to the fallback, with that
-provider's own `retries`, and the review carries on there. The step's
-usage is recorded under the model that answered. A follow-up's steps fall
-back the same way.
 
 ### Confidence and risk
 
@@ -605,38 +465,28 @@ request.
 
 ### Environment variables
 
-The provider, some of the root's settings and the embedder can come from
-the environment:
+Some of the root's settings can come from the environment; the provider's
+and the embedder's variables are on [Models](models.md#from-the-environment):
 
-| Variable                       | Key                                                             |
-| ------------------------------ | --------------------------------------------------------------- |
-| `KRITIKA_PROVIDERS_NAME`       | the provider's name, `openrouter` unless set                    |
-| `KRITIKA_PROVIDERS_TYPE`       | `type`, which defaults to the name when that is a provider type |
-| `KRITIKA_PROVIDERS_BASE_URL`   | `baseUrl`                                                       |
-| `KRITIKA_PROVIDERS_API_KEY`    | `apiKey`                                                        |
-| `KRITIKA_PROVIDERS_RETRIES`    | `retries`                                                       |
-| `KRITIKA_REVIEW_MODEL`         | `review.model`                                                  |
-| `KRITIKA_REVIEW_FALLBACK`      | `review.fallback`                                               |
-| `KRITIKA_REVIEW_FEEDBACK`      | `review.feedback`                                               |
-| `KRITIKA_REVIEW_APPROVE`       | `review.approve`, `true` or `false`                             |
-| `KRITIKA_REVIEW_FIXES`         | `review.fixes`, `true` or `false`                               |
-| `KRITIKA_REVIEW_INCREMENTAL`   | `review.incremental`, a whole number of files                   |
-| `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                             |
-| `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                                |
-| `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                              |
-| `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5              |
-| `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                            |
-| `KRITIKA_CONFIDENCE_RISK`      | `confidence.risk`, `low`, `medium`, `high` or `critical`        |
-| `KRITIKA_TRIGGER_SETTLE`       | `trigger.settle`, a duration such as `30s`                      |
-| `KRITIKA_TRIGGER_LIMIT`        | `trigger.limit`, a whole number of reviews                      |
-| `KRITIKA_EMBEDDING_MODEL`      | `embedding.model`                                               |
-| `KRITIKA_EMBEDDING_DIMS`       | `embedding.dims`                                                |
+| Variable                       | Key                                                      |
+| ------------------------------ | -------------------------------------------------------- |
+| `KRITIKA_REVIEW_MODEL`         | `review.model`                                           |
+| `KRITIKA_REVIEW_FALLBACK`      | `review.fallback`                                        |
+| `KRITIKA_REVIEW_FEEDBACK`      | `review.feedback`                                        |
+| `KRITIKA_REVIEW_APPROVE`       | `review.approve`, `true` or `false`                      |
+| `KRITIKA_REVIEW_FIXES`         | `review.fixes`, `true` or `false`                        |
+| `KRITIKA_REVIEW_INCREMENTAL`   | `review.incremental`, a whole number of files            |
+| `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                      |
+| `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                         |
+| `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                       |
+| `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5       |
+| `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                     |
+| `KRITIKA_CONFIDENCE_RISK`      | `confidence.risk`, `low`, `medium`, `high` or `critical` |
+| `KRITIKA_TRIGGER_SETTLE`       | `trigger.settle`, a duration such as `30s`               |
+| `KRITIKA_TRIGGER_LIMIT`        | `trigger.limit`, a whole number of reviews               |
 
-The environment declares at most one provider, which replaces the file's
-of the same name whole or is added to the file's. The embedding variables
-set the file's embedder key by key. The Configuration page lists what the
-file and the environment set under "Instance settings", with where each
-comes from.
+The Configuration page lists what the file and the environment set under
+"Instance settings", with where each comes from.
 
 ### Which repositories run
 
@@ -683,10 +533,8 @@ an account's entry replaces it key by key:
 | `reviewsPerDay`  | unlimited | reviews in a calendar day                                                                                                                                  |
 | `tokensPerMonth` | unlimited | input and output tokens in a calendar month                                                                                                                |
 
-`providers` are its own model keys. A model named `<key name>/<model>` in
-its `owner/*` or `owner/name` entries, or in one of its repositories'
-`.kritika.yaml`, runs on that key and the account pays for it; a key's
-name may not be one the instance's providers use.
+`providers` are its own model keys, which its repositories' models can
+name ([an account's own keys](models.md#an-accounts-own-keys)).
 
 An account runs while an app serves it. An entry for an account no app
 serves is kept, but not run, and the Configuration page lists it as not
