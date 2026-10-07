@@ -115,44 +115,78 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 	return nil
 }
 
-// SweepDisabledIndexes drops the index of every repository disabled for
-// longer than grace and returns how many it dropped. The repository is left
-// with no active generation, which is marked superseded, so enabling it
-// again onboards a fresh index. It runs on the owner connection, which
-// row-level security does not restrict. Leader only.
-func (s *Store) SweepDisabledIndexes(ctx context.Context, grace time.Duration) (int64, error) {
+// SweepStoppedIndexes drops the index of every repository that has not run
+// for longer than grace and returns how many it dropped. A repository runs
+// while it is enabled and runs, given its account ID, full name and traits,
+// says it does. Its clock, stopped_at, starts at the first sweep that finds
+// it holding an index and not running, and is cleared by the first that
+// finds it running or holding none. The repository is left with no active
+// generation, which is marked superseded, so running it again onboards a
+// fresh index. It runs on the owner connection, which row-level security
+// does not restrict. Leader only.
+func (s *Store) SweepStoppedIndexes(
+	ctx context.Context, grace time.Duration, runs func(accountID, fullName string, t configfile.RepoTraits) bool,
+) (int64, error) {
 	if s.owner == nil {
-		return 0, errors.New("store: SweepDisabledIndexes needs the owner connection")
+		return 0, errors.New("store: SweepStoppedIndexes needs the owner connection")
 	}
-	var runs []string
+	var dropped []string
 	err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
-		// Locked, so a repository enabled again meanwhile is either left out
+		// Locked, so a repository turned on meanwhile is either seen running
 		// or waits until its index is gone, never swept halfway.
-		rows, err := tx.Query(ctx, `SELECT active_index_run_id::text FROM repositories
-			WHERE active_index_run_id IS NOT NULL AND (NOT enabled AND disabled_at < now() - make_interval(secs => $1)
-				OR NOT coalesce(turned_on, true) AND turned_at < now() - make_interval(secs => $1))
-			FOR UPDATE`, grace.Seconds())
+		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, name, enabled, archived, fork, turned_on,
+				active_index_run_id IS NOT NULL
+			FROM repositories WHERE active_index_run_id IS NOT NULL OR stopped_at IS NOT NULL
+			FOR UPDATE`)
 		if err != nil {
 			return err
 		}
-		if runs, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(runs) == 0 {
+		var stopped, others []string
+		var id, accountID, name string
+		var enabled, indexed bool
+		var t configfile.RepoTraits
+		_, err = pgx.ForEachRow(rows, []any{&id, &accountID, &name, &enabled, &t.Archived, &t.Fork, &t.TurnedOn, &indexed}, func() error {
+			if indexed && (!enabled || !runs(accountID, name, t)) {
+				stopped = append(stopped, id)
+			} else {
+				others = append(others, id)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET stopped_at = NULL WHERE id = ANY($1::uuid[]) AND stopped_at IS NOT NULL`,
+			others); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET stopped_at = now() WHERE id = ANY($1::uuid[]) AND stopped_at IS NULL`,
+			stopped); err != nil {
+			return err
+		}
+		rows, err = tx.Query(ctx, `SELECT active_index_run_id::text FROM repositories
+			WHERE id = ANY($1::uuid[]) AND stopped_at <= now() - make_interval(secs => $2)`, stopped, grace.Seconds())
+		if err != nil {
+			return err
+		}
+		if dropped, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(dropped) == 0 {
 			return err
 		}
 		for _, stmt := range []string{
-			`UPDATE repositories SET active_index_run_id = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,
+			`UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL, updated_at = now() WHERE active_index_run_id = ANY($1::uuid[])`,
 			`UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = ANY($1::uuid[])`,
 			`DELETE FROM index_chunks WHERE index_run_id = ANY($1::uuid[])`,
 		} {
-			if _, err := tx.Exec(ctx, stmt, runs); err != nil {
+			if _, err := tx.Exec(ctx, stmt, dropped); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("store: sweep disabled indexes: %w", err)
+		return 0, fmt.Errorf("store: sweep stopped indexes: %w", err)
 	}
-	return int64(len(runs)), nil
+	return int64(len(dropped)), nil
 }
 
 // RepoRef names a repository and its account.

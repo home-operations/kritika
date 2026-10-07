@@ -709,27 +709,32 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 	}
 }
 
-// TestSweepDisabledIndexes checks that only a repository disabled for longer
-// than the grace loses its index, that it is left to onboard afresh, and
-// that a second sweep finds nothing.
-func TestSweepDisabledIndexes(t *testing.T) {
+// TestSweepStoppedIndexes: a repository that stops running for any reason
+// (archived, turned off, off in the configuration, disabled or under an
+// account no App serves) starts its clock at the next sweep and loses its
+// index, left to onboard afresh, once the clock is past the grace; one
+// that runs again within it keeps its index, and a clock left on a
+// repository with no index is cleared.
+func TestSweepStoppedIndexes(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+	on := parse(t, twoAccounts)
+	if err := s.ApplyConfig(ctx, on); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	off := parse(t, twoAccounts+"  alpha/*: { enabled: false }\n")
+	unserved := parse(t, strings.Replace(alphaAccount, "alpha", "beta", 2))
 	// The suites share one database: leave no index schema behind.
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL;
 			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
-	// Both alpha repositories get an active generation with one chunk;
-	// an admin turns alpha/two off, and the App loses alpha/one later.
-	runs := map[string]string{}
-	for _, name := range []string{"alpha/one", "alpha/two"} {
+	// index gives the repository an active generation with one chunk.
+	index := func(name string) string {
+		t.Helper()
 		var run string
 		if err := s.owner.QueryRow(ctx, `WITH g AS (
 				INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
@@ -742,60 +747,153 @@ func TestSweepDisabledIndexes(t *testing.T) {
 			UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`, name).Scan(&run); err != nil {
 			t.Fatalf("index %s: %v", name, err)
 		}
-		runs[name] = run
+		return run
 	}
-	state := func(name string) (active bool, status string, chunks int) {
+	// check fails unless the repository still has run as its index and its
+	// clock is running as stopped says, or, when dropped, the run is
+	// superseded with no chunks and the repository has no clock.
+	check := func(what, name, run string, dropped, stopped bool) {
 		t.Helper()
+		var active, clock bool
+		var status string
+		var chunks int
 		if err := s.owner.QueryRow(ctx, `SELECT
 				(SELECT active_index_run_id IS NOT NULL FROM repositories WHERE name = $1),
+				(SELECT stopped_at IS NOT NULL FROM repositories WHERE name = $1),
 				(SELECT status FROM index_runs WHERE id = $2),
-				(SELECT count(*) FROM index_chunks WHERE index_run_id = $2)`, name, runs[name]).Scan(&active, &status, &chunks); err != nil {
+				(SELECT count(*) FROM index_chunks WHERE index_run_id = $2)`, name, run).Scan(&active, &clock, &status, &chunks); err != nil {
 			t.Fatal(err)
 		}
-		return active, status, chunks
-	}
-	sweep := func(want int64) {
-		t.Helper()
-		if n, err := s.SweepDisabledIndexes(ctx, time.Hour); err != nil || n != want {
-			t.Fatalf("SweepDisabledIndexes = %d, %v; want %d", n, err, want)
+		if dropped && (active || clock || status != "superseded" || chunks != 0) ||
+			!dropped && (!active || clock != stopped || status != "completed" || chunks != 1) {
+			t.Fatalf("%s: %s active=%v stopped=%v status=%s chunks=%d; want dropped %v, stopped %v",
+				what, name, active, clock, status, chunks, dropped, stopped)
 		}
 	}
-
+	sweep := func(f *configfile.File, want int64) {
+		t.Helper()
+		n, err := s.SweepStoppedIndexes(ctx, time.Hour, func(accountID, fullName string, traits configfile.RepoTraits) bool {
+			a, ok := f.AccountByID(accountID)
+			return ok && f.Runs(a, fullName, traits)
+		})
+		if err != nil || n != want {
+			t.Fatalf("SweepStoppedIndexes = %d, %v; want %d", n, err, want)
+		}
+	}
 	exec := func(sql string) {
 		t.Helper()
 		if _, err := s.owner.Exec(ctx, sql); err != nil {
 			t.Fatal(err)
 		}
 	}
+	backdate := func(name string) {
+		t.Helper()
+		if _, err := s.owner.Exec(ctx, `UPDATE repositories SET stopped_at = now() - interval '2 hours' WHERE name = $1`, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	turn := func(name string, on bool) {
+		t.Helper()
+		alpha := accountID(t, s, "alpha")
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			return TurnOn(ctx, tx, configfile.RepositoryID(alpha, name), on)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET turned_on = NULL, turned_at = NULL, enabled = true, disabled_at = NULL
-			WHERE name IN ('alpha/one', 'alpha/two')`)
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET archived = false, turned_on = NULL, turned_at = NULL,
+			enabled = true, disabled_at = NULL WHERE name IN ('alpha/one', 'alpha/two')`)
 	})
-	alpha := accountID(t, s, "alpha")
-	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		return TurnOn(ctx, tx, configfile.RepositoryID(alpha, "alpha/two"), false)
-	}); err != nil {
-		t.Fatal(err)
-	}
+	one, two := index("alpha/one"), index("alpha/two")
 
-	sweep(0)
-	if active, status, chunks := state("alpha/two"); !active || status != "completed" || chunks != 1 {
-		t.Fatalf("within the grace: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
+	sweep(on, 0)
+	check("running", "alpha/one", one, false, false)
+	check("running", "alpha/two", two, false, false)
+
+	exec(`UPDATE repositories SET archived = true WHERE name = 'alpha/one'`)
+	turn("alpha/two", false)
+	sweep(on, 0)
+	check("archived, within the grace", "alpha/one", one, false, true)
+	check("turned off, within the grace", "alpha/two", two, false, true)
+
+	backdate("alpha/two")
+	turn("alpha/two", true)
+	turn("alpha/two", false)
+	sweep(on, 0)
+	check("turned on and off again between sweeps", "alpha/two", two, false, true)
+
+	exec(`UPDATE repositories SET archived = false WHERE name = 'alpha/one'`)
+	turn("alpha/two", true)
+	sweep(on, 0)
+	check("unarchived within the grace", "alpha/one", one, false, false)
+	check("turned on within the grace", "alpha/two", two, false, false)
+
+	sweep(off, 0)
+	check("off in the configuration, within the grace", "alpha/one", one, false, true)
+	check("turned on, whatever the configuration says", "alpha/two", two, false, false)
+	backdate("alpha/one")
+	sweep(off, 1)
+	check("off in the configuration past the grace", "alpha/one", one, true, false)
+
+	exec(`UPDATE repositories SET enabled = false WHERE name = 'alpha/two'`)
+	sweep(on, 0)
+	check("disabled, within the grace", "alpha/two", two, false, true)
+	backdate("alpha/two")
+	sweep(on, 1)
+	check("disabled past the grace", "alpha/two", two, true, false)
+
+	one = index("alpha/one")
+	sweep(unserved, 0)
+	backdate("alpha/one")
+	sweep(unserved, 1)
+	check("under an account no App serves past the grace", "alpha/one", one, true, false)
+
+	backdate("alpha/one")
+	sweep(on, 0)
+	check("no index, a clock left behind", "alpha/one", one, true, false)
+
+	// A repository the forge reports rather than the configuration lists.
+	alpha := accountID(t, s, "alpha")
+	reach := func(archived bool) {
+		t.Helper()
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			_, _, err := EnsureRepository(ctx, tx, alpha, ReachedRepository{FullName: "alpha/forge", Traits: &configfile.RepoTraits{Archived: archived}})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	exec(`UPDATE repositories SET turned_at = now() - interval '2 hours' WHERE name = 'alpha/two'`)
-	sweep(1)
-	if active, status, chunks := state("alpha/two"); active || status != "superseded" || chunks != 0 {
-		t.Fatalf("turned off past the grace: active=%v status=%s chunks=%d, want the index dropped", active, status, chunks)
+	lose := func() {
+		t.Helper()
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			return DisableForgeRepositories(ctx, tx, alpha, configfile.RepositoryID(alpha, "alpha/forge"))
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if active, status, chunks := state("alpha/one"); !active || status != "completed" || chunks != 1 {
-		t.Fatalf("a repository that runs: active=%v status=%s chunks=%d, want the index kept", active, status, chunks)
-	}
-	sweep(0)
-	exec(`UPDATE repositories SET enabled = false, disabled_at = now() - interval '2 hours' WHERE name = 'alpha/one'`)
-	sweep(1)
-	if active, status, chunks := state("alpha/one"); active || status != "superseded" || chunks != 0 {
-		t.Fatalf("lost past the grace: active=%v status=%s chunks=%d, want the index dropped", active, status, chunks)
-	}
+	reach(false)
+	t.Cleanup(func() {
+		id := configfile.RepositoryID(alpha, "alpha/forge")
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, id)
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM index_runs WHERE repository_id = $1`, id)
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM repositories WHERE id = $1`, id)
+	})
+	forge := index("alpha/forge")
+	lose()
+	sweep(on, 0)
+	backdate("alpha/forge")
+	reach(false)
+	lose()
+	sweep(on, 0)
+	check("lost, reached again and lost again between sweeps", "alpha/forge", forge, false, true)
+
+	reach(true)
+	sweep(on, 0)
+	backdate("alpha/forge")
+	reach(true)
+	sweep(on, 1)
+	check("archived past the grace, however often the forge names it", "alpha/forge", forge, true, false)
 }
 
 // TestFindRepo: a repository is found by its full name within the account
