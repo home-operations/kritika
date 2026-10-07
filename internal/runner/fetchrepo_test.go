@@ -206,8 +206,11 @@ func TestFetchRepoTags(t *testing.T) {
 	if out, err := run(map[string]any{"tags": "9.9"}); err != nil || !strings.HasPrefix(out, "None of the 2 tags of "+url+` contain "9.9". The newest: v2, v1.`) {
 		t.Fatalf("no tag with 9.9 = %q, %v", out, err)
 	}
-	if _, err := run(map[string]any{"tags": "", "ref": "v2"}); err == nil || !strings.Contains(err.Error(), "give tags alone") {
+	if _, err := run(map[string]any{"tags": "v", "ref": "v2"}); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("tags with a ref: err = %v", err)
+	}
+	if _, err := run(map[string]any{"tags": "", "from": "v1"}); err == nil || !strings.Contains(err.Error(), "give ref to fetch") {
+		t.Fatalf("tags with from and no ref: err = %v", err)
 	}
 	if tool.fetches != 0 || tool.written != 0 {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, written = %d", tool.fetches, tool.written)
