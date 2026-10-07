@@ -257,7 +257,7 @@ The summary template's dot is the review:
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
 | `.Result.Summary.Diagram`                                                    | Mermaid source for the flow the change adds or alters, "" unless `review.diagram` is on and the change has one           |
 | `.Result.Findings`                                                           | the findings, each as the inline template sees one                                                                       |
-| `.Counts.Blocking`, `.Counts.Important`, `.Counts.Nit`                       | the findings by severity                                                                                                 |
+| `.Counts.Blocking`, `.Counts.Important`, `.Counts.Nit`, `.Counts.Total`      | the findings by severity and all of them, those outside the diff included                                                |
 | `.Unanchored`                                                                | the findings on lines the diff does not show                                                                             |
 | `.Notes`                                                                     | the review's notes                                                                                                       |
 | `.Incremental`, `.PriorHeadSHA`, `.PriorHeadURL`                             | whether the review covered only what changed since the last one, and that review's head                                  |

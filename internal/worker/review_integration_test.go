@@ -570,13 +570,13 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritika:pr-1 -->\n") ||
 		!strings.Contains(sticky, "- **[important · correctness]** [`main.go:1`](local://onedr0p/home-ops/") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001)") ||
-		!strings.Contains(sticky, "**1 finding** · 1 important\n") || strings.Contains(sticky, "What's good") ||
+		!strings.Contains(sticky, "**2 findings** · 1 blocking · 1 important\n") || strings.Contains(sticky, "What's good") ||
 		!strings.Contains(sticky, "**Outside the diff**\n\n- **[blocking · correctness]** `main.go:500` off the diff\n\n  dropped\n") ||
 		strings.Contains(sticky, "were dropped") {
 		t.Fatalf("comments = %v", comments)
 	}
 	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important · correctness]** **first line**") ||
-		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritika: 1 finding(s)" {
+		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritika: 2 finding(s)" {
 		t.Fatalf("inline = %+v status = %q", inline, forgeStatus)
 	}
 	fc.mu.Lock()
@@ -1810,9 +1810,10 @@ func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, acc
 }
 
 // checkConfidence asserts what a review does where the merge-base
-// .kritika.yaml asks for a confidence score its important finding keeps
-// the pull request under: the score is held to that finding's ceiling,
-// recorded with its call and its cost, and fails the commit status.
+// .kritika.yaml asks for a confidence score its findings keep the pull
+// request under: the score is held to the ceiling of the blocking one,
+// though it is outside the diff, recorded with its call and its cost, and
+// fails the commit status.
 func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID, head string) {
 	t.Helper()
 	fc.mu.Lock()
@@ -1835,7 +1836,7 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	if err := json.Unmarshal([]byte(confidence), &got); err != nil {
 		t.Fatalf("confidence = %s, %v", confidence, err)
 	}
-	if want := (review.Confidence{Score: 3, Threshold: 4, Reason: "Nothing else stands out.", Risk: review.RiskMedium, Model: "reviewer"}); got != want {
+	if want := (review.Confidence{Score: 2, Threshold: 4, Reason: "Nothing else stands out.", Risk: review.RiskMedium, Model: "reviewer"}); got != want {
 		t.Fatalf("confidence = %+v, want %+v", got, want)
 	}
 	if calls != 1 || charged != 1 {
@@ -1844,7 +1845,7 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	lf.mu.Lock()
 	status := lf.status
 	lf.mu.Unlock()
-	if status != "failure: kritika: confidence 3/5, below 4, 1 finding(s)" {
+	if status != "failure: kritika: confidence 2/5, below 4, 2 finding(s)" {
 		t.Fatalf("status = %q", status)
 	}
 }

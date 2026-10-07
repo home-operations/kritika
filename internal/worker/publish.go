@@ -97,14 +97,18 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 	unanchored, notes := splitDropped(dropped)
-	var dismissed int
-	if res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed); dismissed > 0 {
+	var dismissed, dismissedOff int
+	res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed)
+	unanchored, dismissedOff = dropDismissed(unanchored, p.prior.dismissed)
+	if dismissed += dismissedOff; dismissed > 0 {
 		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
 	}
 	if p.parse.Diagram {
 		res.Summary.Diagram = carriedDiagram(run.Result, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
 	}
-	if note := p.judge(job, res, diff); note != "" {
+	// A finding on a line the diff does not show has no inline comment, but
+	// weighs on the score, the counts and the approval all the same.
+	if note := p.judge(job, review.Result{Findings: slices.Concat(res.Findings, unanchored)}, diff); note != "" {
 		notes = append(notes, note)
 	}
 	if note := skillsNote(run.SkillsOffered, run.SkillsOpened); note != "" {
@@ -304,10 +308,11 @@ func (p *publishPhase) writeBack(
 		sources = review.SourceLinks(p.agent.Sources)
 	}
 	web, pull := p.dashboard(owner, repo)
+	counts := review.Result{Findings: slices.Concat(res.Findings, unanchored)}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
-		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: res.Counts(), Notes: notes, Unanchored: unanchored,
+		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}
@@ -343,12 +348,12 @@ func (p *publishPhase) writeBack(
 			linked = true
 		}
 	}
-	state, desc := p.verdict(len(res.Findings))
+	state, desc := p.verdict(counts.Total())
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, state, "kritika: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	if p.settings.Review.Approve {
-		data.Approval = p.approve(ctx, res.Counts(), p.headCurrent(ctx))
+		data.Approval = p.approve(ctx, counts, p.headCurrent(ctx))
 	}
 	if linked || data.Approval != nil {
 		// The threads and the approval exist only now, so the summary is

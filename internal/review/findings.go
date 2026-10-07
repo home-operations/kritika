@@ -208,6 +208,9 @@ func (r Result) Counts() Counts {
 	return c
 }
 
+// Total is the number of findings at any severity.
+func (c Counts) Total() int { return c.Blocking + c.Important + c.Nit }
+
 // Approvable reports whether the result lets kritika approve the pull
 // request: nothing blocking and nothing important, so nits alone do not
 // withhold an approval.
