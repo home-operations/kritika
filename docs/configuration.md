@@ -474,10 +474,9 @@ own:
   burst of pushes is reviewed once.
 - `trigger.limit`: how many automatic reviews a pull request gets before
   kritika pauses them, so a long-lived pull request stops spending on
-  every push; unlimited unless set. The summary of the last one says so.
-  `@<app slug> review` still reviews a paused pull request, and
-  `@<app slug> resume` turns its automatic reviews back on, as
-  `@<app slug> pause` turns them off at any time.
+  every push; unlimited unless set. The summary of the last one says so,
+  and `@<app slug> review` and `resume` still work
+  ([commands](reviews.md#commands)).
 - `review.incremental`: how many files of the change may move since the
   last review before a re-review covers the whole pull request again.
   What moves between the two heads outside the change's own paths is the
