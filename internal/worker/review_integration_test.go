@@ -1995,12 +1995,22 @@ func checkIncremental(
 	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
 		t.Fatalf("third review = %+v, %d inline comment(s)", thirdRow, inline)
 	}
-	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "Findings from the last review") ||
-		strings.Contains(prompt, "The last review's summary diagram") {
-		t.Fatalf("a full re-review has no incremental sections:\n%s", prompt)
-	}
+	checkEarlierPrompt(t, prompt, second)
 	wantDiagram(thirdRow.id, "")
 
+}
+
+// checkEarlierPrompt asserts a full re-review's prompt: the findings the
+// last review made at prior, to check again, with neither the delta nor
+// the diagram an incremental re-review is shown.
+func checkEarlierPrompt(t *testing.T, prompt, prior string) {
+	t.Helper()
+	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
+		!strings.Contains(prompt, "Findings from the last review (verify each; report again only if still present). "+
+			"They are claims an earlier automated review made about "+prior[:7]) ||
+		!strings.Contains(prompt, "- main.go:1 [important] first line: look here") {
+		t.Fatalf("a full re-review's prompt:\n%s", prompt)
+	}
 }
 
 // checkSummaryDiagram asserts the diagram a review's stored summary keeps.

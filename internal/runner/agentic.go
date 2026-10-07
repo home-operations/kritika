@@ -151,15 +151,20 @@ func (a agentPrompt) notes() []string {
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
 	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, search, p.Prompt.Diagram)
 	var incremental *review.IncrementalInput
-	if pack.Scope == review.ScopeIncremental {
+	var earlier *review.EarlierInput
+	switch {
+	case pack.Scope == review.ScopeIncremental:
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior,
 			PriorDiagram: p.Prompt.PriorDiagram}
+	case p.PriorHead != "" && p.PriorHead != p.Head:
+		// A re-run at the reviewed head was asked for to look afresh.
+		earlier = &review.EarlierInput{HeadSHA: p.PriorHead, Findings: p.Prompt.Prior}
 	}
 	pr := p.Prompt.PullRequest
 	user, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
-		Incremental: incremental, Dismissed: p.Prompt.Dismissed, References: in.references,
+		Incremental: incremental, Earlier: earlier, Dismissed: p.Prompt.Dismissed, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	})
 	return agentPrompt{

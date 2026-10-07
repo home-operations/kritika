@@ -65,6 +65,24 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 	}
 }
 
+// TestBuildEarlierFindings: a full re-review is shown the last review's
+// findings to check again, without the incremental sections.
+func TestBuildEarlierFindings(t *testing.T) {
+	in := incrementalInput()
+	in.Earlier = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: in.Incremental.Prior}
+	in.Incremental = nil
+	msg, _, _ := Build(in)
+	if !strings.Contains(msg, priorHeading+". They are claims an earlier automated review made about 0123456") ||
+		!strings.Contains(msg, "- main.go:11 [important] y changed: why it matters") ||
+		strings.Contains(msg, deltaHeading) || strings.Contains(msg, "This is a re-review") {
+		t.Fatalf("message:\n%s", msg)
+	}
+	diffAt, earlierAt, contextAt := strings.Index(msg, "Diff (unified"), strings.Index(msg, priorHeading), strings.Index(msg, "Context (not part")
+	if diffAt >= earlierAt || earlierAt >= contextAt {
+		t.Fatalf("want diff, earlier findings, context in that order:\n%s", msg)
+	}
+}
+
 func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 	in := incrementalInput()
 	full, _, _ := Build(in)
