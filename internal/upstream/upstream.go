@@ -28,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/protocol"
 	"github.com/go-git/go-git/v6/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
@@ -138,15 +139,8 @@ func (f *Fetcher) fetch(ctx context.Context, repo *git.Repository, req Request, 
 	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: remoteName, URLs: []string{req.URL}}); err != nil {
 		return nil, fmt.Errorf("upstream: remote: %w", err)
 	}
-	base := f.Transport
-	if base == nil {
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		// Nothing reuses t once the fetch is done, and it would keep its
-		// idle connections open until they time out.
-		defer t.CloseIdleConnections()
-		base = t
-	}
-	wire := &cappedTransport{base: base, max: f.Limits.WireBytes}
+	wire, done := f.wire()
+	defer done()
 	opts := []client.Option{client.WithHTTPClient(&http.Client{Transport: wire})}
 	specs := []config.RefSpec{config.RefSpec(req.Ref + ":" + toRef.String())}
 	if req.From != "" {
@@ -214,6 +208,97 @@ func (f *Fetcher) fetch(ctx context.Context, repo *git.Repository, req Request, 
 		}
 	}
 	return res, nil
+}
+
+// wire is the transport a fetch or a listing goes through, capped at
+// WireBytes, and what to call once it is done.
+func (f *Fetcher) wire() (*cappedTransport, func()) {
+	if f.Transport != nil {
+		return &cappedTransport{base: f.Transport, max: f.Limits.WireBytes}, func() {}
+	}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	// Nothing reuses t once the fetch is done, and it would keep its idle
+	// connections open until they time out.
+	return &cappedTransport{base: t, max: f.Limits.WireBytes}, t.CloseIdleConnections
+}
+
+// Tags lists the tags of the repository at rawURL, an https:// clone URL,
+// in newerFirst order. It asks the server for refs/tags/ only: GitHub
+// otherwise lists every pull request's refs too, which can outnumber the
+// tags many times over. A server too old to take the prefix lists every
+// ref, and the rest are dropped here.
+func (f *Fetcher) Tags(ctx context.Context, rawURL string) ([]string, error) {
+	if err := checkURL(rawURL); err != nil {
+		return nil, err
+	}
+	u, err := transport.ParseURL(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("upstream: url: %w", err)
+	}
+	wire, done := f.wire()
+	defer done()
+	cl := client.New(client.WithHTTPClient(&http.Client{Transport: wire}))
+	sess, err := cl.Handshake(ctx, &transport.Request{URL: u, Command: transport.UploadPackService, Protocol: protocol.V2})
+	if err != nil {
+		return nil, f.listErr(wire, err)
+	}
+	defer func() { _ = sess.Close() }()
+	refs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{RefPrefixes: []string{"refs/tags/"}})
+	switch {
+	// go-git takes a listing without refs for an empty repository, which is
+	// what the prefix leaves of one without tags.
+	case errors.Is(err, transport.ErrEmptyRemoteRepository) && !wire.over():
+		return []string{}, nil
+	case err != nil:
+		return nil, f.listErr(wire, err)
+	}
+	tags := []string{}
+	for _, ref := range refs.References {
+		if name, ok := strings.CutPrefix(ref.Name().String(), "refs/tags/"); ok && !strings.HasSuffix(name, "^{}") {
+			tags = append(tags, name)
+		}
+	}
+	slices.SortFunc(tags, newerFirst)
+	return tags, nil
+}
+
+func (f *Fetcher) listErr(wire *cappedTransport, err error) error {
+	if wire.over() {
+		return fmt.Errorf("%w: past %d MiB", ErrTooLarge, f.Limits.WireBytes>>20)
+	}
+	return fmt.Errorf("upstream: tags: %w", err)
+}
+
+// newerFirst orders tag names by the numbers in them, compared as
+// numbers and largest first, so v1.10.0 comes before v1.9.0 and
+// gpu-v0.12.1 before gpu-v0.12.0, whatever a name puts around its
+// version. A pre-release is listed just above its release.
+func newerFirst(a, b string) int {
+	for a != "" && b != "" {
+		da, db := digitRun(a), digitRun(b)
+		if da == 0 || db == 0 {
+			if a[0] != b[0] {
+				return cmp.Compare(b[0], a[0])
+			}
+			a, b = a[1:], b[1:]
+			continue
+		}
+		x, y := strings.TrimLeft(a[:da], "0"), strings.TrimLeft(b[:db], "0")
+		if c := cmp.Or(cmp.Compare(len(y), len(x)), strings.Compare(y, x)); c != 0 {
+			return c
+		}
+		a, b = a[da:], b[db:]
+	}
+	return cmp.Compare(len(b), len(a))
+}
+
+// digitRun is how many digits s starts with.
+func digitRun(s string) int {
+	n := 0
+	for n < len(s) && s[n] >= '0' && s[n] <= '9' {
+		n++
+	}
+	return n
 }
 
 // fetchErr says why a fetch over wire failed. A ref the server lacks fails
@@ -468,10 +553,8 @@ func render(ctx context.Context, changes object.Changes, l Limits) (string, []st
 
 // check validates r and returns its paths cleaned.
 func (r Request) check() ([]string, error) {
-	u, err := url.Parse(r.URL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
-		strings.Trim(u.Path, "/") == "" {
-		return nil, fmt.Errorf("upstream: url %q is not an https:// clone URL without credentials, a query or a fragment", r.URL)
+	if err := checkURL(r.URL); err != nil {
+		return nil, err
 	}
 	if err := checkRef(r.Ref); err != nil {
 		return nil, fmt.Errorf("upstream: ref: %w", err)
@@ -490,6 +573,17 @@ func (r Request) check() ([]string, error) {
 		paths = append(paths, c)
 	}
 	return paths, nil
+}
+
+// checkURL accepts an https:// clone URL without credentials, a query or
+// a fragment.
+func checkURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		strings.Trim(u.Path, "/") == "" {
+		return fmt.Errorf("upstream: url %q is not an https:// clone URL without credentials, a query or a fragment", raw)
+	}
+	return nil
 }
 
 // checkRef accepts HEAD, a full commit SHA, or a name a remote tag or

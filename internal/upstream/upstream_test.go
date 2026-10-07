@@ -395,3 +395,61 @@ func TestBackfillSendsNoHaves(t *testing.T) {
 		t.Fatalf("wanted %d objects across %q", wants, rec.bodies)
 	}
 }
+
+func TestTags(t *testing.T) {
+	src := newSource(t)
+	mirror, err := git.PlainOpen(filepath.Join(src.root, "repo.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// GitHub lists a ref for every pull request beside the tags.
+	if err := mirror.Storer.SetReference(plumbing.NewHashReference("refs/pull/1/head", plumbing.NewHash(src.v2))); err != nil {
+		t.Fatal(err)
+	}
+	for _, srv := range servers(t, src) {
+		t.Run(srv.name, func(t *testing.T) {
+			rec := &recorder{base: srv.transport}
+			tags, err := (&Fetcher{Transport: rec, Limits: testLimits}).Tags(t.Context(), srv.url)
+			if err != nil || !slices.Equal(tags, []string{"v2", "v1-again", "v1"}) {
+				t.Fatalf("tags = %q, %v; want the three tags, newest first, without peeled entries or other refs", tags, err)
+			}
+			if srv.filters && !slices.ContainsFunc(rec.bodies, func(b string) bool { return strings.Contains(b, "ref-prefix refs/tags/") }) {
+				t.Fatalf("no request asked for refs/tags/ only: %q", rec.bodies)
+			}
+		})
+	}
+
+	srv := servers(t, src)[0]
+	if _, err := (&Fetcher{Transport: srv.transport, Limits: Limits{WireBytes: 10}}).Tags(t.Context(), srv.url); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("over the wire cap: err = %v, want ErrTooLarge", err)
+	}
+	if _, err := (&Fetcher{Limits: testLimits}).Tags(t.Context(), "http://github.com/a/b"); err == nil ||
+		!strings.Contains(err.Error(), "not an https:// clone URL") {
+		t.Fatalf("an http URL: err = %v", err)
+	}
+
+	bare := t.TempDir()
+	untagged, err := git.PlainClone(filepath.Join(bare, "repo.git"), &git.CloneOptions{URL: filepath.Join(src.root, "repo.git"), Mirror: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range []string{"v1", "v1-again", "v2"} {
+		if err := untagged.Storer.RemoveReference(plumbing.NewTagReferenceName(tag)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plain := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(bare), false)))
+	t.Cleanup(plain.Close)
+	if tags, err := (&Fetcher{Transport: plain.Client().Transport, Limits: testLimits}).Tags(t.Context(), plain.URL+"/repo.git"); err != nil || len(tags) != 0 {
+		t.Fatalf("a repository without tags: %q, %v; want none and no error", tags, err)
+	}
+}
+
+func TestNewerFirst(t *testing.T) {
+	tags := []string{"v1.9.0", "0.0.7", "gpu-v0.12.0-chart", "v1.10.0", "gpu-v0.12.1", "v1.10.0-rc.1", "0.0.10", "gpu-v0.12.0", "latest"}
+	slices.SortFunc(tags, newerFirst)
+	want := []string{"v1.10.0-rc.1", "v1.10.0", "v1.9.0", "latest", "gpu-v0.12.1", "gpu-v0.12.0-chart", "gpu-v0.12.0", "0.0.10", "0.0.7"}
+	if !slices.Equal(tags, want) {
+		t.Fatalf("sorted = %q, want %q", tags, want)
+	}
+}
