@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Case is one pull request with what a reviewer should have caught.

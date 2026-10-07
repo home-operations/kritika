@@ -543,7 +543,7 @@ func TestParseRejects(t *testing.T) {
 			`configfile: trigger.include[1]: name "a" is given twice`},
 		{"exclude name given twice", "trigger:\n  exclude: [{ name: a, expr: 'true' }, { name: a, expr: 'true' }]\n" + minimal,
 			`configfile: trigger.exclude[1]: name "a" is given twice`},
-		{"include as a bare expression", "trigger:\n  include: 'true'\n" + minimal, "cannot unmarshal"},
+		{"include as a bare expression", "trigger:\n  include: 'true'\n" + minimal, "cannot construct"},
 		{"include fails smoke test", "trigger:\n  include: [{ expr: 'pr.labels[5].name == \"x\"' }]\n" + minimal, "smoke test"},
 		{"repository include error", acme("  acme/x: { trigger: { include: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/x.trigger.include[0]"},
 		{"repository exclude error", acme("  acme/x: { trigger: { exclude: [{ expr: 'pr.title' }] } }\n"), "repositories.acme/x.trigger.exclude[0]"},

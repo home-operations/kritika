@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"

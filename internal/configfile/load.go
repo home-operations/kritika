@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"

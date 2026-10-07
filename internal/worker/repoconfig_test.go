@@ -99,7 +99,7 @@ func TestEffective(t *testing.T) {
 			name: "invalid yaml is noted and the admin's settings apply", doc: "enabled: false\nunknown: 1\n", files: adminFiles,
 			enabled: true, ignore: []string{"vendor/**"}, repoFiles: append(adminPaths, repoconfig.FileName),
 			templates: adminDefaults, strict: true,
-			notes: []string{".kritika.yaml was ignored: repoconfig: parse: yaml: unmarshal errors:\n  line 2: field unknown not found in type repoconfig.File"},
+			notes: []string{".kritika.yaml was ignored: repoconfig: parse: yaml: construct errors: line 2: field unknown not found in type repoconfig.File"},
 		},
 	}
 	for _, tt := range tests {
