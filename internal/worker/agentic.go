@@ -136,6 +136,7 @@ func (w *Review) agentPrompt(
 		Repository: pr.repository, Context: eff.Review.Context,
 		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Diagram: eff.Review.Diagram,
 		MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings), Dismissed: dismissedFindings(prior.dismissed),
+		PriorChecked: prior.checked,
 	}
 	if eff.Review.Diagram {
 		p.PriorDiagram = prior.diagram

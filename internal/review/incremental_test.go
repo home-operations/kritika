@@ -18,8 +18,9 @@ index 222..555 100644
 `
 
 const (
-	deltaHeading = "Changed since the last review"
-	priorHeading = "Findings from the last review (verify each; report again only if still present)"
+	deltaHeading   = "Changed since the last review"
+	priorHeading   = "Findings from the last review (verify each; report again only if still present)"
+	checkedHeading = "What the last review checked at"
 )
 
 func incrementalInput() Input {
@@ -66,20 +67,41 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 }
 
 // TestBuildEarlierFindings: a full re-review is shown the last review's
-// findings to check again, without the incremental sections.
+// findings and notes to check again, without the incremental sections.
 func TestBuildEarlierFindings(t *testing.T) {
 	in := incrementalInput()
-	in.Earlier = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: in.Incremental.Prior}
+	in.Earlier = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: in.Incremental.Prior, Checked: []string{"util.go: u is pure"}}
 	in.Incremental = nil
 	msg, _, _ := Build(in)
 	if !strings.Contains(msg, priorHeading+". They are claims an earlier automated review made about 0123456") ||
 		!strings.Contains(msg, "- main.go:11 [important] y changed: why it matters") ||
+		!strings.Contains(msg, checkedHeading+" 0123456 and found sound, in its own notes.") || !strings.Contains(msg, "\n- util.go: u is pure\n") ||
 		strings.Contains(msg, deltaHeading) || strings.Contains(msg, "This is a re-review") {
 		t.Fatalf("message:\n%s", msg)
 	}
-	diffAt, earlierAt, contextAt := strings.Index(msg, "Diff (unified"), strings.Index(msg, priorHeading), strings.Index(msg, "Context (not part")
-	if diffAt >= earlierAt || earlierAt >= contextAt {
-		t.Fatalf("want diff, earlier findings, context in that order:\n%s", msg)
+	diffAt, earlierAt, checkedAt, contextAt := strings.Index(msg, "Diff (unified"), strings.Index(msg, priorHeading),
+		strings.Index(msg, checkedHeading), strings.Index(msg, "Context (not part")
+	if diffAt >= earlierAt || earlierAt >= checkedAt || checkedAt >= contextAt {
+		t.Fatalf("want diff, earlier findings, notes, context in that order:\n%s", msg)
+	}
+}
+
+// TestBuildIncrementalChecked: an incremental re-review is shown the last
+// review's notes after its findings, and none when it left none.
+func TestBuildIncrementalChecked(t *testing.T) {
+	in := incrementalInput()
+	msg, _, _ := Build(in)
+	if strings.Contains(msg, checkedHeading) {
+		t.Fatalf("notes without any:\n%s", msg)
+	}
+	in.Incremental.Checked = []string{"util.go: u is pure", "  spread\nover lines "}
+	msg, _, _ = Build(in)
+	if !strings.Contains(msg, checkedHeading+" 0123456 and found sound") || !strings.Contains(msg, "\n- util.go: u is pure\n- spread over lines\n") ||
+		strings.Index(msg, priorHeading) >= strings.Index(msg, checkedHeading) {
+		t.Fatalf("message:\n%s", msg)
+	}
+	if got := checkedSection("0123456", []string{"a note too long for the room"}, 200); got != "" {
+		t.Fatalf("a section with no note that fits = %q", got)
 	}
 }
 

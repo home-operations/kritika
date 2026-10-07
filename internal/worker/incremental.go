@@ -27,6 +27,8 @@ type priorReview struct {
 	dismissed []store.Dismissal
 	// diagram is its summary's diagram, "" when it drew none.
 	diagram string
+	// checked are its notes on what it checked and found sound.
+	checked []string
 }
 
 type priorFinding struct {
@@ -40,9 +42,10 @@ type priorFinding struct {
 // findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
 	var p priorReview
-	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, coalesce(summary->>'diagram', '') FROM reviews
+	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, coalesce(summary->>'diagram', ''),
+		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')) FROM reviews
 		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA, &p.trigger, &p.diagram)
+		Scan(&p.id, &p.headSHA, &p.trigger, &p.diagram, &p.checked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil
 	}

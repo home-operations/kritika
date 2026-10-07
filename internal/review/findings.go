@@ -98,10 +98,18 @@ type Summary struct {
 	// without fences; "" when the change has no flow worth drawing or the
 	// model's diagram was not one Parse keeps.
 	Diagram string `json:"diagram,omitempty"`
+	// Checked are the review's notes for the next review of the pull
+	// request on what it checked and found sound, one line each; no
+	// comment shows them.
+	Checked []string `json:"checked,omitempty"`
 }
 
 // maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
 const maxPraise = 3
+
+// maxChecked bounds Summary.Checked; the schema says so and Parse enforces
+// it, as it cuts each note to one line.
+const maxChecked = 10
 
 // maxDiagramBytes bounds Summary.Diagram. A diagram over it is dropped
 // rather than cut, since a cut one would not render.
@@ -257,6 +265,7 @@ const (
 	keyTake         = "take"
 	keyPraise       = "praise"
 	keyDiagram      = "diagram"
+	keyChecked      = "checked"
 	keyFindings     = "findings"
 	keyPath         = "path"
 	keyLine         = "line"
@@ -312,6 +321,9 @@ const (
 	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
 		"change adds or alters as the head commit has it: each node a short plain-language step, not a function name; " +
 		"at most ten nodes or messages, every label holding punctuation quoted. Omit it when the change has no flow worth drawing."
+	describeChecked = "For the next review of this pull request, which starts without your reading: what you read " +
+		"beyond the diff and found sound, one short line each naming the file or symbol and what you verified. " +
+		"No comment shows it; leave it empty when there is nothing to pass on."
 	describeCategory = "What kind of problem it is. correctness: wrong behaviour, a bug, a broken contract. " +
 		"security: exposure, injection, secrets, unsafe defaults, data loss. performance: cost in time, memory or calls. " +
 		"reliability: error handling, retries, timeouts, concurrency, resource leaks. maintainability: structure, " +
@@ -352,6 +364,7 @@ func contractSchema(requireFix, diagram bool) json.RawMessage {
 			Items:       &jsonSchema{Type: schemaString},
 			MaxItems:    maxPraise,
 		},
+		keyChecked: {Type: schemaArray, Description: describeChecked, Items: &jsonSchema{Type: schemaString}, MaxItems: maxChecked},
 	}
 	if diagram {
 		summary[keyDiagram] = &jsonSchema{Type: schemaString, Description: describeDiagram}
@@ -456,6 +469,13 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 	}
 	res.Summary.Praise = praise
+	var checked []string
+	for _, c := range res.Summary.Checked {
+		if c = oneLine(c); c != "" && len(checked) < maxChecked {
+			checked = append(checked, c)
+		}
+	}
+	res.Summary.Checked = checked
 	if opts.Diagram {
 		res.Summary.Diagram = diagram(res.Summary.Diagram)
 	} else {
