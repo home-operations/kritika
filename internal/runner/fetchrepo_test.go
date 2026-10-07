@@ -133,6 +133,20 @@ func TestFetchRepoTool(t *testing.T) {
 	}
 }
 
+// TestFetchRepoDiffPastBudget: a diff that would take the files written
+// past the review's budget is returned but not kept in a file.
+func TestFetchRepoDiffPastBudget(t *testing.T) {
+	url, tool := servedRepo(t)
+	tool.written = fetchWriteBytes - int64(len("package pkg\n\nfunc A() {}\n"))
+	out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"pkg"}}))
+	if err != nil || !strings.Contains(out, "It is not kept in a file") || !strings.Contains(out, "+func A() {}") {
+		t.Fatalf("fetch = %q, %v", out, err)
+	}
+	if _, err := os.Stat(filepath.Join(tool.dir, "1-repo@v2.diff")); !os.IsNotExist(err) || tool.written != fetchWriteBytes {
+		t.Fatalf("the diff file was written past the budget: written = %d, %v", tool.written, err)
+	}
+}
+
 func TestFetchRepoSources(t *testing.T) {
 	tool := &fetchRepoTool{}
 	for _, req := range []upstream.Request{

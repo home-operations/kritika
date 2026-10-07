@@ -147,6 +147,10 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		b.WriteString(".")
 		return b.String(), nil
 	}
+	if t.written+int64(len(res.Diff)) > fetchWriteBytes {
+		fmt.Fprintf(&b, ". It is not kept in a file, past what this review may write, and follows, cut to fit when long:\n\n%s", res.Diff)
+		return b.String(), nil
+	}
 	diffFile := name + ".diff"
 	if err := os.WriteFile(filepath.Join(t.dir, diffFile), []byte(res.Diff), 0o644); err != nil {
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)

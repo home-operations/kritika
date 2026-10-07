@@ -461,6 +461,9 @@ type ContinueInput struct {
 	Dismissed []DismissedFinding
 	// Diagram says the summary carries a diagram.
 	Diagram bool
+	// Fetched says the last review called fetch_repo, whose files this
+	// review does not have.
+	Fetched bool
 	// BudgetTokens bounds the message as Input's does.
 	BudgetTokens int
 }
@@ -488,6 +491,9 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "The pull request's head moved from %s to %s since your last review, on the same merge base. Your tools now "+
 		"read %[2]s; what you read before changed only where the diff below shows.", prior, head)
+	if in.Fetched {
+		b.WriteString(" The repositories fetch_repo fetched then are no longer on disk: fetch again any you need to read.")
+	}
 	b.WriteString(reReviewLead)
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; findings still point only at lines the pull request's "+
 		"diff shows):\n\n", prior, head)

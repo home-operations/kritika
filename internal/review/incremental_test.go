@@ -107,9 +107,14 @@ func TestBuildContinuation(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
 		}
 	}
-	if len(omitted) != 0 || strings.Contains(msg, "diagram") {
-		t.Fatalf("omitted %v, or a diagram asked of a summary without one:\n%s", omitted, msg)
+	if len(omitted) != 0 || strings.Contains(msg, "diagram") || strings.Contains(msg, "fetch_repo") {
+		t.Fatalf("omitted %v, or a diagram or fetches asked about of a review without them:\n%s", omitted, msg)
 	}
+	in.Fetched = true
+	if msg, _ := BuildContinuation(in); !strings.Contains(msg, "the diff below shows. The repositories fetch_repo fetched then are no longer on disk") {
+		t.Fatalf("the last review's fetches not said to be gone:\n%s", msg)
+	}
+	in.Fetched = false
 	in.Diagram = true
 	if msg, _ := BuildContinuation(in); !strings.HasSuffix(msg, "or as an empty string when the change no longer has a flow to draw.") {
 		t.Fatalf("no diagram asked for:\n%s", msg)

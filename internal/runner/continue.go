@@ -9,10 +9,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -93,9 +95,12 @@ func carryOn(
 		logger.Info("the last review's conversation is not carried on", "reason", why)
 		return prompt
 	}
+	fetched := slices.ContainsFunc(c.Messages, func(m model.Message) bool {
+		return slices.ContainsFunc(m.ToolCalls, func(tc model.ToolCall) bool { return tc.Name == "fetch_repo" })
+	})
 	user, omitted := review.BuildContinuation(review.ContinueInput{
 		PriorHeadSHA: p.PriorHead, HeadSHA: p.Head, DeltaDiff: delta, Dismissed: p.Prompt.Dismissed, Diagram: p.Prompt.Diagram,
-		BudgetTokens: budget,
+		Fetched: fetched, BudgetTokens: budget,
 	})
 	logger.Info("carrying on the last review's conversation", "run", review.ShortSHA(p.Prompt.Continue.RunID), "tokens", c.Tokens,
 		"messages", len(c.Messages))
