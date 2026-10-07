@@ -284,6 +284,22 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryHeldBack: findings a re-review held back are listed
+// folded away, and count nowhere.
+func TestRenderSummaryHeldBack(t *testing.T) {
+	d := sampleData()
+	d.Result.Findings, d.Counts = nil, Counts{}
+	d.HeldBack = []Finding{{Path: "old.go", Line: 3, Severity: SeverityImportant, Category: CategoryReliability, Title: "unbounded retry",
+		URL: "https://forge.example/o/r/blob/0123456789abcdef/old.go#L3"}}
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	want := "**No findings**\n\n## Findings\n\n<details>\n<summary>Held back (1): not on lines changed since the last review</summary>\n\n" +
+		"- **[important · reliability]** [`old.go:3`](https://forge.example/o/r/blob/0123456789abcdef/old.go#L3) unbounded retry\n\n" +
+		"</details>\n\n### Summary\n"
+	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
+		t.Fatalf("missing %q in:\n%s", want, body)
+	}
+}
+
 func TestRenderSummarySources(t *testing.T) {
 	d := sampleData()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)

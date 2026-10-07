@@ -468,6 +468,8 @@ type fakeCompleter struct {
 	efforts  []model.Effort
 	// diagram, when set, is the summary diagram a review submits.
 	diagram string
+	// extra, when set, is one more finding a review submits, as JSON.
+	extra string
 }
 
 // draw sets the summary diagram the reviews that follow submit, "" for
@@ -478,6 +480,14 @@ func (f *fakeCompleter) draw(diagram string) {
 	f.diagram = diagram
 }
 
+// find sets one more finding the reviews that follow submit, as JSON, ""
+// for none.
+func (f *fakeCompleter) find(extra string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.extra = extra
+}
+
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	f.mu.Lock()
 	f.calls++
@@ -485,9 +495,12 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	f.systems = append(f.systems, req.System)
 	f.sessions = append(f.sessions, req.Session)
 	f.efforts = append(f.efforts, req.Effort)
-	var diagram string
+	var diagram, extra string
 	if f.diagram != "" {
 		diagram = `,"diagram":` + strconv.Quote(f.diagram)
+	}
+	if f.extra != "" {
+		extra = "," + f.extra
 	}
 	f.mu.Unlock()
 	// An agent is offered its read-only tools too; it submits at once.
@@ -512,7 +525,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]`+diagram+`},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
-		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}]}`,
+		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
@@ -1870,11 +1883,12 @@ func checkWithdrawn(t *testing.T, lf *localForge) {
 }
 
 // checkIncremental reviews a pull request, pushes a commit on top, and then
-// force-pushes it away: the second review is incremental and does not post
-// the repeated finding inline again, the third is full because the head it
-// would build on is gone. The merge base asks for a summary diagram, which
-// only the first review draws: the second is shown it and keeps it, the
-// third's answer without one stands.
+// force-pushes it away: the second review is incremental, does not post
+// the repeated finding inline again and holds back a new one far from the
+// pushed lines, the third is full because the head it would build on is
+// gone. The merge base asks for a summary diagram, which only the first
+// review draws: the second is shown it and keeps it, the third's answer
+// without one stands.
 func checkIncremental(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, dir, base string,
 	dispatchPR func(int, string, bool, ...string), waitReview func(string) (string, string, string), accountID string,
@@ -1932,7 +1946,8 @@ func checkIncremental(
 	base = commitDiagramConfig(t, dir, wt)
 	lf.setBase(base)
 	fc.draw(diagram)
-	first := commit("package main\n\nfunc f1() {}\n")
+	const firstMain = "package main\n\nfunc f1() {}\n\nfunc g() {}\n\nfunc h() {}\n"
+	first := commit(firstMain)
 	firstRow, prompt, inline := reviewHead(first)
 	fc.draw("")
 	if firstRow.scope != "full" || firstRow.reason != "no completed review to build on" || firstRow.prior != "" || inline != 1 {
@@ -1947,8 +1962,12 @@ func checkIncremental(
 	}
 	thread := postedInline(ctx, t, appStore, accountID, firstRow.id)[0].ID
 
-	second := commit("package main\n\nfunc f1() {}\n\nfunc f2() {}\n")
+	// The push adds lines 8 and 9; line 3 is further from them than a
+	// new finding may be.
+	second := commit(firstMain + "\nfunc f2() {}\n")
+	fc.find(`{"path":"main.go","line":3,"severity":"important","category":"correctness","title":"far from the push","explanation":"held back"}`)
 	secondRow, prompt, inline := reviewHead(second)
+	fc.find("")
 	if secondRow.scope != "incremental" || secondRow.reason != "" || secondRow.prior != firstRow.id || inline != 0 {
 		t.Fatalf("second review = %+v, %d inline comment(s); want incremental on %s with nothing posted inline again",
 			secondRow, inline, firstRow.id)
@@ -2080,6 +2099,13 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 		strings.Contains(sticky, prior[:7]) || strings.Contains(sticky, "Incremental review") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/5#r") ||
 		strings.Contains(sticky, "Earlier findings") {
+		t.Fatalf("sticky comment = %q", sticky)
+	}
+	// The new finding far from the pushed lines is listed apart and
+	// counted nowhere.
+	if !strings.Contains(sticky, "**2 findings** · 1 blocking · 1 important\n") ||
+		!strings.Contains(sticky, "<summary>Held back (1): not on lines changed since the last review</summary>\n\n- **[important · correctness]** [`main.go:3`](") ||
+		!strings.Contains(sticky, ") far from the push\n") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
 

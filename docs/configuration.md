@@ -361,6 +361,13 @@ rebase, and does not count. A re-run at the head the last review saw, or a
 rebase that leaves the change as it was, always covers the whole pull
 request.
 
+Such a re-review reports what the new commits brought. A finding in the
+diff that the last review did not make, more than 3 lines from every line
+changed since, is held back: the summary lists it folded away, with no
+inline comment, and it counts toward nothing, the score, the status and
+the approval included. A file where one of the last review's findings went
+unreported is spared, since that finding may be back under a new title.
+
 ### The agent
 
 `agent` bounds a review's tool loop, and a follow-up's:

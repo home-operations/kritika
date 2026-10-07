@@ -69,6 +69,9 @@ type RenderData struct {
 	// Unanchored are findings on lines the diff does not show, which
 	// have no inline comment and are listed in the summary only.
 	Unanchored []Finding
+	// HeldBack are the findings in the diff an incremental re-review held
+	// back (see HoldBack): listed only, neither posted, counted nor scored.
+	HeldBack []Finding
 	// Incomplete, when set, says why the head was not fully reviewed; the
 	// default template then states that instead of a verdict.
 	Incomplete string

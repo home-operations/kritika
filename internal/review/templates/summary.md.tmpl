@@ -20,7 +20,7 @@
 **{{ if .Approval.Approved }}Approved{{ else }}Not approved{{ end }}**{{ if .Approval.Reason }}: {{ .Approval.Reason }}{{ end }}
 
 {{ end -}}
-{{ if or .Result.Findings .Unanchored .Prior -}}
+{{ if or .Result.Findings .Unanchored .HeldBack .Prior -}}
 ## Findings
 
 {{ if .Result.Findings -}}
@@ -36,6 +36,16 @@
 
 {{ .Explanation | indent 2 }}
 {{ end }}
+{{ end -}}
+{{ if .HeldBack -}}
+<details>
+<summary>Held back ({{ len .HeldBack }}): not on lines changed since the last review</summary>
+
+{{ range .HeldBack -}}
+- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}
+{{ end }}
+</details>
+
 {{ end -}}
 {{ if .Prior -}}
 {{ $resolved := 0 }}{{ $dismissed := 0 -}}

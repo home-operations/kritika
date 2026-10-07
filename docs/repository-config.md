@@ -268,6 +268,7 @@ The summary template's dot is the review:
 | `.Result.Findings`                                                           | the findings, each as the inline template sees one                                                                       |
 | `.Counts.Blocking`, `.Counts.Important`, `.Counts.Nit`, `.Counts.Total`      | the findings by severity and all of them, those outside the diff included                                                |
 | `.Unanchored`                                                                | the findings on lines the diff does not show                                                                             |
+| `.HeldBack`                                                                  | an incremental re-review's new findings more than 3 lines from what changed since the last review, not counted           |
 | `.Notes`                                                                     | the review's notes                                                                                                       |
 | `.Incremental`, `.PriorHeadSHA`, `.PriorHeadURL`                             | whether the review covered only what changed since the last one, and that review's head                                  |
 | `.Prior`                                                                     | the last review's findings this review did not report again, each with `.Resolved`, or `.Dismissed` and `.DismissReason` |
