@@ -102,7 +102,8 @@ func anthropicStop(s anthropic.StopReason) StopReason {
 // anthropicParams maps everything but the model, which each attempt sets.
 // The system prompt and the last block of the last message are cache
 // breakpoints: the first caches the instructions, the second everything so
-// far, which the next step of a tool loop reads back.
+// far, which the next step of a tool loop reads back. A step no other reads
+// back has none.
 func anthropicParams(req StepRequest) (anthropic.MessageNewParams, error) {
 	p := anthropic.MessageNewParams{MaxTokens: req.MaxTokens}
 	if p.MaxTokens <= 0 {
@@ -112,14 +113,17 @@ func anthropicParams(req StepRequest) (anthropic.MessageNewParams, error) {
 		p.OutputConfig = anthropic.OutputConfigParam{Effort: anthropicEffort(req.Effort)}
 	}
 	if req.System != "" {
-		p.System = []anthropic.TextBlockParam{{Text: req.System, CacheControl: anthropic.NewCacheControlEphemeralParam()}}
+		p.System = []anthropic.TextBlockParam{{Text: req.System}}
+		if !req.Once {
+			p.System[0].CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
 	}
 	for _, m := range req.Messages {
 		if blocks := anthropicBlocks(m); len(blocks) > 0 {
 			p.Messages = append(p.Messages, anthropic.MessageParam{Role: anthropic.MessageParamRole(m.Role), Content: blocks})
 		}
 	}
-	if n := len(p.Messages); n > 0 {
+	if n := len(p.Messages); n > 0 && !req.Once {
 		blocks := p.Messages[n-1].Content
 		if cc := blocks[len(blocks)-1].GetCacheControl(); cc != nil {
 			*cc = anthropic.NewCacheControlEphemeralParam()

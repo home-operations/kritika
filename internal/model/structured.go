@@ -11,7 +11,7 @@ import (
 // SchemaName whose input schema is the answer's and telling the model to
 // answer by calling it; the call's input is the answer. The call is asked
 // for in the prompt rather than forced through tool_choice, which the
-// newest models reject.
+// newest models reject. It makes one step, which no other reads back.
 type Structured struct {
 	Stepper Stepper
 	// OnStep, when set, is called after every Step Complete makes, with the
@@ -31,7 +31,7 @@ func (s Structured) Complete(ctx context.Context, req CompletionRequest) (Comple
 		Model: req.Model, Fallbacks: req.Fallbacks, Session: req.Session, System: req.System,
 		Messages:  []Message{{Role: RoleUser, Text: req.User + "\n\n" + answerWith(req.SchemaName)}},
 		Tools:     []ToolDef{{Name: req.SchemaName, InputSchema: req.Schema}},
-		MaxTokens: req.MaxTokens, Effort: req.Effort,
+		MaxTokens: req.MaxTokens, Effort: req.Effort, Once: true,
 	}
 	start := time.Now()
 	resp, err := s.Stepper.Step(ctx, step)
