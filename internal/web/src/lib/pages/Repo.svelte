@@ -62,7 +62,9 @@
   const settingRows: Row[] = [
     { label: 'Review model', key: 'review.model', value: (s) => s.models.review || '—', mono: true },
     { label: 'Fallback model', key: 'review.fallback', value: (s) => s.models.fallback || '—', mono: true },
+    { label: 'Review effort', key: 'review.effort', value: (s) => s.models.effort || "the provider's default" },
     { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },
+    { label: 'Confidence effort', key: 'confidence.effort', value: (s) => (s.confidence.model ? s.confidence.effort || "the provider's default" : '—') },
     { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
     {
       label: 'Confidence gate',
