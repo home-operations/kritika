@@ -138,7 +138,10 @@ func (s *skillTool) Run(_ context.Context, input json.RawMessage) (string, error
 	}
 	s.mu.Unlock()
 	if len(data) > s.maxBytes {
-		return textcut.Prefix(string(data), s.maxBytes) + "\n[cut: the file is longer]", nil
+		// Within maxBytes with its note, or the loop's cut to the same limit
+		// would replace the note.
+		const cut = "\n[cut: the file is longer]"
+		return textcut.Prefix(string(data), max(s.maxBytes-len(cut), 0)) + cut, nil
 	}
 	return string(data), nil
 }

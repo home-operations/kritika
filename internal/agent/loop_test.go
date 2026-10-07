@@ -500,8 +500,10 @@ func checkToolOutputTruncated(t *testing.T, _ Result, _ []StepEvent, scripted *s
 		t.Fatalf("ToolResults = %+v, want exactly 1", lastMsg.ToolResults)
 	}
 	content := lastMsg.ToolResults[0].Content
-	if !strings.HasPrefix(content, "abcde") || !strings.Contains(content, "[truncated 5 bytes]") {
-		t.Fatalf("content = %q, want a 5-byte prefix plus a truncation marker", content)
+	kept := strings.LastIndex(content, "\n[truncated ")
+	if len(content) > 40 || !strings.HasPrefix(content, "abcdefghij") || kept < 0 ||
+		!strings.HasSuffix(content, fmt.Sprintf("\n[truncated %d bytes]", 100-kept)) {
+		t.Fatalf("content = %q, want at most 40 bytes: a prefix and a note of the rest", content)
 	}
 }
 
@@ -817,8 +819,8 @@ func TestRun(t *testing.T) {
 		},
 		{
 			name:      "tool_output_truncated",
-			tools:     []Tool{&fakeTool{name: "big", output: "abcdefghij"}},
-			limits:    Limits{MaxToolOutputBytes: 5},
+			tools:     []Tool{&fakeTool{name: "big", output: strings.Repeat("abcdefghij", 10)}},
+			limits:    Limits{MaxToolOutputBytes: 40},
 			setup:     setupToolOutputTruncated,
 			wantStop:  StopSubmitted,
 			wantSteps: 2,

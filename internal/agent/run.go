@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Source bounds: how many URLs one run records, and how long each may be.
@@ -171,13 +172,20 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	case ctx.Err() != nil:
 		return "", fmt.Errorf("agent: run: %w", ctx.Err())
 	case cctx.Err() != nil:
-		return fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, rt.mask(out.String())), nil
+		return rt.result(fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, rt.mask(out.String())), out.dropped), nil
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
 		}
 	}
-	return fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), rt.mask(out.String())), nil
+	return rt.result(fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), rt.mask(out.String())), out.dropped), nil
+}
+
+// result is a command's result cut to MaxOutputBytes with its note, which
+// counts the bytes the buffer dropped as well, so the loop's own cut to the
+// same limit leaves it whole.
+func (rt *RunTool) result(s string, dropped int) string {
+	return textcut.Cut(s, rt.cfg.MaxOutputBytes, dropped)
 }
 
 func (rt *RunTool) mask(out string) string {
@@ -279,11 +287,5 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// String is the kept output as valid UTF-8, with a note of what was cut.
-func (b *cappedBuffer) String() string {
-	s := strings.ToValidUTF8(b.buf.String(), "�")
-	if b.dropped > 0 {
-		s += fmt.Sprintf("\n[truncated %d bytes]", b.dropped)
-	}
-	return s
-}
+// String is the kept output as valid UTF-8; dropped counts the rest.
+func (b *cappedBuffer) String() string { return strings.ToValidUTF8(b.buf.String(), "�") }
