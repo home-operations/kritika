@@ -122,12 +122,12 @@ it, so it has no switch:
 
 A repository's `agent.commands` lets the model run allowlisted programs
 over a checkout of the head commit: to read a dependency bump's release
-notes and compare view with `gh`, fetch anything else with `curl`, search
-with `rg` and `fd`, or read JSON and YAML with `jq` and `yq`. Runner Jobs
-run on the release's `-tools` image, a distroless image with all six,
-pinned by digest like the chart's image. A command is offered only when
-the runner image has it on its `PATH`, so an image set in `runner.image`
-without them offers none.
+notes and upstream pull requests with `gh`, fetch anything else with
+`curl`, search with `rg` and `fd`, or read JSON and YAML with `jq` and
+`yq`. Runner Jobs run on the release's `-tools` image, a distroless image
+with all six, pinned by digest like the chart's image. A command is
+offered only when the runner image has it on its `PATH`, so an image set
+in `runner.image` without them offers none.
 
 `gh` signs in with the run's own GitHub token, and an app already allows
 `github.com` and `api.github.com` through the gateway. Every other host

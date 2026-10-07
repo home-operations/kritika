@@ -34,13 +34,16 @@ func TestSystemPrompt(t *testing.T) {
 		strings.Index(withCommands, "run tool") > strings.Index(withCommands, "Check errors.") {
 		t.Fatalf("system prompt with commands:\n%s", withCommands)
 	}
-	if strings.Contains(withCommands, "fetch_repo") {
-		t.Fatalf("a prompt without fetch_repo mentions it:\n%s", withCommands)
+	if strings.Contains(withCommands, "fetch_repo") || strings.Contains(withCommands, "compare view") {
+		t.Fatalf("a prompt without fetch_repo mentions it or the compare view:\n%s", withCommands)
 	}
 	withFetch := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"gh"}, true, false, false)
 	if fetch := strings.Index(withFetch, "fetch_repo fetches another repository"); fetch < strings.Index(withFetch, "run tool: gh.") ||
 		fetch > strings.Index(withFetch, "Check errors.") || !strings.Contains(withFetch, "Give paths to fetch only part") {
 		t.Fatalf("fetch_repo must follow the run tool, before the instructions:\n%s", withFetch)
+	}
+	if !strings.Contains(withFetch, "For a version bump, fetch the new version with from set to the old\none") {
+		t.Fatalf("a prompt with fetch_repo must send a version bump to it:\n%s", withFetch)
 	}
 	if strings.Contains(bare, "search_code") {
 		t.Fatalf("a prompt without search mentions search_code:\n%s", bare)

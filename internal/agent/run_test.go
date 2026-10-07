@@ -277,8 +277,10 @@ func TestRunToolGH(t *testing.T) {
 	if got := rt.Sources(); !slices.Equal(got, []string{"https://api.github.com/repos/a/b/compare/v1...v2"}) {
 		t.Fatalf("sources = %q", got)
 	}
+	// A version bump's diff is fetch_repo's, which the review's prompt
+	// describes: the compare view counts from where the branches split.
 	if d := rt.Def().Description; !strings.Contains(d, "Use gh, not curl, for anything on GitHub") ||
-		!strings.Contains(d, "compare/<old>...<new> --jq '.files[].filename'") {
+		!strings.Contains(d, "gh release view <tag>") || strings.Contains(d, "compare") {
 		t.Fatalf("description = %q", d)
 	}
 }
