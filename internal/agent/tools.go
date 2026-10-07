@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/storer"
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/textcut"

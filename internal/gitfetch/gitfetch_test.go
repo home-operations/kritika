@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
+	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
+
+	"github.com/home-operations/kritika/internal/gittest"
 )
 
 // repo builds a local repository with a base commit and two head commits:
@@ -30,10 +32,7 @@ func build(t *testing.T) repo {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A depth-one fetch of a bare SHA needs the server to allow it. Real git
-	// serves a local path and only advertises the capability when told to,
-	// which is also what GitHub does server-side.
-	allowSHAFetch(t, r)
+	gittest.Unsigned(t, r)
 	wt, _ := r.Worktree()
 	commit := func(msg string, files map[string]string) string {
 		t.Helper()
@@ -56,7 +55,7 @@ func build(t *testing.T) repo {
 	out.head = commit("change", map[string]string{"main.go": "package main\n\nfunc a() {}\n\nfunc b() {}\n"})
 	// On a second branch from base, add an unrelated commit and re-apply the
 	// same change. A branch rather than a reset keeps the first head
-	// reachable, which a SHA fetch requires.
+	// reachable, which real git's upload-pack needs to serve it by SHA.
 	if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("rebased"), Create: true, Hash: plumbing.NewHash(out.base)}); err != nil {
 		t.Fatal(err)
 	}
@@ -130,18 +129,6 @@ func TestPatchIDIgnoresPositions(t *testing.T) {
 	}
 	if PatchID(a) == PatchID(c) {
 		t.Fatal("changed content must affect the patch id")
-	}
-}
-
-func allowSHAFetch(t *testing.T, r *git.Repository) {
-	t.Helper()
-	cfg, err := r.Config()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.Raw.SetOption("uploadpack", "", "allowReachableSHA1InWant", "true")
-	if err := r.SetConfig(cfg); err != nil {
-		t.Fatal(err)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/agent"

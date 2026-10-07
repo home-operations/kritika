@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
+	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,6 +40,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/gitfetch"
+	"github.com/home-operations/kritika/internal/gittest"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
@@ -544,10 +545,7 @@ func testRepo(t *testing.T) (dir, base, head string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A depth-one fetch of a bare SHA needs the server to allow it. Real git
-	// serves a local path and only advertises the capability when told to,
-	// which is also what GitHub does server-side.
-	allowSHAFetch(t, r)
+	gittest.Unsigned(t, r)
 	wt, _ := r.Worktree()
 	commit := func(name, content, msg string) string {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
@@ -1992,8 +1990,13 @@ func checkIncremental(
 	}
 	checkIncrementalRecord(ctx, t, appStore, lf, accountID, secondRow.id, first)
 
-	// Force-push: the second head is no longer reachable from any ref.
+	// Force-push: the second head is no longer reachable from any ref. A gc
+	// drops it too: go-git's upload-pack, unlike git's, serves an object no
+	// ref reaches.
 	reset()
+	if err := r.DeleteObject(plumbing.NewHash(second)); err != nil {
+		t.Fatal(err)
+	}
 	third := commit("package main\n\nfunc f3() {}\n")
 	thirdRow, prompt, inline := reviewHead(third)
 	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
@@ -2686,18 +2689,6 @@ func (g *gateExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	}
 	<-ctx.Done()
 	return executor.Result{JobName: "kritika-run-blocked", Err: context.Cause(ctx)}
-}
-
-func allowSHAFetch(t *testing.T, r *git.Repository) {
-	t.Helper()
-	cfg, err := r.Config()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.Raw.SetOption("uploadpack", "", "allowReachableSHA1InWant", "true")
-	if err := r.SetConfig(cfg); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // jobDeadline stands in for River's job timeout, which cancels a job's ctx

@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
+	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"

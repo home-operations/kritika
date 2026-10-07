@@ -6,10 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/memory"
+
+	"github.com/home-operations/kritika/internal/gittest"
 )
 
 const widgetBase = `package demo
@@ -76,10 +78,11 @@ func Unrelated() {}
 func repo(t *testing.T) (head, base *object.Tree, diff string) {
 	t.Helper()
 	fs := memfs.New()
-	r, err := git.Init(memory.NewStorage(), fs)
+	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
 	if err != nil {
 		t.Fatal(err)
 	}
+	gittest.Unsigned(t, r)
 	wt, _ := r.Worktree()
 	write := func(name, content string) {
 		f, _ := fs.Create(name)
