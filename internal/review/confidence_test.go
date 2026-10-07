@@ -2,6 +2,7 @@ package review
 
 import (
 	"cmp"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -52,27 +53,59 @@ func TestParseConfidence(t *testing.T) {
 func TestBuildConfidence(t *testing.T) {
 	diff := "diff --git a/main.go b/main.go\n--- a/main.go\n+++ b/main.go\n@@ -1,1 +1,2 @@\n package main\n+func f() {}\n"
 	in := Input{Repository: "o/r", Number: 7, Title: "Add f", Author: "dev", BaseRef: "main", Changed: ChangedPaths(diff), Diff: diff}
+	many := make([]string, 25)
+	for i := range many {
+		many[i] = fmt.Sprintf("https://example.com/%d", i)
+	}
 	tests := []struct {
-		name     string
-		findings []Finding
-		want     []string
+		name    string
+		body    string
+		res     Result
+		sources []string
+		want    []string
 	}{
-		{name: "no findings", want: []string{"Pull request #7: Add f", "- main.go\n", "+func f() {}", "The review reported no findings."}},
+		{name: "no findings", want: []string{
+			"Pull request #7: Add f", "- main.go\n", "+func f() {}", "The review's account of itself:\n\nIt lists nothing it checked beyond the diff.\n",
+			"\nIt read no sources outside the repository.\n", "The review reported no findings.",
+		}},
 		{
 			name: "findings follow the diff, whole",
-			findings: []Finding{{
+			res: Result{Findings: []Finding{{
 				Path: "main.go", Line: 2, Severity: SeverityBlocking, Title: "f does nothing", Explanation: "It is empty.\nCallers expect a result.",
-			}},
+			}}},
 			want: []string{"Findings the review reported (1):", "- [blocking] main.go:2 f does nothing\n  It is empty.\n  Callers expect a result.\n"},
+		},
+		{
+			name: "the description and the review's account",
+			body: "Release notes: f is new.",
+			res: Result{Summary: Summary{
+				Take:    "Adds f.\nIt is unused.",
+				Checked: []string{"main.go: no caller of f yet", strings.Repeat("y", 400)},
+			}},
+			sources: []string{"https://github.com/up/stream/releases/tag/v2"},
+			want: []string{
+				"<description>\nRelease notes: f is new.\n</description>", "\nIts summary: Adds f. It is unused.\n",
+				"\nWhat it checked beyond the diff and found sound:\n- main.go: no caller of f yet\n- " + strings.Repeat("y", 200) + " …\n",
+				"\nThe sources it read outside the repository:\n- https://github.com/up/stream/releases/tag/v2\n\n\nThe review reported no findings.",
+			},
+		},
+		{
+			name: "past 20 sources, a count", sources: many,
+			want: []string{"- https://example.com/19\n- and 5 more\n"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, tt.findings, ConfidenceSystem, 0)
+			in := in
+			in.Body = tt.body
+			msg := BuildConfidence(in, tt.res, tt.sources, ConfidenceSystem, 0)
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
 				}
+			}
+			if strings.Contains(msg, "https://example.com/20") {
+				t.Errorf("the 21st source is listed:\n%s", msg)
 			}
 		})
 	}
@@ -127,7 +160,7 @@ func TestBuildConfidenceBudget(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, nil, ConfidenceSystem, tt.budget)
+			msg := BuildConfidence(in, Result{}, nil, ConfidenceSystem, tt.budget)
 			if kept := strings.Contains(msg, "+// a line of the large file under review"); kept != tt.kept {
 				t.Fatalf("diff in the message = %v, want %v", kept, tt.kept)
 			}

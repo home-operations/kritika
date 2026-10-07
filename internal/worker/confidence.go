@@ -79,6 +79,17 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		return review.Confidence{}, err
 	}
 	spec, _ := p.file.Provider(p.account, ref.Provider())
+	var body string
+	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&body)
+	})
+	if err != nil {
+		return review.Confidence{}, fmt.Errorf("worker: read pull request description: %w", err)
+	}
+	var sources []string
+	if p.agent != nil {
+		sources = p.agent.Sources
+	}
 	// The calls are charged as they are made: one the model answered
 	// without the score is billed all the same.
 	record := p.w.recorder().OnStep(ctx, p.logger, store.ModelCall{
@@ -93,8 +104,8 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
-			Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res.Findings, system, p.settings.Agent.MaxPromptTokens),
+			Body: body, Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
+		}, res, sources, system, p.settings.Agent.MaxPromptTokens),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}

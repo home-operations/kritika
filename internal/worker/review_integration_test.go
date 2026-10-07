@@ -1832,13 +1832,17 @@ func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, acc
 func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID, head string) {
 	t.Helper()
 	fc.mu.Lock()
-	scorer := fc.systems[len(fc.systems)-1]
+	scorer, asked := fc.systems[len(fc.systems)-1], fc.users[len(fc.users)-1]
 	// The review's step, through the gateway, and the confidence call each
 	// carry the .kritika.yaml's effort for their model.
 	efforts := fc.efforts[len(fc.efforts)-2:]
 	fc.mu.Unlock()
 	if scorer != review.ConfidenceSystem || !slices.Equal(efforts, []model.Effort{model.EffortXHigh, model.EffortLow}) {
 		t.Fatalf("the last call was not the confidence model's at the file's efforts (%v):\n%s", efforts, scorer)
+	}
+	// The scorer is shown what the review says it read.
+	if !strings.Contains(asked, "\nIts summary: Changes main.go.\n") || !strings.Contains(asked, "\n- main.go: package clause read\n") {
+		t.Fatalf("the scorer was not shown the review's account:\n%s", asked)
 	}
 	var confidence string
 	var calls, charged int
