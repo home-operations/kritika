@@ -46,7 +46,9 @@ How the score is reached and used:
   skipped when its last review was scored, and keeps that score; one whose
   last review has no score is reviewed again.
 - **Cost:** the scorer's call counts towards the account's
-  `tokensPerMonth`, and shows in the review's transcript.
+  `tokensPerMonth`, and shows in the review's transcript. It asks for no
+  prompt caching: no later call reads it back, and writing a prompt to a
+  provider's cache can cost more than sending it uncached.
 - **Prompt size:** the scorer is sent a prompt of
   [`agent.prompt`](configuration.md#the-agent) tokens, without tools, so a
   file left out of the prompt is one it never sees. A `confidence.model`

@@ -197,6 +197,10 @@ type StepRequest struct {
 	// Effort is how hard the model reasons; empty means the provider's
 	// default.
 	Effort Effort
+	// Once says no later step reads this one's prompt back, so adapters
+	// leave it out of the provider's prompt cache, whose writes cost more
+	// than an uncached prompt.
+	Once bool
 }
 
 // StepResponse is the model's turn and what it cost.

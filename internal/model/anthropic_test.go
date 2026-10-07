@@ -108,6 +108,21 @@ func TestAnthropicStepResponses(t *testing.T) {
 	}
 }
 
+// TestAnthropicRequestOnce: a step no other reads back has no cache
+// breakpoint, on the system prompt or on the last message.
+func TestAnthropicRequestOnce(t *testing.T) {
+	srv, got := fakeProvider(t, http.StatusOK, anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", anthropicUsage))
+	if _, err := newTestAnthropic(t, srv, nil).Step(t.Context(), StepRequest{
+		Model: "acme-large", System: "be terse", Messages: []Message{{Role: RoleUser, Text: "score this"}}, Once: true,
+	}); err != nil {
+		t.Fatalf("Step: %v", err)
+	}
+	if field(got.body, "system", 0, "text") != "be terse" || field(got.body, "system", 0, "cache_control") != nil ||
+		field(got.body, "messages", 0, "content", 0, "cache_control") != nil {
+		t.Fatalf("request = %v; want no cache_control", got.body)
+	}
+}
+
 func TestAnthropicRequest(t *testing.T) {
 	srv, got := fakeProvider(t, http.StatusOK, anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", anthropicUsage))
 	c := newTestAnthropic(t, srv, nil)

@@ -129,10 +129,10 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 		// breakpoint on the last cacheable block that moves forward as the
 		// conversation grows; without it, providers whose caching is not
 		// automatic (Anthropic, Gemini) cache none of a tool loop's steps.
-		opts = append(opts,
-			option.WithJSONSet("usage", map[string]any{"include": true}),
-			option.WithJSONSet("cache_control", map[string]any{"type": "ephemeral"}),
-		)
+		opts = append(opts, option.WithJSONSet("usage", map[string]any{"include": true}))
+		if !req.Once {
+			opts = append(opts, option.WithJSONSet("cache_control", map[string]any{"type": "ephemeral"}))
+		}
 		if len(req.Fallbacks) > 0 {
 			opts = append(opts, option.WithJSONSet("models", append([]string{req.Model}, req.Fallbacks...)))
 		}

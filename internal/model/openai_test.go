@@ -432,6 +432,17 @@ func TestOpenAIOpenRouterCaching(t *testing.T) {
 			t.Fatalf("cache_control = %v", got.body["cache_control"])
 		}
 	}
+	// A step no other reads back asks for no caching, whose writes cost
+	// more than an uncached prompt.
+	srv, got := fakeProvider(t, http.StatusOK, body)
+	if _, err := newTestOpenAI(t, srv, true, nil).Step(t.Context(), StepRequest{
+		Model: "acme/large", Messages: []Message{{Role: RoleUser, Text: "hi"}}, Once: true,
+	}); err != nil {
+		t.Fatalf("Step: %v", err)
+	}
+	if _, hasCache := got.body["cache_control"]; hasCache || field(got.body, "usage", "include") != true {
+		t.Fatalf("a step once: cache_control = %v, usage = %v", got.body["cache_control"], got.body["usage"])
+	}
 }
 
 // TestOpenAIEffort: the effort goes out as OpenRouter's reasoning object or

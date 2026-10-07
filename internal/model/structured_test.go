@@ -89,6 +89,9 @@ func TestStructuredComplete(t *testing.T) {
 			if s.ToolChoice != (ToolChoice{}) {
 				t.Fatalf("tool choice = %+v; want it left to the model", s.ToolChoice)
 			}
+			if !s.Once {
+				t.Fatal("the step is not marked once: no other step reads it back")
+			}
 			if len(s.Messages) != 1 || s.Messages[0].Role != RoleUser || !strings.HasPrefix(s.Messages[0].Text, "review this\n\n") ||
 				!strings.Contains(s.Messages[0].Text, "calling the findings tool") {
 				t.Fatalf("messages = %+v; want the single user message, told to answer by calling the tool", s.Messages)
