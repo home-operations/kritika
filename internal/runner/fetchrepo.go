@@ -102,7 +102,9 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		Ref   string   `json:"ref"`
 		From  string   `json:"from"`
 		Paths []string `json:"paths"`
-		// Tags is set, to "" for every tag, when the call lists tags.
+		// Tags is set, to "" for every tag, when the call lists tags. A
+		// model may send every property, the ones it does not mean empty,
+		// so beside a ref an empty one asks for nothing.
 		Tags *string `json:"tags"`
 	}
 	if len(input) > 0 {
@@ -110,11 +112,14 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 			return "", fmt.Errorf("agent: fetch_repo: %w", err)
 		}
 	}
-	if in.Tags != nil {
-		if in.Ref != "" || in.From != "" || len(in.Paths) > 0 {
-			return "", errors.New("agent: fetch_repo: give tags alone, without ref, from or paths")
+	switch {
+	case in.Tags != nil && in.Ref == "":
+		if in.From != "" || len(in.Paths) > 0 {
+			return "", errors.New("agent: fetch_repo: give ref to fetch, or tags without from or paths to list tags")
 		}
 		return t.listTags(ctx, in.URL, *in.Tags)
+	case in.Tags != nil && *in.Tags != "":
+		return "", errors.New("agent: fetch_repo: give ref to fetch or tags to list tags, not both")
 	}
 	req := upstream.Request{URL: in.URL, Ref: in.Ref, From: in.From, Paths: in.Paths}
 	if t.fetches >= fetchMax {
