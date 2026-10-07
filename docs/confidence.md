@@ -18,8 +18,12 @@ confidence:
 ## The score
 
 With a `confidence.model`, a second model scores every reviewed pull
-request from 0 to 5: how ready it is to merge, from the diff and the
-findings the review reported. A different vendor's model than the review's
+request from 0 to 5: how ready it is to merge, from the pull request's
+description and diff, the findings the review reported, and the review's
+account of itself: its summary, what it checked beyond the diff and the
+sources it read. A concern of the scorer's own names what that account
+leaves out, such as a release note no check covers, rather than guessing
+at what the review read. A different vendor's model than the review's
 makes it a second opinion.
 
 | Key                       | Default                 | What                                                                                       | From a `.kritika.yaml`                     |

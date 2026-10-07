@@ -122,7 +122,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	}
 	// A finding on a line the diff does not show has no inline comment, but
 	// weighs on the score, the counts and the approval all the same.
-	if note := p.judge(job, review.Result{Findings: slices.Concat(res.Findings, unanchored)}, diff); note != "" {
+	if note := p.judge(job, review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}, diff); note != "" {
 		notes = append(notes, note)
 	}
 	if note := skillsNote(run.SkillsOffered, run.SkillsOpened); note != "" {
