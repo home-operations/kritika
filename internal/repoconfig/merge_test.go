@@ -212,7 +212,7 @@ func TestMerge(t *testing.T) {
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
 		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},
-		{name: "a secret reference does not decode", doc: "review: { model: { env: KEY } }\n", wantErr: "cannot unmarshal"},
+		{name: "a secret reference does not decode", doc: "review: { model: { env: KEY } }\n", wantErr: "cannot construct"},
 		{name: "a file that does not parse leaves the admin's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}
 	for _, tt := range tests {
