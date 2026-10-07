@@ -63,8 +63,9 @@ From the top, each part shown only when it has something to say:
    notes, such as files left out of the prompt or a `.kritika.yaml` value
    that was dropped.
 8. The footer: `Reviews (3) · Last reviewed commit: "subject" · <model>`,
-   ending with the pull request's cost when the admin turns `review.cost`
-   on.
+   the model as `<model>/<effort>` when a [`review.effort`](models.md#effort)
+   is set, ending with the pull request's cost when the admin turns
+   `review.cost` on.
 
 The re-run badge at the top opens the pull request's page on the
 dashboard. A repository can replace the comment with its own template

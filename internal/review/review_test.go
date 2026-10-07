@@ -432,7 +432,8 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	if err := CheckFollowUp(json.RawMessage(`{"reply": "Because the base value moved."}`)); err != nil {
 		t.Fatalf("CheckFollowUp = %v", err)
 	}
-	if !strings.HasPrefix(FollowUpBody(reply, "m"), reply) || !strings.Contains(FollowUpBody(reply, "m"), "kritika follow-up with m") {
+	if !strings.HasPrefix(FollowUpBody(reply, "m", ""), reply) || !strings.Contains(FollowUpBody(reply, "m", ""), "kritika follow-up with m.") ||
+		!strings.Contains(FollowUpBody(reply, "m", "low"), "kritika follow-up with m/low.") {
 		t.Fatal("FollowUpBody")
 	}
 }

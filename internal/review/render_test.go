@@ -179,6 +179,11 @@ func TestRenderSummaryCost(t *testing.T) {
 	if !strings.Contains(body, "<sub>Reviews (1) · Last reviewed commit: `0123456` · vendor/model-x · $1.23</sub>") {
 		t.Fatalf("footer without the cost:\n%s", body)
 	}
+	// The model's effort, when one is set, follows the model after a slash.
+	d.Effort = "high"
+	if body, _ := RenderSummary(t.Context(), Templates{}, d); !strings.Contains(body, " · vendor/model-x/high · $1.23</sub>") {
+		t.Fatalf("footer without the effort:\n%s", body)
+	}
 	for amount, want := range map[float64]string{0: "$0", 0.0042: "$0.0042", 0.01: "$0.01", 12.5: "$12.50"} {
 		if got := FormatUSD(amount); got != want {
 			t.Errorf("FormatUSD(%v) = %q, want %q", amount, got, want)

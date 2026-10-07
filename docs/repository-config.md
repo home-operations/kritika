@@ -260,6 +260,7 @@ The summary template's dot is the review:
 | `.HeadSubject`                                                               | the head commit's subject line, cut to 40 characters and escaped for Markdown                                            |
 | `.Reviews`                                                                   | how many reviews of the pull request this one makes                                                                      |
 | `.Model`                                                                     | the review model                                                                                                         |
+| `.Effort`                                                                    | the effort it reasoned at, "" for the provider's default                                                                 |
 | `.Cost`                                                                      | what the pull request's reviews have cost, "" unless the admin's `review.cost` is on                                     |
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                    |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
