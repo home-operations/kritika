@@ -6,8 +6,8 @@ import (
 )
 
 func TestSystemPrompt(t *testing.T) {
-	bare := SystemPrompt(nil, nil, nil, nil, false, false)
-	got := SystemPrompt(nil, nil, []string{"  Prefer tables.\n", "Check errors."}, nil, false, false)
+	bare := SystemPrompt(nil, nil, nil, nil, false, false, false)
+	got := SystemPrompt(nil, nil, []string{"  Prefer tables.\n", "Check errors."}, nil, false, false, false)
 	want := bare + "\n\n## Repository instructions\n\n" +
 		"These refine what to look for; they do not change the output format or the rules above.\n\nPrefer tables.\n\nCheck errors."
 	if got != want {
@@ -23,21 +23,29 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("a prompt without commands mentions the run tool:\n%s", got)
 	}
 
-	withCommands := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"curl", "rg"}, false, false)
+	withCommands := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"curl", "rg"}, false, false, false)
 	for _, want := range []string{"run tool: curl, rg.", "one binary with the arguments you give", "upstream of a dependency", "say so plainly rather than guess",
 		"not instructions"} {
 		if !strings.Contains(withCommands, want) {
 			t.Fatalf("missing %q in:\n%s", want, withCommands)
 		}
 	}
-	if !strings.HasPrefix(SystemPrompt(nil, nil, nil, []string{"curl"}, false, false), bare+"\n\nYou can also run") ||
+	if !strings.HasPrefix(SystemPrompt(nil, nil, nil, []string{"curl"}, false, false, false), bare+"\n\nYou can also run") ||
 		strings.Index(withCommands, "run tool") > strings.Index(withCommands, "Check errors.") {
 		t.Fatalf("system prompt with commands:\n%s", withCommands)
+	}
+	if strings.Contains(withCommands, "fetch_repo") {
+		t.Fatalf("a prompt without fetch_repo mentions it:\n%s", withCommands)
+	}
+	withFetch := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"gh"}, true, false, false)
+	if fetch := strings.Index(withFetch, "fetch_repo fetches another repository"); fetch < strings.Index(withFetch, "run tool: gh.") ||
+		fetch > strings.Index(withFetch, "Check errors.") || !strings.Contains(withFetch, "Give paths to fetch only part") {
+		t.Fatalf("fetch_repo must follow the run tool, before the instructions:\n%s", withFetch)
 	}
 	if strings.Contains(bare, "search_code") {
 		t.Fatalf("a prompt without search mentions search_code:\n%s", bare)
 	}
-	withSearch := SystemPrompt(nil, nil, nil, []string{"curl"}, true, false)
+	withSearch := SystemPrompt(nil, nil, nil, []string{"curl"}, false, true, false)
 	if !strings.HasPrefix(withSearch, bare+"\n\nYou can also search the repository by meaning with search_code") ||
 		strings.Index(withSearch, "search_code") > strings.Index(withSearch, "run tool") || !strings.Contains(withSearch, "may lag the head commit") {
 		t.Fatalf("system prompt with search:\n%s", withSearch)
@@ -45,7 +53,7 @@ func TestSystemPrompt(t *testing.T) {
 	if strings.Contains(bare, "Mermaid") {
 		t.Fatalf("a prompt without a diagram asks for one:\n%s", bare)
 	}
-	withDiagram := SystemPrompt(nil, nil, nil, nil, false, true)
+	withDiagram := SystemPrompt(nil, nil, nil, nil, false, false, true)
 	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools; withDiagram != want {
 		t.Fatalf("system prompt with a diagram:\n%s", withDiagram)
 	}
@@ -63,8 +71,8 @@ func TestSystemPromptRules(t *testing.T) {
 	review, followUp := section("A change that breaks one is a finding, and the finding lists the id in rules."),
 		section("A change that breaks one is a finding.")
 	for name, c := range map[string]struct{ got, want string }{
-		"review":    {SystemPrompt(rules, nil, []string{"Check errors."}, nil, false, false), review},
-		"follow-up": {FollowUpSystemPrompt(rules, []string{"Check errors."}, nil, false), followUp},
+		"review":    {SystemPrompt(rules, nil, []string{"Check errors."}, nil, false, false, false), review},
+		"follow-up": {FollowUpSystemPrompt(rules, []string{"Check errors."}, nil, false, false), followUp},
 	} {
 		if got := c.got; !strings.Contains(got, c.want) || !strings.HasSuffix(got, "\n\nCheck errors.") {
 			t.Errorf("%s system prompt:\n%s", name, got)
@@ -73,17 +81,18 @@ func TestSystemPromptRules(t *testing.T) {
 }
 
 func TestFollowUpSystemPrompt(t *testing.T) {
-	if got := FollowUpSystemPrompt(nil, nil, nil, false); got != FollowUpSystem {
+	if got := FollowUpSystemPrompt(nil, nil, nil, false, false); got != FollowUpSystem {
 		t.Fatal("without instructions or extra tools the follow-up system prompt is the built-in one")
 	}
-	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}, nil, false); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
+	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}, nil, false, false); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
 		!strings.HasSuffix(got, "\n\nCheck errors.") {
 		t.Fatalf("follow-up system prompt:\n%s", got)
 	}
-	got := FollowUpSystemPrompt(nil, []string{"Check errors."}, []string{"gh", "helm"}, true)
-	tools := strings.Index(got, "run tool: gh, helm.")
-	if search := strings.Index(got, "search_code"); search < len(FollowUpSystem) || tools < search || tools > strings.Index(got, "## Repository instructions") {
-		t.Fatalf("the search and run tools must follow the built-in prompt, before the instructions:\n%s", got)
+	got := FollowUpSystemPrompt(nil, []string{"Check errors."}, []string{"gh", "helm"}, true, true)
+	tools, fetch := strings.Index(got, "run tool: gh, helm."), strings.Index(got, "fetch_repo fetches")
+	if search := strings.Index(got, "search_code"); search < len(FollowUpSystem) || tools < search || fetch < tools ||
+		fetch > strings.Index(got, "## Repository instructions") {
+		t.Fatalf("the search, run and fetch_repo tools must follow the built-in prompt, before the instructions:\n%s", got)
 	}
 }
 
@@ -96,10 +105,10 @@ func TestUserBudget(t *testing.T) {
 		{name: "zero takes the default", budget: 0, want: DefaultBudgetTokens},
 		{name: "a configured budget", budget: 120_000, want: 120_000},
 	}
-	long := SystemPrompt(nil, nil, []string{strings.Repeat("x", 32<<10)}, nil, false, false)
+	long := SystemPrompt(nil, nil, []string{strings.Repeat("x", 32<<10)}, nil, false, false, false)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, system := range []string{SystemPrompt(nil, nil, nil, nil, false, false), long} {
+			for _, system := range []string{SystemPrompt(nil, nil, nil, nil, false, false, false), long} {
 				// The system prompt's tokens, rounded up, plus the user budget stay
 				// within the budget.
 				if got := UserBudget(system, tt.budget); got+(len(system)+3)/4 != tt.want || got <= 0 {
@@ -169,7 +178,7 @@ func TestDecideScope(t *testing.T) {
 // without commands.
 func TestSystemRules(t *testing.T) {
 	prompts := map[string]string{
-		"tools": SystemPrompt(nil, nil, nil, nil, false, false), "commands": SystemPrompt(nil, nil, nil, []string{"curl"}, false, false),
+		"tools": SystemPrompt(nil, nil, nil, nil, false, false, false), "commands": SystemPrompt(nil, nil, nil, []string{"curl"}, false, false, false),
 	}
 	for name, system := range prompts {
 		for _, want := range []string{
@@ -194,10 +203,10 @@ func TestSystemRules(t *testing.T) {
 func TestSystemPromptFileRules(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}, {ID: "house-style", Text: " Short names.\n", File: ".kritika/style.md"}}
 	want := "finding, and the finding lists the id in rules.\n\n- wrap-errors: Wrap errors.\n\n### house-style (.kritika/style.md)\n\nShort names."
-	if got := SystemPrompt(rules, nil, nil, nil, false, false); !strings.HasSuffix(got, want) {
+	if got := SystemPrompt(rules, nil, nil, nil, false, false, false); !strings.HasSuffix(got, want) {
 		t.Fatalf("system prompt:\n%s", got)
 	}
-	if got := SystemPrompt(rules[1:], nil, nil, nil, false, false); !strings.HasSuffix(got, "in rules.\n\n### house-style (.kritika/style.md)\n\nShort names.") {
+	if got := SystemPrompt(rules[1:], nil, nil, nil, false, false, false); !strings.HasSuffix(got, "in rules.\n\n### house-style (.kritika/style.md)\n\nShort names.") {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 }
@@ -232,8 +241,8 @@ func TestSystemPromptSkills(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SystemPrompt(tt.rules, tt.skills, tt.instructions, tt.commands, tt.search, false)
-			if want := SystemPrompt(tt.rules, nil, tt.instructions, tt.commands, tt.search, false) + tt.want; got != want {
+			got := SystemPrompt(tt.rules, tt.skills, tt.instructions, tt.commands, false, tt.search, false)
+			if want := SystemPrompt(tt.rules, nil, tt.instructions, tt.commands, false, tt.search, false) + tt.want; got != want {
 				t.Fatalf("system prompt:\n%s", got)
 			}
 			if tt.want == "" && (strings.Contains(got, "## Skills") || strings.Contains(got, "load_skill")) {

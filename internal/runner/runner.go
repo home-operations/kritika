@@ -156,11 +156,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 			tools.skills = &skillTool{base: baseTree, skills: in.skills, maxBytes: p.Agent.limits().MaxToolOutputBytes}
 		}
 		var cleanup func()
-		tools.run, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)
+		tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken,
+			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
 		prompt = newAgentPrompt(p, in, packView{
 			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
-		}, tools.commands(), tools.search != nil)
+		}, tools.commands(), tools.fetch != nil, tools.search != nil)
 		if p.Prompt.Continue != nil && scope == review.ScopeIncremental {
 			prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, headTree, ignore, tools.extra()), res.DeltaDiff, logger)
 		}

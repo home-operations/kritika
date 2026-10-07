@@ -56,10 +56,11 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 	similar, search := similarContext(ctx, p, secrets, res, logger)
 	chunks, tools.search = append(chunks, similar...), search
 	var cleanup func()
-	tools.run, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), secrets.GitToken, p.Agent.limits().MaxToolOutputBytes, logger)
+	tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), secrets.GitToken,
+		p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
 
-	system := review.FollowUpSystemPrompt(in.rules, in.instructions, tools.commands(), tools.search != nil)
+	system := review.FollowUpSystemPrompt(in.rules, in.instructions, tools.commands(), tools.fetch != nil, tools.search != nil)
 	pr := p.Prompt.PullRequest
 	user := review.BuildFollowUp(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body, BaseRef: pr.BaseRef,
