@@ -134,6 +134,16 @@ func TestFetchRepoTool(t *testing.T) {
 	}
 }
 
+// TestFetchRepoMissingPaths: a fetch names the paths it found nothing
+// under, and where in the tree their last segments are.
+func TestFetchRepoMissingPaths(t *testing.T) {
+	url, tool := servedRepo(t)
+	out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1", "paths": []string{"a.go", "README.md", "nope"}}))
+	if err != nil || !strings.HasSuffix(out, "1 files, 1 KiB. Nothing is under a.go; these paths end in it: pkg/a.go. Nothing is under nope.") {
+		t.Fatalf("a fetch of paths the tree lacks = %q, %v", out, err)
+	}
+}
+
 // TestFetchRepoDiffPastBudget: a diff that would take the files written
 // past the review's budget is returned but not kept in a file.
 func TestFetchRepoDiffPastBudget(t *testing.T) {
