@@ -54,14 +54,14 @@ the App is installed on.
 
 **Events:**
 
-| Event                       | What kritika uses it for                                                |
-| --------------------------- | ----------------------------------------------------------------------- |
-| Pull request                | reviews when a pull request opens, is pushed to or is labelled; closing |
-| Pull request review comment | mentions in inline threads                                              |
-| Pull request review thread  | a resolved finding thread dismisses its finding                         |
-| Issue comment               | mentions in the conversation                                            |
-| Push                        | keeping the index of the default branch current                         |
-| Repository                  | a repository created, archived or unarchived                            |
+| Event                       | What kritika uses it for                                                    |
+| --------------------------- | --------------------------------------------------------------------------- |
+| Pull request                | reviews when a pull request opens, is pushed to or is labelled; closing     |
+| Pull request review comment | mentions in inline threads                                                  |
+| Pull request review thread  | a resolved finding thread dismisses its finding                             |
+| Issue comment               | mentions in the conversation                                                |
+| Push                        | keeping the index of the default branch current                             |
+| Repository                  | a repository created, archived, unarchived, renamed, transferred or deleted |
 
 Installation events arrive without subscribing.
 

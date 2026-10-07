@@ -38,8 +38,9 @@ const (
 	KindThread       Kind = "thread"
 	KindPush         Kind = "push"
 	KindInstallation Kind = "installation"
-	// KindRepository is a repository created, archived or unarchived; its
-	// Repository says what the forge now says of it.
+	// KindRepository is a repository created, archived, unarchived,
+	// renamed, transferred or deleted; its Repository says what the forge
+	// now says of it.
 	KindRepository Kind = "repository"
 	KindIgnored    Kind = "ignored"
 )
@@ -54,6 +55,9 @@ type Event struct {
 	Delivery string
 	// Repository is the repository the event concerns, when it has one.
 	Repository *Repository
+	// Previous is the full name a repository renamed or transferred had
+	// before.
+	Previous string
 	// Account is the forge account the event concerns: the repository owner,
 	// or the installation account for installation events.
 	Account string
@@ -444,12 +448,28 @@ func parsePush(delivery string, body []byte) (Event, error) {
 
 // repositoryActions are the repository event actions that change what
 // kritika records of one; the rest, such as edited, change nothing it keeps.
-var repositoryActions = map[string]bool{"created": true, "archived": true, "unarchived": true}
+var repositoryActions = map[string]bool{
+	"created": true, "archived": true, "unarchived": true, "renamed": true, "transferred": true, "deleted": true,
+}
 
 func parseRepository(delivery string, body []byte) (Event, error) {
 	var p struct {
 		Action     string `json:"action"`
 		Repository ghRepo `json:"repository"`
+		// A rename's changes name the old name, a transfer's the old owner.
+		Changes struct {
+			Repository struct {
+				Name struct {
+					From string `json:"from"`
+				} `json:"name"`
+			} `json:"repository"`
+			Owner struct {
+				From struct {
+					User         ghUser `json:"user"`
+					Organization ghUser `json:"organization"`
+				} `json:"from"`
+			} `json:"owner"`
+		} `json:"changes"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Event{}, fmt.Errorf("webhook: repository payload: %w", err)
@@ -457,10 +477,18 @@ func parseRepository(delivery string, body []byte) (Event, error) {
 	if !repositoryActions[p.Action] {
 		return Event{Kind: KindIgnored, Action: evRepository, Delivery: delivery}, nil
 	}
-	return Event{
+	ev := Event{
 		Kind: KindRepository, Action: p.Action, Delivery: delivery,
 		Repository: p.Repository.event(), Account: p.Repository.Owner.Login,
-	}, nil
+	}
+	if owner, name, ok := strings.Cut(p.Repository.FullName, "/"); ok {
+		from := p.Changes.Owner.From
+		previous := cmp.Or(from.Organization.Login, from.User.Login, owner) + "/" + cmp.Or(p.Changes.Repository.Name.From, name)
+		if previous != p.Repository.FullName {
+			ev.Previous = previous
+		}
+	}
+	return ev, nil
 }
 
 func parseInstallation(delivery string, body []byte) (Event, error) {
