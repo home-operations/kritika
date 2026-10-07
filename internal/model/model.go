@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -114,6 +115,34 @@ type ToolChoice struct {
 	Name string
 }
 
+// Effort is how hard a model reasons on a step, the reasoning effort of
+// the providers' APIs; the zero value leaves it to the provider's default.
+type Effort string
+
+// Effort levels, lowest first. OpenRouter and OpenAI take them all; the
+// Anthropic Messages API has no level under low, so its adapter sends
+// EffortNone and EffortMinimal as EffortLow. A level a model lacks is the
+// provider's to map or refuse.
+const (
+	EffortNone    Effort = "none"
+	EffortMinimal Effort = "minimal"
+	EffortLow     Effort = "low"
+	EffortMedium  Effort = "medium"
+	EffortHigh    Effort = "high"
+	EffortXHigh   Effort = "xhigh"
+	EffortMax     Effort = "max"
+)
+
+// Efforts lists the effort levels, lowest first.
+var Efforts = []Effort{EffortNone, EffortMinimal, EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
+
+// EffortLevels lists the effort levels for a message.
+const EffortLevels = string(EffortNone) + ", " + string(EffortMinimal) + ", " + string(EffortLow) + ", " +
+	string(EffortMedium) + ", " + string(EffortHigh) + ", " + string(EffortXHigh) + " or " + string(EffortMax)
+
+// Valid reports whether e is an effort level.
+func (e Effort) Valid() bool { return slices.Contains(Efforts, e) }
+
 // StopReason is why the model ended its turn.
 type StopReason string
 
@@ -165,6 +194,9 @@ type StepRequest struct {
 	ToolChoice ToolChoice
 	// MaxTokens bounds the answer; zero means the adapter's default.
 	MaxTokens int64
+	// Effort is how hard the model reasons; empty means the provider's
+	// default.
+	Effort Effort
 }
 
 // StepResponse is the model's turn and what it cost.
@@ -203,6 +235,8 @@ type CompletionRequest struct {
 	Schema     json.RawMessage
 	SchemaName string
 	MaxTokens  int64
+	// Effort is how hard the model reasons, as StepRequest.Effort.
+	Effort Effort
 }
 
 // CompletionResponse is the answer plus what it cost.
@@ -296,6 +330,9 @@ func checkRequest(req StepRequest) error {
 		return fmt.Errorf("model: tool choice mode %q", c.Mode)
 	case (c.Mode == ToolChoiceTool) != (c.Name != ""):
 		return fmt.Errorf("model: tool choice %s must name a tool exactly when the mode is %s", c.Mode, ToolChoiceTool)
+	}
+	if req.Effort != "" && !req.Effort.Valid() {
+		return fmt.Errorf("model: effort must be %s, got %q", EffortLevels, req.Effort)
 	}
 	return nil
 }
