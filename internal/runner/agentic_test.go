@@ -271,6 +271,36 @@ func TestAgentErrorsAreMasked(t *testing.T) {
 	}
 }
 
+func TestKeptConversation(t *testing.T) {
+	secrets := Secrets{GitToken: "git-token", GatewayToken: "krk_run_token"}
+	conv := func(text string, tokens int64) *agent.Conversation {
+		return &agent.Conversation{System: "s", Messages: []model.Message{{Role: model.RoleUser, Text: text}}, Tokens: tokens}
+	}
+	tests := []struct {
+		name string
+		c    *agent.Conversation
+		kept bool
+	}{
+		{"none", nil, false},
+		{"short enough", conv("the diff", agent.ContinueTokens-1), true},
+		{"too long to carry on", conv("the diff", agent.ContinueTokens), false},
+		{"holding the git token", conv("a log said git-token", 10), false},
+		{"holding the run token", conv(`{"auth":"krk_run_token"}`, 10), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := keptConversation(tt.c, secrets, slog.New(slog.DiscardHandler))
+			if (got != nil) != tt.kept {
+				t.Fatalf("kept = %s, want kept %v", got, tt.kept)
+			}
+			var back agent.Conversation
+			if tt.kept && (json.Unmarshal(got, &back) != nil || back.Messages[0].Text != "the diff") {
+				t.Fatalf("kept conversation = %s", got)
+			}
+		})
+	}
+}
+
 // scriptedStepper answers each step with the next scripted response.
 type scriptedStepper struct {
 	mu    sync.Mutex

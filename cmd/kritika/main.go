@@ -550,9 +550,14 @@ func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *
 }
 
 // retentionSweepInterval is how often the leader deletes model-call
-// transcripts, review diffs, disabled repositories' indexes and dashboard
-// sessions past their retention window.
+// transcripts, review diffs, agent conversations, disabled repositories'
+// indexes and dashboard sessions past their retention window.
 const retentionSweepInterval = time.Hour
+
+// conversationRetention is how long an agent's conversation is kept for a
+// re-review to carry on: well past any provider's cache window, after
+// which carrying it on would cost more than starting afresh.
+const conversationRetention = 2 * time.Hour
 
 // retentionStore is the subset of *store.Store that retentionSweep needs,
 // narrowed so it can be exercised in tests with a fake.
@@ -561,12 +566,14 @@ type retentionStore interface {
 	SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error)
 	SweepSessions(ctx context.Context, now time.Time) (int64, error)
 	SweepDisabledIndexes(ctx context.Context, grace time.Duration) (int64, error)
+	SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
 // retentionSweep runs once immediately, then every interval until ctx ends,
 // deleting model-call transcripts older than the current configuration's
-// retention window and the indexes of repositories disabled for longer than its
-// disabledIndexGrace (owner pool, bypassing row-level security), and
+// retention window, the indexes of repositories disabled for longer than its
+// disabledIndexGrace and agent conversations older than
+// conversationRetention (owner pool, bypassing row-level security), and
 // expired dashboard sessions (app pool). A sweep failure is logged, never
 // fatal: it just leaves stale rows for the next tick.
 func retentionSweep(ctx context.Context, st retentionStore, current *configfile.Current, interval time.Duration, logger *slog.Logger) {
@@ -592,6 +599,8 @@ func retentionSweep(ctx context.Context, st retentionStore, current *configfile.
 		report("dashboard sessions", "rows", n, err)
 		n, err = st.SweepDisabledIndexes(ctx, current.Get().DisabledIndexGrace())
 		report("disabled repositories' indexes", "repositories", n, err)
+		n, err = st.SweepConversations(ctx, conversationRetention)
+		report("agent conversations", "rows", n, err)
 		select {
 		case <-ctx.Done():
 			return

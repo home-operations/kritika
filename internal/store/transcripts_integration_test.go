@@ -228,6 +228,52 @@ func TestSweepDiffs(t *testing.T) {
 	}
 }
 
+func TestSweepConversations(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	alpha := accountID(t, s, "alpha")
+	insert := func(age string) string {
+		t.Helper()
+		var id string
+		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind) VALUES ($1, 'review') RETURNING id`, alpha).Scan(&id)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Only a runner writes a conversation; the owner stands in for it.
+		if _, err := s.owner.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, created_at)
+			VALUES ($1, $2, $3, '{"system":"s"}', 10, now() - $4::interval)`, id, alpha, id, age); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	old, older, fresh := insert("3 hours"), insert("1 day"), insert("1 minute")
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(ctx, `DELETE FROM agent_conversations WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
+		_, _ = s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
+	})
+	batch := diffSweepBatch
+	diffSweepBatch = 1
+	t.Cleanup(func() { diffSweepBatch = batch })
+	if _, err := s.SweepConversations(ctx, 0); err == nil {
+		t.Fatal("a zero retention was accepted")
+	}
+	if n, err := s.SweepConversations(ctx, 2*time.Hour); err != nil || n < 2 {
+		t.Fatalf("swept %d, %v; want the two old conversations", n, err)
+	}
+	var left []string
+	if err := s.owner.QueryRow(ctx, `SELECT array_agg(runner_run_id::text) FROM agent_conversations WHERE runner_run_id IN ($1, $2, $3)`,
+		old, older, fresh).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 1 || left[0] != fresh {
+		t.Fatalf("left = %v, want only %s", left, fresh)
+	}
+}
+
 func TestSweepSessions(t *testing.T) {
 	s := openStore(t)
 	ctx := context.Background()
