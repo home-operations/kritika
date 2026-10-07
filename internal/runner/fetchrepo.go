@@ -164,7 +164,10 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	if req.From != "" {
 		page = "compare/" + req.From + "..." + req.Ref
 	}
-	t.record(req.URL, page)
+	// A fetch that found nothing under its paths read nothing.
+	if res.Files > 0 || res.Diff != "" {
+		t.record(req.URL, page)
+	}
 
 	rel := upstreamRel + "/" + name
 	var b strings.Builder
@@ -220,7 +223,6 @@ func (t *fetchRepoTool) listTags(ctx context.Context, rawURL, match string) (str
 	if err != nil {
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
-	t.record(rawURL, "tags")
 	return tagList(rawURL, match, tags), nil
 }
 
@@ -298,8 +300,8 @@ func withText(tags []string, text string) []string {
 func (t *fetchRepoTool) Sources() []string { return append([]string{}, t.sources...) }
 
 // record keeps a page of what the tool read as a source: on GitHub page
-// under the repository, such as tree/<ref>, compare/<from>...<ref> or
-// tags, and elsewhere the repository.
+// under the repository, tree/<ref> or compare/<from>...<ref>, and
+// elsewhere the repository.
 func (t *fetchRepoTool) record(rawURL, page string) {
 	u, err := url.Parse(rawURL)
 	if err != nil {

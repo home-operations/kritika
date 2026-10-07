@@ -34,10 +34,13 @@ func TestMain(m *testing.M) {
 // helper is the command: "exit N" exits N, "sleep" outlives any test
 // timeout, "flood N" writes N bytes, "fail-after N" writes N bytes and then
 // an error to stderr, "unknown X" fails as gh does for a command X it lacks
-// and "quote X" prints the same and succeeds, and anything else prints the
-// working directory, the environment and the arguments.
+// and "quote X" prints the same and succeeds, "--fail-test ..." fails, and
+// anything else prints the working directory, the environment and the
+// arguments.
 func helper(args []string) int {
 	switch {
+	case len(args) > 0 && args[0] == "--fail-test":
+		return 22
 	case len(args) == 2 && (args[0] == "unknown" || args[0] == "quote"):
 		fmt.Fprintf(os.Stderr, "unknown command %q for \"gh\"\n\nUsage:  gh <command> <subcommand> [flags]\n\nAvailable commands:\n  api\n", args[1])
 		if args[0] == "quote" {
@@ -192,6 +195,8 @@ func TestRunToolRecordsCurlSources(t *testing.T) {
 				`{"command":"curl","args":["file:///proc/self/environ","ftp://example.com/x","not a url"]}`,
 				// Only curl's arguments are sources.
 				`{"command":"rg","args":["https://other.example.com/"]}`,
+				// A call that failed read nothing.
+				`{"command":"curl","args":["--fail-test","https://failed.example.com/"]}`,
 			} {
 				if _, err := rt.Run(t.Context(), json.RawMessage(input)); err != nil {
 					t.Fatal(err)

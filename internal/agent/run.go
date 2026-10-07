@@ -149,14 +149,6 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	if !slices.Contains(rt.ran, req.Command) {
 		rt.ran = append(rt.ran, req.Command)
 	}
-	switch req.Command {
-	case "curl":
-		rt.record(req.Args)
-	case "gh":
-		if s := ghSource(req.Args); s != "" {
-			rt.record([]string{s})
-		}
-	}
 
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
 	defer cancel()
@@ -179,6 +171,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 	}
 	code := cmd.ProcessState.ExitCode()
+	if code == 0 {
+		rt.recordRead(req.Command, req.Args)
+	}
 	text, dropped, stderr := rt.mask(out.String()), out.dropped, rt.mask(errs.String())
 	if req.Command == "gh" && code != 0 {
 		if hint := ghUnknownCommand(text); hint != "" {
@@ -272,6 +267,20 @@ func refusedArgs(command string, args []string) string {
 		}
 	}
 	return ""
+}
+
+// recordRead keeps as sources what a command that succeeded read: the
+// URLs curl was given and the resource a gh call names. One that failed
+// read nothing a review rests on.
+func (rt *RunTool) recordRead(command string, args []string) {
+	switch command {
+	case "curl":
+		rt.record(args)
+	case "gh":
+		if s := ghSource(args); s != "" {
+			rt.record([]string{s})
+		}
+	}
 }
 
 // record keeps each http(s) URL in args as a source, without any

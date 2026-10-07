@@ -144,6 +144,32 @@ func TestFetchRepoMissingPaths(t *testing.T) {
 	}
 }
 
+// TestFetchRepoSourcesRead: only a fetch that found files or a diff is a
+// source; a tag listing and a fetch that found nothing are not.
+func TestFetchRepoSourcesRead(t *testing.T) {
+	url, tool := servedRepo(t)
+	for _, in := range []map[string]any{
+		{"url": url, "tags": ""},
+		{"url": url, "ref": "v1", "paths": []string{"nope"}},
+	} {
+		if _, err := tool.Run(t.Context(), fetchInput(t, in)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := tool.Sources(); len(got) != 0 {
+		t.Fatalf("sources = %q, want none", got)
+	}
+	if _, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"nope"}})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "paths": []string{"pkg"}})); err != nil {
+		t.Fatal(err)
+	}
+	if got := tool.Sources(); !slices.Equal(got, []string{strings.TrimSuffix(url, ".git")}) {
+		t.Fatalf("sources = %q, want the repository once, for the fetch with files", got)
+	}
+}
+
 // TestFetchRepoDiffPastBudget: a diff that would take the files written
 // past the review's budget is returned but not kept in a file.
 func TestFetchRepoDiffPastBudget(t *testing.T) {
@@ -164,12 +190,11 @@ func TestFetchRepoSources(t *testing.T) {
 		{"https://github.com/a/b.git", "tree/v2"},
 		{"https://github.com/a/b", "compare/v1...v2"},
 		{"https://github.com/a/b/", "tree/v2"},
-		{"https://github.com/a/b", "tags"},
 		{"https://gitlab.com/g/p.git", "tree/v2"},
 	} {
 		tool.record(read[0], read[1])
 	}
-	want := []string{"https://github.com/a/b/tree/v2", "https://github.com/a/b/compare/v1...v2", "https://github.com/a/b/tags", "https://gitlab.com/g/p"}
+	want := []string{"https://github.com/a/b/tree/v2", "https://github.com/a/b/compare/v1...v2", "https://gitlab.com/g/p"}
 	if got := tool.Sources(); !slices.Equal(got, want) {
 		t.Fatalf("sources = %q, want %q", got, want)
 	}
