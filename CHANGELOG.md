@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.43](https://github.com/home-operations/kritika/compare/0.0.42...0.0.43) (2026-10-07)
+
+
+### Features
+
+* **agent:** answer a gh call without its command with the likely one ([#652](https://github.com/home-operations/kritika/issues/652)) ([436fef9](https://github.com/home-operations/kritika/commit/436fef9305d2b27e2757227fba5ea4904dd6157b))
+* **review:** let read_file read the files fetch_repo wrote ([#653](https://github.com/home-operations/kritika/issues/653)) ([5617d3a](https://github.com/home-operations/kritika/commit/5617d3a06cbbbb0bcef4e5f5f512a88be7584891))
+* **review:** name where a path fetch_repo found nothing under is ([#654](https://github.com/home-operations/kritika/issues/654)) ([f82a889](https://github.com/home-operations/kritika/commit/f82a88953883b56bea4ab412d757213eda3e9f34))
+* **review:** show the confidence scorer what the review read ([#651](https://github.com/home-operations/kritika/issues/651)) ([6675909](https://github.com/home-operations/kritika/commit/66759090324e101fa72b72651d7533a283232265))
+
+
+### Bug Fixes
+
+* **agent:** keep the end of a command's stderr when its output is cut ([#649](https://github.com/home-operations/kritika/issues/649)) ([c55c954](https://github.com/home-operations/kritika/commit/c55c9546435e0f036c40bb71d05794a3c6f9711c))
+* **review:** list only the sources a review read something from ([#655](https://github.com/home-operations/kritika/issues/655)) ([2074d90](https://github.com/home-operations/kritika/commit/2074d900d7cff8e5c66ab5bd01c5bab5b21bc7c4))
+* **review:** read an empty fetch_repo tags beside a ref as no listing ([#648](https://github.com/home-operations/kritika/issues/648)) ([5e519f8](https://github.com/home-operations/kritika/commit/5e519f84a5450d418cc97e0188fe685059e22473))
+
+
+### Performance Improvements
+
+* **model:** leave the confidence call out of the prompt cache ([#656](https://github.com/home-operations/kritika/issues/656)) ([dfe7ec2](https://github.com/home-operations/kritika/commit/dfe7ec2307f99fb75066f685dd25dc4bfaefd71a))
+
 ## [0.0.42](https://github.com/home-operations/kritika/compare/0.0.41...0.0.42) (2026-10-07)
 
 
