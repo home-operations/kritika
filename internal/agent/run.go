@@ -112,8 +112,10 @@ func (rt *RunTool) Def() model.ToolDef {
 	}
 	if slices.Contains(rt.names, "gh") {
 		desc += " Use gh, not curl, for anything on GitHub: it is signed in to read public repositories, such as " +
-			"`gh release view <tag> -R <owner>/<repo>`, `gh api repos/<owner>/<repo>/compare/<base>...<head>` or " +
-			"`gh api repos/<owner>/<repo>/contents/<path>?ref=<tag>`."
+			"`gh release view <tag> -R <owner>/<repo>` or `gh api repos/<owner>/<repo>/contents/<path>?ref=<tag>`. " +
+			"For a version bump, read what changed between the two versions in the compare view rather than a file at " +
+			"each version: `gh api repos/<owner>/<repo>/compare/<old>...<new> --jq '.files[].filename'` lists the " +
+			"changed files, and `--jq '.files[] | select(.filename == \"<path>\") | .patch'` returns one file's diff."
 	}
 	if slices.Contains(rt.names, "curl") {
 		if rt.cfg.Proxied {
