@@ -166,11 +166,11 @@ What bounds a command:
 When the run tool offers `gh` or `curl`, which already reach the network,
 the agent also gets `fetch_repo`. It fetches another repository at a tag,
 branch or commit, such as the upstream of a dependency on any host, and
-writes its files beside the checkout for `rg` and `fd` to search, with the
-diff from an earlier ref when asked, or lists the repository's tags, so the
-agent can find a version's tag rather than guess its name. kritika makes
-the fetch itself, with go-git: the model names a repository and a ref,
-never git arguments.
+writes its files beside the checkout for `read_file` to read and `rg` and
+`fd` to search, with the diff from an earlier ref when asked, or lists the
+repository's tags, so the agent can find a version's tag rather than guess
+its name. kritika makes the fetch itself, with go-git: the model names a
+repository and a ref, never git arguments.
 
 - **Anonymous HTTPS:** an `https://` clone URL, fetched without a
   credential through the gateway. `github.com` is already allowed; any
@@ -186,6 +186,10 @@ never git arguments.
   128 MiB from the server and two minutes, and 256 MiB of files written
   across the fetches, beside the checkout. Symlinks, submodules and files
   over 1 MiB are left out, and the files are written without execute bits.
+- **Read in place:** `read_file` reads a fetched file at the path the fetch
+  names, under `../upstream/`, opening it through a root confined to that
+  directory, so neither a path nor a link reaches past it. Every other path
+  it reads from the head commit's git objects.
 
 ### More tools
 

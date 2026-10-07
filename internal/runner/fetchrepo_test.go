@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
+	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
@@ -260,5 +261,67 @@ func TestVersionOf(t *testing.T) {
 		if got := versionOf(ref); got != want {
 			t.Errorf("versionOf(%q) = %q, want %q", ref, got, want)
 		}
+	}
+}
+
+func TestFetchedReadFile(t *testing.T) {
+	url, fetch := servedRepo(t)
+	if _, err := fetch.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "paths": []string{"pkg"}})); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(fetch.dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	// A fetch keeps a diff larger than any file it writes.
+	big := strings.Repeat("+a line of a long diff\n", (fetchDiffBytes-1)/len("+a line of a long diff\n"))
+	if err := os.WriteFile(filepath.Join(fetch.dir, "9-repo@v9.diff"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fetch.dir, "huge.diff"), []byte(big+big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	head := tree(t, map[string]string{"main.go": "package main\n"})
+
+	plain := offeredTools(Spec{Agent: &AgentLimits{}, Prompt: &Prompt{}}, head, nil, nil)[0]
+	if _, err := plain.Run(t.Context(), fetchInput(t, map[string]any{"path": "../upstream/1-repo@v2/pkg/a.go"})); err == nil ||
+		!strings.Contains(err.Error(), "escapes the tree") || strings.Contains(plain.Def().Description, "fetch_repo") {
+		t.Fatalf("without fetch_repo, read_file reads the head alone: %v", err)
+	}
+	read := offeredTools(Spec{Agent: &AgentLimits{}, Prompt: &Prompt{}}, head, nil, []agent.Tool{fetch})[0]
+	if d := read.Def(); d.Name != "read_file" || !strings.HasSuffix(d.Description, "It also reads the files fetch_repo wrote, at the paths it names under ../upstream/.") {
+		t.Fatalf("def = %+v", d)
+	}
+	for _, tt := range []struct {
+		name      string
+		in        map[string]any
+		want, err string
+	}{
+		{"a fetched file", map[string]any{"path": "../upstream/1-repo@v2/pkg/a.go"}, "1\tpackage pkg\n2\t\n3\tfunc A() {}", ""},
+		{"lines of it", map[string]any{"path": "../upstream/1-repo@v2/pkg/a.go", "start_line": 3, "end_line": 3}, "3\tfunc A() {}", ""},
+		{"a file of the head", map[string]any{"path": "main.go"}, "1\tpackage main", ""},
+		{"a file the fetch left out", map[string]any{"path": "../upstream/1-repo@v2/README.md"}, "", "no such file"},
+		{"a directory", map[string]any{"path": "../upstream/1-repo@v2/pkg"}, "", "a directory"},
+		{"a path out of the fetch directory", map[string]any{"path": "../upstream/../secret"}, "", "escapes the tree"},
+		{"a link out of the fetch directory", map[string]any{"path": "../upstream/link"}, "", "agent: read_file: ../upstream/link"},
+		{"lines of a diff over a file's limit", map[string]any{"path": "../upstream/9-repo@v9.diff", "start_line": 90000, "end_line": 90000},
+			"90000\t+a line of a long diff", ""},
+		{"a file over a diff's limit", map[string]any{"path": "../upstream/huge.diff", "start_line": 1, "end_line": 1}, "", "over the 4194304 byte limit"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := read.Run(t.Context(), fetchInput(t, tt.in))
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) || strings.Contains(got, "secret") {
+					t.Fatalf("read = %q, %v; want an error holding %q", got, err, tt.err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("read = %q, %v; want %q", got, err, tt.want)
+			}
+		})
 	}
 }

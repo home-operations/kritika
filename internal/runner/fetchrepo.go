@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -71,8 +73,8 @@ var fetchRepoSchema = json.RawMessage(`{
 
 // fetchRepoTool is fetch_repo: it fetches a repository other than the one
 // under review at a ref, and writes its files under dir, beside the
-// checkout, for the run tool's commands to search, with the diff from an
-// earlier ref when asked.
+// checkout, for read_file to read and the run tool's commands to search,
+// with the diff from an earlier ref when asked.
 type fetchRepoTool struct {
 	dir string
 	// transport carries the fetches; nil is upstream's default, through the
@@ -89,7 +91,7 @@ func (t *fetchRepoTool) Def() model.ToolDef {
 	return model.ToolDef{
 		Name: "fetch_repo",
 		Description: "Fetch a repository other than the one under review, such as the upstream of a dependency, at a tag, " +
-			"branch or commit, and write its files to a directory the run tool's commands can search. With from, it also " +
+			"branch or commit, and write its files to a directory read_file reads and the run tool's commands search. With from, it also " +
 			"returns the diff between the two. With tags instead of ref, it lists the repository's tags, to find the tag " +
 			fmt.Sprintf("of a version rather than guess its name. A review may fetch %d times and list tags %d times.", fetchMax, listMax),
 		InputSchema: fetchRepoSchema,
@@ -330,4 +332,76 @@ func dirName(n int, rawURL, ref string) string {
 		return '-'
 	}, fmt.Sprintf("%d-%s@%s", n, repo, ref))
 	return name[:min(len(name), dirNameMax)]
+}
+
+// fetchedReadFile is read_file that also reads the files fetch_repo wrote
+// to dir, at the paths it names under upstreamRel, and hands every other
+// path to the read_file it wraps, over the head commit.
+type fetchedReadFile struct {
+	agent.Tool
+	dir      string
+	maxBytes int
+}
+
+func (r fetchedReadFile) Def() model.ToolDef {
+	def := r.Tool.Def()
+	def.Description += " It also reads the files fetch_repo wrote, at the paths it names under " + upstreamRel + "/."
+	return def
+}
+
+func (r fetchedReadFile) Run(ctx context.Context, input json.RawMessage) (string, error) {
+	var req struct {
+		Path      string `json:"path"`
+		StartLine int    `json:"start_line"`
+		EndLine   int    `json:"end_line"`
+	}
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &req); err != nil {
+			return "", fmt.Errorf("agent: read_file: %w", err)
+		}
+	}
+	rel, ok := strings.CutPrefix(path.Clean(req.Path), upstreamRel+"/")
+	if !ok {
+		return r.Tool.Run(ctx, input)
+	}
+	content, err := readFetched(r.dir, rel)
+	if err != nil {
+		return "", fmt.Errorf("agent: read_file: %s: %w", req.Path, err)
+	}
+	out, err := agent.NumberLines(req.Path, content, req.StartLine, req.EndLine, r.maxBytes)
+	if err != nil {
+		return "", fmt.Errorf("agent: read_file: %w", err)
+	}
+	return out, nil
+}
+
+// readFetched reads the file at rel under dir. The read stays inside dir
+// whatever rel or a link in it says. A fetch writes no file over
+// MaxBlobBytes, but keeps a diff of up to fetchDiffBytes, which is read in
+// line ranges.
+func readFetched(dir, rel string) (string, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.Open(rel)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", errors.New("no such file: fetch_repo names the paths it wrote")
+	}
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	switch {
+	case err != nil:
+		return "", err
+	case info.IsDir():
+		return "", errors.New("a directory: list it with the run tool's commands")
+	case info.Size() > fetchDiffBytes:
+		return "", fmt.Errorf("%d bytes, over the %d byte limit", info.Size(), fetchDiffBytes)
+	}
+	b, err := io.ReadAll(f)
+	return string(b), err
 }
