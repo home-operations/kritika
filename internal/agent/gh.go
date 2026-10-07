@@ -1,6 +1,9 @@
 package agent
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // ghValueFlags are the gh flags whose value is the next argument, so it is
 // not taken for the path or the target a call reads.
@@ -79,3 +82,56 @@ func ownerRepo(s string) bool {
 	owner, repo, ok := strings.Cut(s, "/")
 	return ok && owner != "" && repo != "" && !strings.ContainsAny(repo, "/ ")
 }
+
+// ghUnknownCommand is what the run tool answers, in place of gh's list of
+// all its commands, when out is gh's error for a first argument that is no
+// command: what the call most likely meant. It is "" for any other output.
+func ghUnknownCommand(out string) string {
+	line, _, _ := strings.Cut(strings.TrimLeft(out, "\n"), "\n")
+	name, ok := strings.CutPrefix(line, `unknown command "`)
+	if !ok {
+		return ""
+	}
+	if name, ok = strings.CutSuffix(name, `" for "gh"`); !ok {
+		return ""
+	}
+	hint := fmt.Sprintf("unknown command %q for gh: its first argument is one of its commands, such as api, release, pr, "+
+		"issue or repo.", name)
+	first, _, spaced := strings.Cut(name, " ")
+	switch {
+	case strings.Contains(strings.TrimPrefix(first, "/"), "/"):
+		hint += fmt.Sprintf(" A REST path is read with api before it: gh api %s.", first)
+	case len(ghVerbs[first]) > 0:
+		calls := make([]string, len(ghVerbs[first]))
+		for i, c := range ghVerbs[first] {
+			calls[i] = "gh " + c + " " + first
+		}
+		if n := len(calls); n > 1 {
+			calls = append(calls[:n-2], calls[n-2]+" or "+calls[n-1])
+		}
+		hint += fmt.Sprintf(" %s is a subcommand: name its command first, as %s.", first, strings.Join(calls, ", "))
+	}
+	if spaced {
+		hint += " Each argument is an element of its own, not one string."
+	}
+	return hint
+}
+
+// ghVerbs are the reading subcommands of gh's release, pr and issue
+// commands, a call that leaves its command out starts with, and the
+// commands that have each.
+var ghVerbs = map[string][]string{
+	"view":     {ghRelease, ghPR, ghIssue},
+	"list":     {ghRelease, ghPR, ghIssue},
+	"status":   {ghPR, ghIssue},
+	"diff":     {ghPR},
+	"checks":   {ghPR},
+	"download": {ghRelease},
+}
+
+// gh's commands a subcommand belongs to.
+const (
+	ghRelease = "release"
+	ghPR      = "pr"
+	ghIssue   = "issue"
+)

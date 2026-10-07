@@ -178,8 +178,14 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
 		}
 	}
-	head := fmt.Sprintf("exit code %d\n%s", cmd.ProcessState.ExitCode(), rt.mask(out.String()))
-	return rt.result(head, out.dropped, rt.mask(errs.String())), nil
+	code := cmd.ProcessState.ExitCode()
+	text, dropped, stderr := rt.mask(out.String()), out.dropped, rt.mask(errs.String())
+	if req.Command == "gh" && code != 0 {
+		if hint := ghUnknownCommand(text); hint != "" {
+			text, dropped, stderr = hint, 0, ""
+		}
+	}
+	return rt.result(fmt.Sprintf("exit code %d\n%s", code, text), dropped, stderr), nil
 }
 
 // A cut output keeps at most MaxOutputBytes/stderrShare of the end of the
