@@ -60,8 +60,11 @@ func TestAgentPrompt(t *testing.T) {
 		diagram bool
 		// priorDiagram is the last review's diagram the spec carries.
 		priorDiagram string
+		// rerun reviews the head the last review saw.
+		rerun bool
 	}{
 		{name: "strictness", scope: review.ScopeFull, strict: true},
+		{name: "a re-run at the reviewed head is not shown the earlier findings", scope: review.ScopeFull, rerun: true},
 		{name: "a diagram asked for is in the prompt", scope: review.ScopeFull, diagram: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{
@@ -85,6 +88,9 @@ func TestAgentPrompt(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.RequireSuggestedFix, s.Prompt.Diagram, s.Prompt.Rules = tt.strict, tt.diagram, tt.rules
 			s.Prompt.PriorDiagram = tt.priorDiagram
+			if tt.rerun {
+				s.PriorHead = s.Head
+			}
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
@@ -100,12 +106,17 @@ func TestAgentPrompt(t *testing.T) {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
-			if tt.scope == review.ScopeIncremental {
+			var earlier *review.EarlierInput
+			switch {
+			case tt.scope == review.ScopeIncremental:
 				inc = &review.IncrementalInput{PriorHeadSHA: shaB, DeltaDiff: agentDiff, Prior: s.Prompt.Prior, PriorDiagram: tt.priorDiagram}
+			case !tt.rerun:
+				earlier = &review.EarlierInput{HeadSHA: shaB, Findings: s.Prompt.Prior}
 			}
 			want, _, _ := review.Build(review.Input{
 				Repository: "acme/widgets", Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main",
-				Changed: pack.Changed, Diff: agentDiff, Context: pack.Context, Incremental: inc, BudgetTokens: review.UserBudget(system, 0),
+				Changed: pack.Changed, Diff: agentDiff, Context: pack.Context, Incremental: inc, Earlier: earlier,
+				BudgetTokens: review.UserBudget(system, 0),
 			})
 			if user != want {
 				t.Fatalf("user message:\n%s\nwant:\n%s", user, want)
@@ -116,8 +127,8 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.priorDiagram != "" && !strings.Contains(user, tt.priorDiagram) {
 				t.Fatalf("incremental prompt lacks the prior diagram:\n%s", user)
 			}
-			if tt.scope == review.ScopeIncremental && !strings.Contains(user, "earlier finding") {
-				t.Fatalf("incremental prompt lacks the prior findings:\n%s", user)
+			if strings.Contains(user, "earlier finding") == tt.rerun {
+				t.Fatalf("a re-review is shown the last review's findings unless it re-runs the reviewed head:\n%s", user)
 			}
 		})
 	}

@@ -359,14 +359,17 @@ that, the re-review covers the whole pull request again. What moves
 between the two heads outside the change's own paths is the base, under a
 rebase, and does not count. A re-run at the head the last review saw, or a
 rebase that leaves the change as it was, always covers the whole pull
-request.
+request. A re-review that covers the whole pull request is still shown
+the last review's findings, to report again those that still hold, except
+a re-run at the head the last review saw, which looks afresh.
 
-Such a re-review reports what the new commits brought. A finding in the
-diff that the last review did not make, more than 3 lines from every line
-changed since, is held back: the summary lists it folded away, with no
-inline comment, and it counts toward nothing, the score, the status and
-the approval included. A file where one of the last review's findings went
-unreported is spared, since that finding may be back under a new title.
+An incremental re-review reports what the new commits brought. A finding
+in the diff that the last review did not make, more than 3 lines from
+every line changed since, is held back: the summary lists it folded away,
+with no inline comment, and it counts toward nothing, the score, the
+status and the approval included. A file where one of the last review's
+findings went unreported is spared, since that finding may be back under
+a new title.
 
 ### The agent
 
