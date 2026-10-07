@@ -257,8 +257,8 @@ func splitDropped(dropped []review.Dropped) (unanchored []review.Finding, notes 
 // inline review, and the commit status. Only the sticky comment is
 // required: the other two are best effort and logged when they fail, so a
 // forge quirk cannot turn a finished review into a retry storm. A finding
-// the last review already posted inline, or one the settings keep out of
-// inline comments, is listed in the summary only. Once the inline review
+// the last review already posted inline, or any finding when inline
+// comments are off, is listed in the summary only. Once the inline review
 // is posted, the sticky comment is edited again to link each finding to
 // its thread. The returned comments say, per finding, whether an inline
 // comment for it is on the forge, and its id there.
@@ -284,7 +284,7 @@ func (p *publishPhase) writeBack(
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
 	for i, f := range res.Findings {
-		if onForge[i].Posted || !p.postsInline(f) {
+		if onForge[i].Posted || !p.settings.Review.InlineComments {
 			continue
 		}
 		body, inlineNotes := review.RenderInline(ctx, templates, f)
@@ -556,14 +556,6 @@ func (p *publishPhase) headCurrent(ctx context.Context) bool {
 		p.logger.Warn("head not re-read before approving", "error", err)
 	}
 	return err == nil && head == p.pr.headSHA
-}
-
-// postsInline reports whether the review's settings post f as an inline
-// comment: none when inline comments are off, and otherwise every finding
-// but a nit that the feedback level keeps to the summary.
-func (p *publishPhase) postsInline(f review.Finding) bool {
-	r := p.settings.Review
-	return r.InlineComments && (f.Severity != review.SeverityNit || r.NitsInline())
 }
 
 // upsertSticky edits the pull request's sticky comment to body, creating

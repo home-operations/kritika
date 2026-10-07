@@ -232,15 +232,14 @@ type Overrides struct {
 }
 
 // ReviewSpec sets how a review is done at one scope: its models, a role
-// written here, even empty, replacing the broader scope's, how much it
-// says, whether a finding must carry a suggested fix, whether it approves,
+// written here, even empty, replacing the broader scope's, whether a
+// finding must carry a suggested fix, whether it approves,
 // how many files may change since the last review before a re-review
 // covers the whole pull request again, whether the summary draws the
 // change's flow, and whether its footer states the pull request's spend.
 type ReviewSpec struct {
 	Model       *ModelRef `yaml:"model,omitempty"`
 	Fallback    *ModelRef `yaml:"fallback,omitempty"`
-	Feedback    *string   `yaml:"feedback,omitempty"`
 	Fixes       *bool     `yaml:"fixes,omitempty"`
 	Approve     *bool     `yaml:"approve,omitempty"`
 	Incremental *int      `yaml:"incremental,omitempty"`
@@ -585,9 +584,6 @@ type Review struct {
 	// first. The API serves them from the rules routes, with what each
 	// enforced, not with the settings.
 	Rules []Rule `json:"-"`
-	// Feedback is how much a review says: FeedbackDetailed,
-	// FeedbackStandard or FeedbackMinimal.
-	Feedback string `json:"feedback"`
 }
 
 // ContextFile is a repository file that explains the code, named to the
@@ -598,25 +594,6 @@ type ContextFile struct {
 	Description string   `yaml:"description" json:"description"`
 	Paths       []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 }
-
-// Feedback levels.
-const (
-	// FeedbackDetailed reports anything a maintainer could act on, nits,
-	// missing tests and questions included, each inline.
-	FeedbackDetailed = "detailed"
-	// FeedbackStandard is the same review with nits left out of the inline
-	// comments; the summary still lists them.
-	FeedbackStandard = "standard"
-	// FeedbackMinimal reports only bugs, risks and breaking changes.
-	FeedbackMinimal = "minimal"
-)
-
-// Focused reports whether the reviewer is told to report only what would
-// stop the review.
-func (r Review) Focused() bool { return r.Feedback == FeedbackMinimal }
-
-// NitsInline reports whether a nit is posted as an inline comment.
-func (r Review) NitsInline() bool { return r.Feedback != FeedbackStandard }
 
 // CommentsSpec sets how a review comments at one scope: whether findings
 // go inline, and the repository files that replace the built-in summary

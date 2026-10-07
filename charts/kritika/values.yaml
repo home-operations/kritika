@@ -47,7 +47,7 @@ strategy:
 # (a Secret key). The variables that stand in for the configuration
 # file's sections (auth*, apps*, providers*, embedding*, and the review,
 # confidence and trigger settings reviewModel, reviewFallback,
-# reviewFeedback, reviewApprove, reviewFixes, reviewIncremental,
+# reviewApprove, reviewFixes, reviewIncremental,
 # reviewDiagram, reviewCost, confidenceModel, confidenceThreshold, confidenceGate,
 # confidenceRisk, triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
@@ -192,8 +192,6 @@ config:
   reviewModel: ""
   # -- The model a review falls back to when the review model fails.
   reviewFallback: ""
-  # -- How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.
-  reviewFeedback: ""
   # @schema
   # type: [boolean, string]
   # @schema

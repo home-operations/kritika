@@ -28,7 +28,7 @@ type Merged struct {
 // condition under an admin's name),
 // appends its context files and rules to the
 // admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
-// the feedback level, the confidence threshold, how the review comments,
+// the confidence threshold, how the review comments,
 // whether it approves and whether its summary draws a diagram. A model must be one of a provider
 // op.Providers names. A value it may not take is dropped, and Dropped says
 // so. A file that does not parse is ignored as a whole: op stands, and the
@@ -74,13 +74,6 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	}
 	if f.Review.Diagram != nil {
 		m.Review.Diagram = *f.Review.Diagram
-	}
-	switch {
-	case f.Review.Feedback == "":
-	case configfile.ValidFeedback(f.Review.Feedback):
-		m.Review.Feedback = f.Review.Feedback
-	default:
-		m.drop("review.feedback", strconv.Quote(f.Review.Feedback), configfile.FeedbackLevels)
 	}
 	for _, c := range f.Context {
 		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {

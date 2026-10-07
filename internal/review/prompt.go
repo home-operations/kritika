@@ -79,11 +79,9 @@ const bodyShare = 4
 
 const systemLead = "You are kritika, a code reviewer for pull requests. "
 
-// reportThorough and reportFocused are what a thorough and a focused
-// review report: anything a maintainer could act on, or only what would
-// stop the review.
-const (
-	reportThorough = `Comment on every line of the diff where a maintainer could act on what you say: bugs, behaviour changes the
+// systemReport is what a review reports: anything a maintainer could act
+// on.
+const systemReport = `Comment on every line of the diff where a maintainer could act on what you say: bugs, behaviour changes the
 description does not mention, security and data-loss risks, breaking changes, missing error handling, and mistakes
 in configuration or infrastructure files, and also the smaller things worth changing now: a simpler or safer way to
 write the same code, an edge case the change misses, a test the new behaviour lacks, a name or message a reader
@@ -92,14 +90,6 @@ deserve. Every finding names a concrete change; an observation with nothing to d
 not comment on formatting or anything a linter or the build enforces, and do not restate the diff. Never report:
 unused imports or variables, missing imports or undefined names a build would catch, or style in test code. Give
 each point its own finding on the line it is about, rather than one finding that bundles several.`
-	reportFocused = `Report only things a maintainer would act on: bugs, behaviour changes the description does not mention, security
-and data-loss risks, breaking changes, missing error handling, and mistakes in configuration or infrastructure
-files. Do not comment on style, formatting, naming, or anything a linter enforces. Do not restate the diff.
-Before reporting something, ask whether a maintainer would stop the review for it; if not, leave it out. Never
-report: comments or docstrings to add, type annotations, unused imports or variables, missing imports or undefined
-names a build would catch, more specific exception types, logging to add, renames of taste, validation a framework
-already does, or style in test code. Prefer few, precise findings over many vague ones.`
-)
 
 // systemRules is what every reviewer is told after what it can see and
 // what to report.
@@ -202,18 +192,14 @@ type Rule struct {
 	File string
 }
 
-// SystemPrompt is the reviewer's standing instructions, for a thorough or
-// a focused review, with the rules and the repository's instructions,
-// which come from the admin and the merge base and so carry the
-// maintainers' authority, appended. commands are what the run tool offers;
-// none leaves the tool out of the prompt. search says the search_code
-// tool is offered, and diagram that the summary carries a diagram.
-func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string, focused, search, diagram bool) string {
-	report := reportThorough
-	if focused {
-		report = reportFocused
-	}
-	system := systemLead + agenticSees + "\n\n" + report + systemRules
+// SystemPrompt is the reviewer's standing instructions, with the rules and
+// the repository's instructions, which come from the admin and the merge
+// base and so carry the maintainers' authority, appended. commands are what
+// the run tool offers; none leaves the tool out of the prompt. search says
+// the search_code tool is offered, and diagram that the summary carries a
+// diagram.
+func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string, search, diagram bool) string {
+	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules
 	if diagram {
 		system += summaryDiagram
 	}

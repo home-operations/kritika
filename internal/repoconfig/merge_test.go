@@ -100,14 +100,6 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{
-			name: "feedback replaces the admin's", doc: "review: { feedback: minimal }\n",
-			want: func(s *configfile.Settings) { s.Review.Feedback = configfile.FeedbackMinimal },
-		},
-		{
-			name: "an unknown feedback level is dropped", doc: "review: { feedback: exhaustive }\n",
-			dropped: []string{`.kritika.yaml: review.feedback "exhaustive" was dropped; allowed: detailed, standard or minimal`},
-		},
-		{
 			name: "approve replaces the admin's", doc: "review: { approve: true }\n",
 			want: func(s *configfile.Settings) { s.Review.Approve = true },
 		},

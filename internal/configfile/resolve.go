@@ -77,7 +77,7 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 		Ignore:      slices.Clone(DefaultIgnore),
 		Agent:       DefaultAgent,
 		Incremental: IncrementalSettings{MaxDeltaFiles: DefaultMaxDeltaFiles},
-		Review:      Review{InlineComments: true, Feedback: FeedbackDetailed},
+		Review:      Review{InlineComments: true},
 		Confidence:  Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow},
 		Skills:      Skills{Paths: slices.Clone(DefaultSkillPaths)},
 		Providers:   f.providerNames(a),
@@ -252,9 +252,6 @@ func (r Review) overlay(o *Overrides) Review {
 		r.Context = o.Context
 	}
 	r.Rules = WithRules(r.Rules, o.Rules)
-	if o.Review.Feedback != nil {
-		r.Feedback = *o.Review.Feedback
-	}
 	return r
 }
 

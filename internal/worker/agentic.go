@@ -134,7 +134,7 @@ func (w *Review) agentPrompt(
 ) (*runner.Prompt, []string, error) {
 	p := &runner.Prompt{
 		Repository: pr.repository, Context: eff.Review.Context,
-		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Focused: eff.Review.Focused(), Diagram: eff.Review.Diagram,
+		RequireSuggestedFix: eff.Review.RequireSuggestedFix, Diagram: eff.Review.Diagram,
 		MaxDeltaFiles: eff.Incremental.MaxDeltaFiles, Prior: reviewFindings(prior.findings), Dismissed: dismissedFindings(prior.dismissed),
 	}
 	if eff.Review.Diagram {

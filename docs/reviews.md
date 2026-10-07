@@ -31,6 +31,19 @@ someone comments `@<bot> pause`.
 | Reactions         | 👀 on the pull request while a review runs, 👍 once one is posted; a mention kritika answers gets the same ([permissions](setup.md#register-the-github-app))         |
 | An approval       | with `review.approve` on ([approvals](confidence.md#approvals))                                                                                                      |
 
+### Findings
+
+A review comments on every line a maintainer could act on: bugs and risks,
+and also smaller improvements, missing tests and questions. Each finding
+is posted inline wherever the diff shows its line, with a one-click
+suggestion wherever the fix changes those lines or adds lines after them,
+unless `comments.inline` is off; the summary lists every finding.
+
+Every finding carries a category beside its severity, what kind of problem
+it is: `correctness`, `security`, `performance`, `reliability`,
+`maintainability` or `tests`. The comments show it, the dashboard filters
+by it, and `kritika_findings_total` counts by it.
+
 ### The summary comment
 
 From the top, each part shown only when it has something to say:

@@ -8,7 +8,7 @@
       "type": "object"
     },
     "config": {
-      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, embedding*, and the review,\nconfidence and trigger settings reviewModel, reviewFallback,\nreviewFeedback, reviewApprove, reviewFixes, reviewIncremental,\nreviewDiagram, reviewCost, confidenceModel, confidenceThreshold, confidenceGate,\nconfidenceRisk, triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
+      "description": "How kritika runs and what it reviews with, as the KRITIKA_* variables\n(docs/configuration.md) keyed by their names without the prefix, in\ncamelCase: `pollInterval` is KRITIKA_POLL_INTERVAL, `authOidcIssuer` is\nKRITIKA_AUTH_OIDC_ISSUER. The keys below are every variable that can be\nset; a key left empty sets nothing and kritika's own default applies,\nwhich each description names. A value is a plain value, rendered\nthrough `tpl`, or, for a secret, a map with the variable's `valueFrom`\n(a Secret key). The variables that stand in for the configuration\nfile's sections (auth*, apps*, providers*, embedding*, and the review,\nconfidence and trigger settings reviewModel, reviewFallback,\nreviewApprove, reviewFixes, reviewIncremental,\nreviewDiagram, reviewCost, confidenceModel, confidenceThreshold, confidenceGate,\nconfidenceRisk, triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values\n(the addresses, the database, the config file, the runner image,\nServiceAccount, TTL, resources and tools) cannot be set here; the chart\nrefuses them, as it refuses a KRITIKA_* variable under `env`.",
       "properties": {
         "appsAccounts": {
           "default": "",
@@ -344,12 +344,6 @@
           "default": "",
           "description": "The model a review falls back to when the review model fails.",
           "title": "reviewFallback",
-          "type": "string"
-        },
-        "reviewFeedback": {
-          "default": "",
-          "description": "How much a review says: `detailed` (nits, missing tests and questions inline), `standard` (nits in the summary only) or `minimal` (bugs, risks and breaking changes only); `standard` unless set.",
-          "title": "reviewFeedback",
           "type": "string"
         },
         "reviewFixes": {

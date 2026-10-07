@@ -235,12 +235,7 @@ export interface ReviewBlock {
   diagram: boolean;
   cost: boolean;
   context: ContextFile[];
-  feedback: Feedback;
 }
-
-// How much a review says: anything a maintainer could act on, the same
-// with nits kept to the summary, or only bugs, risks and breaking changes.
-export type Feedback = 'detailed' | 'standard' | 'minimal';
 
 // What narrows when a skill is offered: a changed path matching one of
 // paths, and one of the when conditions holding.

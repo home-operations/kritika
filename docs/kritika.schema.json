@@ -17,10 +17,6 @@
       "properties": {
         "model": { "$ref": "#/$defs/model" },
         "fallback": { "$ref": "#/$defs/model" },
-        "feedback": {
-          "enum": ["detailed", "standard", "minimal"],
-          "description": "How much the review says: detailed, anything a maintainer could act on, every finding inline; standard, the same with nits kept to the summary; minimal, only bugs, risks and breaking changes."
-        },
         "fixes": {
           "type": "boolean",
           "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."

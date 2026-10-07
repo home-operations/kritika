@@ -57,7 +57,6 @@ func TestAgentPrompt(t *testing.T) {
 		rules   []configfile.Rule
 		active  []review.Rule
 		strict  bool
-		focused bool
 		diagram bool
 		// priorDiagram is the last review's diagram the spec carries.
 		priorDiagram string
@@ -69,7 +68,6 @@ func TestAgentPrompt(t *testing.T) {
 			name: "incremental shows the prior diagram to keep or update", scope: review.ScopeIncremental, diagram: true,
 			priorDiagram: "flowchart LR\n  A[Request] --> B[Handler]",
 		},
-		{name: "a focused review gets the focused prompt", scope: review.ScopeFull, focused: true},
 		{
 			name: "a rule scoped to paths the change does not touch is left out", scope: review.ScopeFull,
 			rules:  []configfile.Rule{{ID: "go", Rule: "Wrap errors.", Paths: []string{"*.go"}}, {ID: "web", Rule: "No inline styles.", Paths: []string{"web/**"}}},
@@ -85,7 +83,7 @@ func TestAgentPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
-			s.Prompt.RequireSuggestedFix, s.Prompt.Focused, s.Prompt.Diagram, s.Prompt.Rules = tt.strict, tt.focused, tt.diagram, tt.rules
+			s.Prompt.RequireSuggestedFix, s.Prompt.Diagram, s.Prompt.Rules = tt.strict, tt.diagram, tt.rules
 			s.Prompt.PriorDiagram = tt.priorDiagram
 			pack := pack
 			pack.Scope = tt.scope
@@ -98,7 +96,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false)
 			system, user := prompt.system, prompt.user
-			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, tt.focused, false, tt.diagram); system != want {
+			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, false, tt.diagram); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput

@@ -529,13 +529,9 @@ func validateAgent(where string, a Agent) error {
 	return nil
 }
 
-// validateReview checks what one scope writes of a review's feedback,
-// context, rules and comment templates: the feedback is a level, and the
-// paths stay inside the repository.
+// validateReview checks what one scope writes of a review's context, rules
+// and comment templates: the paths stay inside the repository.
 func validateReview(where string, r *Overrides) error {
-	if fb := r.Review.Feedback; fb != nil && !ValidFeedback(*fb) {
-		return fmt.Errorf("configfile: %sreview.feedback must be %s, got %q", where, FeedbackLevels, *fb)
-	}
 	for i, c := range r.Context {
 		if err := c.Check(); err != nil {
 			return fmt.Errorf("configfile: %scontext[%d]: %w", where, i, err)
@@ -583,14 +579,6 @@ func ValidGlob(g string) bool { return strings.TrimSpace(g) != "" && doublestar.
 
 // ValidConfidence reports whether n is a confidence score.
 func ValidConfidence(n int) bool { return n >= 0 && n <= MaxConfidence }
-
-// ValidFeedback reports whether s is a feedback level.
-func ValidFeedback(s string) bool {
-	return s == FeedbackDetailed || s == FeedbackStandard || s == FeedbackMinimal
-}
-
-// FeedbackLevels lists the feedback levels for a message.
-const FeedbackLevels = FeedbackDetailed + ", " + FeedbackStandard + " or " + FeedbackMinimal
 
 // CheckRepoPath rejects a repository path that is empty, absolute or
 // escapes the repository root: every path a configuration names is read

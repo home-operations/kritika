@@ -149,8 +149,7 @@ func (a agentPrompt) notes() []string {
 // context includes the similar code the gateway found. commands are what
 // the run tool offers, and search says search_code is offered.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
-	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, p.Prompt.Focused, search,
-		p.Prompt.Diagram)
+	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, search, p.Prompt.Diagram)
 	var incremental *review.IncrementalInput
 	if pack.Scope == review.ScopeIncremental {
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior,

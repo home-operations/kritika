@@ -87,14 +87,6 @@ func Categories() []Category { return slices.Clone(categories) }
 // Valid reports whether c is one of the categories.
 func (c Category) Valid() bool { return slices.Contains(categories, c) }
 
-// focusedCategories are the categories a focused (minimal) review keeps:
-// what would stop the review. The rest is dropped before it is posted.
-var focusedCategories = []Category{CategoryCorrectness, CategorySecurity, CategoryReliability}
-
-// Focused reports whether a finding of category c belongs in a focused
-// review.
-func (c Category) Focused() bool { return slices.Contains(focusedCategories, c) }
-
 // Summary is the review's overall judgement for the sticky comment.
 type Summary struct {
 	// Headline is one sentence on what the change does, the summary
@@ -231,9 +223,6 @@ const (
 	DropNoFix       DropReason = "no_suggested_fix"
 	DropBadSeverity DropReason = "bad_severity"
 	DropBadCategory DropReason = "bad_category"
-	// DropOutsideFocus is a finding whose category a focused review does
-	// not report.
-	DropOutsideFocus DropReason = "outside_minimal"
 )
 
 // Dropped is a finding Parse discarded, with the reason.
@@ -246,9 +235,6 @@ type Dropped struct {
 type ParseOptions struct {
 	// RequireSuggestedFix drops findings that carry no suggested fix.
 	RequireSuggestedFix bool
-	// Focused drops findings of the categories a focused review leaves
-	// out, whatever the model was told.
-	Focused bool
 	// Diagram keeps the summary's diagram; without it the diagram is
 	// dropped, whatever the model sent.
 	Diagram bool
@@ -442,8 +428,8 @@ func Check(raw json.RawMessage) error {
 }
 
 // Parse decodes the model's JSON and drops findings kritika cannot post: an
-// unknown severity or category, a category a focused review leaves out, a
-// missing field, a missing fix when opts require one, or a line the diff
+// unknown severity or category, a missing field, a missing fix when opts
+// require one, or a line the diff
 // does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
 // anchors maps a path to the head-side lines the diff covers, each with
@@ -489,8 +475,6 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 			reason = DropBadSeverity
 		case !f.Category.Valid():
 			reason = DropBadCategory
-		case opts.Focused && !f.Category.Focused():
-			reason = DropOutsideFocus
 		case f.Path == "" || f.Line <= 0 || f.Title == "" || f.Explanation == "":
 			reason = DropIncomplete
 		case opts.RequireSuggestedFix && f.SuggestedFix == "" && f.Replacement == "" && f.InsertAfter == "":

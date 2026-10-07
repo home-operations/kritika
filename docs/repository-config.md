@@ -27,7 +27,6 @@ repository entries take, in the same groups:
 ```yaml
 review:
   model: openrouter/anthropic/claude-opus-5.5
-  feedback: standard
 trigger:
   exclude:
     - expr: pr.draft
@@ -57,7 +56,6 @@ skills:
 | ------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
 | `enabled`                                                    | `false` stops reviews, follow-ups and indexing                     | can only turn the repository off                |
 | [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                        |
-| [`review.feedback`](#feedback)                               | how much the review says                                           | replaces                                        |
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows                   | replaces, either way                            |
 | [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                      | replaces, either way                            |
@@ -70,10 +68,10 @@ skills:
 | [`context`](#context)                                        | files that explain the code                                        | added after                                     |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
 
-A value the file may not take, such as an unknown feedback level or a
-model of an undeclared provider, is dropped: the admin's value applies for
-that field, a note in the review's summary says which field was dropped
-and what it may be, and the rest of the file still applies. `agent`,
+A value the file may not take, such as a model of an undeclared provider,
+is dropped: the admin's value applies for that field, a note in the
+review's summary says which field was dropped and what it may be, and the
+rest of the file still applies. `agent`,
 `trigger.settle`, `trigger.limit`, `review.incremental`, `review.cost`,
 `confidence.instructions` and `limits` are the admin's alone; a file
 naming one of them, or any other unknown key, does not parse.
@@ -86,23 +84,6 @@ review and for follow-ups. A model of any other provider is dropped; the
 account's limits bound what a choice can cost. A review whose model fails
 goes on with the fallback, on the same provider or another, and so does a
 follow-up.
-
-### Feedback
-
-| `review.feedback`    | What the review reports                                                                                                                                                                                  |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `detailed` (default) | every line a maintainer could act on, smaller improvements, missing tests and questions included, each inline, with a one-click suggestion wherever the fix changes those lines or adds lines after them |
-| `standard`           | the same review, with nits in the summary rather than inline                                                                                                                                             |
-| `minimal`            | only what would stop the review: correctness, security and reliability findings; a finding of another category is dropped before it is posted                                                            |
-
-Only nits move between levels: with `comments.inline` on, a blocking or
-important finding a level keeps is posted inline wherever the diff shows
-its line, and the summary lists every finding posted.
-
-Every finding carries a category beside its severity, what kind of problem
-it is: `correctness`, `security`, `performance`, `reliability`,
-`maintainability` or `tests`. The comments show it, the dashboard filters
-by it, and `kritika_findings_total` counts by it.
 
 ### Approvals
 
