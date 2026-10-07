@@ -217,8 +217,9 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A run's steps are one conversation, whichever provider answers; a
-	// follow-up's is its mention's, which a retried run carries on.
-	req.Model, req.Fallbacks, req.Session = ref.Model(), nil, c.grant.RunID
+	// follow-up's is its mention's, which a retried run carries on. The
+	// effort is the grant's, as the model is: a runner chooses neither.
+	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, c.grant.RunID, model.Effort(c.grant.Effort)
 	if id := c.grant.FollowupCommentID; id != 0 {
 		req.Session = "followup-" + strconv.FormatInt(id, 10)
 	}

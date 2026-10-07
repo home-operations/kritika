@@ -854,7 +854,7 @@ func TestGatewayTokens(t *testing.T) {
 	// A run needs a review, which needs a pull request of a repository.
 	grant := func() GatewayGrant {
 		t.Helper()
-		g := GatewayGrant{AccountID: alpha, Model: "openrouter/acme/large", Fallback: "openrouter/acme/small", Budget: 1000}
+		g := GatewayGrant{AccountID: alpha, Model: "openrouter/acme/large", Fallback: "openrouter/acme/small", Effort: "high", Budget: 1000}
 		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE name = 'alpha/one'`).Scan(&g.RepositoryID); err != nil {
 				return err

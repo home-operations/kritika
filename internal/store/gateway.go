@@ -26,8 +26,9 @@ type GatewayGrant struct {
 	// completed review, "" without one.
 	FollowupCommentID int64
 	// Model and Fallback are the provider/model references the run may
-	// call; Fallback may be empty.
-	Model, Fallback string
+	// call; Fallback may be empty. Effort is how hard they reason, a
+	// model.Effort, or empty for the provider's default.
+	Model, Fallback, Effort string
 	// Budget is the tokens the run may spend, Spent what it has.
 	Budget, Spent int64
 }
@@ -39,9 +40,9 @@ func (s *Store) MintGatewayToken(ctx context.Context, g GatewayGrant, expires ti
 	_, _ = rand.Read(raw) // never fails
 	token := gatewayTokenPrefix + hex.EncodeToString(raw)
 	_, err := s.app.Exec(ctx, `INSERT INTO gateway_tokens
-		(token_hash, runner_run_id, account_id, review_id, repository_id, model, fallback, budget_tokens, expires_at, followup_comment_id)
-		VALUES ($1, $2, $3, nullif($4, '')::uuid, $5, $6, $7, $8, $9, nullif($10::bigint, 0))`,
-		tokenHash(token), g.RunID, g.AccountID, g.ReviewID, g.RepositoryID, g.Model, g.Fallback, g.Budget, expires, g.FollowupCommentID)
+		(token_hash, runner_run_id, account_id, review_id, repository_id, model, fallback, effort, budget_tokens, expires_at, followup_comment_id)
+		VALUES ($1, $2, $3, nullif($4, '')::uuid, $5, $6, $7, $8, $9, $10, nullif($11::bigint, 0))`,
+		tokenHash(token), g.RunID, g.AccountID, g.ReviewID, g.RepositoryID, g.Model, g.Fallback, g.Effort, g.Budget, expires, g.FollowupCommentID)
 	if err != nil {
 		return "", fmt.Errorf("store: mint gateway token: %w", err)
 	}
@@ -55,10 +56,10 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 		return GatewayGrant{}, ErrGatewayToken
 	}
 	var g GatewayGrant
-	err := s.app.QueryRow(ctx, `SELECT runner_run_id, account_id, coalesce(review_id::text, ''), repository_id, model, fallback,
+	err := s.app.QueryRow(ctx, `SELECT runner_run_id, account_id, coalesce(review_id::text, ''), repository_id, model, fallback, effort,
 		budget_tokens, spent_tokens, coalesce(followup_comment_id, 0)
 		FROM gateway_tokens WHERE token_hash = $1 AND expires_at > now()`, tokenHash(token)).
-		Scan(&g.RunID, &g.AccountID, &g.ReviewID, &g.RepositoryID, &g.Model, &g.Fallback, &g.Budget, &g.Spent, &g.FollowupCommentID)
+		Scan(&g.RunID, &g.AccountID, &g.ReviewID, &g.RepositoryID, &g.Model, &g.Fallback, &g.Effort, &g.Budget, &g.Spent, &g.FollowupCommentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return GatewayGrant{}, ErrGatewayToken
 	}

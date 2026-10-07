@@ -322,7 +322,7 @@ func (f *followUp) runAgent(
 	deadline = agentDeadline(deadline, limits.Timeout)
 	token, err := f.w.Store.MintGatewayToken(ctx, store.GatewayGrant{
 		RunID: runID, AccountID: f.account.ID(), ReviewID: rec.id, RepositoryID: f.pr.repositoryID, FollowupCommentID: f.comment.ID,
-		Model: string(ref), Fallback: string(f.settings.Models.Fallback), Budget: limits.MaxTokens,
+		Model: string(ref), Fallback: string(f.settings.Models.Fallback), Effort: string(f.settings.Models.Effort), Budget: limits.MaxTokens,
 	}, time.Now().Add(deadline+f.w.GatewayTokenTTL))
 	if err != nil {
 		dctx, cancel := detach(ctx)
