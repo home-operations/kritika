@@ -161,6 +161,26 @@ What bounds a command:
   that locates a repository by its working tree, such as flate, find this
   one.
 
+### Other repositories
+
+When the run tool offers `gh` or `curl`, which already reach the network,
+the agent also gets `fetch_repo`. It fetches another repository at a tag,
+branch or commit, such as the upstream of a dependency on any host, and
+writes its files beside the checkout for `rg` and `fd` to search, with the
+diff from an earlier ref when asked. kritika makes the fetch itself, with
+go-git: the model names a repository and a ref, never git arguments.
+
+- **Anonymous HTTPS:** an `https://` clone URL, fetched without a
+  credential through the gateway. `github.com` is already allowed; any
+  other host must be in `egress.allow`, as for `curl`.
+- **Only what is asked for:** depth one, without tags, and with paths only
+  the files under them, from a server that can filter; one that cannot
+  sends the whole tree, within the limit below.
+- **Bounded:** 8 fetches a review, each taking at most 128 MiB from the
+  server and two minutes, and 256 MiB of files written across them,
+  beside the checkout. Symlinks, submodules and files over 1 MiB are left
+  out, and the files are written without execute bits.
+
 ### More tools
 
 The chart's `runner.tools` mounts more programs from their own images,

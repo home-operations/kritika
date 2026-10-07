@@ -101,9 +101,9 @@ func TestAgentPrompt(t *testing.T) {
 			if !slices.Equal(in.ruleIDs(), ruleIDs(tt.active)) {
 				t.Fatalf("rule ids = %v, want %v", in.ruleIDs(), ruleIDs(tt.active))
 			}
-			prompt := newAgentPrompt(s, in, pack, nil, false)
+			prompt := newAgentPrompt(s, in, pack, nil, false, false)
 			system, user := prompt.system, prompt.user
-			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, false, tt.diagram); system != want {
+			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, false, false, tt.diagram); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -144,7 +144,7 @@ func TestAgentPromptPointsAtContext(t *testing.T) {
 	}
 	files := repoconfig.Files{"docs/arch.md": "never inlined"}
 	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}}
-	user := newAgentPrompt(s, newPromptInputs(s, files, nil, pack.Changed), pack, nil, false).user
+	user := newAgentPrompt(s, newPromptInputs(s, files, nil, pack.Changed), pack, nil, false, false).user
 	if !strings.Contains(user, "### docs/arch.md: how the parts fit\n") || strings.Contains(user, "never inlined") || strings.Contains(user, "schema") {
 		t.Fatalf("user message:\n%s", user)
 	}
@@ -171,7 +171,7 @@ func TestPromptInputsNotes(t *testing.T) {
 	const lines = 60_000
 	big := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1," + strconv.Itoa(lines) + " @@\n" + strings.Repeat("+x\n", lines)
 	long := packView{Diff: agentDiff + big, Changed: []string{"main.go", "big.go"}}
-	prompt := newAgentPrompt(s, in, long, nil, false)
+	prompt := newAgentPrompt(s, in, long, nil, false, false)
 	if notes := prompt.notes(); len(notes) != 1 || notes[0] != "1 diff file(s) left out of the prompt to fit its budget: big.go" {
 		t.Fatalf("prompt notes = %q", notes)
 	}
@@ -549,7 +549,7 @@ func TestAgentPromptBudget(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Agent = tt.agent
-			prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false)
+			prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
 			if kept := strings.Contains(prompt.user, "+// a line of the large file under review"); kept != tt.kept {
 				t.Fatalf("large file in the prompt = %v, want %v", kept, tt.kept)
 			}

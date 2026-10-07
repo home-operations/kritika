@@ -149,9 +149,10 @@ func (a agentPrompt) notes() []string {
 
 // newAgentPrompt composes the prompt from the inputs and the pack, whose
 // context includes the similar code the gateway found. commands are what
-// the run tool offers, and search says search_code is offered.
-func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, search bool) agentPrompt {
-	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, search, p.Prompt.Diagram)
+// the run tool offers, fetch says fetch_repo is offered, and search
+// search_code.
+func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
+	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, fetch, search, p.Prompt.Diagram)
 	var incremental *review.IncrementalInput
 	var earlier *review.EarlierInput
 	switch {
@@ -272,10 +273,11 @@ func agentLoop(
 }
 
 // agentTools is what the agent gets beside the read-only tools: the run
-// tool, when commands are offered, and search_code, when the repository
-// has an index.
+// tool, when commands are offered, with fetch_repo when one of them reaches
+// the network, and search_code, when the repository has an index.
 type agentTools struct {
 	run    *agent.RunTool
+	fetch  *fetchRepoTool
 	search *searchTool
 	skills *skillTool
 }
@@ -285,6 +287,9 @@ func (t agentTools) extra() []agent.Tool {
 	var out []agent.Tool
 	if t.run != nil {
 		out = append(out, t.run)
+	}
+	if t.fetch != nil {
+		out = append(out, t.fetch)
 	}
 	if t.search != nil {
 		out = append(out, t.search)
@@ -330,6 +335,9 @@ func runAgentic(
 	sources := []string{}
 	if tools.run != nil {
 		sources = tools.run.Sources()
+	}
+	if tools.fetch != nil {
+		sources = append(sources, tools.fetch.Sources()...)
 	}
 	offered, opened := []string{}, []string{}
 	if tools.skills != nil {

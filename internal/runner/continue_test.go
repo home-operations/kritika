@@ -50,8 +50,13 @@ func TestCarryOn(t *testing.T) {
 		status  int
 		body    string
 		carried bool
+		fetched bool
 	}{
 		{name: "the same system prompt, tools and description", status: http.StatusOK, body: conversation(nil), carried: true},
+		{name: "one that fetched a repository", status: http.StatusOK, carried: true, fetched: true,
+			body: conversation(func(c *agent.Conversation) {
+				c.Messages[1].ToolCalls = append([]model.ToolCall{call("0", "fetch_repo", `{}`)}, c.Messages[1].ToolCalls...)
+			})},
 		{name: "another system prompt", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.System = "An older one." })},
 		{name: "an older description", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Messages[0].Text = opening("Adds a.") })},
 		{name: "too large for the run's budget", status: http.StatusOK, body: conversation(func(c *agent.Conversation) { c.Tokens = 60_000 })},
@@ -85,6 +90,9 @@ func TestCarryOn(t *testing.T) {
 				if !strings.Contains(got.user, want) {
 					t.Fatalf("missing %q in the next turn:\n%s", want, got.user)
 				}
+			}
+			if strings.Contains(got.user, "fetch_repo fetched then") != tc.fetched {
+				t.Fatalf("the next turn says the fetches are gone: %t, want %t:\n%s", !tc.fetched, tc.fetched, got.user)
 			}
 		})
 	}

@@ -230,8 +230,8 @@ func TestPromptInputsSkills(t *testing.T) {
 			if !slices.Equal(got, tt.want) || !slices.Equal(in.notes, tt.wantNotes) {
 				t.Fatalf("skills = %q, notes = %q; want %q, %q", got, in.notes, tt.want, tt.wantNotes)
 			}
-			system := newAgentPrompt(s, in, packView{Diff: agentDiff, Changed: []string{"main.go"}}, nil, false).system
-			if want := review.SystemPrompt(nil, repoconfig.PromptSkills(in.skills), nil, nil, false, false); system != want {
+			system := newAgentPrompt(s, in, packView{Diff: agentDiff, Changed: []string{"main.go"}}, nil, false, false).system
+			if want := review.SystemPrompt(nil, repoconfig.PromptSkills(in.skills), nil, nil, false, false, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			if strings.Contains(system, "## Skills") != (len(tt.want) > 0) {

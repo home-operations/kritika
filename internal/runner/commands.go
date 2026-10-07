@@ -18,13 +18,15 @@ import (
 )
 
 // commandTool is the run tool for the commands p allows that this image
-// has on its PATH, over a checkout of tree written to scratch space. It is
-// nil, with a no-op cleanup, when there is nothing to offer or the
-// commands cannot be kept from the runner's secrets; the review then goes
-// on with the read-only tools alone. cleanup removes the scratch space.
+// has on its PATH, over a checkout of tree written to scratch space, and
+// fetch_repo, which writes beside the checkout, when one of the commands
+// already reaches the network. Both are nil, with a no-op cleanup, when
+// there is nothing to offer or the commands cannot be kept from the
+// runner's secrets; the review then goes on with the read-only tools
+// alone. cleanup removes the scratch space.
 func commandTool(
 	ctx context.Context, p Spec, tree *agent.Tree, gitToken string, maxOutput int, logger *slog.Logger,
-) (run *agent.RunTool, cleanup func()) {
+) (run *agent.RunTool, fetch *fetchRepoTool, cleanup func()) {
 	cleanup = func() {}
 	found := map[string]string{}
 	for _, name := range p.Agent.Commands {
@@ -36,32 +38,32 @@ func commandTool(
 		found[name] = path
 	}
 	if len(found) == 0 {
-		return nil, cleanup
+		return nil, nil, cleanup
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
-		return nil, cleanup
+		return nil, nil, cleanup
 	}
 	scratch, err := os.MkdirTemp("", "kritika-run-")
 	if err != nil {
 		logger.Warn("commands not offered: no scratch space", "error", err)
-		return nil, cleanup
+		return nil, nil, cleanup
 	}
 	cleanup = func() { _ = os.RemoveAll(scratch) }
 	// HOME is apart from the checkout, or a repository could plant the
 	// ~/.curlrc curl reads before its arguments.
-	dir, home := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home")
-	for _, d := range []string{dir, home} {
+	dir, home, up := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"), filepath.Join(scratch, upstreamDir)
+	for _, d := range []string{dir, home, up} {
 		if err := os.Mkdir(d, 0o755); err != nil {
 			logger.Warn("commands not offered: no scratch space", "error", err)
-			return nil, cleanup
+			return nil, nil, cleanup
 		}
 	}
 	started := time.Now()
 	stats, err := tree.Checkout(ctx, dir, agent.MaxCheckoutBytes)
 	if err != nil {
 		logger.Warn("commands not offered: checkout failed", "error", err)
-		return nil, cleanup
+		return nil, nil, cleanup
 	}
 	logger.Info("checkout written", "files", stats.Files, "bytes", stats.Bytes, "skipped", stats.Skipped,
 		"truncated", stats.Truncated, "elapsed", time.Since(started).Round(time.Millisecond))
@@ -76,11 +78,17 @@ func commandTool(
 	// gh reaches GitHub over HTTPS, which the gateway cannot add a
 	// credential to, so it carries the run's read-only token.
 	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + gitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
-	return agent.NewRunTool(agent.RunConfig{
+	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
 		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note,
 		Mask: Secrets{GitToken: gitToken}.Mask,
-	}), cleanup
+	})
+	// An operator who allows only rg or fd has not let the agent reach the
+	// network, so fetch_repo comes with a command that does.
+	if found["gh"] != "" || found["curl"] != "" {
+		fetch = &fetchRepoTool{dir: up}
+	}
+	return run, fetch, cleanup
 }
 
 // markRepository gives the checkout an empty .git whose origin is the

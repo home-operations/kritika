@@ -81,9 +81,12 @@ func TestCommandTool(t *testing.T) {
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
-		run, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
+		run, fetch, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
+		}
+		if fetch != nil {
+			t.Fatal("fetch_repo offered beside rg alone, which reaches no network")
 		}
 		if !slices.Equal(run.Names(), []string{"rg"}) {
 			t.Fatalf("names = %v", run.Names())
@@ -115,14 +118,35 @@ func TestCommandTool(t *testing.T) {
 		}
 	})
 
+	t.Run("fetch_repo beside a command that reaches the network", func(t *testing.T) {
+		if err := os.Symlink(self, filepath.Join(bin, "gh")); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
+		s := reviewSpec()
+		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"gh", "rg"}, 5
+		run, fetch, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
+		defer cleanup()
+		if run == nil || fetch == nil {
+			t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
+		}
+		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
+		if err != nil || len(scratch) != 1 {
+			t.Fatalf("scratch = %v, %v", scratch, err)
+		}
+		if info, err := os.Stat(fetch.dir); err != nil || !info.IsDir() || fetch.dir != filepath.Join(scratch[0], upstreamDir) {
+			t.Fatalf("fetch_repo writes to %s, not beside the checkout in %s: %v", fetch.dir, scratch[0], err)
+		}
+	})
+
 	t.Run("nothing to offer", func(t *testing.T) {
 		for _, commands := range [][]string{nil, {"curl"}} {
 			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
-			run, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
+			run, fetch, cleanup := commandTool(t.Context(), s, head, "ghs_run", 1024, logger)
 			cleanup()
-			if run != nil {
-				t.Fatalf("%v: run tool offered with %v", commands, run.Names())
+			if run != nil || fetch != nil {
+				t.Fatalf("%v: run tool offered with %v, fetch_repo %v", commands, run.Names(), fetch != nil)
 			}
 		}
 	})

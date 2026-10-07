@@ -52,15 +52,18 @@ submit_reply exactly once with the reply; that call is your answer.`
 
 // FollowUpSystemPrompt is FollowUpSystem with what the run's tools add,
 // the rules and the repository's instructions appended, as SystemPrompt
-// appends them to a review's. commands are what the run tool offers, and
-// search says the search_code tool is offered.
-func FollowUpSystemPrompt(rules []Rule, instructions, commands []string, search bool) string {
+// appends them to a review's. commands are what the run tool offers, fetch
+// says the fetch_repo tool is offered, and search the search_code tool.
+func FollowUpSystemPrompt(rules []Rule, instructions, commands []string, fetch, search bool) string {
 	system := FollowUpSystem
 	if search {
 		system += agenticSearch
 	}
 	if len(commands) > 0 {
 		system += fmt.Sprintf(agenticCommands, strings.Join(commands, ", "))
+	}
+	if fetch {
+		system += agenticFetch
 	}
 	return withInstructions(system, rules, "", instructions)
 }
