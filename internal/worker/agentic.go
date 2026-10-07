@@ -249,7 +249,8 @@ func (w *Review) agentSpec(
 	deadline = agentDeadline(deadline, settings.Agent.Timeout)
 	token, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
-		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Budget: admitted.maxTokens,
+		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Effort: string(settings.Models.Effort),
+		Budget: admitted.maxTokens,
 	}, time.Now().Add(deadline+w.GatewayTokenTTL))
 	if err != nil {
 		return deadline, nil, err

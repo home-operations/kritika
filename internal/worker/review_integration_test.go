@@ -465,6 +465,7 @@ type fakeCompleter struct {
 	users    []string
 	systems  []string
 	sessions []string
+	efforts  []model.Effort
 	// diagram, when set, is the summary diagram a review submits.
 	diagram string
 }
@@ -483,6 +484,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
 	f.sessions = append(f.sessions, req.Session)
+	f.efforts = append(f.efforts, req.Effort)
 	var diagram string
 	if f.diagram != "" {
 		diagram = `,"diagram":` + strconv.Quote(f.diagram)
@@ -1623,9 +1625,10 @@ rules:
   - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
 comments:
   summary: ".kritika/summary.md.tmpl"
-confidence: { model: test/reviewer, threshold: 4, gate: true }
+confidence: { model: test/reviewer, effort: low, threshold: 4, gate: true }
 review:
   approve: true
+  effort: xhigh
 `,
 		".kritika/rules.md":        "Flag every TODO left in code.\n",
 		".kritika/summary.md.tmpl": "Custom summary for #{{ .Number }}: {{ .Result.Summary.Take }}\n",
@@ -1818,9 +1821,12 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	t.Helper()
 	fc.mu.Lock()
 	scorer := fc.systems[len(fc.systems)-1]
+	// The review's step, through the gateway, and the confidence call each
+	// carry the .kritika.yaml's effort for their model.
+	efforts := fc.efforts[len(fc.efforts)-2:]
 	fc.mu.Unlock()
-	if scorer != review.ConfidenceSystem {
-		t.Fatalf("the last call was not the confidence model's:\n%s", scorer)
+	if scorer != review.ConfidenceSystem || !slices.Equal(efforts, []model.Effort{model.EffortXHigh, model.EffortLow}) {
+		t.Fatalf("the last call was not the confidence model's at the file's efforts (%v):\n%s", efforts, scorer)
 	}
 	var confidence string
 	var calls, charged int

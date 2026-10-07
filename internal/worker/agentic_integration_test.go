@@ -119,6 +119,8 @@ type scriptedModel struct {
 	bodies [][]byte
 	// sessions are the conversations the requests named.
 	sessions []string
+	// efforts are each request's reasoning effort, "" for none.
+	efforts []string
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -133,7 +135,8 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Role    string `json:"role"`
 			Content any    `json:"content"`
 		} `json:"messages"`
-		MaxCompletionTokens int64 `json:"max_completion_tokens"`
+		MaxCompletionTokens int64  `json:"max_completion_tokens"`
+		ReasoningEffort     string `json:"reasoning_effort"`
 	}
 	body, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(body, &req)
@@ -145,6 +148,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.auth = append(m.auth, r.Header.Get("Authorization"))
 	m.sessions = append(m.sessions, r.Header.Get("x-opencode-session"))
 	m.maxTokens = append(m.maxTokens, req.MaxCompletionTokens)
+	m.efforts = append(m.efforts, req.ReasoningEffort)
 	if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
 		m.systems = append(m.systems, fmt.Sprint(req.Messages[0].Content))
 	}
@@ -545,11 +549,12 @@ func (h *agenticHarness) modelCalls(t *testing.T, accountID, reviewID string) []
 // the run token and provider key in it masked.
 // checkStepSession steps once through the gateway on the run's behalf to
 // an opencode provider and checks that it was told the run as the step's
-// conversation: a run's steps are one.
+// conversation, a run's steps are one, and the grant's effort.
 func (h *agenticHarness) checkStepSession(t *testing.T, reviewID, runID, repositoryID string) {
 	t.Helper()
 	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
-		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repositoryID, Model: "opencode/agent-model", Budget: 150,
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repositoryID, Model: "opencode/agent-model", Effort: "xhigh",
+		Budget: 150,
 	}, time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
@@ -562,10 +567,10 @@ func (h *agenticHarness) checkStepSession(t *testing.T, reviewID, runID, reposit
 		t.Fatal(err)
 	}
 	h.sm.mu.Lock()
-	session := h.sm.sessions[len(h.sm.sessions)-1]
+	session, effort := h.sm.sessions[len(h.sm.sessions)-1], h.sm.efforts[len(h.sm.efforts)-1]
 	h.sm.mu.Unlock()
-	if session != runID {
-		t.Fatalf("the provider was told session %q, want the run %q", session, runID)
+	if session != runID || effort != "xhigh" {
+		t.Fatalf("the provider was told session %q at effort %q, want the run %q at the grant's xhigh", session, effort, runID)
 	}
 }
 
