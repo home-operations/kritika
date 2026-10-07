@@ -275,7 +275,8 @@ func TestRunToolGH(t *testing.T) {
 	if got := rt.Sources(); !slices.Equal(got, []string{"https://api.github.com/repos/a/b/compare/v1...v2"}) {
 		t.Fatalf("sources = %q", got)
 	}
-	if d := rt.Def().Description; !strings.Contains(d, "Use gh, not curl, for anything on GitHub") {
+	if d := rt.Def().Description; !strings.Contains(d, "Use gh, not curl, for anything on GitHub") ||
+		!strings.Contains(d, "compare/<old>...<new> --jq '.files[].filename'") {
 		t.Fatalf("description = %q", d)
 	}
 }

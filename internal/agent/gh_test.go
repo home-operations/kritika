@@ -8,6 +8,7 @@ func TestGHSource(t *testing.T) {
 		want string
 	}{
 		{[]string{"api", "repos/a/b/compare/v1...v2"}, "https://api.github.com/repos/a/b/compare/v1...v2"},
+		{[]string{"api", "repos/a/b/compare/v1...v2", "--jq", ".files[].filename"}, "https://api.github.com/repos/a/b/compare/v1...v2"},
 		{[]string{"api", "-H", "Accept: application/vnd.github+json", "/repos/a/b/releases/tags/v2", "--jq", ".body"},
 			"https://api.github.com/repos/a/b/releases/tags/v2"},
 		{[]string{"api", "graphql", "-f", "query=x"}, ""},
