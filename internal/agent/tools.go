@@ -90,20 +90,31 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 	if err != nil {
 		return "", fmt.Errorf("agent: read_file: %s: %w", cleaned, err)
 	}
+	out, err := NumberLines(cleaned, content, req.StartLine, req.EndLine, rt.maxBytes)
+	if err != nil {
+		return "", fmt.Errorf("agent: read_file: %w", err)
+	}
+	return out, nil
+}
+
+// NumberLines is a file's content as read_file returns it: lines start
+// through end, 1-based and inclusive, 0 standing for the first and the
+// last, each as "N\t...", cut to maxBytes. name is the file's, for errors.
+func NumberLines(name, content string, start, end, maxBytes int) (string, error) {
 	if isBinary(content) {
-		return "", fmt.Errorf("agent: read_file: %s is binary", cleaned)
+		return "", fmt.Errorf("%s is binary", name)
 	}
 	lines := splitLines(content)
 
-	start, end := cmp.Or(req.StartLine, 1), cmp.Or(req.EndLine, len(lines))
+	start, end = cmp.Or(start, 1), cmp.Or(end, len(lines))
 	if start < 1 {
-		return "", fmt.Errorf("agent: read_file: %s: start_line must be >= 1", cleaned)
+		return "", fmt.Errorf("%s: start_line must be >= 1", name)
 	}
 	if end < start {
-		return "", fmt.Errorf("agent: read_file: %s: end_line must be >= start_line", cleaned)
+		return "", fmt.Errorf("%s: end_line must be >= start_line", name)
 	}
 	if start > len(lines) {
-		return "", fmt.Errorf("agent: read_file: %s: start_line %d is beyond the file's %d lines", cleaned, start, len(lines))
+		return "", fmt.Errorf("%s: start_line %d is beyond the file's %d lines", name, start, len(lines))
 	}
 	end = min(end, len(lines))
 
@@ -114,7 +125,7 @@ func (rt *readFileTool) Run(_ context.Context, input json.RawMessage) (string, e
 		}
 		fmt.Fprintf(&b, "%d\t%s", i, lines[i-1])
 	}
-	return textcut.Truncate(b.String(), rt.maxBytes), nil
+	return textcut.Truncate(b.String(), maxBytes), nil
 }
 
 var grepSchema = json.RawMessage(`{
