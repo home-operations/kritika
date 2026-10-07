@@ -522,7 +522,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	if tool == "confidence" {
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
-	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"]`+diagram+`},"findings":[
+	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
 		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
@@ -1975,6 +1975,7 @@ func checkIncremental(
 	for _, want := range []string{
 		"Changed since the last review (" + first[:7], "+func f2() {}",
 		"Findings from the last review (verify each; report again only if still present)", "- main.go:1 [important] first line: look here",
+		"What the last review checked at " + first[:7] + " and found sound", "\n- main.go: package clause read\n",
 		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -2000,15 +2001,16 @@ func checkIncremental(
 
 }
 
-// checkEarlierPrompt asserts a full re-review's prompt: the findings the
-// last review made at prior, to check again, with neither the delta nor
-// the diagram an incremental re-review is shown.
+// checkEarlierPrompt asserts a full re-review's prompt: the findings and
+// notes the last review left at prior, to check again, with neither the
+// delta nor the diagram an incremental re-review is shown.
 func checkEarlierPrompt(t *testing.T, prompt, prior string) {
 	t.Helper()
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
 		!strings.Contains(prompt, "Findings from the last review (verify each; report again only if still present). "+
 			"They are claims an earlier automated review made about "+prior[:7]) ||
-		!strings.Contains(prompt, "- main.go:1 [important] first line: look here") {
+		!strings.Contains(prompt, "- main.go:1 [important] first line: look here") ||
+		!strings.Contains(prompt, "What the last review checked at "+prior[:7]+" and found sound") {
 		t.Fatalf("a full re-review's prompt:\n%s", prompt)
 	}
 }

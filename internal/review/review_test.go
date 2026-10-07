@@ -586,7 +586,7 @@ func TestSchemas(t *testing.T) {
 // schemas declare, at the summary and the finding level.
 func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
-		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d"},
+		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d", Checked: []string{"c"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
 			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
 	})
@@ -615,6 +615,27 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 			!slices.Equal(keys(got.Findings[0]), props(n.Properties["findings"].Items)) {
 			t.Fatalf("%s properties drifted from the JSON tags: %s", name, raw)
 		}
+	}
+}
+
+// TestParseChecked: the notes for the next review are cut to one line
+// each and to maxChecked of them, blank ones dropped.
+func TestParseChecked(t *testing.T) {
+	notes := make([]string, 0, 2+maxChecked)
+	notes = append(notes, `" main.go:\n f1 is pure "`, `"  "`)
+	want := []string{"main.go: f1 is pure"}
+	for i := range maxChecked {
+		notes = append(notes, fmt.Sprintf(`"n%d"`, i))
+		if len(want) < maxChecked {
+			want = append(want, fmt.Sprintf("n%d", i))
+		}
+	}
+	res, _, err := Parse(`{"summary":{"take":"t","praise":[],"checked":[`+strings.Join(notes, ",")+`]},"findings":[]}`, nil, ParseOptions{})
+	if err != nil || !slices.Equal(res.Summary.Checked, want) {
+		t.Fatalf("checked = %q, want %q (err %v)", res.Summary.Checked, want, err)
+	}
+	if res, _, _ := Parse(`{"summary":{"take":"t","praise":[]},"findings":[]}`, nil, ParseOptions{}); res.Summary.Checked != nil {
+		t.Fatalf("no notes = %q", res.Summary.Checked)
 	}
 }
 

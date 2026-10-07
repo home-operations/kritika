@@ -41,6 +41,7 @@ func loopPrompt(s Spec, strict bool) agentPrompt {
 func agentPromptSpec() Spec {
 	s := reviewSpec()
 	s.PriorHead = shaB
+	s.Prompt.PriorChecked = []string{"util.go: u is pure"}
 	return s
 }
 
@@ -109,9 +110,10 @@ func TestAgentPrompt(t *testing.T) {
 			var earlier *review.EarlierInput
 			switch {
 			case tt.scope == review.ScopeIncremental:
-				inc = &review.IncrementalInput{PriorHeadSHA: shaB, DeltaDiff: agentDiff, Prior: s.Prompt.Prior, PriorDiagram: tt.priorDiagram}
+				inc = &review.IncrementalInput{PriorHeadSHA: shaB, DeltaDiff: agentDiff, Prior: s.Prompt.Prior, PriorDiagram: tt.priorDiagram,
+					Checked: s.Prompt.PriorChecked}
 			case !tt.rerun:
-				earlier = &review.EarlierInput{HeadSHA: shaB, Findings: s.Prompt.Prior}
+				earlier = &review.EarlierInput{HeadSHA: shaB, Findings: s.Prompt.Prior, Checked: s.Prompt.PriorChecked}
 			}
 			want, _, _ := review.Build(review.Input{
 				Repository: "acme/widgets", Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main",
@@ -127,8 +129,8 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.priorDiagram != "" && !strings.Contains(user, tt.priorDiagram) {
 				t.Fatalf("incremental prompt lacks the prior diagram:\n%s", user)
 			}
-			if strings.Contains(user, "earlier finding") == tt.rerun {
-				t.Fatalf("a re-review is shown the last review's findings unless it re-runs the reviewed head:\n%s", user)
+			if strings.Contains(user, "earlier finding") == tt.rerun || strings.Contains(user, "u is pure") == tt.rerun {
+				t.Fatalf("a re-review is shown the last review's findings and notes unless it re-runs the reviewed head:\n%s", user)
 			}
 		})
 	}

@@ -155,10 +155,10 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, s
 	switch {
 	case pack.Scope == review.ScopeIncremental:
 		incremental = &review.IncrementalInput{PriorHeadSHA: p.PriorHead, DeltaDiff: pack.DeltaDiff, Prior: p.Prompt.Prior,
-			PriorDiagram: p.Prompt.PriorDiagram}
+			PriorDiagram: p.Prompt.PriorDiagram, Checked: p.Prompt.PriorChecked}
 	case p.PriorHead != "" && p.PriorHead != p.Head:
 		// A re-run at the reviewed head was asked for to look afresh.
-		earlier = &review.EarlierInput{HeadSHA: p.PriorHead, Findings: p.Prompt.Prior}
+		earlier = &review.EarlierInput{HeadSHA: p.PriorHead, Findings: p.Prompt.Prior, Checked: p.Prompt.PriorChecked}
 	}
 	pr := p.Prompt.PullRequest
 	user, omitted, contextOmitted := review.Build(review.Input{

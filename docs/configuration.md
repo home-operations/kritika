@@ -361,7 +361,10 @@ rebase, and does not count. A re-run at the head the last review saw, or a
 rebase that leaves the change as it was, always covers the whole pull
 request. A re-review that covers the whole pull request is still shown
 the last review's findings, to report again those that still hold, except
-a re-run at the head the last review saw, which looks afresh.
+a re-run at the head the last review saw, which looks afresh. Each review
+also leaves notes, which no comment shows, on what it checked beyond the
+diff and found sound, and the next re-review is shown them beside the
+findings.
 
 An incremental re-review reports what the new commits brought. A finding
 in the diff that the last review did not make, more than 3 lines from
