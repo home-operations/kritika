@@ -86,4 +86,4 @@
 _{{ . }}._
 {{ end -}}
 {{ end }}
-<sub>Reviews ({{ .Reviews }}) · Last reviewed commit: {{ if .HeadURL }}[{{ if .HeadSubject }}"{{ .HeadSubject }}"{{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}]({{ .HeadURL }}){{ else if .HeadSubject }}"{{ .HeadSubject }}"{{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }} · {{ .Model }}{{ if .Cost }} · {{ .Cost }}{{ end }}</sub>
+<sub>Reviews ({{ .Reviews }}) · Last reviewed commit: {{ if .HeadURL }}[{{ if .HeadSubject }}"{{ .HeadSubject }}"{{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}]({{ .HeadURL }}){{ else if .HeadSubject }}"{{ .HeadSubject }}"{{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }} · {{ .Model }}{{ if .Effort }}/{{ .Effort }}{{ end }}{{ if .Cost }} · {{ .Cost }}{{ end }}</sub>

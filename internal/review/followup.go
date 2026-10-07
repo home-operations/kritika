@@ -147,8 +147,12 @@ func oneLine(s string) string {
 	return s
 }
 
-// FollowUpBody renders the reply as posted.
-func FollowUpBody(reply, model string) string {
+// FollowUpBody renders the reply as posted, with the model that answered
+// and, after a slash, the effort it reasoned at when one was set.
+func FollowUpBody(reply, model, effort string) string {
+	if effort != "" {
+		model += "/" + effort
+	}
 	return reply + fmt.Sprintf("\n\n<sub>kritika follow-up with %s.</sub>\n", model)
 }
 

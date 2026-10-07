@@ -46,6 +46,8 @@ type RenderData struct {
 	// Reviews is how many reviews of the pull request this one makes.
 	Reviews int
 	Model   string
+	// Effort is how hard the model reasoned, "" for the provider's default.
+	Effort string
 	// Cost is what the pull request's reviews have cost together, as
 	// FormatUSD writes it, "" where the repository does not show it.
 	Cost string

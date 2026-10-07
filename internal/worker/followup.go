@@ -251,7 +251,7 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	// has been paid for it.
 	pctx, cancel := detach(ctx)
 	defer cancel()
-	replyID, err := f.reply(pctx, review.FollowUpBody(reply, agent.Model))
+	replyID, err := f.reply(pctx, review.FollowUpBody(reply, agent.Model, string(f.settings.Models.Effort)))
 	if err != nil {
 		return store.FollowupFailed, err
 	}
