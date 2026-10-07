@@ -224,8 +224,8 @@ application pool's if jobs wait on the pool, which
 `postgresql.parameters` for more replicas. CNPG's `cnpg_backends_total`
 metric shows what each `application_name` holds.
 
-The leader's hourly retention sweeps of transcripts
-and stored diffs work in batches, each its own statement, so a backlog
+The leader's hourly retention sweeps of transcripts, stored diffs and
+agent conversations work in batches, each its own statement, so a backlog
 larger than one statement could clear is worked off over the sweep rather
 than rolled back.
 

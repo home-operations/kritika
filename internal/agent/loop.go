@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/home-operations/kritika/internal/model"
@@ -69,12 +70,14 @@ type StepEvent struct {
 // Result is how a Run ended.
 type Result struct {
 	Stop StopReason
-	// Submitted is the Submit tool's input, set iff Stop == StopSubmitted.
-	Submitted json.RawMessage
-	Steps     int
-	ToolCalls map[string]int
-	Usage     model.Usage
-	CostUSD   float64
+	// Submitted is the Submit tool's input, and Conversation the exchange
+	// that ended with it, both set iff Stop == StopSubmitted.
+	Submitted    json.RawMessage
+	Conversation *Conversation
+	Steps        int
+	ToolCalls    map[string]int
+	Usage        model.Usage
+	CostUSD      float64
 	// Model is the model that answered the last step, empty before one
 	// has.
 	Model string
@@ -303,6 +306,10 @@ func (r Run) Do(ctx context.Context) Result {
 		if submitted != nil {
 			result.Stop = StopSubmitted
 			result.Submitted = submitted
+			result.Conversation = &Conversation{
+				System: r.System, Tools: toolDefs, Tokens: resp.Usage.Prompt() + resp.Usage.Output,
+				Messages: append(slices.Clone(messages), model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls}),
+			}
 			return result
 		}
 		if truncated {

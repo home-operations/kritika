@@ -26,6 +26,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/adapter"
+	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -232,7 +233,9 @@ type agentRunRow struct {
 type agenticHarness struct {
 	ctx context.Context
 	st  *store.Store
-	svc *ingest.Service
+	// runner is the store as a runner's role opens it.
+	runner *store.Store
+	svc    *ingest.Service
 	// insertOnly enqueues jobs without working them, as the web API does.
 	insertOnly *river.Client[pgx.Tx]
 	file       *configfile.File
@@ -265,7 +268,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	t.Cleanup(runnerStore.Close)
 
-	h := &agenticHarness{ctx: ctx, st: appStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
+	h := &agenticHarness{ctx: ctx, st: appStore, runner: runnerStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
 	srv := httptest.NewServer(h.sm)
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
@@ -387,6 +390,32 @@ func (h *agenticHarness) agentRow(t *testing.T, reviewID string) agentRunRow {
 	return r
 }
 
+// conversation is the conversation the runner of reviewID kept, read as
+// that runner reads its own run, with the session it was kept under and
+// the run's id; found is false when it kept none.
+func (h *agenticHarness) conversation(t *testing.T, reviewID string) (c agent.Conversation, session, runID string, found bool) {
+	t.Helper()
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT id FROM runner_runs WHERE review_id = $1 ORDER BY created_at DESC LIMIT 1`, reviewID).Scan(&runID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	err := h.runner.WithRunnerJob(h.ctx, runID, func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT session, conversation FROM agent_conversations WHERE runner_run_id = $1`, runID).Scan(&session, &raw)
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return agent.Conversation{}, "", runID, false
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		t.Fatal(err)
+	}
+	return c, session, runID, true
+}
+
 func TestAgenticReviewEndToEnd(t *testing.T) {
 	h := newAgenticHarness(t)
 	t.Run("the agent greps, reads and submits a finding", func(t *testing.T) { checkAgentSubmits(t, h) })
@@ -483,6 +512,20 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	}
 	checkAgentRules(t, system)
 	checkAgentTranscript(t, h, reviewID)
+	checkConversationKept(t, h, reviewID, system)
+}
+
+// checkConversationKept checks the runner of reviewID kept its conversation
+// for the next re-review under its own session: the system prompt the
+// provider was sent, every message as the last step sent it, and the
+// model's submission last.
+func checkConversationKept(t *testing.T, h *agenticHarness, reviewID, system string) {
+	t.Helper()
+	c, session, runID, found := h.conversation(t, reviewID)
+	if !found || session != runID || c.System != system || c.Tokens != 110 || len(c.Messages) != 6 ||
+		len(c.Messages[5].ToolCalls) != 1 || c.Messages[5].ToolCalls[0].Name != "submit_review" {
+		t.Fatalf("kept conversation = %+v under session %q (run %s), found %v", c, session, runID, found)
+	}
 }
 
 // checkAgentTranscript checks that the gateway recorded a review's steps
@@ -837,6 +880,9 @@ func checkAgentNeverSubmits(t *testing.T, h *agenticHarness) {
 	}
 	if run := h.agentRow(t, reviewID); run.stop != "no_submit" || run.steps != 2 {
 		t.Fatalf("agent run = %+v", run)
+	}
+	if c, _, _, found := h.conversation(t, reviewID); found {
+		t.Fatalf("a run that never submitted kept %+v", c)
 	}
 	if rows, tokens := h.usageTokens(t, reviewID); rows != 2 || tokens != 220 {
 		t.Fatalf("an unsubmitted run still spent tokens: usage rows=%d tokens=%d", rows, tokens)

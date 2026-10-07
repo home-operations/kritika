@@ -213,6 +213,10 @@ runner:
 - A transcript may contain repository content the agent read, and every
   member of its account can read it
   ([retention](configuration.md#how-kritika-runs)).
+- A review agent's conversation is also kept, unmasked since a provider's
+  prompt cache matches only the exact text, for the pull request's next
+  re-review: no dashboard view shows it, one that holds the run's own
+  tokens is not kept, and the leader deletes it after two hours.
 - An admin's every write is audit-logged in the same transaction as the
   change it makes, and the Configuration page shows a secret only as set
   or not, with a URL's credentials hidden.

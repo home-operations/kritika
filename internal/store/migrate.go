@@ -156,7 +156,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		// runner_runs it may update only what a runner reports, never the
 		// account or review its run belongs to.
 		`GRANT SELECT, UPDATE (` + strings.Join(runnerRunColumns, ", ") + `) ON runner_runs TO ` + runner,
-		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs TO ` + runner,
+		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs, agent_conversations TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}

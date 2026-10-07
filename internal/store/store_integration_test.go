@@ -479,7 +479,22 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 				t.Fatalf("a pack under another account must be refused, got %v", err)
 			}
 		})
+		t.Run("conversation under "+tt.name, func(t *testing.T) {
+			err := runner.WithRunnerJob(ctx, runID, func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens)
+					VALUES ($1, $2, $3, '{}', 1)`, runID, tt.account, runID)
+				return err
+			})
+			pgErr, refused := errors.AsType[*pgconn.PgError](err)
+			switch {
+			case tt.allowed && err != nil:
+				t.Fatalf("a runner must be able to keep its conversation: %v", err)
+			case !tt.allowed && (!refused || pgErr.Code != "42501"):
+				t.Fatalf("a conversation under another account must be refused, got %v", err)
+			}
+		})
 	}
+	t.Cleanup(func() { _, _ = s.owner.Exec(ctx, `DELETE FROM agent_conversations WHERE runner_run_id = $1`, runID) })
 }
 
 func TestRunSecretsToSweep(t *testing.T) {

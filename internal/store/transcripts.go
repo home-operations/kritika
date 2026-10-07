@@ -120,8 +120,8 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 // Rows one statement of a retention sweep takes. A sweep is many such
 // statements, each committed on its own, so a backlog too large for the
 // owner connection's statement timeout is worked off rather than rolled
-// back whole every time. A context pack carries a diff, so its batch is
-// the smaller. Variables for the tests.
+// back whole every time. A context pack carries a diff and a conversation
+// a whole exchange, so their batch is the smaller. Variables for the tests.
 var (
 	modelCallSweepBatch = 5000
 	diffSweepBatch      = 200
@@ -159,6 +159,25 @@ func (s *Store) SweepModelCalls(ctx context.Context, olderThan time.Duration) (i
 		SELECT id FROM model_calls WHERE created_at < now() - make_interval(secs => $1) LIMIT $2)`, olderThan, modelCallSweepBatch)
 	if err != nil {
 		return n, fmt.Errorf("store: sweep model calls: %w", err)
+	}
+	return n, nil
+}
+
+// SweepConversations deletes every account's agent conversations kept
+// more than olderThan ago, a batch at a time, and returns how many it
+// deleted. Owner connection, leader only, like SweepModelCalls.
+func (s *Store) SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error) {
+	if s.owner == nil {
+		return 0, errors.New("store: SweepConversations needs the owner connection")
+	}
+	if olderThan <= 0 {
+		return 0, fmt.Errorf("store: conversation retention %s is not positive", olderThan)
+	}
+	n, err := s.sweepBatches(ctx, `DELETE FROM agent_conversations WHERE runner_run_id IN (
+		SELECT runner_run_id FROM agent_conversations WHERE created_at < now() - make_interval(secs => $1) LIMIT $2)`,
+		olderThan, diffSweepBatch)
+	if err != nil {
+		return n, fmt.Errorf("store: sweep conversations: %w", err)
 	}
 	return n, nil
 }

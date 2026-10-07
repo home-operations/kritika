@@ -301,7 +301,8 @@ func (t agentTools) commands() []string {
 const gatewayRetries = 2
 
 // runAgentic runs the agent over the fetched head with the prompt already
-// composed, writes its agent_runs row and marks the run done.
+// composed, writes its agent_runs row, with a review's conversation for
+// the next re-review, and marks the run done.
 func runAgentic(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
 	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
@@ -356,6 +357,10 @@ func runAgentic(
 	}
 	rec.skillsOffered, rec.skillsOpened = offered, opened
 	rec.commandsOffered, rec.commandsRun = offeredCommands, ran
+	if p.Kind == KindReview && res.Conversation != nil {
+		// The gateway names a run's steps by the run.
+		rec.conversation, rec.tokens, rec.session = keptConversation(res.Conversation, secrets, logger), res.Conversation.Tokens, p.RunID
+	}
 	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "commands", ran, "sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
 	return writeAgentRun(ctx, st, p, rec, "done")
@@ -382,6 +387,37 @@ type agentRecord struct {
 	// and the worker then names the model the run was granted.
 	model string
 	err   string
+	// conversation is the agent's exchange, encoded, which the pull
+	// request's next re-review may carry on, nil when none is kept, with
+	// its size in tokens; session is the conversation its steps were sent
+	// as.
+	conversation []byte
+	tokens       int64
+	session      string
+}
+
+// keptConversation is the conversation of a review's agent, encoded, that
+// its run keeps for the next re-review, nil for none: one too long to
+// carry on, or one holding the run's secrets, which a conversation kept
+// unmasked must not.
+func keptConversation(c *agent.Conversation, secrets Secrets, logger *slog.Logger) []byte {
+	if c == nil {
+		return nil
+	}
+	if c.Tokens >= agent.ContinueTokens {
+		logger.Info("conversation not kept: too long to carry on", "tokens", c.Tokens)
+		return nil
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		logger.Warn("conversation not kept", "error", err)
+		return nil
+	}
+	if secrets.Mask(string(b)) != string(b) {
+		logger.Warn("conversation not kept: it holds one of the run's secrets")
+		return nil
+	}
+	return b
 }
 
 // newAgentRecord encodes a finished Run and the sources its commands
@@ -424,6 +460,13 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
+		}
+		if rec.conversation != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens)
+				SELECT id, account_id, $2, $3, $4 FROM runner_runs WHERE id = $1`,
+				p.RunID, rec.session, string(rec.conversation), rec.tokens); err != nil {
+				return fmt.Errorf("runner: write conversation: %w", err)
+			}
 		}
 		return setPhaseTx(ctx, tx, p.RunID, phase)
 	})
