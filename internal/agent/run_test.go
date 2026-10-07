@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/memory"
+
+	"github.com/home-operations/kritika/internal/gittest"
 )
 
 // helperEnv makes the test binary act as a command for the run tool, so
@@ -363,10 +365,11 @@ func TestCheckout(t *testing.T) {
 func symlinkTree(t *testing.T) *object.Tree {
 	t.Helper()
 	fs := memfs.New()
-	r, err := git.Init(memory.NewStorage(), fs)
+	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
 	if err != nil {
 		t.Fatal(err)
 	}
+	gittest.Unsigned(t, r)
 	wt, err := r.Worktree()
 	if err != nil {
 		t.Fatal(err)

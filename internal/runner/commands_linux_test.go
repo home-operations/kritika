@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v6"
 
 	"github.com/home-operations/kritika/internal/agent"
 )

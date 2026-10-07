@@ -7,10 +7,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-billy/v6/memfs"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/go-git/go-git/v6/storage/memory"
+
+	"github.com/home-operations/kritika/internal/gittest"
 )
 
 const goFile = `package demo
@@ -25,7 +27,8 @@ func Use() { _ = Build("x") }
 func trees(t *testing.T) (head, base *object.Tree) {
 	t.Helper()
 	fs := memfs.New()
-	r, _ := git.Init(memory.NewStorage(), fs)
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
 	wt, _ := r.Worktree()
 	write := func(name, content string) {
 		f, _ := fs.Create(name)
@@ -118,7 +121,8 @@ func TestBuildStopsAtBudget(t *testing.T) {
 // chunk cut to its limit ends on a rune boundary.
 func TestBuildKeepsTextValidUTF8(t *testing.T) {
 	fs := memfs.New()
-	r, _ := git.Init(memory.NewStorage(), fs)
+	r, _ := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	gittest.Unsigned(t, r)
 	wt, _ := r.Worktree()
 	for name, content := range map[string]string{
 		"latin1.yaml": "key: caf\xe9\n",

@@ -16,12 +16,12 @@ import (
 	"slices"
 	"strings"
 
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/client"
+	"github.com/go-git/go-git/v6/plumbing/object"
+	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 )
 
 // Refs the commits are fetched into. They are private to kritika so the bare
@@ -74,10 +74,13 @@ type Result struct {
 	DeltaChanged []string
 	// Dir is the bare repository on disk; the caller removes it.
 	Dir string
+
+	repo *git.Repository
 }
 
-// Close removes the bare repository.
-func (r *Result) Close() error { return os.RemoveAll(r.Dir) }
+// Close closes and removes the bare repository. go-git keeps the fetched
+// pack open, and a removed file stays on disk while it is.
+func (r *Result) Close() error { return errors.Join(r.repo.Close(), os.RemoveAll(r.Dir)) }
 
 // Run fetches head and base at depth one and diffs them. The temp dir is
 // removed on error; on success the caller owns it through Result.Close.
@@ -97,28 +100,32 @@ func Run(ctx context.Context, f Fetch) (*Result, error) {
 	return res, nil
 }
 
-func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
+func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 	repo, err := git.PlainInit(dir, true)
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: init: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = repo.Close()
+		}
+	}()
 	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: remoteName, URLs: []string{f.CloneURL}}); err != nil {
 		return nil, fmt.Errorf("gitfetch: remote: %w", err)
 	}
-	var auth transport.AuthMethod
+	var opts []client.Option
 	if f.Token != "" {
-		auth = &githttp.BasicAuth{Username: "x-access-token", Password: f.Token}
+		opts = append(opts, client.WithHTTPAuth(&githttp.BasicAuth{Username: "x-access-token", Password: f.Token}))
 	}
 	// Fetching a bare SHA needs the server to allow it; GitHub does for
 	// reachable commits. Both refspecs in one fetch so the server can send
 	// one pack.
 	err = repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteName:   remoteName,
-		Auth:         auth,
-		Depth:        1,
-		Tags:         git.NoTags,
-		RefSpecs:     refSpecs(f),
-		ProxyOptions: proxyFromEnv(),
+		RemoteName:    remoteName,
+		ClientOptions: opts,
+		Depth:         1,
+		Tags:          git.NoTags,
+		RefSpecs:      refSpecs(f),
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("gitfetch: fetch: %w", err)
@@ -129,7 +136,7 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	}
 	if f.Base == "" {
 		// Head only: no diff, the caller walks the tree.
-		return &Result{Head: head, Dir: dir}, nil
+		return &Result{Head: head, Dir: dir, repo: repo}, nil
 	}
 	base, err := repo.CommitObject(plumbing.NewHash(f.Base))
 	if err != nil {
@@ -143,11 +150,11 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Head: head, Base: base, Diff: diff, PatchID: PatchID(diff), Changed: changed, Dir: dir}
+	res := &Result{Head: head, Base: base, Diff: diff, PatchID: PatchID(diff), Changed: changed, Dir: dir, repo: repo}
 	if f.Prior == "" {
 		return res, nil
 	}
-	if res.Prior, res.PriorErr = fetchPrior(ctx, repo, auth, f.Prior); res.Prior == nil {
+	if res.Prior, res.PriorErr = fetchPrior(ctx, repo, opts, f.Prior); res.Prior == nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("gitfetch: prior: %w", ctx.Err())
 		}
@@ -176,31 +183,19 @@ func run(ctx context.Context, f Fetch, dir string) (*Result, error) {
 	return res, nil
 }
 
-// proxyFromEnv is the proxy the pod was handed as HTTPS_PROXY, which go-git
-// does not read on its own. Empty means a direct connection.
-func proxyFromEnv() transport.ProxyOptions {
-	for _, name := range []string{"HTTPS_PROXY", "https_proxy"} {
-		if v := os.Getenv(name); v != "" {
-			return transport.ProxyOptions{URL: v}
-		}
-	}
-	return transport.ProxyOptions{}
-}
-
 // fetchPrior fetches the prior head in a fetch of its own, so that an
 // unreachable prior cannot fail the fetch of head and base. The error says
 // why the prior could not be had; the caller decides whether that matters.
-func fetchPrior(ctx context.Context, repo *git.Repository, auth transport.AuthMethod, prior string) (*object.Commit, error) {
+func fetchPrior(ctx context.Context, repo *git.Repository, opts []client.Option, prior string) (*object.Commit, error) {
 	if c, err := repo.CommitObject(plumbing.NewHash(prior)); err == nil {
 		return c, nil
 	}
 	err := repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteName:   remoteName,
-		Auth:         auth,
-		ProxyOptions: proxyFromEnv(),
-		Depth:        1,
-		Tags:         git.NoTags,
-		RefSpecs:     []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
+		RemoteName:    remoteName,
+		ClientOptions: opts,
+		Depth:         1,
+		Tags:          git.NoTags,
+		RefSpecs:      []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("gitfetch: fetch prior %s: %w", prior, err)
