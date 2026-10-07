@@ -121,127 +121,24 @@ an image volume extension, the extensions through a `Database` resource, the
 application and runner roles as `DatabaseRole` resources, the Secrets with
 their `uri` key for `database.*.existingSecret`, failover and backups.
 
-### Egress gateway
+### Security
 
-The kritika serve pods serve a forward proxy on `service.gatewayPort`, and runner Jobs
-are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With `networkPolicy.enabled`,
-a runner pod can then reach nothing but DNS, Postgres and that port: its git
-fetch and every command it runs go through the gateway, which allows a
-destination by name and by the address it resolves to. github.com is
-always allowed once an app is declared; `egress` in `configFile` sets the
-rest:
+Runner Jobs parse untrusted content and run what the model asks, so the
+chart confines them:
 
-| Key                  | What it does                                                                                                                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `egress.allow`       | allows registries, release APIs and the like; `"*"` allows every host on the internet, while a private, cluster or link-local address is reached only when an entry names an address or CIDR covering it |
-| `egress.deny`        | refuses hosts and addresses whatever `allow` says                                                                                                                                                        |
-| `egress.credentials` | names hosts the gateway adds a bearer token to when a runner sends it a plain `http://` request, so the runner never holds the token                                                                     |
+- With `networkPolicy.enabled`, a runner pod reaches nothing but DNS,
+  Postgres and the egress gateway kritika serve runs on
+  `service.gatewayPort`, which allows what the configuration file's
+  `egress` lists and is the runner's only way to its model.
+- A runner holds no provider key or App key: only a GitHub token for its
+  run, a gateway token and the runner role's database URI.
+- `runner.tools` adds programs a review's `agent.commands` may run, from
+  their own images; `config.runnerRuntimeClass` puts runner Jobs under a
+  sandboxed runtime such as gVisor; `runner.resources` keeps a runaway run
+  in its own cgroup.
 
-The token is a secret reference like any other in the file:
-
-```yaml
-configFile:
-  egress:
-    allow: [api.github.com, "*.githubusercontent.com", ghcr.io]
-    credentials:
-      api.github.com: { env: GITHUB_TOKEN }
-env:
-  GITHUB_TOKEN:
-    valueFrom:
-      secretKeyRef: { name: kritika-github-token, key: token }
-```
-
-The same port is a runner's model endpoint, and every review runs through
-it, so it has no switch:
-
-- kritika serve mints a token for each run, good for that run until
-  `config.gatewayTokenTtl` past its Job's deadline and revoked when it
-  ends, and hands it to the pod in place of a provider key.
-- The gateway answers each step through the account's provider with the
-  key only kritika serve holds, refuses a step once the run's token budget
-  or the account's `tokensPerMonth` is spent, and records the step's
-  usage. Provider endpoints are therefore not in a runner's allowlist.
-- The runner also asks it once for the review's similar code: the gateway
-  embeds the diff with the instance's embedder and answers from the
-  repository's index, charging the embedding to the run.
-
-### Runner tools
-
-A repository's `agent.commands` lets the model run allowlisted
-binaries over a checkout of the head commit: to read a dependency bump's
-release notes and compare view with `gh`, fetch anything else with
-`curl`, search with `rg` and `fd`, or read JSON and YAML with `jq` and
-`yq`. Runner Jobs run on the release's `-tools` image, a distroless image
-with all six, pinned by digest like the chart's image; a command is offered only when the runner image has it on
-its `PATH`, so an image set in `runner.image` without them offers none.
-`gh` signs in with the run's own token, which can read only the
-repository under review and public repositories, and an app already
-allows `github.com` and `api.github.com` through the gateway. Every other
-host `curl` reaches must pass the gateway too, so add the release hosts
-and registries to `egress.allow`:
-
-```yaml
-configFile:
-  egress:
-    allow: ["*.githubusercontent.com"]
-  repositories:
-    org-1/repo-1:
-      agent: { commands: [gh, curl, fd, rg] }
-```
-
-A command runs without a shell, with an environment of `PATH`, its own
-`HOME` and the gateway, `gh` also with the run's read-only token as
-`GH_TOKEN`, and the runner makes itself unreadable to it first,
-so a command cannot read the runner's credentials from `/proc`. The
-`-tools` image has no shell either, and the checkout is written without
-execute bits, so `fd -x` or `rg --pre` can start only programs the image
-and `runner.tools` ship. The
-checkout carries an empty `.git` whose `origin` is the repository's clone
-URL, no history, so a tool that locates a repository by its working tree,
-such as flate, finds this one. A
-runner still parses untrusted content and runs what the model asks: run
-runner Jobs under a sandboxed RuntimeClass.
-
-`runner.tools` mounts more binaries from their own images, each as a
-read-only image volume put first on the runner's `PATH`; a tool is a
-`name`, a digest-pinned `image`, the `path` of its binaries inside the
-image (`/` unless set) and the `commands` it provides (its name unless
-set), which `agent.commands` may then allow. The binaries must be static
-or link only against glibc, libgcc and libstdc++. It needs Kubernetes 1.33
-or newer:
-
-```yaml
-runner:
-  tools:
-    - name: flate
-      image: ghcr.io/home-operations/flate:0.6.5@sha256:e0e2d2de97539b3141977e8bb3bbb50ea5c5afe89477950e5fa972c9862478da
-configFile:
-  agent: { commands: [gh, flate] }
-```
-
-### Runner sandbox
-
-Runner Jobs parse untrusted repository content and run what the model asks of
-them. Set `config.runnerRuntimeClass` to a sandboxed runtime
-the cluster offers (`gvisor` with runsc, or a Kata class) so a kernel
-vulnerability reachable from the pod is contained by the sandbox rather than
-the node. It is advised, not required: without it the pod's other bounds
-still hold (no provider key or App key, egress by hostname through the gateway,
-read-only root, no capabilities), but the container runtime alone separates
-it from the node.
-
-Set `runner.resources` too. Without them runner pods are BestEffort, with no
-memory limit, so a runaway run presses on its whole node rather than being
-killed in its own cgroup. Index and review runs have stayed under 100 MiB of
-working set so far, so a `128Mi` request with a `1Gi` limit leaves ample
-room:
-
-```yaml
-runner:
-  resources:
-    requests: { cpu: 10m, memory: 128Mi }
-    limits: { memory: 1Gi }
-```
+[Security](https://kritika.home-operations.com/security/) covers the
+gateway, runner tools and the sandbox in full.
 
 ### Topology
 
