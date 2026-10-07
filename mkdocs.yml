@@ -121,6 +121,7 @@ nav:
   - Getting started:
       - Setup: setup.md
       - Postgres with CloudNativePG: database.md
+      - Security: security.md
   - Configuration:
       - Configuration file: configuration.md
       - Repository settings: repository-config.md

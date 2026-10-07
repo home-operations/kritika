@@ -103,19 +103,15 @@ review; the dashboard's setup checklist shows what is still missing.
 
 ### Security notes
 
-- **Install kritika into a namespace of its own:** runner Jobs run in the
-  release namespace, and kritika's Role can create, patch and delete every
-  Secret there, though it can never get or list one.
+- **Install kritika into a namespace of its own:** kritika's Role can
+  create, patch and delete every Secret in the release namespace.
 - **Turn on the chart's NetworkPolicy:** runner pods then reach the
-  outside only through kritika's egress gateway, which every review's
-  model calls go through too. It is a forward proxy that allows
-  destinations by name and resolved address: github.com and the
-  configuration's `egress.allow`, less `egress.deny`, with private and
-  cluster addresses refused unless allowed. Runner pods never hold the
-  credentials `egress.credentials` lets the gateway add.
-- **Run runner Jobs under a sandboxed RuntimeClass** such as gVisor (the
-  chart's `config.runnerRuntimeClass`) where the cluster has one, since
+  outside only through kritika's egress gateway.
+- **Run runner Jobs under a sandboxed RuntimeClass** such as gVisor, since
   the pod parses untrusted content.
+
+[Security](https://kritika.home-operations.com/security/) covers what a
+runner holds, the gateway and the sandbox.
 
 ## Documentation
 
@@ -124,6 +120,7 @@ review; the dashboard's setup checklist shows what is still missing.
 | [Setup](https://kritika.home-operations.com/setup/)                                 | from install to the first review: the GitHub App, its permissions and its webhook                 |
 | [Configuration](https://kritika.home-operations.com/configuration/)                 | the configuration file: sign-in, GitHub Apps, providers, repository settings, accounts and egress |
 | [`.kritika.yaml` reference](https://kritika.home-operations.com/repository-config/) | what a repository's own file can change                                                           |
+| [Security](https://kritika.home-operations.com/security/)                           | hardening an install, what a runner holds, the egress gateway, runner tools and the sandbox       |
 | [Chart values](charts/kritika/README.md)                                            | every value of the Helm chart                                                                     |
 | [Reviews](https://kritika.home-operations.com/reviews/)                             | when a review runs, what it posts, and the commands that steer it                                 |
 | [Dashboard](https://kritika.home-operations.com/dashboard/)                         | the setup checklist, the Configuration page, repository on/off and actions                        |

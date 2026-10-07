@@ -86,6 +86,8 @@ flowchart LR
   key and an embedder, and get to the first review.
 - **[Postgres with CloudNativePG](database.md)**: the database, its three
   roles, connection URIs, failover and backups.
+- **[Security](security.md)**: hardening an install, what a runner holds,
+  the egress gateway, runner tools and the sandbox.
 - **[Configuration file](configuration.md)**: sign-in and role mappings, GitHub
   Apps, providers, the repository settings, repository entries and accounts.
 - **[Repository settings](repository-config.md)**: what a repository's

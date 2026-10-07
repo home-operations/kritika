@@ -175,6 +175,5 @@ Re-run, cancel and reindex queue the work rather than running it inline.
   before a restart.
 - A secret is read from its variable at startup too: restart the pods
   after rotating one.
-- A role mapping is only as trustworthy as what it reads. Map on groups
-  or roles the IdP controls, not on an email or name a user can set on
-  their own profile.
+- A role mapping is only as trustworthy as what it reads
+  ([security](security.md#hardening-an-install)).
