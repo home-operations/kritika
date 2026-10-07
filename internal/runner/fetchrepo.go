@@ -114,6 +114,9 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 			return "", fmt.Errorf("agent: fetch_repo: %w", err)
 		}
 	}
+	// A model that sends every property may send paths as [""], which
+	// asks for no path.
+	in.Paths = slices.DeleteFunc(in.Paths, func(p string) bool { return strings.TrimSpace(p) == "" })
 	switch {
 	case in.Tags != nil && in.Ref == "":
 		if in.From != "" || len(in.Paths) > 0 {
