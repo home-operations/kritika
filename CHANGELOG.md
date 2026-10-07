@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.42](https://github.com/home-operations/kritika/compare/0.0.41...0.0.42) (2026-10-07)
+
+
+### Features
+
+* **review:** let fetch_repo list a repository's tags ([#645](https://github.com/home-operations/kritika/issues/645)) ([34abc70](https://github.com/home-operations/kritika/commit/34abc70f629002fcbcd27c81f10b209ac931f75b))
+* **review:** send a version bump's diff to fetch_repo, not the compare view ([#642](https://github.com/home-operations/kritika/issues/642)) ([f28f0de](https://github.com/home-operations/kritika/commit/f28f0de502dfc344510cadc0dd72bbd57381eb00))
+* **upstream:** list a repository's tags ([#644](https://github.com/home-operations/kritika/issues/644)) ([ad88579](https://github.com/home-operations/kritika/commit/ad88579a525844ca179020a25dcec47c5172ab57))
+
+
+### Bug Fixes
+
+* **agent:** keep a cut tool output's note within the output limit ([#641](https://github.com/home-operations/kritika/issues/641)) ([a794a80](https://github.com/home-operations/kritika/commit/a794a80cb5783361e6dfddd06941a575048c3b64))
+
 ## [0.0.41](https://github.com/home-operations/kritika/compare/0.0.40...0.0.41) (2026-10-07)
 
 
