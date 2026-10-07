@@ -7,8 +7,8 @@
 {{ .Result.Summary.Headline }}
 
 {{ end -}}
-{{ if .Result.Findings -}}
-**{{ len .Result.Findings }} {{ plural "finding" "findings" (len .Result.Findings) }}**{{ if .Counts.Blocking }} · {{ .Counts.Blocking }} blocking{{ end }}{{ if .Counts.Important }} · {{ .Counts.Important }} important{{ end }}{{ if .Counts.Nit }} · {{ .Counts.Nit }} nit{{ end }}
+{{ if .Counts.Total -}}
+**{{ .Counts.Total }} {{ plural "finding" "findings" .Counts.Total }}**{{ if .Counts.Blocking }} · {{ .Counts.Blocking }} blocking{{ end }}{{ if .Counts.Important }} · {{ .Counts.Important }} important{{ end }}{{ if .Counts.Nit }} · {{ .Counts.Nit }} nit{{ end }}
 {{ else -}}
 **No findings**
 {{ end }}

@@ -264,6 +264,21 @@ func TestRenderSummaryLinks(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryOutsideDiffOnly: findings the diff does not show count
+// in the summary's line like any other, so a review with only those does
+// not read as finding nothing.
+func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
+	d := sampleData()
+	d.Result.Findings = nil
+	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "Never cleared."}}
+	d.Counts = Result{Findings: d.Unanchored}.Counts()
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, "**1 finding** · 1 important\n") || strings.Contains(body, "No findings") ||
+		!strings.Contains(body, "**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n") {
+		t.Fatalf("body:\n%s", body)
+	}
+}
+
 func TestRenderSummarySources(t *testing.T) {
 	d := sampleData()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
