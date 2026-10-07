@@ -475,9 +475,11 @@ decided in this order:
 
 An `owner/name` entry may not set `enabled`: the dashboard owns a
 repository's on or off, and the configuration only says where one starts.
-A repository that is off is neither reviewed, polled nor indexed. One an
-admin turned off, or that the App no longer reaches, has its index dropped
-once `KRITIKA_INDEX_GRACE` has passed.
+A repository that is off, that the App no longer reaches, or whose account
+no App serves is neither reviewed, polled nor indexed. Its index is
+dropped once it has been off for `KRITIKA_INDEX_GRACE`, counted from the
+leader's hourly sweep that first finds it off; one that runs again before
+then keeps its index.
 
 ## `accounts`
 

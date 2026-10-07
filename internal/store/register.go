@@ -44,7 +44,9 @@ func (s *Store) RegisterRepositories(ctx context.Context, accountID string, repo
 // names it, spelling included, and returns its id and whether it is new. A
 // row the forge manages is enabled, since the forge just named it; one the
 // spec lists keeps its enabled flag. A DefaultBranch of "" leaves the known
-// one, and so does a nil Traits the known traits.
+// one, and so does a nil Traits the known traits. A row enabled again loses
+// the time the index sweep found it stopped: it may run, and stop again,
+// before the next sweep sees it.
 func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository) (id string, isNew bool, err error) {
 	var archived, fork *bool
 	if r.Traits != nil {
@@ -59,6 +61,7 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
+			stopped_at = CASE WHEN repositories.managed_by = 'forge' AND NOT repositories.enabled THEN NULL ELSE repositories.stopped_at END,
 			archived = coalesce($5, repositories.archived),
 			fork = coalesce($6, repositories.fork),
 			updated_at = now()
@@ -85,9 +88,11 @@ func TurnedOn(ctx context.Context, tx pgx.Tx, id string) (*bool, error) {
 }
 
 // TurnOn records an admin's choice to review the repository with id or
-// not, and when it was made.
+// not, and when it was made. Turning it on clears the time the index sweep
+// found it stopped, as EnsureRepository does enabling it.
 func TurnOn(ctx context.Context, tx pgx.Tx, id string, on bool) error {
-	tag, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = $2, turned_at = now(), updated_at = now() WHERE id = $1`, id, on)
+	tag, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = $2, turned_at = now(),
+		stopped_at = CASE WHEN $2 THEN NULL ELSE stopped_at END, updated_at = now() WHERE id = $1`, id, on)
 	if err != nil {
 		return fmt.Errorf("store: turn repository %s on or off: %w", id, err)
 	}
