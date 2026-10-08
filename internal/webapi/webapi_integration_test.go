@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -466,7 +467,7 @@ func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
 			if status != 200 {
 				t.Fatalf("status = %d: %s", status, body)
 			}
-			want, _ := json.Marshal(transcriptOf(transcript.Rebuild(tc.rows)))
+			want, _ := jsonv2.Marshal(transcriptOf(transcript.Rebuild(tc.rows)), jsonOptions)
 			if strings.TrimSpace(string(body)) != string(want) {
 				t.Errorf("transcript =\n%s\nwant\n%s", body, want)
 			}

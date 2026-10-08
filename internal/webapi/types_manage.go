@@ -53,7 +53,7 @@ type RegisterResult struct {
 // Accepted is an action queued; JobID is the queued job, when there is
 // one.
 type Accepted struct {
-	JobID int64 `json:"jobId,omitempty"`
+	JobID int64 `json:"jobId,omitzero"`
 }
 
 // AuditAction names what an audit event records.

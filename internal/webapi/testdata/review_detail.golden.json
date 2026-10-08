@@ -42,7 +42,7 @@
   "summary": {
     "take": "Looks fine.",
     "praise": ["tests"],
-    "diagram": "flowchart TD\n  A --\u003e B"
+    "diagram": "flowchart TD\n  A --> B"
   },
   "findings": [
     {

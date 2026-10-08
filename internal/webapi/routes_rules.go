@@ -100,7 +100,6 @@ type repoRules struct {
 func collectRules(repos []repoRules) []Rule {
 	byKey := map[string]*Rule{}
 	add := func(r Rule, repo string) {
-		r.When = nonNil(r.When)
 		parts := []string{string(r.Kind), r.ID, r.Text, r.Path, r.Description, strings.Join(r.Paths, "\x00"), whenKey(r.When), string(r.Source)}
 		key := strings.Join(parts, "\x01")
 		if r.Source == RuleFromEntry {
@@ -117,11 +116,11 @@ func collectRules(repos []repoRules) []Rule {
 		own := rr.settings.Review
 		contextFrom := RuleSource(rr.sources["context"])
 		for _, c := range own.Context {
-			add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: nonNil(c.Paths), Source: contextFrom}, rr.name)
+			add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: c.Paths, Source: contextFrom}, rr.name)
 		}
 		for _, w := range own.Rules {
 			source := ruleFrom[rr.ruleScopes[w.ID]]
-			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), When: w.When, Source: source}, rr.name)
+			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: w.Paths, When: w.When, Source: source}, rr.name)
 		}
 		if rr.doc == nil {
 			continue
@@ -132,12 +131,12 @@ func collectRules(repos []repoRules) []Rule {
 		}
 		for _, c := range m.Review.Context {
 			if !slices.ContainsFunc(own.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
-				add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: nonNil(c.Paths), Source: RuleFromRepository}, rr.name)
+				add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: c.Paths, Source: RuleFromRepository}, rr.name)
 			}
 		}
 		for _, w := range m.Review.Rules[len(own.Rules):] {
 			add(Rule{
-				Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: nonNil(w.Paths), When: w.When, Source: RuleFromRepository,
+				Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: w.Paths, When: w.When, Source: RuleFromRepository,
 			}, rr.name)
 		}
 	}
