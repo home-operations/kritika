@@ -119,7 +119,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	// Everything the worker reads back is decided here, before the pack is
 	// written: whether the review is skipped, what it builds on, and what
 	// the prompt was given. A skipped review spends nothing on a model.
-	scope, scopeReason := review.DecideScope(p.PriorHead != "", p.PriorHead == p.Head, priorHead != nil,
+	scope, scopeReason := review.DecideScope(p.PriorHead != "", p.PriorHead == p.Head, p.Prompt.PullRequest.Manual(), priorHead != nil,
 		len(deltaPaths), p.Prompt.MaxDeltaFiles)
 	skip, skipDetail, err := agentSkip(p, res.Changed, res.PatchID, res.Diff)
 	switch {
