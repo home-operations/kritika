@@ -31,6 +31,9 @@ type priorReview struct {
 	diagram string
 	// checked are its notes on what it checked and found sound.
 	checked []string
+	// confidence is its confidence score and risk, nil when it was not
+	// scored.
+	confidence *review.Confidence
 }
 
 type priorFinding struct {
@@ -44,15 +47,21 @@ type priorFinding struct {
 // findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
 	var p priorReview
+	var confidence []byte
 	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, merge_base_sha, coalesce(summary->>'diagram', ''),
-		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')) FROM reviews
+		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')), confidence FROM reviews
 		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA, &p.trigger, &p.mergeBase, &p.diagram, &p.checked)
+		Scan(&p.id, &p.headSHA, &p.trigger, &p.mergeBase, &p.diagram, &p.checked, &confidence)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil
 	}
 	if err != nil {
 		return priorReview{}, fmt.Errorf("worker: load last completed review: %w", err)
+	}
+	if confidence != nil {
+		if err := json.Unmarshal(confidence, &p.confidence); err != nil {
+			return priorReview{}, fmt.Errorf("worker: decode last completed review's confidence: %w", err)
+		}
 	}
 	err = tx.QueryRow(ctx, `SELECT c.changed_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
 		WHERE rr.review_id = $1 ORDER BY c.created_at DESC LIMIT 1`, p.id).Scan(&p.changed)

@@ -1763,6 +1763,9 @@ review:
 	}
 	checkWithdrawn(t, lf)
 	checkConfidence(ctx, t, appStore, lf, fc, accountID, codeHead)
+	pushedHead := commit("more code", map[string]string{"main.go": "package main\n\nfunc d() {}\n\nfunc f() {}\n"})
+	dispatchPR(3, pushedHead, false)
+	checkEarlierRisk(t, fc, waitReview, pushedHead, codeHead)
 
 	// The same kind of change carrying the label the filter excludes.
 	labelledHead := commit("labelledHead", map[string]string{"main.go": "package main\n\nfunc e() {}\n"})
@@ -1873,9 +1876,11 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	if scorer != review.ConfidenceSystem || !slices.Equal(efforts, []model.Effort{model.EffortXHigh, model.EffortLow}) {
 		t.Fatalf("the last call was not the confidence model's at the file's efforts (%v):\n%s", efforts, scorer)
 	}
-	// The scorer is shown what the review says it read.
-	if !strings.Contains(asked, "\nIts summary: Changes main.go.\n") || !strings.Contains(asked, "\n- main.go: package clause read\n") {
-		t.Fatalf("the scorer was not shown the review's account:\n%s", asked)
+	// The scorer is shown what the review says it read, and on a first
+	// review no earlier risk.
+	if !strings.Contains(asked, "\nIts summary: Changes main.go.\n") || !strings.Contains(asked, "\n- main.go: package clause read\n") ||
+		strings.Contains(asked, "The last review of this pull request") {
+		t.Fatalf("the scorer was not shown the review's account alone:\n%s", asked)
 	}
 	var confidence string
 	var calls, charged int
@@ -1891,7 +1896,11 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	if err := json.Unmarshal([]byte(confidence), &got); err != nil {
 		t.Fatalf("confidence = %s, %v", confidence, err)
 	}
-	if want := (review.Confidence{Score: 2, Threshold: 4, Reason: "Nothing else stands out.", Risk: review.RiskMedium, Model: "reviewer"}); got != want {
+	want := review.Confidence{
+		Score: 2, Threshold: 4, Reason: "Nothing else stands out.", Risk: review.RiskMedium, Model: "reviewer",
+		Rubric: review.ConfidenceRubric(review.ConfidenceSystem),
+	}
+	if got != want {
 		t.Fatalf("confidence = %+v, want %+v", got, want)
 	}
 	if calls != 1 || charged != 1 {
@@ -1948,6 +1957,23 @@ func checkConfidenceCounted(ctx context.Context, t *testing.T, appStore *store.S
 	}
 	if len(want) == 0 || !maps.Equal(got, want) {
 		t.Fatalf("scores counted = %v, want the scored reviews' %v", got, want)
+	}
+}
+
+// checkEarlierRisk asserts that the review of head, pushed onto the pull
+// request whose review of prior checkConfidence asserted, is scored with
+// the risk that review was rated.
+func checkEarlierRisk(t *testing.T, fc *fakeCompleter, waitReview func(string) (string, string, string), head, prior string) {
+	t.Helper()
+	if status, _, _ := waitReview(head); status != "completed" {
+		t.Fatalf("status = %s, want completed", status)
+	}
+	fc.mu.Lock()
+	asked := fc.users[len(fc.users)-1]
+	fc.mu.Unlock()
+	if want := "\n\nThe last review of this pull request, at " + review.ShortSHA(prior) +
+		", rated its risk medium. Its reason: Nothing else stands out.\n"; !strings.Contains(asked, want) {
+		t.Fatalf("the scorer was not shown the last review's risk:\n%s", asked)
 	}
 }
 
