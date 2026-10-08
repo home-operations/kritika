@@ -55,6 +55,19 @@ func thread(id string, resolved bool, comments ...string) string {
 	return fmt.Sprintf(`{"id":%q,"isResolved":%v,"comments":{"nodes":[%s]}}`, id, resolved, strings.Join(nodes, ","))
 }
 
+func TestGraphQLErrorKeepsLittleOfTheBody(t *testing.T) {
+	f, c := newFakeAPI(t)
+	c.login = "kritika[bot]"
+	f.mux.HandleFunc("POST /api/graphql", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprint(w, "<html>"+strings.Repeat("x", 100<<10)+"</html>")
+	})
+	_, err := c.ResolveThread(t.Context(), "o", "r", 7, 1, true)
+	if err == nil || !strings.Contains(err.Error(), ": graphql: 502 Bad Gateway: <html>") || len(err.Error()) > maxGraphQLErrorBytes+128 {
+		t.Fatalf("error = %.80v... (%d bytes)", err, len(fmt.Sprint(err)))
+	}
+}
+
 func TestResolveThread(t *testing.T) {
 	tests := []struct {
 		name         string
