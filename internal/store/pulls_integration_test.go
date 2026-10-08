@@ -44,12 +44,34 @@ func TestPausePullRequest(t *testing.T) {
 		}
 		return p
 	}
+	// count counts a review as the publish does: it reads whether the
+	// count pauses, then counts, and the two must agree.
 	count := func(maxAuto int) bool {
+		t.Helper()
+		var would, now bool
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			var err error
+			if would, err = AutoReviewPauses(ctx, tx, pull, maxAuto); err != nil {
+				return err
+			}
+			now, err = CountAutoReview(ctx, tx, pull, would)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if would != now {
+			t.Fatalf("AutoReviewPauses(%d) = %v, CountAutoReview = %v", maxAuto, would, now)
+		}
+		return now
+	}
+	// countTold counts a review whose read of the pause, made beside
+	// another review's, was pause.
+	countTold := func(pause bool) bool {
 		t.Helper()
 		var now bool
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var err error
-			now, err = CountAutoReview(ctx, tx, pull, maxAuto)
+			now, err = CountAutoReview(ctx, tx, pull, pause)
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -81,6 +103,18 @@ func TestPausePullRequest(t *testing.T) {
 	if paused() || count(3) || paused() {
 		t.Fatal("resuming starts the count over")
 	}
+	// The second and third of three reviews, both told no pause as they
+	// read the count at once, pass the limit unpaused; the next announces
+	// the pause and pauses.
+	for range 2 {
+		if countTold(false) || paused() {
+			t.Fatal("a review told no pause does not pause, even past the limit")
+		}
+	}
+	if !count(3) || !paused() {
+		t.Fatal("the review after an unpaused limit announces the pause and pauses")
+	}
+	set(false)
 	set(true)
 	if !paused() {
 		t.Fatal("a request pauses")
