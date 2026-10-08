@@ -655,6 +655,7 @@ func TestParseDiagram(t *testing.T) {
 		{"an init directive is dropped", "%%{init: {}}%%\n" + flow, ""},
 		{"an init directive after a comment is dropped", "%% theme\n%%{init: {}}%%\n" + flow, ""},
 		{"an init directive after the kind is dropped", flow + "\n%%{init: {\"theme\": \"dark\"}}%%", ""},
+		{"an init directive within a line is dropped", "flowchart LR\n  A --> B %%{init: {\"theme\": \"dark\"}}%%", ""},
 		{"front matter that configures is dropped", "---\ntitle: Flow\nconfig:\n  theme: dark\n---\n" + flow, ""},
 		{"prose is dropped", "The webhook calls the worker.", ""},
 		{"an oversized diagram is dropped", "flowchart TD\n" + strings.Repeat("  A --> B\n", maxDiagramBytes/10), ""},
