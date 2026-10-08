@@ -222,6 +222,14 @@ func TestOrphanedRuns(t *testing.T) {
 	live := insertRiverJob(t, ctx, s, "review", "running", 1, 25, time.Minute, `{}`)
 	retried := insertRiverJob(t, ctx, s, "review", "retryable", 1, 25, 10*time.Minute, `{}`)
 	gone := insertRiverJob(t, ctx, s, "index", "discarded", 3, 3, 10*time.Minute, `{}`)
+	// A run an earlier attempt of the live job left, which runs anew.
+	leftRun, _ := insertRun(t, ctx, s, alpha, insertReview(t, ctx, s, alpha), live)
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE runner_runs SET created_at = now() - interval '1 minute' WHERE id = $1`, leftRun)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	liveRun, _ := insertRun(t, ctx, s, alpha, insertReview(t, ctx, s, alpha), live)
 	reviewRun, review := insertRun(t, ctx, s, alpha, insertReview(t, ctx, s, alpha), retried)
 	indexRun, indexGen := insertRun(t, ctx, s, alpha, "", gone)
@@ -249,13 +257,14 @@ func TestOrphanedRuns(t *testing.T) {
 	for _, r := range got {
 		ids = append(ids, r.ID)
 	}
-	if want := []string{reviewRun, indexRun}; !slices.Equal(ids, want) {
-		t.Fatalf("orphaned = %v, want %v: unfinished, of a job not running (not %s, %s or %s)", ids, want, liveRun, legacy, endedRun)
+	if want := []string{leftRun, reviewRun, indexRun}; !slices.Equal(ids, want) {
+		t.Fatalf("orphaned = %v, want %v: unfinished, of a job not running or with a newer run (not %s, %s or %s)",
+			ids, want, liveRun, legacy, endedRun)
 	}
-	if r := got[0]; r.AccountID != alpha || r.Kind != RunnerKindReview || r.ReviewID != review || r.IndexRunID != "" {
+	if r := got[1]; r.AccountID != alpha || r.Kind != RunnerKindReview || r.ReviewID != review || r.IndexRunID != "" {
 		t.Fatalf("review run = %+v", r)
 	}
-	if r := got[1]; r.Kind != RunnerKindIndex || r.IndexRunID != indexGen || r.ReviewID != "" {
+	if r := got[2]; r.Kind != RunnerKindIndex || r.IndexRunID != indexGen || r.ReviewID != "" {
 		t.Fatalf("index run = %+v", r)
 	}
 	for range 2 { // idempotent
