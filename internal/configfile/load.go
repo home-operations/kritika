@@ -404,6 +404,9 @@ func (f *File) validateEmbedding() error {
 
 func (f *File) validateProviders() error {
 	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
+		if !nameRe.MatchString(name) {
+			return fmt.Errorf("configfile: providers.%s: a provider name must be lowercase alphanumerics and hyphens, 1 to 63 characters", name)
+		}
 		if err := f.Providers[name].validate("providers." + name); err != nil {
 			return err
 		}

@@ -42,17 +42,22 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	// A body that cannot be read again cannot be sent again.
 	retry := wait <= t.maxWait && (req.Body == nil || req.Body == http.NoBody || req.GetBody != nil)
-	if t.observe != nil {
-		t.observe(wait, retry)
+	observe := func(resent bool) {
+		if t.observe != nil {
+			t.observe(wait, resent)
+		}
 	}
 	if !retry {
+		observe(false)
 		return resp, nil
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	_ = resp.Body.Close()
 	if err := t.wait(req.Context(), wait); err != nil {
+		observe(false)
 		return nil, err
 	}
+	observe(true)
 	again := req.Clone(req.Context())
 	if req.GetBody != nil {
 		body, err := req.GetBody()
