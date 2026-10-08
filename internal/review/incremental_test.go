@@ -255,6 +255,36 @@ func TestPriorFindingsAreFramedAsData(t *testing.T) {
 	}
 }
 
+func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
+	in := incrementalInput()
+	var diff strings.Builder
+	changed := make([]string, 0, 300)
+	for i := range 300 {
+		path := fmt.Sprintf("pkg/sub/file_%03d.go", i)
+		changed = append(changed, path)
+		fmt.Fprintf(&diff, "diff --git a/%[1]s b/%[1]s\n--- a/%[1]s\n+++ b/%[1]s\n@@ -1 +1 @@\n-x\n+%s\n", path, strings.Repeat("y", 200))
+	}
+	in.Changed, in.Diff = changed, diff.String()
+	in.BudgetTokens = 12_000
+	msg, omitted, _ := Build(in)
+	if len(omitted) < 100 {
+		t.Fatalf("omitted %d files, expected most of 300", len(omitted))
+	}
+	note := msg[strings.Index(msg, "\n\n[")+2:]
+	note = note[:strings.Index(note, "\n")+1]
+	if len(note) > omissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
+		t.Fatalf("note of %d bytes: %q", len(note), note)
+	}
+	// The diff took the room the sections would have had, so the model
+	// is told the delta existed rather than nothing at all.
+	if !strings.Contains(msg, deltaOmitted) {
+		t.Fatalf("missing the delta's omission note after %d omitted files:\n%s", len(omitted), msg[len(msg)-1500:])
+	}
+	if len(msg) > in.BudgetTokens*charsPerToken {
+		t.Fatalf("message of %d chars exceeds the budget of %d", len(msg), in.BudgetTokens*charsPerToken)
+	}
+}
+
 func TestBuildIncrementalNothingChanged(t *testing.T) {
 	in := incrementalInput()
 	in.Incremental.DeltaDiff = ""

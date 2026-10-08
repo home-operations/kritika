@@ -354,13 +354,9 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	writeIssues(&b, in.Issues, budget/bodyShare)
 	b.WriteString(diffLead)
 
-	room := budget - b.Len() - 512 // headroom for the omission note
-	diff, omitted := FitDiff(in.Diff, room)
+	diff, omitted := FitDiff(in.Diff, budget-b.Len()-omissionRoom)
 	b.WriteString(diff)
-	if len(omitted) > 0 {
-		fmt.Fprintf(&b, "\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n",
-			len(omitted), strings.Join(omitted, ", "))
-	}
+	b.WriteString(omissionNote("\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n", omitted))
 	b.WriteString(incrementalSections(in.Incremental, budget-b.Len()))
 	if e := in.Earlier; e != nil {
 		b.WriteString(priorSection(e.HeadSHA, e.Findings, budget-b.Len()))
@@ -424,6 +420,41 @@ const anchorsAbove = "findings anchor to the pull request's diff, not to this on
 // noteRoom is kept free for the note on delta files or prior findings
 // that did not fit.
 const noteRoom = 128
+
+// omissionRoom is kept free, before a diff is fitted, for the note on
+// the files that did not fit, which omissionNote keeps within it.
+const omissionRoom = 512
+
+// omissionNote is the note, per format, on the files a diff left out:
+// their count and the list of them, as many as fit in omissionRoom, the
+// rest counted. The note takes every path the first one, so a path alone
+// can exceed the room. It is "" when nothing was omitted.
+func omissionNote(format string, omitted []string) string {
+	if len(omitted) == 0 {
+		return ""
+	}
+	room := omissionRoom - len(fmt.Sprintf(format, len(omitted), ""))
+	var list strings.Builder
+	n := 0
+	for ; n < len(omitted); n++ {
+		item := omitted[n]
+		if n > 0 {
+			item = ", " + item
+		}
+		var more string
+		if rest := len(omitted) - n - 1; rest > 0 {
+			more = fmt.Sprintf(" and %d more", rest)
+		}
+		if n > 0 && list.Len()+len(item)+len(more) > room {
+			break
+		}
+		list.WriteString(item)
+	}
+	if rest := len(omitted) - n; rest > 0 {
+		fmt.Fprintf(&list, " and %d more", rest)
+	}
+	return fmt.Sprintf(format, len(omitted), list.String())
+}
 
 // incrementalSections renders a re-review's delta, prior findings, the
 // last review's notes and its diagram in at most room characters. The
@@ -516,12 +547,10 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string) {
 	b.WriteString(reReviewLead)
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
-	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(closing)-512)
+	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(closing)-omissionRoom)
 	b.WriteString(delta)
-	if len(omitted) > 0 {
-		fmt.Fprintf(&b, "\n[%d file(s) of the diff since your last review were omitted to fit the prompt budget: %s; "+
-			"read them with your tools]\n", len(omitted), strings.Join(omitted, ", "))
-	}
+	b.WriteString(omissionNote("\n[%d file(s) of the diff since your last review were omitted to fit the prompt budget: %s; "+
+		"read them with your tools]\n", omitted))
 	writeDismissed(&b, in.Dismissed, budget-len(closing))
 	b.WriteString(closing)
 	return b.String(), omitted
