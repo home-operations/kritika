@@ -164,7 +164,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	b.notes = append(b.notes, promptNotes...)
 	tools := file.ToolsFor(settings.Agent.Commands)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
-	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
+	out := w.runRunner(ctx, w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(account.Key(), pr.repository, jobs.QueueReview, args.Number),
 		Annotations: runnerAnnotations(job.ID, args.HeadSHA),
 		Job:         spec,
@@ -172,13 +172,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		Deadline:    deadline,
 		Resources:   resources,
 		Tools:       tools,
-	})
+	}, args.AccountID, runID, settings.Models.Review, w.rowWait, logger)
 	// The parts are done with the slots they ran in.
 	releaseExtra()
-	// The agent's row is read before recordRun settles the run's phase: a
-	// stopped run's row may still be on its way from the terminating pod.
-	w.revokeGatewayTokens(ctx, logger, runID)
-	agentOutcome, agentErr := w.readAgentRun(ctx, args.AccountID, runID, settings.Models.Review, stopped(ctx, res, cause), w.rowWait)
+	res, cause, agentOutcome, agentErr := out.res, out.cause, out.agent, out.agentErr
 	// A River cancel (JobCancelTx from a web request) cancels ctx itself,
 	// unlike supervise's own errSuperseded/errHeartbeatLost, which only
 	// cancel the child ctx passed to the executor. ctx is left live from here
