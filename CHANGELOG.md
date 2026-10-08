@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.47](https://github.com/home-operations/kritika/compare/0.0.46...0.0.47) (2026-10-08)
+
+
+### Bug Fixes
+
+* **runner:** write an empty rule list for a split review with no rules ([#718](https://github.com/home-operations/kritika/issues/718)) ([981cf58](https://github.com/home-operations/kritika/commit/981cf58884b9671c8dd28cca8a05f9f5bc7559e2))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool oxfmt (0.71.0 → 0.72.0) ([#715](https://github.com/home-operations/kritika/issues/715)) ([e5815aa](https://github.com/home-operations/kritika/commit/e5815aaa10e1aa36f04d03f48032b105540bac0c))
+
 ## [0.0.46](https://github.com/home-operations/kritika/compare/0.0.45...0.0.46) (2026-10-08)
 
 
