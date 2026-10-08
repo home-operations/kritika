@@ -4,6 +4,7 @@
 package metrics
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,6 +22,7 @@ type Metrics struct {
 	followups      *prometheus.CounterVec
 	threads        *prometheus.CounterVec
 	findings       *prometheus.CounterVec
+	confidence     *prometheus.CounterVec
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
 	contextChunks  *prometheus.CounterVec
@@ -92,6 +94,10 @@ func New(reg prometheus.Registerer) *Metrics {
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_findings_total", Help: "Findings posted, by severity and category.",
 		}, []string{lblAccount, "severity", "category"}),
+		confidence: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_confidence_scores_total",
+			Help: "Reviews the confidence model scored, by score (0 to 5) and risk (low, medium, high, critical).",
+		}, []string{lblAccount, "score", "risk"}),
 		indexRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
@@ -131,7 +137,7 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
-	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.threads, m.findings,
+	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.threads, m.findings, m.confidence,
 		m.indexRuns, m.indexChunks, m.contextChunks,
 		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.egress,
 		m.forgeLimits, m.transcripts,
@@ -182,6 +188,13 @@ func (m *Metrics) Thread(account, outcome string) {
 func (m *Metrics) Findings(account, severity, category string, n int) {
 	if m != nil && n > 0 {
 		m.findings.WithLabelValues(account, severity, category).Add(float64(n))
+	}
+}
+
+// ConfidenceScored counts a published review's confidence score and risk.
+func (m *Metrics) ConfidenceScored(account string, score int, risk string) {
+	if m != nil {
+		m.confidence.WithLabelValues(account, strconv.Itoa(score), risk).Inc()
 	}
 }
 
