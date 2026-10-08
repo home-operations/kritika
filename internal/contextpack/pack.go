@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"io"
 	"slices"
 	"time"
 
@@ -163,14 +164,18 @@ func (b *builder) read(tree *object.Tree, path string) []byte {
 	if err != nil || f.Size > int64(b.opts.MaxFileBytes) {
 		return nil
 	}
-	if bin, err := f.IsBinary(); err != nil || bin {
-		return nil
-	}
-	s, err := f.Contents()
+	// Read once, as bytes; a binary file, which holds a NUL, is nothing to
+	// read.
+	r, err := f.Reader()
 	if err != nil {
 		return nil
 	}
-	return []byte(s)
+	defer func() { _ = r.Close() }()
+	src, err := io.ReadAll(r)
+	if err != nil || bytes.IndexByte(src, 0) >= 0 {
+		return nil
+	}
+	return src
 }
 
 // overlay is stage 1, and it also collects what stages 2 and 3 look for.

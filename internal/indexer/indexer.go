@@ -4,9 +4,11 @@
 package indexer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 	"unicode/utf8"
 
@@ -150,18 +152,14 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Skipped++
 		return nil
 	}
-	if bin, err := f.IsBinary(); err != nil || bin {
+	// Read once, as bytes: a binary file, which holds a NUL, is skipped,
+	// and so is one that is not UTF-8, which would fail the staging insert
+	// and so the whole run, since Postgres text holds valid UTF-8 only.
+	src, err := readBlob(f)
+	if err != nil || len(src) == 0 || bytes.IndexByte(src, 0) >= 0 || !utf8.Valid(src) {
 		b.stats.Skipped++
 		return nil
 	}
-	// A file that is not UTF-8 would fail the staging insert, and so the
-	// whole run: Postgres text holds valid UTF-8 only.
-	content, err := f.Contents()
-	if err != nil || content == "" || !utf8.ValidString(content) {
-		b.stats.Skipped++
-		return nil
-	}
-	src := []byte(content)
 	b.stats.Files++
 	b.stats.Bytes += len(src)
 	pf := b.parser.Parse(f.Name, src)
@@ -180,6 +178,16 @@ func (b *builder) file(f *object.File) error {
 		})
 	}
 	return nil
+}
+
+// readBlob reads the file's contents in one pass.
+func readBlob(f *object.File) ([]byte, error) {
+	r, err := f.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	return io.ReadAll(r)
 }
 
 // pieces picks the declarations to store: the outermost ones that fit
