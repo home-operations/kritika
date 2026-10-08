@@ -69,7 +69,7 @@ func BuildMerge(title, body string, parts []MergePart, findings []Finding, budge
 	for i, p := range parts {
 		section := mergeSection(i, len(parts), p)
 		if b.Len()+len(section) > limit {
-			fmt.Fprintf(&b, "\n[%d more part(s) left out to fit the budget]\n", len(parts)-i)
+			fmt.Fprintf(&b, "\n[%d more part(s) omitted to fit the prompt budget]\n", len(parts)-i)
 			break
 		}
 		b.WriteString(section)
@@ -82,7 +82,7 @@ func BuildMerge(title, body string, parts []MergePart, findings []Finding, budge
 	for i, f := range findings {
 		line := findingLine(f)
 		if b.Len()+len(line) > limit {
-			fmt.Fprintf(&b, "[%d more finding(s) left out to fit the budget]\n", len(findings)-i)
+			fmt.Fprintf(&b, "[%d more finding(s) omitted to fit the prompt budget]\n", len(findings)-i)
 			break
 		}
 		b.WriteString(line)

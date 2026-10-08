@@ -231,10 +231,10 @@ func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 			if got := strings.Contains(msg, "main.go:11 [important] y changed"); got != tc.wantPrior {
 				t.Fatalf("prior findings present = %v:\n%s", got, msg)
 			}
-			if got := strings.Contains(msg, "from the last review omitted to fit the context budget"); got != tc.wantPriorCut {
+			if got := strings.Contains(msg, "from the last review omitted to fit the prompt budget"); got != tc.wantPriorCut {
 				t.Fatalf("prior cut note present = %v:\n%s", got, msg)
 			}
-			if got := strings.Contains(msg, "[The diff since the last review was omitted to fit the context budget.]"); got == tc.wantDelta {
+			if got := strings.Contains(msg, "[The diff since the last review was omitted to fit the prompt budget.]"); got == tc.wantDelta {
 				t.Fatalf("delta omission note present = %v:\n%s", got, msg)
 			}
 		})

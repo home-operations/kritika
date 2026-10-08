@@ -77,7 +77,7 @@ func TestBuildMergeBudget(t *testing.T) {
 		strings.Contains(msg, fmt.Sprintf("dir/f%02d.go", maxMergePaths)) {
 		t.Fatalf("part 1's files:\n%s", msg)
 	}
-	if strings.Contains(msg, "big.go") || !strings.Contains(msg, "[1 more part(s) left out to fit the budget]") ||
+	if strings.Contains(msg, "big.go") || !strings.Contains(msg, "[1 more part(s) omitted to fit the prompt budget]") ||
 		!strings.Contains(msg, "x.go:1 [nit] nit") || len(msg) > budget*charsPerToken {
 		t.Fatalf("a part past the budget was shown, or the message is %d bytes:\n%s", len(msg), msg)
 	}
