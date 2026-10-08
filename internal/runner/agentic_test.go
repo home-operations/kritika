@@ -63,9 +63,12 @@ func TestAgentPrompt(t *testing.T) {
 		priorDiagram string
 		// rerun reviews the head the last review saw.
 		rerun bool
+		// manual is a review asked for by hand.
+		manual bool
 	}{
 		{name: "strictness", scope: review.ScopeFull, strict: true},
 		{name: "a re-run at the reviewed head is not shown the earlier findings", scope: review.ScopeFull, rerun: true},
+		{name: "a re-run asked for at a new head is not shown the earlier findings", scope: review.ScopeFull, manual: true},
 		{name: "a diagram asked for is in the prompt", scope: review.ScopeFull, diagram: true},
 		{name: "incremental adds the delta and the prior findings", scope: review.ScopeIncremental, strict: true},
 		{
@@ -92,6 +95,10 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.rerun {
 				s.PriorHead = s.Head
 			}
+			if tt.manual {
+				s.Prompt.PullRequest.Event = "manual"
+			}
+			fresh := tt.rerun || tt.manual
 			pack := pack
 			pack.Scope = tt.scope
 			if tt.scope == review.ScopeIncremental {
@@ -112,7 +119,7 @@ func TestAgentPrompt(t *testing.T) {
 			case tt.scope == review.ScopeIncremental:
 				inc = &review.IncrementalInput{PriorHeadSHA: shaB, DeltaDiff: agentDiff, Prior: s.Prompt.Prior, PriorDiagram: tt.priorDiagram,
 					Checked: s.Prompt.PriorChecked}
-			case !tt.rerun:
+			case !fresh:
 				earlier = &review.EarlierInput{HeadSHA: shaB, Findings: s.Prompt.Prior, Checked: s.Prompt.PriorChecked}
 			}
 			want, _, _ := review.Build(review.Input{
@@ -129,8 +136,8 @@ func TestAgentPrompt(t *testing.T) {
 			if tt.priorDiagram != "" && !strings.Contains(user, tt.priorDiagram) {
 				t.Fatalf("incremental prompt lacks the prior diagram:\n%s", user)
 			}
-			if strings.Contains(user, "earlier finding") == tt.rerun || strings.Contains(user, "u is pure") == tt.rerun {
-				t.Fatalf("a re-review is shown the last review's findings and notes unless it re-runs the reviewed head:\n%s", user)
+			if strings.Contains(user, "earlier finding") == fresh || strings.Contains(user, "u is pure") == fresh {
+				t.Fatalf("a re-review is shown the last review's findings and notes unless it re-runs the reviewed head or was asked for:\n%s", user)
 			}
 		})
 	}
