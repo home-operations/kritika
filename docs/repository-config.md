@@ -60,7 +60,7 @@ skills:
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows                   | replaces, either way                            |
 | [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                      | replaces, either way                            |
-| [`confidence.*`](#confidence)                                | the score that judges a review                                     | replaces; `risk` may only be lowered            |
+| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it        | replaces; `risk` may only be lowered            |
 | [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                   | judged beside the admin's lists                 |
 | `comments.inline`                                            | `false` posts the summary alone, without inline comments           | replaces                                        |
 | [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                      | replaces                                        |
@@ -86,8 +86,8 @@ account's limits bound what a choice can cost. A review whose model fails
 goes on with the fallback, on the same provider or another, and so does a
 follow-up.
 
-`review.effort` and `confidence.effort` set how hard the review model,
-with its fallback, and the scorer reason, one of `none`, `minimal`, `low`,
+`review.effort` and `confidence.effort` set how hard the review model and
+the scorer, each with its fallback, reason, one of `none`, `minimal`, `low`,
 `medium`, `high`, `xhigh` or `max` ([effort](models.md#effort)). Each
 replaces the admin's; `""` restores the provider's default, and a value
 that is no level is dropped.
@@ -118,9 +118,11 @@ tokens on every review, and it replaces the admin's in either direction.
 
 ### Confidence
 
-`confidence.model`, `confidence.effort`, `confidence.threshold` and
-`confidence.gate` replace the admin's, the threshold and the gate in
-either direction;
+`confidence.model`, `confidence.fallback`, `confidence.effort`,
+`confidence.threshold` and `confidence.gate` replace the admin's, the
+threshold and the gate in either direction; the models are held to the
+providers `review.model` is ([models](#models)), and the fallback takes
+the scorer's call when the confidence model fails;
 `confidence.risk` may only lower the admin's, and a higher one is dropped.
 `confidence.instructions` is the admin's alone
 ([confidence and approvals](confidence.md)).

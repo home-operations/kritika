@@ -44,9 +44,13 @@
           "$ref": "#/$defs/model",
           "description": "The model that scores a reviewed pull request, replacing the admin's."
         },
+        "fallback": {
+          "$ref": "#/$defs/model",
+          "description": "The model that takes the scorer's call when the confidence model fails, replacing the admin's."
+        },
         "effort": {
           "$ref": "#/$defs/effort",
-          "description": "How hard the confidence model reasons; replaces the admin's."
+          "description": "How hard the confidence model, and the fallback that takes its call, reasons; replaces the admin's."
         },
         "threshold": {
           "type": "integer",

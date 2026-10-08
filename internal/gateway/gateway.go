@@ -231,8 +231,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := configfile.ModelRef(c.grant.Model)
-	provider, _ := c.file.Provider(c.account, ref.Provider())
-	stepper, err := g.Steppers.Stepper(c.file, c.account, ref.Provider())
+	route, err := g.Steppers.Route(c.file, c.account, ref)
 	if err != nil {
 		c.logger.Error("gateway: no model adapter", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
@@ -250,9 +249,27 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// Each part of a split review is a conversation of its own.
 		req.Session += "/" + strconv.Itoa(part)
 	}
-	fb := configfile.ModelRef(c.grant.Fallback)
-	if fb != "" && fb.Provider() == ref.Provider() {
+	call := adapter.Call{Route: route, Failed: func(err error, on, next adapter.Route) {
+		if next.Ref != on.Ref {
+			c.logger.Warn("gateway: step failed on the review model; trying the fallback", "fallback", next.Ref,
+				"error", maskProvider(err.Error(), on.Provider))
+			return
+		}
+		c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), on.Provider))
+	}}
+	switch fb := configfile.ModelRef(c.grant.Fallback); {
+	case fb == "":
+	case fb.Provider() == ref.Provider():
 		req.Fallbacks = []string{fb.Model()}
+	default:
+		// The review model's attempts spent, a fallback on another
+		// provider gets the same step, unless the configuration no longer
+		// has it, which the step then does without.
+		if fallback, err := g.Steppers.Route(c.file, c.account, fb); err != nil {
+			c.logger.Error("gateway: no adapter for the fallback", "fallback", fb, "error", err)
+		} else {
+			call.Fallback = &fallback
+		}
 	}
 	if req.MaxTokens <= 0 || req.MaxTokens > MaxStepOutput {
 		req.MaxTokens = MaxStepOutput
@@ -269,27 +286,9 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// which the runner waits for the answer.
 	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
 	defer cancel()
-	resp, attempts, err := adapter.Step(sctx, stepper, req, provider.Retries, func(err error) {
-		c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), provider))
-	})
-	if err != nil && sctx.Err() == nil && fb != "" && fb.Provider() != ref.Provider() {
-		// The review model's attempts are spent; a fallback on another
-		// provider gets the same step, with that provider's retries. The
-		// request is provider-neutral, so the conversation carries over.
-		if fbStepper, fbProvider, ok := g.fallback(c, fb); ok {
-			c.logger.Warn("gateway: step failed on the review model; trying the fallback", "fallback", fb,
-				"error", maskProvider(err.Error(), provider))
-			req.Model = fb.Model()
-			var more int
-			resp, more, err = adapter.Step(sctx, fbStepper, req, fbProvider.Retries, func(err error) {
-				c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), fbProvider))
-			})
-			attempts += more
-			ref, provider = fb, fbProvider
-		}
-	}
+	resp, attempts, served, err := call.Do(sctx, req)
 	took := time.Since(start)
-	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(ref, resp.Model), c.role(), adapter.Outcome(err), resp.Usage.Prompt(),
+	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(served.Ref, resp.Model), c.role(), adapter.Outcome(err), resp.Usage.Prompt(),
 		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD)
 	if cerr := g.charge(ctx, c, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
@@ -297,16 +296,19 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		c.logger.Error("gateway: step not charged", "error", cerr)
 	}
 	// Recorded before the runner gets its answer, so the next step's delta
-	// is taken against this one; the recorder bounds how long it waits.
+	// is taken against this one; the recorder bounds how long it waits. A
+	// failed step's response names no model: it is recorded under the one
+	// it last went to.
+	req.Model = served.Ref.Model()
 	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
 		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part, Duration: took,
-	}, req, resp, err, adapter.Mask(c.file, provider, c.token))
+	}, req, resp, err, adapter.Mask(c.file, served.Provider, c.token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
 		// it must not carry the key, or credentials in the provider's URL,
 		// if the provider or the SDK echoed them.
-		msg := maskProvider(err.Error(), provider)
+		msg := maskProvider(err.Error(), served.Provider)
 		c.logger.Warn("gateway: step failed", "error", msg)
 		status, code := upstreamStatus(err)
 		refuse(w, status, code, msg)
@@ -376,19 +378,6 @@ func upstreamStatus(err error) (int, string) {
 		return http.StatusBadGateway, "upstream_error"
 	}
 	return http.StatusUnprocessableEntity, "upstream_refused"
-}
-
-// fallback resolves the adapter and provider of a run's fallback model on
-// another provider, or reports false when the configuration no longer has
-// it, which the step then does without.
-func (g *Server) fallback(c runCall, fb configfile.ModelRef) (model.Stepper, configfile.Provider, bool) {
-	stepper, err := g.Steppers.Stepper(c.file, c.account, fb.Provider())
-	if err != nil {
-		c.logger.Error("gateway: no adapter for the fallback", "fallback", fb, "error", err)
-		return nil, configfile.Provider{}, false
-	}
-	provider, _ := c.file.Provider(c.account, fb.Provider())
-	return stepper, provider, true
 }
 
 // charge settles a step's reservation: an answered step's actual spend

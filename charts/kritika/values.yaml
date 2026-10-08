@@ -48,9 +48,9 @@ strategy:
 # file's sections (auth*, apps*, providers*, embedding*, and the review,
 # confidence and trigger settings reviewModel, reviewFallback,
 # reviewEffort, reviewApprove, reviewFixes, reviewIncremental,
-# reviewDiagram, reviewCost, confidenceModel, confidenceEffort,
-# confidenceThreshold, confidenceGate, confidenceRisk, triggerSettle and
-# triggerLimit) win over the file. The variables the chart derives from its other values
+# reviewDiagram, reviewCost, confidenceModel, confidenceFallback,
+# confidenceEffort, confidenceThreshold, confidenceGate, confidenceRisk,
+# triggerSettle and triggerLimit) win over the file. The variables the chart derives from its other values
 # (the addresses, the database, the config file, the runner image,
 # ServiceAccount, TTL, resources and tools) cannot be set here; the chart
 # refuses them, as it refuses a KRITIKA_* variable under `env`.
@@ -222,7 +222,9 @@ config:
   reviewCost: ""
   # -- The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set.
   confidenceModel: ""
-  # -- How hard the confidence model reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set.
+  # -- The model the scorer's call falls back to when the confidence model fails.
+  confidenceFallback: ""
+  # -- How hard the confidence model, and the fallback that takes its call, reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set.
   confidenceEffort: ""
   # @schema
   # type: [integer, string]

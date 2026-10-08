@@ -141,17 +141,18 @@ func TestMerge(t *testing.T) {
 			dropped: []string{`.kritika.yaml: review.effort "turbo" was dropped; allowed: none, minimal, low, medium, high, xhigh or max`},
 		},
 		{
-			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, threshold: 0, gate: true }\n",
+			name: "confidence replaces the admin's", doc: "confidence: { model: own/judge, fallback: p/judge, threshold: 0, gate: true }\n",
 			want: func(s *configfile.Settings) {
-				s.Confidence.Model, s.Confidence.Threshold, s.Confidence.Gate = "own/judge", 0, true
+				s.Confidence.Model, s.Confidence.Fallback, s.Confidence.Threshold, s.Confidence.Gate = "own/judge", "p/judge", 0, true
 			},
 		},
 		{
-			name: "a confidence model of another provider and a threshold off the scale are dropped",
-			doc:  "confidence: { model: q/judge, threshold: 6 }\n",
+			name: "a confidence model or fallback of another provider and a threshold off the scale are dropped",
+			doc:  "confidence: { model: q/judge, fallback: q/small, threshold: 6 }\n",
 			dropped: []string{
 				`.kritika.yaml: confidence.threshold 6 was dropped; allowed: 0 to 5`,
 				`.kritika.yaml: confidence.model "q/judge" was dropped; allowed: a model of own, p`,
+				`.kritika.yaml: confidence.fallback "q/small" was dropped; allowed: a model of own, p`,
 			},
 		},
 		{

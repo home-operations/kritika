@@ -83,13 +83,15 @@ type Review struct {
 }
 
 // Confidence is how the repository's reviews are judged: the model that
-// scores a reviewed pull request, a "<provider>/<model>" of a provider its
-// account may use, how hard it reasons, as Review.Effort, the score it
-// must reach and whether the commit status fails under it, which all
-// replace the admin's, and the highest risk a change may carry and still
-// be approved, which may only lower the admin's.
+// scores a reviewed pull request and the one that takes its call when it
+// fails, each a "<provider>/<model>" of a provider its account may use,
+// how hard they reason, as Review.Effort, the score it must reach and
+// whether the commit status fails under it, which all replace the
+// admin's, and the highest risk a change may carry and still be approved,
+// which may only lower the admin's.
 type Confidence struct {
 	Model     configfile.ModelRef `yaml:"model,omitempty"`
+	Fallback  configfile.ModelRef `yaml:"fallback,omitempty"`
 	Effort    *model.Effort       `yaml:"effort,omitempty"`
 	Threshold *int                `yaml:"threshold,omitempty"`
 	Gate      *bool               `yaml:"gate,omitempty"`

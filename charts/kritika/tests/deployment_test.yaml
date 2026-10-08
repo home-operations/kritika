@@ -114,6 +114,7 @@ tests:
         reviewCost: true
         reviewEffort: high
         confidenceEffort: low
+        confidenceFallback: openrouter/vendor/small-model
         triggerLimit: 0
         authOidcClientSecret: {}
     asserts:
@@ -138,6 +139,9 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_CONFIDENCE_EFFORT, value: low }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_CONFIDENCE_FALLBACK, value: openrouter/vendor/small-model }
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_TRIGGER_LIMIT, value: "0" }

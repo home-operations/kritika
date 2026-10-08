@@ -134,6 +134,7 @@ func (m *Merged) choose(f *File, providers []string) {
 		{"review.model", f.Review.Model, &m.Models.Review},
 		{"review.fallback", f.Review.Fallback, &m.Models.Fallback},
 		{"confidence.model", f.Confidence.Model, &m.Confidence.Model},
+		{"confidence.fallback", f.Confidence.Fallback, &m.Confidence.Fallback},
 	} {
 		if c.want == "" {
 			continue

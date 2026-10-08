@@ -178,6 +178,9 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Confidence.Model != nil {
 		s.Confidence.Model = *o.Confidence.Model
 	}
+	if o.Confidence.Fallback != nil {
+		s.Confidence.Fallback = *o.Confidence.Fallback
+	}
 	if o.Confidence.Effort != nil {
 		s.Confidence.Effort = *o.Confidence.Effort
 	}

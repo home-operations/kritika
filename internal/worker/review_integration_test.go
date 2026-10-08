@@ -63,6 +63,10 @@ providers:
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
     retries: 1
+  other:
+    type: anthropic
+    baseUrl: http://unused.invalid
+    apiKey: { env: TEST_SECRET }
 review:
   model: test/reviewer
 limits:
@@ -1703,7 +1707,7 @@ rules:
   - { id: renovate, rule: Say what the update breaks., when: [{ expr: 'pr.headRef.startsWith("renovate/")' }] }
 comments:
   summary: ".kritika/summary.md.tmpl"
-confidence: { model: test/reviewer, effort: low, threshold: 4, gate: true }
+confidence: { model: test/reviewer, fallback: other/judge, effort: low, threshold: 4, gate: true }
 review:
   approve: true
   effort: xhigh
@@ -1799,8 +1803,17 @@ review:
 	checkWithdrawn(t, lf)
 	checkConfidence(ctx, t, appStore, lf, fc, accountID, codeHead)
 	pushedHead := commit("more code", map[string]string{"main.go": "package main\n\nfunc d() {}\n\nfunc f() {}\n"})
+	// The confidence model fails both its attempts; the fallback on the
+	// other provider scores.
+	fc.failScore(2)
 	dispatchPR(3, pushedHead, false)
 	checkEarlierRisk(t, fc, waitReview, pushedHead, codeHead)
+	checkFallbackScored(ctx, t, appStore, fc, accountID, pushedHead)
+	// Both fail every attempt.
+	unscoredHead := commit("unscored", map[string]string{"main.go": "package main\n\nfunc d() {}\n\nfunc f() {}\n\nfunc h() {}\n"})
+	fc.failScore(3)
+	dispatchPR(3, unscoredHead, false)
+	checkFallbackFailed(ctx, t, appStore, waitReview, accountID, unscoredHead)
 
 	// The same kind of change carrying the label the filter excludes.
 	labelledHead := commit("labelledHead", map[string]string{"main.go": "package main\n\nfunc e() {}\n"})
@@ -2009,6 +2022,57 @@ func checkEarlierRisk(t *testing.T, fc *fakeCompleter, waitReview func(string) (
 	if want := "\n\nThe last review of this pull request, at " + review.ShortSHA(prior) +
 		", rated its risk medium. Its reason: Nothing else stands out.\n"; !strings.Contains(asked, want) {
 		t.Fatalf("the scorer was not shown the last review's risk:\n%s", asked)
+	}
+}
+
+// checkFallbackScored asserts that the review of head, whose confidence
+// model failed every attempt, was scored by the merge-base .kritika.yaml's
+// confidence.fallback at the scorer's effort, and that the one call is
+// recorded and charged under the model that answered.
+func checkFallbackScored(ctx context.Context, t *testing.T, appStore *store.Store, fc *fakeCompleter, accountID, head string) {
+	t.Helper()
+	fc.mu.Lock()
+	effort := fc.efforts[len(fc.efforts)-1]
+	fc.mu.Unlock()
+	if effort != model.EffortLow {
+		t.Fatalf("the fallback's call reasoned at %q, want the scorer's low", effort)
+	}
+	var scoredBy, recorded string
+	var charged int
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT v.confidence->>'model',
+				(SELECT string_agg(m.model, ',') FROM model_calls m WHERE m.review_id = v.id AND m.kind = 'confidence'),
+				(SELECT count(*) FROM usage u WHERE u.review_id = v.id AND u.role = 'confidence' AND u.model = 'judge')
+			FROM reviews v WHERE v.head_sha = $1 AND v.status = 'completed'`, head).Scan(&scoredBy, &recorded, &charged)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if scoredBy != "judge" || recorded != "judge" || charged != 1 {
+		t.Fatalf("scored by %q, calls recorded under %q, %d charged to judge; want the fallback's one call", scoredBy, recorded, charged)
+	}
+}
+
+// checkFallbackFailed asserts that the review of head, whose confidence
+// model and fallback failed every attempt, completed unscored, its one call
+// recorded under the fallback, the model it last went to.
+func checkFallbackFailed(
+	ctx context.Context, t *testing.T, appStore *store.Store, waitReview func(string) (string, string, string), accountID, head string,
+) {
+	t.Helper()
+	if status, _, _ := waitReview(head); status != "completed" {
+		t.Fatalf("status = %s, want completed", status)
+	}
+	var scored bool
+	var recorded string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT v.confidence IS NOT NULL,
+				(SELECT string_agg(m.model, ',') FROM model_calls m WHERE m.review_id = v.id AND m.kind = 'confidence')
+			FROM reviews v WHERE v.head_sha = $1 AND v.status = 'completed'`, head).Scan(&scored, &recorded)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if scored || recorded != "judge" {
+		t.Fatalf("scored %v, calls recorded under %q; want it unscored and its one call under the fallback", scored, recorded)
 	}
 }
 

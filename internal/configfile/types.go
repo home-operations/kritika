@@ -256,13 +256,15 @@ type ReviewSpec struct {
 }
 
 // ConfidenceSpec sets how a review is judged at one scope: the model that
-// scores the reviewed pull request, a model written here, even empty,
-// replacing the broader scope's, how hard it reasons, the score the pull
-// request must reach, whether the commit status fails under it, the
-// highest risk a change may carry and still be approved, and the admin's
-// guidance to the scorer on rating risk.
+// scores the reviewed pull request and the one that takes its call when it
+// fails, a model written here, even empty, replacing the broader scope's,
+// how hard they reason, the score the pull request must reach, whether
+// the commit status fails under it, the highest risk a change may carry
+// and still be approved, and the admin's guidance to the scorer on rating
+// risk.
 type ConfidenceSpec struct {
 	Model        *ModelRef     `yaml:"model,omitempty"`
+	Fallback     *ModelRef     `yaml:"fallback,omitempty"`
 	Effort       *model.Effort `yaml:"effort,omitempty"`
 	Threshold    *int          `yaml:"threshold,omitempty"`
 	Gate         *bool         `yaml:"gate,omitempty"`
@@ -274,7 +276,11 @@ type ConfidenceSpec struct {
 // Model nothing is scored.
 type Confidence struct {
 	Model ModelRef `json:"model"`
-	// Effort is how hard the model reasons, as Models.Effort.
+	// Fallback takes the scorer's call when Model fails, as Models.Fallback
+	// takes a review's step.
+	Fallback ModelRef `json:"fallback"`
+	// Effort is how hard the model, and the fallback that takes its call,
+	// reasons, as Models.Effort.
 	Effort model.Effort `json:"effort"`
 	// Threshold is the score, out of MaxConfidence, a pull request must
 	// reach to be approved and, with Gate, for its commit status to pass.

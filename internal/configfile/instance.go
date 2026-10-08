@@ -13,8 +13,8 @@ import (
 
 // The environment may set some of the file's keys: one model provider, the
 // review and fallback models and their effort, the confidence model, its
-// effort, threshold and risk, and settle every account and repository
-// inherits, and the embedder. Each wins over the file's.
+// fallback, effort, threshold and risk, and settle every account and
+// repository inherits, and the embedder. Each wins over the file's.
 
 // Environment variable prefixes of the keys the environment may set.
 const (
@@ -137,6 +137,9 @@ func overlayDefaultsEnv(d *Defaults, environ []string, from map[string]bool) err
 		case confidenceEnvPrefix + "MODEL":
 			ref := ModelRef(value)
 			d.Confidence.Model, path = &ref, keyScorer
+		case confidenceEnvPrefix + "FALLBACK":
+			ref := ModelRef(value)
+			d.Confidence.Fallback, path = &ref, keyScorerFallback
 		case confidenceEnvPrefix + "EFFORT":
 			effort := model.Effort(value)
 			d.Confidence.Effort, path = &effort, keyScorerEffort
@@ -214,8 +217,8 @@ type FileLayer struct {
 	Fallback  FileValue
 	// Defaults are the other settings it writes that the environment may
 	// set too: the review effort, approve, fixes, incremental, diagram,
-	// the confidence model, effort, threshold, gate and risk, settle and
-	// limit, in that order, by their policy keys.
+	// the confidence model, fallback, effort, threshold, gate and risk,
+	// settle and limit, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -286,6 +289,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
 		{keyCost, strconv.FormatBool(deref(d.Review.Cost)), d.Review.Cost != nil},
 		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
+		{keyScorerFallback, string(deref(d.Confidence.Fallback)), d.Confidence.Fallback != nil},
 		{keyScorerEffort, string(deref(d.Confidence.Effort)), d.Confidence.Effort != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},
