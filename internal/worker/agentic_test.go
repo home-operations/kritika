@@ -153,14 +153,22 @@ func TestAdmissionBudget(t *testing.T) {
 	}
 }
 
+// TestPartsTimeout: a review's agent time covers its parts in rounds of
+// as many as it holds model slots for, up to the cap.
 func TestPartsTimeout(t *testing.T) {
-	if got := partsTimeout(1, 20*time.Minute); got != 20*time.Minute {
-		t.Fatalf("one part = %s, want its timeout", got)
-	}
-	if got := partsTimeout(3, 20*time.Minute); got != time.Hour {
-		t.Fatalf("three parts = %s, want an hour", got)
-	}
-	if got := partsTimeout(8, 50*time.Minute); got != jobtimeout.MaxAgentTimeout {
-		t.Fatalf("eight long parts = %s, want the cap", got)
+	for _, tt := range []struct {
+		size    sizing
+		timeout time.Duration
+		want    time.Duration
+	}{
+		{size: sizing{parts: 1, slots: 1}, timeout: 20 * time.Minute, want: 20 * time.Minute},
+		{size: sizing{parts: 3, slots: 1}, timeout: 20 * time.Minute, want: time.Hour},
+		{size: sizing{parts: 3, slots: 2}, timeout: 20 * time.Minute, want: 40 * time.Minute},
+		{size: sizing{parts: 8, slots: 8}, timeout: 20 * time.Minute, want: 20 * time.Minute},
+		{size: sizing{parts: 8, slots: 1}, timeout: 50 * time.Minute, want: jobtimeout.MaxAgentTimeout},
+	} {
+		if got := partsTimeout(tt.size.rounds(), tt.timeout); got != tt.want {
+			t.Fatalf("%+v at %s each = %s, want %s", tt.size, tt.timeout, got, tt.want)
+		}
 	}
 }

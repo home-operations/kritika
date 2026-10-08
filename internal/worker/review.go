@@ -153,8 +153,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	provider, _ := file.Provider(account, settings.Models.Review.Provider())
 	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, settings.Models.Review, provider.Type)
-	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, cont, admitted, &spec,
-		&secrets, deadline, client, logger)
+	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
+	extra, releaseExtra := w.freeSlots(ctx, logger, account, settings, parts-1, job.ID)
+	defer releaseExtra()
+	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, cont, admitted,
+		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
@@ -170,6 +173,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		Resources:   resources,
 		Tools:       tools,
 	})
+	// The parts are done with the slots they ran in.
+	releaseExtra()
 	// The agent's row is read before recordRun settles the run's phase: a
 	// stopped run's row may still be on its way from the terminating pod.
 	w.revokeGatewayTokens(ctx, logger, runID)

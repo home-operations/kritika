@@ -484,7 +484,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 17 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 18 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1727,22 +1727,56 @@ func checkAgentReadsDiff(t *testing.T, h *agenticHarness) {
 
 // checkAgentSizedForParts reviews a pull request the forge reports at the
 // size of #667's: its runner may split it into the eight parts agent.parts
-// allows, and its grant and Job deadline cover them.
+// allows, and its grant covers them. Its Job deadline covers them in rounds
+// of as many as run at once in the model slots the review holds, its own
+// and those it found free, all of which it lets go once it ends.
 func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
-	h.sm.reset(scriptReadDiff)
 	h.lf.setSize(forge.OpenPullRequest{Additions: 6824, Deletions: 291, ChangedFiles: 188})
 	defer h.lf.setSize(forge.OpenPullRequest{})
-	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n\nfunc v3() {}\n\nfunc v4() {}\n\nfunc v5() {}\n")
-	h.dispatch(t, next)
-	_, status, errText := h.waitReview(t, next)
-	if status != "completed" {
-		t.Fatalf("status = %s (%s)", status, errText)
-	}
-	h.exec.mu.Lock()
-	limits, deadline, budget := h.exec.agent, h.exec.deadline, h.exec.budget
-	h.exec.mu.Unlock()
-	if limits == nil || limits.Parts != 8 || budget != 8*limits.MaxTokens || deadline != jobtimeout.MaxAgentTimeout+jobtimeout.AgentFetchHeadroom {
-		t.Fatalf("agent = %+v, budget = %d, deadline = %s; want 8 parts, 8 times the tokens and the agent's cap", limits, budget, deadline)
+	wide := *h.file
+	wide.Defaults.Limits.Concurrency = new(3)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
+	for i, tc := range []struct {
+		file     *configfile.File
+		parallel int
+	}{{file: h.file, parallel: 1}, {file: &wide, parallel: 3}} {
+		h.review.Current.Set(tc.file)
+		h.sm.reset(scriptReadDiff)
+		next := h.commit(t, "main.go", fmt.Sprintf("package main\n\nfunc b() {}\n\nfunc v2() {}\n\nfunc v3() {}\n\nfunc v4() {}\n\nfunc v5() {}\n\nfunc sized%d() {}\n", i))
+		h.dispatch(t, next)
+		_, status, errText := h.waitReview(t, next)
+		if status != "completed" {
+			t.Fatalf("concurrency %d: status = %s (%s)", tc.parallel, status, errText)
+		}
+		h.exec.mu.Lock()
+		limits, deadline, budget := h.exec.agent, h.exec.deadline, h.exec.budget
+		h.exec.mu.Unlock()
+		if limits == nil {
+			t.Fatalf("concurrency %d: the run had no agent", tc.parallel)
+		}
+		rounds := (8 + tc.parallel - 1) / tc.parallel
+		want := min(time.Duration(rounds*limits.TimeoutSeconds)*time.Second, jobtimeout.MaxAgentTimeout) + jobtimeout.AgentFetchHeadroom
+		if limits.Parts != 8 || limits.Parallel != tc.parallel || budget != 8*limits.MaxTokens || deadline != want {
+			t.Fatalf("concurrency %d: agent = %+v, budget = %d, deadline = %s; want 8 parts, %d at once, 8 times the tokens and %s",
+				tc.parallel, limits, budget, deadline, tc.parallel, want)
+		}
+		// The job lets its own slot go as it returns, a moment after the
+		// review's status says it ended.
+		for until := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			var held int
+			err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+				return tx.QueryRow(h.ctx, `SELECT count(*) FROM model_leases WHERE job_id IS NOT NULL`).Scan(&held)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if held == 0 {
+				break
+			}
+			if time.Now().After(until) {
+				t.Fatalf("concurrency %d: %d leases still held after the review", tc.parallel, held)
+			}
+		}
 	}
 }
 

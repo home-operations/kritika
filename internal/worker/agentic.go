@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -255,13 +256,13 @@ func (b *Base) readAgentRun(
 
 // agentSpec gives spec its agent: the prompt, the gateway and a run
 // token for it, which lets it carry on cont when that is set, and the
-// agent's bounds. The token is minted last, so an error leaves none
-// behind; the caller revokes it once the run ends. It returns the runner
-// Job's deadline, which the agent's timeout may lengthen, and the
-// prompt's notes.
+// agent's bounds, for a review sized for size's parts. The token is
+// minted last, so an error leaves none behind; the caller revokes it once
+// the run ends. It returns the runner Job's deadline, which the agent's
+// timeout may lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
-	cont *runner.Continuation, admitted admission, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
+	cont *runner.Continuation, admitted admission, size sizing, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
 	client forge.Client, logger *slog.Logger,
 ) (time.Duration, []string, error) {
 	settings := eff.Settings
@@ -269,12 +270,11 @@ func (w *Review) agentSpec(
 	if err != nil {
 		return deadline, nil, err
 	}
-	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
-	deadline = agentDeadline(deadline, partsTimeout(parts, settings.Agent.Timeout))
+	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Effort: string(settings.Models.Effort),
-		Budget: admitted.budget(parts),
+		Budget: admitted.budget(size.parts),
 	}
 	if cont != nil {
 		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session
@@ -287,8 +287,9 @@ func (w *Review) agentSpec(
 	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName, Granted: grant.Model}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
-		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: parts, TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
-		Commands: settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
+		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.parts, Parallel: size.slots,
+		TimeoutSeconds: int(settings.Agent.Timeout / time.Second), Commands: settings.Agent.Commands,
+		CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
 	}
 	return deadline, notes, nil
 }
@@ -325,10 +326,47 @@ func (w *Review) splitParts(ctx context.Context, client forge.Client, pr *pullRe
 	return estimateParts(size, maxParts)
 }
 
-// partsTimeout is the agent time a review in parts parts needs, one after
-// another and each within timeout, as much of it as a job may run.
-func partsTimeout(parts int, timeout time.Duration) time.Duration {
-	return min(time.Duration(parts)*timeout, jobtimeout.MaxAgentTimeout)
+// partsTimeout is the agent time a review needs whose parts run in rounds
+// rounds, each part within timeout, as much of it as a job may run.
+func partsTimeout(rounds int, timeout time.Duration) time.Duration {
+	return min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout)
+}
+
+// sizing is what a review is sized for: the parts its runner may split it
+// into, and the review model's slots it holds, which its parts may run in
+// at once.
+type sizing struct {
+	parts, slots int
+}
+
+// rounds is how many parts run one after another at the most.
+func (s sizing) rounds() int { return (s.parts + s.slots - 1) / s.slots }
+
+// freeSlots takes, without waiting, up to n more of the review model's
+// slots for a split review's parts to run at once: only ones no other job
+// holds, so the account's concurrency still bounds the model calls running
+// at once, and the parts that find none run one after another. It returns
+// how many it took and what lets them go, which may be called again.
+func (w *Review) freeSlots(
+	ctx context.Context, logger *slog.Logger, account *configfile.Account, settings configfile.Settings, n int, jobID int64,
+) (int, func()) {
+	key := string(settings.Models.Review)
+	var taken []*store.Lease
+	for range n {
+		l, err := w.Store.TakeLease(ctx, account.ID(), key, settings.Limits.Concurrency, jobID)
+		if err != nil {
+			logger.Warn("free model slots not taken", "error", err)
+		}
+		if l == nil {
+			break
+		}
+		taken = append(taken, l)
+	}
+	return len(taken), sync.OnceFunc(func() {
+		for _, l := range taken {
+			w.releaseLease(ctx, logger, l, key)
+		}
+	})
 }
 
 // revokeGatewayTokens ends the run's token once its runner is done, on a

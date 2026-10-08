@@ -244,13 +244,11 @@ func offeredTools(p Spec, head *object.Tree, ignore []string, extra []agent.Tool
 	}, extra...)
 }
 
-// agentLoop runs the tool loop over head until the agent answers with
-// prompt's submit tool, with extra tools beside the read-only ones. A
-// positive timeout bounds it; running out of time ends it as canceled with
-// the timeout in Err.
+// agentLoop runs the tool loop with tools until the agent answers with
+// prompt's submit tool. A positive timeout bounds it; running out of time
+// ends it as canceled with the timeout in Err.
 func agentLoop(
-	ctx context.Context, stepper model.Stepper, p Spec, head *object.Tree, ignore []string, extra []agent.Tool,
-	prompt agentPrompt, timeout time.Duration, logger *slog.Logger,
+	ctx context.Context, stepper model.Stepper, p Spec, tools []agent.Tool, prompt agentPrompt, timeout time.Duration, logger *slog.Logger,
 ) (agent.Result, []store.TimelineStep) {
 	actx, cancel := ctx, context.CancelFunc(func() {})
 	if timeout > 0 {
@@ -260,7 +258,7 @@ func agentLoop(
 	timeline := []store.TimelineStep{}
 	res := agent.Run{
 		Stepper: stepper, Model: p.Model.Model, System: prompt.system, User: prompt.user, Carried: prompt.carried,
-		Tools:    offeredTools(p, head, ignore, extra),
+		Tools:    tools,
 		Submit:   prompt.submit,
 		Validate: prompt.validate,
 		Limits:   p.Agent.limits(),
@@ -342,7 +340,7 @@ func runAgentic(
 	}
 	logger.Info("agent started", "model", p.Model.Model, "scope", scope, "prompt_chars", len(prompt.system)+len(prompt.user),
 		"commands", tools.commands(), "search", tools.search != nil)
-	res, timeline := agentLoop(ctx, stepper, p, head, ignore, tools.extra(), prompt,
+	res, timeline := agentLoop(ctx, stepper, p, offeredTools(p, head, ignore, tools.extra()), prompt,
 		time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
 	sources := toolSources(tools)
 	var continued string
