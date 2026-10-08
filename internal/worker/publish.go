@@ -144,6 +144,9 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		return store.ReviewFailed, err
 	}
 	p.countFindings(res)
+	if c := p.confidence; c != nil {
+		p.w.Metrics.ConfidenceScored(p.account.Key(), c.Score, string(c.Risk))
+	}
 	if err := p.persist(ctx, res, inline, run.Model, commentID); err != nil {
 		return store.ReviewFailed, err
 	}

@@ -94,7 +94,10 @@ step to the next.
 in your code, such as "the media apps under `kubernetes/apps/default` are
 low whatever moves" or "anything under `db/migrations` is critical"; it
 refines the tables above and changes nothing else about the score. It is
-the admin's alone, so a pull request cannot talk its own risk down.
+the admin's alone, so a pull request cannot talk its own risk down. The
+[`kritika_confidence_scores_total`](metrics.md) series counts the scored
+reviews by score and risk, so what a change to the instructions does
+shows over time.
 
 Risk bears on approvals alone, never on the commit status: a risky change
 that scores well passes its check and waits for a person.

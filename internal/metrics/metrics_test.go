@@ -15,6 +15,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.Review("t", "completed", time.Second)
 	none.ModelCall("t", "m", "review", "ok", 1, 0, 1, 0.1)
 	none.TranscriptWrite("review", "ok")
+	none.ConfidenceScored("t", 5, "low")
 	none.Leading(true)
 
 	reg := prometheus.NewRegistry()
@@ -49,6 +50,11 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	m.TranscriptWrite("agent_step", "error")
 	if v := testutil.ToFloat64(m.transcripts.WithLabelValues("agent_step", "error")); v != 1 {
 		t.Fatalf("transcript writes = %v", v)
+	}
+	m.ConfidenceScored("onedr0p", 4, "high")
+	m.ConfidenceScored("onedr0p", 4, "high")
+	if v := testutil.ToFloat64(m.confidence.WithLabelValues("onedr0p", "4", "high")); v != 2 {
+		t.Fatalf("confidence scores = %v", v)
 	}
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader before leading = %v", v)

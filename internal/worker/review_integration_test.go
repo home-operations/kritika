@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
@@ -44,6 +46,7 @@ import (
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
@@ -1305,7 +1308,8 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	exec := &gateExecutor{inner: &executor.Local{Store: runnerStore}, started: make(chan executor.Spec)}
 	deadline := &jobDeadline{}
 	workers := river.NewWorkers()
-	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger}
+	reg := prometheus.NewRegistry()
+	wb := Base{Store: appStore, Current: current, Forges: &forges{f: lf}, Logger: logger, Metrics: metrics.New(reg)}
 	// The runner reaches fc, and the index through fe, by the gateway.
 	steppers := &adapter.Steppers{Build: func(configfile.Provider) (model.Stepper, error) { return fc, nil }}
 	gw := httptest.NewServer(&gateway.Server{
@@ -1425,6 +1429,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 
 	t.Run("the merge-base .kritika.yaml skips, instructs and templates", func(t *testing.T) {
 		checkRepoConfig(ctx, t, appStore, insertOnly, lf, fc, dir, base, dispatchPR, waitReview, account.ID())
+	})
+
+	t.Run("every scored review is counted by its score and risk", func(t *testing.T) {
+		checkConfidenceCounted(ctx, t, appStore, reg, account.ID(), account.Key())
 	})
 
 	t.Run("re-reviews build on the last reviewed head", func(t *testing.T) {
@@ -1894,6 +1902,52 @@ func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, l
 	lf.mu.Unlock()
 	if status != "failure: kritika: confidence 2/5, below 4, 2 finding(s)" {
 		t.Fatalf("status = %q", status)
+	}
+}
+
+// checkConfidenceCounted asserts that each completed review the scorer
+// scored was counted once, under its account's key, score and risk.
+func checkConfidenceCounted(ctx context.Context, t *testing.T, appStore *store.Store, reg *prometheus.Registry, accountID, accountKey string) {
+	t.Helper()
+	want := map[string]int{}
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT confidence->>'score' || '/' || (confidence->>'risk'), count(*)::int FROM reviews
+			WHERE status = 'completed' AND confidence IS NOT NULL GROUP BY 1`)
+		if err != nil {
+			return err
+		}
+		var key string
+		var n int
+		_, err = pgx.ForEachRow(rows, []any{&key, &n}, func() error {
+			want[key] = n
+			return nil
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, f := range families {
+		if f.GetName() != "kritika_confidence_scores_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["account"] != accountKey {
+				t.Fatalf("a score counted under account %q", labels["account"])
+			}
+			got[labels["score"]+"/"+labels["risk"]] += int(m.GetCounter().GetValue())
+		}
+	}
+	if len(want) == 0 || !maps.Equal(got, want) {
+		t.Fatalf("scores counted = %v, want the scored reviews' %v", got, want)
 	}
 }
 
