@@ -116,7 +116,7 @@ func TestBuildContinuation(t *testing.T) {
 	}
 	in.Fetched = false
 	in.Diagram = true
-	if msg, _ := BuildContinuation(in); !strings.HasSuffix(msg, "or as an empty string when the change no longer has a flow to draw.") {
+	if msg, _ := BuildContinuation(in); !strings.HasSuffix(msg, " "+keepDiagram) {
 		t.Fatalf("no diagram asked for:\n%s", msg)
 	}
 	in.DeltaDiff, in.BudgetTokens = deltaDiff+strings.Replace(deltaDiff, "main.go", "big.go", 4)+strings.Repeat("+x\n", 4000), 600
@@ -309,7 +309,7 @@ func TestBuildIncrementalPriorDiagram(t *testing.T) {
 				return
 			}
 			for _, want := range []string{
-				"<diagram>\n" + src + "\n</diagram>\n", "exactly as it is when it still matches", "updated when the new commits alter",
+				"<diagram>\n" + src + "\n</diagram>\n", "not only the commits since. " + keepDiagram,
 				"as an empty string when the change at head no longer has a flow",
 			} {
 				if !strings.Contains(msg, want) {

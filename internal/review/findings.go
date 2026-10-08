@@ -319,8 +319,8 @@ const (
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
 	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
-		"change adds or alters as the head commit has it: each node a short plain-language step, not a function name; " +
-		"at most ten nodes or messages, every label holding punctuation quoted. Omit it when the change has no flow worth drawing."
+		"change adds or alters as the head commit has it, drawn as the instructions say. Omit it when the change has no " +
+		"such flow."
 	describeChecked = "For the next review of this pull request, which starts without your reading: what you read " +
 		"beyond the diff and found sound, one short line each naming the file or symbol and what you verified. " +
 		"No comment shows it; leave it empty when there is nothing to pass on."

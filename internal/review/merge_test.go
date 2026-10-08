@@ -8,7 +8,8 @@ import (
 )
 
 func TestMergeSystemPromptAndSchema(t *testing.T) {
-	if strings.Contains(MergeSystemPrompt(false), "Mermaid") || !strings.Contains(MergeSystemPrompt(true), "Mermaid") {
+	if strings.Contains(MergeSystemPrompt(false), "Mermaid") || !strings.Contains(MergeSystemPrompt(true), summaryDiagram) ||
+		!strings.Contains(MergeSystemPrompt(false), summarySpec) {
 		t.Fatal("the merge call is asked for a diagram only where the summary carries one")
 	}
 	var schema struct {

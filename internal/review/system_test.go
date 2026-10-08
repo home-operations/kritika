@@ -206,7 +206,7 @@ func TestSystemRules(t *testing.T) {
 		for _, want := range []string{
 			"you do not recognise is not a finding",
 			"A finding you would have to hedge (may, could, appears to)",
-			"mentions a concern only if it is also a finding",
+			"what is worth stating is worth a finding",
 			"It does not say what the diff cannot show",
 			"give\nreplacement: those lines exactly as they should be committed",
 			"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
