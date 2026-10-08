@@ -85,9 +85,10 @@ variables of their own
 
 ## Retries
 
-`retries` is how many more times a review's model step, or the scorer's
-call, is tried when the provider fails it in a way another attempt may get
-past: a 5xx, a 429, a timeout or a cut connection.
+`retries` is how many more times a review's model step, the scorer's call
+or a split review's summary call is tried when the provider fails it in a
+way another attempt may get past: a 5xx, a 429, a timeout or a cut
+connection.
 
 - kritika waits up to a second, then up to twice as long each time, to at
   most 30 seconds, and waits out a longer `Retry-After` the provider
@@ -102,7 +103,10 @@ past: a 5xx, a 429, a timeout or a cut connection.
   retries early; with a fallback on another provider, the review model's
   attempts get at most half of them, so the fallback always gets a turn.
   The scorer's call has the two minutes a score gets
-  ([confidence](confidence.md#the-score)), shared the same way.
+  ([confidence](confidence.md#the-score)), shared the same way. A split
+  review's summary call has 100 seconds, and the review model's attempts
+  may take all of them: that is about one slow answer, which half of it
+  would cut.
 
 A routing proxy that picks a model per request is where it earns its keep:
 a step the proxy routed badly is answered on the next attempt. A
@@ -126,7 +130,8 @@ review's step has failed on the review model, and its provider's
 `retries` or half of the step's 12 minutes are spent, the same step goes
 to the fallback, with that provider's own `retries`, and the review
 carries on there. The step's usage is recorded under the model that
-answered. A follow-up's steps fall back the same way.
+answered. A follow-up's steps fall back the same way, and so does a split
+review's summary call ([large reviews](configuration.md#the-agent)).
 
 `confidence.fallback` does the same for the scorer's call: on the
 confidence model's provider it goes to the provider with the call, on

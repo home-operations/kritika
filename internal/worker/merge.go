@@ -75,11 +75,35 @@ func (p *publishPhase) merge(ctx context.Context, parts []review.MergePart, find
 		return "", err
 	}
 	ref := p.settings.Models.Review
-	stepper, err := p.w.Steppers.Stepper(p.file, p.account, ref.Provider())
+	route, err := p.w.Steppers.Route(p.file, p.account, ref)
 	if err != nil {
 		return "", err
 	}
-	spec, _ := p.file.Provider(p.account, ref.Provider())
+	// The call is tried again and falls back as a review's step is, but the
+	// review model's attempts may take all of its time: that is about one
+	// slow answer at the review's effort, which half of it would cut, and a
+	// merge that fails only joins the parts' summaries. A failure is logged
+	// masked, as the scorer's is.
+	routed := adapter.Call{Route: route, Failed: func(err error, on, next adapter.Route) {
+		msg := adapter.Mask(p.file, on.Provider)(err.Error())
+		if next.Ref != on.Ref {
+			p.logger.Warn("merge call failed on the review model; trying the fallback", "fallback", next.Ref, "error", msg)
+			return
+		}
+		p.logger.Warn("merge call failed; trying again", "model", on.Ref, "error", msg)
+	}}
+	var fallbacks []string
+	switch fb := p.settings.Models.Fallback; {
+	case fb == "":
+	case fb.Provider() == ref.Provider():
+		fallbacks = []string{fb.Model()}
+	default:
+		if fallback, err := p.w.Steppers.Route(p.file, p.account, fb); err != nil {
+			p.logger.Error("no adapter for the review fallback", "fallback", fb, "error", err)
+		} else {
+			routed.Fallback = &fallback
+		}
+	}
 	var body string
 	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&body)
@@ -87,20 +111,28 @@ func (p *publishPhase) merge(ctx context.Context, parts []review.MergePart, find
 	if err != nil {
 		return "", fmt.Errorf("worker: read pull request description: %w", err)
 	}
-	record := p.w.recorder().OnStep(ctx, p.logger, store.ModelCall{
-		AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: store.ModelCallMerge,
-	}, adapter.Mask(p.file, spec))
+	var served adapter.Route
+	stepper := model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+		resp, _, on, err := routed.Do(ctx, req)
+		served = on
+		return resp, err
+	})
 	completer := model.Structured{Stepper: stepper, OnStep: func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
-		record(req, resp, err, d)
+		// A failed call is recorded under the model it last went to, as the
+		// scorer's is.
+		req.Model = served.Ref.Model()
+		p.w.recorder().Record(ctx, p.logger, store.ModelCall{
+			AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: store.ModelCallMerge, Duration: d,
+		}, req, resp, err, adapter.Mask(p.file, served.Provider))
 		p.charge(ctx, resp, store.RoleReview)
 	}}
 	resp, err := completer.Complete(ctx, model.CompletionRequest{
 		System: review.MergeSystemPrompt(p.parse.Diagram),
 		User:   review.BuildMerge(p.pr.title, body, parts, findings, p.settings.Agent.MaxPromptTokens),
-		Model:  ref.Model(), Session: "merge-" + p.reviewID, Effort: p.settings.Models.Effort,
+		Model:  ref.Model(), Fallbacks: fallbacks, Session: "merge-" + p.reviewID, Effort: p.settings.Models.Effort,
 		Schema: review.MergeSchema(p.parse.Diagram), SchemaName: "summary", MaxTokens: mergeMaxOutputTokens,
 	})
-	p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(ref, resp.Model), store.RoleReview, adapter.Outcome(err),
+	p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(served.Ref, resp.Model), store.RoleReview, adapter.Outcome(err),
 		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 	return resp.Raw, err
 }

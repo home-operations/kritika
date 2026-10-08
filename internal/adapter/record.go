@@ -146,13 +146,3 @@ func (r Recorder) Record(
 	}
 	r.Metrics.TranscriptWrite(string(c.Kind), outcome)
 }
-
-// OnStep is a model.Structured OnStep that records each step as c.
-func (r Recorder) OnStep(
-	ctx context.Context, logger *slog.Logger, c store.ModelCall, mask func(string) string,
-) func(model.StepRequest, model.StepResponse, error, time.Duration) {
-	return func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
-		c.Duration = d
-		r.Record(ctx, logger, c, req, resp, err, mask)
-	}
-}

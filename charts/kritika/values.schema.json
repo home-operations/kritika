@@ -308,7 +308,7 @@
         },
         "providersRetries": {
           "default": "",
-          "description": "How many more times a review's model step, or the scorer's call, is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5.",
+          "description": "How many more times a review's model step, the scorer's call or a split review's summary call is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5.",
           "required": [],
           "title": "providersRetries",
           "type": [

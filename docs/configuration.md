@@ -445,8 +445,10 @@ a new title.
   free when the review starts, its own and those no other review holds,
   and the rest as those end; the parts' tool calls run one at a time. They
   are published as one review, its summary written from theirs by one more
-  call to the review model, which counts towards `tokensPerMonth`; when
-  that call fails or the cap is reached, the summary joins the parts' own.
+  call to the review model, which is tried again and falls back as a
+  review's step is ([retries](models.md#retries)) and counts towards
+  `tokensPerMonth`; when that call still fails or the cap is reached, the
+  summary joins the parts' own.
   A part that ends before it submits leaves its files unreviewed: the
   summary names them, and the review counts as incomplete for the commit
   status, approves nothing, withdrawing an approval given before, and is no
