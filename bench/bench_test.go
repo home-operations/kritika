@@ -6,9 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -295,11 +296,7 @@ func totals(results []caseResult, mode string) modeTotals {
 
 func printSummary(t *testing.T, rep report) {
 	t.Helper()
-	names := make([]string, 0, len(rep.Modes))
-	for m := range rep.Modes {
-		names = append(names, m)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(rep.Modes))
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nmodel %s, %d cases%s\n", rep.Model, rep.Cases, map[bool]string{true: " (dry: no model calls)", false: ""}[rep.Dry])
 	fmt.Fprintf(&b, "%-8s %6s %6s %11s %11s %9s %9s %9s %8s\n", "mode", "cases", "errors", "must recall", "nice recall", "findings", "matched", "cost usd", "mean s")
