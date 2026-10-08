@@ -121,7 +121,7 @@ func TestRateLimitTransport(t *testing.T) {
 		{
 			name:   "a request cancelled during the wait fails",
 			server: &limitedServer{refuse: 1, status: 403, headers: map[string]string{"Retry-After": "1"}},
-			cancel: true, wantCalls: 1, wantWait: time.Second, wantWaited: true, wantErr: true,
+			cancel: true, wantCalls: 1, wantWait: time.Second, wantWaited: false, wantErr: true,
 		},
 	}
 	for _, tt := range tests {

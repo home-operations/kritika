@@ -498,6 +498,8 @@ func TestParseRejects(t *testing.T) {
 		want string // substring of the error
 	}{
 		{"unknown top-level key", minimal + "account: []\n", "field account not found"},
+		{"a provider name a model reference cannot carry", minimal + "providers:\n  Big: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }\n",
+			"providers.Big: a provider name must be lowercase"},
 		{"unknown nested key", strings.Replace(minimal, "accounts: [acme]", "accounts: [acme], owner: acme", 1), "field owner not found"},
 		{"a forge key", strings.Replace(minimal, "acme-bot: { ", "acme-bot: { forge: github, ", 1), "field forge not found"},
 		{"bad app name", strings.Replace(minimal, "acme-bot:", "Acme Bot:", 1), "lowercase"},

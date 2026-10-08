@@ -171,11 +171,17 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "egress: connection cannot be hijacked", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	client, buf, err := hj.Hijack()
 	if err != nil {
 		p.observe("connect", OutcomeError)
 		p.Logger.Warn("egress hijack failed", "host", r.Host, "error", err)
+		return
+	}
+	// Written to the connection itself: a 200 through the ResponseWriter
+	// would carry a Transfer-Encoding, which a CONNECT response must not.
+	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
+		_ = client.Close()
+		p.observe("connect", OutcomeError)
 		return
 	}
 	defer func() { _ = client.Close() }()

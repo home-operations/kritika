@@ -3,7 +3,6 @@ package webapi
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
@@ -45,7 +44,7 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	listedAt := time.Now()
+	listedAt := s.now()
 	accounts, err := app.Reach(r.Context(), in.Accounts)
 	if err != nil {
 		return errForge(err)

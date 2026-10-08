@@ -424,6 +424,7 @@ func (r Run) step(ctx context.Context, req model.StepRequest) (model.StepRespons
 		}
 		select {
 		case <-ctx.Done():
+			return resp, err
 		case <-time.After(wait):
 			resp, err = r.Stepper.Step(ctx, req)
 		}
