@@ -512,6 +512,14 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	}, nil
 }
 
+// CheckResources reports whether the configuration's runner resources
+// decode as a container's, so a value that would refuse every Job is
+// refused at startup instead.
+func CheckResources(m map[string]any) error {
+	_, err := containerResources(m)
+	return err
+}
+
 // containerResources decodes an account's runner.resources, which the
 // configuration keeps as the YAML written, refusing a field the Kubernetes
 // type does not have rather than dropping it.

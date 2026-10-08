@@ -101,6 +101,22 @@ func TestJobSpecRefusesBadResources(t *testing.T) {
 	}
 }
 
+func TestCheckResources(t *testing.T) {
+	for _, tt := range []struct {
+		resources map[string]any
+		ok        bool
+	}{
+		{nil, true},
+		{map[string]any{"requests": map[string]any{"cpu": "500m", "memory": "1Gi"}, "limits": map[string]any{"memory": "2Gi"}}, true},
+		{map[string]any{"limits": map[string]any{"cpu": "2 cores"}}, false},
+		{map[string]any{"limit": map[string]any{"memory": "2Gi"}}, false},
+	} {
+		if err := CheckResources(tt.resources); (err == nil) != tt.ok {
+			t.Errorf("CheckResources(%v) = %v, want ok %v", tt.resources, err, tt.ok)
+		}
+	}
+}
+
 func mustJob(t *testing.T, k *Kube, s Spec) *batchv1.Job {
 	t.Helper()
 	j, err := k.job(s)
