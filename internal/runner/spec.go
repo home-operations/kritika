@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 20
+const SpecVersion = 21
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -74,7 +74,11 @@ type AgentLimits struct {
 	// MaxPromptTokens bounds the agent's opening prompt, the diff and
 	// context it starts from; zero takes review.DefaultBudgetTokens.
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
-	TimeoutSeconds  int `json:"timeoutSeconds,omitempty"`
+	// Parts is the most parts the runner may split a review into, which
+	// the run's grant and deadline cover; under two it never splits.
+	// TimeoutSeconds bounds each part.
+	Parts          int `json:"parts,omitempty"`
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 	// Commands name the binaries the run tool may execute; the runner
 	// offers those it finds on its PATH, and no run tool without any.
 	Commands              []string `json:"commands,omitempty"`

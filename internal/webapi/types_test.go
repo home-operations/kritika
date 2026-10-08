@@ -69,8 +69,8 @@ var goldenRepoSettings = RepoSettings{
 		Context: []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
 	},
 	Agent: configfile.AgentSettings{
-		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, MaxPromptTokens: 24000, Timeout: 20 * time.Minute, Commands: []string{"go"},
-		CommandTimeout: 30 * time.Second,
+		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, MaxPromptTokens: 24000, MaxParts: 8, Timeout: 20 * time.Minute,
+		Commands: []string{"go"}, CommandTimeout: 30 * time.Second,
 	},
 	Limits: configfile.Limits{Concurrency: 2},
 	Skills: configfile.Skills{

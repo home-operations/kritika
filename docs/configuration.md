@@ -400,15 +400,16 @@ a new title.
 
 `agent` bounds a review's tool loop, and a follow-up's:
 
-| Key              | Default              | What                                                                           |
-| ---------------- | -------------------- | ------------------------------------------------------------------------------ |
-| `steps`          | 60                   | model calls the loop may make                                                  |
-| `output`         | 32768                | bytes one tool call may return                                                 |
-| `tokens`         | 4,000,000            | prompt and output tokens the review may spend across its steps                 |
-| `prompt`         | 24000, at least 8000 | tokens of the prompt a review, its confidence score and a follow-up start from |
-| `timeout`        | 20m, at most 2h35m   | the loop's wall time                                                           |
-| `commands`       | none                 | the programs its run tool may execute                                          |
-| `commandTimeout` | 30s, at least 1s     | one command's wall time                                                        |
+| Key              | Default              | What                                                                                         |
+| ---------------- | -------------------- | -------------------------------------------------------------------------------------------- |
+| `steps`          | 60                   | model calls the loop may make                                                                |
+| `output`         | 32768                | bytes one tool call may return                                                               |
+| `tokens`         | 4,000,000            | prompt and output tokens the review, or each part of a split one, may spend across its steps |
+| `prompt`         | 24000, at least 8000 | tokens of the prompt a review, its confidence score and a follow-up start from               |
+| `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                    |
+| `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                          |
+| `commands`       | none                 | the programs its run tool may execute                                                        |
+| `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |
 
 - **Submitting:** the last step is told to submit, as is any step once the
   review has spent nine tenths of its `tokens`. A step told to submit that

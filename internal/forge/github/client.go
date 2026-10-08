@@ -512,6 +512,7 @@ func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int
 	if pr.ClosedAt != nil {
 		out.ClosedAt = &pr.ClosedAt.Time
 	}
+	out.Additions, out.Deletions, out.ChangedFiles = pr.GetAdditions(), pr.GetDeletions(), pr.GetChangedFiles()
 	return out, nil
 }
 

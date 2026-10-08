@@ -219,6 +219,7 @@ export interface AgentLimits {
   maxToolOutputBytes: number;
   maxTokens: number;
   maxPromptTokens: number;
+  maxParts: number;
   timeoutSeconds: number;
   commands: string[];
   commandTimeoutSeconds: number;

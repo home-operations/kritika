@@ -34,6 +34,7 @@ apps:
     webhookSecret: { env: TEST_SECRET }
 repositories:
   acme/slow-agent: { agent: { timeout: 50m } }
+  acme/whole: { agent: { parts: 1 } }
 `
 
 func TestJobTimeouts(t *testing.T) {
@@ -58,10 +59,14 @@ func TestJobTimeouts(t *testing.T) {
 		// The agent's 20m plus 5m of fetch headroom outlasts the runner
 		// deadline, plus 15m to take the lease and 5m to publish; the index
 		// has 15m + 60m to embed.
-		{name: "the default agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: 45 * time.Minute,
+		{name: "a review that is never split", accountID: acme.ID(), repositoryID: acmeRepo("acme/whole"), review: 45 * time.Minute,
+			index: 75 * time.Minute, followUp: 45 * time.Minute},
+		// Eight parts of 20m each pass the agent's cap, so a review may run
+		// to the job cap; a follow-up is never split.
+		{name: "the default agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/unlisted"), review: jobtimeout.MaxJobTimeout,
 			index: 75 * time.Minute, followUp: 45 * time.Minute},
 		{name: "a longer agent timeout", accountID: acme.ID(), repositoryID: acmeRepo("acme/slow-agent"),
-			review: 75 * time.Minute, index: 75 * time.Minute, followUp: 75 * time.Minute},
+			review: jobtimeout.MaxJobTimeout, index: 75 * time.Minute, followUp: 75 * time.Minute},
 		{name: "unknown account", accountID: "missing", repositoryID: "missing", review: 35 * time.Minute, index: 75 * time.Minute, followUp: 35 * time.Minute},
 	}
 	for _, tt := range tests {
@@ -89,7 +94,7 @@ func TestJobTimeouts(t *testing.T) {
 	t.Setenv("KRITIKA_RUNNER_DEADLINE", jobtimeout.MaxRunnerDeadline.String())
 	current = configfile.NewCurrent(configfiletest.Load(t, timeoutConfigYAML))
 	review, index = &Review{Current: current}, &Index{Current: current}
-	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/unlisted")}}),
+	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/whole")}}),
 		jobtimeout.MaxRunnerDeadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom; got != want {
 		t.Errorf("review timeout at the max deadline = %s, want %s", got, want)
 	}

@@ -494,6 +494,7 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	}{
 		{keySteps, r.Agent.Steps},
 		{keyOutput, r.Agent.Output},
+		{keyParts, r.Agent.Parts},
 		{keyIncremental, r.Review.Incremental},
 	} {
 		if c.v != nil && *c.v <= 0 {

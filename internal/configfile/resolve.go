@@ -274,6 +274,9 @@ func (a AgentSettings) overlay(o Agent) AgentSettings {
 	if o.Prompt != nil {
 		a.MaxPromptTokens = *o.Prompt
 	}
+	if o.Parts != nil {
+		a.MaxParts = *o.Parts
+	}
 	if o.Timeout != nil {
 		a.Timeout = *o.Timeout
 	}

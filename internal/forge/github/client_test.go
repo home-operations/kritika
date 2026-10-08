@@ -460,8 +460,8 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 }
 
 // TestPullRequestByNumber: the zero time lists every open pull request,
-// and one asked for by number comes back as it stands, closed included, a
-// missing one as fs.ErrNotExist.
+// and one asked for by number comes back as it stands, closed included and
+// with its size, a missing one as fs.ErrNotExist.
 func TestPullRequestByNumber(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/pulls", 200, openPullsJSON)
@@ -469,13 +469,15 @@ func TestPullRequestByNumber(t *testing.T) {
 		t.Fatalf("ListOpenPullRequests(zero) = %+v, %v; want every open pull request", all, err)
 	}
 	f.reply("GET /api/v3/repos/o/r/pulls/9", 200, `{"number":9,"state":"closed","merged":true,"closed_at":"2026-10-02T08:59:24Z",
+		"additions":6824,"deletions":291,"changed_files":188,
 		"head":{"ref":"f","sha":"h9","repo":{"full_name":"o/r"}},"base":{"ref":"main","repo":{"full_name":"o/r","default_branch":"main"}},
 		"user":{"login":"u","type":"User"}}`)
 	f.reply("GET /api/v3/repos/o/r/pulls/10", 404, `{"message":"Not Found"}`)
 	closed, err := c.PullRequest(t.Context(), "o", "r", 9)
 	if err != nil || closed.State != "closed" || !closed.Merged || closed.ClosedAt == nil ||
-		!closed.ClosedAt.Equal(time.Date(2026, 10, 2, 8, 59, 24, 0, time.UTC)) {
-		t.Fatalf("PullRequest(9) = %+v, %v; want it closed and merged at 08:59:24", closed, err)
+		!closed.ClosedAt.Equal(time.Date(2026, 10, 2, 8, 59, 24, 0, time.UTC)) ||
+		closed.Additions != 6824 || closed.Deletions != 291 || closed.ChangedFiles != 188 {
+		t.Fatalf("PullRequest(9) = %+v, %v; want it closed and merged at 08:59:24, with its size", closed, err)
 	}
 	if _, err := c.PullRequest(t.Context(), "o", "r", 10); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("PullRequest(10) = %v, want fs.ErrNotExist", err)
