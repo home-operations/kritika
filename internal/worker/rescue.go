@@ -85,10 +85,12 @@ func (r *Rescuer) Run(ctx context.Context) {
 }
 
 // Rescue makes one pass: jobs whose heartbeat went stale are handed back
-// to River, then every unfinished run whose job is no longer running is
-// reaped, and the heartbeats of ended jobs are swept. The two are
-// independent, each idempotent, so a reap the API server refuses is tried
-// again next pass without the job waiting on it.
+// to River, then every unfinished run whose job is no longer running, or
+// runs anew with a run of its own, is reaped, and the heartbeats of ended
+// jobs are swept. The two are independent, each idempotent, so a reap the
+// API server refuses is tried again next pass without the job waiting on
+// it, and a job claimed again before its reap does not hide the run its
+// dead worker left.
 func (r *Rescuer) Rescue(ctx context.Context) error {
 	stale := cmp.Or(r.stale, jobAbandonedAfter)
 	var errs []error

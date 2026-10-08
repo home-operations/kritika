@@ -155,10 +155,15 @@ type OrphanedRun struct {
 }
 
 // OrphanedRuns lists up to limit unfinished runs whose River job is not
-// running, oldest first. A run's job is running for as long as the worker
-// is inside Work, which is where the run is ended; a run still open after
-// that was left by a worker that died, or whose record of it failed. Owner
-// connection.
+// running, or has a newer run still open, oldest first. A run's job is
+// running for as long as the worker is inside Work, which is where the run
+// is ended; a run still open after that was left by a worker that died, or
+// whose record of it failed. A job handed back and claimed again runs anew,
+// with a run of its own, before the pass that hands it back may reach its
+// reaping, so the run its earlier attempt left is known by the newer one.
+// Only an open newer run counts, so the lookup stays on the index of
+// unfinished runs rather than every run the job ever had; once the newer
+// run ends, its job soon does too. Owner connection.
 func (s *Store) OrphanedRuns(ctx context.Context, limit int) ([]OrphanedRun, error) {
 	if s.owner == nil {
 		return nil, errors.New("store: OrphanedRuns needs the owner connection")
@@ -166,7 +171,9 @@ func (s *Store) OrphanedRuns(ctx context.Context, limit int) ([]OrphanedRun, err
 	rows, err := s.owner.Query(ctx, `SELECT r.id, r.account_id, r.kind, coalesce(r.review_id::text, ''), coalesce(r.index_run_id::text, '')
 		FROM runner_runs r
 		WHERE r.finished_at IS NULL AND r.river_job_id IS NOT NULL
-		  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.id = r.river_job_id AND j.state = 'running')
+		  AND (NOT EXISTS (SELECT 1 FROM river_job j WHERE j.id = r.river_job_id AND j.state = 'running')
+		    OR EXISTS (SELECT 1 FROM runner_runs newer
+		      WHERE newer.river_job_id = r.river_job_id AND newer.finished_at IS NULL AND newer.created_at > r.created_at))
 		ORDER BY r.created_at LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("store: list orphaned runs: %w", err)
