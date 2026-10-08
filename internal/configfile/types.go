@@ -43,7 +43,7 @@ type Forge string
 
 // ForgeGitHub is github.com, the one forge kritika supports. Forge stays a
 // type, and the code that switches on it keeps its switch, so another forge
-// can be added back.
+// has a place.
 const ForgeGitHub Forge = "github"
 
 // SecretRef names the environment variable a secret value lives in. Values are resolved at load and never written back to

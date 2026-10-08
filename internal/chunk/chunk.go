@@ -55,7 +55,7 @@ const defaultMaxBytes = 1 << 20
 const parseTimeout = 5 * time.Second
 
 // Parser cuts files. It caches one tree-sitter parser per language and
-// serialises access to each, since parsers are not safe for concurrent use.
+// serialises every parse, since parsers are not safe for concurrent use.
 type Parser struct {
 	Limits Limits
 
