@@ -20,9 +20,9 @@ require (
 	github.com/odvcencio/gotreesitter v0.55.1
 	github.com/openai/openai-go/v3 v3.71.2
 	github.com/prometheus/client_golang v1.24.1
-	github.com/riverqueue/river v0.48.0
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.48.0
-	github.com/riverqueue/river/rivertype v0.48.0
+	github.com/riverqueue/river v0.49.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.49.0
+	github.com/riverqueue/river/rivertype v0.49.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
@@ -85,8 +85,8 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
-	github.com/riverqueue/river/riverdriver v0.48.0 // indirect
-	github.com/riverqueue/river/rivershared v0.48.0 // indirect
+	github.com/riverqueue/river/riverdriver v0.49.0 // indirect
+	github.com/riverqueue/river/rivershared v0.49.0 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
