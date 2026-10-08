@@ -64,7 +64,7 @@ const (
 func BuildMerge(title, body string, parts []MergePart, findings []Finding, budget int) string {
 	limit := budget * charsPerToken
 	var b strings.Builder
-	fmt.Fprintf(&b, "Pull request: %s\n", title)
+	fmt.Fprintf(&b, "Pull request: %s\n", oneLine(title))
 	writeDescription(&b, body, limit/bodyShare)
 	for i, p := range parts {
 		section := mergeSection(i, len(parts), p)

@@ -164,6 +164,14 @@ func TestSameBrief(t *testing.T) {
 	if !SameBrief(opening, bare) || SameBrief(opening, then) {
 		t.Fatal("a pull request without a description or issues")
 	}
+	for _, title := range []string{"Add z\n  and   w", strings.Repeat("Add z ", 50)} {
+		titled := then
+		titled.Title = title
+		opening, _, _ = Build(titled)
+		if !SameBrief(opening, titled) {
+			t.Fatalf("SameBrief = false for the title %q, which Build put on one line", title)
+		}
+	}
 }
 
 // TestBuildIncrementalChecked: an incremental re-review is shown the last
