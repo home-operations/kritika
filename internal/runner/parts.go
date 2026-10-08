@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -155,48 +156,55 @@ func splitNotes(parts []reviewPart) []string {
 	return append([]string{fmt.Sprintf(noteSplit, len(parts))}, whole.notes()...)
 }
 
-// minPartTime is the least time a part of a split review starts with: less
-// is not enough for an agent to read its files and answer.
+// minPartTime is the least time a part of a split review starts with, or
+// half its timeout when that is less: less is not enough for an agent to
+// read its files and answer. Its whole timeout would be too much, since the
+// run's deadline leaves the last round no more than that, less what the run
+// took to reach it.
 const minPartTime = 2 * time.Minute
 
-// runParts runs a split review's parts one after another, each an agent of
-// its own with the run's limits over the same tools, and writes their run
-// as one row: the findings every part submitted under a joined summary,
-// and how each part ended. The parts share the agent time the worker sized
-// the Job for, so a part late enough to pass it is left out, ending the
-// run cleanly rather than at the Job's deadline.
+// lockedTool runs its tool holding lock, a channel of one the parts of a
+// split review running at once share: their tools read the head through one
+// go-git repository, which is not safe for concurrent use, and keep the
+// counts the run records. A part that ends while it waits runs nothing.
+type lockedTool struct {
+	agent.Tool
+	lock chan struct{}
+}
+
+func (t lockedTool) Run(ctx context.Context, input json.RawMessage) (string, error) {
+	select {
+	case t.lock <- struct{}{}:
+	case <-ctx.Done():
+		return "", context.Cause(ctx)
+	}
+	defer func() { <-t.lock }()
+	if ctx.Err() != nil {
+		return "", context.Cause(ctx)
+	}
+	return t.Tool.Run(ctx, input)
+}
+
+// lockTools wraps each of tools to run holding lock.
+func lockTools(tools []agent.Tool, lock chan struct{}) []agent.Tool {
+	out := make([]agent.Tool, len(tools))
+	for i, t := range tools {
+		out[i] = lockedTool{Tool: t, lock: lock}
+	}
+	return out
+}
+
+// runParts runs a split review's parts, each an agent of its own with the
+// run's limits over the same tools, and writes their run as one row: the
+// findings every part submitted under a joined summary, and how each part
+// ended.
 func runParts(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
 	parts []reviewPart, logger *slog.Logger,
 ) error {
-	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
-	deadline := time.Now().Add(min(time.Duration(len(parts))*timeout, jobtimeout.MaxAgentTimeout))
-	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "commands", tools.commands(),
-		"search", tools.search != nil)
-	results := make([]agent.Result, len(parts))
-	var timeline []store.TimelineStep
-	for i, part := range parts {
-		left := time.Until(deadline)
-		switch {
-		case ctx.Err() != nil:
-			results[i] = agent.Result{Stop: agent.StopCanceled, Err: context.Cause(ctx).Error()}
-			continue
-		case left < min(minPartTime, timeout):
-			results[i] = agent.Result{Stop: agent.StopCanceled, Err: "no agent time left"}
-			continue
-		}
-		stepper, err := gatewayStepper(p, secrets, i+1)
-		if err != nil {
-			return err
-		}
-		res, steps := agentLoop(ctx, stepper, p, head, ignore, tools.extra(), part.prompt, min(timeout, left), logger)
-		// The run's timeline numbers its steps across the parts.
-		for j := range steps {
-			steps[j].Part, steps[j].Index = i+1, len(timeline)+j
-		}
-		results[i], timeline = res, append(timeline, steps...)
-		logger.Info("agent part stopped", "part", i+1, "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,
-			"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD)
+	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, parts, logger)
+	if err != nil {
+		return err
 	}
 	merged, records, err := mergeParts(parts, results, secrets)
 	if err != nil {
@@ -220,6 +228,64 @@ func runParts(
 		return errors.Join(fmt.Errorf("runner: agent: %w", cerr), writeAgentRun(wctx, st, p, rec, "failed"))
 	}
 	return writeAgentRun(ctx, st, p, rec, "done")
+}
+
+// runPartLoops runs the agents of a split review's parts, as many at once
+// as p.Agent.Parallel allows and the rest as those end, and returns each
+// part's result and the run's timeline, its steps numbered across the parts
+// in part order. The parts share the agent time the worker sized the Job
+// for, so a part late enough to pass it is left out, ending the run cleanly
+// rather than at the Job's deadline.
+func runPartLoops(
+	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools, parts []reviewPart,
+	logger *slog.Logger,
+) ([]agent.Result, []store.TimelineStep, error) {
+	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
+	parallel := max(p.Agent.Parallel, 1)
+	rounds := (len(parts) + parallel - 1) / parallel
+	deadline := time.Now().Add(min(time.Duration(rounds)*timeout, jobtimeout.MaxAgentTimeout))
+	logger.Info("agent started in parts", "model", p.Model.Model, "parts", len(parts), "parallel", parallel, "commands", tools.commands(),
+		"search", tools.search != nil)
+	results := make([]agent.Result, len(parts))
+	steps := make([][]store.TimelineStep, len(parts))
+	toolLock := make(chan struct{}, 1)
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(parallel)
+	for i, part := range parts {
+		g.Go(func() error {
+			left := time.Until(deadline)
+			switch {
+			case gctx.Err() != nil:
+				results[i] = agent.Result{Stop: agent.StopCanceled, Err: context.Cause(gctx).Error()}
+				return nil
+			case left < min(minPartTime, timeout/2):
+				results[i] = agent.Result{Stop: agent.StopCanceled, Err: "no agent time left"}
+				return nil
+			}
+			stepper, err := gatewayStepper(p, secrets, i+1)
+			if err != nil {
+				return err
+			}
+			plog := logger.With("part", i+1)
+			offered := lockTools(offeredTools(p, head, ignore, tools.extra()), toolLock)
+			res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
+			results[i], steps[i] = res, partSteps
+			plog.Info("agent part stopped", "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,
+				"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, nil, err
+	}
+	var timeline []store.TimelineStep
+	for i, partSteps := range steps {
+		for j := range partSteps {
+			partSteps[j].Part, partSteps[j].Index = i+1, len(timeline)+j
+		}
+		timeline = append(timeline, partSteps...)
+	}
+	return results, timeline, nil
 }
 
 // mergeParts is a split review's run as one agent.Result: the reviews its

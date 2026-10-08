@@ -1,14 +1,20 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -145,5 +151,134 @@ func TestPartPrompts(t *testing.T) {
 		if err := part.prompt.validate(submission(mine, "t")); err != nil {
 			t.Fatalf("part %d refused a finding on its own %s: %v", i+1, mine, err)
 		}
+	}
+}
+
+// TestRunPartLoops: the parts run as many at once as Parallel allows, each
+// under its own part on the gateway and reading the head through the tools
+// they share, and the timeline lists their steps in part order whichever
+// part ends first.
+func TestRunPartLoops(t *testing.T) {
+	answer := func(name, input string) string {
+		return `{"id":"x","object":"chat.completion","created":1,"model":"acme/large","choices":[{"index":0,"message":` +
+			`{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"` + name +
+			`","arguments":` + strconv.Quote(input) + `}}]},"finish_reason":"tool_calls"}],` +
+			`"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150}}`
+	}
+	for _, tt := range []struct {
+		name            string
+		parts, parallel int
+	}{
+		{name: "one after another", parts: 2, parallel: 1},
+		{name: "one round", parts: 2, parallel: 2},
+		{name: "two at once", parts: 3, parallel: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var started, running, most int
+			asked := map[string]int{}
+			together := make(chan struct{})
+			gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				part := r.Header.Get(model.PartHeader)
+				mu.Lock()
+				asked[part]++
+				step := asked[part]
+				if step == 1 {
+					if started++; started == tt.parallel {
+						close(together)
+					}
+				}
+				hold := step == 1 && started <= tt.parallel
+				running++
+				most = max(most, running)
+				mu.Unlock()
+				if hold {
+					// The first parts to start answer once all of them have
+					// asked, which only parts running at once can.
+					select {
+					case <-together:
+					case <-time.After(5 * time.Second):
+					}
+				}
+				out := answer("read_file", `{"path":"a.go"}`)
+				if step > 1 {
+					if !strings.Contains(string(body), "package a") {
+						t.Errorf("part %s was not shown a.go", part)
+					}
+					if part == "1" {
+						time.Sleep(50 * time.Millisecond)
+					}
+					out = answer(submitReview, `{"summary":{"take":"t","praise":[]},"findings":[]}`)
+				}
+				mu.Lock()
+				running--
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(out))
+			}))
+			t.Cleanup(gw.Close)
+			s := reviewSpec()
+			s.Model.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, tt.parallel, 60
+			head := tree(t, map[string]string{"a.go": "package a\n"})
+			parts := make([]reviewPart, tt.parts)
+			for i := range parts {
+				parts[i] = reviewPart{paths: []string{fmt.Sprintf("p%d.go", i+1)}, prompt: loopPrompt(s, false)}
+			}
+			results, timeline, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, head, nil, agentTools{}, parts,
+				slog.New(slog.DiscardHandler))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if most != tt.parallel {
+				t.Fatalf("%d parts ran at once, want %d", most, tt.parallel)
+			}
+			for i, res := range results {
+				if res.Stop != agent.StopSubmitted {
+					t.Fatalf("part %d stopped %s: %s", i+1, res.Stop, res.Err)
+				}
+			}
+			if len(timeline) != 2*tt.parts {
+				t.Fatalf("timeline = %+v, want two steps a part", timeline)
+			}
+			for k, step := range timeline {
+				if step.Part != k/2+1 || step.Index != k {
+					t.Fatalf("timeline = %+v, want each part's steps in part order", timeline)
+				}
+			}
+		})
+	}
+}
+
+// countedTool counts its runs.
+type countedTool struct{ runs *int }
+
+func (countedTool) Def() model.ToolDef { return model.ToolDef{Name: "counted"} }
+
+func (t countedTool) Run(context.Context, json.RawMessage) (string, error) {
+	*t.runs++
+	return "ok", nil
+}
+
+// TestLockedTool: a tool waits for the lock the parts share, gives up when
+// its part ends first, and runs nothing once it has.
+func TestLockedTool(t *testing.T) {
+	var runs int
+	lock := make(chan struct{}, 1)
+	tool := lockTools([]agent.Tool{countedTool{runs: &runs}}, lock)[0]
+	if tool.Def().Name != "counted" {
+		t.Fatalf("Def = %+v, want the tool's own", tool.Def())
+	}
+	lock <- struct{}{}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := tool.Run(ctx, nil); !errors.Is(err, context.DeadlineExceeded) || runs != 0 {
+		t.Fatalf("waiting past its part's end: err = %v, %d runs", err, runs)
+	}
+	<-lock
+	if out, err := tool.Run(t.Context(), nil); err != nil || out != "ok" || runs != 1 || len(lock) != 0 {
+		t.Fatalf("Run = %q, %v, %d runs, lock held %d", out, err, runs, len(lock))
 	}
 }

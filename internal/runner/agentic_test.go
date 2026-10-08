@@ -331,7 +331,8 @@ func TestReviewAgentReturnsAFlattenedSummaryToTheModel(t *testing.T) {
 		{ToolCalls: []model.ToolCall{call("2", "submit_review", submitted)}},
 	}}
 	logger := slog.New(slog.DiscardHandler)
-	res, _ := agentLoop(t.Context(), st, agentPromptSpec(), head, nil, nil, loopPrompt(agentPromptSpec(), false), time.Minute, logger)
+	res, _ := agentLoop(t.Context(), st, agentPromptSpec(), offeredTools(agentPromptSpec(), head, nil, nil), loopPrompt(agentPromptSpec(), false),
+		time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 2 || string(res.Submitted) != submitted {
 		t.Fatalf("result = %+v", res)
 	}
@@ -352,7 +353,7 @@ func TestReviewAgentRecordsATimeline(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Diagram = true
 	logger := slog.New(slog.DiscardHandler)
-	res, timeline := agentLoop(t.Context(), st, s, head, []string{"vendor/**"}, nil, loopPrompt(s, true), time.Minute, logger)
+	res, timeline := agentLoop(t.Context(), st, s, offeredTools(s, head, []string{"vendor/**"}, nil), loopPrompt(s, true), time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.Steps != 3 || res.ToolCalls["grep"] != 1 || res.ToolCalls["read_file"] != 1 ||
 		res.ToolCalls["submit_review"] != 1 || res.CostUSD != 0.5 {
 		t.Fatalf("result = %+v", res)
@@ -399,7 +400,7 @@ func TestReviewAgentOffersTheDescription(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Issues = []review.Issue{{Number: 12, Title: "Add b", Body: "b is missing."}}
 	logger := slog.New(slog.DiscardHandler)
-	res, _ := agentLoop(t.Context(), st, s, head, nil, nil, loopPrompt(s, false), time.Minute, logger)
+	res, _ := agentLoop(t.Context(), st, s, offeredTools(s, head, nil, nil), loopPrompt(s, false), time.Minute, logger)
 	if res.Stop != agent.StopSubmitted || res.ToolCalls["read_description"] != 2 {
 		t.Fatalf("result = %+v", res)
 	}
@@ -415,7 +416,8 @@ func TestReviewAgentTimeout(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	st := blockingStepper{}
 	logger := slog.New(slog.DiscardHandler)
-	res, _ := agentLoop(t.Context(), st, agentPromptSpec(), head, nil, nil, loopPrompt(agentPromptSpec(), false), 20*time.Millisecond, logger)
+	res, _ := agentLoop(t.Context(), st, agentPromptSpec(), offeredTools(agentPromptSpec(), head, nil, nil), loopPrompt(agentPromptSpec(), false),
+		20*time.Millisecond, logger)
 	if res.Stop != agent.StopCanceled || !strings.Contains(res.Err, "timeout") {
 		t.Fatalf("result = %+v", res)
 	}
