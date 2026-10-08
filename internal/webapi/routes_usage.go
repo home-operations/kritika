@@ -13,8 +13,15 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// defaultUsageWindow is the span a usage series covers without ?from=.
-const defaultUsageWindow = 30 * 24 * time.Hour
+// defaultUsageWindow is the span a usage series covers without ?from=, and
+// maxUsageWindow the most ?from= and ?to= may span: the series are read
+// from every row in the span, and the analytics page reads the span
+// before it too, so a span of years would scan the account's history
+// twice on one request.
+const (
+	defaultUsageWindow = 30 * 24 * time.Hour
+	maxUsageWindow     = 366 * 24 * time.Hour
+)
 
 // parseTime reads an RFC 3339 time or a YYYY-MM-DD date (midnight UTC).
 func parseTime(s string) (time.Time, bool) {

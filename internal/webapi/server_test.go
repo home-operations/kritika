@@ -244,6 +244,8 @@ func TestRequestValidation(t *testing.T) {
 		{"/api/v1/accounts/github/alpha/analytics?from=2026-02-01&to=2026-01-01", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/usage?from=yesterday", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/usage?from=2026-02-01&to=2026-01-01", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/usage?from=2024-01-01&to=2026-01-02", CodeBadRequest},
+		{"/api/v1/accounts/github/alpha/analytics?from=0001-01-01", CodeBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
