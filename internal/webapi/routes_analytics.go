@@ -110,5 +110,8 @@ func (s *Server) window(r *http.Request) (time.Time, time.Time, error) {
 	if !from.Before(to) {
 		return time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from must be before to")
 	}
+	if to.Sub(from) > maxUsageWindow {
+		return time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "from and to may span at most a year")
+	}
 	return from, to, nil
 }
