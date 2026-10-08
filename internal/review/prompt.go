@@ -34,8 +34,8 @@ type Input struct {
 	Incremental *IncrementalInput
 	// Earlier, on a full re-review, is the last review's findings, added
 	// after the diff to be checked again as an incremental re-review checks
-	// them; nil on a first review and on a re-run at the head the last
-	// review saw, which looks afresh.
+	// them; nil on a first review, on a re-run at the head the last review
+	// saw and on one asked for by hand, which look afresh.
 	Earlier *EarlierInput
 	// Dismissed are the findings maintainers dismissed on the pull
 	// request, which the review is told not to raise again.
