@@ -166,6 +166,8 @@ func run() (err error) {
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("%s: %w", command, err)
 	}
+	// The signal that ended serve, which the context carries as its cause.
+	logger.Info("kritika stopped", "cause", context.Cause(ctx))
 	return nil
 }
 
