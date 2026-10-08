@@ -466,14 +466,29 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	<-done
 }
 
+func TestKubeRunNeverStartsWhenSecretCreateFails(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("etcdserver: request timed out")
+	})
+	res := newKube(client).Run(t.Context(), spec())
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "request timed out") || !res.NeverStarted {
+		t.Fatalf("res = %+v, want the create error of a run that never started", res)
+	}
+	jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
+	if len(jobs.Items) != 0 {
+		t.Fatalf("a Job was created without its Secret: %v", jobs.Items)
+	}
+}
+
 func TestKubeRunDeletesSecretWhenJobCreateFails(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	client.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("quota exceeded")
 	})
 	res := newKube(client).Run(t.Context(), spec())
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "quota exceeded") {
-		t.Fatalf("err = %v", res.Err)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "quota exceeded") || !res.NeverStarted {
+		t.Fatalf("res = %+v, want the create error of a run that never started", res)
 	}
 	secrets, _ := client.CoreV1().Secrets("kritika").List(t.Context(), metav1.ListOptions{})
 	if len(secrets.Items) != 0 {
@@ -572,8 +587,8 @@ func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
 		return true, nil, errors.New("conflict")
 	})
 	res := newKube(client).Run(t.Context(), spec())
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "conflict") {
-		t.Fatalf("err = %v", res.Err)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "conflict") || !res.NeverStarted {
+		t.Fatalf("res = %+v, want the patch error of a run that never started", res)
 	}
 	jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
 	secrets, _ := client.CoreV1().Secrets("kritika").List(t.Context(), metav1.ListOptions{})

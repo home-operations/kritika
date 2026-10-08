@@ -366,7 +366,7 @@ func (f *followUp) runAgent(
 	case res.Err != nil && workerStopping(ctx):
 		return nil, fmt.Errorf("worker: follow-up cut by a restart: %w", res.Err)
 	// A runner whose pod never started spent nothing: the job is retried.
-	case res.Err != nil && res.StartedAt.IsZero():
+	case res.Err != nil && res.NeverStarted:
 		return nil, fmt.Errorf("worker: runner did not start: %w", res.Err)
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		return nil, finalError{errors.New("worker: runner heartbeat lost")}
