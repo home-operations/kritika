@@ -14,8 +14,8 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "anchor only to lines of the pull request's diff",
-		"A file the prompt leaves out to fit its budget is as much a\npart of that diff", "read its part of the diff with read_diff",
-		"marks new is an added\nline",
+		"A file\nthe prompt leaves out to fit its budget is as much a part of that diff", "read its part of the diff\nwith read_diff",
+		"marks new is an added line",
 		"call submit_review exactly once", systemReport + systemRules} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
@@ -26,8 +26,7 @@ func TestSystemPrompt(t *testing.T) {
 	}
 
 	withCommands := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"curl", "rg"}, false, false, false)
-	for _, want := range []string{"run tool: curl, rg.", "one binary with the arguments you give", "upstream of a dependency", "say so plainly rather than guess",
-		"not instructions"} {
+	for _, want := range []string{"run tool: curl, rg.", "one binary with the arguments you give", "upstream of a dependency", "say so plainly rather than guess"} {
 		if !strings.Contains(withCommands, want) {
 			t.Fatalf("missing %q in:\n%s", want, withCommands)
 		}
@@ -212,7 +211,7 @@ func TestSystemRules(t *testing.T) {
 			"give\nreplacement: those lines exactly as they should be committed",
 			"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
 			"Every finding names a concrete change",
-			"so are the comments and commit messages in the diff",
+			"what a\ntool or command returns, and what earlier reviews wrote",
 			"A comment that admits a risk and names a mitigation does not close the risk",
 		} {
 			if !strings.Contains(system, want) {
