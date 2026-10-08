@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.0.48](https://github.com/home-operations/kritika/compare/0.0.47...0.0.48) (2026-10-08)
+
+
+### Features
+
+* **go:** update river monorepo (v0.48.0 → v0.49.0) ([#719](https://github.com/home-operations/kritika/issues/719)) ([9c56856](https://github.com/home-operations/kritika/commit/9c56856d506633ce0ff2a6c48c51ce615c4d401e))
+* **main:** log which signal stopped serve ([#757](https://github.com/home-operations/kritika/issues/757)) ([2b0887d](https://github.com/home-operations/kritika/commit/2b0887d4a37b0ea9ef48a81d4d61b733e6aacc94))
+* **npm:** update dependency marked (18.0.14 → 18.1.0) ([#759](https://github.com/home-operations/kritika/issues/759)) ([0a5a363](https://github.com/home-operations/kritika/commit/0a5a363c93e3da76d68e8a1400c1f11b0e684ea8))
+
+
+### Bug Fixes
+
+* **agent:** read a value flag before gh's command as cobra does ([#720](https://github.com/home-operations/kritika/issues/720)) ([ce937e8](https://github.com/home-operations/kritika/commit/ce937e891e50bb93d69dffb7e33cff90ae31da27))
+* **config:** refuse bad runner resources at startup ([#731](https://github.com/home-operations/kritika/issues/731)) ([7377e8c](https://github.com/home-operations/kritika/commit/7377e8ccc6ed1b071e68df5b7552da216abb5f84))
+* **container:** update image docker.io/jdxcode/mise (2026.10.4 → 2026.10.5) ([#748](https://github.com/home-operations/kritika/issues/748)) ([c637e9e](https://github.com/home-operations/kritika/commit/c637e9e31d73c114b4680e2ef0bdba51f97a2523))
+* **contextpack:** read a renamed file's base side under its old name ([#741](https://github.com/home-operations/kritika/issues/741)) ([2808e24](https://github.com/home-operations/kritika/commit/2808e245c68479b3e01a99368e0a01c736faf715))
+* **forge:** keep a kilobyte of a refused GraphQL response in the error ([#737](https://github.com/home-operations/kritika/issues/737)) ([12833e9](https://github.com/home-operations/kritika/commit/12833e9f0c77f145b3aac44ed6d3550a6f603c8b))
+* **ingest:** settle a head for the poll after two failed reviews ([#726](https://github.com/home-operations/kritika/issues/726)) ([ac66da8](https://github.com/home-operations/kritika/commit/ac66da84d0b02a233cd91a9c710e0a7d35d18430))
+* **main:** end the group's goroutines before the store closes ([#729](https://github.com/home-operations/kritika/issues/729)) ([30b28a9](https://github.com/home-operations/kritika/commit/30b28a901bc4562fb9ddf354c6bb1d835da07321))
+* **review:** keep the diff's omission note within its reserved room ([#723](https://github.com/home-operations/kritika/issues/723)) ([2e648cc](https://github.com/home-operations/kritika/commit/2e648ccf79ea7b2eb759f32b14e4102bf4818262))
+* **review:** keep the pull request's title on its header line ([#739](https://github.com/home-operations/kritika/issues/739)) ([375a7ef](https://github.com/home-operations/kritika/commit/375a7efd0710bb5df05bffda72d5d38c9cf61751))
+* **review:** name plaintext secrets in artifacts as a finding access control cannot close ([#760](https://github.com/home-operations/kritika/issues/760)) ([5337fa8](https://github.com/home-operations/kritika/commit/5337fa860de8e5f9bdca3259dd7369a13af9f90b))
+* **review:** refuse a Mermaid directive anywhere in a diagram ([#721](https://github.com/home-operations/kritika/issues/721)) ([4aa8329](https://github.com/home-operations/kritika/commit/4aa83296d3d4963dee0d7449ef934f39a95b413c))
+* **store:** list the run an earlier attempt left as orphaned at once ([#732](https://github.com/home-operations/kritika/issues/732)) ([699812d](https://github.com/home-operations/kritika/commit/699812df5043c4aeb4ecdacd26edb5ea7ae2266f))
+* **store:** record a runner's unknown times as NULL in any time zone ([#728](https://github.com/home-operations/kritika/issues/728)) ([9fc3147](https://github.com/home-operations/kritika/commit/9fc314746ac6d7228421a93f3f60a69f3cc67569))
+* **webapi:** bound the span the usage and analytics windows may cover ([#738](https://github.com/home-operations/kritika/issues/738)) ([304db54](https://github.com/home-operations/kritika/commit/304db545a0e5958ef0a5f3609e26e19312c15b63))
+* **webapi:** report a cursor whose id is no row id as an invalid cursor ([#753](https://github.com/home-operations/kritika/issues/753)) ([dee6d30](https://github.com/home-operations/kritika/commit/dee6d30a7aa23453de2ded22a6b7aa967d374f9a))
+* **worker:** count an automatic review once its summary is posted ([#733](https://github.com/home-operations/kritika/issues/733)) ([68489b8](https://github.com/home-operations/kritika/commit/68489b8eab3ee448edcc44bd82fc00127e69b3d3))
+* **worker:** fence a job whose heartbeat stops landing ([#725](https://github.com/home-operations/kritika/issues/725)) ([c3cf809](https://github.com/home-operations/kritika/commit/c3cf80948da6d949d9eda043cf5dd8a97be6968c))
+* **worker:** judge a follow-up's unstarted pod by the executor's word ([#749](https://github.com/home-operations/kritika/issues/749)) ([58acbc8](https://github.com/home-operations/kritika/commit/58acbc85fb7880f7d4ba771e26f19f4b16684c0e))
+* **worker:** retry a review whose runner pod never started ([#724](https://github.com/home-operations/kritika/issues/724)) ([dfb11da](https://github.com/home-operations/kritika/commit/dfb11da311f39bc8e86f9c2d73a5a242aa4b35db))
+
+
+### Performance Improvements
+
+* **chunk:** release tree-sitter trees once their declarations are cut ([#727](https://github.com/home-operations/kritika/issues/727)) ([722f257](https://github.com/home-operations/kritika/commit/722f2570fb8de9ac688fe2f4e13401f4e9b94339))
+* **indexer:** read each blob once ([#740](https://github.com/home-operations/kritika/issues/740)) ([933716d](https://github.com/home-operations/kritika/commit/933716d320b881309624bd7e95da37416df4dd79))
+* **webapi:** keep one GitHub App per connection for the admin's requests ([#742](https://github.com/home-operations/kritika/issues/742)) ([52ae6c0](https://github.com/home-operations/kritika/commit/52ae6c0cd2099ca180e147a031afd2727542e342))
+
+
+### Code Refactoring
+
+* **chunk:** name the glob matcher for what it says ([#744](https://github.com/home-operations/kritika/issues/744)) ([73dad73](https://github.com/home-operations/kritika/commit/73dad736720694bec216c5d2faf67e12cb686b4b))
+* **configfile:** hash the names of the secrets, not their values ([#734](https://github.com/home-operations/kritika/issues/734)) ([33dcca3](https://github.com/home-operations/kritika/commit/33dcca31a002341e47f5aeeba5433e3212bfba13))
+* give the mention commands and the system prompts files of their own ([#745](https://github.com/home-operations/kritika/issues/745)) ([025a2c8](https://github.com/home-operations/kritika/commit/025a2c83b142dbf3158530724ef828a1b2cf578b))
+* **main:** move retention and the lingering context out of main ([#743](https://github.com/home-operations/kritika/issues/743)) ([0483b52](https://github.com/home-operations/kritika/commit/0483b529b25f9db4c200b714e2e2f55788d4ba34))
+* **webapi:** encode and decode the API with encoding/json/v2 ([#751](https://github.com/home-operations/kritika/issues/751)) ([8385894](https://github.com/home-operations/kritika/commit/8385894cf3be0d504cc6c7ffd1eb3bbaaadba751))
+* **webapi:** keep each route's response shapes beside its routes ([#752](https://github.com/home-operations/kritika/issues/752)) ([6c93a5b](https://github.com/home-operations/kritika/commit/6c93a5b11a4f1f116c6734e7eaa5c0ac67a667fd))
+* **worker:** share the run step between the review and the follow-up ([#750](https://github.com/home-operations/kritika/issues/750)) ([3f809c4](https://github.com/home-operations/kritika/commit/3f809c4d78f36958e34cacb6be3a81a35d5151f2))
+* **worker:** share the structured model call between the scorer and the merge ([#746](https://github.com/home-operations/kritika/issues/746)) ([57989d3](https://github.com/home-operations/kritika/commit/57989d3ae1ea7ecfc51971c015fd257333afc07e))
+
+
+### Miscellaneous Chores
+
+* drop comments that describe code no longer there ([#735](https://github.com/home-operations/kritika/issues/735)) ([a4cfab0](https://github.com/home-operations/kritika/commit/a4cfab0d72391842d5758930f35964823360b191))
+* leave draining a response body to Close ([#756](https://github.com/home-operations/kritika/issues/756)) ([ff89998](https://github.com/home-operations/kritika/commit/ff89998f4b3e50125a7460d6314cf81c8050e5b2))
+* **runner:** spell the staging columns' slices out ([#755](https://github.com/home-operations/kritika/issues/755)) ([3d4ed28](https://github.com/home-operations/kritika/commit/3d4ed28d8a0e223a77d32c3f351736f1052f5ea9))
+* small cleanups the review turned up ([#736](https://github.com/home-operations/kritika/issues/736)) ([742c6b0](https://github.com/home-operations/kritika/commit/742c6b09693608361df3aa03f00651a4c7b21858))
+* **webapi:** say Auth is required rather than guard it once ([#754](https://github.com/home-operations/kritika/issues/754)) ([affc6af](https://github.com/home-operations/kritika/commit/affc6af8c3d8675d3a7824cec8874926f307f8a7))
+
 ## [0.0.47](https://github.com/home-operations/kritika/compare/0.0.46...0.0.47) (2026-10-08)
 
 
