@@ -340,8 +340,9 @@ func UserBudget(system string, budget int) int {
 // them, and they are cut only when they alone exceed what the diff left.
 func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	var b strings.Builder
+	// The title is the forge's, on one line as the header reads it.
 	fmt.Fprintf(&b, "Repository: %s\nPull request #%d: %s\nAuthor: %s\nBase branch: %s\nChanged files (%d):\n",
-		in.Repository, in.Number, in.Title, in.Author, in.BaseRef, len(in.Changed))
+		in.Repository, in.Number, oneLine(in.Title), in.Author, in.BaseRef, len(in.Changed))
 	marks := fileMarks(in.Diff)
 	for _, p := range in.Changed {
 		fmt.Fprintf(&b, "- %s%s%s\n", p, marks[p], in.Part.mark(p))
@@ -384,7 +385,7 @@ const (
 // on others would judge the change against what the author has since
 // rewritten.
 func SameBrief(opening string, in Input) bool {
-	if !strings.Contains(opening, fmt.Sprintf("\nPull request #%d: %s\n", in.Number, in.Title)) {
+	if !strings.Contains(opening, fmt.Sprintf("\nPull request #%d: %s\n", in.Number, oneLine(in.Title))) {
 		return false
 	}
 	end := strings.Index(opening, diffLead)
