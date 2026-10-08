@@ -24,12 +24,14 @@ const (
 	KindAgentStep  Kind = "agent_step"
 	KindFollowUp   Kind = "followup"
 	KindConfidence Kind = "confidence"
+	// KindMerge writes a split review's summary from its parts'.
+	KindMerge Kind = "merge"
 )
 
 // Valid reports whether k is a model call kind.
 func (k Kind) Valid() bool {
 	switch k {
-	case KindAgentStep, KindFollowUp, KindConfidence:
+	case KindAgentStep, KindFollowUp, KindConfidence, KindMerge:
 		return true
 	}
 	return false

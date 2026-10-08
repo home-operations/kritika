@@ -349,25 +349,9 @@ func contractSchema(requireFix, diagram bool) json.RawMessage {
 	for i, c := range categories {
 		kinds[i] = string(c)
 	}
-	summary := map[string]*jsonSchema{
-		keyHeadline: {
-			Type:        schemaString,
-			Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
-		},
-		keyTake: {
-			Type:        schemaString,
-			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
-		},
-		keyPraise: {
-			Type:        schemaArray,
-			Description: "Up to three specific things the change does well; empty when nothing stands out.",
-			Items:       &jsonSchema{Type: schemaString},
-			MaxItems:    maxPraise,
-		},
-		keyChecked: {Type: schemaArray, Description: describeChecked, Items: &jsonSchema{Type: schemaString}, MaxItems: maxChecked},
-	}
-	if diagram {
-		summary[keyDiagram] = &jsonSchema{Type: schemaString, Description: describeDiagram}
+	summary := summaryProperties(diagram)
+	summary[keyChecked] = &jsonSchema{
+		Type: schemaArray, Description: describeChecked, Items: &jsonSchema{Type: schemaString}, MaxItems: maxChecked,
 	}
 	return jsonSchema{
 		Type: schemaObject,
@@ -402,6 +386,31 @@ func contractSchema(requireFix, diagram bool) json.RawMessage {
 		},
 		Required: []string{keySummary, keyFindings},
 	}.mustMarshal()
+}
+
+// summaryProperties are a summary's headline, take and praise, and its
+// diagram when diagram is set, as a schema states them.
+func summaryProperties(diagram bool) map[string]*jsonSchema {
+	summary := map[string]*jsonSchema{
+		keyHeadline: {
+			Type:        schemaString,
+			Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
+		},
+		keyTake: {
+			Type:        schemaString,
+			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
+		},
+		keyPraise: {
+			Type:        schemaArray,
+			Description: "Up to three specific things the change does well; empty when nothing stands out.",
+			Items:       &jsonSchema{Type: schemaString},
+			MaxItems:    maxPraise,
+		},
+	}
+	if diagram {
+		summary[keyDiagram] = &jsonSchema{Type: schemaString, Description: describeDiagram}
+	}
+	return summary
 }
 
 // contract picks one of the schemas contractSchema builds.
@@ -460,27 +469,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	if err := dec.Decode(&res); err != nil {
 		return Result{}, nil, fmt.Errorf("review: model output is not the expected JSON: %w", err)
 	}
-	res.Summary.Headline = oneLine(prose(res.Summary.Headline, opts.Repository))
-	res.Summary.Take = prose(res.Summary.Take, opts.Repository)
-	praise := make([]string, 0, maxPraise)
-	for _, p := range res.Summary.Praise {
-		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
-			praise = append(praise, p)
-		}
-	}
-	res.Summary.Praise = praise
-	var checked []string
-	for _, c := range res.Summary.Checked {
-		if c = oneLine(c); c != "" && len(checked) < maxChecked {
-			checked = append(checked, c)
-		}
-	}
-	res.Summary.Checked = checked
-	if opts.Diagram {
-		res.Summary.Diagram = diagram(res.Summary.Diagram)
-	} else {
-		res.Summary.Diagram = ""
-	}
+	res.Summary = normalizeSummary(res.Summary, opts)
 	kept := make([]Finding, 0, len(res.Findings))
 	var dropped []Dropped
 	for _, f := range res.Findings {
@@ -539,6 +528,35 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	})
 	res.Findings = kept
 	return res, dropped, nil
+}
+
+// normalizeSummary applies the contract to a summary's text: one-line
+// headline and checked notes, prose with its references redirected,
+// praise and notes to their caps, and the diagram only where opts ask for
+// one and it is one diagram allows.
+func normalizeSummary(s Summary, opts ParseOptions) Summary {
+	s.Headline = oneLine(prose(s.Headline, opts.Repository))
+	s.Take = prose(s.Take, opts.Repository)
+	praise := make([]string, 0, maxPraise)
+	for _, p := range s.Praise {
+		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
+			praise = append(praise, p)
+		}
+	}
+	s.Praise = praise
+	var checked []string
+	for _, c := range s.Checked {
+		if c = oneLine(c); c != "" && len(checked) < maxChecked {
+			checked = append(checked, c)
+		}
+	}
+	s.Checked = checked
+	if opts.Diagram {
+		s.Diagram = diagram(s.Diagram)
+	} else {
+		s.Diagram = ""
+	}
+	return s
 }
 
 // citedRules is the ids of cited that given lists, once each, in the

@@ -322,11 +322,13 @@ func ContextPackInputs(ctx context.Context, tx pgx.Tx, runnerRunID string) ([]co
 	return chunks, repoFiles, nil
 }
 
-// ReviewModelCalls returns a review's own model calls, its agent's steps
-// and the call that scored its confidence, in the order they were
-// recorded, not the follow-ups later answered against it.
+// ReviewModelCalls returns a review's own model calls, its agent's steps,
+// the call that wrote a split review's summary and the one that scored its
+// confidence, in the order they were recorded, not the follow-ups later
+// answered against it.
 func ReviewModelCalls(ctx context.Context, tx pgx.Tx, reviewID string) ([]transcript.StoredRow, error) {
-	return modelCallsWhere(ctx, tx, `review_id = $1::uuid AND kind IN ('agent_step', 'confidence') AND followup_comment_id IS NULL`, reviewID)
+	return modelCallsWhere(ctx, tx, `review_id = $1::uuid AND kind IN ('agent_step', 'merge', 'confidence') AND followup_comment_id IS NULL`,
+		reviewID)
 }
 
 // FollowupModelCalls returns the model calls that answered a follow-up

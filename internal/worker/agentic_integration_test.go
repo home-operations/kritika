@@ -212,7 +212,10 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if script == scriptParts || script == scriptPartFails {
 		finish = "tool_calls"
 		message = tool("submit_review", `{"summary":{"take":"Reviews its part.","praise":[]},"findings":[]}`)
-		if script == scriptPartFails && len(req.Messages) > 1 && strings.Contains(fmt.Sprint(req.Messages[1].Content), "this is part 2") {
+		switch {
+		case len(req.Messages) > 0 && strings.Contains(fmt.Sprint(req.Messages[0].Content), "writing the summary of a review that was split"):
+			message = tool("summary", `{"headline":"Adds two directories","take":"The whole change, merged.","praise":[]}`)
+		case script == scriptPartFails && len(req.Messages) > 1 && strings.Contains(fmt.Sprint(req.Messages[1].Content), "this is part 2"):
 			finish, message = "stop", `{"role":"assistant","content":"Still looking."}`
 		}
 	}
@@ -330,13 +333,14 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	h.svc = ingest.NewService(appStore, insertOnly)
 	h.insertOnly = insertOnly
 	workers := river.NewWorkers()
+	steppers := &adapter.Steppers{Build: adapter.BuildStepper}
 	h.review = &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf},
-		Executor: h.exec, Logger: logger, superviseEvery: 50 * time.Millisecond,
+		Executor: h.exec, Steppers: steppers, Logger: logger, superviseEvery: 50 * time.Millisecond,
 	}
 	gw := httptest.NewServer(&gateway.Server{
 		Store: appStore, Current: h.review.Current, Logger: logger,
-		Proxy: http.NotFoundHandler(), Steppers: &adapter.Steppers{Build: adapter.BuildStepper},
+		Proxy: http.NotFoundHandler(), Steppers: steppers,
 		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return h.fe }},
 	})
 	t.Cleanup(gw.Close)
@@ -1745,9 +1749,11 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 // checkAgentSplitsALargeReview reviews a change of two directories of
 // about 40 KiB each, which the forge reports large enough to split: each
 // part's agent submits under a part of its own, and the review is
-// published as one. A push of two more such directories is then reviewed
-// in parts too, the second of which never submits: the review is published
-// with that part's files named, and is incomplete for the commit status.
+// published as one, its summary written from theirs by one more call. A
+// push of two more such directories is then reviewed in parts too, the
+// second of which never submits: the review is published with the first
+// part's summary and the second's files named, and is incomplete for the
+// commit status.
 func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 	body := strings.Repeat("// "+strings.Repeat("x", 60)+"\n", 650)
 	for _, dir := range []string{"a", "b", "c", "d"} {
@@ -1781,11 +1787,16 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		var stops []string
 		var parts, indexes []int
 		var partial bool
+		var merges int
 		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(h.ctx, `SELECT array(SELECT p->>'stop' FROM jsonb_array_elements(a.parts) p),
 				array(SELECT (s->>'index')::int FROM jsonb_array_elements(a.timeline) s), v.partial
 				FROM agent_runs a JOIN runner_runs r ON r.id = a.runner_run_id JOIN reviews v ON v.id = r.review_id
 				WHERE r.review_id = $1`, reviewID).Scan(&stops, &indexes, &partial); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(h.ctx, `SELECT count(*) FROM model_calls WHERE review_id = $1 AND kind = 'merge'`, reviewID).
+				Scan(&merges); err != nil {
 				return err
 			}
 			return tx.QueryRow(h.ctx, `SELECT array(SELECT DISTINCT part FROM model_calls WHERE review_id = $1 AND kind = 'agent_step'
@@ -1799,13 +1810,17 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		h.lf.mu.Unlock()
 		// The parts' steps are numbered across the run, the second part's
 		// two answers in prose too, and only the review that left a part's
-		// files unreviewed is partial.
-		wantStops, wantIndexes := []string{"submitted", "submitted"}, []int{0, 1}
+		// files unreviewed is partial; its one finished part's summary needs
+		// no merging.
+		wantStops, wantIndexes, wantMerges := []string{"submitted", "submitted"}, []int{0, 1}, 1
 		if round.script == scriptPartFails {
-			wantStops[1], wantIndexes = "no_submit", []int{0, 1, 2}
+			wantStops[1], wantIndexes, wantMerges = "no_submit", []int{0, 1, 2}, 0
 		}
 		if !slices.Equal(indexes, wantIndexes) || partial != (round.script == scriptPartFails) {
 			t.Fatalf("round %d: timeline indexes %v, partial %v", i+1, indexes, partial)
+		}
+		if merged := strings.Contains(sticky, "The whole change, merged."); merges != wantMerges || merged != (wantMerges == 1) {
+			t.Fatalf("round %d: %d merge calls, merged take shown %v; want %d", i+1, merges, merged, wantMerges)
 		}
 		if !slices.Equal(stops, wantStops) || !slices.Equal(parts, []int{1, 2}) || !strings.Contains(sticky, "Reviewed in 2 parts") ||
 			!strings.HasPrefix(forgeStatus, round.wantStatus) || (round.wantNote != "") != strings.Contains(sticky, "went unreviewed") ||

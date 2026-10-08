@@ -20,6 +20,7 @@ const (
 	ModelCallAgentStep  = transcript.KindAgentStep
 	ModelCallFollowUp   = transcript.KindFollowUp
 	ModelCallConfidence = transcript.KindConfidence
+	ModelCallMerge      = transcript.KindMerge
 )
 
 // ModelCall is one row of model_calls. ReviewID, RunnerRunID and

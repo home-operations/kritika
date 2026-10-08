@@ -129,8 +129,16 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 			p.logger.Info("findings held back", "count", len(p.heldBack))
 		}
 	}
+	answer := run.Result
+	if len(run.Parts) > 1 {
+		var note string
+		answer, note = p.mergeSummary(ctx, run.Parts, answer, &res, slices.Concat(res.Findings, unanchored))
+		if note != "" {
+			notes = append(notes, note)
+		}
+	}
 	if p.parse.Diagram {
-		res.Summary.Diagram = carriedDiagram(run.Result, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
+		res.Summary.Diagram = carriedDiagram(answer, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
 	}
 	// A finding on a line the diff does not show has no inline comment, but
 	// weighs on the score, the counts and the approval all the same.
