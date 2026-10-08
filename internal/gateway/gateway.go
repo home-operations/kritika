@@ -269,7 +269,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// which the runner waits for the answer.
 	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
 	defer cancel()
-	resp, attempts, err := step(sctx, stepper, req, provider.Retries, sleep, func(err error) {
+	resp, attempts, err := adapter.Step(sctx, stepper, req, provider.Retries, func(err error) {
 		c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), provider))
 	})
 	if err != nil && sctx.Err() == nil && fb != "" && fb.Provider() != ref.Provider() {
@@ -281,7 +281,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 				"error", maskProvider(err.Error(), provider))
 			req.Model = fb.Model()
 			var more int
-			resp, more, err = step(sctx, fbStepper, req, fbProvider.Retries, sleep, func(err error) {
+			resp, more, err = adapter.Step(sctx, fbStepper, req, fbProvider.Retries, func(err error) {
 				c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), fbProvider))
 			})
 			attempts += more
@@ -389,50 +389,6 @@ func (g *Server) fallback(c runCall, fb configfile.ModelRef) (model.Stepper, con
 	}
 	provider, _ := c.file.Provider(c.account, fb.Provider())
 	return stepper, provider, true
-}
-
-// A step that failed in a way another attempt may not is tried again after
-// retryMin, doubled each time up to retryMax. A provider's Retry-After is
-// honored up to retryAfterMax: a longer one would sleep the step past the
-// run's deadline with the remaining retries and the fallback untried.
-const (
-	retryMin      = time.Second
-	retryMax      = 30 * time.Second
-	retryAfterMax = time.Minute
-)
-
-// step runs one model step through stepper, and after a transient failure
-// (model.Transient) tries again, up to retries more times with backoff, or
-// the wait the provider asked for when that is longer, up to retryAfterMax,
-// while ctx lives; failed reports each failure it tries again after. It
-// returns the last answer or error and how many attempts it made. One
-// reservation covers them all: the request is the same each time.
-func step(
-	ctx context.Context, stepper model.Stepper, req model.StepRequest, retries int,
-	wait func(context.Context, time.Duration) bool, failed func(error),
-) (model.StepResponse, int, error) {
-	for attempt := 0; ; attempt++ {
-		resp, err := stepper.Step(ctx, req)
-		if err == nil || attempt >= retries || ctx.Err() != nil || !model.Transient(err) {
-			return resp, attempt + 1, err
-		}
-		failed(err)
-		if !wait(ctx, max(store.Backoff(attempt, retryMin, retryMax), min(model.RetryAfter(err), retryAfterMax))) {
-			return resp, attempt + 1, err
-		}
-	}
-}
-
-// sleep waits d, or until ctx ends, and reports whether it waited d out.
-func sleep(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
-	}
 }
 
 // charge settles a step's reservation: an answered step's actual spend

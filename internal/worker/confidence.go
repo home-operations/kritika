@@ -102,10 +102,22 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	}
 	// The calls are charged as they are made: one the model answered
 	// without the score is billed all the same.
+	mask := adapter.Mask(p.file, spec)
 	record := p.w.recorder().OnStep(ctx, p.logger, store.ModelCall{
 		AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: store.ModelCallConfidence,
-	}, adapter.Mask(p.file, spec))
-	completer := model.Structured{Stepper: stepper, OnStep: func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
+	}, mask)
+	// The call is tried again as a review's step is, with its provider's
+	// retries, and recorded once, as the step the model answered or the
+	// last one it failed. A failure is logged masked, as the gateway logs
+	// a step's: the provider or its SDK may echo its key or the
+	// credentials in its URL.
+	retrying := model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+		resp, _, err := adapter.Step(ctx, stepper, req, spec.Retries, func(err error) {
+			p.logger.Warn("confidence call failed; trying again", "model", ref, "error", mask(err.Error()))
+		})
+		return resp, err
+	})
+	completer := model.Structured{Stepper: retrying, OnStep: func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
 		record(req, resp, err, d)
 		p.charge(ctx, resp, store.RoleConfidence)
 	}}

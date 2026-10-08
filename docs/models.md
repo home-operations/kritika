@@ -84,12 +84,12 @@ variables of their own
 
 ## Retries
 
-`retries` is how many more times a review's model step is tried when the
-provider fails it in a way another attempt may get past: a 5xx, a 429, a
-timeout or a cut connection.
+`retries` is how many more times a review's model step, or the scorer's
+call, is tried when the provider fails it in a way another attempt may get
+past: a 5xx, a 429, a timeout or a cut connection.
 
-- The gateway waits up to a second, then up to twice as long each time, to
-  at most 30 seconds, and waits out a longer `Retry-After` the provider
+- kritika waits up to a second, then up to twice as long each time, to at
+  most 30 seconds, and waits out a longer `Retry-After` the provider
   sends, up to a minute.
 - It never retries a refusal of the request itself, such as a prompt over
   the model's input limit, or a spent budget.
@@ -98,7 +98,8 @@ timeout or a cut connection.
 - The provider's client sends nothing again on its own, so `retries` is
   every attempt a step gets. A step's attempts, the waits between them and
   its [fallback](#fallback) share 12 minutes, so long timeouts end the
-  retries early.
+  retries early. The scorer's call has the two minutes a score gets
+  ([confidence](confidence.md#the-score)).
 
 A routing proxy that picks a model per request is where it earns its keep:
 a step the proxy routed badly is answered on the next attempt. A

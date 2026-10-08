@@ -45,6 +45,10 @@ How the score is reached and used:
 - **Unchanged rebases:** a bot's rebase that leaves its patch unchanged is
   skipped when its last review was scored, and keeps that score; one whose
   last review has no score is reviewed again.
+- **Retries:** the scorer's call is tried again as a review's step is,
+  with its provider's [`retries`](models.md#retries), within the two
+  minutes a score gets, the wait for a slot on the model included; a call
+  that still fails leaves the review unscored.
 - **Cost:** the scorer's call counts towards the account's
   `tokensPerMonth`, and shows in the review's transcript. It asks for no
   prompt caching: no later call reads it back, and writing a prompt to a
