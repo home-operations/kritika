@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.49](https://github.com/home-operations/kritika/compare/0.0.48...0.0.49) (2026-10-08)
+
+
+### Code Refactoring
+
+* **bench:** sort the mode names with slices.Sorted ([#762](https://github.com/home-operations/kritika/issues/762)) ([e1080b1](https://github.com/home-operations/kritika/commit/e1080b10250abfe011fe5e581c909585d0442fec))
+
+
+### Tests
+
+* sleep inside synctest bubbles with synctest.Sleep ([#761](https://github.com/home-operations/kritika/issues/761)) ([8b26cc8](https://github.com/home-operations/kritika/commit/8b26cc8335d01c527c1c010ec3bb9b2c056277ca))
+* take the context from the test instead of context.Background ([#764](https://github.com/home-operations/kritika/issues/764)) ([9ad12f3](https://github.com/home-operations/kritika/commit/9ad12f3ac0453ef79b49b59f3b6a8f85dbd0a646))
+
+
+### Miscellaneous Chores
+
+* bump Go to 1.27.2 and x/net to 0.60.0 for the October advisories ([#766](https://github.com/home-operations/kritika/issues/766)) ([51af759](https://github.com/home-operations/kritika/commit/51af759d90a3c197766c90f36ea257f46915411a))
+
 ## [0.0.48](https://github.com/home-operations/kritika/compare/0.0.47...0.0.48) (2026-10-08)
 
 
