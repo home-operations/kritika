@@ -425,11 +425,14 @@ a new title.
 - **The prompt** holds the system prompt, the pull request, as much of the
   diff as fits, whole files only, and then the context. A file left out is
   named in the review's notes, and a review's or a follow-up's agent reads
-  it with its tools; the scorer, which has none, never sees it. A model
-  with a larger context window can take more, so a large file is reviewed
-  from the start. Every step sends the prompt again and counts it against
-  `tokens`, so a larger `prompt` leaves the agent fewer steps unless
-  `tokens` is raised with it, and one near `tokens` leaves it none.
+  it with its tools; the scorer, which has none, never sees it. The list of
+  changed files marks each one the change adds, deletes or renames, and a
+  review's findings may point at any line of the pull request's diff, in a
+  file left out as in one shown. A model with a larger context window can
+  take more, so a large file is reviewed from the start. Every step sends
+  the prompt again and counts it against `tokens`, so a larger `prompt`
+  leaves the agent fewer steps unless `tokens` is raised with it, and one
+  near `tokens` leaves it none.
 - **Commands:** the runner's `-tools` image has `gh`, `curl`, `fd`, `jq`,
   `rg` and `yq`. The agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under
