@@ -160,10 +160,10 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 			'[{"stage":"definitions","path":"b.go","start_line":1,"end_line":2,"text":"func F() {}"}]',
 			jsonb_build_object('.kritika.yaml', $4::text))`, s.runID, s.accountID, "diff of "+slug,
 		"rules: [{ id: house-style, file: docs/rules-of-"+slug+".md }]\n")
-	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources)
+	e.exec(`INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline, model, sources, parts)
 		VALUES ($1, $2, 'submitted', '{"findings":[]}', 2, '{"grep":1}',
-			'[{"index":0,"tools":["grep"],"duration_ms":5,"output_bytes":7,"input_tokens":10,"output_tokens":2}]', 'acme/large',
-			'["https://docs.example"]')`, s.runID, s.accountID)
+			'[{"index":0,"part":1,"tools":["grep"],"duration_ms":5,"output_bytes":7,"input_tokens":10,"output_tokens":2}]', 'acme/large',
+			'["https://docs.example"]', '[{"paths":["a.go"],"stop":"submitted","steps":2}]')`, s.runID, s.accountID)
 	e.exec(`INSERT INTO usage (account_id, repository_id, review_id, role, model, input_tokens, output_tokens, cost_usd)
 		VALUES ($1, $2, $3, 'review', 'acme/large', 100, 10, 0.5)`, s.accountID, s.repoID, s.reviewID)
 	ix := e.scalar(`INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, finished_at)
@@ -299,6 +299,8 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/pulls?repo=wa/one", `"reviewCount":1,"costUsd":0.5`},
 		{a + "/reviews/" + e.a.reviewID, `"logTail":"tail of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID, `"ruleIds":["wrap-errors"]`},
+		{a + "/reviews/" + e.a.reviewID, `"timeline":[{"index":0,"part":1,`},
+		{a + "/reviews/" + e.a.reviewID, `"parts":[{"paths":["a.go"],"stop":"submitted","error":"","steps":2}]`},
 		{a + "/reviews/" + e.a.reviewID + "/diff", `"diff":"diff of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},

@@ -149,12 +149,16 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 		Sources: a.Sources, SkillsOffered: nonNil(a.SkillsOffered), SkillsOpened: nonNil(a.SkillsOpened),
 		CommandsOffered: nonNil(a.CommandsOffered), CommandsRun: nonNil(a.CommandsRun), Usage: usageOf(a.Usage),
 		CostUSD: a.CostUSD, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt, Result: a.Result, CarriedReviewID: a.CarriedReviewID,
+		Parts: make([]AgentPart, len(a.Parts)),
 	}
 	for i, st := range a.Timeline {
 		out.Timeline[i] = TimelineStep{
-			Index: st.Index, Tools: nonNil(st.Tools), DurationMs: st.DurationMS, OutputBytes: st.OutputBytes,
+			Index: st.Index, Part: st.Part, Tools: nonNil(st.Tools), DurationMs: st.DurationMS, OutputBytes: st.OutputBytes,
 			InputTokens: st.InputTokens, OutputTokens: st.OutputTokens,
 		}
+	}
+	for i, p := range a.Parts {
+		out.Parts[i] = AgentPart{Paths: nonNil(p.Paths), Stop: p.Stop, Error: p.Error, Steps: p.Steps}
 	}
 	return out
 }

@@ -94,6 +94,7 @@
     "timeline": [
       {
         "index": 0,
+        "part": 1,
         "tools": ["grep"],
         "durationMs": 1200,
         "outputBytes": 300,
@@ -119,7 +120,15 @@
     "result": {
       "findings": []
     },
-    "carriedReviewId": "rev-0"
+    "carriedReviewId": "rev-0",
+    "parts": [
+      {
+        "paths": ["a.go"],
+        "stop": "submitted",
+        "error": "",
+        "steps": 3
+      }
+    ]
   },
   "usage": [
     {

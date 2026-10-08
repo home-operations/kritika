@@ -7,14 +7,15 @@
   import ToolCallView from './ToolCallView.svelte';
   import ToolDefs from './ToolDefs.svelte';
 
-  let { turn, toolNames }: { turn: Turn; toolNames: Map<string, string> } = $props();
+  // heading is the turn title's level, one below the part's in a split review.
+  let { turn, toolNames, heading = 'h3' }: { turn: Turn; toolNames: Map<string, string>; heading?: 'h3' | 'h4' } = $props();
   let raw = $state(false);
   const u = $derived(turn.usage);
 </script>
 
 <article class="turn" class:turn-error={!!turn.error} aria-labelledby="turn-{turn.id}">
   <header class="turn-head">
-    <h3 id="turn-{turn.id}" class="turn-title">#{turn.index}</h3>
+    <svelte:element this={heading} id="turn-{turn.id}" class="turn-title">#{turn.index}</svelte:element>
     <span class="badge">{turn.kind.replace('_', ' ')}{turn.kind === 'agent_step' ? ` ${turn.step}` : ''}</span>
     <span class="mono small">{turn.model}</span>
     {#if turn.upstream}<span class="mono small muted">via {turn.upstream}</span>{/if}

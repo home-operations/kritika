@@ -84,13 +84,12 @@ type Turn struct {
 // Rebuild turns rows, in the order they were recorded, into a
 // conversation. A row leaves its system prompt and tools out when its
 // run's part sent the same with its last step, so the ones a turn had in
-// effect are its part's; a turn shows them where they differ from the
-// turn's before it, which, with a split review's parts interleaved, may be
-// another part's.
+// effect are its part's. A turn shows them where they differ from those its
+// part had at its turn before or, at a part's first turn, from the
+// conversation's, so a split review's parts, interleaved as they run at
+// once, each read on their own.
 func Rebuild(rows []StoredRow) Conversation {
 	var c Conversation
-	var system *string
-	var tools *[]model.ToolDef
 	type conversation struct {
 		run  string
 		part int
@@ -99,11 +98,13 @@ func Rebuild(rows []StoredRow) Conversation {
 		system *string
 		tools  *[]model.ToolDef
 	}
+	var base sent
 	last := map[conversation]sent{}
 	runs := map[conversation]bool{}
 	for _, r := range rows {
 		key := conversation{r.RunnerRunID, r.Part}
-		effect := last[key]
+		before, seen := last[key]
+		effect := before
 		if r.System != nil {
 			effect.system = r.System
 		}
@@ -111,6 +112,9 @@ func Rebuild(rows []StoredRow) Conversation {
 			effect.tools = r.Tools
 		}
 		last[key] = effect
+		if !seen {
+			before = base
+		}
 		t := Turn{
 			ID: r.ID, Kind: r.Kind, Step: r.Step, Part: r.Part, RunnerRunID: r.RunnerRunID, FollowupCommentID: r.FollowupCommentID,
 			Model: r.Model, Upstream: r.Upstream, MessagesFrom: r.MessagesFrom, Messages: r.Messages, Response: r.Response,
@@ -119,21 +123,19 @@ func Rebuild(rows []StoredRow) Conversation {
 		}
 		if effect.system != nil {
 			switch {
-			case system == nil:
-				c.System = *effect.system
-			case *effect.system != *system:
+			case base.system == nil:
+				base.system, c.System = effect.system, *effect.system
+			case before.system == nil || *effect.system != *before.system:
 				t.System = effect.system
 			}
-			system = effect.system
 		}
 		if effect.tools != nil {
 			switch {
-			case tools == nil:
-				c.Tools = *effect.tools
-			case !slices.EqualFunc(*effect.tools, *tools, sameTool):
+			case base.tools == nil:
+				base.tools, c.Tools = effect.tools, *effect.tools
+			case before.tools == nil || !slices.EqualFunc(*effect.tools, *before.tools, sameTool):
 				t.Tools = effect.tools
 			}
-			tools = effect.tools
 		}
 		if r.Kind == KindAgentStep {
 			t.Reset = r.MessagesFrom == 0 && runs[key]

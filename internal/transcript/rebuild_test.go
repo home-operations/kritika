@@ -170,9 +170,10 @@ func TestRebuildParts(t *testing.T) {
 		t.Fatalf("turns = %+v; want only part 1's second step reset", turns)
 	}
 
-	// Parts with prompts of their own, interleaved: part 1's second step
-	// leaves out the prompt it sent before, which the turn shows again
-	// after part 2's.
+	// Parts with prompts of their own, interleaved: part 2's first step
+	// shows its prompt, which differs from the conversation's, and part 1's
+	// second step leaves out the prompt it sent before, which its part had
+	// already.
 	first := delta(State{}, stepReq("sys A", user("one")))
 	first.Response = Response{Text: "step", Stop: model.StopToolUse}
 	e := first.Encode()
@@ -187,8 +188,8 @@ func TestRebuildParts(t *testing.T) {
 		t.Fatal("part 1's second step recorded the prompt it sent before")
 	}
 	conv := Rebuild(rows)
-	if conv.System != "sys A" || conv.Turns[1].System == nil || *conv.Turns[1].System != "sys B" ||
-		conv.Turns[2].System == nil || *conv.Turns[2].System != "sys A" {
-		t.Fatalf("conversation = %+v; want part 2's prompt shown, then part 1's again", conv)
+	if conv.System != "sys A" || conv.Turns[0].System != nil || conv.Turns[1].System == nil || *conv.Turns[1].System != "sys B" ||
+		conv.Turns[2].System != nil {
+		t.Fatalf("conversation = %+v; want part 2's prompt shown, and part 1's not again", conv)
 	}
 }

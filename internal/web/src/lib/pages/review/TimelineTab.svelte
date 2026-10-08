@@ -30,14 +30,27 @@
 
   const segs = $derived(d.runnerRun ? segments(d.runnerRun, clock.now) : []);
   const totalMs = $derived(segs.reduce((a, s) => a + s.ms, 0));
-  const steps = $derived(
-    (d.agentRun?.timeline ?? []).map((s) => ({
-      key: String(s.index),
-      label: String(s.index),
-      values: [s.inputTokens + s.outputTokens],
-      title: `step ${s.index}: ${wholeNumber(s.inputTokens)} in, ${wholeNumber(s.outputTokens)} out, ${duration(s.durationMs)}, ${bytes(s.outputBytes)} tool output${s.tools.length ? `, ${s.tools.join(', ')}` : ''}`,
-    })),
-  );
+  const split = $derived((d.agentRun?.parts.length ?? 0) > 1);
+  // A split review's steps are named by part and by step within the part.
+  const steps = $derived.by(() => {
+    const seen = new Map<number, number>();
+    return (d.agentRun?.timeline ?? []).map((s) => {
+      const n = seen.get(s.part) ?? 0;
+      seen.set(s.part, n + 1);
+      return {
+        key: String(s.index),
+        label: split ? `${s.part}.${n}` : String(s.index),
+        values: [s.inputTokens + s.outputTokens],
+        title: `${split ? `part ${s.part}, step ${n}` : `step ${s.index}`}: ${wholeNumber(s.inputTokens)} in, ${wholeNumber(s.outputTokens)} out, ${duration(s.durationMs)}, ${bytes(s.outputBytes)} tool output${s.tools.length ? `, ${s.tools.join(', ')}` : ''}`,
+      };
+    });
+  });
+
+  // dirs names the directories a part's files are in, the first three.
+  function dirs(paths: string[]): string {
+    const all = [...new Set(paths.map((p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/') + 1) : './')))];
+    return all.length > 3 ? `${all.slice(0, 3).join(', ')} and ${all.length - 3} more` : all.join(', ');
+  }
 </script>
 
 {#if d.runnerRun}
@@ -83,10 +96,31 @@
   <section class="panel" aria-labelledby="tl-agent">
     <header class="panel-head">
       <h2 id="tl-agent">Agent steps</h2>
-      <span class="small muted">{a.steps} steps · {a.stopReason} · {usd(a.costUsd)}</span>
+      <span class="small muted">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {usd(a.costUsd)}</span>
     </header>
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />
+    {/if}
+    {#if split}
+      <div class="table-wrap">
+        <table class="data" aria-label="Parts">
+          <thead>
+            <tr><th scope="col" class="num">Part</th><th scope="col">Files</th><th scope="col" class="num">Steps</th><th scope="col">Ended</th><th scope="col">Error</th></tr>
+          </thead>
+          <tbody>
+            {#each a.parts as p, i (i)}
+              {@const files = `${p.paths.length} ${p.paths.length === 1 ? 'file' : 'files'} in`}
+              <tr>
+                <td class="num">{i + 1}</td>
+                <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span></td>
+                <td class="num">{p.steps}</td>
+                <td>{p.stop}</td>
+                <td class="error-cell">{p.error}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
     <dl class="deflist">
       <dt>Model</dt><dd class="mono">{a.model}</dd>

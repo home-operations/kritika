@@ -47,7 +47,8 @@ type Response struct {
 
 // Turn is one model call: the messages new in its request from index
 // MessagesFrom, and the answer. System and Tools are set when the call
-// changed them; Reset says Messages is the whole request.
+// changed them from its part's call before, or, at a part's first call,
+// from the conversation's; Reset says Messages is the whole request.
 type Turn struct {
 	Index int             `json:"index"`
 	ID    string          `json:"id"`

@@ -590,6 +590,8 @@ export interface Usage {
 
 export interface TimelineStep {
   index: number;
+  // part is the part of a split review the step was for, from 1; 0 when the review was not split.
+  part: number;
   tools: string[];
   durationMs: number;
   outputBytes: number;
@@ -619,6 +621,16 @@ export interface AgentRun {
   result: unknown;
   // carriedReviewId is the review whose conversation the agent carried on, null when it started afresh.
   carriedReviewId: string | null;
+  // parts are how the parts of a split review ended, in part order; empty when it was not split.
+  parts: AgentPart[];
+}
+
+// AgentPart is one part of a split review: its files, why its agent stopped, with the error it ended on, and its steps.
+export interface AgentPart {
+  paths: string[];
+  stop: string;
+  error: string;
+  steps: number;
 }
 
 export interface UsageRow {
@@ -732,9 +744,10 @@ export interface Response {
   stop: string;
 }
 
-// system and tools are non-null only on a turn that changed them; reset
-// says messages is the whole request rather than what is new since the
-// previous turn of its run.
+// system and tools are non-null only on a turn that changed them from its
+// part's turn before, or, at a part's first turn, from the conversation's;
+// reset says messages is the whole request rather than what is new since
+// the previous turn of its run.
 export interface Turn {
   index: number;
   id: string;

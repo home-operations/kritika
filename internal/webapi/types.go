@@ -473,9 +473,11 @@ type Usage struct {
 	Output     int64 `json:"output"`
 }
 
-// TimelineStep is one agent step.
+// TimelineStep is one agent step. Part is the part of a split review it
+// was for, from 1; 0 when the review was not split.
 type TimelineStep struct {
 	Index        int      `json:"index"`
+	Part         int      `json:"part"`
 	Tools        []string `json:"tools"`
 	DurationMs   int64    `json:"durationMs"`
 	OutputBytes  int      `json:"outputBytes"`
@@ -506,6 +508,18 @@ type AgentRun struct {
 	// CarriedReviewID is the review whose conversation the agent carried
 	// on, nil when it started afresh.
 	CarriedReviewID *string `json:"carriedReviewId"`
+	// Parts are how the parts of a split review ended, in part order;
+	// empty when it was not split.
+	Parts []AgentPart `json:"parts"`
+}
+
+// AgentPart is one part of a split review: its files, why its agent
+// stopped, with the error it ended on, and its steps.
+type AgentPart struct {
+	Paths []string `json:"paths"`
+	Stop  string   `json:"stop"`
+	Error string   `json:"error"`
+	Steps int      `json:"steps"`
 }
 
 // UsageRow is one usage row charged to a review.
