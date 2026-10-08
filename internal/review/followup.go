@@ -193,6 +193,14 @@ func AutoPausedNote(slug string, max int) string {
 		"`@%s resume` turns them back on", max, slug, slug)
 }
 
+// NothingToReviewBody is the reply to "@<bot> review" on a merged or
+// closed pull request whose head is already in its base branch, with no
+// earlier review to say where it branched off: nothing is left to diff.
+func NothingToReviewBody(headSHA, baseRef string) string {
+	return fmt.Sprintf("Nothing to review: `%s` is already in `%s`, and no earlier review recorded where it branched off.\n",
+		ShortSHA(headSHA), baseRef)
+}
+
 // ReviewQueuedBody is the reply to a request for a review of headSHA:
 // queued, or already queued or running.
 func ReviewQueuedBody(headSHA string, already bool) string {

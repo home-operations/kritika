@@ -3,7 +3,7 @@
   import { href } from '../../router.svelte';
   import { REVIEW_TABS, type ReviewTab } from '../../routes';
   import { Resource, live } from '../../resource.svelte';
-  import { isActive, skipText } from '../../format';
+  import { isActive, rerunBody, skipText } from '../../format';
   import { pullRoute, rerunPath, cancelPath, accountApi } from '../../links';
   import { isAdmin } from '../../session.svelte';
   import ActionButton from '../../components/ActionButton.svelte';
@@ -91,18 +91,16 @@
           {#if r.error}<p class="error-text" role="note">{r.error}</p>{/if}
           {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
           {#if r.pullState !== 'open'}<NoMoreReviews merged={r.pullMerged} />{/if}
-          {#if isAdmin() && (r.pullState === 'open' || cancelable)}
+          {#if isAdmin()}
             <div class="page-actions">
-              {#if r.pullState === 'open'}
-                <ActionButton
-                  label="Re-run"
-                  title="Re-run the review?"
-                  body={`Queue a fresh review of ${r.pull.repository}#${r.pull.number} at its current head.`}
-                  path={rerunPath(slug, r.pull)}
-                  done="Re-run queued"
-                  ondone={() => res.load()}
-                />
-              {/if}
+              <ActionButton
+                label="Re-run"
+                title="Re-run the review?"
+                body={rerunBody(`${r.pull.repository}#${r.pull.number}`, r.pullState === 'open', r.pullMerged)}
+                path={rerunPath(slug, r.pull)}
+                done="Re-run queued"
+                ondone={() => res.load()}
+              />
               {#if cancelable}
                 <ActionButton
                   label="Cancel review"

@@ -58,10 +58,8 @@ func (s *Server) rerun(w http.ResponseWriter, r *http.Request, t *accountScope) 
 		}
 		job, err = s.actions.Rerun(ctx, tx, tid, p.RepositoryID, p.Number)
 		switch {
-		case errors.Is(err, jobs.ErrNoHead) && p.Merged:
-			return errStatus(http.StatusConflict, CodeNoHead, "the pull request was merged, and is not reviewed again")
 		case errors.Is(err, jobs.ErrNoHead):
-			return errStatus(http.StatusConflict, CodeNoHead, "the pull request is closed, and is not reviewed while it is")
+			return errStatus(http.StatusConflict, CodeNoHead, "the pull request has no head to review")
 		case errors.Is(err, jobs.ErrRerunQueued):
 			live, err := store.FindLiveReviewJob(ctx, tx, p.RepositoryID, p.Number)
 			if err != nil {

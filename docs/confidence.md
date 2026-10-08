@@ -119,6 +119,8 @@ a check, or fail the check and leave approving to people.
   longer allows it dismisses kritika's approval, as does a reviewer who
   stands as requesting changes. A head that moved while it was reviewed is
   left to its own review.
+- **Merged or closed:** a review someone asks for of a merged or closed
+  pull request neither approves it nor withdraws an approval.
 - **Unchanged rebases:** a bot's unchanged rebase, skipped with the score
   it carries, has that score decide its approval the same way.
 - **Reported:** the summary says which way it went: `Approved`, or

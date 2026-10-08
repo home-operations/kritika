@@ -294,6 +294,45 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 	return &pr, nil
 }
 
+// reviewBase is the commit a review of pr diffs its head against: the
+// merge base with its base branch. A merge commit or a fast-forward puts
+// the head in the base branch, where the merge base is the head itself and
+// shows no change; the one the pull request's last completed review used
+// still does, and is "" when there is none.
+func reviewBase(ctx context.Context, st *store.Store, client forge.Client, accountID string, pr *pullRequest) (string, error) {
+	owner, repo := pr.ownerRepo()
+	base, err := client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA)
+	if err != nil || base != pr.headSHA {
+		return base, err
+	}
+	err = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `SELECT merge_base_sha FROM reviews WHERE pull_request_id = $1 AND status = 'completed'
+			AND merge_base_sha NOT IN ('', $2) ORDER BY created_at DESC LIMIT 1`, pr.id, pr.headSHA).Scan(&base)
+		if errors.Is(err, pgx.ErrNoRows) {
+			base = ""
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return "", fmt.Errorf("worker: read the last review's merge base: %w", err)
+	}
+	return base, nil
+}
+
+// nothingToReview is why pr, whose head is in its base branch with no
+// earlier merge base to diff it against, is not reviewed.
+func nothingToReview(pr *pullRequest) string {
+	return "nothing to review: the head is already in " + pr.baseRef
+}
+
+// statusless is a forge client that sets no commit status.
+type statusless struct{ forge.Client }
+
+func (statusless) SetStatus(context.Context, string, string, string, forge.StatusState, string) error {
+	return nil
+}
+
 // earlyEnd is what a review ended before its runner is recorded with.
 type earlyEnd struct {
 	args                              jobs.ReviewArgs
@@ -435,8 +474,9 @@ func (w *Review) begin(
 	}
 	// A job queued while the pull request was open may only run, after a
 	// settle time, a retry or a wait for a slot, once it is merged or
-	// closed: nothing is left to review, and no status is set on its head.
-	if pr.closed != "" {
+	// closed: an automatic review has nothing left to do then, and no status
+	// is set on its head. Only a review someone asked for runs.
+	if pr.closed != "" && args.Trigger != jobs.TriggerManual {
 		logger.Info("review skipped before start", "reason", pr.closed)
 		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, pr.closed)
 	}
@@ -448,10 +488,22 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
+	if pr.closed != "" {
+		// A look back at a merged or closed pull request someone asked
+		// for: its head will not merge again, so no check on it says
+		// anything of the review.
+		logger.Info("reviewing on request", "reason", pr.closed)
+		client = statusless{client}
+	}
 	owner, repo := pr.ownerRepo()
 	e.client, e.owner, e.repo = client, owner, repo
-	if e.mergeBase, err = client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA); err != nil {
+	if e.mergeBase, err = reviewBase(ctx, w.Store, client, args.AccountID, pr); err != nil {
 		return begun{}, true, err
+	}
+	if e.mergeBase == "" {
+		reason := nothingToReview(pr)
+		logger.Info("review skipped before start", "reason", reason)
+		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, reason)
 	}
 	doc, notes, err := readRepoConfig(ctx, client, owner, repo, e.mergeBase)
 	if err != nil {

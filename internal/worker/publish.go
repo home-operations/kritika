@@ -383,7 +383,9 @@ func (p *publishPhase) writeBack(
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, state, "kritika: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
-	if p.settings.Review.Approve {
+	// A merged or closed pull request's head merges no more, so it is
+	// neither approved nor its approval withdrawn.
+	if p.settings.Review.Approve && p.pr.closed == "" {
 		data.Approval = p.approve(ctx, counts, p.headCurrent(ctx))
 	}
 	if linked || data.Approval != nil {

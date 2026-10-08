@@ -94,10 +94,19 @@ export const skipText: Record<Exclude<SkipReason, ''>, string> = {
   too_large: 'more changed lines than the repository allows',
 };
 
-// noMoreReviews says why a pull request that is not open takes no more
-// reviews: a merged one never does, a closed one not while it is.
+// noMoreReviews says why a pull request that is not open takes no
+// automatic reviews: a merged or closed one is reviewed only when someone
+// asks.
 export function noMoreReviews(merged: boolean): string {
-  return merged ? 'Merged: it is not reviewed again' : 'Closed: it is not reviewed while it is';
+  return merged ? 'Merged: reviewed again only when asked' : 'Closed: reviewed only when asked';
+}
+
+// rerunBody is what a re-run queues: a merged or closed pull request's is a
+// look back at its last head, which sets no commit status and approves
+// nothing.
+export function rerunBody(name: string, open: boolean, merged: boolean): string {
+  if (open) return `Queue a fresh review of ${name} at its current head.`;
+  return `Queue a look back at ${name}, ${merged ? 'merged' : 'closed'}, at its last head. It sets no commit status and approves nothing.`;
 }
 
 export const indexTone: Record<IndexRunStatus, Tone> = {

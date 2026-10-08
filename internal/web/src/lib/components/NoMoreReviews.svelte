@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Why a pull request takes no more reviews, where the action to ask for
-  // one would be: a merged one never does, a closed one not while it is.
+  // Why a merged or closed pull request takes no automatic reviews, beside
+  // the action that asks for one.
   import Icon from '../Icon.svelte';
   import { mdiLockOutline } from '../icons';
   import { noMoreReviews } from '../format';
