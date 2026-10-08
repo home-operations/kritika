@@ -21,7 +21,7 @@
     "@shikijs/langs": "^4.5.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "bits-ui": "^2.19.5",
-    "marked": "^18.0.14",
+    "marked": "^18.1.0",
     "shiki": "^4.5.0",
     "simple-icons": "^16.33.0",
     "svelte": "^5.57.1",
