@@ -1005,6 +1005,54 @@ test.describe('review', () => {
     await page.goto(`/${T}/reviews/rev-1/timeline`);
     await expect(page.locator('.deflist').filter({ hasText: 'Model' })).not.toContainText('carried on from');
   });
+
+  test("a split review's timeline lists its parts and names each step by its part", async ({ page }) => {
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    await expect(page.locator('.chart-tick').first()).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Parts' })).toHaveCount(0);
+    const a = g.reviewDetail.agentRun!;
+    const step = a.timeline[0]!;
+    const part = a.parts[0]!;
+    const agentRun = {
+      ...a,
+      steps: 3,
+      timeline: [
+        { ...step, index: 0, part: 1 },
+        { ...step, index: 1, part: 1 },
+        { ...step, index: 2, part: 2 },
+      ],
+      parts: [
+        { ...part, paths: ['server/a.ts', 'server/b.ts', 'web/c.ts'], steps: 2 },
+        { ...part, paths: ['docs/d.md'], stop: 'no_submit', error: 'answered in prose', steps: 1 },
+      ],
+    };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    await expect(page.locator('section[aria-labelledby="tl-agent"] .panel-head')).toContainText('3 steps in 2 parts');
+    const rows = page.getByRole('table', { name: 'Parts' }).locator('tbody tr');
+    await expect(rows.nth(0).locator('td')).toHaveText(['1', '3 files in server/, web/', '2', 'submitted', '']);
+    await expect(rows.nth(1).locator('td')).toHaveText(['2', '1 file in docs/', '1', 'no_submit', 'answered in prose']);
+    const labels = page.getByRole('img', { name: /^Tokens per agent step/ }).locator('.chart-tick').filter({ hasText: /^\d+\.\d+$/ });
+    await expect(labels).toHaveText(['1.0', '1.1', '2.0']);
+  });
+
+  test("a split review's conversation shows each part's turns together, then those after them", async ({ page }) => {
+    const turn = g.transcript.turns[0]!;
+    const transcript = {
+      ...g.transcript,
+      turns: [
+        { ...turn, id: 'mc-1', index: 0, part: 1, step: 0 },
+        { ...turn, id: 'mc-2', index: 1, part: 2, step: 0 },
+        { ...turn, id: 'mc-3', index: 2, part: 1, step: 1 },
+        { ...turn, id: 'mc-4', index: 3, part: 0, step: 0, kind: 'merge' as const },
+      ],
+    };
+    await g.mockApi(page, [[/\/reviews\/rev-1\/transcript$/, transcript], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/conversation`);
+    await expect(page.locator('.part-head')).toHaveText(['Part 1', 'Part 2', 'After the parts']);
+    await expect(page.locator('.turn-title')).toHaveText(['#0', '#2', '#1', '#3']);
+    await expect(page.getByRole('heading', { level: 4, name: '#2' })).toBeVisible();
+  });
 });
 
 test('a skipped review says why, on its own page and on the pull request', async ({ page }) => {

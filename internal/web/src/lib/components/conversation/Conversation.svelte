@@ -1,6 +1,7 @@
 <script lang="ts">
   // The full model conversation behind a review or follow-up: the base
-  // system prompt and tools, then every recorded model call in order.
+  // system prompt and tools, then every recorded model call in order, a
+  // split review's by part.
   import type { Transcript, Turn } from '../../types';
   import Collapsible from '../Collapsible.svelte';
   import CodeBlock from '../CodeBlock.svelte';
@@ -42,6 +43,19 @@
     const needle = q.trim().toLowerCase();
     return needle ? transcript.turns.filter((_, i) => haystacks[i]!.includes(needle)) : transcript.turns;
   });
+
+  // A split review's parts run at once, so their turns interleave: each
+  // part's are shown together, in part order, then the turns after them.
+  const split = $derived(transcript.turns.some((t) => t.part > 0));
+  const groups = $derived.by(() => {
+    const byPart = new Map<number, Turn[]>();
+    for (const t of shown) {
+      const group = byPart.get(t.part);
+      if (group) group.push(t);
+      else byPart.set(t.part, [t]);
+    }
+    return [...byPart].sort(([a], [b]) => (a || Infinity) - (b || Infinity));
+  });
 </script>
 
 <div class="conversation">
@@ -69,5 +83,8 @@
   {#if shown.length === 0}
     <p class="state-msg">No turn matches “{q}”.</p>
   {/if}
-  {#each shown as t (t.id)}<TurnCard turn={t} {toolNames} />{/each}
+  {#each groups as [part, turns] (part)}
+    {#if split}<h3 class="part-head">{part ? `Part ${part}` : 'After the parts'}</h3>{/if}
+    {#each turns as t (t.id)}<TurnCard turn={t} {toolNames} heading={split ? 'h4' : 'h3'} />{/each}
+  {/each}
 </div>
