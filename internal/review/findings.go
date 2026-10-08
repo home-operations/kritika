@@ -615,6 +615,9 @@ func diagram(src string) string {
 // ("%%{...}%%") appears anywhere, since either can reconfigure the forge's
 // rendering.
 func diagramHeader(src string) string {
+	if strings.Contains(src, "%%{") {
+		return ""
+	}
 	lines := strings.Split(src, "\n")
 	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
 		end := slices.IndexFunc(lines[1:], func(l string) bool { return strings.TrimSpace(l) == "---" })
@@ -628,17 +631,12 @@ func diagramHeader(src string) string {
 		}
 		lines = lines[end+2:]
 	}
-	var header string
 	for _, l := range lines {
-		t := strings.TrimSpace(l)
-		if strings.HasPrefix(t, "%%{") {
-			return ""
-		}
-		if header == "" && t != "" && !strings.HasPrefix(t, "%%") {
-			header = t
+		if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "%%") {
+			return t
 		}
 	}
-	return header
+	return ""
 }
 
 // Fingerprint identifies a finding across reviews of the same pull request:
