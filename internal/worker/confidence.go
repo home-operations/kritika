@@ -85,69 +85,23 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	if err := p.checkMonthCap(ctx); err != nil {
 		return review.Confidence{}, err
 	}
-	route, err := p.w.Steppers.Route(p.file, p.account, ref)
+	// A confidence model that hangs, or a long Retry-After, would spend
+	// the score's whole time; with a fallback on another provider its
+	// attempts get at most half of what is left. One the model answered
+	// without the score is billed all the same.
+	call, err := p.structured(ctx, ref, p.settings.Confidence.Fallback, store.ModelCallConfidence, store.RoleConfidence,
+		"confidence", "confidence", true)
 	if err != nil {
 		return review.Confidence{}, err
 	}
-	// A confidence model that hangs, or a long Retry-After, would spend
-	// the score's whole time; with a fallback on another provider its
-	// attempts get at most half of what is left. A failure is logged
-	// masked, as the gateway logs a step's: the provider or its SDK may
-	// echo its key or the credentials in its URL.
-	routed := adapter.Call{Route: route, Halve: true, Failed: func(err error, on, next adapter.Route) {
-		msg := adapter.Mask(p.file, on.Provider)(err.Error())
-		if next.Ref != on.Ref {
-			p.logger.Warn("confidence call failed on the confidence model; trying the fallback", "fallback", next.Ref, "error", msg)
-			return
-		}
-		p.logger.Warn("confidence call failed; trying again", "model", on.Ref, "error", msg)
-	}}
-	// A fallback on the confidence model's provider goes to the provider
-	// with the call; one on another provider gets the call once the
-	// confidence model's attempts are spent, unless the configuration no
-	// longer has it, which the call then does without.
-	var fallbacks []string
-	switch fb := p.settings.Confidence.Fallback; {
-	case fb == "":
-	case fb.Provider() == ref.Provider():
-		fallbacks = []string{fb.Model()}
-	default:
-		if fallback, err := p.w.Steppers.Route(p.file, p.account, fb); err != nil {
-			p.logger.Error("no adapter for the confidence fallback", "fallback", fb, "error", err)
-		} else {
-			routed.Fallback = &fallback
-		}
-	}
-	var body string
-	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&body)
-	})
+	body, err := p.pullBody(ctx)
 	if err != nil {
-		return review.Confidence{}, fmt.Errorf("worker: read pull request description: %w", err)
+		return review.Confidence{}, err
 	}
 	var sources []string
 	if p.agent != nil {
 		sources = p.agent.Sources
 	}
-	// The call is tried again as a review's step is, with its provider's
-	// retries, and recorded once, under the model that answered it or
-	// failed it last; it is charged as it is made: one the model answered
-	// without the score is billed all the same.
-	var served adapter.Route
-	stepper := model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
-		resp, _, on, err := routed.Do(ctx, req)
-		served = on
-		return resp, err
-	})
-	completer := model.Structured{Stepper: stepper, OnStep: func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
-		// A failed call's response names no model: it is recorded under
-		// the one it last went to.
-		req.Model = served.Ref.Model()
-		p.w.recorder().Record(ctx, p.logger, store.ModelCall{
-			AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: store.ModelCallConfidence, Duration: d,
-		}, req, resp, err, adapter.Mask(p.file, served.Provider))
-		p.charge(ctx, resp, store.RoleConfidence)
-	}}
 	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
 	rubric := review.ConfidenceRubric(system)
 	req := model.CompletionRequest{
@@ -156,18 +110,18 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Body: body, Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
 		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, p.settings.Agent.MaxPromptTokens),
-		Model: ref.Model(), Fallbacks: fallbacks, Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
+		Model: ref.Model(), Fallbacks: call.fallbacks, Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
 	var resp model.CompletionResponse
-	call := func(ctx context.Context) error {
+	complete := func(ctx context.Context) error {
 		var err error
-		resp, err = completer.Complete(ctx, req)
-		p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(served.Ref, resp.Model), store.RoleConfidence, adapter.Outcome(err),
+		resp, err = call.completer.Complete(ctx, req)
+		p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(call.served.Ref, resp.Model), store.RoleConfidence, adapter.Outcome(err),
 			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
 		return err
 	}
-	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, call); err != nil {
+	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
 		return review.Confidence{}, err
 	}
 	score, risk, reason, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
