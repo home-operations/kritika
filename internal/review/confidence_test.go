@@ -62,12 +62,23 @@ func TestBuildConfidence(t *testing.T) {
 		body    string
 		res     Result
 		sources []string
+		earlier *EarlierRisk
 		want    []string
 	}{
 		{name: "no findings", want: []string{
 			"Pull request #7: Add f", "- main.go\n", "+func f() {}", "The review's account of itself:\n\nIt lists nothing it checked beyond the diff.\n",
 			"\nIt read no sources outside the repository.\n", "The review reported no findings.",
 		}},
+		{
+			name:    "the risk the last review was rated follows the findings",
+			earlier: &EarlierRisk{HeadSHA: "abcdef1234", Risk: RiskHigh, Reason: "A major bump\nof the ingress chart."},
+			want: []string{"The review reported no findings.\n\n\nThe last review of this pull request, at abcdef1, rated its risk high. " +
+				"Its reason: A major bump of the ingress chart.\n"},
+		},
+		{
+			name: "a rating without a reason", earlier: &EarlierRisk{HeadSHA: "abcdef1234", Risk: RiskLow},
+			want: []string{"at abcdef1, rated its risk low.\n"},
+		},
 		{
 			name: "findings follow the diff, whole",
 			res: Result{Findings: []Finding{{
@@ -98,11 +109,14 @@ func TestBuildConfidence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			in := in
 			in.Body = tt.body
-			msg := BuildConfidence(in, tt.res, tt.sources, ConfidenceSystem, 0)
+			msg := BuildConfidence(in, tt.res, tt.sources, tt.earlier, ConfidenceSystem, 0)
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
 				}
+			}
+			if tt.earlier == nil && strings.Contains(msg, "The last review of this pull request") {
+				t.Errorf("a rating is given with none earlier:\n%s", msg)
 			}
 			if strings.Contains(msg, "https://example.com/20") {
 				t.Errorf("the 21st source is listed:\n%s", msg)
@@ -146,6 +160,16 @@ func TestConfidenceSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestConfidenceRubric(t *testing.T) {
+	plain := ConfidenceRubric(ConfidenceSystemPrompt(""))
+	if plain != ConfidenceRubric(ConfidenceSystem) || len(plain) != 16 {
+		t.Fatalf("rubric = %q, want 16 hex digits the same for the same instructions", plain)
+	}
+	if ConfidenceRubric(ConfidenceSystemPrompt("Image bumps are low.")) == plain {
+		t.Fatal("the instance's guidance does not change the rubric")
+	}
+}
+
 func TestBuildConfidenceBudget(t *testing.T) {
 	diff := "diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n@@ -0,0 +1,3000 @@\n" +
 		strings.Repeat("+// a line of the large file under review\n", 3000)
@@ -160,7 +184,7 @@ func TestBuildConfidenceBudget(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, Result{}, nil, ConfidenceSystem, tt.budget)
+			msg := BuildConfidence(in, Result{}, nil, nil, ConfidenceSystem, tt.budget)
 			if kept := strings.Contains(msg, "+// a line of the large file under review"); kept != tt.kept {
 				t.Fatalf("diff in the message = %v, want %v", kept, tt.kept)
 			}

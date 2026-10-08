@@ -105,6 +105,13 @@ notes the description does not carry, may take the score down as a
 concern of its own, but never raises the risk: risk is what the change can
 do, however much of it could be checked.
 
+A review of a new head is shown the risk the last review was rated, with
+its reason, and keeps that rating unless the change now does something
+the reason does not account for, so a second reading of the same change
+does not move it. A re-run of the same head rates afresh, as does the
+first review after kritika's scoring instructions or
+`confidence.instructions` change.
+
 `confidence.instructions` is plain guidance to the scorer on rating risk
 in your code, such as "the media apps under `kubernetes/apps/default` are
 low whatever moves" or "anything under `db/migrations` is critical"; it

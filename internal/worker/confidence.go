@@ -100,12 +100,13 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		p.charge(ctx, resp)
 	}}
 	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
+	rubric := review.ConfidenceRubric(system)
 	req := model.CompletionRequest{
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Body: body, Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res, sources, system, p.settings.Agent.MaxPromptTokens),
+		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric), system, p.settings.Agent.MaxPromptTokens),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
@@ -125,8 +126,21 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		return review.Confidence{}, err
 	}
 	return review.Confidence{
-		Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Risk: risk, Model: resp.Model,
+		Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Risk: risk, Model: resp.Model, Rubric: rubric,
 	}, nil
+}
+
+// earlierRisk is the risk prior was rated, which a review of head is asked
+// to keep unless the change now does something that rating does not
+// account for. It is nil when prior was not scored, saw head itself, so
+// that a re-run rates afresh, or was rated under instructions other than
+// rubric's.
+func earlierRisk(prior priorReview, head, rubric string) *review.EarlierRisk {
+	c := prior.confidence
+	if c == nil || prior.headSHA == head || c.Rubric != rubric {
+		return nil
+	}
+	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason}
 }
 
 // charge records what one scoring call spent against the review, where the
