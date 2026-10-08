@@ -1104,8 +1104,9 @@ func checkFollowUps(
 	if want := fmt.Sprintf("followup-%d", id); session != want {
 		t.Fatalf("follow-up session = %q, want %q: the mention is the conversation", session, want)
 	}
-	// The agent is offered a review's tools, and told how it answers.
-	if !strings.Contains(system, "submit_reply") || !strings.Contains(system, "read_file, grep and list_files") {
+	// The agent is offered a review's tools; how it answers, submit_reply's
+	// description says.
+	if strings.Contains(system, "submit_reply") || !strings.Contains(system, "read_file, grep and list_files") {
 		t.Fatalf("follow-up system prompt lacks its tools:\n%s", system)
 	}
 	// The root's AGENTS.md, as the review's runner read it.

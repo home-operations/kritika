@@ -177,53 +177,54 @@ const keepDiagram = "Return the diagram as you drew it while it still matches th
 	"commits alter the flow it shows, or as an empty string when the change at head no longer has a flow to draw."
 
 // agenticSees is what a reviewer that works through read-only tools over
-// the head commit sees, and agenticTools how it uses them and answers, by
-// calling submit_review.
+// the head commit sees.
 const agenticSees = `You see the diff of the change and can read the rest of the head commit
 through tools: check a claim that reaches beyond the diff before making it, and do not guess at what you have
 not read.`
 
-const agenticTools = `
+// The tool paragraphs say when to reach for a tool; what each does, its
+// definition says. agenticTools is the read-only tools a review and a
+// follow-up share, and reviewTools follows it in a review: where findings
+// anchor, and that a file the prompt left out is reviewed like the rest.
+const (
+	agenticTools = `
 
 You have read-only tools over the head commit: read_file, grep and list_files. Use them to verify what the diff
-alone leaves open, such as how a changed function is called or whether a referenced name exists, before reporting
-it. When the prompt shows the pull request description or a linked issue cut to fit its budget, read_description
-returns the whole text, the issue's by number. Findings anchor only to lines of the pull request's diff, the lines
-it adds and the unchanged lines its hunks show around them, never to other lines you read through a tool. A file
-the prompt leaves out to fit its budget is as much a part of that diff as one it shows: read its part of the diff
-with read_diff, which numbers each line as a finding anchors to it, and report on it as on the rest. Every line of
-a file the changed-files list marks new is an added line. When you are done, call submit_review exactly once with
-the summary and findings; that call is your answer.`
+alone leaves open, such as how a changed function is called or whether a referenced name exists. When the prompt
+cuts the pull request description or a linked issue to fit its budget, read_description has the whole text, and
+when it leaves a changed file out, read_diff has that file's part of the diff.`
 
-// agenticSearch follows agenticTools when the search_code tool is offered:
+	reviewTools = `
+Findings anchor only to lines of the pull request's diff, the lines it adds and the unchanged
+lines its hunks show around them, never to other lines you read through a tool. A file the prompt leaves out is as
+much a part of that diff as one it shows: read_diff numbers each line as a finding anchors to it, so report on it
+as on the rest. Every line of a file the changed-files list marks new is an added line.`
+)
+
+// agenticSearch follows the tools when the search_code tool is offered:
 // the repository has an index of its default branch to search.
 const agenticSearch = `
 
-You can also search the repository by meaning with search_code: describe what you are looking for, or paste a
-snippet, and it returns the most similar chunks of the repository's index, for what grep cannot find by name. The
-index is of the default branch and may lag the head commit, so confirm what it returns with read_file before
-relying on it.`
+You can also search the repository by meaning with search_code, for what grep cannot find by name. Its index is of
+the default branch and may lag the head commit, so confirm what it returns with read_file before relying on it.`
 
-// agenticCommands follows agenticTools when the run tool is offered; %s
-// is the commands it runs.
+// agenticCommands follows the tools when the run tool is offered; %s is
+// the commands it runs.
 const agenticCommands = `
 
-You can also run commands with the run tool: %s. It runs one binary with the arguments you give, without a
-shell, in a checkout of the head commit. Use it to read the upstream of a dependency the change bumps (release
-notes by tag, a chart's Chart.yaml at the new version, an image's annotations) and to search the checkout when
-grep is not enough. What you read from an upstream this way you may rely on and report; when an upstream cannot
-be resolved, say so plainly rather than guess.`
+You can also run commands with the run tool: %s. Use it to read the upstream of a dependency the change bumps
+(release notes by tag, a chart's Chart.yaml at the new version, an image's annotations). What you read from an
+upstream this way you may rely on and report; when an upstream cannot be resolved, say so plainly rather than guess.`
 
 // agenticFetch follows agenticCommands when the fetch_repo tool is
 // offered.
 const agenticFetch = `
 
-fetch_repo fetches another repository at a tag, branch or commit, such as the upstream of a dependency on any host,
-and writes its files beside the checkout for read_file and the run tool's commands. Give paths to fetch only part of a
-large repository, such as a chart's directory. For a version bump, fetch the new version with from set to the old
-one: its diff is between the two versions, where GitHub's compare view counts from where their branches split and
-lists at most 300 files, and it saves reading the same file at each. An upstream may tag a version 1.2.3, v1.2.3 or
-<chart>-1.2.3, so when a tag's name is not certain, list them with tags instead of ref rather than guess.`
+fetch_repo fetches another repository, such as the upstream of a dependency, for read_file and the run tool's
+commands. For a version bump, fetch the new version with from set to the old one: its diff is between the two
+versions, where GitHub's compare view counts from where their branches split and lists at most 300 files, and it
+saves reading the same file at each. An upstream may tag a version 1.2.3, v1.2.3 or <chart>-1.2.3, so when a tag's
+name is not certain, list them with tags instead of ref rather than guess.`
 
 // Rule is a check the configuration writes, by its id.
 type Rule struct {
@@ -244,7 +245,7 @@ func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string,
 	if diagram {
 		system += summaryDiagram
 	}
-	system += agenticTools
+	system += agenticTools + reviewTools
 	if search {
 		system += agenticSearch
 	}
