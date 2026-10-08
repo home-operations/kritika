@@ -98,8 +98,6 @@ func fetchForIndex(ctx context.Context, p Spec, token string, logger *slog.Logge
 	return res, "full", nil
 }
 
-func strs(n int) []string { return make([]string, n) }
-
 func baseFor(mode, base string) string {
 	if mode == "full" {
 		return ""
@@ -111,7 +109,8 @@ func baseFor(mode, base string) string {
 // the run row the same way context packs do.
 func stage(ctx context.Context, tx pgx.Tx, runID string, chunks []indexer.Chunk) error {
 	n := len(chunks)
-	paths, langs, symbols, kinds, scopes, texts := strs(n), strs(n), strs(n), strs(n), strs(n), strs(n)
+	paths, langs, symbols := make([]string, n), make([]string, n), make([]string, n)
+	kinds, scopes, texts := make([]string, n), make([]string, n), make([]string, n)
 	starts, ends := make([]int32, n), make([]int32, n)
 	for i, c := range chunks {
 		paths[i], starts[i], ends[i] = c.Path, int32(c.StartLine), int32(c.EndLine)
