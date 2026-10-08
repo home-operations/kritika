@@ -138,12 +138,18 @@ func CountAutoReview(ctx context.Context, tx pgx.Tx, pullRequestID string, maxAu
 // reviewed: an event for it again (a redelivery, a reopen) starts nothing.
 var ReviewedStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped}
 
-// SettledStatuses are the review statuses under which a head needs nothing
-// from a poll, which lists a pull request whenever anything about it moved:
-// the reviewed ones, a skip the repository's own settings decided, and a
-// cancellation someone asked for. A superseded or failed review leaves the
-// head unreviewed, so the poll picks it up again.
-var SettledStatuses = []ReviewStatus{ReviewCompleted, ReviewCapped, ReviewSkipped, ReviewCanceled}
+// pollSettledStatuses are the review statuses under which a head's latest
+// review settles it for a poll: a skip the repository's own settings
+// decided, and a cancellation someone asked for, each only until a later
+// review of the head ends otherwise.
+var pollSettledStatuses = []ReviewStatus{ReviewSkipped, ReviewCanceled}
+
+// pollFailedReviews is how many failed reviews of a head settle it for a
+// poll. A failed review's own comment moves the pull request, so the next
+// poll lists it again and makes up for a failure that does not repeat; one
+// that does is the review's own, and would otherwise run on every poll
+// until the day's cap.
+const pollFailedReviews = 2
 
 // headReviews selects the statuses of the reviews of a pull request's head,
 // by repository ($1), number ($2) and head ($3).
@@ -151,18 +157,33 @@ const headReviews = `SELECT r.status, r.skip_reason, r.created_at FROM reviews r
 	WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3`
 
 // HeadReviewed reports whether a review of the pull request's head ended in
-// one of ReviewedStatuses, or its latest one in one of statuses: a skip or
-// a cancellation settles the head only until a later review of it ends
-// otherwise.
-func HeadReviewed(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string, statuses []ReviewStatus) (bool, error) {
+// one of ReviewedStatuses.
+func HeadReviewed(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string) (bool, error) {
 	var reviewed bool
 	if err := tx.QueryRow(ctx, `WITH head AS (`+headReviews+`)
-		SELECT EXISTS (SELECT 1 FROM head WHERE status = ANY($4))
-			OR coalesce((SELECT status = ANY($5) FROM head ORDER BY created_at DESC LIMIT 1), false)`,
-		repositoryID, number, headSHA, ReviewedStatuses, statuses).Scan(&reviewed); err != nil {
+		SELECT EXISTS (SELECT 1 FROM head WHERE status = ANY($4))`,
+		repositoryID, number, headSHA, ReviewedStatuses).Scan(&reviewed); err != nil {
 		return false, fmt.Errorf("store: read reviews of the head: %w", err)
 	}
 	return reviewed, nil
+}
+
+// PollSettled reports whether the pull request's head needs nothing from a
+// poll, which lists a pull request whenever anything about it moved: a
+// review of it ended in one of ReviewedStatuses, its latest one in one of
+// pollSettledStatuses, or pollFailedReviews reviews of it failed. A
+// superseded review leaves the head unreviewed, so the poll picks it up
+// again.
+func PollSettled(ctx context.Context, tx pgx.Tx, repositoryID string, number int, headSHA string) (bool, error) {
+	var settled bool
+	if err := tx.QueryRow(ctx, `WITH head AS (`+headReviews+`)
+		SELECT EXISTS (SELECT 1 FROM head WHERE status = ANY($4))
+			OR coalesce((SELECT status = ANY($5) FROM head ORDER BY created_at DESC LIMIT 1), false)
+			OR (SELECT count(*) FROM head WHERE status = $6) >= $7`,
+		repositoryID, number, headSHA, ReviewedStatuses, pollSettledStatuses, ReviewFailed, pollFailedReviews).Scan(&settled); err != nil {
+		return false, fmt.Errorf("store: read reviews of the head: %w", err)
+	}
+	return settled, nil
 }
 
 // LabelSettled reports whether the pull request's head needs nothing from a

@@ -232,11 +232,12 @@ func (s *Service) review(ctx context.Context, tx pgx.Tx, req Request, rid string
 	// and a webhook event may be delivered again, or reopen a pull
 	// request whose head stands reviewed. The queue's unique key alone
 	// would not say so once River has cleaned the earlier job up.
-	statuses := store.ReviewedStatuses
+	var reviewed bool
 	if req.Event.Action == ActionPoll {
-		statuses = store.SettledStatuses
+		reviewed, err = store.PollSettled(ctx, tx, rid, pr.Number, pr.HeadSHA)
+	} else {
+		reviewed, err = store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA)
 	}
-	reviewed, err := store.HeadReviewed(ctx, tx, rid, pr.Number, pr.HeadSHA, statuses)
 	switch {
 	case err != nil:
 		return Outcome{}, err
