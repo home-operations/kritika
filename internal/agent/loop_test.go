@@ -367,6 +367,84 @@ func checkTruncatedSubmitStops(t *testing.T, result Result, _ []StepEvent, scrip
 	}
 }
 
+// lastUserText is the text of req's last message, "" when it is not a
+// user message.
+func lastUserText(req model.StepRequest) string {
+	last := req.Messages[len(req.Messages)-1]
+	if last.Role != model.RoleUser {
+		return ""
+	}
+	return last.Text
+}
+
+func setupCutOffStepGoesOn(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{Stop: model.StopMaxTokens},
+		{Text: "still thinking..."},
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkCutOffStepGoesOn(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+	run := Run{Submit: testSubmitDef}
+	if got, want := lastUserText(scripted.calls[1]), run.cutOffText(DefaultLimits.MaxOutputTokensPerStep); got != want {
+		t.Fatalf("after the cut-off step the model was told %q, want %q", got, want)
+	}
+	// The cut-off step left the nudge for a turn that answered in prose.
+	if got := lastUserText(scripted.calls[2]); got != run.nudgeText() {
+		t.Fatalf("after the prose turn the model was told %q, want the nudge", got)
+	}
+}
+
+// setupCutOffStepsInARow is cut off twice, calls a tool, which starts the
+// count again, then is cut off until the run ends.
+func setupCutOffStepsInARow(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	cut := model.StepResponse{Stop: model.StopMaxTokens}
+	st := &scriptedStepper{steps: []model.StepResponse{
+		cut, cut,
+		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}},
+		cut, cut, cut, cut,
+	}}
+	return st, nil, st
+}
+
+// setupCutOffAfterProse is cut off twice, answers in prose, which starts
+// the count again, then is cut off before it submits.
+func setupCutOffAfterProse(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	cut := model.StepResponse{Stop: model.StopMaxTokens}
+	st := &scriptedStepper{steps: []model.StepResponse{
+		cut, cut,
+		{Text: "still thinking..."},
+		cut,
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkCutOffAfterProse(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+	run := Run{Submit: testSubmitDef}
+	goOn := run.cutOffText(DefaultLimits.MaxOutputTokensPerStep)
+	want := []string{"", goOn, goOn, run.nudgeText(), goOn}
+	for i, call := range scripted.calls {
+		if got := lastUserText(call); got != want[i] {
+			t.Fatalf("request %d ends with %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func checkCutOffStepsInARow(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+	run := Run{Submit: testSubmitDef}
+	goOn := run.cutOffText(DefaultLimits.MaxOutputTokensPerStep)
+	// The opening message and the tool's results carry no text.
+	want := []string{"", goOn, goOn, "", goOn, goOn, run.nudgeText()}
+	for i, call := range scripted.calls {
+		if got := lastUserText(call); got != want[i] {
+			t.Fatalf("request %d ends with %q, want %q", i, got, want[i])
+		}
+	}
+}
+
 func setupBudgetExhaustedStopsImmediately(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}, Usage: model.Usage{Input: 60}},
@@ -748,6 +826,36 @@ func TestRun(t *testing.T) {
 			wantStop:  StopTruncated,
 			wantSteps: 1,
 			check:     checkTruncatedSubmitStops,
+		},
+		{
+			// A step the output cap cut off before any tool call had not
+			// finished: it is told to go on, and the nudge is kept for a
+			// turn that answers in prose.
+			name:      "cut_off_step_goes_on",
+			setup:     setupCutOffStepGoesOn,
+			wantStop:  StopSubmitted,
+			wantSteps: 3,
+			check:     checkCutOffStepGoesOn,
+		},
+		{
+			// Cut off more than cutOffRetries times in a row, the model is
+			// nudged to submit, and the next cut-off ends the run as a turn
+			// with no tool call would.
+			name:      "cut_off_steps_in_a_row_fall_back_to_the_nudge",
+			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
+			setup:     setupCutOffStepsInARow,
+			wantStop:  StopNoSubmit,
+			wantSteps: 7,
+			check:     checkCutOffStepsInARow,
+		},
+		{
+			// A turn in prose ends a run of cut-off steps as a tool call
+			// does: the cut-off after it is told to go on.
+			name:      "prose_ends_a_run_of_cut_off_steps",
+			setup:     setupCutOffAfterProse,
+			wantStop:  StopSubmitted,
+			wantSteps: 5,
+			check:     checkCutOffAfterProse,
 		},
 		{
 			name:      "budget_exhausted_stops_immediately",

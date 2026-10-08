@@ -417,6 +417,11 @@ a new title.
   the steps spent reading are not lost to one slip at the end. `steps: 1`
   is the cheapest review: one step, which must submit the findings, over
   the same prompt.
+- **Output per step:** a step may produce 16384 tokens, and a model
+  reasoning at a high [`review.effort`](models.md#effort) can spend them
+  all before it calls a tool. Such a step is told to go on rather than to
+  submit, up to twice in a row; a third in a row is taken as an answer in
+  prose.
 - **The prompt** holds the system prompt, the pull request, as much of the
   diff as fits, whole files only, and then the context. A file left out is
   named in the review's notes, and a review's or a follow-up's agent reads
