@@ -248,7 +248,11 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 		return store.FollowupFailed, finalError{err}
 	}
 	// The reply is posted even once the job's ctx has ended: the agent
-	// has been paid for it.
+	// has been paid for it. A fenced job is the exception, since another
+	// replica may be answering it by now.
+	if cause := context.Cause(ctx); errors.Is(cause, errJobFenced) {
+		return store.FollowupFailed, cause
+	}
 	pctx, cancel := detach(ctx)
 	defer cancel()
 	replyID, err := f.reply(pctx, review.FollowUpBody(reply, agent.Model, string(f.settings.Models.Effort)))

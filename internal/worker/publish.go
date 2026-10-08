@@ -151,6 +151,11 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
 		notes = append(notes, note)
 	}
+	// A fenced job may be another replica's by now, its review on the way:
+	// the detached write-back must not post beside that one.
+	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
+		return store.ReviewSuperseded, cause
+	}
 	// Scoring had its own time; the write-back gets a whole bound after it.
 	ctx, cancel = detach(job)
 	defer cancel()
