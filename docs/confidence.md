@@ -119,7 +119,8 @@ do, however much of it could be checked.
 A review of a new head is shown the risk the last review was rated, with
 its reason, and keeps that rating unless the change now does something
 the reason does not account for, so a second reading of the same change
-does not move it. A re-run of the same head rates afresh, as does the
+does not move it. A re-run of the same head rates afresh, as does one
+someone asked for with `@<app slug> review` or from the dashboard, and the
 first review after kritika's scoring instructions or
 `confidence.instructions` change.
 
