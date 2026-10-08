@@ -249,7 +249,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// Each part of a split review is a conversation of its own.
 		req.Session += "/" + strconv.Itoa(part)
 	}
-	call := adapter.Call{Route: route, Failed: func(err error, on, next adapter.Route) {
+	call := adapter.Call{Route: route, Halve: true, Failed: func(err error, on, next adapter.Route) {
 		if next.Ref != on.Ref {
 			c.logger.Warn("gateway: step failed on the review model; trying the fallback", "fallback", next.Ref,
 				"error", maskProvider(err.Error(), on.Provider))
@@ -283,7 +283,10 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 	// The step, its retries and its fallback share one budget, inside
-	// which the runner waits for the answer.
+	// which the runner waits for the answer. With a fallback on another
+	// provider, the review model's attempts get at most half of it, so a
+	// model that hangs, or a long Retry-After, still leaves the fallback a
+	// turn.
 	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
 	defer cancel()
 	resp, attempts, served, err := call.Do(sctx, req)

@@ -88,9 +88,12 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	if err != nil {
 		return review.Confidence{}, err
 	}
-	// A failure is logged masked, as the gateway logs a step's: the
-	// provider or its SDK may echo its key or the credentials in its URL.
-	routed := adapter.Call{Route: route, Failed: func(err error, on, next adapter.Route) {
+	// A confidence model that hangs, or a long Retry-After, would spend
+	// the score's whole time; with a fallback on another provider its
+	// attempts get at most half of what is left. A failure is logged
+	// masked, as the gateway logs a step's: the provider or its SDK may
+	// echo its key or the credentials in its URL.
+	routed := adapter.Call{Route: route, Halve: true, Failed: func(err error, on, next adapter.Route) {
 		msg := adapter.Mask(p.file, on.Provider)(err.Error())
 		if next.Ref != on.Ref {
 			p.logger.Warn("confidence call failed on the confidence model; trying the fallback", "fallback", next.Ref, "error", msg)
