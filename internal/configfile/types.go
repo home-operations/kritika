@@ -488,13 +488,17 @@ type Agent struct {
 	Steps *int `yaml:"steps,omitempty"`
 	// Output bounds one tool result, in bytes.
 	Output *int `yaml:"output,omitempty"`
-	// Tokens bounds the prompt plus output tokens one review may spend
-	// across all its steps.
+	// Tokens bounds the prompt plus output tokens one review, or each part
+	// of a split one, may spend across all its steps.
 	Tokens *int64 `yaml:"tokens,omitempty"`
 	// Prompt bounds, in tokens, the opening prompt of a review, its
 	// confidence score and a follow-up: how much of the diff and context
 	// they start from before tools read the rest.
-	Prompt  *int           `yaml:"prompt,omitempty"`
+	Prompt *int `yaml:"prompt,omitempty"`
+	// Parts is the most parts a review whose diff is over review.PartBytes
+	// is split into, each read by an agent with these bounds of its own; 1
+	// never splits.
+	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
 	// Commands name the binaries the agent's run tool may execute, such as
 	// curl, fd and rg. The tool is offered only for names the runner image
@@ -510,6 +514,7 @@ type AgentSettings struct {
 	MaxToolOutputBytes int
 	MaxTokens          int64
 	MaxPromptTokens    int
+	MaxParts           int
 	Timeout            time.Duration
 	Commands           []string
 	CommandTimeout     time.Duration
@@ -527,12 +532,13 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 		MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
 		MaxTokens             int64    `json:"maxTokens"`
 		MaxPromptTokens       int      `json:"maxPromptTokens"`
+		MaxParts              int      `json:"maxParts"`
 		TimeoutSeconds        int64    `json:"timeoutSeconds"`
 		Commands              []string `json:"commands"`
 		CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
 	}{
 		MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens,
-		MaxPromptTokens: a.MaxPromptTokens, TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
+		MaxPromptTokens: a.MaxPromptTokens, MaxParts: a.MaxParts, TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
 		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()),
 	})
 }
@@ -545,9 +551,14 @@ var DefaultAgent = AgentSettings{
 	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
 	MaxTokens:          agent.DefaultLimits.MaxTokens,
 	MaxPromptTokens:    review.DefaultBudgetTokens,
+	MaxParts:           DefaultParts,
 	Timeout:            20 * time.Minute,
 	CommandTimeout:     30 * time.Second,
 }
+
+// DefaultParts is the most parts a review is split into unless agent.parts
+// says otherwise: a 512 KiB diff at review.PartBytes a part.
+const DefaultParts = 8
 
 // MinPromptTokens is the least agent.prompt takes: the system prompt, with
 // its repository instructions, and the pull request's description are paid

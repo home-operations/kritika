@@ -25,6 +25,10 @@ type Clients interface {
 type OpenPullRequest struct {
 	webhook.PullRequest
 	DefaultBranch string
+	// Additions, Deletions and ChangedFiles are the size of the pull
+	// request's diff as the forge counts it, lines and files, all zero when
+	// it was listed rather than read alone.
+	Additions, Deletions, ChangedFiles int
 }
 
 // Comment is a pull request comment as the forge holds it: a conversation

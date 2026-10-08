@@ -33,10 +33,12 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
@@ -307,7 +309,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	h.lf = &localForge{dir: h.dir, base: h.base, tip: h.head}
-	h.exec = &hookExecutor{inner: &executor.Local{Store: runnerStore}}
+	h.exec = &hookExecutor{inner: &executor.Local{Store: runnerStore}, st: appStore}
 
 	insertOnly, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{})
 	if err != nil {
@@ -452,6 +454,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("a path the file's exclusion names is skipped even when asked for", func(t *testing.T) { checkFilePathsExcluded(t, h) })
 	t.Run("the agent is offered the merge base's skills and reads one", func(t *testing.T) { checkAgentReadsSkill(t, h) })
 	t.Run("the agent reads a changed file's part of the diff", func(t *testing.T) { checkAgentReadsDiff(t, h) })
+	t.Run("a large pull request's run is sized for its parts", func(t *testing.T) { checkAgentSizedForParts(t, h) })
 	t.Run("another account cannot read the agent runs", func(t *testing.T) {
 		count := func(accountID string) int {
 			var n int
@@ -464,7 +467,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 14 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 15 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1098,6 +1101,12 @@ type hookExecutor struct {
 	detach bool
 	// tools are the names of the tools the last run was handed.
 	tools []string
+	// st, when set, reads the last run's grant as it starts: its agent
+	// limits, Job deadline and token budget.
+	st       *store.Store
+	agent    *runner.AgentLimits
+	deadline time.Duration
+	budget   int64
 }
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
@@ -1107,6 +1116,12 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	e.tools = nil
 	for _, tool := range spec.Tools {
 		e.tools = append(e.tools, tool.Name)
+	}
+	e.agent, e.deadline, e.budget = spec.Job.Agent, spec.Deadline, 0
+	if e.st != nil {
+		if g, err := e.st.LookupGatewayToken(ctx, spec.Secrets.GatewayToken); err == nil {
+			e.budget = g.Budget
+		}
 	}
 	e.mu.Unlock()
 	if detach {
@@ -1651,6 +1666,27 @@ func checkAgentReadsDiff(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Unlock()
 	if len(results) == 0 || !strings.Contains(results[len(results)-1], "\n9\t+func v4() {}\n") {
 		t.Fatalf("tool results = %q, want main.go's diff with the head's line numbers last", results)
+	}
+}
+
+// checkAgentSizedForParts reviews a pull request the forge reports at the
+// size of #667's: its runner may split it into the eight parts agent.parts
+// allows, and its grant and Job deadline cover them.
+func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptReadDiff)
+	h.lf.setSize(forge.OpenPullRequest{Additions: 6824, Deletions: 291, ChangedFiles: 188})
+	defer h.lf.setSize(forge.OpenPullRequest{})
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n\nfunc v3() {}\n\nfunc v4() {}\n\nfunc v5() {}\n")
+	h.dispatch(t, next)
+	_, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	h.exec.mu.Lock()
+	limits, deadline, budget := h.exec.agent, h.exec.deadline, h.exec.budget
+	h.exec.mu.Unlock()
+	if limits == nil || limits.Parts != 8 || budget != 8*limits.MaxTokens || deadline != jobtimeout.MaxAgentTimeout+jobtimeout.AgentFetchHeadroom {
+		t.Fatalf("agent = %+v, budget = %d, deadline = %s; want 8 parts, 8 times the tokens and the agent's cap", limits, budget, deadline)
 	}
 }
 

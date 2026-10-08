@@ -18,6 +18,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/repoconfig"
+	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -46,8 +47,22 @@ func stopError(r store.AgentRunRow) error {
 // admission is what a review holds before its runner starts.
 type admission struct {
 	lease *store.Lease
-	// maxTokens is the agent's token budget for this review.
+	// maxTokens is the agent's token budget for this review, or for each
+	// part of a split one.
 	maxTokens int64
+	// monthLeft is what the account's monthly cap leaves, 0 when it sets
+	// none.
+	monthLeft int64
+}
+
+// budget is what a review in parts parts may spend through its grant: each
+// part maxTokens, together within what the month leaves.
+func (a admission) budget(parts int) int64 {
+	total := int64(parts) * a.maxTokens
+	if a.monthLeft > 0 {
+		total = min(total, a.monthLeft)
+	}
+	return total
 }
 
 // agentAdmit settles what a review may spend before its runner
@@ -75,7 +90,7 @@ func (w *Review) agentAdmit(
 	}
 	// The caps are read under the lease, so concurrent reviews cannot all
 	// pass a cap of one.
-	budget, capped, err := w.agentCaps(ctx, account, settings)
+	budget, left, capped, err := w.agentCaps(ctx, account, settings)
 	if err != nil || capped != "" {
 		w.releaseLease(ctx, logger, l, string(ref))
 		if err != nil {
@@ -83,25 +98,30 @@ func (w *Review) agentAdmit(
 		}
 		return admission{}, store.ReviewCapped, capped, nil
 	}
-	return admission{lease: l, maxTokens: budget}, "", "", nil
+	return admission{lease: l, maxTokens: budget, monthLeft: left}, "", "", nil
 }
 
-// agentCaps is the token budget a review may spend, or the cap
-// that stops it.
-func (w *Review) agentCaps(ctx context.Context, account *configfile.Account, settings configfile.Settings) (int64, string, error) {
+// agentCaps is the token budget a review may spend and what the month's
+// cap leaves, 0 when there is none, or the cap that stops it.
+func (w *Review) agentCaps(
+	ctx context.Context, account *configfile.Account, settings configfile.Settings,
+) (budget, left int64, capped string, err error) {
 	limits := settings.Limits
 	if limits.ReviewsPerDay <= 0 && limits.TokensPerMonth <= 0 {
-		return settings.Agent.MaxTokens, "", nil
+		return settings.Agent.MaxTokens, 0, "", nil
 	}
 	u, err := w.Store.AccountUsage(ctx, account.ID())
 	if err != nil {
-		return 0, "", fmt.Errorf("worker: read caps: %w", err)
+		return 0, 0, "", fmt.Errorf("worker: read caps: %w", err)
 	}
 	if capped := store.CapReason(u, limits); capped != "" {
-		return 0, capped, nil
+		return 0, 0, capped, nil
 	}
-	budget, capped := agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.Tokens)
-	return budget, capped, nil
+	if limits.TokensPerMonth > 0 {
+		left = limits.TokensPerMonth - u.Tokens
+	}
+	budget, capped = agentBudget(settings.Agent.MaxTokens, limits.TokensPerMonth, u.Tokens)
+	return budget, left, capped, nil
 }
 
 // minAgentTokens is the least monthly headroom a review starts
@@ -249,11 +269,12 @@ func (w *Review) agentSpec(
 	if err != nil {
 		return deadline, nil, err
 	}
-	deadline = agentDeadline(deadline, settings.Agent.Timeout)
+	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
+	deadline = agentDeadline(deadline, partsTimeout(parts, settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Effort: string(settings.Models.Effort),
-		Budget: admitted.maxTokens,
+		Budget: admitted.budget(parts),
 	}
 	if cont != nil {
 		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session
@@ -266,10 +287,48 @@ func (w *Review) agentSpec(
 	spec.Model = &runner.ModelEndpoint{GatewayURL: w.GatewayURL, Model: gateway.ModelName, Granted: grant.Model}
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
-		MaxPromptTokens: settings.Agent.MaxPromptTokens, TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
+		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: parts, TimeoutSeconds: int(settings.Agent.Timeout / time.Second),
 		Commands: settings.Agent.Commands, CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
 	}
 	return deadline, notes, nil
+}
+
+// diffBytesPerLine and diffBytesPerFile estimate a unified diff's size
+// from the forge's counts: a changed line with its share of the context
+// around it, and a file's header.
+const (
+	diffBytesPerLine = 64
+	diffBytesPerFile = 256
+)
+
+// estimateParts is how many parts the diff of a pull request of pr's size
+// is likely split into, at most maxParts.
+func estimateParts(pr forge.OpenPullRequest, maxParts int) int {
+	size := diffBytesPerLine*(pr.Additions+pr.Deletions) + diffBytesPerFile*pr.ChangedFiles
+	return min(max((size+review.PartBytes-1)/review.PartBytes, 1), max(maxParts, 1))
+}
+
+// splitParts is how many parts a review of pr is sized for, its grant and
+// its deadline: estimated from the size the forge reports, since only the
+// runner sees the diff, which it splits within that. A review is not split
+// when agent.parts is 1 or the size cannot be read.
+func (w *Review) splitParts(ctx context.Context, client forge.Client, pr *pullRequest, maxParts int, logger *slog.Logger) int {
+	if maxParts < 2 {
+		return 1
+	}
+	owner, repo := pr.ownerRepo()
+	size, err := client.PullRequest(ctx, owner, repo, pr.number)
+	if err != nil {
+		logger.Warn("pull request size not read; the review is not split", "error", err)
+		return 1
+	}
+	return estimateParts(size, maxParts)
+}
+
+// partsTimeout is the agent time a review in parts parts needs, one after
+// another and each within timeout, as much of it as a job may run.
+func partsTimeout(parts int, timeout time.Duration) time.Duration {
+	return min(time.Duration(parts)*timeout, jobtimeout.MaxAgentTimeout)
 }
 
 // revokeGatewayTokens ends the run's token once its runner is done, on a

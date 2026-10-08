@@ -8,6 +8,8 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -99,5 +101,66 @@ func TestAgentBudget(t *testing.T) {
 				t.Fatalf("agentBudget = %d, %q; want %d, capped %v", got, reason, tt.want, tt.capped)
 			}
 		})
+	}
+}
+
+// TestEstimateParts: the forge's counts of a pull request's lines and files
+// size its diff in parts of review.PartBytes, one at least and maxParts at
+// most.
+func TestEstimateParts(t *testing.T) {
+	tests := []struct {
+		name                          string
+		additions, deletions, changed int
+		maxParts, want                int
+	}{
+		{name: "a small change", additions: 40, deletions: 10, changed: 3, maxParts: 8, want: 1},
+		{name: "no counts", maxParts: 8, want: 1},
+		{name: "#667's pull request", additions: 6824, deletions: 291, changed: 188, maxParts: 8, want: 8},
+		{name: "a medium change", additions: 1000, deletions: 400, changed: 40, maxParts: 8, want: 2},
+		{name: "held to maxParts", additions: 50_000, changed: 900, maxParts: 4, want: 4},
+		{name: "never split", additions: 50_000, changed: 900, maxParts: 1, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := forge.OpenPullRequest{Additions: tt.additions, Deletions: tt.deletions, ChangedFiles: tt.changed}
+			if got := estimateParts(pr, tt.maxParts); got != tt.want {
+				t.Fatalf("estimateParts = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestAdmissionBudget: a split review's grant is each part's budget times
+// the parts, within what the month leaves.
+func TestAdmissionBudget(t *testing.T) {
+	tests := []struct {
+		name  string
+		a     admission
+		parts int
+		want  int64
+	}{
+		{name: "one part", a: admission{maxTokens: 4_000_000}, parts: 1, want: 4_000_000},
+		{name: "parts multiply it", a: admission{maxTokens: 4_000_000}, parts: 3, want: 12_000_000},
+		{name: "the month caps it", a: admission{maxTokens: 4_000_000, monthLeft: 10_000_000}, parts: 3, want: 10_000_000},
+		{name: "under the month's cap", a: admission{maxTokens: 1_000_000, monthLeft: 10_000_000}, parts: 3, want: 3_000_000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.a.budget(tt.parts); got != tt.want {
+				t.Fatalf("budget(%d) = %d, want %d", tt.parts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPartsTimeout(t *testing.T) {
+	if got := partsTimeout(1, 20*time.Minute); got != 20*time.Minute {
+		t.Fatalf("one part = %s, want its timeout", got)
+	}
+	if got := partsTimeout(3, 20*time.Minute); got != time.Hour {
+		t.Fatalf("three parts = %s, want an hour", got)
+	}
+	if got := partsTimeout(8, 50*time.Minute); got != jobtimeout.MaxAgentTimeout {
+		t.Fatalf("eight long parts = %s, want the cap", got)
 	}
 }

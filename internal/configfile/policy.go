@@ -35,6 +35,7 @@ var (
 const (
 	keySteps  = "agent.steps"
 	keyOutput = "agent.output"
+	keyParts  = "agent.parts"
 )
 
 // The keys the environment sets as well (instance.go).
@@ -87,6 +88,7 @@ var Policies = []Policy{
 	{Key: keyOutput, Scopes: everyScope},
 	{Key: "agent.tokens", Scopes: everyScope},
 	{Key: "agent.prompt", Scopes: everyScope},
+	{Key: keyParts, Scopes: everyScope},
 	{Key: "agent.timeout", Scopes: everyScope},
 	{Key: "agent.commands", Scopes: everyScope},
 	{Key: "agent.commandTimeout", Scopes: everyScope},

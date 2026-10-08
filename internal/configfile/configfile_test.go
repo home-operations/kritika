@@ -791,7 +791,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo(`{
-      agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
+      agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, parts: 3, timeout: 3m, commands: [curl, rg], commandTimeout: 10s },
       review: { incremental: 5, fixes: true },
       rules: [{ id: style, file: docs/rules.md }],
       comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl } }`)))
@@ -799,7 +799,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, MaxPromptTokens: 120_000, Timeout: 3 * time.Minute,
+		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, MaxPromptTokens: 120_000, MaxParts: 3, Timeout: 3 * time.Minute,
 			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second}
 		if !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
 			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
@@ -828,6 +828,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 	rejects := []struct{ name, repo, want string }{
 		{"a mode", "{ mode: agentic }", "field mode not found"},
 		{"zero steps", "{ agent: { steps: 0 } }", "agent.steps must be positive"},
+		{"zero parts", "{ agent: { parts: 0 } }", "agent.parts must be positive"},
 		{"negative steps", "{ agent: { steps: -1 } }", "agent.steps must be positive"},
 		{"zero tool output", "{ agent: { output: 0 } }", "agent.output must be positive"},
 		{"zero tokens", "{ agent: { tokens: 0 } }", "agent.tokens must be positive"},

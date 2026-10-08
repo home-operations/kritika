@@ -104,6 +104,8 @@ type localForge struct {
 	// reacted every comment it has reacted to, in order.
 	reactions map[int64]string
 	reacted   []int64
+	// size is what PullRequest reports, none when it changes no files.
+	size forge.OpenPullRequest
 	// pullReactions are the bot's reactions on each pull request, by
 	// number and content.
 	pullReactions map[int]map[string]bool
@@ -311,7 +313,20 @@ func (l *localForge) Permission(_ context.Context, _, _, login string) (forge.Pe
 }
 
 func (l *localForge) PullRequest(context.Context, string, string, int) (forge.OpenPullRequest, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.size.ChangedFiles > 0 {
+		return l.size, nil
+	}
 	return forge.OpenPullRequest{}, fs.ErrNotExist
+}
+
+// setSize makes PullRequest report a pull request of size's lines and
+// files; the zero size reports none.
+func (l *localForge) setSize(size forge.OpenPullRequest) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.size = size
 }
 
 func (l *localForge) ListOpenPullRequests(context.Context, string, string, time.Time) ([]forge.OpenPullRequest, error) {
