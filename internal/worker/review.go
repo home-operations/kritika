@@ -72,7 +72,7 @@ func (pr *pullRequest) dedupesBotPatch(trigger string) bool {
 func lastPatchID(ctx context.Context, tx pgx.Tx, prID, reviewID string) (string, error) {
 	var patch string
 	err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-		AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
+		AND status IN ('prepared', 'completed') AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", fmt.Errorf("worker: read last review: %w", err)
 	}
@@ -622,7 +622,7 @@ func (w *Review) botPatch(
 	var last string
 	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_patch_id FROM reviews WHERE pull_request_id = $1
-			AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
+			AND status IN ('prepared', 'completed') AND NOT partial ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		logger.Warn("last forge patch id not read; the runner checks the patch", "error", err)

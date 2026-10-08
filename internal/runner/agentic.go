@@ -47,6 +47,9 @@ type packView struct {
 	Context   []contextpack.Chunk
 	DeltaDiff string
 	Scope     review.Scope
+	// Part is the part of a split review the prompt is for, nil when it is
+	// not split.
+	Part *review.PartInput
 }
 
 // SkipUnchangedPatch is the skip reason the runner decides beyond
@@ -62,6 +65,7 @@ const (
 	noteDiffOmitted           = "%d diff file(s) left out of the prompt to fit its budget: %s"
 	noteContextOmitted        = "%d context chunk(s) left out of the prompt to fit its budget"
 	noteDiffNotKept           = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
+	noteSplit                 = "Reviewed in %d parts, each by an agent of its own"
 )
 
 // promptInputs is what the repository's files and the settings give the
@@ -167,7 +171,7 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 	user, omitted, contextOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
-		Incremental: incremental, Earlier: earlier, Dismissed: p.Prompt.Dismissed, References: in.references,
+		Incremental: incremental, Earlier: earlier, Dismissed: p.Prompt.Dismissed, References: in.references, Part: pack.Part,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	})
 	return agentPrompt{
@@ -332,33 +336,15 @@ func runAgentic(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
 	prompt agentPrompt, scope review.Scope, logger *slog.Logger,
 ) error {
-	stepper, err := model.NewOpenAI(model.OpenAIConfig{
-		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
-		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout,
-	})
+	stepper, err := gatewayStepper(p, secrets, 0)
 	if err != nil {
-		return fmt.Errorf("runner: %w", err)
+		return err
 	}
-	commands := tools.commands()
 	logger.Info("agent started", "model", p.Model.Model, "scope", scope, "prompt_chars", len(prompt.system)+len(prompt.user),
-		"commands", commands, "search", tools.search != nil)
+		"commands", tools.commands(), "search", tools.search != nil)
 	res, timeline := agentLoop(ctx, stepper, p, head, ignore, tools.extra(), prompt,
 		time.Duration(p.Agent.TimeoutSeconds)*time.Second, logger)
-	sources := []string{}
-	if tools.run != nil {
-		sources = tools.run.Sources()
-	}
-	if tools.fetch != nil {
-		sources = append(sources, tools.fetch.Sources()...)
-	}
-	offered, opened := []string{}, []string{}
-	if tools.skills != nil {
-		offered, opened = tools.skills.names(), tools.skills.Opened()
-	}
-	offeredCommands, ran := []string{}, []string{}
-	if tools.run != nil {
-		offeredCommands, ran = commands, tools.run.Ran()
-	}
+	sources := toolSources(tools)
 	var continued string
 	if prompt.carried != nil {
 		continued = p.Prompt.Continue.RunID
@@ -374,8 +360,8 @@ func runAgentic(
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canceledWriteTimeout)
 		defer cancel()
 		rec, err := newAgentRecord(res, timeline, sources, secrets)
-		rec.skillsOffered, rec.skillsOpened = offered, opened
-		rec.commandsOffered, rec.commandsRun, rec.continued = offeredCommands, ran, continued
+		rec.useTools(tools)
+		rec.continued = continued
 		if err == nil {
 			err = writeAgentRun(wctx, st, p, rec, "failed")
 		}
@@ -387,8 +373,8 @@ func runAgentic(
 	if err != nil {
 		return err
 	}
-	rec.skillsOffered, rec.skillsOpened = offered, opened
-	rec.commandsOffered, rec.commandsRun, rec.continued = offeredCommands, ran, continued
+	rec.useTools(tools)
+	rec.continued = continued
 	if p.Kind == KindReview && res.Conversation != nil {
 		// The gateway names a run's steps by the run, unless its token
 		// names the session of a conversation it may carry on.
@@ -398,9 +384,49 @@ func runAgentic(
 			rec.session = c.Session
 		}
 	}
-	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "commands", ran, "sources", len(sources),
+	logger.Info("agent stopped", "stop", res.Stop, "steps", res.Steps, "tool_calls", res.ToolCalls, "commands", rec.commandsRun,
+		"sources", len(sources),
 		"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD, "error", rec.err)
 	return writeAgentRun(ctx, st, p, rec, "done")
+}
+
+// gatewayStepper is the run's client of the gateway, naming part, the part
+// of a split review its steps are for, or none when part is 0.
+func gatewayStepper(p Spec, secrets Secrets, part int) (model.Stepper, error) {
+	s, err := model.NewOpenAI(model.OpenAIConfig{
+		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
+		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout, Part: part,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("runner: %w", err)
+	}
+	return s, nil
+}
+
+// toolSources are what the run tool's commands and fetch_repo read from
+// outside the repository, never nil.
+func toolSources(tools agentTools) []string {
+	sources := []string{}
+	if tools.run != nil {
+		sources = tools.run.Sources()
+	}
+	if tools.fetch != nil {
+		sources = append(sources, tools.fetch.Sources()...)
+	}
+	return sources
+}
+
+// useTools records on rec the repository's skills and the run tool's
+// commands the agent was offered, and those it used.
+func (rec *agentRecord) useTools(tools agentTools) {
+	rec.skillsOffered, rec.skillsOpened = []string{}, []string{}
+	if tools.skills != nil {
+		rec.skillsOffered, rec.skillsOpened = tools.skills.names(), tools.skills.Opened()
+	}
+	rec.commandsOffered, rec.commandsRun = []string{}, []string{}
+	if tools.run != nil {
+		rec.commandsOffered, rec.commandsRun = tools.commands(), tools.run.Ran()
+	}
 }
 
 // canceledWriteTimeout bounds writing a cancelled agent's row, well inside
@@ -434,6 +460,9 @@ type agentRecord struct {
 	// continued is the run whose conversation the agent carried on, "" for
 	// none.
 	continued string
+	// parts are how a split review's parts ended, encoded, nil for a
+	// review that was not split.
+	parts []byte
 }
 
 // keptConversation is the conversation of a review's agent, encoded, that
@@ -492,13 +521,13 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened, commands_offered, commands_run, continued_from)
+				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts)
 			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
-				nullif($19, '')::uuid
+				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb)
 			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued)
+			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued, rec.parts)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

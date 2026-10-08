@@ -15,6 +15,7 @@ func TestVerdict(t *testing.T) {
 		confidence *review.Confidence
 		unscored   bool
 		gate       bool
+		unfinished int
 		findings   int
 		wantState  forge.StatusState
 		wantDesc   string
@@ -35,10 +36,15 @@ func TestVerdict(t *testing.T) {
 		},
 		{name: "a score asked for and not given, gated", unscored: true, gate: true, wantState: forge.StatusError, wantDesc: "confidence not scored, no findings"},
 		{name: "a score asked for and not given, not gated", unscored: true, wantState: forge.StatusSuccess, wantDesc: "confidence not scored, no findings"},
+		{
+			name: "a split review a part of which went unreviewed", confidence: &review.Confidence{Score: 5, Threshold: 4}, unfinished: 1,
+			findings: 2, wantState: forge.StatusError, wantDesc: "review incomplete, 2 finding(s)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &publishPhase{confidence: tt.confidence, unscored: tt.unscored, settings: configfile.Settings{Confidence: configfile.Confidence{Gate: tt.gate}}}
+			p := &publishPhase{confidence: tt.confidence, unscored: tt.unscored, unfinished: tt.unfinished,
+				settings: configfile.Settings{Confidence: configfile.Confidence{Gate: tt.gate}}}
 			if state, desc := p.verdict(tt.findings); state != tt.wantState || desc != tt.wantDesc {
 				t.Fatalf("verdict = %s %q, want %s %q", state, desc, tt.wantState, tt.wantDesc)
 			}

@@ -249,6 +249,9 @@ type ReviewResult struct {
 	Model                              string
 	CommentID                          int64
 	Confidence                         *review.Confidence
+	// Partial says parts of a split review went unreviewed, so the review
+	// is no baseline for a later one.
+	Partial bool
 }
 
 // RecordReviewResult persists a published review: its findings, the sticky
@@ -281,8 +284,8 @@ func RecordReviewResult(ctx context.Context, tx pgx.Tx, r ReviewResult) error {
 			return fmt.Errorf("store: encode confidence: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3, confidence = $4 WHERE id = $1`,
-		r.ReviewID, r.Model, summary, confidence); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE reviews SET model = $2, summary = $3, confidence = $4, partial = $5 WHERE id = $1`,
+		r.ReviewID, r.Model, summary, confidence, r.Partial); err != nil {
 		return fmt.Errorf("store: record review model: %w", err)
 	}
 	return nil

@@ -50,7 +50,7 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	var confidence []byte
 	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, merge_base_sha, coalesce(summary->>'diagram', ''),
 		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')), confidence FROM reviews
-		WHERE pull_request_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`, prID).
+		WHERE pull_request_id = $1 AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID).
 		Scan(&p.id, &p.headSHA, &p.trigger, &p.mergeBase, &p.diagram, &p.checked, &confidence)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return priorReview{}, nil

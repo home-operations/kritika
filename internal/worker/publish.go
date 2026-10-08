@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -63,6 +64,14 @@ type publishPhase struct {
 	// heldBack are the findings an incremental re-review held back, which
 	// the summary lists apart from its own.
 	heldBack []review.Finding
+	// unfinished counts the parts of a split review that ended before
+	// they submitted, whose files went unreviewed: the review is then
+	// incomplete for the commit status and approves nothing.
+	unfinished int
+	// rechecked reports whether the last review's findings on a path were
+	// checked again, as they always are unless a split review's part that
+	// had them ended before it submitted.
+	rechecked func(path string) bool
 }
 
 // run publishes what the runner's agent submitted; the run's usage is
@@ -103,6 +112,9 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
 	}
 	unanchored, notes := splitDropped(dropped)
+	partNotes := unfinishedParts(run.Parts)
+	p.unfinished, p.rechecked = len(partNotes), recheckedBy(run.Parts)
+	notes = append(notes, partNotes...)
 	var dismissed, dismissedOff int
 	res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed)
 	unanchored, dismissedOff = dropDismissed(unanchored, p.prior.dismissed)
@@ -176,6 +188,27 @@ func (p *publishPhase) countAutoReview(ctx context.Context) (string, error) {
 	p.logger.Info("automatic reviews paused", "after", p.settings.MaxAutoReviews)
 	return review.AutoPausedNote(strings.TrimSuffix(login, "[bot]"), p.settings.MaxAutoReviews), nil
 }
+
+// unfinishedParts is what the summary states for each part of a split
+// review that ended before it submitted, whose files went unreviewed.
+func unfinishedParts(parts []store.AgentPart) []string {
+	var notes []string
+	for i, part := range parts {
+		if part.Stop == string(agent.StopSubmitted) {
+			continue
+		}
+		files := part.Paths
+		if n := len(files); n > maxNamedFiles {
+			files = append(slices.Clone(files[:maxNamedFiles]), fmt.Sprintf("%d more", n-maxNamedFiles))
+		}
+		notes = append(notes, fmt.Sprintf("Part %d of %d ended before it submitted, so its files went unreviewed: %s",
+			i+1, len(parts), strings.Join(files, ", ")))
+	}
+	return notes
+}
+
+// maxNamedFiles is how many files a note names before it counts the rest.
+const maxNamedFiles = 5
 
 // skillsNote is what the summary states about the repository's skills: the
 // ones the review was offered and, of those, the ones it read. "" when it
@@ -353,7 +386,7 @@ func (p *publishPhase) writeBack(
 	if data.Incremental {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
 		data.Prior = p.priorFindings(res)
-		p.resolveThreads(ctx, resolvedThreads(res, p.prior.findings))
+		p.resolveThreads(ctx, resolvedThreads(res, p.recheckedPrior()))
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -458,7 +491,7 @@ func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 	}
 	owner, repo := p.pr.ownerRepo()
 	out := make([]review.PriorFinding, 0, len(p.prior.findings))
-	for _, pf := range p.prior.findings {
+	for _, pf := range p.recheckedPrior() {
 		f := pf.Finding
 		if reported[review.Fingerprint(f)] {
 			continue
@@ -476,6 +509,30 @@ func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
 		out = append(out, review.PriorFinding{Finding: f, Dismissed: true, DismissReason: d.Reason})
 	}
 	return out
+}
+
+// recheckedPrior is the last review's findings this review checked again:
+// a finding a split review's unfinished part had is neither still present
+// nor resolved.
+func (p *publishPhase) recheckedPrior() []priorFinding {
+	if p.rechecked == nil {
+		return p.prior.findings
+	}
+	return slices.DeleteFunc(slices.Clone(p.prior.findings), func(pf priorFinding) bool { return !p.rechecked(pf.Path) })
+}
+
+// recheckedBy reports, for the parts of a split review, whether the last
+// review's findings on a path were checked again by a part that submitted:
+// the part that reviews the path, or the first part, which checks those on
+// files no part reviews. Every path is when the review was not split.
+func recheckedBy(parts []store.AgentPart) func(path string) bool {
+	if len(parts) == 0 {
+		return func(string) bool { return true }
+	}
+	return func(path string) bool {
+		i := max(slices.IndexFunc(parts, func(part store.AgentPart) bool { return slices.Contains(part.Paths, path) }), 0)
+		return parts[i].Stop == string(agent.StopSubmitted)
+	}
 }
 
 // resolvedThreads is the inline comment id of each of the last review's
@@ -522,6 +579,9 @@ func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
 func (p *publishPhase) approve(ctx context.Context, counts review.Counts, current bool) *review.Approval {
 	owner, repo := p.pr.ownerRepo()
 	ok, why := approvable(counts, p.settings.Confidence, p.confidence, p.unscored)
+	if ok && p.unfinished > 0 {
+		ok, why = false, "parts of the change went unreviewed"
+	}
 	if ok {
 		requested, err := p.client.ChangesRequested(ctx, owner, repo, p.pr.number)
 		if err != nil {
@@ -653,7 +713,7 @@ func (p *publishPhase) persist(
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return store.RecordReviewResult(ctx, tx, store.ReviewResult{
 			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: res, Inline: inline, Model: modelName,
-			CommentID: commentID, Confidence: p.confidence,
+			CommentID: commentID, Confidence: p.confidence, Partial: p.unfinished > 0,
 		})
 	})
 }

@@ -1,6 +1,7 @@
 package review
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -103,5 +104,61 @@ func TestSplitDiffKeepsEveryFile(t *testing.T) {
 	}
 	if again := SplitDiff(sizedDiff(t, files...), nil, PartBytes, 4); !slices.EqualFunc(again, parts, slices.Equal) {
 		t.Fatal("the same diff split differently")
+	}
+}
+
+// TestBuildPart: a part's prompt lists every changed file, its own marked,
+// says which part it is, and shows only its own files' diff.
+func TestBuildPart(t *testing.T) {
+	diff := sizedDiff(t, "a/x.go", 200, "b/y.go", 200)
+	in := Input{Repository: "a/b", Number: 1, Changed: []string{"a/x.go", "b/y.go"}, Diff: PartDiff(diff, []string{"b/y.go"}),
+		Part: &PartInput{Index: 2, Count: 2, Paths: []string{"b/y.go"}}}
+	msg, _, _ := Build(in)
+	for _, want := range []string{"- a/x.go\n- b/y.go (this part)\n", "reviewed in 2 parts", "this is part 2", "diff --git a/b/y.go"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("message lacks %q:\n%s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "diff --git a/a/x.go") {
+		t.Fatalf("part 2's message shows part 1's diff:\n%s", msg)
+	}
+	if whole, _, _ := Build(Input{Repository: "a/b", Number: 1, Changed: in.Changed, Diff: diff}); strings.Contains(whole, "this part") {
+		t.Fatalf("a review that is not split names a part:\n%s", whole)
+	}
+}
+
+func TestCheckPart(t *testing.T) {
+	check := CheckPart([]string{"a/x.go"}, []string{"b/y.go"})
+	submit := func(path string) json.RawMessage {
+		return json.RawMessage(`{"summary":{"take":"t","praise":[]},"findings":[{"path":"` + path + `","line":1,"severity":"nit",` +
+			`"category":"correctness","title":"t","explanation":"e"}]}`)
+	}
+	if err := check(submit("a/x.go")); err != nil {
+		t.Fatalf("a finding on the part's own file: %v", err)
+	}
+	if err := check(submit("docs/unchanged.md")); err != nil {
+		t.Fatalf("a finding off the diff, which no part reviews: %v", err)
+	}
+	if err := check(submit("b/y.go")); err == nil || !strings.Contains(err.Error(), "a/x.go") {
+		t.Fatalf("a finding on another part's file = %v, want it refused naming the part's own", err)
+	}
+	if err := check(json.RawMessage(`{"summary":{"take":""},"findings":[]}`)); err == nil {
+		t.Fatal("a submission Check refuses passed")
+	}
+}
+
+func TestMergeParts(t *testing.T) {
+	got := MergeParts([]Result{
+		{Summary: Summary{Headline: "First", Take: "One.", Praise: []string{"a", "b"}, Checked: []string{"c1"}},
+			Findings: []Finding{{Path: "a/x.go", Title: "x"}}},
+		{Summary: Summary{Headline: "Second", Take: "Two.", Praise: []string{"c", "d"}, Checked: []string{"c2"}},
+			Findings: []Finding{{Path: "b/y.go", Title: "y"}}},
+	})
+	if got.Summary.Headline != "First" || got.Summary.Take != "One.\n\nTwo." || !slices.Equal(got.Summary.Praise, []string{"a", "b", "c"}) ||
+		!slices.Equal(got.Summary.Checked, []string{"c1", "c2"}) || len(got.Findings) != 2 || got.Findings[1].Path != "b/y.go" {
+		t.Fatalf("merged = %+v", got)
+	}
+	if empty := MergeParts(nil); empty.Summary.Praise == nil || empty.Findings == nil {
+		t.Fatalf("merging nothing = %+v, want empty lists the contract takes", empty)
 	}
 }

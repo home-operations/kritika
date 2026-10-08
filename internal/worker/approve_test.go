@@ -44,6 +44,7 @@ func TestApprove(t *testing.T) {
 		confidence          *review.Confidence
 		unscored, requested bool
 		moved               bool
+		unfinished          int
 		err, reviewsErr     error
 		approved, dismissed string
 		outcome             review.Approval
@@ -81,6 +82,8 @@ func TestApprove(t *testing.T) {
 			outcome:   review.Approval{Reason: "1 blocking and 0 important finding(s); an earlier approval, if one stands, could not be dismissed"}},
 		{name: "a head that moved still loses an approval its findings forbid", moved: true, counts: review.Counts{Blocking: 1},
 			dismissed: withdraws + "1 blocking and 0 important finding(s) at abcdef1.", outcome: review.Approval{Reason: "1 blocking and 0 important finding(s)"}},
+		{name: "a split review with an unfinished part withdraws", unfinished: 1,
+			dismissed: withdraws + "parts of the change went unreviewed at abcdef1.", outcome: review.Approval{Reason: "parts of the change went unreviewed"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,7 +91,7 @@ func TestApprove(t *testing.T) {
 			f := &approvalForge{err: tt.err, requested: tt.requested, reviewsErr: tt.reviewsErr}
 			p := &publishPhase{
 				client: f, pr: &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, logger: slog.New(slog.DiscardHandler),
-				settings: configfile.Settings{Confidence: tt.want}, confidence: tt.confidence, unscored: tt.unscored,
+				settings: configfile.Settings{Confidence: tt.want}, confidence: tt.confidence, unscored: tt.unscored, unfinished: tt.unfinished,
 			}
 			got := p.approve(t.Context(), tt.counts, !tt.moved)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {

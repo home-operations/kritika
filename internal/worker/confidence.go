@@ -171,6 +171,8 @@ func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 	}
 	gate := p.settings.Confidence.Gate
 	switch c := p.confidence; {
+	case p.unfinished > 0:
+		return forge.StatusError, "review incomplete, " + desc
 	case p.unscored && gate:
 		return forge.StatusError, "confidence not scored, " + desc
 	case p.unscored:
@@ -199,7 +201,7 @@ func carriedConfidence(
 	}
 	var raw []byte
 	err = tx.QueryRow(ctx, `SELECT confidence FROM reviews WHERE pull_request_id = $1 AND id::text <> $2
-		AND status IN ('prepared', 'completed') ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&raw)
+		AND status IN ('prepared', 'completed') AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && raw == nil) {
 		return nil, false, nil
 	}

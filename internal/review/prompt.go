@@ -43,6 +43,9 @@ type Input struct {
 	// References are the files the repository names as explaining the
 	// code, spent after the diff and before the context pack.
 	References []Reference
+	// Part, when set, is the part of a split review the prompt is for:
+	// Diff holds its files' sections alone, and Changed every file.
+	Part *PartInput
 	// BudgetTokens bounds the whole user message. Tokens are approximated
 	// at four characters each, rounded conservatively; the budget is a
 	// ceiling, not a target.
@@ -339,7 +342,10 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 		in.Repository, in.Number, in.Title, in.Author, in.BaseRef, len(in.Changed))
 	marks := fileMarks(in.Diff)
 	for _, p := range in.Changed {
-		fmt.Fprintf(&b, "- %s%s\n", p, marks[p])
+		fmt.Fprintf(&b, "- %s%s%s\n", p, marks[p], in.Part.mark(p))
+	}
+	if in.Part != nil {
+		fmt.Fprintf(&b, partLead, in.Part.Count, in.Part.Index)
 	}
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	writeDescription(&b, in.Body, budget/bodyShare)

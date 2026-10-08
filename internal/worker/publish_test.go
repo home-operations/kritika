@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/runner"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestSplitDropped(t *testing.T) {
@@ -263,3 +264,51 @@ func TestWriteSticky(t *testing.T) {
 }
 
 var errForge = errors.New("forge: forbidden")
+
+// TestUnfinishedParts: each part of a split review that ended before it
+// submitted is named with its files, the first few of them, and none is
+// named for a review whose parts all submitted or one not split.
+func TestUnfinishedParts(t *testing.T) {
+	parts := []store.AgentPart{
+		{Paths: []string{"a/x.go"}, Stop: "submitted"},
+		{Paths: []string{"b/1.go", "b/2.go", "b/3.go", "b/4.go", "b/5.go", "b/6.go", "b/7.go"}, Stop: "no_submit"},
+		{Paths: []string{"c/z.go"}, Stop: "canceled"},
+	}
+	got := unfinishedParts(parts)
+	want := []string{
+		"Part 2 of 3 ended before it submitted, so its files went unreviewed: b/1.go, b/2.go, b/3.go, b/4.go, b/5.go, 2 more",
+		"Part 3 of 3 ended before it submitted, so its files went unreviewed: c/z.go",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("notes = %q, want %q", got, want)
+	}
+	if got := unfinishedParts(parts[:1]); got != nil {
+		t.Fatalf("a submitted part = %q, want no note", got)
+	}
+	if got := unfinishedParts(nil); got != nil {
+		t.Fatalf("a review not split = %q, want no note", got)
+	}
+}
+
+// TestRecheckedBy: a split review checks the last review's findings on a
+// path again when the part that had them submitted, the first part having
+// those on files no part reviews; a review not split checks them all.
+func TestRecheckedBy(t *testing.T) {
+	parts := []store.AgentPart{
+		{Paths: []string{"a/x.go"}, Stop: "submitted"},
+		{Paths: []string{"b/y.go"}, Stop: "no_submit"},
+	}
+	checked := recheckedBy(parts)
+	for path, want := range map[string]bool{"a/x.go": true, "b/y.go": false, "docs/unchanged.md": true} {
+		if got := checked(path); got != want {
+			t.Fatalf("rechecked(%q) = %v, want %v", path, got, want)
+		}
+	}
+	parts[0].Stop = "canceled"
+	if recheckedBy(parts)("docs/unchanged.md") {
+		t.Fatal("a file no part reviews counts as checked though the first part never submitted")
+	}
+	if !recheckedBy(nil)("b/y.go") {
+		t.Fatal("a review not split checks every finding again")
+	}
+}
