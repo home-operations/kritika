@@ -425,7 +425,8 @@ a new title.
 - **The prompt** holds the system prompt, the pull request, as much of the
   diff as fits, whole files only, and then the context. A file left out is
   named in the review's notes, and a review's or a follow-up's agent reads
-  it with its tools; the scorer, which has none, never sees it. The list of
+  its part of the diff with `read_diff`, which numbers each line as the
+  head has it; the scorer, which has no tools, never sees it. The list of
   changed files marks each one the change adds, deletes or renames, and a
   review's findings may point at any line of the pull request's diff, in a
   file left out as in one shown. A model with a larger context window can

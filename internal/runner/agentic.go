@@ -279,10 +279,12 @@ func agentLoop(
 	return res, timeline
 }
 
-// agentTools is what the agent gets beside the read-only tools: the run
-// tool, when commands are offered, with fetch_repo when one of them reaches
-// the network, and search_code, when the repository has an index.
+// agentTools is what the agent gets beside the read-only tools over head:
+// read_diff over the pull request's diff, the run tool, when commands are
+// offered, with fetch_repo when one of them reaches the network, and
+// search_code, when the repository has an index.
 type agentTools struct {
+	diff   *readDiffTool
 	run    *agent.RunTool
 	fetch  *fetchRepoTool
 	search *searchTool
@@ -292,6 +294,9 @@ type agentTools struct {
 // extra lists the tools to offer.
 func (t agentTools) extra() []agent.Tool {
 	var out []agent.Tool
+	if t.diff != nil {
+		out = append(out, t.diff)
+	}
 	if t.run != nil {
 		out = append(out, t.run)
 	}

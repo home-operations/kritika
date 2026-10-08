@@ -52,7 +52,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		return err
 	}
 	in := newPromptInputs(p, files, nil, res.Changed)
-	var tools agentTools
+	tools := agentTools{diff: newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)}
 	similar, search := similarContext(ctx, p, secrets, res, logger)
 	chunks, tools.search = append(chunks, similar...), search
 	var cleanup func()

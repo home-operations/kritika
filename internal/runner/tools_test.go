@@ -37,6 +37,7 @@ func TestToolsTakeZeroValuesAsLeftOut(t *testing.T) {
 		{"read_description", map[string]any{}, func() agent.Tool {
 			return agent.ReadDescriptionTool("The description.", map[int]string{7: "The issue."}, limit)
 		}},
+		{"read_diff", map[string]any{"path": "main.go"}, func() agent.Tool { return newReadDiffTool(readDiffSample, limit) }},
 		{"run", map[string]any{"command": "true"}, func() agent.Tool {
 			return agent.NewRunTool(agent.RunConfig{
 				Dir: t.TempDir(), Commands: map[string]string{"true": trueBin}, Timeout: 10 * time.Second, MaxOutputBytes: limit,

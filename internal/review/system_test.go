@@ -14,7 +14,8 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "anchor only to lines of the pull request's diff",
-		"A file the prompt leaves out to fit its budget is as much a\npart of that diff", "marks new is an added line",
+		"A file the prompt leaves out to fit its budget is as much a\npart of that diff", "read its part of the diff with read_diff",
+		"marks new is an added\nline",
 		"call submit_review exactly once", systemReport + systemRules} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
@@ -88,6 +89,9 @@ func TestSystemPromptRules(t *testing.T) {
 func TestFollowUpSystemPrompt(t *testing.T) {
 	if got := FollowUpSystemPrompt(nil, nil, nil, false, false); got != FollowUpSystem {
 		t.Fatal("without instructions or extra tools the follow-up system prompt is the built-in one")
+	}
+	if !strings.Contains(FollowUpSystem, "read_diff shows that file's part of the diff") {
+		t.Fatalf("the follow-up system prompt does not offer read_diff for a file the prompt left out:\n%s", FollowUpSystem)
 	}
 	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}, nil, false, false); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
 		!strings.HasSuffix(got, "\n\nCheck errors.") {
