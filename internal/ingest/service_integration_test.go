@@ -359,6 +359,19 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &failed))); err != nil || out.Status != Enqueued {
 		t.Fatalf("poll of a head skipped, then failed = %+v, %v; want it enqueued", out, err)
 	}
+	// A second failure settles the head for the poll: the failure is the
+	// review's own, not one the poll's retry makes up for.
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at, finished_at)
+			SELECT account_id, id, 'ggg', 'failed', now() + interval '2 seconds', now() FROM pull_requests
+			WHERE repository_id = $1 AND number = $2`, rid, pr.Number)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := svc.Dispatch(ctx, request(f, ev(ActionPoll, &failed))); err != nil || out != (Outcome{Status: Skipped, Reason: reasonReviewed}) {
+		t.Fatalf("poll of a head failed twice = %+v, %v; want it skipped as reviewed", out, err)
+	}
 	merged := *pr
 	merged.HeadSHA, merged.State, merged.Merged = "fff", "closed", true
 	for _, action := range []string{ActionPoll, "synchronize", "reopened"} {
