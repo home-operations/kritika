@@ -215,6 +215,20 @@ func (rt *RunTool) mask(out string) string {
 // or run a program of the caller's choosing.
 var ghRefused = []string{"auth", "alias", "config", "extension", "extensions", "ext"}
 
+// ghFlagTakesValue reports whether a flag before gh's command takes the
+// next argument for its value: every one but the root command's own,
+// which take none, as cobra parses them. A flag with its value attached
+// by "=" and a group of short flags take nothing more.
+func ghFlagTakesValue(a string) bool {
+	switch {
+	case a == "-h" || a == "--help" || a == "--version" || a == "--" || strings.Contains(a, "="):
+		return false
+	case strings.HasPrefix(a, "--"):
+		return true
+	}
+	return len(a) == 2
+}
+
 // fdValueFlags are fd's short flags that take a value, which ends a group
 // of short flags: what follows one in the same argument is its value.
 const fdValueFlags = "dEteSocjC"
@@ -226,14 +240,21 @@ const fdValueFlags = "dEteSocjC"
 func refusedArgs(command string, args []string) string {
 	switch command {
 	case "gh":
-		for _, a := range args {
-			if strings.HasPrefix(a, "-") {
-				continue
+		// gh's command is its first positional argument, with the flags
+		// before it read as cobra reads them: a flag the root command does
+		// not have takes the next argument for its value, so "gh
+		// --hostname h auth token" runs "auth token".
+		for i := 0; i < len(args); i++ {
+			a := args[i]
+			if !strings.HasPrefix(a, "-") {
+				if slices.Contains(ghRefused, a) {
+					return "gh " + a + " is not offered"
+				}
+				break
 			}
-			if slices.Contains(ghRefused, a) {
-				return "gh " + a + " is not offered"
+			if ghFlagTakesValue(a) {
+				i++
 			}
-			break
 		}
 	case "rg":
 		for _, a := range args {
