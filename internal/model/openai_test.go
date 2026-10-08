@@ -381,9 +381,15 @@ func TestStalledProviderTimesOut(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(release) })
-	for _, pt := range []ProviderType{ProviderOpenAI, ProviderOpenRouter, ProviderOpenCode, ProviderAnthropic} {
+	for _, pt := range []ProviderType{ProviderOpenAI, ProviderOpenRouter, ProviderOpenCode, ProviderAnthropic, ProviderChatGPT} {
 		t.Run(string(pt), func(t *testing.T) {
-			s, err := NewStepper(pt, srv.URL, "k", Pricing{}, nil)
+			var s Stepper
+			var err error
+			if pt == ProviderChatGPT {
+				s, err = NewChatGPT(ChatGPTConfig{BaseURL: srv.URL, Tokens: &tokens{token: "k"}})
+			} else {
+				s, err = NewStepper(pt, srv.URL, "k", Pricing{}, nil)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -498,6 +504,15 @@ func TestAdaptersIdentifyKritika(t *testing.T) {
 	t.Run("anthropic", func(t *testing.T) {
 		srv, got := fakeProvider(t, http.StatusOK, anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", anthropicUsage))
 		if _, err := newTestAnthropic(t, srv, nil).Step(t.Context(), StepRequest{Model: "m"}); err != nil {
+			t.Fatal(err)
+		}
+		if ua := got.header.Get("User-Agent"); ua != want {
+			t.Fatalf("User-Agent = %q, want %q", ua, want)
+		}
+	})
+	t.Run("chatgpt", func(t *testing.T) {
+		srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
+		if _, err := newTestChatGPT(t, srv, nil, nil).Step(t.Context(), StepRequest{Model: "m"}); err != nil {
 			t.Fatal(err)
 		}
 		if ua := got.header.Get("User-Agent"); ua != want {

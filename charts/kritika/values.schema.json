@@ -286,7 +286,7 @@
         },
         "providersApiKey": {
           "default": "",
-          "description": "The provider's API key, from a Secret; set it to declare the provider here.",
+          "description": "The provider's API key, from a Secret; set it to declare the provider here. A `chatgpt` provider takes `providersCredentials` instead.",
           "required": [],
           "title": "providersApiKey",
           "type": [
@@ -299,6 +299,16 @@
           "description": "The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set.",
           "title": "providersBaseUrl",
           "type": "string"
+        },
+        "providersCredentials": {
+          "default": "",
+          "description": "A `chatgpt` provider's sign-in record, from a Secret, in place of a key.",
+          "required": [],
+          "title": "providersCredentials",
+          "type": [
+            "string",
+            "object"
+          ]
         },
         "providersName": {
           "default": "",
@@ -318,7 +328,7 @@
         },
         "providersType": {
           "default": "",
-          "description": "The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those.",
+          "description": "The provider's type, `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`; the name unless set, when the name is one of those.",
           "title": "providersType",
           "type": "string"
         },

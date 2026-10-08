@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/home-operations/kritika/internal/chatgpt"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -51,9 +52,17 @@ func (c *Steppers) Stepper(f *configfile.File, t *configfile.Account, name strin
 	return stepper, nil
 }
 
-// BuildStepper constructs the adapter a provider's type selects.
+// BuildStepper constructs the adapter a provider's type selects. A chatgpt
+// provider's adapter holds the plan's session, which renews its token.
 func BuildStepper(p configfile.Provider) (model.Stepper, error) {
-	s, err := model.NewStepper(p.Type, p.BaseURL, p.APIKeyValue().Value(), p.Pricing, nil)
+	var s model.Stepper
+	var err error
+	if p.Type == configfile.ProviderChatGPT {
+		session := chatgpt.NewSession(p.ChatGPTCredentials(), nil)
+		s, err = model.NewChatGPT(model.ChatGPTConfig{BaseURL: p.BaseURL, Tokens: session, Pricing: p.Pricing})
+	} else {
+		s, err = model.NewStepper(p.Type, p.BaseURL, p.APIKeyValue().Value(), p.Pricing, nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("adapter: %w", err)
 	}

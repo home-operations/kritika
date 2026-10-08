@@ -49,6 +49,7 @@ func TestEnumsValid(t *testing.T) {
 		{"openai", ProviderOpenAI.Valid(), true},
 		{"anthropic", ProviderAnthropic.Valid(), true},
 		{"opencode", ProviderOpenCode.Valid(), true},
+		{"chatgpt", ProviderChatGPT.Valid(), true},
 		{"unknown provider", ProviderType("cohere").Valid(), false},
 		{"empty provider", ProviderType("").Valid(), false},
 		{"user", RoleUser.Valid(), true},

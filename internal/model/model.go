@@ -27,18 +27,21 @@ type ProviderType string
 // Provider types kritika implements. OpenRouter is the OpenAI adapter at
 // OpenRouter's URL with its server-side fallback and reported cost;
 // OpenCode is the OpenAI adapter at OpenCode Go's URL, naming the
-// conversation each step belongs to as the gateway asks.
+// conversation each step belongs to as the gateway asks; ChatGPT is the
+// Responses API on a ChatGPT Plus or Pro plan, with a sign-in's tokens in
+// place of a key.
 const (
 	ProviderOpenRouter ProviderType = "openrouter"
 	ProviderOpenAI     ProviderType = "openai"
 	ProviderAnthropic  ProviderType = "anthropic"
 	ProviderOpenCode   ProviderType = "opencode"
+	ProviderChatGPT    ProviderType = "chatgpt"
 )
 
 // Valid reports whether p is a provider type kritika implements.
 func (p ProviderType) Valid() bool {
 	switch p {
-	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode:
+	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, ProviderChatGPT:
 		return true
 	}
 	return false
@@ -297,10 +300,11 @@ var (
 	GatewayRequestTimeout = GatewayStepBudget + 5*time.Minute
 )
 
-// NewStepper builds the adapter for a provider. An empty baseURL means the
-// provider's default endpoint; client may be nil. The adapter sends each
-// request once: the gateway and the workers retry a step with the
-// provider's retries (adapter.Step).
+// NewStepper builds the adapter for a provider that takes a key. An empty
+// baseURL means the provider's default endpoint; client may be nil. The
+// adapter sends each request once: the gateway and the workers retry a
+// step with the provider's retries (adapter.Step). A chatgpt provider takes
+// a token source instead (NewChatGPT).
 func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client *http.Client) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:
@@ -315,6 +319,8 @@ func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client 
 	case ProviderOpenCode:
 		baseURL = cmp.Or(baseURL, OpenCodeBaseURL)
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenCode: true, Pricing: pricing})
+	case ProviderChatGPT:
+		return nil, errors.New("model: a chatgpt provider takes a token source, not a key")
 	default:
 		return nil, fmt.Errorf("model: provider type %q has no adapter", t)
 	}
@@ -353,12 +359,16 @@ func checkRequest(req StepRequest) error {
 }
 
 // Transient reports whether a step failed in a way another attempt may
-// not: the provider answered 408, 429 or a 5xx, or the connection failed,
-// timed out or was cut. A provider's refusal of the request itself, any
-// other 4xx, and a spent budget fail the same way again.
+// not: the provider answered 408, 429 or a 5xx, said it was unavailable,
+// or the connection failed, timed out or was cut. A provider's refusal of
+// the request itself, any other 4xx, and a spent budget fail the same way
+// again.
 func Transient(err error) bool {
 	if err == nil || errors.Is(err, ErrBudget) {
 		return false
+	}
+	if errors.Is(err, ErrUnavailable) {
+		return true
 	}
 	status := 0
 	if e, ok := errors.AsType[*openai.Error](err); ok {

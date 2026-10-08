@@ -185,8 +185,8 @@ the same name whole, or is added to the file's when none has that name.
 
 `providers` are the instance's model keys, and `embedding` the embedder
 that builds each repository's similar-code index from one of them.
-[Models](models.md) describes both, with retries, fallback, local models
-and OpenCode.
+[Models](models.md) describes both, with retries, fallback, local models,
+OpenCode and ChatGPT plans.
 
 ```yaml
 providers:

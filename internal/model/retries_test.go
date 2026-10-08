@@ -66,6 +66,19 @@ func TestAdaptersSendOnce(t *testing.T) {
 			t.Fatalf("the provider got %d requests, want 1", n.Load())
 		}
 	})
+	t.Run("chatgpt", func(t *testing.T) {
+		srv, n := failing(t, http.StatusServiceUnavailable)
+		s, err := NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Tokens: &tokens{token: "k"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Step(t.Context(), req); err == nil {
+			t.Fatal("Step answered a 503")
+		}
+		if n.Load() != 1 {
+			t.Fatalf("the provider got %d requests, want 1", n.Load())
+		}
+	})
 }
 
 func TestRetryAfter(t *testing.T) {

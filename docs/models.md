@@ -32,13 +32,14 @@ embedding:
   dims: 1024
 ```
 
-| Key       | What                                                                                              |
-| --------- | ------------------------------------------------------------------------------------------------- |
-| `type`    | `openrouter`, `openai`, `anthropic` or `opencode`                                                 |
-| `apiKey`  | its key, required                                                                                 |
-| `baseUrl` | its API's URL, the type's default unless set                                                      |
-| `pricing` | per model id, the prices of a provider that reports no cost ([local models](#local-models))       |
-| `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries)) |
+| Key           | What                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| `type`        | `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`                                      |
+| `apiKey`      | its key, required by every type but `chatgpt`                                                     |
+| `credentials` | a `chatgpt` provider's sign-in record, in place of a key ([ChatGPT plans](#chatgpt-plans))        |
+| `baseUrl`     | its API's URL, the type's default unless set                                                      |
+| `pricing`     | per model id, the prices of a provider that reports no cost ([local models](#local-models))       |
+| `retries`     | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries)) |
 
 The provider key never enters a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](security.md#the-model-endpoint)).
@@ -73,6 +74,7 @@ One provider and the embedder can come from the environment instead:
 | `KRITIKA_PROVIDERS_TYPE`     | `type`, which defaults to the name when that is a provider type |
 | `KRITIKA_PROVIDERS_BASE_URL` | `baseUrl`                                                       |
 | `KRITIKA_PROVIDERS_API_KEY`  | `apiKey`                                                        |
+| `KRITIKA_PROVIDERS_CREDENTIALS` | `credentials`                                                |
 | `KRITIKA_PROVIDERS_RETRIES`  | `retries`                                                       |
 | `KRITIKA_EMBEDDING_MODEL`    | `embedding.model`                                               |
 | `KRITIKA_EMBEDDING_DIMS`     | `embedding.dims`                                                |
@@ -175,6 +177,7 @@ Each provider type gets the level in its own form:
 | `openrouter`         | `reasoning.effort`     | OpenRouter maps a level a model lacks to the nearest it takes, for each model in the request's list |
 | `openai`, `opencode` | `reasoning_effort`     | a model that takes no reasoning effort refuses the request; leave its effort unset                  |
 | `anthropic`          | `output_config.effort` | the Messages API runs from `low` to `max`, so `none` and `minimal` go out as `low`; unset as above  |
+| `chatgpt`            | `reasoning.effort`     | as `openai`                                                                                         |
 
 The environment sets both (`KRITIKA_REVIEW_EFFORT`, `KRITIKA_CONFIDENCE_EFFORT`,
 [environment variables](configuration.md#environment-variables)), as do
@@ -273,3 +276,54 @@ review: { model: opencode/glm-5.3, fallback: zen/qwen3.8-max }
   `/v1/responses` or `/v1/messages` cannot.
 - A response that reports no cost makes the call cost nothing unless
   `pricing` gives the model's prices, as for a local model.
+
+## ChatGPT plans
+
+A ChatGPT Plus or Pro plan can pay for reviews in place of an API key:
+OpenAI's Sign in with ChatGPT lets an open-source app draw on the plan's
+usage for Responses API requests. A provider of type `chatgpt` is that
+route, with the sign-in's credentials in place of `apiKey`:
+
+```yaml
+providers:
+  chatgpt:
+    type: chatgpt
+    credentials: { env: CHATGPT_CREDENTIALS }
+  openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
+review:
+  model: chatgpt/gpt-6.1-sol
+  fallback: openrouter/openai/gpt-6.1-sol
+```
+
+`credentials` references a variable holding the credential record the
+sign-in issued, in the shape OpenAI's open-source flow gives a local
+credential file: a JSON object with the issued `client_id`, the
+`access_token` and `refresh_token`, the `scopes` granted, which must
+include `chatgpt.tokens.use.direct`, and the token's `expires_in` and
+`saved_at`. The provider's models are the plan's, named by slug, as
+`gpt-6.1-sol`.
+
+- **Tokens.** The access token lasts an hour; kritika renews it with the
+  refresh token, which every renewal replaces. The renewed tokens live in
+  the process, so run one `serve` replica with a `chatgpt` provider: a
+  second replica renewing with a token the first already replaced ends the
+  sign-in. A refresh token OpenAI no longer takes, because the plan's
+  owner disconnected kritika or it went unused for thirty days, signs the
+  provider out: its steps fail, the fallback takes them, and the record
+  has to be issued again.
+- **Limits.** A plan at its usage limit refuses a step with a 429 that
+  kritika does not retry: the provider sends nothing on the plan for 15
+  minutes, every step going to `review.fallback` or
+  `confidence.fallback` meanwhile, as a spent credit's would. The plan's
+  owner sees and caps kritika's share under ChatGPT's settings, Usage. On
+  Plus, kritika shares the five-hour limit with every other app on the
+  plan, the owner's own Codex use included; Pro has no five-hour limit.
+- **Cost.** The plan reports no cost, so a call costs nothing unless
+  `pricing` gives the model's prices; tokens count against
+  `tokensPerMonth` either way.
+- **The route.** Requests go to `/v1/responses`, streamed and unstored,
+  with the tools in one namespace. It refuses an output cap, so a step's
+  answer is as long as the model makes it; `review.effort` and
+  `confidence.effort` go as `reasoning.effort`. The embedder stays on an
+  `openrouter` or `openai` provider: plan usage covers the Responses API
+  only.

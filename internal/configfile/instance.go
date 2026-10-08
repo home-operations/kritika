@@ -61,6 +61,8 @@ func overlayProviderEnv(providers *map[string]Provider, environ []string) (strin
 			p.BaseURL = value
 		case "API_KEY":
 			p.APIKey = SecretRef{Env: env}
+		case "CREDENTIALS":
+			p.Credentials = SecretRef{Env: env}
 		case "RETRIES":
 			n, err := strconv.Atoi(value)
 			if err != nil {

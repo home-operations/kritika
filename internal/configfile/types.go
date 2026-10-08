@@ -21,6 +21,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/chatgpt"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -36,6 +37,7 @@ const (
 	ProviderOpenAI     = model.ProviderOpenAI
 	ProviderAnthropic  = model.ProviderAnthropic
 	ProviderOpenCode   = model.ProviderOpenCode
+	ProviderChatGPT    = model.ProviderChatGPT
 )
 
 // Forge identifies which forge a connection talks to.
@@ -109,8 +111,13 @@ func (s Secret) GoString() string { return s.String() }
 type Provider struct {
 	Type ProviderType `yaml:"type"`
 	// BaseURL overrides the type's default endpoint.
-	BaseURL string    `yaml:"baseUrl,omitempty"`
-	APIKey  SecretRef `yaml:"apiKey"`
+	BaseURL string `yaml:"baseUrl,omitempty"`
+	// APIKey is the provider's key, which every type but chatgpt takes.
+	APIKey SecretRef `yaml:"apiKey,omitempty"`
+	// Credentials is the record a Sign in with ChatGPT issued, which a
+	// chatgpt provider takes in place of a key: the plan's access and
+	// refresh tokens, and the client the sign-in registered.
+	Credentials SecretRef `yaml:"credentials,omitempty"`
 	// Pricing, keyed by model id, computes the cost of calls the provider
 	// does not report a cost for; without it such calls cost zero while
 	// their tokens still count against limits.
@@ -125,6 +132,8 @@ type Provider struct {
 	Retries int `yaml:"retries,omitempty"`
 
 	apiKey Secret
+	// plan is Credentials, read and parsed, for a chatgpt provider.
+	plan chatgpt.Credentials
 }
 
 // MaxProviderRetries bounds Provider.Retries: with backoff, five more
@@ -133,6 +142,10 @@ const MaxProviderRetries = 5
 
 // APIKeyValue returns the resolved API key.
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
+
+// ChatGPTCredentials returns the resolved credentials of a chatgpt
+// provider, the zero record for any other.
+func (p Provider) ChatGPTCredentials() chatgpt.Credentials { return p.plan }
 
 // ModelRef names a model as "<provider>/<model>", where provider is a key of
 // the account's or the instance's providers map and model is whatever the

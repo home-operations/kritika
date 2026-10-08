@@ -63,7 +63,7 @@ flowchart LR
 - **Flow diagrams, opt-in.** The summary can draw the flow a change adds or
   alters as a Mermaid diagram, so a reviewer sees the path before reading
   the code.
-- **Providers and limits.** OpenRouter, OpenAI, Anthropic and OpenCode adapters, with
+- **Providers and limits.** OpenRouter, OpenAI, Anthropic, OpenCode and ChatGPT plan adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
   key never enters a runner pod: the agent reaches its model through kritika's
   gateway.
@@ -91,7 +91,7 @@ flowchart LR
 - **[Configuration file](configuration.md)**: sign-in and role mappings, GitHub
   Apps, the repository settings, repository entries, accounts and egress.
 - **[Models](models.md)**: providers and their keys, retries, fallback, the
-  embedder, local models and OpenCode.
+  embedder, local models, OpenCode and ChatGPT plans.
 - **[Repository settings](repository-config.md)**: what a repository's
   `.kritika.yaml` can change.
 - **[Helm chart values](chart-values.md)**: the chart's values, grouped.

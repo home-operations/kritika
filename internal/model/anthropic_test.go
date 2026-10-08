@@ -269,6 +269,7 @@ func TestNewStepper(t *testing.T) {
 		{"openai default url", ProviderOpenAI, "", false},
 		{"anthropic", ProviderAnthropic, "", false},
 		{"opencode default url", ProviderOpenCode, "", false},
+		{"chatgpt takes no key", ProviderChatGPT, "", true},
 		{"unknown", ProviderType("cohere"), "", true},
 	}
 	for _, tt := range tests {

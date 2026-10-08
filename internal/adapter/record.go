@@ -25,10 +25,12 @@ import (
 // step, waiting on it.
 const recordTimeout = 2 * time.Second
 
-// ProviderSecrets are a provider's key and the credentials in its base
-// URL, whole and the password alone; some may be empty.
+// ProviderSecrets are a provider's key, or a chatgpt provider's tokens as
+// its configuration holds them, and the credentials in its base URL, whole
+// and the password alone; some may be empty.
 func ProviderSecrets(p configfile.Provider) []string {
-	secrets := []string{p.APIKeyValue().Value()}
+	plan := p.ChatGPTCredentials()
+	secrets := []string{p.APIKeyValue().Value(), plan.AccessToken, plan.RefreshToken}
 	if u, err := url.Parse(p.BaseURL); err == nil && u.User != nil {
 		secrets = append(secrets, u.User.String())
 		if pw, ok := u.User.Password(); ok {

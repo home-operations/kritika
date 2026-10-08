@@ -175,7 +175,7 @@ config:
 
   # -- The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set.
   providersName: ""
-  # -- The provider's type, `openrouter`, `openai`, `anthropic` or `opencode`; the name unless set, when the name is one of those.
+  # -- The provider's type, `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`; the name unless set, when the name is one of those.
   providersType: ""
   # -- The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set.
   providersBaseUrl: ""
@@ -187,8 +187,13 @@ config:
   # @schema
   # type: [string, object]
   # @schema
-  # -- The provider's API key, from a Secret; set it to declare the provider here.
+  # -- The provider's API key, from a Secret; set it to declare the provider here. A `chatgpt` provider takes `providersCredentials` instead.
   providersApiKey: ""
+  # @schema
+  # type: [string, object]
+  # @schema
+  # -- A `chatgpt` provider's sign-in record, from a Secret, in place of a key.
+  providersCredentials: ""
   # -- The model every review runs on unless a repository names another, `<provider>/<model>`.
   reviewModel: ""
   # -- The model a review falls back to when the review model fails.

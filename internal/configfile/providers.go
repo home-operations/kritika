@@ -5,6 +5,8 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+
+	"github.com/home-operations/kritika/internal/chatgpt"
 )
 
 // Provider is the model provider name refers to for account t: the account's
@@ -19,18 +21,44 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	return p, ok
 }
 
+// resolve reads the provider's secret: a chatgpt provider's credentials
+// record, every other type's key.
+func (p *Provider) resolve(where string, s *secrets) error {
+	if p.Type == ProviderChatGPT {
+		v, err := s.read(p.Credentials)
+		if err != nil {
+			return fmt.Errorf("configfile: %s.credentials: %w", where, err)
+		}
+		if p.plan, err = chatgpt.ParseCredentials([]byte(v.Value())); err != nil {
+			return fmt.Errorf("configfile: %s.credentials: %w", where, err)
+		}
+		return nil
+	}
+	v, err := s.read(p.APIKey)
+	if err != nil {
+		return fmt.Errorf("configfile: %s.apiKey: %w", where, err)
+	}
+	p.apiKey = v
+	return nil
+}
+
 // validate checks a provider's type, endpoint, key and prices.
 func (p Provider) validate(where string) error {
 	if !p.Type.Valid() {
-		return fmt.Errorf("configfile: %s.type must be %s, %s, %s or %s, got %q",
-			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, p.Type)
+		return fmt.Errorf("configfile: %s.type must be %s, %s, %s, %s or %s, got %q",
+			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, ProviderChatGPT, p.Type)
 	}
 	if p.BaseURL != "" {
 		if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("configfile: %s.baseUrl %q must be an absolute URL", where, p.BaseURL)
 		}
 	}
-	if p.apiKey.Value() == "" {
+	switch {
+	case p.Type == ProviderChatGPT && !p.APIKey.empty():
+		return fmt.Errorf("configfile: %s: a %s provider takes credentials, not apiKey", where, ProviderChatGPT)
+	case p.Type != ProviderChatGPT && !p.Credentials.empty():
+		return fmt.Errorf("configfile: %s: credentials is for a %s provider; a %s provider takes apiKey", where, ProviderChatGPT, p.Type)
+	case p.Type != ProviderChatGPT && p.apiKey.Value() == "":
 		return fmt.Errorf("configfile: %s.apiKey resolved to an empty value", where)
 	}
 	if p.Retries < 0 || p.Retries > MaxProviderRetries {
