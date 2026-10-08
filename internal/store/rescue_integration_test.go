@@ -317,3 +317,34 @@ func TestJobHead(t *testing.T) {
 		}
 	}
 }
+
+// TestRecordRunnerRunLeavesUnknownTimesNull records a run whose pod never
+// scheduled or started, in a session whose time zone is not UTC, and
+// checks the times it never learned are NULL rather than the zero time.
+func TestRecordRunnerRunLeavesUnknownTimesNull(t *testing.T) {
+	s := openStore(t)
+	ctx := context.Background()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("unstarted"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "unstarted")
+	runID, _ := insertRun(t, ctx, s, account, insertReview(t, ctx, s, account), 0)
+	var scheduled, started *time.Time
+	var phase string
+	err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL TIME ZONE 'Asia/Tokyo'`); err != nil {
+			return err
+		}
+		if err := RecordRunnerRun(ctx, tx, runID, RunnerResult{JobName: "kritika-run-x", Error: "never started"}); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT scheduled_at, started_at, phase FROM runner_runs WHERE id = $1`, runID).
+			Scan(&scheduled, &started, &phase)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scheduled != nil || started != nil || phase != "failed" {
+		t.Fatalf("scheduled_at = %v, started_at = %v, phase = %s; want both NULL and the run failed", scheduled, started, phase)
+	}
+}

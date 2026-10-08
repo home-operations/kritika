@@ -176,12 +176,21 @@ type RunnerResult struct {
 // failed Job ends the run failed; a successful one leaves the phase the
 // runner set.
 func RecordRunnerRun(ctx context.Context, tx pgx.Tx, runID string, r RunnerResult) error {
+	// A time the executor never learned, a pod that never scheduled or
+	// started, is NULL, not the zero time.
+	var scheduled, started any
+	if !r.ScheduledAt.IsZero() {
+		scheduled = r.ScheduledAt
+	}
+	if !r.StartedAt.IsZero() {
+		started = r.StartedAt
+	}
 	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET job_name = $2, pod_name = $3, node_name = $4,
-		scheduled_at = nullif($5, '0001-01-01'::timestamptz), started_at = nullif($6, '0001-01-01'::timestamptz), finished_at = now(),
+		scheduled_at = $5, started_at = $6, finished_at = now(),
 		exit_code = $7, termination_reason = $8, deadline_exceeded = $9, log_tail = $10,
 		phase = CASE WHEN $11 THEN phase ELSE 'failed' END, error = CASE WHEN $11 THEN error ELSE left($12, 2000) END
 		WHERE id = $1`,
-		runID, r.JobName, r.PodName, r.NodeName, r.ScheduledAt, r.StartedAt,
+		runID, r.JobName, r.PodName, r.NodeName, scheduled, started,
 		r.ExitCode, r.TerminationReason, r.DeadlineExceeded, r.LogTail, r.Error == "", r.Error); err != nil {
 		return fmt.Errorf("store: record runner run: %w", err)
 	}
