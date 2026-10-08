@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // Review threads are GraphQL-only on GitHub: REST knows the comments but
@@ -125,6 +127,10 @@ func sameLogin(a, b string) bool {
 	return strings.EqualFold(strings.TrimSuffix(a, "[bot]"), strings.TrimSuffix(b, "[bot]"))
 }
 
+// maxGraphQLErrorBytes bounds how much of a refused response's body the
+// error carries.
+const maxGraphQLErrorBytes = 1 << 10
+
 // graphql posts one query with its variables through the installation's
 // authenticated client and decodes data into out; a response with errors
 // is an error.
@@ -148,7 +154,9 @@ func (c *Client) graphql(ctx context.Context, query string, vars map[string]any,
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("graphql: %s: %s", resp.Status, strings.TrimSpace(string(raw)))
+		// The body is kept for the message: a refusal's own words say why,
+		// a proxy's error page in full would be the job's last error.
+		return fmt.Errorf("graphql: %s: %s", resp.Status, textcut.Prefix(strings.TrimSpace(string(raw)), maxGraphQLErrorBytes))
 	}
 	var env struct {
 		Data   json.RawMessage `json:"data"`
