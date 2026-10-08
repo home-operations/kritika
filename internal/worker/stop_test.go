@@ -21,6 +21,7 @@ func TestWorkerStopping(t *testing.T) {
 	}{
 		{"a live job", t.Context(), false},
 		{"a stopping client's cut", cancelled(errors.New("stop initiated")), true},
+		{"the heartbeat's fence", cancelled(errJobFenced), true},
 		{"an admin's cancel", cancelled(river.ErrJobCancelledRemotely), false},
 		{"the job's timeout", cancelled(context.DeadlineExceeded), false},
 	} {

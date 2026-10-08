@@ -11,18 +11,30 @@ import (
 	"github.com/riverqueue/river/rivertype"
 )
 
-// fakeHeartbeater records every beat and fails the first n.
+// fakeHeartbeater records every beat and fails the first n, and every
+// one while down. While hung, a beat waits for its ctx, as one on a
+// connection that never answers does.
 type fakeHeartbeater struct {
 	mu    sync.Mutex
 	beats []int64
 	fail  int
+	down  bool
+	hung  bool
 }
 
-func (f *fakeHeartbeater) HeartbeatJob(_ context.Context, jobID int64) error {
+func (f *fakeHeartbeater) HeartbeatJob(ctx context.Context, jobID int64) error {
 	f.mu.Lock()
+	if f.hung {
+		f.mu.Unlock()
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	defer f.mu.Unlock()
 	if f.fail > 0 {
 		f.fail--
+		return errors.New("db down")
+	}
+	if f.down {
 		return errors.New("db down")
 	}
 	f.beats = append(f.beats, jobID)
@@ -86,5 +98,74 @@ func TestJobHeartbeatRefusesToStartUnseen(t *testing.T) {
 	}
 	if store.count() != 0 {
 		t.Fatalf("beats = %d, want none", store.count())
+	}
+}
+
+func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
+	store := &fakeHeartbeater{}
+	h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler), every: time.Millisecond, fence: 5 * time.Millisecond}
+	err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+		store.mu.Lock()
+		store.down = true
+		store.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-time.After(5 * time.Second):
+			return errors.New("the job was never fenced")
+		}
+	})
+	if !errors.Is(err, errJobFenced) {
+		t.Fatalf("Work = %v, want the job fenced", err)
+	}
+	if got := store.count(); got != 1 {
+		t.Fatalf("beats written = %d, want only the first", got)
+	}
+	time.Sleep(10 * time.Millisecond)
+	store.mu.Lock()
+	store.down = false
+	store.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
+	if got := store.count(); got != 1 {
+		t.Fatalf("beats after the fence = %d, want none: a late beat would hide the cut from the leader", got-1)
+	}
+}
+
+// TestJobHeartbeatFencesTheJobWhileABeatHangs: a beat that never returns
+// still has the job fenced once the window is up.
+func TestJobHeartbeatFencesTheJobWhileABeatHangs(t *testing.T) {
+	store := &fakeHeartbeater{}
+	h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler), every: time.Millisecond, fence: 20 * time.Millisecond}
+	err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+		store.mu.Lock()
+		store.hung = true
+		store.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-time.After(5 * time.Second):
+			return errors.New("the job was never fenced")
+		}
+	})
+	if !errors.Is(err, errJobFenced) {
+		t.Fatalf("Work = %v, want the job fenced", err)
+	}
+}
+
+func TestJobHeartbeatOutlastsAShortOutage(t *testing.T) {
+	store := &fakeHeartbeater{}
+	h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler), every: time.Millisecond, fence: time.Second}
+	err := h.Work(t.Context(), &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+		store.mu.Lock()
+		store.fail = 3
+		store.mu.Unlock()
+		deadline := time.Now().Add(time.Second)
+		for store.count() < 4 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		return ctx.Err()
+	})
+	if err != nil {
+		t.Fatalf("Work = %v, want the job to outlast three missed beats", err)
 	}
 }

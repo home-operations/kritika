@@ -113,14 +113,18 @@ func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) erro
 	defer cancel()
 	cause := context.Cause(ctx)
 	if workerStopping(ctx) {
+		why := "cut by a restart and retried"
+		if errors.Is(cause, errJobFenced) {
+			why = "cut as its heartbeat stopped landing; its job was handed back"
+		}
 		if _, ferr := w.endReview(cctx, e.accountID, e.reviewID, store.ReviewEnd{
-			Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true,
+			Status: store.ReviewSuperseded, Error: why, OnlyUnfinished: true,
 		}); ferr != nil {
 			return ferr
 		}
-		e.logger.Info("review cut by a restart; its job is retried", "job", e.jobName)
+		e.logger.Info("review "+why, "job", e.jobName)
 		w.Metrics.Review(e.accountKey, string(store.ReviewSuperseded), time.Since(e.started))
-		return fmt.Errorf("worker: review cut by a restart: %w", cause)
+		return fmt.Errorf("worker: review %s: %w", why, cause)
 	}
 	status, errText, desc := store.ReviewCanceled, "", "kritika: review canceled"
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
