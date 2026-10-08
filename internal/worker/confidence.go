@@ -13,6 +13,7 @@ import (
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
@@ -154,7 +155,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Body: body, Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric), system, p.settings.Agent.MaxPromptTokens),
+		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, p.settings.Agent.MaxPromptTokens),
 		Model: ref.Model(), Fallbacks: fallbacks, Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
@@ -180,12 +181,12 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 
 // earlierRisk is the risk prior was rated, which a review of head is asked
 // to keep unless the change now does something that rating does not
-// account for. It is nil when prior was not scored, saw head itself, so
-// that a re-run rates afresh, or was rated under instructions other than
-// rubric's.
-func earlierRisk(prior priorReview, head, rubric string) *review.EarlierRisk {
+// account for. It is nil when prior was not scored, saw head itself or
+// the review was asked for by hand, so that a re-run rates afresh, or was
+// rated under instructions other than rubric's.
+func earlierRisk(prior priorReview, head, rubric, trigger string) *review.EarlierRisk {
 	c := prior.confidence
-	if c == nil || prior.headSHA == head || c.Rubric != rubric {
+	if c == nil || prior.headSHA == head || trigger == jobs.TriggerManual || c.Rubric != rubric {
 		return nil
 	}
 	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason}

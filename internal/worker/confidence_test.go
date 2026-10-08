@@ -6,6 +6,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -116,28 +117,30 @@ func TestCarryApproval(t *testing.T) {
 }
 
 // TestEarlierRisk: a review of a new head is given the risk the last
-// review was rated under the same instructions; a re-run of the same head
-// and a rating under other instructions start afresh.
+// review was rated under the same instructions; a re-run of the same head,
+// a re-run asked for and a rating under other instructions start afresh.
 func TestEarlierRisk(t *testing.T) {
 	rated := func(rubric string) *review.Confidence {
 		return &review.Confidence{Score: 4, Risk: review.RiskHigh, Reason: "A major bump.", Rubric: rubric}
 	}
 	tests := []struct {
-		name  string
-		prior priorReview
-		want  *review.EarlierRisk
+		name    string
+		prior   priorReview
+		trigger string
+		want    *review.EarlierRisk
 	}{
 		{name: "no earlier review"},
 		{name: "an earlier review left unscored", prior: priorReview{id: "r1", headSHA: "old"}},
 		{name: "a re-run of the head it rated", prior: priorReview{id: "r1", headSHA: "new", confidence: rated("rubric")}},
 		{name: "a rating under other instructions", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("other")}},
 		{name: "a rating from before rubrics", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("")}},
+		{name: "a re-run asked for at a new head", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("rubric")}, trigger: jobs.TriggerManual},
 		{name: "a new head under the same instructions", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("rubric")},
 			want: &review.EarlierRisk{HeadSHA: "old", Risk: review.RiskHigh, Reason: "A major bump."}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := earlierRisk(tt.prior, "new", "rubric")
+			got := earlierRisk(tt.prior, "new", "rubric", tt.trigger)
 			if (got == nil) != (tt.want == nil) || (got != nil && *got != *tt.want) {
 				t.Fatalf("earlierRisk = %+v, want %+v", got, tt.want)
 			}
