@@ -80,25 +80,32 @@ var overlayPrefixes = []string{
 }
 
 // configHash identifies a configuration: the file's bytes, the overlay
-// variables that change what it says, and the values of the secrets it
-// names, so two replicas with the same file but another environment do not
-// compare equal.
+// variables that change what it says, and the names of the secrets it
+// reads, so two replicas with the same file but another environment do not
+// compare equal. A secret's value stays out of it: the hash is stored and
+// logged, and a digest of a password invites guessing it offline. Two
+// replicas that read the same names with other values hash alike, which
+// the first sign-in or forge call on the odd one out tells apart.
 func configHash(raw []byte, environ, secretEnv []string) string {
 	h := sha256.New()
 	h.Write(raw)
 	var overlay []string
 	for _, kv := range environ {
 		name, _, _ := strings.Cut(kv, "=")
-		if name != reviewWorkersEnv && slices.ContainsFunc(overlayPrefixes, func(p string) bool { return strings.HasPrefix(name, p) }) {
-			overlay = append(overlay, kv)
+		if name == reviewWorkersEnv || !slices.ContainsFunc(overlayPrefixes, func(p string) bool { return strings.HasPrefix(name, p) }) {
+			continue
 		}
+		if slices.Contains(secretEnv, name) {
+			kv = name
+		}
+		overlay = append(overlay, kv)
 	}
 	slices.Sort(overlay)
 	for _, kv := range overlay {
 		h.Write([]byte("\x00" + kv))
 	}
 	for _, name := range secretEnv {
-		h.Write([]byte("\x00" + name + "=" + os.Getenv(name)))
+		h.Write([]byte("\x00" + name))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

@@ -162,6 +162,29 @@ func TestConnectionCredentials(t *testing.T) {
 	}
 }
 
+func TestConfigHashLeavesSecretValuesOut(t *testing.T) {
+	raw := []byte("auth: {}\n")
+	secrets := []string{"KRITIKA_AUTH_ADMIN_PASSWORD"}
+	base := configHash(raw, []string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=30s", "HOME=/x"}, secrets)
+	for name, tt := range map[string]struct {
+		environ []string
+		secrets []string
+		same    bool
+	}{
+		"another password":        {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=other", "KRITIKA_TRIGGER_SETTLE=30s"}, secrets, true},
+		"a variable not overlaid": {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=30s", "USER=y"}, secrets, true},
+		"another overlay value":   {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=90s"}, secrets, false},
+		"another secret named":    {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=30s"}, []string{"KRITIKA_AUTH_ADMIN_PASSWORD", "OIDC_SECRET"}, false},
+	} {
+		if got := configHash(raw, tt.environ, tt.secrets) == base; got != tt.same {
+			t.Errorf("%s: hash unchanged = %v, want %v", name, got, tt.same)
+		}
+	}
+	if strings.Contains(base, "hunter2") {
+		t.Fatal("the hash is hex")
+	}
+}
+
 func TestHashAndConnectionLookup(t *testing.T) {
 	f, err := load(t, fixture(t))
 	if err != nil {
