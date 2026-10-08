@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -51,7 +50,6 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 		observe(false)
 		return resp, nil
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	_ = resp.Body.Close()
 	if err := t.wait(req.Context(), wait); err != nil {
 		observe(false)

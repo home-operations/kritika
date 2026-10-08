@@ -124,7 +124,6 @@ func (c apiClient) get(ctx context.Context, path string, v any) (int, http.Heade
 	defer func() { _ = resp.Body.Close() }()
 	body := io.LimitReader(resp.Body, maxAPIBody)
 	if resp.StatusCode/100 != 2 || v == nil {
-		_, _ = io.Copy(io.Discard, body) // drain for connection reuse
 		return resp.StatusCode, resp.Header, nil
 	}
 	if err := json.NewDecoder(body).Decode(v); err != nil {
