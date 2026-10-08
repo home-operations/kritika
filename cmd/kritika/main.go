@@ -62,7 +62,7 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (err error) {
 	command, err := config.ParseCommand(os.Args[1:])
 	if err != nil {
 		return err
@@ -106,6 +106,23 @@ func run() error {
 	// database is still starting.
 	mgmt := server.NewManagement(cfg.MetricsAddr, logger)
 	g, ctx := errgroup.WithContext(ctx)
+	// Whatever ends run ends the group's goroutines first, and run waits
+	// for them before the store closes: the close waits for every
+	// connection, and the leader holds its lock connection for its tenure,
+	// so an error returned while the group runs would otherwise hang it,
+	// liveness still answering. An error of the group's own that run does
+	// not return, a listener a runner's exit cut, is worth a line.
+	ctx, cancel := context.WithCancel(ctx)
+	var st *store.Store
+	defer func() {
+		cancel()
+		if werr := g.Wait(); werr != nil && !errors.Is(werr, context.Canceled) && !errors.Is(err, werr) {
+			logger.Warn("a listener or duty failed", "error", werr)
+		}
+		if st != nil {
+			st.Close()
+		}
+	}()
 	g.Go(func() error { return mgmt.Run(ctx) })
 
 	// serve's public listener comes up next, before the database answers,
@@ -132,11 +149,10 @@ func run() error {
 	// Both commands connect with the application DSN and refuse to start if
 	// it could bypass row-level security or the vector extension is
 	// missing; serve also opens the owner DSN, to lead.
-	st, err := openStore(ctx, storeOptions(command, cfg, logger), logger)
+	st, err = openStore(ctx, storeOptions(command, cfg, logger), logger)
 	if err != nil {
 		return err
 	}
-	defer st.Close()
 
 	if command == config.CommandRun {
 		// A runner does one thing and exits; it never becomes ready.
