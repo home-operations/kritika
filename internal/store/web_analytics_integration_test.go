@@ -3,7 +3,6 @@
 package store
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ import (
 // either side of the window.
 func TestReadAnalytics(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("analytics"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}

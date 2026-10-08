@@ -103,7 +103,7 @@ type manageEnv struct {
 
 func newManageEnv(t *testing.T) *manageEnv {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
@@ -292,7 +292,7 @@ func testAuditLog(t *testing.T, e *manageEnv, md string) {
 		path = mdPath + "/audit?limit=2&cursor=" + *page.NextCursor
 	}
 	var want int
-	if err := e.owner.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE account_id = $1`, md).Scan(&want); err != nil {
+	if err := e.owner.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE account_id = $1`, md).Scan(&want); err != nil {
 		t.Fatal(err)
 	}
 	if len(seen) != want || want < 3 {

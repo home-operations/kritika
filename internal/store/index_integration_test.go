@@ -55,7 +55,7 @@ repositories:
 // whose pull requests moved last go first.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, onboardAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}

@@ -95,7 +95,7 @@ func (f *forges) For(context.Context, *configfile.Connection, string) (forge.Cli
 }
 
 func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
@@ -280,7 +280,7 @@ func (f *tipForge) BranchTip(context.Context, string, string, string) (string, s
 // has its indexed repositories' default branches checked, and an index job
 // queued when one moved; one that webhooks reach does not.
 func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
@@ -298,8 +298,8 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	exec := func(sql string, args ...any) {
 		t.Helper()
-		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, sql, args...)
+		if err := st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), sql, args...)
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -318,7 +318,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	t.Cleanup(func() {
 		exec(`UPDATE repositories SET active_index_run_id = NULL WHERE id = $1`, repoID)
 		exec(`DELETE FROM index_runs WHERE id = $1`, runID)
-		_, _ = st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`)
+		_, _ = st.App().Exec(context.Background(), `DELETE FROM river_job WHERE kind = 'index'`)
 	})
 	indexJobs := func() []string {
 		t.Helper()
@@ -377,7 +377,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 // while the listing ran, and a listing that fails or comes back empty
 // disables nothing.
 func TestSyncRepositories(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	st := storetest.Open(t)
@@ -390,8 +390,8 @@ func TestSyncRepositories(t *testing.T) {
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	// The other suites poll every enabled repository of the account.
 	t.Cleanup(func() {
-		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false WHERE name LIKE 'onedr0p/synced%'`)
+		_ = st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `UPDATE repositories SET enabled = false WHERE name LIKE 'onedr0p/synced%'`)
 			return err
 		})
 	})
@@ -528,7 +528,7 @@ func (f *reactionForge) ListInline(_ context.Context, _, _ string, number int) (
 // comments into every finding that carries the comment's thread, for the
 // pull requests reviewed lately only.
 func TestPollerReadsReactions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
@@ -646,7 +646,7 @@ func (f *skipForge) ListOpenPullRequests(_ context.Context, _, name string, _ ti
 // list is skipped, the others are still polled, and the poll state is left
 // for the next pass to cover the skipped one.
 func TestPollerPollsPastAFailingRepository(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
@@ -684,8 +684,8 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false WHERE name = 'onedr0p/flaky'`)
+		_ = st.WithAccount(context.Background(), account.ID(), func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), `UPDATE repositories SET enabled = false WHERE name = 'onedr0p/flaky'`)
 			return err
 		})
 	})
@@ -727,7 +727,7 @@ func (f *stallForge) ListOpenPullRequests(ctx context.Context, _, _ string, _ ti
 // TestPollerRunCutsAPollAtItsInterval: a poll that outlasts the interval
 // is cut, the next one starts on time, and the poll state is left for it.
 func TestPollerRunCutsAPollAtItsInterval(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")
@@ -788,7 +788,7 @@ func TestPollerRunCutsAPollAtItsInterval(t *testing.T) {
 // and recorded closed, merged or not; one the forge still has open, and one
 // it does not know, are left as they are.
 func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s")

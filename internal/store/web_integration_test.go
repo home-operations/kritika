@@ -44,7 +44,7 @@ func insertReview(t *testing.T, ctx context.Context, s *Store, account string) s
 // kritika_events channel that Listen decodes and hands to onEvent.
 func TestListenPublishesReviewEvents(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestListenPublishesReviewEvents(t *testing.T) {
 // must, and must not fire more than once for it.
 func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestListenSkipsRunnerRunHeartbeatOnlyUpdates(t *testing.T) {
 // every other account-scoped table.
 func TestModelCallsRowLevelSecurity(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestModelCallsRowLevelSecurity(t *testing.T) {
 // sessions, or any other dashboard table.
 func TestRunnerRoleCannotTouchWebTables(t *testing.T) {
 	openStore(t) // ensures Migrate/grant() have run against this schema
-	ctx := context.Background()
+	ctx := t.Context()
 	runner, err := Open(ctx, Options{
 		AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),

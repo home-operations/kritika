@@ -313,7 +313,7 @@ type agenticHarness struct {
 
 func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
 	runnerStore, err := store.Open(ctx, store.Options{AppURL: storetest.Env(t, "KRITIKA_TEST_RUNNER_URL"), Logger: logger})
@@ -677,8 +677,8 @@ func checkGatewayConversation(t *testing.T, h *agenticHarness) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = h.st.RevokeGatewayTokens(h.ctx, runID)
-		_ = failRun(h.ctx, h.st, h.account.ID(), runID, "test run")
+		_ = h.st.RevokeGatewayTokens(context.Background(), runID)
+		_ = failRun(context.Background(), h.st, h.account.ID(), runID, "test run")
 	})
 	var kept string
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {

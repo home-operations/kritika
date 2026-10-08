@@ -17,7 +17,7 @@ import (
 
 func TestModelCalls(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -106,7 +106,7 @@ func checkSplitRunTranscript(
 	t *testing.T, s *Store, alpha, reviewID string, record func(runID string, part int, req model.StepRequest),
 ) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	var runID string
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
@@ -153,7 +153,7 @@ func checkSplitRunTranscript(
 
 // checkModelCallRefusals checks what InsertModelCall refuses.
 func checkModelCallRefusals(t *testing.T, s *Store, alpha, beta string) {
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		if err := InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, Kind: "other"}); err == nil {
 			t.Error("an unknown kind was inserted")
@@ -180,7 +180,7 @@ func deleteModelCalls(t *testing.T, s *Store, where string, args ...any) {
 
 func TestSweepModelCalls(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestSweepModelCalls(t *testing.T) {
 
 func TestSweepDiffs(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -244,8 +244,8 @@ func TestSweepDiffs(t *testing.T) {
 	}
 	old, older, fresh := insert(), insert(), insert()
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(ctx, `DELETE FROM context_packs WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
-		_, _ = s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM context_packs WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
 	})
 	if _, err := s.owner.Exec(ctx, `UPDATE context_packs SET created_at = now() - interval '40 days' WHERE runner_run_id IN ($1, $2)`, old, older); err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestSweepDiffs(t *testing.T) {
 
 func TestSweepConversations(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -308,8 +308,8 @@ func TestSweepConversations(t *testing.T) {
 	}
 	old, older, fresh := insert("3 hours"), insert("1 day"), insert("1 minute")
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(ctx, `DELETE FROM agent_conversations WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
-		_, _ = s.owner.Exec(ctx, `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM agent_conversations WHERE runner_run_id IN ($1, $2, $3)`, old, older, fresh)
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id IN ($1, $2, $3)`, old, older, fresh)
 	})
 	batch := diffSweepBatch
 	diffSweepBatch = 1
@@ -332,7 +332,7 @@ func TestSweepConversations(t *testing.T) {
 
 func TestSweepSessions(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	var user string
 	if err := s.app.QueryRow(ctx, `INSERT INTO users (display_name) VALUES ('sweep') RETURNING id`).Scan(&user); err != nil {

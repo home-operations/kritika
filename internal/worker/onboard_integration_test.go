@@ -18,7 +18,7 @@ import (
 // TestOnboarderKeepsToItsWindow checks the feeder queues onboarding jobs up
 // to its window and no further, and fills a place a finished job leaves.
 func TestOnboarderKeepsToItsWindow(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")

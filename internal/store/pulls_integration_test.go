@@ -3,7 +3,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -17,7 +16,7 @@ import (
 // that resuming starts the count over.
 func TestPausePullRequest(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("paused"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -136,7 +135,7 @@ func TestPausePullRequest(t *testing.T) {
 // reason it was given, the repository's or the runner's, and gives it back.
 func TestReviewSkipReason(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("skips"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -166,7 +165,7 @@ func TestReviewSkipReason(t *testing.T) {
 // review, that the newest names none, and that a skipped one is never it.
 func TestNewestReviewID(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("newest"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -210,7 +209,7 @@ func TestNewestReviewID(t *testing.T) {
 // count is of the reviews that completed, whatever else ended otherwise.
 func TestAccountStatsCountCompletedReviews(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("counted"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -244,7 +243,7 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 // the month's total only.
 func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("costed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -326,7 +325,7 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 // request and of its repository, and its finding in what wants attention.
 func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("lastreview"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}

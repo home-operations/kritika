@@ -104,7 +104,7 @@ func TestServeDrainsOnCancel(t *testing.T) {
 	addr := ln.Addr().String()
 	_ = ln.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
 		done <- Serve(ctx, addr, http.NotFoundHandler(), shutdownTimeout, slog.New(slog.DiscardHandler))
@@ -146,7 +146,7 @@ func TestServeDrainCutsWhatOutlastsIt(t *testing.T) {
 		close(started)
 		<-release
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
 		done <- Serve(ctx, addr, slow, 50*time.Millisecond, slog.New(slog.DiscardHandler))

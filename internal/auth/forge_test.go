@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +40,7 @@ func TestVerifiedEmail(t *testing.T) {
 			}))
 			defer srv.Close()
 			id := profile
-			err := verifiedEmail(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, &id)
+			err := verifiedEmail(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, &id)
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || id != tt.want {
 				t.Fatalf("verifiedEmail = %v, id = %+v; want %+v, error %v", err, id, tt.want, tt.wantErr)
 			}

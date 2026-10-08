@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -42,7 +41,7 @@ func TestGitHubMember(t *testing.T) {
 				_, _ = w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			got, err := githubAPI{}.member(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "acme")
+			got, err := githubAPI{}.member(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "acme")
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
 				t.Fatalf("member = %v, %v; want %v, error %v", got, err, tt.want, tt.wantErr)
 			}
@@ -73,7 +72,7 @@ func TestGitHubMappingVars(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	vars, err := githubAPI{}.mappingVars(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()},
+	vars, err := githubAPI{}.mappingVars(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()},
 		Identity{Login: "alice", Email: "a@example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +125,7 @@ func TestGitHubIdentity(t *testing.T) {
 				}
 			}))
 			defer srv.Close()
-			got, err := githubAPI{}.identity(context.Background(), apiClient{base: srv.URL, token: "tok", client: srv.Client()})
+			got, err := githubAPI{}.identity(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()})
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
 				t.Fatalf("identity = %+v, %v; want %+v, error %v", got, err, tt.want, tt.wantErr)
 			}
