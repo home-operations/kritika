@@ -92,8 +92,7 @@ func TestSupervise(t *testing.T) {
 				if b, ok := tt.exec.(*blockingExecutor); ok {
 					<-b.started
 					// A fresh heartbeat before start must not end the run.
-					time.Sleep(20 * time.Millisecond)
-					synctest.Wait()
+					synctest.Sleep(20 * time.Millisecond)
 					select {
 					case <-done:
 						t.Fatalf("the run ended before anything changed, cause = %v", cause)

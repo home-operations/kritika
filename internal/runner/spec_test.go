@@ -170,15 +170,13 @@ func TestHeartbeatBeatsOnInterval(t *testing.T) {
 		if n := beats.Load(); n != 1 {
 			t.Fatalf("beats = %d at start, want 1 (one immediately)", n)
 		}
-		time.Sleep(3 * interval)
-		synctest.Wait()
+		synctest.Sleep(3 * interval)
 		if n := beats.Load(); n != 4 {
 			t.Fatalf("beats = %d after 3 intervals, want 4", n)
 		}
 		cancel()
 		<-done
-		time.Sleep(3 * interval)
-		synctest.Wait()
+		synctest.Sleep(3 * interval)
 		if n := beats.Load(); n != 4 {
 			t.Fatalf("beats = %d after cancel, want 4: heartbeat kept beating after its context ended", n)
 		}
