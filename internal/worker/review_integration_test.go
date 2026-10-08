@@ -1181,17 +1181,6 @@ func checkReviewRequest(
 ) {
 	t.Helper()
 	mention, waitFollowUp, lastComment := followUpHelpers(ctx, t, st, svc, lf, req, accountID)
-	// Earlier checks close the pull request; a closed one has no head to
-	// review, and the request is ignored as such.
-	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM followups`); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'open' WHERE number = 1`)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
 	manual := func() (all, unfinished int) {
 		t.Helper()
 		if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -1211,7 +1200,43 @@ func checkReviewRequest(
 	}
 	before, _ := manual()
 
-	id := mention("outsider", "@kritika review")
+	// Earlier checks merge the pull request and leave none of its reviews a
+	// merge base. Once a merge commit puts its head in its base branch,
+	// nothing is left to diff, and the request says so instead of queueing.
+	var head string
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM followups`); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE number = 1 AND merged`).Scan(&head)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lf.mu.Lock()
+	base := lf.base
+	lf.base = head
+	lf.mu.Unlock()
+	id := mention("onedr0p", "@kritika review")
+	if status, reason := waitFollowUp(id); status != "answered" || reason != "nothing to review: the head is already in main" {
+		t.Fatalf("review request on a merged pull request with nothing to diff: status = %s (%s)", status, reason)
+	}
+	if _, body := lastComment(); !strings.Contains(body, "Nothing to review: `"+head[:7]+"` is already in `main`") {
+		t.Fatalf("reply to the review request = %q", body)
+	}
+	if after, _ := manual(); after != before {
+		t.Fatalf("manual review jobs %d -> %d; want none queued", before, after)
+	}
+	lf.mu.Lock()
+	lf.base = base
+	lf.mu.Unlock()
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'open', merged = false WHERE number = 1`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	id = mention("outsider", "@kritika review")
 	if status, reason := waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
 		t.Fatalf("outsider's review request: status = %s (%s)", status, reason)
 	}
@@ -2265,8 +2290,8 @@ func checkActions(
 	t.Run("EnqueueReindex reports the sentinels it branches on", func(t *testing.T) {
 		checkEnqueueReindexSentinels(ctx, t, appStore, insertOnly, accountID, repoID)
 	})
-	t.Run("EnqueueRerun on a closed pull request is rejected", func(t *testing.T) {
-		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, accountID, repoID)
+	t.Run("a closed pull request is reviewed only when someone asks", func(t *testing.T) {
+		checkEnqueueRerunClosed(ctx, t, appStore, insertOnly, accountID, repoID, head, lf)
 	})
 }
 
@@ -2499,16 +2524,23 @@ func checkRequestCancelRunning(
 	}
 }
 
-// checkEnqueueRerunClosed asserts EnqueueRerun refuses a pull request that
-// has no open head to re-review. dispatchPR always reopens PR #1 (State:
-// "open"), so this closes it directly with SQL rather than through a
-// dispatch, and must run after every other checkActions subtest that
-// dispatches: a later dispatch would silently reopen the row.
-func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID string) {
+// checkEnqueueRerunClosed asserts what a closed pull request takes: a
+// re-run someone asks for is reviewed, with no commit status and no
+// approval, while a label change queues nothing and an automatic job ends
+// skipped with no runner. dispatchPR always reopens PR #1 (State: "open"),
+// so this closes it directly with SQL rather than through a dispatch, and
+// must run after every other checkActions subtest that dispatches: a later
+// dispatch would silently reopen the row.
+func checkEnqueueRerunClosed(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, head string,
+	lf *localForge,
+) {
 	t.Helper()
+	// The pull request is left at a head the cancel subtests made up; it
+	// is merged at one the repository has, which a review can fetch.
 	err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed' WHERE account_id = $1 AND repository_id = $2 AND number = 1`,
-			accountID, repoID)
+		_, err := tx.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = true, head_sha = $3
+			WHERE account_id = $1 AND repository_id = $2 AND number = 1`, accountID, repoID, head)
 		return err
 	})
 	if err != nil {
@@ -2516,23 +2548,17 @@ func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.
 	}
 
 	err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		_, err := jobs.EnqueueRerun(ctx, tx, insertOnly, accountID, repoID, 1)
+		_, err := jobs.EnqueueLabelChange(ctx, tx, insertOnly, accountID, repoID, 1, "labeled")
 		return err
 	})
 	if !errors.Is(err, jobs.ErrNoHead) {
-		t.Fatalf("EnqueueRerun on a closed pull request = %v, want ErrNoHead", err)
+		t.Fatalf("EnqueueLabelChange on a closed pull request = %v, want ErrNoHead", err)
 	}
 
-	// A job queued while the pull request was open, and run once it is
-	// closed, ends as a skipped review with no runner.
-	var head string
-	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE repository_id = $1 AND number = 1`, repoID).Scan(&head)
-	}); err != nil {
-		t.Fatalf("read head: %v", err)
-	}
+	// An automatic job queued while the pull request was open, and run once
+	// it is closed, ends as a skipped review with no runner.
 	if _, err := insertOnly.Insert(ctx, jobs.ReviewArgs{
-		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: head, Trigger: jobs.TriggerManual, Request: uuid.NewString(),
+		AccountID: accountID, RepositoryID: repoID, Number: 1, HeadSHA: head, Trigger: "synchronize", Request: uuid.NewString(),
 	}, nil); err != nil {
 		t.Fatalf("insert review job: %v", err)
 	}
@@ -2542,16 +2568,119 @@ func checkEnqueueRerunClosed(ctx context.Context, t *testing.T, appStore *store.
 		var runs int
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT status, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
-				FROM reviews r WHERE head_sha = $1 AND error = 'the pull request is closed'`, head).Scan(&status, &runs)
+				FROM reviews r WHERE head_sha = $1 AND error = 'the pull request was merged'`, head).Scan(&status, &runs)
 		})
 		if err == nil {
 			if status != "skipped" || runs != 0 {
-				t.Fatalf("review of a closed pull request: status %s with %d runner runs, want skipped with none", status, runs)
+				t.Fatalf("automatic review of a closed pull request: status %s with %d runner runs, want skipped with none", status, runs)
 			}
-			return
+			break
 		}
 		if !errors.Is(err, pgx.ErrNoRows) || time.Now().After(deadline) {
 			t.Fatalf("no skipped review of the closed pull request: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// A re-run someone asks for is a look back: reviewed in full, with no
+	// commit status set and no approval given.
+	lf.mu.Lock()
+	lf.status = "untouched"
+	approvals, base := len(lf.approvals), lf.base
+	lf.mu.Unlock()
+	if got := rerunClosed(ctx, t, appStore, insertOnly, accountID, repoID, head); got.status != "completed" || got.mergeBase != base {
+		t.Fatalf("look back = %+v, want completed against %s", got, base)
+	}
+	lf.mu.Lock()
+	status, approved := lf.status, len(lf.approvals)-approvals
+	lf.mu.Unlock()
+	if status != "untouched" || approved != 0 {
+		t.Fatalf("the closed pull request's review set status %q and gave %d approvals, want none", status, approved)
+	}
+
+	// Merged with a merge commit, the head is in its base branch and is its
+	// own merge base: the last review's merge base shows the change instead.
+	lf.mu.Lock()
+	lf.base = head
+	lf.mu.Unlock()
+	t.Cleanup(func() {
+		lf.mu.Lock()
+		lf.base = base
+		lf.mu.Unlock()
+	})
+	if got := rerunClosed(ctx, t, appStore, insertOnly, accountID, repoID, head); got.status != "completed" || got.mergeBase != base {
+		t.Fatalf("look back at a head in its base branch = %+v, want completed against %s", got, base)
+	}
+
+	// With no earlier review to say where it branched off, nothing is left.
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE reviews SET merge_base_sha = '' WHERE pull_request_id =
+			(SELECT id FROM pull_requests WHERE repository_id = $1 AND number = 1)`, repoID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := rerunClosed(ctx, t, appStore, insertOnly, accountID, repoID, head)
+	if got.status != "skipped" || got.err != "nothing to review: the head is already in main" || got.runs != 0 {
+		t.Fatalf("look back with no merge base = %+v, want skipped with nothing to review and no runner", got)
+	}
+}
+
+// lookBack is what became of a re-run of a closed pull request.
+type lookBack struct {
+	status, mergeBase, err string
+	runs                   int
+}
+
+// rerunClosed asks for a review of PR #1, closed at head, once the job
+// before it lets it queue, and waits for the review it starts to end.
+func rerunClosed(
+	ctx context.Context, t *testing.T, appStore *store.Store, insertOnly *river.Client[pgx.Tx], accountID, repoID, head string,
+) lookBack {
+	t.Helper()
+	count := func() int {
+		var n int
+		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1`, head).Scan(&n)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := count()
+	var err error
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err = appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+			_, err := jobs.EnqueueRerun(ctx, tx, insertOnly, accountID, repoID, 1)
+			return err
+		})
+		if !errors.Is(err, jobs.ErrRerunQueued) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("EnqueueRerun on a closed pull request: %v", err)
+	}
+	var got lookBack
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		finished := false
+		if count() > before {
+			if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT status, merge_base_sha, error, finished_at IS NOT NULL,
+						(SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
+					FROM reviews r WHERE head_sha = $1 ORDER BY created_at DESC LIMIT 1`, head).
+					Scan(&got.status, &got.mergeBase, &got.err, &finished, &got.runs)
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if finished {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the look back at %s did not end: %+v", head[:7], got)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

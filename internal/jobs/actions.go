@@ -12,8 +12,9 @@ import (
 	"github.com/riverqueue/river/rivertype"
 )
 
-// ErrNoHead is returned by EnqueueRerun when the pull request has no open
-// head to re-review: it is closed, or the number does not exist.
+// ErrNoHead is returned when the pull request has no head to review: the
+// number does not exist, or, for any review but a re-run someone asks
+// for, it is closed.
 var ErrNoHead = errors.New("jobs: pull request has no head to re-review")
 
 // ErrNotCancelable is returned by RequestCancel when the review is not in a
@@ -35,7 +36,9 @@ var ErrRepositoryNotFound = errors.New("jobs: repository not found")
 var ErrReindexQueued = errors.New("jobs: reindex already queued")
 
 // EnqueueRerun re-queues a review of number's current head, the way a human
-// asks kritika to look again. It gives the job a fresh, random Request value
+// asks kritika to look again, a merged or closed pull request's too: a look
+// back at what was missed, which the worker reviews with no commit status
+// and no approval. It gives the job a fresh, random Request value
 // so it inserts even when a review of the same head already completed,
 // bypassing the push-triggered dedup that keys on
 // account+repository+number+head alone; while a review of that head is
@@ -65,8 +68,8 @@ func enqueueFresh(
 ) (int64, error) {
 	var headSHA string
 	err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests
-		WHERE account_id = $1 AND repository_id = $2 AND number = $3 AND state = 'open'`,
-		accountID, repositoryID, number).Scan(&headSHA)
+		WHERE account_id = $1 AND repository_id = $2 AND number = $3 AND (state = 'open' OR $4)`,
+		accountID, repositoryID, number, trigger == TriggerManual).Scan(&headSHA)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNoHead
 	}

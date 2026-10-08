@@ -200,7 +200,8 @@ func (f clientsFunc) For(_ context.Context, _ *configfile.Connection, repo strin
 
 // TestRescueReportsAReviewThatWillNotRunAgain: a review job rescued into
 // discarded or cancelled has its head's pending status replaced; one that
-// is retried, or a job of another kind, does not.
+// is retried, a look back that set no status, or a job of another kind,
+// does not.
 func TestRescueReportsAReviewThatWillNotRunAgain(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "pem")
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")
@@ -229,6 +230,8 @@ apps:
 		{"retried", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 1, MaxAttempts: 8}, head, nil},
 		{"an index job", store.AbandonedJob{ID: 1, Kind: "index", Attempt: 3, MaxAttempts: 3}, head, nil},
 		{"a job that started no review", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8}, store.JobHead{}, nil},
+		{"a look back at a merged pull request", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8},
+			store.JobHead{AccountID: head.AccountID, Repository: head.Repository, HeadSHA: head.HeadSHA, Statusless: true}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

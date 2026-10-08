@@ -133,13 +133,14 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 
 // reportEnded replaces the pending status on the head of a review job
 // that was rescued into a state River does not run again: its dead worker
-// set the status and nothing else would replace it.
+// set the status and nothing else would replace it. A look back at a merged
+// or closed pull request set none, and is left so.
 func (r *Rescuer) reportEnded(ctx context.Context, job store.AbandonedJob) error {
 	if r.Current == nil || r.Forges == nil {
 		return nil
 	}
 	head, ok, err := r.Store.JobHead(ctx, job.ID)
-	if err != nil || !ok {
+	if err != nil || !ok || head.Statusless {
 		return err
 	}
 	file := r.Current.Get()

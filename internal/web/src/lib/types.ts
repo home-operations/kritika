@@ -436,7 +436,7 @@ export interface PullRef {
 
 export interface ReviewInfo extends Review {
   pull: PullRef;
-  // A merged or closed pull request takes no more reviews.
+  // A merged or closed pull request is reviewed only when someone asks.
   pullState: 'open' | 'closed';
   pullMerged: boolean;
   scopeReason: string;

@@ -144,7 +144,7 @@ test.describe('actions', () => {
     await expect(page.getByRole('status')).toContainText('already queued or running');
   });
 
-  test('offer no re-run of a merged or closed pull request, and say why', async ({ page }) => {
+  test('offer a re-run of a merged or closed pull request on its page alone, and say what it does', async ({ page }) => {
     const merged: T.Pull = { ...g.pull, state: 'closed', merged: true };
     const closed: T.Pull = { ...g.pull, number: 8, url: g.pull.url.replace(/\d+$/, '8'), state: 'closed' };
     const open: T.Pull = { ...g.pull, number: 9, url: g.pull.url.replace(/\d+$/, '9') };
@@ -157,17 +157,19 @@ test.describe('actions', () => {
     const rows = page.locator('.pull-rows tr');
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0).getByRole('checkbox')).toHaveCount(0);
-    await expect(rows.nth(0).getByTitle('Merged: it is not reviewed again')).toBeVisible();
-    await expect(rows.nth(1).getByTitle('Closed: it is not reviewed while it is')).toBeVisible();
+    await expect(rows.nth(0).getByTitle('Merged: reviewed again only when asked, from its page')).toBeVisible();
+    await expect(rows.nth(1).getByTitle('Closed: reviewed only when asked, from its page')).toBeVisible();
     await page.getByRole('checkbox', { name: 'Select every pull request shown' }).check();
     await expect(page.getByRole('group', { name: 'Selected pull requests' })).toContainText('1 selected');
 
-    await page.goto(`/#/a/${S}/pulls/alpha/one/7`);
-    await expect(page.locator('.no-more-reviews')).toHaveText('Merged: it is not reviewed again.');
-    await expect(page.getByRole('button', { name: 'Re-run' })).toHaveCount(0);
-    await page.goto(`/#/a/${S}/reviews/rev-1`);
-    await expect(page.locator('.no-more-reviews')).toHaveText('Merged: it is not reviewed again.');
-    await expect(page.getByRole('button', { name: 'Re-run' })).toHaveCount(0);
+    const lookBack = 'Queue a look back at alpha/one#7, merged, at its last head. It sets no commit status and approves nothing.';
+    for (const path of ['pulls/alpha/one/7', 'reviews/rev-1']) {
+      await page.goto(`/#/a/${S}/${path}`);
+      await expect(page.locator('.no-more-reviews')).toHaveText('Merged: reviewed again only when asked.');
+      await page.getByRole('button', { name: 'Re-run' }).click();
+      await expect(page.getByRole('dialog', { name: 'Re-run the review?' })).toContainText(lookBack);
+      await page.keyboard.press('Escape');
+    }
   });
 
   test('offer no reindex of a repository that is off', async ({ page }) => {

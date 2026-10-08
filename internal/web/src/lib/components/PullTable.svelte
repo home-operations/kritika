@@ -71,8 +71,8 @@
                   onchange={(e) => onpick([pullKey(p)], e.currentTarget.checked)}
                 />
               {:else}
-                <span class="muted" title={noMoreReviews(p.merged)}>
-                  <Icon path={mdiLockOutline} size={13} label="Takes no more reviews" />
+                <span class="muted" title={`${noMoreReviews(p.merged)}, from its page`}>
+                  <Icon path={mdiLockOutline} size={13} label="Re-run from its page" />
                 </span>
               {/if}
             </td>

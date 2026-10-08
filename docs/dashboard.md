@@ -70,8 +70,9 @@ by day, model, repository or role.
 ### Pull requests
 
 Each row counts the reviews that completed and what every review of it
-cost. An admin can pick pull requests, by checkbox or with Space on the
-keyboard's row, and re-run them together. A pull request's page says when
+cost. An admin can pick open pull requests, by checkbox or with Space on
+the keyboard's row, and re-run them together; a merged or closed one is
+re-run from its own page. A pull request's page says when
 its review is queued or waiting to run again after a failed attempt, with
 the attempt's error, and the queue names the cause when GitHub did not
 answer.

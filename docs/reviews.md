@@ -11,7 +11,7 @@ and the commands that steer it.
 | A push                                                 | the new head, once `trigger.settle` has passed: only what changed since the last review, unless more files moved than `review.incremental` allows |
 | A label is added or removed                            | the head, only if it has no review yet: the trigger lists kept it out, or its review failed                                                       |
 | A poll finds a push the webhook missed                 | the new head                                                                                                                                      |
-| `@<bot> review`, or a re-run from the dashboard        | the head, even one the admin's trigger lists keep out or that is paused                                                                           |
+| `@<bot> review`, or a re-run from the dashboard        | the head, even one the admin's trigger lists keep out, that is paused, or that is merged or closed                                                |
 
 Drafts, forks and bots' pull requests are reviewed like any other unless a
 `trigger.exclude` condition keeps them out
@@ -19,7 +19,12 @@ Drafts, forks and bots' pull requests are reviewed like any other unless a
 A bot's rebase that leaves its patch unchanged is skipped, unless a
 confidence score is asked for and its last review has none. A pull request
 stops getting automatic reviews after `trigger.limit` of them, or once
-someone comments `@<bot> pause`.
+someone comments `@<bot> pause`, and gets none once it is merged or
+closed. A review asked for then is a look back at its last head, for what
+a review missed: it posts its summary and findings, but sets no commit
+status and approves nothing. Where a merge commit or a fast-forward put
+the head in its base branch, it diffs against the merge base the last
+review used; with none, nothing is left to review, and kritika says so.
 
 ## What it posts
 

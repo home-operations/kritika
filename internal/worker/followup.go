@@ -528,8 +528,8 @@ func (f *followUp) pause(ctx context.Context, slug string, paused bool) (store.F
 // requestReview queues a review of the pull request's head, as the
 // dashboard's re-run does, for someone with write access who asked with
 // "@<bot> review": it is how a pull request from a fork, which is not
-// reviewed on its own, gets one. It replies that it did, and counts
-// against the hourly follow-up limit.
+// reviewed on its own, gets one, and a merged or closed one a look back.
+// It replies that it did, and counts against the hourly follow-up limit.
 func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, error) {
 	limited, err := f.rateLimited(ctx)
 	if err != nil {
@@ -537,6 +537,15 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	}
 	if limited {
 		return store.FollowupLimited, nil
+	}
+	if f.pr.closed != "" {
+		base, err := reviewBase(ctx, f.w.Store, f.client, f.account.ID(), f.pr)
+		if err != nil {
+			return store.FollowupFailed, err
+		}
+		if base == "" {
+			return f.answer(ctx, review.NothingToReviewBody(f.pr.headSHA, f.pr.baseRef), nothingToReview(f.pr))
+		}
 	}
 	queue := river.ClientFromContext[pgx.Tx](ctx)
 	already := false
@@ -548,7 +557,7 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 		return err
 	})
 	if errors.Is(err, jobs.ErrNoHead) {
-		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, "the pull request is closed", 0, "")
+		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, "the pull request has no head to review", 0, "")
 	}
 	if err != nil {
 		return store.FollowupFailed, fmt.Errorf("worker: queue the requested review: %w", err)

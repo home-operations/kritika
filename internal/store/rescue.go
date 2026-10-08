@@ -118,6 +118,10 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 // JobHead is the head a review job reviewed.
 type JobHead struct {
 	AccountID, Repository, HeadSHA string
+	// Statusless says the review began after its pull request was merged
+	// or closed: a look back someone asked for, which sets no commit
+	// status.
+	Statusless bool
 }
 
 // JobHead returns the head the reviews of River job jobID were of, false
@@ -127,9 +131,10 @@ func (s *Store) JobHead(ctx context.Context, jobID int64) (JobHead, bool, error)
 		return JobHead{}, false, errors.New("store: JobHead needs the owner connection")
 	}
 	var h JobHead
-	err := s.owner.QueryRow(ctx, `SELECT r.account_id::text, repo.name, r.head_sha
+	err := s.owner.QueryRow(ctx, `SELECT r.account_id::text, repo.name, r.head_sha,
+			COALESCE(p.state <> 'open' AND r.created_at >= p.closed_at, false)
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
-		WHERE r.river_job_id = $1 ORDER BY r.created_at DESC LIMIT 1`, jobID).Scan(&h.AccountID, &h.Repository, &h.HeadSHA)
+		WHERE r.river_job_id = $1 ORDER BY r.created_at DESC LIMIT 1`, jobID).Scan(&h.AccountID, &h.Repository, &h.HeadSHA, &h.Statusless)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return JobHead{}, false, nil
 	}

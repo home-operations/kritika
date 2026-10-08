@@ -5,7 +5,7 @@
   import { repoRoute, rerunPath, accountApi, threadUrl } from '../links';
   import { isAdmin } from '../session.svelte';
   import ActionButton from '../components/ActionButton.svelte';
-  import { jobCauseText, shortSha, skipText, SEVERITIES } from '../format';
+  import { jobCauseText, rerunBody, shortSha, skipText, SEVERITIES } from '../format';
   import { safeHref } from '../markdown';
   import { clock } from '../time.svelte';
   import type { PullDetail, ReviewDetail } from '../types';
@@ -93,12 +93,13 @@
           </p>
           {#if p.state !== 'open'}
             <NoMoreReviews merged={p.merged} />
-          {:else if isAdmin()}
+          {/if}
+          {#if isAdmin()}
             <div class="page-actions">
               <ActionButton
                 label="Re-run"
                 title="Re-run the review?"
-                body={`Queue a fresh review of ${fullName}#${p.number} at its current head.`}
+                body={rerunBody(`${fullName}#${p.number}`, p.state === 'open', p.merged)}
                 path={rerunPath(slug, { repository: fullName, number: p.number })}
                 done="Re-run queued"
                 ondone={() => res.load()}

@@ -298,4 +298,22 @@ func TestJobHead(t *testing.T) {
 	if _, ok, err := s.JobHead(ctx, f.lastTry); err != nil || ok {
 		t.Fatalf("JobHead of a job with no review = %v, %v; want none", ok, err)
 	}
+	if head.Statusless {
+		t.Fatal("the review of an open pull request is statusless")
+	}
+
+	// A review that began after its pull request was merged is a look back.
+	for _, tt := range []struct {
+		closed time.Duration
+		want   bool
+	}{{-time.Minute, true}, {time.Minute, false}} {
+		if _, err := s.owner.Exec(ctx, `UPDATE pull_requests SET state = 'closed', merged = true,
+				closed_at = (SELECT created_at FROM reviews WHERE id = $1) + $2 * interval '1 second'
+			WHERE id = (SELECT pull_request_id FROM reviews WHERE id = $1)`, f.review, tt.closed.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+		if head, _, err := s.JobHead(ctx, f.silent); err != nil || head.Statusless != tt.want {
+			t.Fatalf("closed %s from the review's start: statusless = %v, %v; want %v", tt.closed, head.Statusless, err, tt.want)
+		}
+	}
 }
