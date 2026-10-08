@@ -25,8 +25,8 @@ import (
 // submitReview is the tool whose input is the review contract.
 const submitReview = "submit_review"
 
-const submitDescription = "Submit the review and end it. The input is the whole review: a summary and the findings, " +
-	"each anchored to a line added or changed on the head side of the diff. Call it exactly once, when you are done."
+const submitDescription = "Submit the review and end it. The input is the whole review: a summary and the findings. " +
+	"Call it exactly once, when you are done."
 
 // SubmitTool is the submit_review tool as the agent is offered it: its
 // input is the review contract, strict when a suggested fix is required,
