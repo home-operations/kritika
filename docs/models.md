@@ -99,8 +99,10 @@ past: a 5xx, a 429, a timeout or a cut connection.
 - The provider's client sends nothing again on its own, so `retries` is
   every attempt a step gets. A step's attempts, the waits between them and
   its [fallback](#fallback) share 12 minutes, so long timeouts end the
-  retries early. The scorer's call has the two minutes a score gets
-  ([confidence](confidence.md#the-score)).
+  retries early; with a fallback on another provider, the review model's
+  attempts get at most half of them, so the fallback always gets a turn.
+  The scorer's call has the two minutes a score gets
+  ([confidence](confidence.md#the-score)), shared the same way.
 
 A routing proxy that picks a model per request is where it earns its keep:
 a step the proxy routed badly is answered on the next attempt. A
@@ -121,18 +123,19 @@ provider with the request, as OpenRouter's server-side fallback is, and
 the provider or the adapter tries it when the review model fails. A
 fallback on another provider is tried by the gateway itself: once a
 review's step has failed on the review model, and its provider's
-`retries` are spent, the same step goes to the fallback, with that
-provider's own `retries`, and the review carries on there. The step's
-usage is recorded under the model that answered. A follow-up's steps fall
-back the same way.
+`retries` or half of the step's 12 minutes are spent, the same step goes
+to the fallback, with that provider's own `retries`, and the review
+carries on there. The step's usage is recorded under the model that
+answered. A follow-up's steps fall back the same way.
 
 `confidence.fallback` does the same for the scorer's call: on the
 confidence model's provider it goes to the provider with the call, on
 another provider it gets the call once the confidence model's attempts
-are spent, and the call is recorded, charged and counted under the model
-that answered. It is set wherever `confidence.model` is, a repository's
-`.kritika.yaml` included, under the same provider rules, and
-`confidence.effort` applies to it too.
+are spent, which get at most half of the time the score has left, and the
+call is recorded, charged and counted under the model that answered. It
+is set wherever `confidence.model` is, a repository's `.kritika.yaml`
+included, under the same provider rules, and `confidence.effort` applies
+to it too.
 
 ## Effort
 

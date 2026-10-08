@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
@@ -42,6 +43,10 @@ type Call struct {
 	// which next tries again, or, for the fallback's first attempt, takes
 	// over. It may be nil.
 	Failed func(err error, on, next Route)
+	// Halve, with a Fallback, bounds the attempts on Route to half the time
+	// ctx has left, so the fallback always gets a turn; unset, they may
+	// take all of it.
+	Halve bool
 }
 
 // Do makes the call: it returns the answer or the last error, how many
@@ -51,7 +56,13 @@ type Call struct {
 // way.
 func (c Call) Do(ctx context.Context, req model.StepRequest) (model.StepResponse, int, Route, error) {
 	req.Model = c.Ref.Model()
-	resp, attempts, err := Step(ctx, c.Stepper, req, c.Provider.Retries, c.failedOn(c.Route))
+	own := ctx
+	if deadline, ok := ctx.Deadline(); ok && c.Halve && c.Fallback != nil {
+		var cancel context.CancelFunc
+		own, cancel = context.WithDeadline(ctx, time.Now().Add(time.Until(deadline)/2))
+		defer cancel()
+	}
+	resp, attempts, err := Step(own, c.Stepper, req, c.Provider.Retries, c.failedOn(c.Route))
 	if err == nil || ctx.Err() != nil || c.Fallback == nil {
 		return resp, attempts, c.Route, err
 	}

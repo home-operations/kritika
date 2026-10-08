@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 
@@ -119,6 +120,40 @@ func TestCallDo(t *testing.T) {
 				if failed[i] != tt.failed[i] {
 					t.Fatalf("failures reported %v, want %v", failed, tt.failed)
 				}
+			}
+		})
+	}
+}
+
+// TestCallHalve: a model that never answers spends half the call's time
+// when a fallback on another provider waits for its turn, and all of it
+// otherwise, when the fallback would fail the same way.
+func TestCallHalve(t *testing.T) {
+	hang := model.StepperFunc(func(ctx context.Context, _ model.StepRequest) (model.StepResponse, error) {
+		<-ctx.Done()
+		return model.StepResponse{}, ctx.Err()
+	})
+	fallback := &stepperFunc{}
+	for _, tt := range []struct {
+		name   string
+		halve  bool
+		served string
+	}{
+		{"halved, the fallback answers", true, "q/small"},
+		{"not halved, the model takes it all", false, "p/big"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 400*time.Millisecond)
+			defer cancel()
+			route := Route{Ref: "p/big", Stepper: hang}
+			c := Call{Route: route, Fallback: &Route{Ref: "q/small", Stepper: fallback}, Halve: tt.halve}
+			start := time.Now()
+			_, _, served, err := c.Do(ctx, model.StepRequest{})
+			if string(served.Ref) != tt.served || (err == nil) != tt.halve {
+				t.Fatalf("Do = %s, %v; want %s", served.Ref, err, tt.served)
+			}
+			if took := time.Since(start); tt.halve && took > 350*time.Millisecond {
+				t.Fatalf("the model held the call %s of its 400ms", took)
 			}
 		})
 	}

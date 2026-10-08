@@ -50,7 +50,9 @@ How the score is reached and used:
   step is, with its provider's [`retries`](models.md#retries), and once
   those are spent `confidence.fallback` takes it, as `review.fallback`
   takes a review's step ([fallback](models.md#fallback)), all within the
-  two minutes a score gets, the wait for a slot on the model included. A
+  two minutes a score gets, the wait for a slot on the model included.
+  With a fallback on another provider, the confidence model's attempts
+  get at most half of what is left, so the fallback always gets a turn. A
   call that still fails leaves the review unscored. The scorer's fallback
   is its own, not `review.fallback`, which is often the review model
   through another provider: the second opinion stays one.
