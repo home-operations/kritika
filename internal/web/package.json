@@ -23,7 +23,7 @@
     "bits-ui": "^2.19.5",
     "marked": "^18.1.0",
     "shiki": "^4.5.0",
-    "simple-icons": "^16.33.0",
+    "simple-icons": "^16.34.0",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "^6.0.3",
