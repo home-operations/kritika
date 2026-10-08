@@ -134,8 +134,7 @@ not been there. Repository review instructions, when present, come from the main
 
 After the diff you may get a context section: whole declarations from the PR head that the diff touches, the
 definitions of identifiers used on changed lines, callers of changed declarations, and code elsewhere in the
-repository that resembles the change. Use it to judge the change; never report findings on context lines, only on
-lines of the pull request's diff.
+repository that resembles the change. Use it to judge the change.
 
 Answer with a summary and findings. ` + summarySpec + `
 Checked is where what you read goes, as the schema says; no comment shows it. Each finding has a severity and a
@@ -418,6 +417,10 @@ const reReviewLead = "\n\nThis is a re-review: the last review set the bar, so r
 	"findings that the lines changed since it show, and none it already made. Nits and anything not worth flagging " +
 	"then are not wanted now. Zero findings is the expected outcome when the new commits are sound.\n\n"
 
+// anchorsAbove reminds a re-review, beside the diff since the last
+// review, which diff its findings anchor to.
+const anchorsAbove = "findings anchor to the pull request's diff, not to this one"
+
 // noteRoom is kept free for the note on delta files or prior findings
 // that did not fit.
 const noteRoom = 128
@@ -440,8 +443,8 @@ func incrementalSections(inc *IncrementalInput, room int) string {
 	room -= len(prior)
 
 	var b strings.Builder
-	header := fmt.Sprintf(reReviewLead+"Changed since the last review (%s to head, unified; the diff above still decides "+
-		"which lines a finding may point at):\n\n", ShortSHA(inc.PriorHeadSHA))
+	header := fmt.Sprintf(reReviewLead+"Changed since the last review (%s to head, unified; "+anchorsAbove+"):\n\n",
+		ShortSHA(inc.PriorHeadSHA))
 	delta, omitted := inc.DeltaDiff, []string(nil)
 	if len(header)+len(delta) > room {
 		delta, omitted = FitDiff(inc.DeltaDiff, room-len(header)-noteRoom)
@@ -511,8 +514,7 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string) {
 		b.WriteString(" The repositories fetch_repo fetched then are no longer on disk: fetch again any you need to read.")
 	}
 	b.WriteString(reReviewLead)
-	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; findings still point only at lines the pull request's "+
-		"diff shows):\n\n", prior, head)
+	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(closing)-512)
 	b.WriteString(delta)
