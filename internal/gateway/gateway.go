@@ -88,6 +88,19 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// stepPart is the part of a split review a step is for, as its runner
+// names it in model.PartHeader: 0 when it names none.
+func stepPart(h string) (int, error) {
+	if h == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(h, 10, 32)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%s %q is not a part number", model.PartHeader, h)
+	}
+	return int(n), nil
+}
+
 // refuse answers a step with an error. Only a 500, the gateway's own
 // trouble reaching its database, is worth the runner's retry; every other
 // refusal is final: the provider was already retried, the budget is spent,
@@ -193,6 +206,11 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	part, err := stepPart(r.Header.Get(model.PartHeader))
+	if err != nil {
+		refuse(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		refuse(w, http.StatusRequestEntityTooLarge, "invalid_request", err.Error())
@@ -227,6 +245,10 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, cmp.Or(c.grant.Session, c.grant.RunID), model.Effort(c.grant.Effort)
 	if id := c.grant.FollowupCommentID; id != 0 {
 		req.Session = "followup-" + strconv.FormatInt(id, 10)
+	}
+	if part > 0 {
+		// Each part of a split review is a conversation of its own.
+		req.Session += "/" + strconv.Itoa(part)
 	}
 	fb := configfile.ModelRef(c.grant.Fallback)
 	if fb != "" && fb.Provider() == ref.Provider() {
@@ -278,7 +300,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// is taken against this one; the recorder bounds how long it waits.
 	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
-		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Duration: took,
+		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part, Duration: took,
 	}, req, resp, err, adapter.Mask(c.file, provider, c.token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;

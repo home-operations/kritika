@@ -740,6 +740,7 @@ export interface Turn {
   id: string;
   kind: TranscriptKind;
   step: number;
+  part: number;
   model: string;
   upstream: string;
   system: string | null;

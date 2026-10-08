@@ -192,7 +192,7 @@ func (e *apiEnv) seedModelCalls(s seeded, slug string) {
 		}
 		req := model.StepRequest{System: "sys of " + slug, Messages: msgs, Tools: tools}
 		err := e.st.WithAccount(ctx, s.accountID, func(tx pgx.Tx) error {
-			prev, n, err := store.AgentState(ctx, tx, s.runID)
+			prev, n, err := store.AgentState(ctx, tx, s.runID, 0)
 			if err != nil {
 				return err
 			}

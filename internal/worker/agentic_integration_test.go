@@ -796,6 +796,45 @@ func (h *agenticHarness) checkStepSession(t *testing.T, reviewID, runID, reposit
 			t.Fatalf("the provider was told session %q at effort %q, want %q at the grant's xhigh", session, effort, want)
 		}
 	}
+	// A part of a split review is a conversation of its own, and its steps
+	// are recorded as the part's: none carries on the conversation its
+	// grant names, and the run's bytes count on.
+	var before int64
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT coalesce(max(run_bytes), 0) FROM model_calls WHERE runner_run_id = $1`, runID).Scan(&before)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
+		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: repositoryID, Model: "opencode/agent-model", Budget: 150,
+		Continues: runID,
+	}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := model.NewOpenAI(model.OpenAIConfig{BaseURL: h.gatewayURL + "/v1", APIKey: token, ReportsModel: true, Part: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Step(h.ctx, model.StepRequest{Model: gateway.ModelName, Messages: []model.Message{{Role: model.RoleUser, Text: "part two"}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.sm.mu.Lock()
+	session := h.sm.sessions[len(h.sm.sessions)-1]
+	h.sm.mu.Unlock()
+	var part int
+	var runBytes int64
+	var carried *string
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT part, run_bytes, carried_from::text FROM model_calls WHERE runner_run_id = $1
+			ORDER BY created_at DESC, id DESC LIMIT 1`, runID).Scan(&part, &runBytes, &carried)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if session != runID+"/2" || part != 2 || carried != nil || runBytes <= before {
+		t.Fatalf("part 2's step went as session %q, part %d, carried from %v, run bytes %d after %d; want %q, 2, none, and more",
+			session, part, carried, runBytes, before, runID+"/2")
+	}
 }
 
 func (h *agenticHarness) checkStepMasked(t *testing.T, runID string) {

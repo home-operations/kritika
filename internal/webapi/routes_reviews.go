@@ -259,7 +259,7 @@ func transcriptOf(c transcript.Conversation) Transcript {
 	out := Transcript{System: c.System, Tools: toolDefs(c.Tools), Turns: make([]Turn, len(c.Turns))}
 	for i, t := range c.Turns {
 		turn := Turn{
-			Index: i, ID: t.ID, Kind: t.Kind, Step: t.Step, Model: t.Model, Upstream: t.Upstream, System: t.System,
+			Index: i, ID: t.ID, Kind: t.Kind, Step: t.Step, Part: t.Part, Model: t.Model, Upstream: t.Upstream, System: t.System,
 			Reset: t.Reset, MessagesFrom: t.MessagesFrom, Messages: make([]Message, len(t.Messages)),
 			Response: Response{Text: t.Response.Text, ToolCalls: toolCalls(t.Response.ToolCalls), Stop: t.Response.Stop},
 			Usage:    usageOf(t.Usage), CostUSD: t.CostUSD, DurationMs: t.Duration.Milliseconds(), Error: t.Error,

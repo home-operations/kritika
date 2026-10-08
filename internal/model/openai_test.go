@@ -565,3 +565,24 @@ func TestRequestTimeoutOverrides(t *testing.T) {
 		t.Fatalf("err = %v after %s, want a transient timeout well before StepTimeout", err, time.Since(start))
 	}
 }
+
+// TestOpenAIPartHeader: a client made for a part of a split review names it
+// on every request; one made for none sends no header.
+func TestOpenAIPartHeader(t *testing.T) {
+	for _, tt := range []struct {
+		part int
+		want string
+	}{{0, ""}, {3, "3"}} {
+		srv, got := fakeProvider(t, http.StatusOK, chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""))
+		c, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "k", Part: tt.part})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}}); err != nil {
+			t.Fatal(err)
+		}
+		if h := got.header.Get(PartHeader); h != tt.want {
+			t.Fatalf("part %d: %s = %q, want %q", tt.part, PartHeader, h, tt.want)
+		}
+	}
+}
