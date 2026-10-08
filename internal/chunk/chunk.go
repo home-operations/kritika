@@ -416,8 +416,8 @@ func Windows(src []byte, size, overlap int) []Decl {
 	return out
 }
 
-// Ignored reports whether path matches any of the doublestar globs.
-func Ignored(globs []string, path string) bool {
+// Matches reports whether path matches any of the doublestar globs.
+func Matches(globs []string, path string) bool {
 	for _, g := range globs {
 		if ok, _ := doublestar.Match(g, path); ok {
 			return true

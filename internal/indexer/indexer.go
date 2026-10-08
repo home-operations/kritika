@@ -92,7 +92,7 @@ type builder struct {
 	stats  Stats
 }
 
-func (b *builder) ignored(path string) bool { return chunk.Ignored(b.ignore, path) }
+func (b *builder) ignored(path string) bool { return chunk.Matches(b.ignore, path) }
 
 func (b *builder) walkAll(ctx context.Context, head *object.Tree) error {
 	iter := head.Files()

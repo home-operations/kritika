@@ -31,7 +31,7 @@ func SplitDiff(diff string, ignore []string, size, maxParts int) [][]string {
 	var files []fileSection
 	total := 0
 	for _, s := range splitFiles(diff) {
-		if !chunk.Ignored(ignore, s.path) {
+		if !chunk.Matches(ignore, s.path) {
 			files = append(files, s)
 			total += len(s.text)
 		}

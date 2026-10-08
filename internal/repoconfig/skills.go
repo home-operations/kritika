@@ -86,7 +86,7 @@ func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, c
 		if slices.Contains(off, s.Name) {
 			continue
 		}
-		if len(sc.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Ignored(sc.Paths, c) }) {
+		if len(sc.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(sc.Paths, c) }) {
 			continue
 		}
 		if size := len(s.Name) + len(s.Description); size <= room {

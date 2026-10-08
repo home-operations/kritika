@@ -34,7 +34,7 @@ func NewTree(t *object.Tree, ignore []string) *Tree {
 }
 
 // ignored reports whether p matches one of the tree's ignore globs.
-func (t *Tree) ignored(p string) bool { return chunk.Ignored(t.ignore, p) }
+func (t *Tree) ignored(p string) bool { return chunk.Matches(t.ignore, p) }
 
 // file returns the tree's file at p, with p cleaned and validated first.
 // The returned path is the cleaned form of p.
