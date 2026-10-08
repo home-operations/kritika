@@ -309,8 +309,8 @@ func TestKubeRunReportsFailure(t *testing.T) {
 	j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded"}}
 	_, _ = client.BatchV1().Jobs("kritika").UpdateStatus(ctx, j, metav1.UpdateOptions{})
 	res := <-done
-	if res.Err == nil {
-		t.Fatal("a failed job must produce an error")
+	if res.Err == nil || res.NeverStarted {
+		t.Fatalf("res = %+v, want the error of a job that ran and failed", res)
 	}
 }
 
@@ -697,7 +697,7 @@ func TestKubeRunGivesUpAPodThatNeverStarts(t *testing.T) {
 	}
 	select {
 	case res := <-done:
-		if res.Err == nil || !strings.Contains(res.Err.Error(), "never started: ImagePullBackOff: no such tag") || res.TerminationReason == "" {
+		if res.Err == nil || !strings.Contains(res.Err.Error(), "never started: ImagePullBackOff: no such tag") || res.TerminationReason == "" || !res.NeverStarted {
 			t.Fatalf("res = %+v, want a run that never started", res)
 		}
 	case <-time.After(5 * time.Second):

@@ -42,7 +42,11 @@ type Result struct {
 	ExitCode                   int
 	TerminationReason          string
 	DeadlineExceeded           bool
-	LogTail                    string
+	// NeverStarted is set when the run was given up on before its
+	// container ran. StartedAt is no sign either way: the kubelet sets a
+	// pod's start time before it pulls the pod's images.
+	NeverStarted bool
+	LogTail      string
 	// Err is set when the run did not complete successfully.
 	Err error
 }

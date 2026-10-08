@@ -487,6 +487,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
+	t.Run("a runner whose pod never started is retried", func(t *testing.T) { checkRunnerNeverStarted(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("a review model on no configured provider fails before its runner", func(t *testing.T) { checkAgentProviderMissing(t, h) })
 	t.Run("the gateway serves a run token's steps within its budget", func(t *testing.T) { checkGatewayEndpoint(t, h) })
@@ -510,7 +511,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 19 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 20 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1181,6 +1182,10 @@ type hookExecutor struct {
 	// returns as soon as ctx ends, and the runner only sees the
 	// cancellation a moment later, as a terminating pod would.
 	detach bool
+	// unstarted, when set, ends the next run the way a pod that never
+	// started does: with the error, the kubelet's start time and no
+	// runner run.
+	unstarted error
 	// tools are the names of the tools the last run was handed.
 	tools []string
 	// st, when set, reads the last run's grant as it starts: its agent
@@ -1193,8 +1198,8 @@ type hookExecutor struct {
 
 func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
 	e.mu.Lock()
-	hold, detach := e.hold, e.detach
-	e.hold, e.detach = 0, false
+	hold, detach, unstarted := e.hold, e.detach, e.unstarted
+	e.hold, e.detach, e.unstarted = 0, false, nil
 	e.tools = nil
 	for _, tool := range spec.Tools {
 		e.tools = append(e.tools, tool.Name)
@@ -1206,6 +1211,11 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 		}
 	}
 	e.mu.Unlock()
+	if unstarted != nil {
+		return executor.Result{
+			JobName: "kritika-run-unstarted", StartedAt: time.Now(), TerminationReason: "ErrImagePull", NeverStarted: true, Err: unstarted,
+		}
+	}
 	if detach {
 		return e.runDetached(ctx, spec)
 	}
@@ -1588,6 +1598,44 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 				t.Fatalf("review %s (%q), run %s, err %v; want review %s (%q...), run failed", status, errText, phase, err, tt.status, tt.errPrefix)
 			}
 		})
+	}
+}
+
+// checkRunnerNeverStarted has the runner's pod fail to start once, as an
+// image that cannot be pulled does: the review ends superseded and the
+// job is retried, and the retry's review completes.
+func checkRunnerNeverStarted(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc u() {}\n")
+	h.exec.mu.Lock()
+	h.exec.unstarted = errors.New("executor: job kritika-run-unstarted never started: ErrImagePull")
+	h.exec.mu.Unlock()
+	h.dispatch(t, next)
+	var statuses []string
+	waitFor(t, 30*time.Second, "the retried review to complete", func() bool {
+		statuses = nil
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			rows, err := tx.Query(h.ctx, `SELECT status || ': ' || coalesce(error, '') FROM reviews WHERE head_sha = $1
+				AND finished_at IS NOT NULL ORDER BY created_at`, next)
+			if err != nil {
+				return err
+			}
+			statuses, err = pgx.CollectRows(rows, pgx.RowTo[string])
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(statuses) == 2
+	})
+	if statuses[0] != "superseded: its runner did not start; retried" || statuses[1] != "completed: " {
+		t.Fatalf("reviews of %s = %q", next[:7], statuses)
+	}
+	h.lf.mu.Lock()
+	forgeStatus := h.lf.status
+	h.lf.mu.Unlock()
+	if !strings.HasPrefix(forgeStatus, "success: ") && !strings.HasPrefix(forgeStatus, "error: kritika: review found") {
+		t.Fatalf("forge status = %q after the retry completed", forgeStatus)
 	}
 }
 

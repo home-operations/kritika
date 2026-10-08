@@ -173,7 +173,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		if time.Since(stuckSince) >= cmp.Or(k.StartGrace, startGrace) {
 			k.deleteJob(ctx, created.Name)
 			k.finish(ctx, &res, spec.Secrets)
-			res.TerminationReason = stuck
+			res.TerminationReason, res.NeverStarted = stuck, true
 			res.Err = fmt.Errorf("executor: job %s never started: %s", created.Name, stuck)
 			return res
 		}
