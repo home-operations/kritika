@@ -163,8 +163,34 @@ func carriedTurn(c *Conversation, submit, text string) model.Message {
 }
 
 // nudgeText is appended once, as a user message, after the first turn with
-// no tool call, before a second such turn ends the Run.
+// no tool call, before a second such turn ends the Run. A turn the output
+// cap cut off before any tool call is answered with cutOffText instead,
+// while cutOffRetries allows.
 func (r Run) nudgeText() string { return "call " + r.Submit.Name }
+
+// cutOffText answers a step the output cap cut off before it called a tool,
+// whose reasoning was spent without an answer: the model goes on, where the
+// nudge would end its review on a step it had not finished. limit is the
+// cap.
+func (r Run) cutOffText(limit int64) string {
+	return fmt.Sprintf("Your last step reached the %d output tokens a step may produce before it called a tool. "+
+		"Go on with your next tool call, or call %s when you are done.", limit, r.Submit.Name)
+}
+
+// cutOffRetries is how many steps in a row the output cap may cut off
+// before any tool call and the model still be told to go on. One more is
+// taken as a turn with no tool call: a model that cannot fit a step into the
+// cap is better asked for what it has.
+const cutOffRetries = 2
+
+// cutOffStreak is how many steps in a row, resp's last, the output cap has
+// cut off before any tool call, given n before resp's.
+func cutOffStreak(n int, resp model.StepResponse) int {
+	if len(resp.ToolCalls) == 0 && resp.Stop == model.StopMaxTokens {
+		return n + 1
+	}
+	return 0
+}
 
 // submitNowText ends the last user message of a step the model must submit
 // on. It is told rather than forced through tool_choice, which the newest
@@ -224,6 +250,9 @@ func (r Run) Do(ctx context.Context) Result {
 
 	result := Result{ToolCalls: map[string]int{}}
 	nudged := false
+	// cutOffs counts the steps in a row, up to the last, that the output
+	// cap cut off before any tool call.
+	cutOffs := 0
 	// forcedSteps counts the steps the model was told to submit on; the
 	// Run ends when the retries after the first are spent.
 	forcedSteps := 0
@@ -289,6 +318,7 @@ func (r Run) Do(ctx context.Context) Result {
 		result.CostUSD += resp.CostUSD
 
 		event := StepEvent{Index: step, Usage: resp.Usage}
+		cutOffs = cutOffStreak(cutOffs, resp)
 
 		if len(resp.ToolCalls) == 0 {
 			event.Duration = time.Since(start)
@@ -303,6 +333,11 @@ func (r Run) Do(ctx context.Context) Result {
 				// message the loop's head completes.
 				messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
 				messages = append(messages, model.Message{Role: model.RoleUser})
+				continue
+			}
+			if 0 < cutOffs && cutOffs <= cutOffRetries {
+				messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
+				messages = append(messages, model.Message{Role: model.RoleUser, Text: r.cutOffText(limits.MaxOutputTokensPerStep)})
 				continue
 			}
 			if nudged {
