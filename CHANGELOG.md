@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.44](https://github.com/home-operations/kritika/compare/0.0.43...0.0.44) (2026-10-08)
+
+
+### Features
+
+* **review:** review a merged or closed pull request someone asks for ([#660](https://github.com/home-operations/kritika/issues/660)) ([c0f5722](https://github.com/home-operations/kritika/commit/c0f57223cd32cf1b82666da87b3cd5fe9501f0fa))
+
+
+### Bug Fixes
+
+* **review:** drop the empty paths a fetch_repo call gives ([#658](https://github.com/home-operations/kritika/issues/658)) ([83e17fd](https://github.com/home-operations/kritika/commit/83e17fd7614319d192decae1a40b4d98f535aa14))
+
 ## [0.0.43](https://github.com/home-operations/kritika/compare/0.0.42...0.0.43) (2026-10-07)
 
 
