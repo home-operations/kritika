@@ -106,8 +106,12 @@ type Page struct {
 	Limit int
 }
 
-// ErrPageLimit is a page whose limit is not positive.
-var ErrPageLimit = errors.New("store: page limit must be positive")
+// ErrPageLimit is a page whose limit is not positive, and ErrCursor a
+// cursor whose id is not a row id of the list it pages.
+var (
+	ErrPageLimit = errors.New("store: page limit must be positive")
+	ErrCursor    = errors.New("store: cursor id is not a row id")
+)
 
 // check rejects a page with no room or a cursor whose id is not a row id.
 func (p Page) check() error {
@@ -115,7 +119,7 @@ func (p Page) check() error {
 		return ErrPageLimit
 	}
 	if !p.After.First() && uuid.Validate(p.After.ID) != nil {
-		return ErrFilter
+		return ErrCursor
 	}
 	return nil
 }

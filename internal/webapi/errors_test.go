@@ -32,6 +32,8 @@ func TestWriteError(t *testing.T) {
 			wantStatus: http.StatusBadRequest, wantCode: CodeBadRequest, wantMsg: "invalid filter"},
 		{name: "bad page limit", err: store.ErrPageLimit,
 			wantStatus: http.StatusBadRequest, wantCode: CodeBadRequest, wantMsg: "invalid filter"},
+		{name: "bad cursor id", err: fmt.Errorf("x: %w", store.ErrCursor),
+			wantStatus: http.StatusBadRequest, wantCode: CodeInvalidCursor, wantMsg: "cursor is not valid"},
 		{name: "client went away", err: context.Canceled, canceled: true},
 		{name: "unknown error", err: errors.New("pg: connection reset"),
 			wantStatus: http.StatusInternalServerError, wantCode: CodeInternal, wantMsg: "internal error"},
