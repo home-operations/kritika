@@ -252,6 +252,58 @@ func TestDiffEdges(t *testing.T) {
 	}
 }
 
+// TestOverlayReadsARenamedFilesBase: the lines a diff removed from a
+// renamed file are read from the base tree under the old name, so the
+// identifiers they carry are looked up like any removed line's.
+func TestOverlayReadsARenamedFilesBase(t *testing.T) {
+	fs := memfs.New()
+	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gittest.Unsigned(t, r)
+	wt, _ := r.Worktree()
+	write := func(name, content string) {
+		f, _ := fs.Create(name)
+		_, _ = f.Write([]byte(content))
+		_ = f.Close()
+		_, _ = wt.Add(name)
+	}
+	sig := &object.Signature{Name: "t", Email: "t@t", When: time.Now()}
+	// Enough unchanged lines for the rename to be detected.
+	filler := "\n// line one of the file\n// line two of the file\n// line three of the file\n// line four of the file\n" +
+		"// line five of the file\n// line six of the file\n// line seven of the file\n// line eight of the file\n"
+	write("old.go", "package demo\n"+filler+"\nfunc Gone() { helperBefore() }\n")
+	write("helpers.go", "package demo\n\nfunc helperBefore() {}\n\nfunc helperAfter() {}\n")
+	baseHash, _ := wt.Commit("base", &git.CommitOptions{Author: sig})
+	_, _ = wt.Remove("old.go")
+	write("moved.go", "package demo\n"+filler+"\nfunc Gone() { helperAfter() }\n")
+	headHash, _ := wt.Commit("head", &git.CommitOptions{Author: sig})
+	bc, _ := r.CommitObject(baseHash)
+	hc, _ := r.CommitObject(headHash)
+	base, _ := bc.Tree()
+	head, _ := hc.Tree()
+	patch, _ := bc.Patch(hc)
+	diff := patch.String()
+	if renames := Renames(diff); renames["old.go"] != "moved.go" {
+		t.Fatalf("no rename detected in:\n%s", diff)
+	}
+	chunks, _, err := Build(t.Context(), Input{Head: head, Base: base, Diff: diff, Changed: []string{"moved.go"}}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defined []string
+	for _, c := range chunks {
+		if c.Stage == StageDefinition {
+			defined = append(defined, c.Symbol)
+		}
+	}
+	slices.Sort(defined)
+	if want := []string{"helperAfter", "helperBefore"}; !slices.Equal(defined, want) {
+		t.Fatalf("definitions = %v, want %v: the removed line's helper comes from the base side under the old name", defined, want)
+	}
+}
+
 // TestBuildStopsAtTheScanBudget: a head tree over the scan budget truncates
 // the scan rather than failing the pack.
 func TestBuildStopsAtTheScanBudget(t *testing.T) {

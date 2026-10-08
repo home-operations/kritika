@@ -184,6 +184,12 @@ func (b *builder) overlay(ctx context.Context) error {
 	b.overlayDecls = map[string]bool{}
 	idCount := map[string]int{}
 	seenSymbol := map[string]bool{}
+	// A renamed file's base side is under its old name, as are the lines
+	// the diff removed from it.
+	basePath := map[string]string{}
+	for old, renamed := range Renames(b.in.Diff) {
+		basePath[renamed] = old
+	}
 	for _, path := range b.in.Changed {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -202,9 +208,10 @@ func (b *builder) overlay(ctx context.Context) error {
 		}
 		// The declarations are all the rest of the pass needs.
 		f.Close()
-		if base := b.read(b.in.Base, path); base != nil {
-			bf := b.parser.Parse(path, base)
-			for _, id := range bf.Identifiers(d.removed[path]) {
+		old := cmp.Or(basePath[path], path)
+		if base := b.read(b.in.Base, old); base != nil {
+			bf := b.parser.Parse(old, base)
+			for _, id := range bf.Identifiers(d.removed[old]) {
 				idCount[id]++
 			}
 			bf.Close()
