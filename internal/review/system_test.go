@@ -208,7 +208,7 @@ func TestSystemRules(t *testing.T) {
 			"A finding you would have to hedge (may, could, appears to)",
 			"what is worth stating is worth a finding",
 			"It does not say what the diff cannot show",
-			"give\nreplacement: those lines exactly as they should be committed",
+			"replacement when\nit changes the lines the finding points at", "as the schema defines them",
 			"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
 			"Every finding names a concrete change",
 			"what a\ntool or command returns, and what earlier reviews wrote",
