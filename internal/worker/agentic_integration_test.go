@@ -133,6 +133,11 @@ type scriptedModel struct {
 	sessions []string
 	// efforts are each request's reasoning effort, "" for none.
 	efforts []string
+	// failMerges is how many split reviews' summary calls still fail with
+	// a 503 before one is answered.
+	failMerges int
+	// merges are the models the summary calls asked for.
+	merges []string
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -141,17 +146,30 @@ func (m *scriptedModel) reset(script modelScript) {
 	m.script, m.step = script, 0
 }
 
+// failMerge records a summary call that asked for asked and reports
+// whether it fails; m.mu is held.
+func (m *scriptedModel) failMerge(asked string) bool {
+	m.merges = append(m.merges, asked)
+	if m.failMerges == 0 {
+		return false
+	}
+	m.failMerges--
+	return true
+}
+
 func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Messages []struct {
 			Role    string `json:"role"`
 			Content any    `json:"content"`
 		} `json:"messages"`
+		Model               string `json:"model"`
 		MaxCompletionTokens int64  `json:"max_completion_tokens"`
 		ReasoningEffort     string `json:"reasoning_effort"`
 	}
 	body, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(body, &req)
+	merging := len(req.Messages) > 0 && strings.Contains(fmt.Sprint(req.Messages[0].Content), "writing the summary of a review that was split")
 	m.mu.Lock()
 	m.bodies = append(m.bodies, body)
 	m.requests++
@@ -169,7 +187,15 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			m.toolResults = append(m.toolResults, fmt.Sprint(msg.Content))
 		}
 	}
+	fail := merging && m.failMerge(req.Model)
 	m.mu.Unlock()
+
+	if fail {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"overloaded","type":"server_error"}}`))
+		return
+	}
 
 	if script == scriptStall && step > 1 {
 		m.mu.Lock()
@@ -213,7 +239,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		finish = "tool_calls"
 		message = tool("submit_review", `{"summary":{"take":"Reviews its part.","praise":[]},"findings":[]}`)
 		switch {
-		case len(req.Messages) > 0 && strings.Contains(fmt.Sprint(req.Messages[0].Content), "writing the summary of a review that was split"):
+		case merging:
 			message = tool("summary", `{"headline":"Adds two directories","take":"The whole change, merged.","praise":[]}`)
 		case script == scriptPartFails && len(req.Messages) > 1 && strings.Contains(fmt.Sprint(req.Messages[1].Content), "this is part 2"):
 			finish, message = "stop", `{"role":"assistant","content":"Still looking."}`
@@ -243,9 +269,9 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `{"id":"x","object":"chat.completion","created":1,"model":"agent-model",`+
+	_, _ = fmt.Fprintf(w, `{"id":"x","object":"chat.completion","created":1,"model":%q,`+
 		`"choices":[{"index":0,"message":%s,"finish_reason":%q}],`+
-		`"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110,"cost":0.01}}`, message, finish)
+		`"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110,"cost":0.01}}`, cmp.Or(req.Model, "agent-model"), message, finish)
 }
 
 type agentRunRow struct {
@@ -484,7 +510,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 18 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 19 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1783,14 +1809,33 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 // checkAgentSplitsALargeReview reviews a change of two directories of
 // about 40 KiB each, which the forge reports large enough to split: each
 // part's agent submits under a part of its own, and the review is
-// published as one, its summary written from theirs by one more call. A
-// push of two more such directories is then reviewed in parts too, the
-// second of which never submits: the review is published with the first
-// part's summary and the second's files named, and is incomplete for the
-// commit status.
+// published as one, its summary written from theirs by one more call,
+// which the review model fails twice, its provider's one retry included,
+// and review.fallback on the other provider answers. Two pushes of two
+// more such directories are then reviewed in parts too: on the first, the
+// fallback fails the call as well, and the summary joins the parts' own;
+// on the second, the second part never submits, and the review is
+// published with the first part's summary and the second's files named,
+// and is incomplete for the commit status.
 func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
+	config := h.config
+	for _, r := range [][2]string{
+		{"apiKey: { env: TEST_SECRET }\n  opencode:", "apiKey: { env: TEST_SECRET }\n    retries: 1\n  opencode:"},
+		{"model: gateway/agent-model\n", "model: gateway/agent-model\n  fallback: opencode/merge-model\n"},
+	} {
+		if !strings.Contains(config, r[0]) {
+			t.Fatalf("the harness configuration has no %q", r[0])
+		}
+		config = strings.Replace(config, r[0], r[1], 1)
+	}
+	routed, err := configfiletest.Parse(t, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.review.Current.Set(routed)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
 	body := strings.Repeat("// "+strings.Repeat("x", 60)+"\n", 650)
-	for _, dir := range []string{"a", "b", "c", "d"} {
+	for _, dir := range []string{"a", "b", "c", "d", "e", "f"} {
 		if err := os.MkdirAll(filepath.Join(h.dir, "split", dir), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1801,14 +1846,29 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 	for i, round := range []struct {
 		script     modelScript
 		files      [2]string
+		failMerges int
+		// asked are the models the summary calls asked for, and merged
+		// whether one of them wrote the summary.
+		asked      []string
+		merged     bool
 		wantStatus string
 		wantNote   string
 	}{
-		{script: scriptParts, files: [2]string{"split/a/one.go", "split/b/two.go"}, wantStatus: "success"},
-		{script: scriptPartFails, files: [2]string{"split/c/three.go", "split/d/four.go"}, wantStatus: "error: kritika: review incomplete",
-			wantNote: "Part 2 of 2 ended before it submitted, so its files went unreviewed: split/d/four.go"},
+		{
+			script: scriptParts, files: [2]string{"split/a/one.go", "split/b/two.go"}, failMerges: 2,
+			asked: []string{"agent-model", "agent-model", "merge-model"}, merged: true, wantStatus: "success",
+		},
+		{
+			script: scriptParts, files: [2]string{"split/c/three.go", "split/d/four.go"}, failMerges: 3,
+			asked: []string{"agent-model", "agent-model", "merge-model"}, wantStatus: "success", wantNote: "writing one from them failed",
+		},
+		{script: scriptPartFails, files: [2]string{"split/e/five.go", "split/f/six.go"}, wantStatus: "error: kritika: review incomplete",
+			wantNote: "Part 2 of 2 ended before it submitted, so its files went unreviewed: split/f/six.go"},
 	} {
 		h.sm.reset(round.script)
+		h.sm.mu.Lock()
+		h.sm.failMerges, h.sm.merges = round.failMerges, nil
+		h.sm.mu.Unlock()
 		if i > 0 {
 			h.commit(t, round.files[0], "package c\n"+body)
 		}
@@ -1822,6 +1882,7 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		var parts, indexes []int
 		var partial bool
 		var merges int
+		var mergedBy string
 		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			if err := tx.QueryRow(h.ctx, `SELECT array(SELECT p->>'stop' FROM jsonb_array_elements(a.parts) p),
 				array(SELECT (s->>'index')::int FROM jsonb_array_elements(a.timeline) s), v.partial
@@ -1829,8 +1890,8 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 				WHERE r.review_id = $1`, reviewID).Scan(&stops, &indexes, &partial); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(h.ctx, `SELECT count(*) FROM model_calls WHERE review_id = $1 AND kind = 'merge'`, reviewID).
-				Scan(&merges); err != nil {
+			if err := tx.QueryRow(h.ctx, `SELECT count(*), coalesce(string_agg(model, ','), '') FROM model_calls
+				WHERE review_id = $1 AND kind = 'merge'`, reviewID).Scan(&merges, &mergedBy); err != nil {
 				return err
 			}
 			return tx.QueryRow(h.ctx, `SELECT array(SELECT DISTINCT part FROM model_calls WHERE review_id = $1 AND kind = 'agent_step'
@@ -1842,6 +1903,9 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		h.lf.mu.Lock()
 		sticky, forgeStatus := h.lf.comments[commentBase+1], h.lf.status
 		h.lf.mu.Unlock()
+		h.sm.mu.Lock()
+		asked := h.sm.merges
+		h.sm.mu.Unlock()
 		// The parts' steps are numbered across the run, the second part's
 		// two answers in prose too, and only the review that left a part's
 		// files unreviewed is partial; its one finished part's summary needs
@@ -1853,11 +1917,16 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		if !slices.Equal(indexes, wantIndexes) || partial != (round.script == scriptPartFails) {
 			t.Fatalf("round %d: timeline indexes %v, partial %v", i+1, indexes, partial)
 		}
-		if merged := strings.Contains(sticky, "The whole change, merged."); merges != wantMerges || merged != (wantMerges == 1) {
-			t.Fatalf("round %d: %d merge calls, merged take shown %v; want %d", i+1, merges, merged, wantMerges)
+		if merged := strings.Contains(sticky, "The whole change, merged."); merges != wantMerges || merged != round.merged {
+			t.Fatalf("round %d: %d merge calls, merged take shown %v; want %d, %v", i+1, merges, merged, wantMerges, round.merged)
+		}
+		// The summary call is recorded once, under the model it last went
+		// to: the fallback, whether it answered or failed as well.
+		if !slices.Equal(asked, round.asked) || (wantMerges == 1) != (mergedBy == "merge-model") {
+			t.Fatalf("round %d: summary calls asked %q, recorded under %q; want %q, the fallback's", i+1, asked, mergedBy, round.asked)
 		}
 		if !slices.Equal(stops, wantStops) || !slices.Equal(parts, []int{1, 2}) || !strings.Contains(sticky, "Reviewed in 2 parts") ||
-			!strings.HasPrefix(forgeStatus, round.wantStatus) || (round.wantNote != "") != strings.Contains(sticky, "went unreviewed") ||
+			!strings.HasPrefix(forgeStatus, round.wantStatus) || (round.script == scriptPartFails) != strings.Contains(sticky, "went unreviewed") ||
 			!strings.Contains(sticky, round.wantNote) {
 			t.Fatalf("round %d: parts stopped %q, steps in parts %v, status %q, sticky:\n%s", i+1, stops, parts, forgeStatus, sticky)
 		}
