@@ -333,7 +333,7 @@ func (f *followUp) runAgent(
 		return nil, errors.Join(err, failRun(dctx, f.w.Store, f.account.ID(), runID, err.Error()))
 	}
 	sup := runSupervision(f.w.Store, f.account.ID(), runID, "", "", f.w.superviseEvery, f.logger)
-	res, cause := supervise(ctx, sup, f.w.Executor, executor.Spec{
+	out := f.w.runRunner(ctx, f.w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(f.account.Key(), f.pr.repository, jobs.QueueFollowUp, f.pr.number),
 		Annotations: runnerAnnotations(f.jobID, f.pr.headSHA),
 		Job: runner.Spec{
@@ -351,9 +351,8 @@ func (f *followUp) runAgent(
 		Deadline:  deadline,
 		Resources: resources,
 		Tools:     f.file.ToolsFor(limits.Commands),
-	})
-	f.w.revokeGatewayTokens(ctx, f.logger, runID)
-	agent, agentErr := f.w.readAgentRun(ctx, f.account.ID(), runID, ref, stopped(ctx, res, cause), f.w.rowWait)
+	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
+	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr
 	// The run's record must land even once the job's ctx has ended. A
 	// record that cannot be written does not cost the agent's answer: the
 	// run is then ended by the sweep of runs whose job is over.

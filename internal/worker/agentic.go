@@ -227,6 +227,30 @@ func (b *Base) loadAgentRun(ctx context.Context, accountID, runID string) (run s
 	return run, true, nil
 }
 
+// agentRun is what a runner's run came to: the executor's result, the
+// cause supervision ended it with, nil when it did not, and the agent's
+// row, or why it could not be read.
+type agentRun struct {
+	res      executor.Result
+	cause    error
+	agent    *store.AgentRunRow
+	agentErr error
+}
+
+// runRunner runs spec on exec, supervised as sup, until it ends, then
+// revokes the run's gateway tokens and reads the agent's row. The row is
+// read before the caller records the run, which settles its phase: a
+// stopped run's row may still be on its way from the terminating pod.
+func (b *Base) runRunner(
+	ctx context.Context, exec executor.Executor, sup supervision, spec executor.Spec, accountID, runID string, ref configfile.ModelRef,
+	rowWait time.Duration, logger *slog.Logger,
+) agentRun {
+	res, cause := supervise(ctx, sup, exec, spec)
+	b.revokeGatewayTokens(ctx, logger, runID)
+	row, agentErr := b.readAgentRun(ctx, accountID, runID, ref, stopped(ctx, res, cause), rowWait)
+	return agentRun{res: res, cause: cause, agent: row, agentErr: agentErr}
+}
+
 // readAgentRun reads the run's agent_runs row, nil when the runner wrote
 // none. What the agent spent is already charged: the gateway records usage
 // for every step it serves, whatever becomes of the review. A run no step
