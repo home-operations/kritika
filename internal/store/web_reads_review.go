@@ -117,7 +117,10 @@ func LatestRunnerRun(ctx context.Context, tx pgx.Tx, reviewID string) (RunnerRun
 
 // TimelineStep is one agent step as agent_runs.timeline records it.
 type TimelineStep struct {
-	Index        int      `json:"index"`
+	Index int `json:"index"`
+	// Part is the part of a split review the step was for, from 1; 0 when
+	// the review was not split.
+	Part         int      `json:"part,omitempty"`
 	Tools        []string `json:"tools"`
 	DurationMS   int64    `json:"duration_ms"`
 	OutputBytes  int      `json:"output_bytes"`
@@ -147,19 +150,33 @@ type AgentRunRow struct {
 	// CarriedReviewID is the review whose run's conversation the agent
 	// carried on, nil when it started afresh.
 	CarriedReviewID *string
+	// Parts are how the parts of a split review ended, in part order;
+	// empty when the review was not split.
+	Parts []AgentPart
+}
+
+// AgentPart is how the agent of one part of a split review ended: the
+// files it reviewed, why it stopped and, once it submitted, the summary it
+// wrote.
+type AgentPart struct {
+	Paths   []string        `json:"paths"`
+	Stop    string          `json:"stop"`
+	Error   string          `json:"error,omitempty"`
+	Steps   int             `json:"steps"`
+	Summary json.RawMessage `json:"summary,omitempty"`
 }
 
 // FindAgentRun returns the agent run of a runner run, or ErrNotFound.
 func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunRow, error) {
 	var a AgentRunRow
-	var result, calls, timeline, sources []byte
+	var result, calls, timeline, sources, parts []byte
 	err := tx.QueryRow(ctx, `SELECT a.stop_reason, a.result, a.steps, a.tool_calls, a.timeline, a.sources, a.input_tokens,
 		a.cache_read_tokens, a.cache_write_tokens, a.output_tokens, a.cost_usd::float8, a.model, a.error, a.created_at,
-		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text
+		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text, a.parts
 		FROM agent_runs a LEFT JOIN runner_runs c ON c.id = a.continued_from WHERE a.runner_run_id = $1`, runnerRunID).
 		Scan(&a.StopReason, &result, &a.Steps, &calls, &timeline, &sources, &a.Usage.Input, &a.Usage.CacheRead,
 			&a.Usage.CacheWrite, &a.Usage.Output, &a.CostUSD, &a.Model, &a.Error, &a.CreatedAt, &a.SkillsOffered, &a.SkillsOpened,
-			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID)
+			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID, &parts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -173,7 +190,7 @@ func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunR
 	for _, d := range []struct {
 		raw []byte
 		v   any
-	}{{calls, &a.ToolCalls}, {timeline, &a.Timeline}, {sources, &a.Sources}} {
+	}{{calls, &a.ToolCalls}, {timeline, &a.Timeline}, {sources, &a.Sources}, {parts, &a.Parts}} {
 		if err := json.Unmarshal(d.raw, d.v); err != nil {
 			return a, fmt.Errorf("store: decode agent run: %w", err)
 		}

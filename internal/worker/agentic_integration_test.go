@@ -106,6 +106,11 @@ const (
 	scriptTruncated
 	// scriptReadDiff reads main.go's part of the diff, then submits.
 	scriptReadDiff
+	// scriptParts submits at once, whichever part of a split review asks.
+	scriptParts
+	// scriptPartFails answers the second part of a split review in prose,
+	// so it never submits, and submits the others at once.
+	scriptPartFails
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -202,6 +207,13 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		message = tool("load_skill", `{"name":"review-go"}`)
 		if step > 1 {
 			message = tool("submit_review", `{"summary":{"take":"Adds v3.","praise":[]},"findings":[]}`)
+		}
+	}
+	if script == scriptParts || script == scriptPartFails {
+		finish = "tool_calls"
+		message = tool("submit_review", `{"summary":{"take":"Reviews its part.","praise":[]},"findings":[]}`)
+		if script == scriptPartFails && len(req.Messages) > 1 && strings.Contains(fmt.Sprint(req.Messages[1].Content), "this is part 2") {
+			finish, message = "stop", `{"role":"assistant","content":"Still looking."}`
 		}
 	}
 	if script == scriptReadDiff {
@@ -455,6 +467,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("the agent is offered the merge base's skills and reads one", func(t *testing.T) { checkAgentReadsSkill(t, h) })
 	t.Run("the agent reads a changed file's part of the diff", func(t *testing.T) { checkAgentReadsDiff(t, h) })
 	t.Run("a large pull request's run is sized for its parts", func(t *testing.T) { checkAgentSizedForParts(t, h) })
+	t.Run("a large change is reviewed in parts and published as one", func(t *testing.T) { checkAgentSplitsALargeReview(t, h) })
 	t.Run("another account cannot read the agent runs", func(t *testing.T) {
 		count := func(accountID string) int {
 			var n int
@@ -467,7 +480,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 15 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 17 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1726,6 +1739,79 @@ func checkAgentSizedForParts(t *testing.T, h *agenticHarness) {
 	h.exec.mu.Unlock()
 	if limits == nil || limits.Parts != 8 || budget != 8*limits.MaxTokens || deadline != jobtimeout.MaxAgentTimeout+jobtimeout.AgentFetchHeadroom {
 		t.Fatalf("agent = %+v, budget = %d, deadline = %s; want 8 parts, 8 times the tokens and the agent's cap", limits, budget, deadline)
+	}
+}
+
+// checkAgentSplitsALargeReview reviews a change of two directories of
+// about 40 KiB each, which the forge reports large enough to split: each
+// part's agent submits under a part of its own, and the review is
+// published as one. A push of two more such directories is then reviewed
+// in parts too, the second of which never submits: the review is published
+// with that part's files named, and is incomplete for the commit status.
+func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
+	body := strings.Repeat("// "+strings.Repeat("x", 60)+"\n", 650)
+	for _, dir := range []string{"a", "b", "c", "d"} {
+		if err := os.MkdirAll(filepath.Join(h.dir, "split", dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.lf.setSize(forge.OpenPullRequest{Additions: 1300, ChangedFiles: 2})
+	defer h.lf.setSize(forge.OpenPullRequest{})
+	h.commit(t, "split/a/one.go", "package a\n"+body)
+	for i, round := range []struct {
+		script     modelScript
+		files      [2]string
+		wantStatus string
+		wantNote   string
+	}{
+		{script: scriptParts, files: [2]string{"split/a/one.go", "split/b/two.go"}, wantStatus: "success"},
+		{script: scriptPartFails, files: [2]string{"split/c/three.go", "split/d/four.go"}, wantStatus: "error: kritika: review incomplete",
+			wantNote: "Part 2 of 2 ended before it submitted, so its files went unreviewed: split/d/four.go"},
+	} {
+		h.sm.reset(round.script)
+		if i > 0 {
+			h.commit(t, round.files[0], "package c\n"+body)
+		}
+		next := h.commit(t, round.files[1], "package d\n"+body)
+		h.dispatch(t, next)
+		reviewID, status, errText := h.waitReview(t, next)
+		if status != "completed" {
+			t.Fatalf("round %d: status = %s (%s)", i+1, status, errText)
+		}
+		var stops []string
+		var parts, indexes []int
+		var partial bool
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			if err := tx.QueryRow(h.ctx, `SELECT array(SELECT p->>'stop' FROM jsonb_array_elements(a.parts) p),
+				array(SELECT (s->>'index')::int FROM jsonb_array_elements(a.timeline) s), v.partial
+				FROM agent_runs a JOIN runner_runs r ON r.id = a.runner_run_id JOIN reviews v ON v.id = r.review_id
+				WHERE r.review_id = $1`, reviewID).Scan(&stops, &indexes, &partial); err != nil {
+				return err
+			}
+			return tx.QueryRow(h.ctx, `SELECT array(SELECT DISTINCT part FROM model_calls WHERE review_id = $1 AND kind = 'agent_step'
+				ORDER BY part)`, reviewID).Scan(&parts)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.lf.mu.Lock()
+		sticky, forgeStatus := h.lf.comments[commentBase+1], h.lf.status
+		h.lf.mu.Unlock()
+		// The parts' steps are numbered across the run, the second part's
+		// two answers in prose too, and only the review that left a part's
+		// files unreviewed is partial.
+		wantStops, wantIndexes := []string{"submitted", "submitted"}, []int{0, 1}
+		if round.script == scriptPartFails {
+			wantStops[1], wantIndexes = "no_submit", []int{0, 1, 2}
+		}
+		if !slices.Equal(indexes, wantIndexes) || partial != (round.script == scriptPartFails) {
+			t.Fatalf("round %d: timeline indexes %v, partial %v", i+1, indexes, partial)
+		}
+		if !slices.Equal(stops, wantStops) || !slices.Equal(parts, []int{1, 2}) || !strings.Contains(sticky, "Reviewed in 2 parts") ||
+			!strings.HasPrefix(forgeStatus, round.wantStatus) || (round.wantNote != "") != strings.Contains(sticky, "went unreviewed") ||
+			!strings.Contains(sticky, round.wantNote) {
+			t.Fatalf("round %d: parts stopped %q, steps in parts %v, status %q, sticky:\n%s", i+1, stops, parts, forgeStatus, sticky)
+		}
 	}
 }
 

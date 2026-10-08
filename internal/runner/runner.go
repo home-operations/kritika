@@ -116,14 +116,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		// expected cause; the error tells it apart from auth or network.
 		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
 	}
-	chunks, stats, err := stages(ctx, headTree, baseTree, res, ignore)
-	if err != nil {
-		return err
-	}
-	logger.Info("context built", "overlay", stats.Overlay, "definitions", stats.Definitions, "callers", stats.Callers,
-		"identifiers", stats.Identifiers, "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
-		"scan_truncated", stats.ScanTruncated, "elapsed", stats.Elapsed.Round(time.Millisecond))
-
 	// Everything the worker reads back is decided here, before the pack is
 	// written: whether the review is skipped, what it builds on, and what
 	// the prompt was given. A skipped review spends nothing on a model.
@@ -135,6 +127,14 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return err
 	case err != nil:
 		logger.Warn("filter failed to evaluate; the review is skipped", "filter", skipDetail, "error", err)
+	}
+	var split [][]string
+	if skip == "" {
+		split = splitReview(p, res, scope)
+	}
+	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, split, logger)
+	if err != nil {
+		return err
 	}
 	var found []repoconfig.Skill
 	if sk := p.Prompt.Skills; sk != nil {
@@ -148,11 +148,10 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	notes = append(notes, in.notes...)
 	var tools agentTools
 	var prompt agentPrompt
+	var parts []reviewPart
+	ruleIDs := in.ruleIDs()
 	if skip == "" {
 		tools.diff = newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)
-		var similar []contextpack.Chunk
-		similar, tools.search = similarContext(ctx, p, secrets, res, logger)
-		chunks = append(chunks, similar...)
 		if len(in.skills) > 0 {
 			tools.skills = &skillTool{base: baseTree, skills: in.skills, maxBytes: p.Agent.limits().MaxToolOutputBytes}
 		}
@@ -160,13 +159,16 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
-		prompt = newAgentPrompt(p, in, packView{
-			Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
-		}, tools.commands(), tools.fetch != nil, tools.search != nil)
-		if p.Prompt.Continue != nil && scope == review.ScopeIncremental {
-			prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, headTree, ignore, tools.extra()), res.DeltaDiff, logger)
+		if split == nil {
+			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
+			notes = append(notes, prompt.notes()...)
+		} else if parts, chunks, ruleIDs, err = partPrompts(
+			ctx, p, secrets, headTree, baseTree, res, files, found, split, scope, &tools, logger,
+		); err != nil {
+			return err
+		} else {
+			notes = append(notes, splitNotes(parts)...)
 		}
-		notes = append(notes, prompt.notes()...)
 	}
 	stagesJSON, err := json.Marshal(chunks)
 	if err != nil {
@@ -200,7 +202,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 				prior_head_sha, delta_diff, delta_paths, scope, scope_reason, skip_reason, rule_ids, skip_detail)
 			SELECT id, account_id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM runner_runs WHERE id = $1`,
 			p.RunID, p.Head, p.Base, res.PatchID, packDiff, res.Changed, stagesJSON, filesJSON, notes,
-			priorHead, packDelta, deltaPaths, string(scope), scopeReason, skip, in.ruleIDs(), skipDetail)
+			priorHead, packDelta, deltaPaths, string(scope), scopeReason, skip, ruleIDs, skipDetail)
 		if err != nil {
 			return fmt.Errorf("runner: write context pack: %w", err)
 		}
@@ -218,7 +220,48 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		logger.Info("agent not run", "reason", skip)
 		return nil
 	}
+	if parts != nil {
+		return runParts(ctx, st, p, secrets, headTree, ignore, tools, parts, logger)
+	}
 	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
+}
+
+// wholeContext is the context stages over the whole diff, or none for a
+// split review, whose parts build theirs from their own diffs.
+func wholeContext(
+	ctx context.Context, head, base *object.Tree, res *gitfetch.Result, ignore []string, split [][]string, logger *slog.Logger,
+) ([]contextpack.Chunk, error) {
+	if split != nil {
+		return []contextpack.Chunk{}, nil
+	}
+	chunks, stats, err := stages(ctx, head, base, res, ignore)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("context built", "overlay", stats.Overlay, "definitions", stats.Definitions, "callers", stats.Callers,
+		"identifiers", stats.Identifiers, "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
+		"scan_truncated", stats.ScanTruncated, "elapsed", stats.Elapsed.Round(time.Millisecond))
+	return chunks, nil
+}
+
+// wholePrompt writes the prompt of a review that is not split, from the
+// whole diff and its context with the similar code that tools' search_code
+// is offered over, carrying on the last review's conversation where it
+// may. It returns the context the prompt was given.
+func wholePrompt(
+	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, res *gitfetch.Result, in promptInputs,
+	scope review.Scope, chunks []contextpack.Chunk, tools *agentTools, logger *slog.Logger,
+) (agentPrompt, []contextpack.Chunk) {
+	var similar []contextpack.Chunk
+	similar, tools.search = similarContext(ctx, p, secrets, res, logger)
+	chunks = append(chunks, similar...)
+	prompt := newAgentPrompt(p, in, packView{
+		Diff: res.Diff, Changed: res.Changed, Context: chunks, DeltaDiff: res.DeltaDiff, Scope: scope,
+	}, tools.commands(), tools.fetch != nil, tools.search != nil)
+	if p.Prompt.Continue != nil && scope == review.ScopeIncremental {
+		prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, head, ignore, tools.extra()), res.DeltaDiff, logger)
+	}
+	return prompt, chunks
 }
 
 // similarContext is context stage 4, best effort: the code elsewhere in
@@ -229,20 +272,36 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 func similarContext(
 	ctx context.Context, p Spec, secrets Secrets, res *gitfetch.Result, logger *slog.Logger,
 ) ([]contextpack.Chunk, *searchTool) {
-	queries := hunkQueries(res.Diff)
-	if len(queries) == 0 {
+	out, ok := similarCodeFor(ctx, p, secrets, res.Diff, res.Changed, logger)
+	if !ok {
 		return nil, nil
 	}
-	out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: res.Changed})
+	return out.Chunks, newSearchTool(p, secrets, res.Changed)
+}
+
+// similarCodeFor is the code elsewhere in the repository that resembles
+// diff's hunks, best effort: false when diff has no hunk to ask about, the
+// repository has no index, or the request failed.
+func similarCodeFor(
+	ctx context.Context, p Spec, secrets Secrets, diff string, changed []string, logger *slog.Logger,
+) (contextpack.SimilarResponse, bool) {
+	queries := hunkQueries(diff)
+	if len(queries) == 0 {
+		return contextpack.SimilarResponse{}, false
+	}
+	out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: changed})
 	if err != nil {
 		logger.Warn("similar-code retrieval skipped", "error", err)
-		return nil, nil
+		return contextpack.SimilarResponse{}, false
 	}
-	if !out.Indexed {
-		return nil, nil
-	}
-	return out.Chunks, &searchTool{
-		gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: res.Changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
+	return out, out.Indexed
+}
+
+// newSearchTool is search_code over the repository's index, leaving out
+// the changed paths, which the prompt shows.
+func newSearchTool(p Spec, secrets Secrets, changed []string) *searchTool {
+	return &searchTool{
+		gatewayURL: p.Model.GatewayURL, token: secrets.GatewayToken, exclude: changed, maxBytes: p.Agent.limits().MaxToolOutputBytes,
 	}
 }
 
