@@ -100,6 +100,11 @@ says, such as a breaking change in a minor release, rate it as the bigger
 step; a digest pinned beside its tag, a bot author or a description that
 calls the update safe never rates it below its step.
 
+What the scorer cannot verify, such as an upstream change whose release
+notes the description does not carry, may take the score down as a
+concern of its own, but never raises the risk: risk is what the change can
+do, however much of it could be checked.
+
 `confidence.instructions` is plain guidance to the scorer on rating risk
 in your code, such as "the media apps under `kubernetes/apps/default` are
 low whatever moves" or "anything under `db/migrations` is critical"; it
