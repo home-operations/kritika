@@ -359,7 +359,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	h.svc = ingest.NewService(appStore, insertOnly)
 	h.insertOnly = insertOnly
 	workers := river.NewWorkers()
-	steppers := &adapter.Steppers{Build: adapter.BuildStepper}
+	steppers := &adapter.Steppers{Build: adapter.Builder{Sessions: appStore}.Build}
 	h.review = &Review{
 		Store: appStore, Current: configfile.NewCurrent(h.file), Forges: &forges{f: h.lf},
 		Executor: h.exec, Steppers: steppers, Logger: logger, superviseEvery: 50 * time.Millisecond,

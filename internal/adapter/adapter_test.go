@@ -62,11 +62,16 @@ func TestSteppersAccountProviders(t *testing.T) {
 func TestBuildStepper(t *testing.T) {
 	for _, typ := range []configfile.ProviderType{configfile.ProviderOpenRouter, configfile.ProviderOpenAI, configfile.ProviderAnthropic} {
 		t.Run(string(typ), func(t *testing.T) {
-			if _, err := BuildStepper(configfile.Provider{Type: typ}); err == nil {
+			if _, err := (Builder{}).Build(configfile.Provider{Type: typ}); err == nil {
 				t.Fatal("a provider without a key must not build")
 			}
 		})
 	}
+	t.Run("chatgpt", func(t *testing.T) {
+		if _, err := (Builder{Sessions: fakeSessions{}}).Build(configfile.Provider{Type: configfile.ProviderChatGPT}); err != nil {
+			t.Fatalf("a chatgpt provider builds on its sessions: %v", err)
+		}
+	})
 }
 
 func TestEmbeddersBuildOnce(t *testing.T) {

@@ -322,11 +322,13 @@ include `chatgpt.tokens.use.direct`, and the token's `expires_in` and
 and so is a record without it. The provider's models are the plan's,
 named by slug, as `gpt-6.1-sol`.
 
-- **Tokens.** The access token lasts an hour; kritika renews it with the
-  refresh token, which every renewal replaces. The renewed tokens live in
-  the process, so run one `serve` replica with a `chatgpt` provider: a
-  second replica renewing with a token the first already replaced ends the
-  sign-in. A refresh token OpenAI no longer takes, because the plan's
+- **Tokens.** The access token lasts an hour; the leader renews it with
+  the refresh token five minutes before, and every renewal replaces the
+  refresh token too. The live tokens are in the database, in
+  `chatgpt_sessions`, as the Secret's record seeded them: every replica
+  reads them there, one process renews them, and a new sign-in in the
+  Secret replaces them. They are stored as they are, like the Secret
+  holds them. A refresh token OpenAI no longer takes, because the plan's
   owner disconnected kritika or it went unused for thirty days, signs the
   provider out: its steps fail, the fallback takes them, and `kritika
   chatgpt login` has to run again.

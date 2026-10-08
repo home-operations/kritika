@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -47,14 +46,12 @@ func TestParseCredentials(t *testing.T) {
 	}
 }
 
-// tokenEndpoint answers every refresh with status and body, counting them
-// and keeping the last form it was sent.
-func tokenEndpoint(t *testing.T, status int, body string) (*httptest.Server, *atomic.Int32, *url.Values) {
+// tokenEndpoint answers every refresh with status and body, keeping the
+// last form it was sent.
+func tokenEndpoint(t *testing.T, status int, body string) (*httptest.Server, *url.Values) {
 	t.Helper()
-	var n atomic.Int32
 	form := &url.Values{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n.Add(1)
 		raw, _ := io.ReadAll(r.Body)
 		*form, _ = url.ParseQuery(string(raw))
 		w.Header().Set("Content-Type", "application/json")
@@ -62,7 +59,7 @@ func tokenEndpoint(t *testing.T, status int, body string) (*httptest.Server, *at
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &n, form
+	return srv, form
 }
 
 const refreshed = `{"access_token":"at-2","refresh_token":"rt-2","token_type":"Bearer","expires_in":3600,` +
@@ -71,7 +68,7 @@ const refreshed = `{"access_token":"at-2","refresh_token":"rt-2","token_type":"B
 func TestRefresh(t *testing.T) {
 	later := saved.Add(time.Hour)
 	t.Run("rotates both tokens and keeps the rest", func(t *testing.T) {
-		srv, _, form := tokenEndpoint(t, http.StatusOK, refreshed)
+		srv, form := tokenEndpoint(t, http.StatusOK, refreshed)
 		c, err := Refresh(t.Context(), srv.Client(), srv.URL, record(), later)
 		if err != nil {
 			t.Fatal(err)
@@ -89,7 +86,7 @@ func TestRefresh(t *testing.T) {
 	})
 	t.Run("a refused refresh token signs out", func(t *testing.T) {
 		for _, code := range signedOutCodes {
-			srv, _, _ := tokenEndpoint(t, http.StatusBadRequest, `{"error":"`+code+`","error_description":"gone"}`)
+			srv, _ := tokenEndpoint(t, http.StatusBadRequest, `{"error":"`+code+`","error_description":"gone"}`)
 			c, err := Refresh(t.Context(), srv.Client(), srv.URL, record(), later)
 			if !errors.Is(err, ErrSignedOut) || !strings.Contains(err.Error(), "gone") {
 				t.Fatalf("%s: err = %v, want ErrSignedOut", code, err)
@@ -108,7 +105,7 @@ func TestRefresh(t *testing.T) {
 			{http.StatusBadRequest, `{"error":"invalid_client"}`},
 			{http.StatusOK, `{"token_type":"Bearer"}`},
 		} {
-			srv, _, _ := tokenEndpoint(t, tt.status, tt.body)
+			srv, _ := tokenEndpoint(t, tt.status, tt.body)
 			c, err := Refresh(t.Context(), srv.Client(), srv.URL, record(), later)
 			if err == nil || errors.Is(err, ErrSignedOut) {
 				t.Fatalf("%d %s: err = %v, want a failure that is not a sign-out", tt.status, tt.body, err)
@@ -116,67 +113,6 @@ func TestRefresh(t *testing.T) {
 			if c.AccessToken != "at-1" || c.RefreshToken != "rt-1" {
 				t.Fatalf("%d %s: credentials changed to %+v", tt.status, tt.body, c)
 			}
-		}
-	})
-}
-
-func newTestSession(t *testing.T, srv *httptest.Server, now time.Time) *Session {
-	t.Helper()
-	s := NewSession(record(), srv.Client())
-	s.tokenURL = srv.URL
-	s.now = func() time.Time { return now }
-	return s
-}
-
-func TestSessionToken(t *testing.T) {
-	t.Run("a fresh token is returned without a request", func(t *testing.T) {
-		srv, n, _ := tokenEndpoint(t, http.StatusOK, refreshed)
-		s := newTestSession(t, srv, saved.Add(10*time.Minute))
-		if tok, err := s.Token(t.Context()); err != nil || tok != "at-1" || n.Load() != 0 {
-			t.Fatalf("Token = %q, %v after %d requests", tok, err, n.Load())
-		}
-	})
-	t.Run("near expiry it is renewed once", func(t *testing.T) {
-		srv, n, _ := tokenEndpoint(t, http.StatusOK, refreshed)
-		s := newTestSession(t, srv, saved.Add(56*time.Minute))
-		for range 2 {
-			if tok, err := s.Token(t.Context()); err != nil || tok != "at-2" {
-				t.Fatalf("Token = %q, %v", tok, err)
-			}
-		}
-		if n.Load() != 1 {
-			t.Fatalf("the token endpoint got %d requests, want 1", n.Load())
-		}
-	})
-	t.Run("a refused refresh signs out for good", func(t *testing.T) {
-		srv, n, _ := tokenEndpoint(t, http.StatusBadRequest, `{"error":"refresh_token_reused"}`)
-		s := newTestSession(t, srv, saved.Add(56*time.Minute))
-		for range 2 {
-			if _, err := s.Token(t.Context()); !errors.Is(err, ErrSignedOut) {
-				t.Fatalf("Token err = %v, want ErrSignedOut", err)
-			}
-		}
-		if n.Load() != 1 {
-			t.Fatalf("the token endpoint got %d requests, want 1", n.Load())
-		}
-	})
-	t.Run("a failed refresh keeps the token while it lasts", func(t *testing.T) {
-		srv, _, _ := tokenEndpoint(t, http.StatusServiceUnavailable, `down`)
-		s := newTestSession(t, srv, saved.Add(56*time.Minute))
-		if tok, err := s.Token(t.Context()); err != nil || tok != "at-1" {
-			t.Fatalf("Token = %q, %v, want the current token", tok, err)
-		}
-		s.now = func() time.Time { return saved.Add(61 * time.Minute) }
-		if _, err := s.Token(t.Context()); err == nil || errors.Is(err, ErrSignedOut) {
-			t.Fatalf("Token err = %v, want the refresh's failure once the token expired", err)
-		}
-	})
-	t.Run("expire renews the token on the next call", func(t *testing.T) {
-		srv, n, _ := tokenEndpoint(t, http.StatusOK, refreshed)
-		s := newTestSession(t, srv, saved.Add(10*time.Minute))
-		s.Expire()
-		if tok, err := s.Token(t.Context()); err != nil || tok != "at-2" || n.Load() != 1 {
-			t.Fatalf("Token = %q, %v after %d requests, want a renewed token", tok, err, n.Load())
 		}
 	})
 }

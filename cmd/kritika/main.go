@@ -281,7 +281,7 @@ func startWorker(
 	forges *worker.ForgeCache, m *metrics.Metrics, logger *slog.Logger,
 ) error {
 	embedders := &adapter.Embedders{Build: adapter.BuildEmbedder}
-	steppers := &adapter.Steppers{Build: adapter.BuildStepper}
+	steppers := &adapter.Steppers{Build: adapter.Builder{Sessions: st}.Build}
 	workers := river.NewWorkers()
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
 	// The gateway: runner pods' one route out, allowed by the hosts the
@@ -535,6 +535,10 @@ func lead(
 	// (owner pool, bypassing row-level security), and expired dashboard
 	// sessions (app pool).
 	duties.Go(func() { retentionSweep(pollCtx, st, current, retentionSweepInterval, logger) })
+	// And so is renewing the ChatGPT plans' tokens, since a rotating
+	// refresh token must be used by one process.
+	plans := &worker.ChatGPTRefresher{Store: st, Current: current, Logger: logger}
+	duties.Go(func() { plans.Run(pollCtx) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err

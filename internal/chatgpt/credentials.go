@@ -82,6 +82,17 @@ func (c Credentials) Expiry() time.Time {
 	return c.SavedAt.Add(time.Duration(c.ExpiresIn) * time.Second)
 }
 
+// RefreshLead is how long before the access token expires it is renewed,
+// so a step's request never goes out with a token about to lapse under it.
+const RefreshLead = 5 * time.Minute
+
+// Due reports whether the access token is within RefreshLead of expiry at
+// now, or past it.
+func (c Credentials) Due(now time.Time) bool { return !now.Before(c.Expiry().Add(-RefreshLead)) }
+
+// clientTimeout bounds one request of a client the package makes itself.
+const clientTimeout = 30 * time.Second
+
 // ErrSignedOut is a refresh token OpenAI no longer takes: the plan's owner
 // disconnected kritika, the token went unused for thirty days, or another
 // process refreshed the same session first. The sign-in is over until

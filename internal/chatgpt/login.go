@@ -65,7 +65,7 @@ func (l Login) Run(ctx context.Context, path string) (Credentials, error) {
 		issuer = Issuer
 	}
 	if client == nil {
-		client = &http.Client{Timeout: refreshTimeout}
+		client = &http.Client{Timeout: clientTimeout}
 	}
 	if now == nil {
 		now = time.Now
