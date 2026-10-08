@@ -142,7 +142,7 @@ func run() (err error) {
 		}
 		public = server.NewSwitch(server.Starting())
 		g.Go(func() error {
-			return server.Serve(lingering(ctx, linger), cfg.Addr, public, publicDrain, logger.With("listener", "public"))
+			return server.Serve(server.Lingering(ctx, linger), cfg.Addr, public, publicDrain, logger.With("listener", "public"))
 		})
 	}
 
@@ -267,7 +267,7 @@ func startPublic(
 		Store: st, Current: current, Auth: authHandler, UI: web.FS(),
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: inserter}, Env: cfg.Env(),
 	})
-	g.Go(func() error { return api.Run(lingering(ctx, linger)) })
+	g.Go(func() error { return api.Run(server.Lingering(ctx, linger)) })
 	public.Set(server.Public(cfg.WebBasePath(), hooks, api.Handler()))
 	return nil
 }
@@ -293,7 +293,7 @@ func startWorker(
 		Steppers: steppers, Embedders: embedders,
 	}
 	g.Go(func() error {
-		return server.Serve(lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
+		return server.Serve(server.Lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
 	})
 	river.AddWorker(workers, &worker.Review{
 		Base: base, Executor: exec, Steppers: steppers,
@@ -375,13 +375,6 @@ func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logge
 // connection refused meanwhile is a webhook lost, since GitHub does not
 // redeliver on its own, or a runner's model step retried.
 const linger = 5 * time.Second
-
-// lingering is a context that ends d after ctx does, with ctx's values.
-func lingering(ctx context.Context, d time.Duration) context.Context {
-	lctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	context.AfterFunc(ctx, func() { time.AfterFunc(d, cancel) })
-	return lctx
-}
 
 // publicDrain is how long a stopping serve lets webhook and dashboard
 // requests finish. Event streams end at once, when the API's Run returns.
@@ -538,7 +531,8 @@ func lead(
 	// window and the indexes of repositories stopped past their grace
 	// (owner pool, bypassing row-level security), and expired dashboard
 	// sessions (app pool).
-	duties.Go(func() { retentionSweep(pollCtx, st, current, retentionSweepInterval, logger) })
+	retention := &worker.Retention{Store: st, Current: current, Logger: logger}
+	duties.Go(func() { retention.Run(pollCtx) })
 	if err := applyConfig(ctx, current.Get(), func(ctx context.Context, f *configfile.File) error {
 		if err := st.ApplyConfig(ctx, f); err != nil {
 			return err
@@ -571,72 +565,6 @@ func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *
 		logger.Warn("index rebuilt for a new embedder: every repository is indexed again", "model", e.Model, "dims", e.Dims)
 	}
 	return err
-}
-
-// retentionSweepInterval is how often the leader deletes model-call
-// transcripts, review diffs, agent conversations, stopped repositories'
-// indexes and dashboard sessions past their retention window.
-const retentionSweepInterval = time.Hour
-
-// conversationRetention is how long an agent's conversation is kept for a
-// re-review to carry on: well past any provider's cache window, after
-// which carrying it on would cost more than starting afresh.
-const conversationRetention = 2 * time.Hour
-
-// retentionStore is the subset of *store.Store that retentionSweep needs,
-// narrowed so it can be exercised in tests with a fake.
-type retentionStore interface {
-	SweepModelCalls(ctx context.Context, olderThan time.Duration) (int64, error)
-	SweepDiffs(ctx context.Context, olderThan time.Duration) (int64, error)
-	SweepSessions(ctx context.Context, now time.Time) (int64, error)
-	SweepStoppedIndexes(
-		ctx context.Context, grace time.Duration, runs func(accountID, fullName string, t configfile.RepoTraits) bool,
-	) (int64, error)
-	SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error)
-}
-
-// retentionSweep runs once immediately, then every interval until ctx ends,
-// deleting model-call transcripts older than the current configuration's
-// retention window, the indexes of repositories it has not run for longer
-// than its index grace and agent conversations older than
-// conversationRetention (owner pool, bypassing row-level security), and
-// expired dashboard sessions (app pool). A sweep failure is logged, never
-// fatal: it just leaves stale rows for the next tick.
-func retentionSweep(ctx context.Context, st retentionStore, current *configfile.Current, interval time.Duration, logger *slog.Logger) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	report := func(what, unit string, n int64, err error) {
-		if err != nil {
-			if ctx.Err() == nil {
-				logger.Warn(what+" not swept", "error", err)
-			}
-			return
-		}
-		if n > 0 {
-			logger.Info(what+" swept", unit, n)
-		}
-	}
-	for {
-		n, err := st.SweepModelCalls(ctx, current.Get().TranscriptRetention())
-		report("model call transcripts", "rows", n, err)
-		n, err = st.SweepDiffs(ctx, current.Get().DiffRetention())
-		report("review diffs", "packs", n, err)
-		n, err = st.SweepSessions(ctx, time.Now())
-		report("dashboard sessions", "rows", n, err)
-		f := current.Get()
-		n, err = st.SweepStoppedIndexes(ctx, f.DisabledIndexGrace(), func(accountID, fullName string, traits configfile.RepoTraits) bool {
-			a, ok := f.AccountByID(accountID)
-			return ok && f.Runs(a, fullName, traits)
-		})
-		report("stopped repositories' indexes", "repositories", n, err)
-		n, err = st.SweepConversations(ctx, conversationRetention)
-		report("agent conversations", "rows", n, err)
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-	}
 }
 
 // applyConfig applies f to the store once, on election, and calls
