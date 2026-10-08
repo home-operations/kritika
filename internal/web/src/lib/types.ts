@@ -84,7 +84,7 @@ export type JobState =
 // Why a job's last attempt failed, where the server can tell; '' otherwise.
 export type JobCause = 'forge_unavailable';
 export type EventKind = 'review' | 'runner_run' | 'index_run' | 'followup' | 'model_call';
-export type TranscriptKind = 'agent_step' | 'followup' | 'confidence';
+export type TranscriptKind = 'agent_step' | 'followup' | 'confidence' | 'merge';
 export type MessageRole = 'user' | 'assistant';
 
 // reviews are the ones that completed this month, reviewCostUsd what they

@@ -33,7 +33,8 @@ type Review struct {
 	river.WorkerDefaults[jobs.ReviewArgs]
 	Base
 	Executor executor.Executor
-	// Steppers reach the model that scores a review's confidence.
+	// Steppers reach the model that scores a review's confidence, and the
+	// review model that writes a split review's summary from its parts'.
 	Steppers *adapter.Steppers
 	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
 	// long its run token outlives the Job's deadline.

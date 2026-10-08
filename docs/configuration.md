@@ -441,13 +441,16 @@ a new title.
   part is reviewed by an agent of its own with the bounds above, from its
   own files' diff and the context built from it, and reports findings only
   on its own files; it can still read any other file. The parts run one
-  after another and are published as one review. A part that ends before it
-  submits leaves its files unreviewed: the summary names them, and the
-  review counts as incomplete for the commit status, approves nothing,
-  withdrawing an approval given before, and is no review a later one builds
-  on. An incremental re-review splits only the diff since the last review,
-  when that is over 64 KiB. The token grant and the Job deadline are sized
-  for the parts from the pull request's size as the forge reports it.
+  after another and are published as one review, its summary written from
+  theirs by one more call to the review model, which counts towards
+  `tokensPerMonth`; when that call fails or the cap is reached, the summary
+  joins the parts' own. A part that ends before it submits leaves its files
+  unreviewed: the summary names them, and the review counts as incomplete
+  for the commit status, approves nothing, withdrawing an approval given
+  before, and is no review a later one builds on. An incremental re-review
+  splits only the diff since the last review, when that is over 64 KiB. The
+  token grant and the Job deadline are sized for the parts from the pull
+  request's size as the forge reports it.
 - **Commands:** the runner's `-tools` image has `gh`, `curl`, `fd`, `jq`,
   `rg` and `yq`. The agent is told to use `gh` for GitHub, which signs in
   with a token minted for the run that can only read the repository under

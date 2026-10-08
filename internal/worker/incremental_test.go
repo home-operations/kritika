@@ -66,6 +66,10 @@ func TestCarriedDiagram(t *testing.T) {
 		{name: "a null diagram is no answer", answer: null, prior: prior, incremental: true, want: prior},
 		{name: "a re-review's empty diagram says the flow is gone", answer: empty, prior: prior, incremental: true},
 		{name: "a re-review's own diagram stands", answer: with, drawn: drawn, prior: prior, incremental: true, want: drawn},
+		{name: "a merged summary with no diagram keeps the last", answer: string(mergedAnswer(`{"take":"t"}`)), prior: prior,
+			incremental: true, want: prior},
+		{name: "a merged summary's empty diagram says the flow is gone", answer: string(mergedAnswer(`{"take":"t","diagram":""}`)),
+			prior: prior, incremental: true},
 		{name: "a full review's answer stands", answer: without, prior: prior},
 		{name: "nothing to carry", answer: without, incremental: true},
 	}

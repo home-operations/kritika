@@ -60,19 +60,29 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	return ""
 }
 
+// checkMonthCap is an error once the account has spent its tokensPerMonth:
+// the agent's admission checked the caps before it ran, and what it spent
+// since may have reached the month's.
+func (p *publishPhase) checkMonthCap(ctx context.Context) error {
+	limit := p.settings.Limits.TokensPerMonth
+	if limit <= 0 {
+		return nil
+	}
+	u, err := p.w.Store.AccountUsage(ctx, p.account.ID())
+	if err != nil {
+		return fmt.Errorf("worker: read caps: %w", err)
+	}
+	if u.Tokens >= limit {
+		return fmt.Errorf("worker: tokensPerMonth (%d) reached", limit)
+	}
+	return nil
+}
+
 // score asks ref for the score, recording the call against the review and
 // charging it to the account.
 func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res review.Result, diff string) (review.Confidence, error) {
-	// The agent's admission checked the caps before it ran; what it spent
-	// since may have reached the month's.
-	if limit := p.settings.Limits.TokensPerMonth; limit > 0 {
-		u, err := p.w.Store.AccountUsage(ctx, p.account.ID())
-		if err != nil {
-			return review.Confidence{}, fmt.Errorf("worker: read caps: %w", err)
-		}
-		if u.Tokens >= limit {
-			return review.Confidence{}, fmt.Errorf("worker: tokensPerMonth (%d) reached", limit)
-		}
+	if err := p.checkMonthCap(ctx); err != nil {
+		return review.Confidence{}, err
 	}
 	stepper, err := p.w.Steppers.Stepper(p.file, p.account, ref.Provider())
 	if err != nil {
@@ -97,7 +107,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	}, adapter.Mask(p.file, spec))
 	completer := model.Structured{Stepper: stepper, OnStep: func(req model.StepRequest, resp model.StepResponse, err error, d time.Duration) {
 		record(req, resp, err, d)
-		p.charge(ctx, resp)
+		p.charge(ctx, resp, store.RoleConfidence)
 	}}
 	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
 	rubric := review.ConfidenceRubric(system)
@@ -143,20 +153,21 @@ func earlierRisk(prior priorReview, head, rubric string) *review.EarlierRisk {
 	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason}
 }
 
-// charge records what one scoring call spent against the review, where the
-// caps count it; a call the provider did not answer spent nothing.
-func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse) {
+// charge records what one call publishing makes spent, as role, against
+// the review, where the caps count it; a call the provider did not answer
+// spent nothing.
+func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse, role string) {
 	if resp.Usage.Prompt() == 0 && resp.Usage.Output == 0 {
 		return
 	}
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID, Role: store.RoleConfidence,
+			AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID, Role: role,
 			Model: resp.Model, Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
 		})
 	})
 	if err != nil {
-		p.logger.Error("confidence usage not recorded", "error", err)
+		p.logger.Error("usage not recorded", "role", role, "error", err)
 	}
 }
 
