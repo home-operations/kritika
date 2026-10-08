@@ -102,6 +102,8 @@ const (
 	scriptSkill
 	// scriptTruncated submits a review the output cap cut off.
 	scriptTruncated
+	// scriptReadDiff reads main.go's part of the diff, then submits.
+	scriptReadDiff
 )
 
 // scriptedModel is an OpenAI-compatible chat completions endpoint.
@@ -198,6 +200,13 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		message = tool("load_skill", `{"name":"review-go"}`)
 		if step > 1 {
 			message = tool("submit_review", `{"summary":{"take":"Adds v3.","praise":[]},"findings":[]}`)
+		}
+	}
+	if script == scriptReadDiff {
+		finish = "tool_calls"
+		message = tool("read_diff", `{"path":"main.go"}`)
+		if step > 1 {
+			message = tool("submit_review", `{"summary":{"take":"Adds v4.","praise":[]},"findings":[]}`)
 		}
 	}
 	if script == scriptTruncated {
@@ -442,6 +451,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("a path the file's exclusion names is skipped even when asked for", func(t *testing.T) { checkFilePathsExcluded(t, h) })
 	t.Run("the agent is offered the merge base's skills and reads one", func(t *testing.T) { checkAgentReadsSkill(t, h) })
+	t.Run("the agent reads a changed file's part of the diff", func(t *testing.T) { checkAgentReadsDiff(t, h) })
 	t.Run("another account cannot read the agent runs", func(t *testing.T) {
 		count := func(accountID string) int {
 			var n int
@@ -454,7 +464,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 13 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 14 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -1617,6 +1627,30 @@ func checkFilePathsExcluded(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Unlock()
 	if after != before {
 		t.Fatalf("a skipped review called the model %d time(s)", after-before)
+	}
+}
+
+// checkAgentReadsDiff reviews a change whose agent reads main.go's part of
+// the diff with read_diff, which numbers each line as the head has it.
+func checkAgentReadsDiff(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptReadDiff)
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n\nfunc v3() {}\n\nfunc v4() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	run := h.agentRow(t, reviewID)
+	var tools map[string]int
+	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
+	if run.stop != "submitted" || tools["read_diff"] != 1 {
+		t.Fatalf("agent run = %+v", run)
+	}
+	h.sm.mu.Lock()
+	results := slices.Clone(h.sm.toolResults)
+	h.sm.mu.Unlock()
+	if len(results) == 0 || !strings.Contains(results[len(results)-1], "\n9\t+func v4() {}\n") {
+		t.Fatalf("tool results = %q, want main.go's diff with the head's line numbers last", results)
 	}
 }
 

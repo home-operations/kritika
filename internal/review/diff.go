@@ -26,6 +26,16 @@ type fileSection struct {
 	text string
 }
 
+// FileDiffs is a unified diff's file sections, each by the path the
+// changed-files list names it by, ending in one newline.
+func FileDiffs(diff string) map[string]string {
+	out := map[string]string{}
+	for _, s := range splitFiles(diff) {
+		out[s.path] = strings.TrimRight(s.text, "\n") + "\n"
+	}
+	return out
+}
+
 // fileMarks is, by path, what the changed-files list says after a file the
 // diff adds, deletes or renames; a file it only modifies has no mark. A new
 // file is worth naming: every line of it is one a finding may anchor to,

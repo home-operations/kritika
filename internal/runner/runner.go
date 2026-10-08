@@ -149,6 +149,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	var tools agentTools
 	var prompt agentPrompt
 	if skip == "" {
+		tools.diff = newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)
 		var similar []contextpack.Chunk
 		similar, tools.search = similarContext(ctx, p, secrets, res, logger)
 		chunks = append(chunks, similar...)
