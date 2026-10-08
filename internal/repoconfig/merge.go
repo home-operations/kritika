@@ -252,6 +252,10 @@ type PullRequest struct {
 	Event string `json:"event,omitempty"`
 }
 
+// Manual reports whether the review was asked for by hand: a re-run from
+// the dashboard or an @<bot> review comment.
+func (p PullRequest) Manual() bool { return p.Event == "manual" }
+
 // Vars is the filter's pr variable, with the keys webhook.PullRequest's
 // FilterVars gives ingest.
 func (p PullRequest) Vars() (map[string]any, error) {

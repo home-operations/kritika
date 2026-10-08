@@ -357,8 +357,9 @@ A later push is reviewed against what changed since the last review, as
 long as no more than `review.incremental` files of the change moved; past
 that, the re-review covers the whole pull request again. What moves
 between the two heads outside the change's own paths is the base, under a
-rebase, and does not count. A re-run at the head the last review saw, or a
-rebase that leaves the change as it was, always covers the whole pull
+rebase, and does not count. A re-run at the head the last review saw, a
+re-run someone asked for with `@<app slug> review` or from the dashboard,
+or a rebase that leaves the change as it was, always covers the whole pull
 request. A re-review that covers the whole pull request is still shown
 the last review's findings, to report again those that still hold, except
 a re-run at the head the last review saw, which looks afresh. Each review

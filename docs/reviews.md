@@ -11,7 +11,7 @@ and the commands that steer it.
 | A push                                                 | the new head, once `trigger.settle` has passed: only what changed since the last review, unless more files moved than `review.incremental` allows |
 | A label is added or removed                            | the head, only if it has no review yet: the trigger lists kept it out, or its review failed                                                       |
 | A poll finds a push the webhook missed                 | the new head                                                                                                                                      |
-| `@<bot> review`, or a re-run from the dashboard        | the head, even one the admin's trigger lists keep out, that is paused, or that is merged or closed                                                |
+| `@<bot> review`, or a re-run from the dashboard        | the whole pull request at its head, even one the admin's trigger lists keep out, that is paused, or that is merged or closed                      |
 
 Drafts, forks and bots' pull requests are reviewed like any other unless a
 `trigger.exclude` condition keeps them out

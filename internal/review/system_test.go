@@ -145,6 +145,7 @@ func TestDecideScope(t *testing.T) {
 		name         string
 		hasPrior     bool
 		sameHead     bool
+		manual       bool
 		priorFetched bool
 		deltaFiles   int
 		maxDelta     int
@@ -163,6 +164,19 @@ func TestDecideScope(t *testing.T) {
 			want: ScopeFull, wantReason: "re-run at the reviewed head",
 		},
 		{name: "same head not fetched", hasPrior: true, sameHead: true, maxDelta: 25, want: ScopeFull, wantReason: "re-run at the reviewed head"},
+		{
+			name: "a re-run asked for at a new head", hasPrior: true, manual: true, priorFetched: true, deltaFiles: 3, maxDelta: 25,
+			want: ScopeFull, wantReason: "re-run asked for at a new head",
+		},
+		{
+			name: "a re-run asked for at a rebased head", hasPrior: true, manual: true, priorFetched: true, deltaFiles: 0, maxDelta: 25,
+			want: ScopeFull, wantReason: "re-run asked for at a new head",
+		},
+		{
+			name: "a re-run asked for at the reviewed head", hasPrior: true, sameHead: true, manual: true, priorFetched: true, maxDelta: 25,
+			want: ScopeFull, wantReason: "re-run at the reviewed head",
+		},
+		{name: "a first review asked for", manual: true, maxDelta: 25, want: ScopeFull, wantReason: "no completed review to build on"},
 		{name: "one under the limit", hasPrior: true, priorFetched: true, deltaFiles: 24, maxDelta: 25, want: ScopeIncremental},
 		{
 			name: "at the limit", hasPrior: true, priorFetched: true, deltaFiles: 25, maxDelta: 25,
@@ -175,7 +189,7 @@ func TestDecideScope(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, reason := DecideScope(tc.hasPrior, tc.sameHead, tc.priorFetched, tc.deltaFiles, tc.maxDelta)
+			got, reason := DecideScope(tc.hasPrior, tc.sameHead, tc.manual, tc.priorFetched, tc.deltaFiles, tc.maxDelta)
 			if got != tc.want || reason != tc.wantReason {
 				t.Fatalf("DecideScope = %q, %q; want %q, %q", got, reason, tc.want, tc.wantReason)
 			}
