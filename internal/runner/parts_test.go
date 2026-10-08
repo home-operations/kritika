@@ -109,7 +109,8 @@ func TestMergeParts(t *testing.T) {
 // it is, given the similar code of its own hunks and offered search_code,
 // given the rules of its own paths, and refused a finding on the other
 // part's file; the first part checks the earlier finding on a file no part
-// reviews.
+// reviews. A split with no rules reports an empty list, not a nil one,
+// which the pack's rule_ids column would refuse.
 func TestPartPrompts(t *testing.T) {
 	asked := 0
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +152,14 @@ func TestPartPrompts(t *testing.T) {
 		if err := part.prompt.validate(submission(mine, "t")); err != nil {
 			t.Fatalf("part %d refused a finding on its own %s: %v", i+1, mine, err)
 		}
+	}
+	s.Prompt.Rules = nil
+	if _, _, rules, err = partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil, split,
+		review.ScopeFull, &tools, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatal(err)
+	}
+	if rules == nil || len(rules) != 0 {
+		t.Fatalf("rules of a split with none = %#v, want an empty list", rules)
 	}
 }
 

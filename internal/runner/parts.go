@@ -76,7 +76,7 @@ func partPrompts(
 	}
 	ins := make([]promptInputs, len(split))
 	var skills []repoconfig.Skill
-	var rules []string
+	rules := []string{}
 	for i, paths := range split {
 		ins[i] = newPromptInputs(p, files, found, paths)
 		for _, s := range ins[i].skills {
