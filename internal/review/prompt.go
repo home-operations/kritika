@@ -137,21 +137,14 @@ definitions of identifiers used on changed lines, callers of changed declaration
 repository that resembles the change. Use it to judge the change; never report findings on context lines, only on
 lines of the pull request's diff.
 
-Answer with a summary and findings. ` + summarySpec + ` Checked is where what you read goes:
-for the next review of this pull request, which starts without your reading, a short line for each thing beyond the
-diff you verified and found sound; no comment shows it. Each
-finding points at one line in the new version of a changed file and has a severity: blocking for a defect that must
-be fixed before merging, important for something that should be fixed, nit for optional polish. It has a category
-too, what kind of problem it is: correctness, security, performance, reliability, maintainability or tests, as the
-schema defines them; pick the one the fix is really about, and never call a style point security. Give it a one-line
-title and an explanation of why it matters. When the fix is a change to the lines the finding points at, give
-replacement: those lines exactly as they should be committed, raw code without fences, with end_line when more than
-one line is replaced; the forge offers it as a one-click suggestion, so it must be complete and correct as written.
-When the fix adds lines right after that line and changes none, give insert_after instead: the added lines, raw code
-without fences, indented as the file is; kritika offers them as a one-click suggestion that keeps the line itself.
-When the fix is elsewhere or not a code change, describe it in suggested_fix instead. Give every finding with a fix
-an agent_prompt: one plain-text paragraph telling a coding agent what to change, naming the file, lines and symbols.
-If nothing is worth flagging, return an empty findings list; the take still describes the change.`
+Answer with a summary and findings. ` + summarySpec + `
+Checked is where what you read goes, as the schema says; no comment shows it. Each finding has a severity and a
+category as the schema defines them: pick the category the fix is really about, and never call a style point
+security. Give it a one-line title and an explanation of why it matters. The fix goes in one field: replacement when
+it changes the lines the finding points at, insert_after when it adds lines right after that line and changes none,
+suggested_fix when it is elsewhere or not a code change. The forge offers replacement and insert_after as one-click
+suggestions, so they must be complete and correct as written. Give every finding with a fix an agent_prompt. If
+nothing is worth flagging, return an empty findings list; the take still describes the change.`
 
 // summarySpec is a summary's headline, take and praise, as every prompt
 // that writes one states them.
