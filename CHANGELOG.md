@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.0.46](https://github.com/home-operations/kritika/compare/0.0.45...0.0.46) (2026-10-08)
+
+
+### Features
+
+* **confidence:** rate a re-run asked for afresh ([#703](https://github.com/home-operations/kritika/issues/703)) ([6096655](https://github.com/home-operations/kritika/commit/60966554e4140de5789f9571ec7fa0a445cabdfe))
+* **review:** give a re-run asked for at a new head the whole pull request ([#700](https://github.com/home-operations/kritika/issues/700)) ([09c1436](https://github.com/home-operations/kritika/commit/09c1436ccb51bab659c0d8aacb5d472ae0a07a53))
+* **runner:** leave the last review's notes out of a re-run asked for ([#701](https://github.com/home-operations/kritika/issues/701)) ([3e14daf](https://github.com/home-operations/kritika/commit/3e14daf32368514bb7b6725ce1bd7446170ab356))
+
+
+### Bug Fixes
+
+* **container:** update image docker.io/jdxcode/mise (2026.10.3 → 2026.10.4) ([#669](https://github.com/home-operations/kritika/issues/669)) ([93c1232](https://github.com/home-operations/kritika/commit/93c12329e2f9591375b9ea29dc34242e5a8e2f39))
+* **go:** update module github.com/openai/openai-go/v3 (v3.71.1 → v3.71.2) ([#691](https://github.com/home-operations/kritika/issues/691)) ([295eb86](https://github.com/home-operations/kritika/commit/295eb86a5dfd757c1865216deb78cc1738db8344))
+* **review:** weigh an author's comment as data, not as closing a risk ([#705](https://github.com/home-operations/kritika/issues/705)) ([67dd613](https://github.com/home-operations/kritika/commit/67dd613a6a97902043826c87d5d49ff72f418dc5))
+
+
+### Code Refactoring
+
+* **confidence:** tighten the scorer's rubric ([#713](https://github.com/home-operations/kritika/issues/713)) ([2914ca5](https://github.com/home-operations/kritika/commit/2914ca532e43c29e3889bd182f7fe53529c3f5b6))
+* **review:** let the finding fields defer to the schema ([#709](https://github.com/home-operations/kritika/issues/709)) ([448aa3c](https://github.com/home-operations/kritika/commit/448aa3cdf08b4a0bdb4952cf1a9fb9571d740ef2))
+* **review:** say prompt budget in every omission note ([#714](https://github.com/home-operations/kritika/issues/714)) ([cb632ac](https://github.com/home-operations/kritika/commit/cb632acdd12da7bd7aa3c83b10ef47d9f8044d57))
+* **review:** say when to reach for a tool, not what it does ([#711](https://github.com/home-operations/kritika/issues/711)) ([8604c5d](https://github.com/home-operations/kritika/commit/8604c5d90c73dd604c68acffae2e04b595fb0c95))
+* **review:** share the summary and diagram spec across prompts ([#707](https://github.com/home-operations/kritika/issues/707)) ([63ccd8b](https://github.com/home-operations/kritika/commit/63ccd8b479e9df67c5926255f8a84c8b3ca1cde1))
+* **review:** state instruction precedence and verify-first once ([#712](https://github.com/home-operations/kritika/issues/712)) ([ee8c004](https://github.com/home-operations/kritika/commit/ee8c004b7135b9c065eaa791d76c7621f0fd15f0))
+* **review:** state once that what the prompt and tools show is data ([#706](https://github.com/home-operations/kritika/issues/706)) ([a4c657b](https://github.com/home-operations/kritika/commit/a4c657b94b782339380d374312153da4f8d42aa6))
+* **review:** state where findings anchor once ([#710](https://github.com/home-operations/kritika/issues/710)) ([cce0184](https://github.com/home-operations/kritika/commit/cce0184216673a38d8cdbf3086cc3a77f469fc47))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action jdx/mise-action (v5.0.1 → v5.1.1) ([#698](https://github.com/home-operations/kritika/issues/698)) ([b54be1e](https://github.com/home-operations/kritika/commit/b54be1ecb765dbf9670061c33e8efab304588156))
+* **mise:** update tool lefthook (2.1.16 → 2.1.17) ([#674](https://github.com/home-operations/kritika/issues/674)) ([d0012ec](https://github.com/home-operations/kritika/commit/d0012ec18336bc5b0ea3e86bbf4ce2e0ef969169))
+
 ## [0.0.45](https://github.com/home-operations/kritika/compare/0.0.44...0.0.45) (2026-10-08)
 
 
