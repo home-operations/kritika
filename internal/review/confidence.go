@@ -83,14 +83,15 @@ Read the description and the diff yourself before the review's account and findi
 
 5: no blocking or important finding, and you see no problem of your own. Nits do not lower the score.
 4: no blocking or important finding, but you have a concern of your own that the findings do not cover.
-3: an important finding was reported. This is the highest score such a pull request can get.
-2: a blocking finding was reported. This is the highest score such a pull request can get.
+3: an important finding was reported.
+2: a blocking finding was reported.
 1: several blocking findings, or one that would lose data, break security or take production down.
 0: the change should not merge in any form close to this one.
 
-A reported finding sets its ceiling whether or not you agree with it: a maintainer dismisses a wrong finding, you
-do not. When you think a finding is wrong, say so in the reason, so the maintainer knows to look. A finding listed
-as dismissed is one a maintainer has ruled on: it takes nothing off the score, and is no concern of your own.
+A reported finding sets its ceiling, 3 for an important one and 2 for a blocking one, whether or not you agree
+with it: a maintainer dismisses a wrong finding, you do not. When you think a finding is wrong, say so in the
+reason, so the maintainer knows to look. A finding listed as dismissed is one a maintainer has ruled on: it takes
+nothing off the score, and is no concern of your own.
 
 A concern of your own is something specific the change risks that neither the findings nor the review's account
 answers: an entry in the release notes the description carries that no checked line covers, or lines of the diff the
@@ -109,13 +110,14 @@ high: a breaking or major change to something much else depends on.
 critical: a change that can lose or corrupt data, delete managed resources or secrets, widen access, expose a
 secret, or cause an outage that a revert does not quickly fix.
 
-A dependency update rates by what the dependency does and how far its version moves, not as a class of its own:
+A dependency update rates by what the dependency does and how far its version moves, not as a class of its own.
+Call a dependency standalone when nothing else depends on it, shared when other things do, and central when much
+else does:
 
-major: medium for an application nothing else depends on, high otherwise, and critical when it can do what the
-critical level names, such as migrating stored data to a form an older version cannot read.
-minor: low for an application nothing else depends on, medium for one that other things do, high for one much else
-depends on.
-patch, or a new digest of the same version: low, or medium for one much else depends on.
+major: medium for a standalone one, high for a shared or central one, and critical when it can do what the critical
+level names, such as migrating stored data to a form an older version cannot read.
+minor: low for a standalone one, medium for a shared one, high for a central one.
+patch, or a new digest of the same version: low, or medium for a central one.
 
 A version under 1.0 promises nothing from one release to the next, but many projects, Helm charts among them, move
 its first non-zero component for routine releases: rate 0.1 to 0.2, or 0.0.1 to 0.0.2, as a minor update, and at
@@ -124,9 +126,8 @@ update unless the description shows the step. Release notes that show an update 
 as a breaking change in a minor release, rate it as the bigger step; a digest pinned beside its tag, a bot author or a
 description that calls the update safe never rates it below its step.
 
-Risk is what the change can do, however much of it could be checked. What neither you nor the review's account can
-verify, such as an upstream change whose release notes the description does not carry, may be a concern for the
-score, but never raises the risk.
+What neither you nor the review's account can verify, such as an upstream change whose release notes the
+description does not carry, may be a concern for the score, but never raises the risk.
 
 When the prompt gives the risk the last review of this pull request was rated, keep that rating unless the change now
 does something the rating and its reason do not account for: a second reading of the same change is no reason to
@@ -172,8 +173,7 @@ var confidenceSchema = jsonSchema{
 			Enum: []string{string(RiskLow), string(RiskMedium), string(RiskHigh), string(RiskCritical)},
 		},
 		"reason": {
-			Type: schemaString, Description: "One or two plain sentences: what took the score down, or at 5 what the risk " +
-				"rating rests on. Never a description of the change. No markdown.",
+			Type: schemaString, Description: "The reason, as the instructions say: one or two plain sentences, no markdown.",
 		},
 	},
 	Required: []string{"score", "risk", "reason"},
