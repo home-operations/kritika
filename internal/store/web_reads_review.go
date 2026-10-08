@@ -327,7 +327,7 @@ func FollowupModelCalls(ctx context.Context, tx pgx.Tx, pullRequestID string, co
 }
 
 func modelCallsWhere(ctx context.Context, tx pgx.Tx, where string, args ...any) ([]transcript.StoredRow, error) {
-	rows, err := tx.Query(ctx, `SELECT id, kind, step, coalesce(review_id::text, ''), coalesce(runner_run_id::text, ''),
+	rows, err := tx.Query(ctx, `SELECT id, kind, step, part, coalesce(review_id::text, ''), coalesce(runner_run_id::text, ''),
 		coalesce(followup_comment_id, 0), model, upstream, system, tools, messages_from, messages, response,
 		input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd::float8, duration_ms, error, truncated, created_at,
 		coalesce((SELECT r.review_id::text FROM runner_runs r WHERE r.id = model_calls.carried_from), '')

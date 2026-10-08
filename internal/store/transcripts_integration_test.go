@@ -36,21 +36,23 @@ func TestModelCalls(t *testing.T) {
 	tools := []model.ToolDef{{Name: "grep", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)}}
 	msgs := make([]model.Message, 0, 3)
 	msgs = append(msgs, model.Message{Role: model.RoleUser, Text: "review"})
-	record := func(req model.StepRequest) {
+	recordPart := func(runID string, part int, req model.StepRequest) {
 		t.Helper()
 		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-			prev, step, err := AgentState(ctx, tx, runID)
+			prev, step, err := AgentState(ctx, tx, runID, part)
 			if err != nil {
 				return err
 			}
 			r := transcript.Delta(prev, req, nil)
 			r.Response = transcript.Response{Text: "ok", Stop: model.StopToolUse}
 			return InsertModelCall(ctx, tx, ModelCall{AccountID: alpha, ReviewID: reviewID, RunnerRunID: runID, Kind: ModelCallAgentStep,
-				Step: step, Model: "m", Row: r.Encode(), Usage: model.Usage{Input: 10, Output: 2}, CostUSD: 0.25, Duration: 1500 * time.Millisecond})
+				Step: step, Part: part, Model: "m", Row: r.Encode(), Usage: model.Usage{Input: 10, Output: 2}, CostUSD: 0.25,
+				Duration: 1500 * time.Millisecond})
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
+	record := func(req model.StepRequest) { t.Helper(); recordPart(runID, 0, req) }
 	record(model.StepRequest{System: "sys", Messages: msgs, Tools: tools})
 	msgs = append(msgs, model.Message{Role: model.RoleAssistant, Text: "looking"}, model.Message{Role: model.RoleUser, Text: "more"})
 	record(model.StepRequest{System: "sys", Messages: msgs, Tools: tools})
@@ -81,6 +83,8 @@ func TestModelCalls(t *testing.T) {
 		t.Fatalf("beta sees %d of alpha's model calls", n)
 	}
 
+	checkSplitRunTranscript(t, s, alpha, reviewID, recordPart)
+
 	// A follow-up row is found by its comment, and has no run.
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		r := transcript.Delta(transcript.State{}, model.StepRequest{System: "f", Messages: msgs[:1]}, nil)
@@ -93,6 +97,58 @@ func TestModelCalls(t *testing.T) {
 	}
 
 	checkModelCallRefusals(t, s, alpha, beta)
+}
+
+// checkSplitRunTranscript records the steps of a split review's two parts
+// one after the other's: each part numbers its steps and takes its deltas
+// apart from the other, and the run's bytes count both.
+func checkSplitRunTranscript(
+	t *testing.T, s *Store, alpha, reviewID string, record func(runID string, part int, req model.StepRequest),
+) {
+	t.Helper()
+	ctx := context.Background()
+	var runID string
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
+			alpha, reviewID).Scan(&runID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	one := make([]model.Message, 0, 3)
+	one = append(one, model.Message{Role: model.RoleUser, Text: "part one"})
+	two := []model.Message{{Role: model.RoleUser, Text: "part two"}}
+	record(runID, 1, model.StepRequest{System: "sys", Messages: one})
+	record(runID, 2, model.StepRequest{System: "sys", Messages: two})
+	one = append(one, model.Message{Role: model.RoleAssistant, Text: "looking"}, model.Message{Role: model.RoleUser, Text: "more"})
+	record(runID, 1, model.StepRequest{System: "sys", Messages: one})
+	var rows []transcript.StoredRow
+	var bytes []int64
+	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		var err error
+		if rows, err = modelCallsWhere(ctx, tx, "runner_run_id = $1::uuid", runID); err != nil {
+			return err
+		}
+		r, err := tx.Query(ctx, `SELECT run_bytes FROM model_calls WHERE runner_run_id = $1 ORDER BY created_at, id`, runID)
+		if err != nil {
+			return err
+		}
+		bytes, err = pgx.CollectRows(r, pgx.RowTo[int64])
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 || rows[0].Part != 1 || rows[0].Step != 0 || rows[1].Part != 2 || rows[1].Step != 0 ||
+		rows[2].Part != 1 || rows[2].Step != 1 || rows[2].MessagesFrom != 1 || len(rows[2].Messages) != 2 {
+		t.Fatalf("rows = %+v; want part 1's second step a delta on its first", rows)
+	}
+	if len(bytes) != 3 || bytes[1] <= bytes[0] || bytes[2] <= bytes[1] {
+		t.Fatalf("run bytes = %v, want the run's total to grow with every part's step", bytes)
+	}
+	for _, turn := range transcript.Rebuild(rows).Turns {
+		if turn.Reset {
+			t.Fatalf("turn %+v reset; a part's first step starts its own conversation", turn)
+		}
+	}
 }
 
 // checkModelCallRefusals checks what InsertModelCall refuses.

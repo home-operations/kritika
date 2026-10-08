@@ -228,3 +228,24 @@ apps:
 		t.Fatalf("masked = %s\nwant     %s", got, want)
 	}
 }
+
+func TestStepPart(t *testing.T) {
+	for _, tt := range []struct {
+		header string
+		want   int
+		err    bool
+	}{
+		{header: "", want: 0},
+		{header: "1", want: 1},
+		{header: "12", want: 12},
+		{header: "0", err: true},
+		{header: "-2", err: true},
+		{header: "two", err: true},
+		{header: "99999999999", err: true},
+	} {
+		got, err := stepPart(tt.header)
+		if got != tt.want || (err != nil) != tt.err {
+			t.Fatalf("stepPart(%q) = %d, %v; want %d, error %v", tt.header, got, err, tt.want, tt.err)
+		}
+	}
+}

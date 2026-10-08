@@ -117,11 +117,12 @@ func (r Recorder) Record(
 		var seeded bool
 		if c.Kind == store.ModelCallAgentStep {
 			var err error
-			if prev, c.Step, err = store.AgentState(ctx, tx, c.RunnerRunID); err != nil {
+			if prev, c.Step, err = store.AgentState(ctx, tx, c.RunnerRunID, c.Part); err != nil {
 				return err
 			}
-			if seeded = c.Step == 0 && c.Carries != ""; seeded {
-				carried, _, err := store.AgentState(ctx, tx, c.Carries)
+			// A split review's part carries on no conversation.
+			if seeded = c.Step == 0 && c.Carries != "" && c.Part == 0; seeded {
+				carried, _, err := store.AgentState(ctx, tx, c.Carries, 0)
 				if err != nil {
 					return err
 				}

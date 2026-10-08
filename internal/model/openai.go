@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -58,10 +59,17 @@ type OpenAIConfig struct {
 	// provider's. The runner's client of the gateway allows the gateway's
 	// whole step budget.
 	RequestTimeout time.Duration
+	// Part names, in PartHeader on every request, the part of a split
+	// review the runner's client of the gateway steps for; zero sends none.
+	Part int
 }
 
 // sessionHeader carries StepRequest.Session to OpenCode.
 const sessionHeader = "x-opencode-session"
+
+// PartHeader carries, from a runner to the gateway, the part of a split
+// review a step is for.
+const PartHeader = "X-Kritika-Part"
 
 // OpenAI is a Stepper over the chat completions API of OpenAI or any server
 // compatible with it.
@@ -92,6 +100,9 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 		option.WithRequestTimeout(cmp.Or(cfg.RequestTimeout, StepTimeout)))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
+	}
+	if cfg.Part > 0 {
+		opts = append(opts, option.WithHeader(PartHeader, strconv.Itoa(cfg.Part)))
 	}
 	return &OpenAI{
 		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel,

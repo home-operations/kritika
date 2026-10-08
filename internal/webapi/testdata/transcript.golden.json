@@ -15,6 +15,7 @@
       "id": "mc-1",
       "kind": "agent_step",
       "step": 0,
+      "part": 0,
       "model": "acme/large",
       "upstream": "acme",
       "system": "You review code, again.",

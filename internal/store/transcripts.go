@@ -35,9 +35,12 @@ type ModelCall struct {
 	// run's transcript, so the conversation is not recorded twice. Record
 	// keeps it on that row alone, as carried_from, and clears it on any
 	// other.
-	Carries  string
-	Kind     ModelCallKind
-	Step     int
+	Carries string
+	Kind    ModelCallKind
+	Step    int
+	// Part is the part of a split review an agent step belongs to, from 1,
+	// and 0 for a review that was not split.
+	Part     int
 	Model    string
 	Upstream string
 	Row      transcript.Encoded
@@ -62,35 +65,41 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	_, err := tx.Exec(ctx, `INSERT INTO model_calls
 		(account_id, review_id, runner_run_id, followup_comment_id, kind, step, model, upstream, system, tools,
 		 messages_from, messages, response, stop_reason, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
-		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes, carried_from)
+		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes, carried_from, part)
 		VALUES ($1, nullif($2, '')::uuid, nullif($3, '')::uuid, nullif($4::bigint, 0), $5, $6, $7, $8, $9, $10::jsonb,
-		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, nullif($28, '')::uuid)`,
+		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, nullif($28, '')::uuid, $29)`,
 		c.AccountID, c.ReviewID, c.RunnerRunID, c.FollowupCommentID, string(c.Kind), c.Step, c.Model, c.Upstream, c.Row.System, tools,
 		c.Row.MessagesFrom, string(c.Row.Messages), string(c.Row.Response), string(c.Stop),
 		c.Usage.Input, c.Usage.CacheRead, c.Usage.CacheWrite, c.Usage.Output, c.CostUSD, c.Duration.Milliseconds(), c.Error,
-		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes, c.Carries)
+		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes, c.Carries, c.Part)
 	if err != nil {
 		return fmt.Errorf("store: insert model call: %w", err)
 	}
 	return nil
 }
 
-// AgentState returns what the run has recorded so far and the number of
-// its next agent step, both zero before its first. It takes a transaction
-// lock on the run's transcript, so two steps recorded at once are recorded
-// one after the other rather than as deltas against the same state.
-func AgentState(ctx context.Context, tx pgx.Tx, runnerRunID string) (transcript.State, int, error) {
+// AgentState returns what part of the run has recorded so far and the
+// number of its next agent step, both zero before its first; the bytes are
+// the whole run's, which its cap bounds whatever its parts. It takes a
+// transaction lock on the run's transcript, so two steps recorded at once
+// are recorded one after the other rather than as deltas against the same
+// state.
+func AgentState(ctx context.Context, tx pgx.Tx, runnerRunID string, part int) (transcript.State, int, error) {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritika-transcript:' || $1, 0))`, runnerRunID); err != nil {
 		return transcript.State{}, 0, fmt.Errorf("store: lock transcript: %w", err)
 	}
 	var st transcript.State
+	if err := tx.QueryRow(ctx, `SELECT coalesce(max(run_bytes), 0) FROM model_calls WHERE runner_run_id = $1 AND kind = $2`,
+		runnerRunID, string(ModelCallAgentStep)).Scan(&st.Bytes); err != nil {
+		return transcript.State{}, 0, fmt.Errorf("store: read transcript size: %w", err)
+	}
 	var step int
 	var msgs, system, tools []byte
-	err := tx.QueryRow(ctx, `SELECT step, messages_end, messages_sha, system_sha, tools_sha, run_bytes FROM model_calls
-		WHERE runner_run_id = $1 AND kind = $2 ORDER BY step DESC LIMIT 1`, runnerRunID, string(ModelCallAgentStep)).
-		Scan(&step, &st.MessagesEnd, &msgs, &system, &tools, &st.Bytes)
+	err := tx.QueryRow(ctx, `SELECT step, messages_end, messages_sha, system_sha, tools_sha FROM model_calls
+		WHERE runner_run_id = $1 AND kind = $2 AND part = $3 ORDER BY step DESC LIMIT 1`, runnerRunID, string(ModelCallAgentStep), part).
+		Scan(&step, &st.MessagesEnd, &msgs, &system, &tools)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return transcript.State{}, 0, nil
+		return transcript.State{Bytes: st.Bytes}, 0, nil
 	}
 	if err != nil {
 		return transcript.State{}, 0, fmt.Errorf("store: read transcript state: %w", err)
@@ -106,7 +115,7 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	var kind string
 	var tools, msgs, resp []byte
 	var ms int64
-	if err := row.Scan(&r.ID, &kind, &r.Step, &r.ReviewID, &r.RunnerRunID, &r.FollowupCommentID, &r.Model, &r.Upstream, &r.System,
+	if err := row.Scan(&r.ID, &kind, &r.Step, &r.Part, &r.ReviewID, &r.RunnerRunID, &r.FollowupCommentID, &r.Model, &r.Upstream, &r.System,
 		&tools, &r.MessagesFrom, &msgs, &resp, &r.Usage.Input, &r.Usage.CacheRead, &r.Usage.CacheWrite, &r.Usage.Output,
 		&r.CostUSD, &ms, &r.Error, &r.Truncated, &r.CreatedAt, &r.CarriedReviewID); err != nil {
 		return r, err
