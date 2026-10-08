@@ -179,6 +179,10 @@ func TestParseCommand(t *testing.T) {
 		{args: []string{"--role", "all"}, wantErr: true},
 		{args: []string{"worker"}, wantErr: true},
 		{args: []string{"serve", "extra"}, wantErr: true},
+		{args: []string{"chatgpt", "login", "creds.json"}, want: CommandLogin},
+		{args: []string{"chatgpt", "login"}, wantErr: true},
+		{args: []string{"chatgpt", "login", ""}, wantErr: true},
+		{args: []string{"chatgpt", "logout", "creds.json"}, wantErr: true},
 	} {
 		got, err := ParseCommand(tt.args)
 		if (err != nil) != tt.wantErr || got != tt.want {

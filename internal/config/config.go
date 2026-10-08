@@ -20,8 +20,8 @@ import (
 	"github.com/home-operations/kritika/internal/egress"
 )
 
-// Command selects what a kritika process runs: the service, or one review or
-// index run in a runner Job.
+// Command selects what a kritika process runs: the service, one review or
+// index run in a runner Job, or a sign-in on the operator's machine.
 type Command string
 
 // Commands a kritika process can run.
@@ -32,7 +32,14 @@ const (
 	CommandServe Command = "serve"
 	// CommandRun is one run in a runner Job, which the service creates.
 	CommandRun Command = "run"
+	// CommandLogin is "chatgpt login <file>": a Sign in with ChatGPT on
+	// the operator's machine, whose credentials go to the file. It needs
+	// none of the service's environment.
+	CommandLogin Command = "chatgpt login"
 )
+
+// Usage is how kritika is invoked.
+const Usage = "kritika [serve | run | chatgpt login <file>]"
 
 // ParseCommand reads the command from a process's arguments, without the
 // program name: serve when there are none.
@@ -46,7 +53,10 @@ func ParseCommand(args []string) (Command, error) {
 			return c, nil
 		}
 	}
-	return "", fmt.Errorf("config: unknown arguments %q: usage: kritika [serve | run]", args)
+	if len(args) == 3 && Command(args[0]+" "+args[1]) == CommandLogin && args[2] != "" {
+		return CommandLogin, nil
+	}
+	return "", fmt.Errorf("config: unknown arguments %q: usage: %s", args, Usage)
 }
 
 // Executor selects how runners run.

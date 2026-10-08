@@ -1,6 +1,7 @@
 // Command kritika reviews GitHub pull requests against an index of the
-// repository. "kritika serve" runs the service, and "kritika run" one review
-// or index run in a runner Job the service creates.
+// repository. "kritika serve" runs the service, "kritika run" one review or
+// index run in a runner Job the service creates, and "kritika chatgpt login"
+// a Sign in with ChatGPT on the operator's machine.
 package main
 
 import (
@@ -30,6 +31,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/auth"
+	"github.com/home-operations/kritika/internal/chatgpt"
 	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/egress"
@@ -66,6 +68,9 @@ func run() error {
 	command, err := config.ParseCommand(os.Args[1:])
 	if err != nil {
 		return err
+	}
+	if command == config.CommandLogin {
+		return login(os.Args[3])
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -211,6 +216,21 @@ func serve(
 		return err
 	}
 	return startWorker(ctx, g, st, cfg, current, exec, forges, m, logger)
+}
+
+// loginTimeout is how long a sign-in waits for the browser to come back.
+const loginTimeout = 10 * time.Minute
+
+// login signs in with ChatGPT on this machine and writes the credentials
+// to path. It reads none of the service's environment: it runs where the
+// operator's browser is, not in a pod.
+func login(path string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
+	defer cancel()
+	_, err := chatgpt.Login{Out: os.Stderr}.Run(ctx, path)
+	return err
 }
 
 // errNoSignIn is a configuration that leaves the dashboard no way to sign

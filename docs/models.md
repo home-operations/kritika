@@ -295,13 +295,30 @@ review:
   fallback: openrouter/openai/gpt-6.1-sol
 ```
 
-`credentials` references a variable holding the credential record the
-sign-in issued, in the shape OpenAI's open-source flow gives a local
-credential file: a JSON object with the issued `client_id`, the
+`credentials` references a variable holding the record a sign-in wrote.
+The sign-in runs on your own machine, where the browser is, since
+OpenAI's callback is a loopback address a pod cannot receive; with Go
+installed, the module runs it without a checkout:
+
+```bash
+go run github.com/home-operations/kritika/cmd/kritika@latest chatgpt login chatgpt-credentials.json
+```
+
+It prints a URL to open. Sign in to the ChatGPT account whose plan pays,
+name the client, allow the plan's use, and the record is written to the
+file, readable by you alone. Put its content in a Secret as the variable
+the reference names, then delete the file:
+
+```bash
+kubectl create secret generic kritika-chatgpt --from-file=CHATGPT_CREDENTIALS=chatgpt-credentials.json
+```
+
+The record is OpenAI's credential file: the issued `client_id`, the
 `access_token` and `refresh_token`, the `scopes` granted, which must
 include `chatgpt.tokens.use.direct`, and the token's `expires_in` and
-`saved_at`. The provider's models are the plan's, named by slug, as
-`gpt-6.1-sol`.
+`saved_at`. A sign-in whose consent left the plan's use out is refused,
+and so is a record without it. The provider's models are the plan's,
+named by slug, as `gpt-6.1-sol`.
 
 - **Tokens.** The access token lasts an hour; kritika renews it with the
   refresh token, which every renewal replaces. The renewed tokens live in
@@ -309,8 +326,8 @@ include `chatgpt.tokens.use.direct`, and the token's `expires_in` and
   second replica renewing with a token the first already replaced ends the
   sign-in. A refresh token OpenAI no longer takes, because the plan's
   owner disconnected kritika or it went unused for thirty days, signs the
-  provider out: its steps fail, the fallback takes them, and the record
-  has to be issued again.
+  provider out: its steps fail, the fallback takes them, and `kritika
+  chatgpt login` has to run again.
 - **Limits.** A plan at its usage limit refuses a step with a 429 that
   kritika does not retry: the provider sends nothing on the plan for 15
   minutes, every step going to `review.fallback` or
