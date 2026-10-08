@@ -224,6 +224,14 @@ type Stepper interface {
 	Step(ctx context.Context, req StepRequest) (StepResponse, error)
 }
 
+// StepperFunc is a Stepper made of one function.
+type StepperFunc func(ctx context.Context, req StepRequest) (StepResponse, error)
+
+// Step implements Stepper.
+func (f StepperFunc) Step(ctx context.Context, req StepRequest) (StepResponse, error) {
+	return f(ctx, req)
+}
+
 // CompletionRequest is one structured-output call.
 type CompletionRequest struct {
 	System string
@@ -289,7 +297,8 @@ var (
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
 // provider's default endpoint; client may be nil. The adapter sends each
-// request once: the gateway retries a step with the provider's retries.
+// request once: the gateway and the workers retry a step with the
+// provider's retries (adapter.Step).
 func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client *http.Client) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:

@@ -115,11 +115,12 @@ type Provider struct {
 	// does not report a cost for; without it such calls cost zero while
 	// their tokens still count against limits.
 	Pricing model.Pricing `yaml:"pricing,omitempty"`
-	// Retries is how many more times the gateway tries a review's model
-	// step that failed in a way another attempt may not (a 5xx, a timeout,
-	// a cut connection), at most MaxProviderRetries; zero tries once. A
+	// Retries is how many more times a review's or a follow-up's step, or
+	// the scorer's call, on one of the provider's models is tried after it
+	// failed in a way another attempt may not (a 5xx, a 429, a timeout, a
+	// cut connection), at most MaxProviderRetries; zero tries once. A
 	// routing proxy that picks a model per request is where it earns its
-	// keep. Follow-ups and the embedder do not retry.
+	// keep. The embedder does not use it.
 	Retries int `yaml:"retries,omitempty"`
 
 	apiKey Secret

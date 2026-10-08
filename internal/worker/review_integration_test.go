@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/openai/openai-go/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -61,6 +62,7 @@ providers:
     type: openai
     baseUrl: http://unused.invalid/v1
     apiKey: { env: TEST_SECRET }
+    retries: 1
 review:
   model: test/reviewer
 limits:
@@ -490,6 +492,17 @@ type fakeCompleter struct {
 	diagram string
 	// extra, when set, is one more finding a review submits, as JSON.
 	extra string
+	// scoreFails is how many confidence calls still fail with a 503 before
+	// one is answered; a failed call is not recorded as made.
+	scoreFails int
+}
+
+// failScore has the next n confidence calls fail in a way a retry gets
+// past.
+func (f *fakeCompleter) failScore(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.scoreFails = n
 }
 
 // draw sets the summary diagram the reviews that follow submit, "" for
@@ -509,7 +522,19 @@ func (f *fakeCompleter) find(extra string) {
 }
 
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
+	// An agent is offered its read-only tools too; it submits at once.
+	tool := req.Tools[0].Name
+	for _, t := range req.Tools {
+		if t.Name == "submit_review" || t.Name == review.SubmitReply {
+			tool = t.Name
+		}
+	}
 	f.mu.Lock()
+	if tool == "confidence" && f.scoreFails > 0 {
+		f.scoreFails--
+		f.mu.Unlock()
+		return model.StepResponse{}, &openai.Error{StatusCode: http.StatusServiceUnavailable}
+	}
 	f.calls++
 	f.users = append(f.users, req.Messages[0].Text)
 	f.systems = append(f.systems, req.System)
@@ -523,13 +548,6 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		extra = "," + f.extra
 	}
 	f.mu.Unlock()
-	// An agent is offered its read-only tools too; it submits at once.
-	tool := req.Tools[0].Name
-	for _, t := range req.Tools {
-		if t.Name == "submit_review" || t.Name == review.SubmitReply {
-			tool = t.Name
-		}
-	}
 	answer := func(raw string, usage model.Usage, upstream string, cost float64) model.StepResponse {
 		return model.StepResponse{
 			ToolCalls: []model.ToolCall{{ID: "call", Name: tool, Input: json.RawMessage(raw)}}, Stop: model.StopToolUse,
@@ -1734,6 +1752,8 @@ review:
 		t.Fatal(err)
 	}
 	codeHead := commit("code", map[string]string{"main.go": "package main\n\nfunc d() {}\n"})
+	// The scorer's first attempt fails; the provider's one retry answers.
+	fc.failScore(1)
 	dispatchPR(3, codeHead, false)
 	if status, _, _ := waitReview(codeHead); status != "completed" {
 		t.Fatalf("status = %s, want completed", status)
@@ -1878,8 +1898,8 @@ func checkStatuses(ctx context.Context, t *testing.T, appStore *store.Store, acc
 // checkConfidence asserts what a review does where the merge-base
 // .kritika.yaml asks for a confidence score its findings keep the pull
 // request under: the score is held to the ceiling of the blocking one,
-// though it is outside the diff, recorded with its call and its cost, and
-// fails the commit status.
+// though it is outside the diff, recorded with its call and its cost once,
+// whatever attempts the call took, and fails the commit status.
 func checkConfidence(ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID, head string) {
 	t.Helper()
 	fc.mu.Lock()
