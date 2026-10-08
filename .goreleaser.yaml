@@ -1,0 +1,99 @@
+---
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
+version: 2
+project_name: kritika
+
+# The binary embeds the dashboard (internal/web/dist), built here as the
+# Dockerfile builds it.
+before:
+  hooks:
+    - go mod tidy
+    - mise run ui-install
+    - mise run ui-build
+
+builds:
+  - id: kritika
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/kritika
+    binary: kritika
+
+archives:
+  - id: kritika
+    ids:
+      - kritika
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  algorithm: sha256
+  split: true
+
+sboms:
+  - artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.json"
+
+signs:
+  - cmd: cosign
+    signature: ${artifact}.sigstore.json
+    args:
+      - sign-blob
+      - --bundle=${signature}
+      - --yes
+      - ${artifact}
+    artifacts: all
+    output: true
+
+homebrew_casks:
+  - name: kritika
+    ids:
+      - kritika
+    binaries:
+      - kritika
+    # Versioned casks: @major.minor is overwritten per patch, @major.minor.patch
+    # accumulates one tap file per release.
+    alternative_names:
+      - "kritika@{{ .Major }}.{{ .Minor }}"
+      - "kritika@{{ .Major }}.{{ .Minor }}.{{ .Patch }}"
+    repository:
+      owner: home-operations
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/home-operations/kritika
+    description: Repository-aware AI pull request reviewer for GitHub
+    # Binaries aren't notarized — strip the quarantine bit so macOS doesn't
+    # block the first run with "developer cannot be verified". Preflight,
+    # since Homebrew orders cask artifacts by class and a postflight hook
+    # would run after the binary's first use.
+    hooks:
+      pre:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kritika"] if OS.mac?
+
+# Parallel per-GOOS release jobs (release.yaml): `release --split` legs +
+# one `continue --merge` job for checksums/signing/SBOMs/publish.
+partial:
+  by: goos
+
+# release-please creates the GitHub Release with the changelog; goreleaser
+# attaches binaries/sboms/sigs to it.
+release:
+  mode: keep-existing

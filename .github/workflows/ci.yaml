@@ -340,6 +340,16 @@ jobs:
           path: internal/web/playwright-report/
           retention-days: 7
 
+  goreleaser:
+    name: GoReleaser
+    uses: $/.github/workflows/goreleaser.yaml
+    permissions:
+      contents: read
+    with:
+      snapshot: true
+    secrets:
+      GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+
   workflow-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
@@ -380,6 +390,7 @@ jobs:
       - go-test
       - go-integration
       - go-vulncheck
+      - goreleaser
       - helm-lint
       - helm-unittest
       - smoke

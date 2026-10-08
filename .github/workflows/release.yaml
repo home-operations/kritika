@@ -163,3 +163,17 @@ jobs:
 
       - name: Sign the published chart with Cosign
         run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/kritika:${VERSION}"
+
+  goreleaser:
+    name: GoReleaser
+    if: ${{ github.event_name == 'release' }}
+    uses: $/.github/workflows/goreleaser.yaml
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      snapshot: false
+    secrets:
+      GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+      BOT_CLIENT_ID: ${{ secrets.BOT_CLIENT_ID }}
+      BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}

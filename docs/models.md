@@ -297,11 +297,13 @@ review:
 
 `credentials` references a variable holding the record a sign-in wrote.
 The sign-in runs on your own machine, where the browser is, since
-OpenAI's callback is a loopback address a pod cannot receive; with Go
-installed, the module runs it without a checkout:
+OpenAI's callback is a loopback address a pod cannot receive. Install
+kritika there with Homebrew, `brew install home-operations/tap/kritika`,
+or from a [release](https://github.com/home-operations/kritika/releases)'s
+archive for your platform, then:
 
 ```bash
-go run github.com/home-operations/kritika/cmd/kritika@latest chatgpt login chatgpt-credentials.json
+kritika chatgpt login chatgpt-credentials.json
 ```
 
 It prints a URL to open. Sign in to the ChatGPT account whose plan pays,
