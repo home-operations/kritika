@@ -59,7 +59,7 @@ func (s *Store) ListAudit(ctx context.Context, accountID string, p Page) ([]Audi
 	if !p.After.First() {
 		n, err := strconv.ParseInt(p.After.ID, 10, 64)
 		if err != nil || n <= 0 {
-			return nil, nil, ErrFilter
+			return nil, nil, ErrCursor
 		}
 		after = &n
 	}

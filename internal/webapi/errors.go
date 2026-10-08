@@ -69,7 +69,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 // writeError writes err as ErrorBody: an apiError as itself, a store miss
-// as 404, a bad filter as 400, anything else as a logged 500 that says
+// as 404, a bad cursor or filter as 400, anything else as a logged 500 that says
 // nothing about its cause.
 func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
 	if e, ok := errors.AsType[*apiError](err); ok {
@@ -79,6 +79,8 @@ func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, ErrorBody{Code: CodeNotFound, Message: "not found"})
+	case errors.Is(err, store.ErrCursor):
+		writeJSON(w, http.StatusBadRequest, ErrorBody{Code: CodeInvalidCursor, Message: "cursor is not valid"})
 	case errors.Is(err, store.ErrFilter), errors.Is(err, store.ErrPageLimit):
 		writeJSON(w, http.StatusBadRequest, ErrorBody{Code: CodeBadRequest, Message: "invalid filter"})
 	case r.Context().Err() != nil:
