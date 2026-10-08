@@ -69,26 +69,36 @@ lists the [statuses' descriptions](reviews.md#the-commit-status).
 ## Risk
 
 The same call rates the change's risk, how much damage it could do if the
-review missed something, from what the change does and not from where its
-files live:
+review missed something. Authentication, authorization, secrets, billing,
+data and its migrations, infrastructure, CI, public interfaces, and build
+or runtime configuration are where damage tends to come from, but a change
+there is rated by what it can do there, not by the area it touches:
 
-| Risk       | What the change is                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------------------- |
-| `low`      | documentation, tests, formatting, comments, and small changes with no effect on behavior that matters   |
-| `medium`   | ordinary application or business logic                                                                  |
-| `high`     | build or runtime configuration, modules much else depends on                                            |
-| `critical` | authentication, authorization, secrets, billing, data migrations, infrastructure, CI, public interfaces |
+| Risk       | What the change can do                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `low`      | nothing that matters: documentation, tests, formatting, comments, and small changes that leave behavior alone                                   |
+| `medium`   | a routine change that a revert undoes, such as ordinary application logic or a single setting                                                   |
+| `high`     | a breaking or major change to something much else depends on                                                                                    |
+| `critical` | lose or corrupt data, delete managed resources or secrets, widen access, expose a secret, or cause an outage that a revert does not quickly fix |
 
 A dependency update is rated by what the dependency does and how far its
-version moves, not as a class of its own. A move of the version's first
-non-zero component is a major update: 1.x to 2.x, but also 0.1 to 0.2 and
-0.0.1 to 0.0.2, since a version under 1.0 promises nothing from one such
-step to the next.
+version moves, not as a class of its own:
 
-| Update         | Risk                                                                                                                                                             |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| major          | at least `high`; `critical` when the dependency is one the critical row names                                                                                    |
-| minor or patch | `low` for an application nothing else depends on, `medium` for one that other things do, `high` for a module much else depends on or that the critical row names |
+| Update                                     | Risk                                                                                                                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| major                                      | `medium` for an application nothing else depends on, `high` otherwise; `critical` when it can do what the critical row names, such as migrating stored data to a form an older version cannot read |
+| minor                                      | `low` for an application nothing else depends on, `medium` for one that other things do, `high` for one much else depends on                                                                       |
+| patch, or a new digest of the same version | `low`; `medium` for one much else depends on                                                                                                                                                       |
+
+A version under 1.0 promises nothing from one release to the next, but
+many projects, Helm charts among them, move its first non-zero component
+for routine releases, so 0.1 to 0.2 and 0.0.1 to 0.0.2 rate as minor
+updates, and at least `medium`. A new digest under a tag that names no
+version, such as `latest`, rates as a minor update unless the description
+shows the step. Release notes that show an update does more than its step
+says, such as a breaking change in a minor release, rate it as the bigger
+step; a digest pinned beside its tag, a bot author or a description that
+calls the update safe never rates it below its step.
 
 `confidence.instructions` is plain guidance to the scorer on rating risk
 in your code, such as "the media apps under `kubernetes/apps/default` are
