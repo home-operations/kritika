@@ -9,6 +9,7 @@ a provider the file declares:
 | `review.model`     | reviews pull requests and answers follow-ups                                                    |
 | `review.fallback`  | takes over a review's or a follow-up's step when the review model fails ([fallback](#fallback)) |
 | `confidence.model` | scores a reviewed pull request ([confidence and approvals](confidence.md))                      |
+| `confidence.fallback` | takes over the scorer's call when the confidence model fails ([fallback](#fallback))         |
 | `embedding.model`  | builds each repository's similar-code index ([the embedder](#the-embedder))                     |
 
 The review models can differ by repository, in the admin's `repositories`
@@ -125,13 +126,22 @@ provider's own `retries`, and the review carries on there. The step's
 usage is recorded under the model that answered. A follow-up's steps fall
 back the same way.
 
+`confidence.fallback` does the same for the scorer's call: on the
+confidence model's provider it goes to the provider with the call, on
+another provider it gets the call once the confidence model's attempts
+are spent, and the call is recorded, charged and counted under the model
+that answered. It is set wherever `confidence.model` is, a repository's
+`.kritika.yaml` included, under the same provider rules, and
+`confidence.effort` applies to it too.
+
 ## Effort
 
 `review.effort` and `confidence.effort` set how hard a model reasons, as
 the providers' reasoning effort: `none`, `minimal`, `low`, `medium`,
 `high`, `xhigh` or `max`, lowest first. `review.effort` is the review
 model's, for reviews and follow-ups alike, and the fallback that takes a
-step reasons as hard; `confidence.effort` is the scorer's. Unset, each is
+step reasons as hard; `confidence.effort` is the scorer's, and its
+fallback's. Unset, each is
 the provider's default. The review is where reasoning pays off, and the
 score is a short call that a lower level answers for less:
 

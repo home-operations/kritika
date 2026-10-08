@@ -40,21 +40,22 @@ const (
 
 // The keys the environment sets as well (instance.go).
 const (
-	keyModel        = "review.model"
-	keyFallback     = "review.fallback"
-	keyEffort       = "review.effort"
-	keyApprove      = "review.approve"
-	keyFixes        = "review.fixes"
-	keyIncremental  = "review.incremental"
-	keyDiagram      = "review.diagram"
-	keyCost         = "review.cost"
-	keyScorer       = "confidence.model"
-	keyScorerEffort = "confidence.effort"
-	keyThreshold    = "confidence.threshold"
-	keyGate         = "confidence.gate"
-	keyRisk         = "confidence.risk"
-	keySettle       = "trigger.settle"
-	keyLimit        = "trigger.limit"
+	keyModel          = "review.model"
+	keyFallback       = "review.fallback"
+	keyEffort         = "review.effort"
+	keyApprove        = "review.approve"
+	keyFixes          = "review.fixes"
+	keyIncremental    = "review.incremental"
+	keyDiagram        = "review.diagram"
+	keyCost           = "review.cost"
+	keyScorer         = "confidence.model"
+	keyScorerFallback = "confidence.fallback"
+	keyScorerEffort   = "confidence.effort"
+	keyThreshold      = "confidence.threshold"
+	keyGate           = "confidence.gate"
+	keyRisk           = "confidence.risk"
+	keySettle         = "trigger.settle"
+	keyLimit          = "trigger.limit"
 )
 
 // Policies is the table.
@@ -69,6 +70,7 @@ var Policies = []Policy{
 	{Key: keyDiagram, Scopes: everyScope},
 	{Key: keyCost, Scopes: everyScope},
 	{Key: keyScorer, Scopes: everyScope},
+	{Key: keyScorerFallback, Scopes: everyScope},
 	{Key: keyScorerEffort, Scopes: everyScope},
 	{Key: keyThreshold, Scopes: everyScope},
 	{Key: keyGate, Scopes: everyScope},

@@ -391,6 +391,7 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   await expect(settings).toContainText(`(.kritika.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
   await expect(settings).toContainText(`Review effort ${rc.settings.models.effort} (default)`);
   await expect(settings).toContainText(`Confidence effort ${rc.settings.confidence.effort} (default)`);
+  await expect(settings).toContainText(`Confidence fallback ${g.repoDetail.settings.confidence.fallback} (default)`);
   const tests = (c: { expr: string; paths?: string[] }) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
   const conditions = (cs: { name: string; expr: string; paths?: string[] }[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
   await expect(settings).toContainText(`Include ${conditions(rc.settings.filters.include)}`);

@@ -208,7 +208,7 @@ one. They come in five groups, with a few keys beside them:
 | Group        | Keys                                                                                | What they set                              |
 | ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
 | `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost` | what a review runs on and what it says     |
-| `confidence` | `model`, `effort`, `threshold`, `gate`, `risk`, `instructions`                      | how a review is judged                     |
+| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`          | how a review is judged                     |
 | `trigger`    | `include`, `exclude`, `settle`, `limit`                                             | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`                                                      | what is posted                             |
 | `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`      | the bounds of a review's tool loop         |
@@ -479,6 +479,7 @@ and the embedder's variables are on [Models](models.md#from-the-environment):
 | `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                            |
 | `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                               |
 | `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                             |
+| `KRITIKA_CONFIDENCE_FALLBACK`  | `confidence.fallback`                                          |
 | `KRITIKA_CONFIDENCE_EFFORT`    | `confidence.effort`, a level or empty                          |
 | `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5             |
 | `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                           |

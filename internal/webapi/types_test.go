@@ -62,7 +62,10 @@ var goldenRepoSettings = RepoSettings{
 		Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
 	},
 	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
-	Confidence: configfile.Confidence{Model: "openrouter/acme-judge", Effort: "low", Threshold: 5, Risk: review.RiskLow, Instructions: "Image bumps are low."},
+	Confidence: configfile.Confidence{
+		Model: "openrouter/acme-judge", Fallback: "openrouter/acme-judge-small", Effort: "low", Threshold: 5, Risk: review.RiskLow,
+		Instructions: "Image bumps are low.",
+	},
 	Review: configfile.Review{
 		RequireSuggestedFix: true,
 		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,

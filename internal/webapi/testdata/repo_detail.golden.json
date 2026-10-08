@@ -67,6 +67,7 @@
     },
     "confidence": {
       "model": "openrouter/acme-judge",
+      "fallback": "openrouter/acme-judge-small",
       "effort": "low",
       "threshold": 5,
       "gate": false,
@@ -160,6 +161,7 @@
       },
       "confidence": {
         "model": "openrouter/acme-judge",
+        "fallback": "openrouter/acme-judge-small",
         "effort": "low",
         "threshold": 5,
         "gate": false,

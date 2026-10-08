@@ -455,11 +455,17 @@ func (f *File) validateAccount(a *Account) error {
 // models name providers declared for account t (nil for the file's own),
 // and its trigger, agent, review and comments keys are in range.
 func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
-	if err := f.checkModels(where+"review", t, r.Review); err != nil {
-		return err
-	}
-	if ref := r.Confidence.Model; ref != nil && *ref != "" {
-		if err := f.checkModelRef(where+keyScorer, t, *ref); err != nil {
+	for _, m := range []struct {
+		key string
+		ref *ModelRef
+	}{
+		{keyModel, r.Review.Model}, {keyFallback, r.Review.Fallback},
+		{keyScorer, r.Confidence.Model}, {keyScorerFallback, r.Confidence.Fallback},
+	} {
+		if m.ref == nil || *m.ref == "" {
+			continue
+		}
+		if err := f.checkModelRef(where+m.key, t, *m.ref); err != nil {
 			return err
 		}
 	}
@@ -619,21 +625,6 @@ func (i *Connection) validate(where string) error {
 		}
 	default:
 		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, i.Forge)
-	}
-	return nil
-}
-
-func (f *File) checkModels(where string, t *Account, m ReviewSpec) error {
-	for _, r := range []struct {
-		role string
-		ref  *ModelRef
-	}{{"model", m.Model}, {"fallback", m.Fallback}} {
-		if r.ref == nil || *r.ref == "" {
-			continue
-		}
-		if err := f.checkModelRef(where+"."+r.role, t, *r.ref); err != nil {
-			return err
-		}
 	}
 	return nil
 }

@@ -29,7 +29,8 @@ makes it a second opinion.
 | Key                       | Default                 | What                                                                                       | From a `.kritika.yaml`                     |
 | ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | `confidence.model`        | none: nothing is scored | the model that scores, a `<provider>/<model>` held to the same providers as `review.model` | replaces                                   |
-| `confidence.effort`       | the provider's          | how hard the scorer reasons ([effort](models.md#effort))                                   | replaces                                   |
+| `confidence.fallback`     | none                    | the model that takes the scorer's call when the confidence model fails ([fallback](models.md#fallback)) | replaces                                   |
+| `confidence.effort`       | the provider's          | how hard the scorer, and the fallback that takes its call, reasons ([effort](models.md#effort)) | replaces                                   |
 | `confidence.threshold`    | 5                       | the score approvals need, and a gated commit status                                        | replaces, either way                       |
 | `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check          | replaces, either way                       |
 | `confidence.risk`         | `low`                   | the highest [risk](#risk) a change may be rated and still be approved                      | may only lower it; a higher one is dropped |
@@ -45,10 +46,14 @@ How the score is reached and used:
 - **Unchanged rebases:** a bot's rebase that leaves its patch unchanged is
   skipped when its last review was scored, and keeps that score; one whose
   last review has no score is reviewed again.
-- **Retries:** the scorer's call is tried again as a review's step is,
-  with its provider's [`retries`](models.md#retries), within the two
-  minutes a score gets, the wait for a slot on the model included; a call
-  that still fails leaves the review unscored.
+- **Retries and fallback:** the scorer's call is tried again as a review's
+  step is, with its provider's [`retries`](models.md#retries), and once
+  those are spent `confidence.fallback` takes it, as `review.fallback`
+  takes a review's step ([fallback](models.md#fallback)), all within the
+  two minutes a score gets, the wait for a slot on the model included. A
+  call that still fails leaves the review unscored. The scorer's fallback
+  is its own, not `review.fallback`, which is often the review model
+  through another provider: the second opinion stays one.
 - **Cost:** the scorer's call counts towards the account's
   `tokensPerMonth`, and shows in the review's transcript. It asks for no
   prompt caching: no later call reads it back, and writing a prompt to a

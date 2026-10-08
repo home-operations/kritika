@@ -257,6 +257,9 @@ func TestConfidenceSettings(t *testing.T) {
 			want: "repositories.acme/x.confidence.threshold must be between 0 and 5"},
 		{name: "a model of no declared provider", doc: "confidence: { model: nowhere/judge }\n",
 			want: `configfile: confidence.model references provider "nowhere"`},
+		{name: "a fallback of no declared provider", doc: "confidence: { model: openrouter/judge, fallback: nowhere/judge }\n",
+			want: `configfile: confidence.fallback references provider "nowhere"`},
+		{name: "a fallback in the environment that names no model", env: "FALLBACK=openrouter", want: `confidence.fallback must be "<provider>/<model>"`},
 		{name: "a risk that is no level", doc: "confidence: { risk: none }\n",
 			want: `configfile: confidence.risk must be low, medium, high or critical, got "none"`},
 		{name: "a risk in the environment that is no level", env: "RISK=severe", want: "confidence.risk must be low, medium, high or critical"},
@@ -277,9 +280,10 @@ func TestConfidenceSettings(t *testing.T) {
 	}
 	doc := fileWithDefaults + `confidence: { model: openrouter/judge, effort: low, risk: medium, instructions: "Image bumps are low." }
 repositories:
-  acme/x: { confidence: { threshold: 3, gate: false, risk: high } }
+  acme/x: { confidence: { threshold: 3, gate: false, risk: high, fallback: "" } }
   acme/y: { confidence: { model: "", effort: "", instructions: "" } }
 `
+	t.Setenv("KRITIKA_CONFIDENCE_FALLBACK", "openrouter/judge-small")
 	t.Setenv("KRITIKA_CONFIDENCE_THRESHOLD", "4")
 	t.Setenv("KRITIKA_CONFIDENCE_GATE", "true")
 	if f, err = Parse([]byte(doc)); err != nil {
@@ -287,16 +291,28 @@ repositories:
 	}
 	a := &f.Accounts[0]
 	for repo, want := range map[string]Confidence{
-		"acme/z": {Model: "openrouter/judge", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium, Instructions: "Image bumps are low."},
+		"acme/z": {Model: "openrouter/judge", Fallback: "openrouter/judge-small", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium,
+			Instructions: "Image bumps are low."},
+		// A fallback written empty drops the environment's.
 		"acme/x": {Model: "openrouter/judge", Effort: model.EffortLow, Threshold: 3, Gate: false, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
 		// An effort written empty leaves it to the provider.
-		"acme/y": {Threshold: 4, Gate: true, Risk: review.RiskMedium},
+		"acme/y": {Fallback: "openrouter/judge-small", Threshold: 4, Gate: true, Risk: review.RiskMedium},
 	} {
 		if got := f.Settings(a, repo).Confidence; got != want {
 			t.Errorf("confidence of %s = %+v, want %+v", repo, got, want)
 		}
 	}
-	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.threshold"] != SourceEnv || src["confidence.gate"] != SourceEnv {
+	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceEnv ||
+		src["confidence.threshold"] != SourceEnv || src["confidence.gate"] != SourceEnv {
 		t.Fatalf("sources = %v", src)
+	}
+	defaults := f.FileLayer().Defaults
+	layer := make([]string, 0, len(defaults))
+	for _, d := range defaults {
+		layer = append(layer, d.Key+"="+d.Value+" ("+string(d.Source)+")")
+	}
+	if want := []string{"confidence.model=openrouter/judge (file)", "confidence.fallback=openrouter/judge-small (env)", "confidence.effort=low (file)",
+		"confidence.threshold=4 (env)", "confidence.gate=true (env)", "confidence.risk=medium (file)"}; !slices.Equal(layer, want) {
+		t.Fatalf("file layer = %v, want %v", layer, want)
 	}
 }

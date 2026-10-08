@@ -191,7 +191,8 @@ Kubernetes: `>=1.25.0-0`
 | config.authOidcRolesClaim | string | `""` | The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`. |
 | config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
 | config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
-| config.confidenceEffort | string | `""` | How hard the confidence model reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set. |
+| config.confidenceEffort | string | `""` | How hard the confidence model, and the fallback that takes its call, reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set. |
+| config.confidenceFallback | string | `""` | The model the scorer's call falls back to when the confidence model fails. |
 | config.confidenceGate | string | `""` | `true` fails the commit status under the threshold, so it can be a required check; off unless set, when the status reports the score and passes. |
 | config.confidenceModel | string | `""` | The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set. |
 | config.confidenceRisk | string | `""` | The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set. |

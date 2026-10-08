@@ -13,18 +13,25 @@ import (
 )
 
 // stepperFunc answers each step from the next error in errs, then the
-// answer; it records how many steps it took.
+// answer; it records how many steps it took and the model each asked for,
+// and calls then, when set, after each.
 type stepperFunc struct {
-	errs  []error
-	steps int
+	errs   []error
+	steps  int
+	models []string
+	then   func()
 }
 
-func (s *stepperFunc) Step(context.Context, model.StepRequest) (model.StepResponse, error) {
+func (s *stepperFunc) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	s.steps++
+	s.models = append(s.models, req.Model)
+	if s.then != nil {
+		defer s.then()
+	}
 	if s.steps <= len(s.errs) {
 		return model.StepResponse{}, s.errs[s.steps-1]
 	}
-	return model.StepResponse{Model: "m", Text: "ok"}, nil
+	return model.StepResponse{Model: req.Model, Text: "ok"}, nil
 }
 
 // TestStepStopsAtItsBudget: a step whose budget ran out while the provider
