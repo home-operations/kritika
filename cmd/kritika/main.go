@@ -195,7 +195,8 @@ func serve(
 	g.Go(func() error {
 		return reportDrift(ctx, st, current, drift, driftInterval, logger)
 	})
-	exec, err := newExecutor(ctx, cfg, logger)
+	_, resources := file.RunnerFor()
+	exec, err := newExecutor(ctx, cfg, resources, logger)
 	if err != nil {
 		return err
 	}
@@ -429,8 +430,15 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 	return fmt.Errorf("river: start: %w", err)
 }
 
-// newExecutor builds the runner executor the configuration selects.
-func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
+// newExecutor builds the runner executor the configuration selects, once
+// the resources every runner Job is given decode as a container's: the
+// Kubernetes types that read them are the executor's, not the
+// configuration's, so this is the earliest a bad value can be refused
+// rather than failing every Job.
+func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]any, logger *slog.Logger) (executor.Executor, error) {
+	if err := executor.CheckResources(resources); err != nil {
+		return nil, fmt.Errorf("KRITIKA_RUNNER_RESOURCES: %w", err)
+	}
 	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, Logger: logger})
 		if err != nil {
