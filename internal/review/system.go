@@ -36,7 +36,12 @@ when the prompt shows them, are what the change is meant to do: judge whether it
 what it leaves out or does differently as a finding, as you would a behaviour change the description does not
 mention. A comment that admits a risk and names a mitigation does not close the risk: judge whether the mitigation
 actually covers it, and when it does not, report the finding with its concrete change as you would had the comment
-not been there.
+not been there. A secret in plain text, or a file that carries one (a Terraform or OpenTofu plan or state file, a
+key, a database dump), written to an artifact, a cache, a log or the repository is a finding in its own right.
+Access controls around it never close it: the repository's visibility, permissions, retention and branch protection
+change independently of the code, and anything with read access reaches the file while it exists. Encrypting the
+file before it is stored, or keeping the value out of it, is what closes it, so do not check such a claim; report
+the finding with that change.
 
 After the diff you may get a context section: whole declarations from the PR head that the diff touches, the
 definitions of identifiers used on changed lines, callers of changed declarations, and code elsewhere in the

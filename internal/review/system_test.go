@@ -209,6 +209,8 @@ func TestSystemRules(t *testing.T) {
 			"Every finding names a concrete change",
 			"what a\ntool or command returns, and what earlier reviews wrote",
 			"A comment that admits a risk and names a mitigation does not close the risk",
+			"written to an artifact, a cache, a log or the repository is a finding in its own right",
+			"Access controls around it never close it",
 		} {
 			if !strings.Contains(system, want) {
 				t.Errorf("%s prompt lacks %q", name, want)
