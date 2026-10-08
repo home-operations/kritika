@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.0.45](https://github.com/home-operations/kritika/compare/0.0.44...0.0.45) (2026-10-08)
+
+
+### Features
+
+* **confidence:** add confidence.fallback, the model that takes the scorer's call ([#687](https://github.com/home-operations/kritika/issues/687)) ([5f4da19](https://github.com/home-operations/kritika/commit/5f4da19a2086a120c87c9a4e53f6e063819f08a8))
+* **confidence:** retry the scorer's call with its provider's retries ([#686](https://github.com/home-operations/kritika/issues/686)) ([f9ba2f1](https://github.com/home-operations/kritika/commit/f9ba2f16341a494d55f1f55bb4b6b001573dc632))
+* **gateway:** record which part of a split review each step belongs to ([#680](https://github.com/home-operations/kritika/issues/680)) ([c209be2](https://github.com/home-operations/kritika/commit/c209be25defb1080fee1c160a682b90142d1b605))
+* **metrics:** count confidence scores by score and risk ([#662](https://github.com/home-operations/kritika/issues/662)) ([8f92f91](https://github.com/home-operations/kritika/commit/8f92f916038cd649f308c8490eaecd89a3dc3a45))
+* **model:** leave a fallback on another provider half the time a call has left ([#689](https://github.com/home-operations/kritika/issues/689)) ([29433b7](https://github.com/home-operations/kritika/commit/29433b760a00af90b1c8f3dd0ecc375c9bceb328))
+* **review:** add agent.parts and size a large review's run for its parts ([#679](https://github.com/home-operations/kritika/issues/679)) ([6e11962](https://github.com/home-operations/kritika/commit/6e1196275370d45c3ec121e6c15940b6a0a79724))
+* **review:** carry a pull request's risk across re-reviews ([#666](https://github.com/home-operations/kritika/issues/666)) ([ccbb15f](https://github.com/home-operations/kritika/commit/ccbb15fe7bcf03d42cde060d65a826909bb65d11))
+* **review:** cut a large diff into the parts of a split review ([#676](https://github.com/home-operations/kritika/issues/676)) ([e89b7e3](https://github.com/home-operations/kritika/commit/e89b7e34ecd99160e3bdc9be5e6e15e71cfe085f))
+* **review:** mark new, deleted and renamed files, and review left-out ones ([#671](https://github.com/home-operations/kritika/issues/671)) ([6410ad8](https://github.com/home-operations/kritika/commit/6410ad847c0f2d78fc2a72fa6df90a8e7f2f4a60))
+* **review:** read a changed file's part of the diff with read_diff ([#673](https://github.com/home-operations/kritika/issues/673)) ([789759d](https://github.com/home-operations/kritika/commit/789759d3678f40ca10aba504ca481d02179e9be4))
+* **review:** retry a split review's summary call and let review.fallback take it ([#690](https://github.com/home-operations/kritika/issues/690)) ([e4aa3fd](https://github.com/home-operations/kritika/commit/e4aa3fd067337706de158b2fd7426a4931ec0701))
+* **review:** review a large diff in parts, one agent after another ([#681](https://github.com/home-operations/kritika/issues/681)) ([6a74fa5](https://github.com/home-operations/kritika/commit/6a74fa594b97597a3ea96940a2953fc58a765ca7))
+* **review:** run a split review's parts at once in the model slots free ([#684](https://github.com/home-operations/kritika/issues/684)) ([e1979fd](https://github.com/home-operations/kritika/commit/e1979fd0b901678f8d5a3a71dff7cedbcb0059af))
+* **review:** write a split review's summary from its parts' in one call ([#682](https://github.com/home-operations/kritika/issues/682)) ([c370626](https://github.com/home-operations/kritika/commit/c37062690a4b6a7151df6499c81bc365dc70687b))
+* **web:** show a split review's parts on its timeline and conversation ([#685](https://github.com/home-operations/kritika/issues/685)) ([2d1fbc2](https://github.com/home-operations/kritika/commit/2d1fbc213cbce45c68d5c14526d8abf9ef12b8d6))
+
+
+### Bug Fixes
+
+* **agent:** go on after a step cut off before any tool call ([#670](https://github.com/home-operations/kritika/issues/670)) ([984ea5e](https://github.com/home-operations/kritika/commit/984ea5ed86eea7f7e8fc52467f4aba7e7cd6133f))
+* **review:** keep what the scorer cannot verify out of risk ([#665](https://github.com/home-operations/kritika/issues/665)) ([d2d1f4b](https://github.com/home-operations/kritika/commit/d2d1f4b7156ee077cc31a11690d8ea986f39896d))
+* **review:** rate risk by what a change can do, and an update by its step ([#663](https://github.com/home-operations/kritika/issues/663)) ([4c74bcb](https://github.com/home-operations/kritika/commit/4c74bcb33b9d4223bac1ac48b65ef6d47c4e8255))
+
 ## [0.0.44](https://github.com/home-operations/kritika/compare/0.0.43...0.0.44) (2026-10-08)
 
 
