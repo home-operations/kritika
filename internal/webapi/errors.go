@@ -1,7 +1,7 @@
 package webapi
 
 import (
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -54,13 +54,18 @@ func errStatus(status int, code ErrorCode, message string) error {
 	return &apiError{status: status, code: code, message: message}
 }
 
+// jsonOptions is how every API response is encoded: json/v2's semantics,
+// under which a nil slice or map is an empty one, as the UI's types
+// promise, with map members sorted so a response reads the same twice.
+var jsonOptions = jsonv2.JoinOptions(jsonv2.Deterministic(true))
+
 // writeJSON writes v as the response. Every API response is no-store:
 // it is per-principal and must never be served from a shared cache.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v) // a failed write has no one to report to
+	_ = jsonv2.MarshalWrite(w, v, jsonOptions) // a failed write has no one to report to
 }
 
 // writeError writes err as ErrorBody: an apiError as itself, a store miss

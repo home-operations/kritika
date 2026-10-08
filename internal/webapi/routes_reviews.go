@@ -100,7 +100,7 @@ func finding(f store.FindingRow) Finding {
 		Explanation:  f.Explanation,
 		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
 		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
-		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: nonNil(f.Rules),
+		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: f.Rules,
 		Status: f.Status, DismissReason: f.DismissReason,
 	}
 }
@@ -118,7 +118,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 		Findings: make([]Finding, len(findings)), Usage: make([]UsageRow, len(usage)),
 	}
 	if v.Summary != nil {
-		d.Summary = &Summary{Headline: v.Summary.Headline, Take: v.Summary.Take, Praise: nonNil(v.Summary.Praise), Diagram: v.Summary.Diagram}
+		d.Summary = &Summary{Headline: v.Summary.Headline, Take: v.Summary.Take, Praise: v.Summary.Praise, Diagram: v.Summary.Diagram}
 	}
 	for i, f := range findings {
 		d.Findings[i] = finding(f)
@@ -146,27 +146,27 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 func agentRun(a *store.AgentRunRow) *AgentRun {
 	out := &AgentRun{
 		StopReason: a.StopReason, Steps: a.Steps, ToolCalls: a.ToolCalls, Timeline: make([]TimelineStep, len(a.Timeline)),
-		Sources: a.Sources, SkillsOffered: nonNil(a.SkillsOffered), SkillsOpened: nonNil(a.SkillsOpened),
-		CommandsOffered: nonNil(a.CommandsOffered), CommandsRun: nonNil(a.CommandsRun), Usage: usageOf(a.Usage),
+		Sources: a.Sources, SkillsOffered: a.SkillsOffered, SkillsOpened: a.SkillsOpened,
+		CommandsOffered: a.CommandsOffered, CommandsRun: a.CommandsRun, Usage: usageOf(a.Usage),
 		CostUSD: a.CostUSD, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt, Result: a.Result, CarriedReviewID: a.CarriedReviewID,
 		Parts: make([]AgentPart, len(a.Parts)),
 	}
 	for i, st := range a.Timeline {
 		out.Timeline[i] = TimelineStep{
-			Index: st.Index, Part: st.Part, Tools: nonNil(st.Tools), DurationMs: st.DurationMS, OutputBytes: st.OutputBytes,
+			Index: st.Index, Part: st.Part, Tools: st.Tools, DurationMs: st.DurationMS, OutputBytes: st.OutputBytes,
 			InputTokens: st.InputTokens, OutputTokens: st.OutputTokens,
 		}
 	}
 	for i, p := range a.Parts {
-		out.Parts[i] = AgentPart{Paths: nonNil(p.Paths), Stop: p.Stop, Error: p.Error, Steps: p.Steps}
+		out.Parts[i] = AgentPart{Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps}
 	}
 	return out
 }
 
 func contextPack(m *store.ContextPackMeta) *ContextPack {
 	out := &ContextPack{
-		HeadSHA: m.HeadSHA, BaseSHA: m.BaseSHA, PatchID: m.PatchID, ChangedPaths: nonNil(m.ChangedPaths),
-		DeltaPaths: nonNil(m.DeltaPaths), PriorHeadSHA: m.PriorHeadSHA, RepoNotes: nonNil(m.RepoNotes), RuleIDs: nonNil(m.RuleIDs),
+		HeadSHA: m.HeadSHA, BaseSHA: m.BaseSHA, PatchID: m.PatchID, ChangedPaths: m.ChangedPaths,
+		DeltaPaths: m.DeltaPaths, PriorHeadSHA: m.PriorHeadSHA, RepoNotes: m.RepoNotes, RuleIDs: m.RuleIDs,
 		Stages: make([]Stage, len(m.Stages)), RepoFiles: make([]RepoFile, 0, len(m.RepoFiles)), CreatedAt: m.CreatedAt,
 	}
 	for i, c := range m.Stages {
@@ -270,7 +270,7 @@ func transcriptOf(c transcript.Conversation) Transcript {
 			Truncated: t.Truncated, CreatedAt: t.CreatedAt, RunnerRunID: t.RunnerRunID,
 		}
 		if t.Tools != nil {
-			turn.Tools = toolDefs(*t.Tools)
+			turn.Tools = new(toolDefs(*t.Tools))
 		}
 		if t.CarriedReviewID != "" {
 			turn.CarriedReviewID = &t.CarriedReviewID
@@ -305,11 +305,4 @@ func toolCalls(in []transcript.ToolCall) []ToolCall {
 
 func usageOf(u model.Usage) Usage {
 	return Usage{Input: u.Input, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Output: u.Output}
-}
-
-func nonNil[T any](s []T) []T {
-	if s == nil {
-		return []T{}
-	}
-	return s
 }

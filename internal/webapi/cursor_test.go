@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http/httptest"
 	"testing"
@@ -73,8 +74,8 @@ func TestParsePage(t *testing.T) {
 }
 
 func TestNewPage(t *testing.T) {
-	if got := newPage([]int(nil), nil); got.Items == nil || got.NextCursor != nil {
-		t.Errorf("empty page = %+v, want [] and null cursor", got)
+	if got, err := jsonv2.Marshal(newPage([]int(nil), nil), jsonOptions); err != nil || string(got) != `{"items":[],"nextCursor":null}` {
+		t.Errorf("empty page = %s, %v; want [] and null cursor", got, err)
 	}
 	next := store.Cursor{S: "a", ID: "b"}
 	got := newPage([]int{1}, &next)

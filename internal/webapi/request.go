@@ -1,10 +1,10 @@
 package webapi
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
+
+	jsonv2 "encoding/json/v2"
 )
 
 // metaPath is the one API route served without a session.
@@ -20,19 +20,15 @@ func (s *Server) getMeta(w http.ResponseWriter, _ *http.Request) error {
 	return nil
 }
 
-// readBody strictly decodes one JSON document into v.
+// readBody strictly decodes one JSON document into v: a member v does
+// not have, a name given twice or anything after the document is refused.
 func readBody(r *http.Request, v any) error {
-	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBodyBytes))
+	err := jsonv2.UnmarshalRead(http.MaxBytesReader(nil, r.Body, maxBodyBytes), v, jsonv2.RejectUnknownMembers(true))
+	if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+		return errBadRequest(CodeBadRequest, "request body is too large")
+	}
 	if err != nil {
-		return errBadRequest(CodeBadRequest, "request body is too large or unreadable")
-	}
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
 		return errBadRequest(CodeBadRequest, "request body is not valid JSON: "+err.Error())
-	}
-	if dec.More() {
-		return errBadRequest(CodeBadRequest, "request body must hold one JSON document")
 	}
 	return nil
 }

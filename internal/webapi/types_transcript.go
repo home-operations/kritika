@@ -48,7 +48,8 @@ type Response struct {
 // Turn is one model call: the messages new in its request from index
 // MessagesFrom, and the answer. System and Tools are set when the call
 // changed them from its part's call before, or, at a part's first call,
-// from the conversation's; Reset says Messages is the whole request.
+// from the conversation's, and null otherwise; Reset says Messages is the
+// whole request.
 type Turn struct {
 	Index int             `json:"index"`
 	ID    string          `json:"id"`
@@ -56,22 +57,22 @@ type Turn struct {
 	Step  int             `json:"step"`
 	// Part is the part of a split review the call stepped for, from 1; 0
 	// when it was not split.
-	Part         int       `json:"part"`
-	Model        string    `json:"model"`
-	Upstream     string    `json:"upstream"`
-	System       *string   `json:"system"`
-	Tools        []ToolDef `json:"tools"`
-	Reset        bool      `json:"reset"`
-	MessagesFrom int       `json:"messagesFrom"`
-	Messages     []Message `json:"messages"`
-	Response     Response  `json:"response"`
-	Usage        Usage     `json:"usage"`
-	CostUSD      float64   `json:"costUsd"`
-	DurationMs   int64     `json:"durationMs"`
-	Error        string    `json:"error"`
-	Truncated    bool      `json:"truncated"`
-	CreatedAt    time.Time `json:"createdAt"`
-	RunnerRunID  string    `json:"runnerRunId"`
+	Part         int        `json:"part"`
+	Model        string     `json:"model"`
+	Upstream     string     `json:"upstream"`
+	System       *string    `json:"system"`
+	Tools        *[]ToolDef `json:"tools"`
+	Reset        bool       `json:"reset"`
+	MessagesFrom int        `json:"messagesFrom"`
+	Messages     []Message  `json:"messages"`
+	Response     Response   `json:"response"`
+	Usage        Usage      `json:"usage"`
+	CostUSD      float64    `json:"costUsd"`
+	DurationMs   int64      `json:"durationMs"`
+	Error        string     `json:"error"`
+	Truncated    bool       `json:"truncated"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	RunnerRunID  string     `json:"runnerRunId"`
 	// CarriedReviewID is the review whose conversation holds the messages
 	// before MessagesFrom, nil when they are earlier turns here.
 	CarriedReviewID *string `json:"carriedReviewId"`

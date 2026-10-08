@@ -3,6 +3,8 @@ package webapi
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"flag"
 	"os"
 	"path/filepath"
@@ -213,7 +215,7 @@ var goldens = map[string]any{
 		System: "You review code.", Tools: goldenTools,
 		Turns: []Turn{{
 			Index: 0, ID: "mc-1", Kind: transcript.KindAgentStep, Step: 0, Model: "acme/large", Upstream: "acme",
-			System: new("You review code, again."), Tools: goldenTools, Reset: false, MessagesFrom: 0,
+			System: new("You review code, again."), Tools: new(goldenTools), Reset: false, MessagesFrom: 0,
 			Messages: []Message{{
 				Role: model.RoleUser, Text: "review this",
 				ToolCalls:   []ToolCall{{ID: "c1", Name: "grep", Input: json.RawMessage(`{"q":"x"}`)}},
@@ -259,7 +261,7 @@ var goldens = map[string]any{
 func TestDTOGolden(t *testing.T) {
 	for name, v := range goldens {
 		t.Run(name, func(t *testing.T) {
-			got, err := json.MarshalIndent(v, "", "  ")
+			got, err := jsonv2.Marshal(v, jsonOptions, jsontext.WithIndent("  "))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -286,6 +288,30 @@ func TestDTOGolden(t *testing.T) {
 			}
 			if !bytes.Equal(gotC.Bytes(), wantC.Bytes()) {
 				t.Errorf("%s changed; the UI's types.ts mirrors it. got:\n%s", path, got)
+			}
+		})
+	}
+}
+
+// TestTurnTools: a turn that kept its tools says null, which the UI tells
+// apart from a turn that cleared them.
+func TestTurnTools(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		tools *[]ToolDef
+		want  string
+	}{
+		{name: "unchanged", tools: nil, want: `"tools":null`},
+		{name: "cleared", tools: new([]ToolDef{}), want: `"tools":[]`},
+		{name: "changed", tools: new(goldenTools), want: `"tools":[{`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := jsonv2.Marshal(Turn{Tools: tc.tools}, jsonOptions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(got, []byte(tc.want)) {
+				t.Errorf("got %s, want %s", got, tc.want)
 			}
 		})
 	}

@@ -38,15 +38,15 @@ func TestCollectRules(t *testing.T) {
 		"  - { id: go, file: docs/go.md, paths: ['**/*.go'], when: [{ expr: 'pr.baseRef == \"main\"' }] }\n")...)
 	got := collectRules(repos)
 	want := []Rule{
-		{Kind: RuleContext, Path: "ARCHITECTURE.md", Description: "how it fits", Paths: []string{}, When: []configfile.When{}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
+		{Kind: RuleContext, Path: "ARCHITECTURE.md", Description: "how it fits", Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
 		{
-			Kind: RuleContext, Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}, When: []configfile.When{}, Source: "defaults",
+			Kind: RuleContext, Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}, Source: "defaults",
 			Repositories: []string{"alpha/one", "alpha/two"},
 		},
-		{Kind: RuleWritten, ID: "no-tokens", Text: "Never log a token.", Paths: []string{}, When: []configfile.When{}, Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
-		{Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors.", Paths: []string{}, When: []configfile.When{}, Source: "account", Repositories: []string{"alpha/two"}},
+		{Kind: RuleWritten, ID: "no-tokens", Text: "Never log a token.", Source: RuleFromRepository, Repositories: []string{"alpha/one"}},
+		{Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors.", Source: "account", Repositories: []string{"alpha/two"}},
 		{
-			Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors here too.", Paths: []string{"**/*.go"}, When: []configfile.When{}, Source: RuleFromEntry,
+			Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap errors here too.", Paths: []string{"**/*.go"}, Source: RuleFromEntry,
 			Repositories: []string{"alpha/one"},
 		},
 		{
@@ -54,7 +54,7 @@ func TestCollectRules(t *testing.T) {
 			Source:       RuleFromRepository,
 			Repositories: []string{"alpha/one"},
 		},
-		{Kind: RuleWritten, ID: "style", Path: "docs/review.md", Paths: []string{}, When: []configfile.When{}, Source: "account", Repositories: []string{"alpha/one", "alpha/two"}},
+		{Kind: RuleWritten, ID: "style", Path: "docs/review.md", Source: "account", Repositories: []string{"alpha/one", "alpha/two"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("collectRules =\n%+v\nwant\n%+v", got, want)

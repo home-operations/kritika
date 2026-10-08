@@ -16,8 +16,10 @@ func TestReadBody(t *testing.T) {
 		wantErr string
 	}{
 		{name: "one document", body: `{"on":true}`, wantOn: true},
-		{name: "unknown field", body: `{"on":true,"x":1}`, wantErr: `unknown field "x"`},
-		{name: "two documents", body: `{"on":true}{"on":false}`, wantErr: "one JSON document"},
+		{name: "unknown field", body: `{"on":true,"x":1}`, wantErr: `unknown object member name "x"`},
+		{name: "a name twice", body: `{"on":true,"on":false}`, wantErr: `duplicate object member name "on"`},
+		{name: "two documents", body: `{"on":true}{"on":false}`, wantErr: "after top-level value"},
+		{name: "a name in another case", body: `{"On":true}`, wantErr: `unknown object member name "On"`},
 		{name: "oversized", body: strings.Repeat(" ", maxBodyBytes+1) + "{}", wantErr: "too large"},
 		{name: "empty", body: "", wantErr: "not valid JSON"},
 	}
