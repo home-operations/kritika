@@ -3,7 +3,6 @@
 package bench
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -105,7 +104,7 @@ func envOr(key, def string) string {
 //	KRITIKA_BENCH_DRY       1: fetch, build context and prompts, call no model
 //	KRITIKA_BENCH_OUT       results directory (default bench/results)
 func TestBench(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dry := os.Getenv("KRITIKA_BENCH_DRY") == "1"
 	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" && !dry {

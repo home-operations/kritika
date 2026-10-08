@@ -54,7 +54,7 @@ func TestAgentDeadline(t *testing.T) {
 }
 
 func TestStopped(t *testing.T) {
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 	failed := executor.Result{Err: errors.New("job failed")}
 	tests := []struct {
@@ -64,11 +64,11 @@ func TestStopped(t *testing.T) {
 		cause error
 		want  bool
 	}{
-		{name: "succeeded", ctx: context.Background(), res: executor.Result{}},
-		{name: "failed on its own", ctx: context.Background(), res: failed},
-		{name: "superseded", ctx: context.Background(), res: failed, cause: errSuperseded, want: true},
+		{name: "succeeded", ctx: t.Context(), res: executor.Result{}},
+		{name: "failed on its own", ctx: t.Context(), res: failed},
+		{name: "superseded", ctx: t.Context(), res: failed, cause: errSuperseded, want: true},
 		{name: "job context ended", ctx: canceled, res: failed, want: true},
-		{name: "deadline", ctx: context.Background(), res: executor.Result{Err: failed.Err, DeadlineExceeded: true}, want: true},
+		{name: "deadline", ctx: t.Context(), res: executor.Result{Err: failed.Err, DeadlineExceeded: true}, want: true},
 		{name: "finished despite a cancel", ctx: canceled, res: executor.Result{}, cause: errSuperseded},
 	}
 	for _, tt := range tests {

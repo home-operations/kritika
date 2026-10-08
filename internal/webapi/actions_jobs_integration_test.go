@@ -64,7 +64,7 @@ type actionsEnv struct {
 
 func newActionsEnv(t *testing.T) *actionsEnv {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
@@ -307,7 +307,7 @@ func testCancelNotCancelable(t *testing.T, e *actionsEnv) {
 }
 
 func testCancelRunning(t *testing.T, e *actionsEnv) {
-	ctx := context.Background()
+	ctx := t.Context()
 	res, err := e.queue.Insert(ctx, jobs.ReviewArgs{
 		AccountID: e.accountID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
 		Trigger: jobs.TriggerManual, Request: "cancel-me",
@@ -330,7 +330,7 @@ func testCancelRunning(t *testing.T, e *actionsEnv) {
 }
 
 func testCancelEndedJob(t *testing.T, e *actionsEnv) {
-	res, err := e.queue.Insert(context.Background(), jobs.ReviewArgs{
+	res, err := e.queue.Insert(t.Context(), jobs.ReviewArgs{
 		AccountID: e.accountID, RepositoryID: e.repoID, Number: 11, HeadSHA: "headA",
 		Trigger: jobs.TriggerManual, Request: "ended",
 	}, nil)

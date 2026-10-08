@@ -470,7 +470,7 @@ func TestSimilarCode(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer srv.Close()
-			got, err := similarCode(context.Background(), srv.URL+"/", "krk_run", contextpack.SimilarRequest{Queries: []string{"main.go\nfunc b() {}"}, Exclude: []string{"main.go"}})
+			got, err := similarCode(t.Context(), srv.URL+"/", "krk_run", contextpack.SimilarRequest{Queries: []string{"main.go\nfunc b() {}"}, Exclude: []string{"main.go"}})
 			if path != "POST /v1/similar" || auth != "Bearer krk_run" || body != `{"queries":["main.go\nfunc b() {}"],"exclude":["main.go"]}` {
 				t.Fatalf("request = %s with %q: %s", path, auth, body)
 			}
@@ -525,19 +525,19 @@ func TestSearchTool(t *testing.T) {
 	if def := tool.Def(); def.Name != "search_code" {
 		t.Fatalf("tool name = %q", def.Name)
 	}
-	out, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`))
+	out, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`))
 	if err != nil || out != "retry.go:3-9 (function retry) similarity 0.81\nfunc retry() {}" {
 		t.Fatalf("Run = %q, %v", out, err)
 	}
-	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":" "}`)); err == nil {
+	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":" "}`)); err == nil {
 		t.Fatal("an empty query ran")
 	}
 	for range searchCalls - 1 {
-		if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`)); err != nil {
+		if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := tool.Run(context.Background(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != searchCalls {
+	if _, err := tool.Run(t.Context(), json.RawMessage(`{"query":"where is the retry"}`)); err == nil || calls != searchCalls {
 		t.Fatalf("past the limit: err=%v calls=%d", err, calls)
 	}
 }

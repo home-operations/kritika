@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 // name, from the one collector the registry accepts.
 func TestPoolCollector(t *testing.T) {
 	newPool := func(maxConns string) *pgxpool.Pool {
-		pool, err := pgxpool.New(context.Background(), "postgres://kritika@127.0.0.1:1/kritika?pool_max_conns="+maxConns)
+		pool, err := pgxpool.New(t.Context(), "postgres://kritika@127.0.0.1:1/kritika?pool_max_conns="+maxConns)
 		if err != nil {
 			t.Fatal(err)
 		}

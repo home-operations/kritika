@@ -26,7 +26,7 @@ import (
 // migrating whatever state it finds and applying its own configuration.
 func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
@@ -79,7 +79,7 @@ func repo(name string) *webhook.Repository {
 
 func TestDispatchPullRequest(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	pr := &webhook.PullRequest{Number: 7, Title: "t", Body: "please review", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "aaa", BaseRef: "main",
 		Labels: []webhook.Label{{Name: "stale", Color: "ffffff"}}}
 
@@ -179,7 +179,7 @@ func TestDispatchPullRequest(t *testing.T) {
 // for the ones that do not hold yet.
 func TestDispatchLeavesDiffConditions(t *testing.T) {
 	svc, _, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	tests := []struct {
 		name   string
 		repo   string
@@ -206,7 +206,7 @@ func TestDispatchLeavesDiffConditions(t *testing.T) {
 // a maintainer can ask for its review.
 func TestDispatchForkRecorded(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	tests := []struct {
 		name   string
@@ -244,7 +244,7 @@ func TestDispatchForkRecorded(t *testing.T) {
 // until it is resumed.
 func TestDispatchSkipsPaused(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	pr := &webhook.PullRequest{Number: 80, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "p1", BaseRef: "main"}
 	ev := func(action string, pr *webhook.PullRequest) webhook.Event {
@@ -288,7 +288,7 @@ func TestDispatchSkipsPaused(t *testing.T) {
 // recorded and never reviewed, whatever the action and however new its head.
 func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	rid := configfile.RepositoryID(account.ID(), "onedr0p/polled")
 	pr := &webhook.PullRequest{Number: 271, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "ccc", BaseRef: "main"}
@@ -386,7 +386,7 @@ func TestDispatchPollSkipsReviewedHead(t *testing.T) {
 // closed pull request, and starts no review.
 func TestDispatchStaleEvent(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	at := func(h int) time.Time { return time.Date(2026, 9, 24, h, 0, 0, 0, time.UTC) }
 	pr := &webhook.PullRequest{Number: 272, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "s1", BaseRef: "main", UpdatedAt: at(10)}
@@ -466,7 +466,7 @@ func TestDispatchStaleEvent(t *testing.T) {
 // account's settings say.
 func TestDispatchSkipsArchivedAndForks(t *testing.T) {
 	svc, _, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, traits := range []configfile.RepoTraits{{Fork: true}, {Archived: true}} {
 		r := &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main", RepoTraits: traits}
 		for _, ev := range []webhook.Event{
@@ -487,7 +487,7 @@ func TestDispatchSkipsArchivedAndForks(t *testing.T) {
 // turned on is reviewed.
 func TestDispatchFollowsTheDashboard(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	turn := func(name string, fork, on bool) {
 		t.Helper()
@@ -524,7 +524,7 @@ func TestDispatchFollowsTheDashboard(t *testing.T) {
 
 func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	scheduledAt := func(headSHA string) time.Time {
 		t.Helper()
@@ -565,7 +565,7 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 
 func TestDispatchCommentPush(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	count := func(kind string) int {
 		var n int
@@ -658,7 +658,7 @@ func TestDispatchCommentPush(t *testing.T) {
 
 func TestDispatchInstallation(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 
 	t.Run("connection adds and removes forge-managed repositories", func(t *testing.T) {
@@ -705,7 +705,7 @@ func TestDispatchInstallation(t *testing.T) {
 		t.Cleanup(func() {
 			removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: "onedr0p",
 				Installation: &webhook.Installation{Repositories: []string{"onedr0p/stays"}}}
-			_, _ = svc.Dispatch(ctx, request(f, removed))
+			_, _ = svc.Dispatch(context.Background(), request(f, removed))
 		})
 		deleted := webhook.Event{Kind: webhook.KindInstallation, Action: "deleted", Account: "Home-Operations", Installation: &webhook.Installation{}}
 		if _, err := svc.Dispatch(ctx, request(f, deleted)); err != nil {
@@ -741,14 +741,14 @@ func TestDispatchInstallation(t *testing.T) {
 // naming it alone, keeps.
 func TestDispatchRepository(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	// The poller's tests share the database and poll every enabled
 	// repository of bot-ross.
 	t.Cleanup(func() {
 		removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: "onedr0p",
 			Installation: &webhook.Installation{Repositories: []string{"onedr0p/old"}}}
-		_, _ = svc.Dispatch(ctx, request(f, removed))
+		_, _ = svc.Dispatch(context.Background(), request(f, removed))
 	})
 	traits := func() (archived, fork bool) {
 		t.Helper()
@@ -791,7 +791,7 @@ func TestDispatchRepository(t *testing.T) {
 // changes only the case keeps its row; a repository deleted is disabled.
 func TestDispatchRepositoryMoved(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	names := []string{"onedr0p/moving", "onedr0p/moved", "home-operations/moved", "home-operations/adopted"}
 	// The poller's tests share the database and poll every enabled
 	// repository of bot-ross.
@@ -800,7 +800,7 @@ func TestDispatchRepositoryMoved(t *testing.T) {
 			owner, _, _ := strings.Cut(name, "/")
 			removed := webhook.Event{Kind: webhook.KindInstallation, Action: "removed", Account: owner,
 				Installation: &webhook.Installation{Repositories: []string{name}}}
-			_, _ = svc.Dispatch(ctx, request(f, removed))
+			_, _ = svc.Dispatch(context.Background(), request(f, removed))
 		}
 	})
 	enabled := func(name string) bool {
@@ -849,7 +849,7 @@ func TestDispatchRepositoryMoved(t *testing.T) {
 
 func TestRecordDelivery(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	in, _ := f.Connection("bot-ross")
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	exec := func(sql string) {
@@ -899,7 +899,7 @@ func TestRecordDelivery(t *testing.T) {
 // ones, and read back with them.
 func TestRecordUnsigned(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	in, _ := f.Connection("bot-ross")
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	read := func() store.WebhookDeliveries {
@@ -941,7 +941,7 @@ func TestRecordUnsigned(t *testing.T) {
 // queues no review beside the one its head has coming.
 func TestDispatchRecordsEdits(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	pr := &webhook.PullRequest{Number: 77, Title: "bump x (1.0 ➔ 1.1)", Body: "old", Author: "renovate[bot]", AuthorIsBot: true,
 		State: "open", HeadRef: "renovate/x", HeadSHA: "e01", BaseRef: "main"}
@@ -998,7 +998,7 @@ func TestDispatchRecordsEdits(t *testing.T) {
 // not change, unless one is still to come.
 func TestDispatchLabelChange(t *testing.T) {
 	svc, st, f := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	rid := configfile.RepositoryID(account.ID(), "onedr0p/labelled")
 	label := func(names ...string) []webhook.Label {

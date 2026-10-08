@@ -40,7 +40,7 @@ func testEnv(t *testing.T, key string) string {
 
 func openStore(t *testing.T) *Store {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := Open(ctx, Options{
 		AppURL: testEnv(t, "KRITIKA_TEST_APP_URL"), OwnerURL: testEnv(t, "KRITIKA_TEST_OWNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),
@@ -72,7 +72,7 @@ func TestPoolStatementTimeouts(t *testing.T) {
 }
 
 func TestOpenRefusesUnsafeApplicationDSN(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	tests := []struct {
 		name string
@@ -102,15 +102,15 @@ func TestOpenRefusesUnsafeApplicationDSN(t *testing.T) {
 
 func TestMigrateIsIdempotent(t *testing.T) {
 	s := openStore(t)
-	if ready, err := s.SchemaReady(context.Background()); err != nil || !ready {
+	if ready, err := s.SchemaReady(t.Context()); err != nil || !ready {
 		t.Fatalf("SchemaReady after Migrate = %v, %v", ready, err)
 	}
-	if err := s.Migrate(context.Background(), "kritika_app", "kritika_runner"); err != nil {
+	if err := s.Migrate(t.Context(), "kritika_app", "kritika_runner"); err != nil {
 		t.Fatalf("second Migrate: %v", err)
 	}
 	names, _ := fs.Glob(migrationFS, "migrations/*.sql")
 	var n int
-	if err := s.owner.QueryRow(context.Background(), `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != len(names) {
+	if err := s.owner.QueryRow(t.Context(), `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != len(names) {
 		t.Fatalf("schema_migrations rows = %d, err %v; want one per embedded migration (%d)", n, err, len(names))
 	}
 }
@@ -155,7 +155,7 @@ func parse(t *testing.T, yaml string) *configfile.File {
 func accountID(t *testing.T, s *Store, name string) string {
 	t.Helper()
 	var id string
-	if err := s.owner.QueryRow(context.Background(), `SELECT id FROM accounts WHERE name = $1`, name).Scan(&id); err != nil {
+	if err := s.owner.QueryRow(t.Context(), `SELECT id FROM accounts WHERE name = $1`, name).Scan(&id); err != nil {
 		t.Fatalf("account %s: %v", name, err)
 	}
 	return id
@@ -163,7 +163,7 @@ func accountID(t *testing.T, s *Store, name string) string {
 
 func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f := parse(t, twoAccounts)
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
@@ -279,7 +279,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 // it over.
 func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	listed := parse(t, twoAccounts)
 	if err := s.ApplyConfig(ctx, listed); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
@@ -313,7 +313,7 @@ func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
 // next apply, and is found in any case.
 func TestRepositoryNamesIgnoreCase(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f := parse(t, twoAccounts)
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
@@ -321,9 +321,9 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 	alpha := accountID(t, s, "alpha")
 	spell := func(name string) (id string, isNew bool) {
 		t.Helper()
-		if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
+		if err := s.WithAccount(context.Background(), alpha, func(tx pgx.Tx) error {
 			var err error
-			id, isNew, err = EnsureRepository(ctx, tx, alpha, ReachedRepository{FullName: name})
+			id, isNew, err = EnsureRepository(context.Background(), tx, alpha, ReachedRepository{FullName: name})
 			return err
 		}); err != nil {
 			t.Fatal(err)
@@ -365,13 +365,13 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 // event, keeps what was known.
 func TestRepositoryTraits(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	alpha := accountID(t, s, "alpha")
 	t.Cleanup(func() {
-		_, _ = s.owner.Exec(ctx, `DELETE FROM repositories WHERE id = $1`, configfile.RepositoryID(alpha, "alpha/copy"))
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM repositories WHERE id = $1`, configfile.RepositoryID(alpha, "alpha/copy"))
 	})
 	report := func(traits *configfile.RepoTraits) configfile.RepoTraits {
 		t.Helper()
@@ -406,7 +406,7 @@ func TestRepositoryTraits(t *testing.T) {
 
 func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -494,12 +494,14 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 			}
 		})
 	}
-	t.Cleanup(func() { _, _ = s.owner.Exec(ctx, `DELETE FROM agent_conversations WHERE runner_run_id = $1`, runID) })
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `DELETE FROM agent_conversations WHERE runner_run_id = $1`, runID)
+	})
 }
 
 func TestRunSecretsToSweep(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -551,7 +553,7 @@ func TestRunSecretsToSweep(t *testing.T) {
 
 func TestLeaderLockIsExclusive(t *testing.T) {
 	s := openStore(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	held := make(chan struct{})
@@ -959,7 +961,7 @@ func checkFollowUpGrant(ctx context.Context, t *testing.T, s *Store, alpha strin
 
 func TestGatewayTokens(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -1059,7 +1061,7 @@ func TestGatewayTokens(t *testing.T) {
 // its size, and not once the run is at or over it; a refund brings it back.
 func checkReservations(t *testing.T, s *Store, token string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tt := range []struct {
 		tokens int64
 		ok     bool
@@ -1085,7 +1087,7 @@ func checkReservations(t *testing.T, s *Store, token string) {
 // and is tried again rather than ending RunAsLeader, and with it the process.
 func TestLeaderDutiesAreRetried(t *testing.T) {
 	s := openStore(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	tenures := make(chan int, 2)
 	done := make(chan error, 1)

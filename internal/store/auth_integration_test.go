@@ -13,7 +13,7 @@ import (
 // grant without a role is refused.
 func TestSessionGrant(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	id := SignInIdentity{Provider: "github", Origin: "github:https://github.com",
 		Subject: "store-test-" + now.Format(time.RFC3339Nano), Login: "x"}
@@ -74,7 +74,7 @@ func TestSessionGrant(t *testing.T) {
 
 func TestLoginStateConsumedOnce(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	state, err := s.CreateLoginState(ctx, LoginState{Provider: "gh", Nonce: "n", PKCEVerifier: "v", ReturnTo: "#/x"}, "browser", now)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestLoginStateConsumedOnce(t *testing.T) {
 // refused until rows expire, rather than growing the table without bound.
 func TestCreateLoginStateCap(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM login_states WHERE provider = 'cap-test'`)

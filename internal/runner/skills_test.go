@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -165,7 +164,7 @@ func TestSkillTool(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			before := tool.Opened()
-			got, err := tool.Run(context.Background(), json.RawMessage(tt.input))
+			got, err := tool.Run(t.Context(), json.RawMessage(tt.input))
 			if (err != nil) != (tt.wantErr != "") || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}

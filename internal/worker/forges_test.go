@@ -142,14 +142,14 @@ func TestForgeCacheBuildsOutsideItsLock(t *testing.T) {
 	for range 2 {
 		go func() {
 			started <- struct{}{}
-			_, _ = cache.For(context.Background(), slow, "acme/widgets")
+			_, _ = cache.For(t.Context(), slow, "acme/widgets")
 		}()
 	}
 	<-started
 	<-started
 	done := make(chan error, 1)
 	go func() {
-		_, err := cache.For(context.Background(), fast, "acme/widgets")
+		_, err := cache.For(t.Context(), fast, "acme/widgets")
 		done <- err
 	}()
 	select {
@@ -160,13 +160,13 @@ func TestForgeCacheBuildsOutsideItsLock(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("another connection's client waited on the slow build")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	if _, err := cache.For(ctx, slow, "acme/gadgets"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("a caller whose context ended got %v, want its deadline", err)
 	}
 	close(release)
-	if _, err := cache.For(context.Background(), slow, "acme/widgets"); err != nil {
+	if _, err := cache.For(t.Context(), slow, "acme/widgets"); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()

@@ -133,7 +133,7 @@ func readJob(t *testing.T, ctx context.Context, s *Store, id int64) jobRow {
 
 func TestAbandonedJobs(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f := newRescueFixture(t, ctx, s)
 	got := f.abandoned(t, ctx, s)
 	if j := got[0]; j.Kind != "review" || j.Attempt != 1 || j.MaxAttempts != 25 || j.CancelRequested || j.RescueState() != rivertype.JobStateRetryable {
@@ -149,7 +149,7 @@ func TestAbandonedJobs(t *testing.T) {
 
 func TestRescueJob(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f := newRescueFixture(t, ctx, s)
 	got := f.abandoned(t, ctx, s)
 
@@ -214,7 +214,7 @@ func TestRescueJob(t *testing.T) {
 
 func TestOrphanedRuns(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestJobHead(t *testing.T) {
 // checks the times it never learned are NULL rather than the zero time.
 func TestRecordRunnerRunLeavesUnknownTimesNull(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("unstarted"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}

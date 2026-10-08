@@ -3,7 +3,6 @@
 package worker
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 
@@ -23,7 +22,7 @@ import (
 // the finding, for a sender with write access only, and unresolving it
 // takes the dismissal back.
 func TestThreadWorker(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	appStore := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")

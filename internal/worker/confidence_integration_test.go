@@ -3,7 +3,6 @@
 package worker
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -24,7 +23,7 @@ import (
 // and may be skipped only where there is a score to keep or none is asked
 // for.
 func TestCarriedConfidence(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")

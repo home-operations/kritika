@@ -20,7 +20,7 @@ import (
 // is dismissed, not addressed, once a maintainer dismisses it.
 func TestListAccountFindings(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("findings"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestListAccountFindings(t *testing.T) {
 // after it report.
 func TestDismissedFindings(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("dismissed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
@@ -280,7 +280,7 @@ func checkDismissedOwn(ctx context.Context, t *testing.T, tx pgx.Tx, reviewID st
 // that is not there says so.
 func TestDeleteDismissal(t *testing.T) {
 	s := openStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("undismissed"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}

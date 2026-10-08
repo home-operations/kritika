@@ -27,7 +27,7 @@ func oidcAuth(issuer string) string {
 
 func TestForgeProviderURLs(t *testing.T) {
 	s, _ := testFile(t, githubAuth("cid")).Auth.SignInByType(configfile.SignInGitHub)
-	p, err := buildProvider(context.Background(), s, "https://kritika.example.com/auth/callback/github", http.DefaultClient, nil)
+	p, err := buildProvider(t.Context(), s, "https://kritika.example.com/auth/callback/github", http.DefaultClient, nil)
 	if err != nil {
 		t.Fatalf("buildProvider: %v", err)
 	}
@@ -78,21 +78,21 @@ func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 	auth := testFile(t, githubAuth("one")).Auth
 	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, http.DefaultClient, nil)
-	a, _, err := ps.get(context.Background(), auth, "github")
+	a, _, err := ps.get(t.Context(), auth, "github")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _, _ := ps.get(context.Background(), auth, "github")
+	b, _, _ := ps.get(t.Context(), auth, "github")
 	if a != b {
 		t.Fatal("unchanged config rebuilt the provider")
 	}
 	auth = testFile(t, githubAuth("two")).Auth
-	c, _, _ := ps.get(context.Background(), auth, "github")
+	c, _, _ := ps.get(t.Context(), auth, "github")
 	if c == a || !strings.Contains(c.AuthCodeURL("s", "n", "v"), "client_id=two") {
 		t.Fatal("changed config did not rebuild the provider")
 	}
 	for _, name := range []string{"oidc", "local", "nope"} {
-		if _, _, err := ps.get(context.Background(), auth, name); !errors.Is(err, ErrUnknownProvider) {
+		if _, _, err := ps.get(t.Context(), auth, name); !errors.Is(err, ErrUnknownProvider) {
 			t.Fatalf("get(%s) = %v, want ErrUnknownProvider", name, err)
 		}
 	}
@@ -121,7 +121,7 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 	ps := newProviders(u, srv.Client(), func() time.Time { return now })
 	auth := testFile(t, oidcAuth(srv.URL)).Auth
 	for range 3 {
-		if _, _, err := ps.get(context.Background(), auth, "oidc"); err == nil || errors.Is(err, ErrUnknownProvider) {
+		if _, _, err := ps.get(t.Context(), auth, "oidc"); err == nil || errors.Is(err, ErrUnknownProvider) {
 			t.Fatalf("get = %v, want a discovery error", err)
 		}
 	}
@@ -129,7 +129,7 @@ func TestProvidersRemembersFailedDiscovery(t *testing.T) {
 		t.Fatalf("discovery requests = %d within the retry window, want 1", hits.Load())
 	}
 	now = now.Add(failedBuildTTL)
-	_, _, _ = ps.get(context.Background(), auth, "oidc")
+	_, _, _ = ps.get(t.Context(), auth, "oidc")
 	if hits.Load() != 2 {
 		t.Fatalf("discovery requests = %d after the retry window, want 2", hits.Load())
 	}
@@ -145,12 +145,12 @@ func TestProvidersDoesNotRememberAnEndedRequest(t *testing.T) {
 	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, srv.Client(), nil)
 	auth := testFile(t, oidcAuth(srv.URL)).Auth
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, _, err := ps.get(canceled, auth, "oidc"); err == nil {
 		t.Fatal("get with a canceled request succeeded")
 	}
-	if _, _, err := ps.get(context.Background(), auth, "oidc"); err == nil || hits.Load() != 1 {
+	if _, _, err := ps.get(t.Context(), auth, "oidc"); err == nil || hits.Load() != 1 {
 		t.Fatalf("get after a canceled request = %v with %d discovery requests, want a fresh attempt", err, hits.Load())
 	}
 }
@@ -172,11 +172,11 @@ func TestProvidersRemembersASlowIssuer(t *testing.T) {
 	u, _ := url.Parse("https://kritika.example.com")
 	ps := newProviders(u, client, nil)
 	auth := testFile(t, oidcAuth(srv.URL)).Auth
-	if _, _, err := ps.get(context.Background(), auth, "oidc"); !errors.Is(err, context.DeadlineExceeded) {
+	if _, _, err := ps.get(t.Context(), auth, "oidc"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("get = %v, want the client timeout", err)
 	}
 	start := time.Now()
-	if _, _, err := ps.get(context.Background(), auth, "oidc"); err == nil {
+	if _, _, err := ps.get(t.Context(), auth, "oidc"); err == nil {
 		t.Fatal("second get succeeded")
 	}
 	if hits.Load() != 1 || time.Since(start) >= client.Timeout {

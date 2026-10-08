@@ -81,7 +81,7 @@ type apiEnv struct {
 
 func newAPIEnv(t *testing.T) *apiEnv {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	owner, err := pgxpool.New(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
@@ -411,7 +411,7 @@ func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 }
 
 func testLastWebhook(t *testing.T, e *apiEnv) {
-	ctx := context.Background()
+	ctx := t.Context()
 	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	in, _ := e.file.Connection("webapi-a-bot")
 	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {
@@ -440,7 +440,7 @@ func testLastWebhook(t *testing.T, e *apiEnv) {
 }
 
 func testTranscriptsEqualRebuild(t *testing.T, e *apiEnv) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var steps, followups []transcript.StoredRow
 	if err := e.st.WithAccount(ctx, e.a.accountID, func(tx pgx.Tx) error {
 		var err error
@@ -617,7 +617,7 @@ func (e *apiEnv) stream(ctx context.Context, who string) <-chan Event {
 }
 
 func testEventStreamScopesToAccount(t *testing.T, e *apiEnv) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	runCtx, stopRun := context.WithCancel(ctx)
 	defer stopRun()

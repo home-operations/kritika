@@ -129,7 +129,7 @@ func TestGrant(t *testing.T) {
 			file := testFile(t, tt.auth)
 			s, _ := file.Auth.SignInByType(tt.typ)
 			o := &orgs{member: tt.member}
-			g, err := grant(context.Background(), file, s, Identity{Login: tt.login}, tt.facts(o))
+			g, err := grant(t.Context(), file, s, Identity{Login: tt.login}, tt.facts(o))
 			if err != nil {
 				t.Fatalf("grant: %v", err)
 			}
@@ -176,7 +176,7 @@ func TestGrantRefuses(t *testing.T) {
 		{"oidc placing nobody by default", oidcNone, on, oidcFacts("other"), ErrNoGrant},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := grant(context.Background(), tt.file, tt.s, Identity{Login: "mallory"}, tt.facts); !errors.Is(err, tt.want) {
+			if _, err := grant(t.Context(), tt.file, tt.s, Identity{Login: "mallory"}, tt.facts); !errors.Is(err, tt.want) {
 				t.Fatalf("grant = %v, want %v", err, tt.want)
 			}
 		})

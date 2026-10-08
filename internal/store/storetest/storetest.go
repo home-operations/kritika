@@ -3,7 +3,6 @@
 package storetest
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -27,7 +26,7 @@ func Env(t testing.TB, key string) string {
 // test ends.
 func Open(t testing.TB) *store.Store {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := store.Open(ctx, store.Options{
 		AppURL: Env(t, "KRITIKA_TEST_APP_URL"), OwnerURL: Env(t, "KRITIKA_TEST_OWNER_URL"),
 		Logger: slog.New(slog.DiscardHandler),

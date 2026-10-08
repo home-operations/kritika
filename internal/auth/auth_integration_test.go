@@ -3,7 +3,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -78,7 +77,7 @@ type authEnv struct {
 
 func newAuthEnv(t *testing.T) *authEnv {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	st := storetest.Open(t)
 	e := &authEnv{
 		t: t, st: st, oidc: newFakeOIDC(t), oidc2: newFakeOIDC(t), gh: newFakeGitHub(t),

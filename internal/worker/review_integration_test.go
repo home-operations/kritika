@@ -1294,7 +1294,7 @@ func checkReviewRequest(
 }
 
 func TestReviewWorkerEndToEnd(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
 	if _, err := appStore.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8); err != nil {
@@ -3181,7 +3181,7 @@ func checkEnqueueReindexSentinels(
 // TestRetriedJobEndsItsEarlierReview: an attempt of a review job ends the
 // review an earlier attempt of the same job left running, and no other.
 func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
