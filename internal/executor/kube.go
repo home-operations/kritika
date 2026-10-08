@@ -99,9 +99,11 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err != nil {
 		return Result{Err: err}
 	}
+	// The API refusing the Secret, the Job or the Secret's owner leaves a
+	// run whose container never ran, which the worker retries.
 	secrets := k.Client.CoreV1().Secrets(k.Namespace)
 	if _, err := secrets.Create(ctx, k.secret(spec, runSpec), metav1.CreateOptions{}); err != nil {
-		return Result{Err: fmt.Errorf("executor: create secret: %w", err)}
+		return Result{NeverStarted: true, Err: fmt.Errorf("executor: create secret: %w", err)}
 	}
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
@@ -110,13 +112,13 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			k.deleteJob(ctx, name)
 		}
 		k.deleteSecret(ctx, name)
-		return Result{Err: fmt.Errorf("executor: create job: %w", err)}
+		return Result{NeverStarted: true, Err: fmt.Errorf("executor: create job: %w", err)}
 	}
 	res := Result{JobName: created.Name}
 	if err := k.own(ctx, created); err != nil {
 		k.deleteJob(ctx, created.Name)
 		k.deleteSecret(ctx, name)
-		res.Err = err
+		res.NeverStarted, res.Err = true, err
 		return res
 	}
 	poll := cmp.Or(k.Poll, 3*time.Second)
