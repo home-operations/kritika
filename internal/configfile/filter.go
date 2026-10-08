@@ -77,7 +77,7 @@ func (f Filter) holds(vars map[string]any, d *Diff) (bool, error) {
 			return false, err
 		}
 	}
-	return len(f.Paths) == 0 || slices.ContainsFunc(d.Changed, func(c string) bool { return chunk.Ignored(f.Paths, c) }), nil
+	return len(f.Paths) == 0 || slices.ContainsFunc(d.Changed, func(c string) bool { return chunk.Matches(f.Paths, c) }), nil
 }
 
 // linesVar is the pr field only a fetched diff gives.

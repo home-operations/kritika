@@ -115,7 +115,7 @@ func ChangedLines(diff string, ignore []string) int {
 		if path == "" {
 			path = l.oldPath
 		}
-		if !chunk.Ignored(ignore, path) {
+		if !chunk.Matches(ignore, path) {
 			n++
 		}
 	})

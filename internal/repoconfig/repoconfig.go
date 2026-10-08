@@ -271,7 +271,7 @@ func AllIgnored(ignore, changed []string) bool {
 		return false
 	}
 	for _, c := range changed {
-		if !chunk.Ignored(ignore, c) {
+		if !chunk.Matches(ignore, c) {
 			return false
 		}
 	}
@@ -284,7 +284,7 @@ func AllIgnored(ignore, changed []string) bool {
 func ActiveContext(files []configfile.ContextFile, changed []string) []configfile.ContextFile {
 	var out []configfile.ContextFile
 	for _, f := range files {
-		if len(f.Paths) == 0 || slices.ContainsFunc(changed, func(c string) bool { return chunk.Ignored(f.Paths, c) }) {
+		if len(f.Paths) == 0 || slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(f.Paths, c) }) {
 			out = append(out, f)
 		}
 	}
@@ -300,7 +300,7 @@ func ActiveContext(files []configfile.ContextFile, changed []string) []configfil
 func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []review.Rule, left int) {
 	room, fileRoom := MaxRulesBytes, MaxRuleFileBytes
 	for _, r := range rules {
-		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Ignored(r.Paths, c) }) {
+		if len(r.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(r.Paths, c) }) {
 			continue
 		}
 		text, budget := r.Rule, &room

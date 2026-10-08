@@ -309,7 +309,7 @@ func newSearchTool(p Spec, secrets Secrets, changed []string) *searchTool {
 func notIgnored(paths, ignore []string) []string {
 	out := []string{}
 	for _, p := range paths {
-		if !chunk.Ignored(ignore, p) {
+		if !chunk.Matches(ignore, p) {
 			out = append(out, p)
 		}
 	}

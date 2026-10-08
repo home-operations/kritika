@@ -154,7 +154,7 @@ type builder struct {
 	callers     map[string][]Chunk
 }
 
-func (b *builder) ignored(path string) bool { return chunk.Ignored(b.in.Ignore, path) }
+func (b *builder) ignored(path string) bool { return chunk.Matches(b.in.Ignore, path) }
 
 func (b *builder) read(tree *object.Tree, path string) []byte {
 	if tree == nil {
