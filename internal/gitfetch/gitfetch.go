@@ -207,8 +207,6 @@ func fetchPrior(ctx context.Context, repo *git.Repository, opts []client.Option,
 	return c, nil
 }
 
-// diffCommits diffs two commits' trees and lists the touched paths,
-// head-side names.
 // treeChanges lists what changed between two commits, renames detected.
 func treeChanges(ctx context.Context, from, to *object.Commit) (object.Changes, error) {
 	fromTree, err := from.Tree()

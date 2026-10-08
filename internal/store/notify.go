@@ -280,15 +280,14 @@ func deliver(notifications chan func(), fn, resync func(), dropping bool, warner
 }
 
 // enqueueReconnect delivers fn (an OnReconnect callback) through the same
-// notification queue as OnEvent/OnConfig, so all three run one at a time,
-// in order, on the consumer goroutine. Unlike a regular notification, a
-// reconnect signal is not safe to drop silently — a consumer that misses
-// it can go on serving stale state indefinitely — so if the queue is
-// full, the oldest queued notification is evicted (and counted as a drop)
-// to make room. This is only ever called from the single producer
-// goroutine that also sends OnEvent/OnConfig closures onto notifications,
-// so the evict-then-send is race-free: nothing else competes for the slot
-// freed by the eviction.
+// notification queue as OnEvent, so both run one at a time, in order, on
+// the consumer goroutine. Unlike a regular notification, a reconnect
+// signal is not safe to drop silently: a consumer that misses it can go on
+// serving stale state indefinitely, so if the queue is full, the oldest
+// queued notification is evicted (and counted as a drop) to make room.
+// This is only ever called from the single producer goroutine that also
+// sends OnEvent closures onto notifications, so the evict-then-send is
+// race-free: nothing else competes for the slot freed by the eviction.
 func enqueueReconnect(notifications chan func(), fn func(), warner *dropWarner) {
 	select {
 	case notifications <- fn:

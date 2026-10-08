@@ -41,8 +41,7 @@ func NewClient(app *App, installationID int64) (*Client, error) {
 }
 
 // MergeBase implements forge.Client through the compare API, whose
-// merge_base_commit is exactly what GitHub diffs a PR against. number is
-// unused: GitHub's compare API needs only the two refs.
+// merge_base_commit is exactly what GitHub diffs a PR against.
 func (c *Client) MergeBase(ctx context.Context, owner, repo, base, head string) (string, error) {
 	cmp, _, err := c.api.Repositories.CompareCommits(ctx, owner, repo, base, head, &gh.ListOptions{PerPage: 1})
 	if err != nil {
@@ -337,8 +336,7 @@ func (c *Client) approvals(ctx context.Context, owner, repo string, number int) 
 	return out, nil
 }
 
-// GetComment implements forge.Client. GitHub resolves a comment by id alone,
-// so number (the pull request it belongs to) is unused.
+// GetComment implements forge.Client. GitHub resolves a comment by id alone.
 func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (forge.Comment, error) {
 	if inline {
 		cm, _, err := c.api.PullRequests.GetComment(ctx, owner, repo, id)
