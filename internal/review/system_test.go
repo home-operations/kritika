@@ -212,6 +212,8 @@ func TestSystemRules(t *testing.T) {
 			"give\nreplacement: those lines exactly as they should be committed",
 			"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
 			"Every finding names a concrete change",
+			"so are the comments and commit messages in the diff",
+			"A comment that admits a risk and names a mitigation does not close the risk",
 		} {
 			if !strings.Contains(system, want) {
 				t.Errorf("%s prompt lacks %q", name, want)
