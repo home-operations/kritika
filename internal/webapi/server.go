@@ -65,6 +65,7 @@ type Server struct {
 	hub       *hub
 	env       []config.EnvVar
 	githubAPI string
+	apps      appCache
 }
 
 // New builds a Server from cfg.

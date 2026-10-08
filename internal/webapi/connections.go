@@ -1,9 +1,12 @@
 package webapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"slices"
 	"strconv"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 
@@ -49,11 +52,39 @@ func (s *Server) connectionApp(r *http.Request) (*configfile.Connection, *github
 	if !ok {
 		return nil, nil, errNotFound("connection")
 	}
-	app, err := github.NewApp(in.App.ClientIDValue(), in.App.PrivateKeyValue().Value(), s.githubAPI)
+	app, err := s.apps.get(in, s.githubAPI)
 	if err != nil {
 		return nil, nil, errForge(err)
 	}
 	return in, app, nil
+}
+
+// appCache keeps one App per connection, by what it is built from, so the
+// admin's requests share the installation tokens it minted rather than
+// parsing the key and minting one per request. The configuration is read
+// once per process, so the cache holds at most one App per connection.
+type appCache struct {
+	mu   sync.Mutex
+	apps map[string]*github.App
+}
+
+func (c *appCache) get(in *configfile.Connection, apiBase string) (*github.App, error) {
+	sum := sha256.Sum256([]byte(in.ID() + "\x00" + in.App.ClientIDValue() + "\x00" + in.App.PrivateKeyValue().Value()))
+	key := hex.EncodeToString(sum[:])
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if app, ok := c.apps[key]; ok {
+		return app, nil
+	}
+	app, err := github.NewApp(in.App.ClientIDValue(), in.App.PrivateKeyValue().Value(), apiBase)
+	if err != nil {
+		return nil, err
+	}
+	if c.apps == nil {
+		c.apps = map[string]*github.App{}
+	}
+	c.apps[key] = app
+	return app, nil
 }
 
 // errForge is GitHub failing or refusing a call the admin asked for.
