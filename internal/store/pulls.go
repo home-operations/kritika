@@ -119,16 +119,31 @@ func PausePullRequest(ctx context.Context, tx pgx.Tx, pullRequestID string, paus
 	return nil
 }
 
-// CountAutoReview counts one automatic review of the pull request and
-// pauses it once the count reaches maxAuto, when that is positive. It
-// reports whether this review paused it.
-func CountAutoReview(ctx context.Context, tx pgx.Tx, pullRequestID string, maxAuto int) (bool, error) {
+// AutoReviewPauses reports whether counting one more automatic review of
+// the pull request would pause it: it is not paused yet, and the count
+// would reach maxAuto, when that is positive. What CountAutoReview would
+// report, read before the review is posted so its summary can say so.
+func AutoReviewPauses(ctx context.Context, tx pgx.Tx, pullRequestID string, maxAuto int) (bool, error) {
+	var pauses bool
+	if err := tx.QueryRow(ctx, `SELECT NOT paused AND $2 > 0 AND auto_reviews + 1 >= $2 FROM pull_requests WHERE id = $1`,
+		pullRequestID, maxAuto).Scan(&pauses); err != nil {
+		return false, fmt.Errorf("store: read automatic reviews: %w", err)
+	}
+	return pauses, nil
+}
+
+// CountAutoReview counts one automatic review of the pull request, and
+// pauses it when pause is set: when the review's summary announced the
+// pause AutoReviewPauses foretold. Two reviews counted at once may both
+// have been told no pause; the count then passes the limit unpaused, and
+// the next review announces the pause rather than one going unannounced.
+// It reports whether this review paused the pull request.
+func CountAutoReview(ctx context.Context, tx pgx.Tx, pullRequestID string, pause bool) (bool, error) {
 	var pausedNow bool
 	if err := tx.QueryRow(ctx, `WITH before AS (SELECT id, paused FROM pull_requests WHERE id = $1 FOR UPDATE)
-		UPDATE pull_requests p SET auto_reviews = p.auto_reviews + 1, paused = p.paused OR ($2 > 0 AND p.auto_reviews + 1 >= $2),
-			updated_at = now()
+		UPDATE pull_requests p SET auto_reviews = p.auto_reviews + 1, paused = p.paused OR $2, updated_at = now()
 		FROM before WHERE p.id = before.id RETURNING p.paused AND NOT before.paused`,
-		pullRequestID, maxAuto).Scan(&pausedNow); err != nil {
+		pullRequestID, pause).Scan(&pausedNow); err != nil {
 		return false, fmt.Errorf("store: count automatic review: %w", err)
 	}
 	return pausedNow, nil
