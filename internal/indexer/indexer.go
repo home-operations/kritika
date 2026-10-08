@@ -165,6 +165,7 @@ func (b *builder) file(f *object.File) error {
 	b.stats.Files++
 	b.stats.Bytes += len(src)
 	pf := b.parser.Parse(f.Name, src)
+	defer pf.Close()
 	if len(pf.Decls) > 0 {
 		b.stats.Parsed++
 	}

@@ -86,6 +86,24 @@ func TestParseGoDeclarations(t *testing.T) {
 	}
 }
 
+func TestCloseKeepsTheDeclarations(t *testing.T) {
+	p := &Parser{}
+	f := p.Parse("demo.go", []byte(goSource))
+	if ids := f.Identifiers([]int{19, 20, 21, 22, 23}); len(ids) == 0 {
+		t.Fatal("no identifiers before Close")
+	}
+	decls := len(f.Decls)
+	f.Close()
+	f.Close()
+	if len(f.Decls) != decls || f.Enclosing([]int{20}, 100) == nil {
+		t.Fatalf("declarations after Close = %d, want %d still usable", len(f.Decls), decls)
+	}
+	if ids := f.Identifiers([]int{20}); ids != nil {
+		t.Fatalf("identifiers after Close = %v, want none", ids)
+	}
+	p.Parse("none.txt", []byte("plain")).Close()
+}
+
 func TestParseFallsBackForConfigAndUnknown(t *testing.T) {
 	p := &Parser{}
 	yaml := p.Parse("values.yaml", []byte("a: 1\nb:\n  c: 2\n"))

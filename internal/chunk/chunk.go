@@ -113,11 +113,23 @@ func (p *Parser) Parse(path string, src []byte) *File {
 	tree, err := lp.parser.ParseStrict(src)
 	p.mu.Unlock()
 	if err != nil || tree == nil || tree.RootNode() == nil {
+		// A parse stopped early returns its partial tree with the error.
+		tree.Release()
 		return f
 	}
 	f.lang, f.tree = lp.lang, tree
 	f.Decls = declarations(lp, tree, src)
 	return f
+}
+
+// Close gives the parse tree's memory back to the library's pool, which
+// a parse takes a fresh arena from otherwise. The declarations and the
+// source stay; Identifiers, which walks the tree, finds none afterwards.
+func (f *File) Close() {
+	if f.tree != nil {
+		f.tree.Release()
+		f.tree = nil
+	}
 }
 
 func (p *Parser) language(path string) *languageParser {

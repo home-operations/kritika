@@ -195,11 +195,14 @@ func (b *builder) overlay(ctx context.Context) error {
 		for _, id := range f.Identifiers(added) {
 			idCount[id]++
 		}
+		// The declarations are all the rest of the pass needs.
+		f.Close()
 		if base := b.read(b.in.Base, path); base != nil {
 			bf := b.parser.Parse(path, base)
 			for _, id := range bf.Identifiers(d.removed[path]) {
 				idCount[id]++
 			}
+			bf.Close()
 		}
 		covered := map[int]bool{}
 		for _, run := range runs(added, b.opts.WindowRadius) {
@@ -329,6 +332,7 @@ func (b *builder) scan(ctx context.Context) error {
 			return nil
 		}
 		pf := b.parser.Parse(f.Name, src)
+		defer pf.Close()
 		b.stats.FilesParsed++
 		if len(pf.Decls) == 0 {
 			return nil
