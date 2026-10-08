@@ -358,7 +358,8 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	diff, omitted := FitDiff(in.Diff, room)
 	b.WriteString(diff)
 	if len(omitted) > 0 {
-		fmt.Fprintf(&b, "\n\n[%d file(s) omitted to fit the context budget: %s]\n", len(omitted), strings.Join(omitted, ", "))
+		fmt.Fprintf(&b, "\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n",
+			len(omitted), strings.Join(omitted, ", "))
 	}
 	b.WriteString(incrementalSections(in.Incremental, budget-b.Len()))
 	if e := in.Earlier; e != nil {
@@ -407,7 +408,7 @@ func SameBrief(opening string, in Input) bool {
 	return opening[start:end] == now.String()
 }
 
-const deltaOmitted = "\n\n[The diff since the last review was omitted to fit the context budget.]\n"
+const deltaOmitted = "\n\n[The diff since the last review was omitted to fit the prompt budget.]\n"
 
 // reReviewLead raises the bar for a re-review: the first review set it, and
 // this one is for defects the new commits introduced or fixes they left
@@ -456,7 +457,7 @@ func incrementalSections(inc *IncrementalInput, room int) string {
 	case delta != "":
 		b.WriteString(header + delta)
 		if len(omitted) > 0 {
-			fmt.Fprintf(&b, "\n[%d file(s) of the diff since the last review were omitted to fit the context budget]\n", len(omitted))
+			fmt.Fprintf(&b, "\n[%d file(s) of the diff since the last review were omitted to fit the prompt budget]\n", len(omitted))
 		}
 	case len(deltaOmitted) <= room:
 		b.WriteString(deltaOmitted)
@@ -518,7 +519,7 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string) {
 	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(closing)-512)
 	b.WriteString(delta)
 	if len(omitted) > 0 {
-		fmt.Fprintf(&b, "\n[%d file(s) of the diff since your last review were omitted to fit the context budget: %s; "+
+		fmt.Fprintf(&b, "\n[%d file(s) of the diff since your last review were omitted to fit the prompt budget: %s; "+
 			"read them with your tools]\n", len(omitted), strings.Join(omitted, ", "))
 	}
 	writeDismissed(&b, in.Dismissed, budget-len(closing))
@@ -578,7 +579,7 @@ func priorSection(head string, findings []Finding, room int) string {
 	for i, l := range lines {
 		if b.Len()+len(l) > room-noteRoom {
 			if b.Len()+noteRoom <= room {
-				fmt.Fprintf(&b, "[%d more finding(s) from the last review omitted to fit the context budget]\n", len(lines)-i)
+				fmt.Fprintf(&b, "[%d more finding(s) from the last review omitted to fit the prompt budget]\n", len(lines)-i)
 			}
 			break
 		}
