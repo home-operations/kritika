@@ -27,7 +27,9 @@ import (
 type Config struct {
 	Store   *store.Store
 	Current *configfile.Current
-	Auth    *auth.Handler
+	// Auth signs the dashboard in and stands behind every route; it is
+	// required, as Store and Current are.
+	Auth *auth.Handler
 	// Actions queues re-runs, cancels and reindexes; nil disables them.
 	Actions Actions
 	// Version is the build's version, shown by /api/v1/meta.
@@ -77,9 +79,7 @@ func New(cfg Config) *Server {
 		cfg.Now = time.Now
 	}
 	h := newHub(cfg.Current, cfg.Logger)
-	if cfg.Auth != nil {
-		h.stands = cfg.Auth.Stands
-	}
+	h.stands = cfg.Auth.Stands
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, actions: cfg.Actions, version: cfg.Version,
 		webURL: cfg.WebURL, ui: cfg.UI, basePath: strings.TrimRight(cfg.WebURL.Path, "/"),
