@@ -60,7 +60,7 @@ var fetchRepoSchema = json.RawMessage(`{
 		"paths": {
 			"type": "array",
 			"items": {"type": "string"},
-			"description": "Files and directories to fetch, relative to the root; only their files are downloaded. Omit for all."
+			"description": "Files and directories to fetch, relative to the root, for part of a large repository such as a chart. Omit for all."
 		},
 		"tags": {
 			"type": "string",

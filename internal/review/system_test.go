@@ -14,9 +14,8 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("system prompt:\n%s", got)
 	}
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "anchor only to lines of the pull request's diff",
-		"A file\nthe prompt leaves out to fit its budget is as much a part of that diff", "read its part of the diff\nwith read_diff",
-		"marks new is an added line",
-		"call submit_review exactly once", systemReport + systemRules} {
+		"A file the prompt leaves out is as\nmuch a part of that diff", "read_diff numbers each line as a finding anchors to it",
+		"marks new is an added line", systemReport + systemRules} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
@@ -26,7 +25,7 @@ func TestSystemPrompt(t *testing.T) {
 	}
 
 	withCommands := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"curl", "rg"}, false, false, false)
-	for _, want := range []string{"run tool: curl, rg.", "one binary with the arguments you give", "upstream of a dependency", "say so plainly rather than guess"} {
+	for _, want := range []string{"run tool: curl, rg.", "upstream of a dependency", "say so plainly rather than guess"} {
 		if !strings.Contains(withCommands, want) {
 			t.Fatalf("missing %q in:\n%s", want, withCommands)
 		}
@@ -40,10 +39,10 @@ func TestSystemPrompt(t *testing.T) {
 	}
 	withFetch := SystemPrompt(nil, nil, []string{"Check errors."}, []string{"gh"}, true, false, false)
 	if fetch := strings.Index(withFetch, "fetch_repo fetches another repository"); fetch < strings.Index(withFetch, "run tool: gh.") ||
-		fetch > strings.Index(withFetch, "Check errors.") || !strings.Contains(withFetch, "Give paths to fetch only part") {
+		fetch > strings.Index(withFetch, "Check errors.") {
 		t.Fatalf("fetch_repo must follow the run tool, before the instructions:\n%s", withFetch)
 	}
-	if !strings.Contains(withFetch, "For a version bump, fetch the new version with from set to the old\none") ||
+	if !strings.Contains(withFetch, "For a version bump, fetch the new version with from set to the old one") ||
 		!strings.Contains(withFetch, "list them with tags instead of ref rather than guess") {
 		t.Fatalf("a prompt with fetch_repo must send a version bump to it, and an uncertain tag to a listing:\n%s", withFetch)
 	}
@@ -59,7 +58,7 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("a prompt without a diagram asks for one:\n%s", bare)
 	}
 	withDiagram := SystemPrompt(nil, nil, nil, nil, false, false, true)
-	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools; withDiagram != want {
+	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools + reviewTools; withDiagram != want {
 		t.Fatalf("system prompt with a diagram:\n%s", withDiagram)
 	}
 }
@@ -86,13 +85,10 @@ func TestSystemPromptRules(t *testing.T) {
 }
 
 func TestFollowUpSystemPrompt(t *testing.T) {
-	if got := FollowUpSystemPrompt(nil, nil, nil, false, false); got != FollowUpSystem {
-		t.Fatal("without instructions or extra tools the follow-up system prompt is the built-in one")
+	if got := FollowUpSystemPrompt(nil, nil, nil, false, false); got != FollowUpSystem+agenticTools || strings.Contains(got, "anchor") {
+		t.Fatalf("without instructions or extra tools the follow-up system prompt is the built-in one with the shared tools:\n%s", got)
 	}
-	if !strings.Contains(FollowUpSystem, "read_diff shows that file's part of the diff") {
-		t.Fatalf("the follow-up system prompt does not offer read_diff for a file the prompt left out:\n%s", FollowUpSystem)
-	}
-	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}, nil, false, false); !strings.HasPrefix(got, FollowUpSystem+"\n\n## Repository instructions\n\n") ||
+	if got := FollowUpSystemPrompt(nil, []string{"Check errors."}, nil, false, false); !strings.HasPrefix(got, FollowUpSystem+agenticTools+"\n\n## Repository instructions\n\n") ||
 		!strings.HasSuffix(got, "\n\nCheck errors.") {
 		t.Fatalf("follow-up system prompt:\n%s", got)
 	}
