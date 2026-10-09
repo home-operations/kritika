@@ -137,9 +137,10 @@ func (l *Lease) heartbeat(ctx context.Context) {
 }
 
 // SlotWaitKey is the river_job metadata key a review snoozed because every
-// slot of its model was held sets to that model key. Release wakes the
-// oldest such review of the account, so a freed slot is taken as soon as a
-// worker gets to the job rather than when its snooze runs out.
+// slot of its model was held sets to that model key, and its next attempt
+// clears. Release wakes the oldest such review of the account, so a freed
+// slot is taken as soon as a worker gets to the job rather than when its
+// snooze runs out.
 const SlotWaitKey = "slot_wait"
 
 // Release frees the slot and wakes the oldest review snoozed for one on
@@ -154,10 +155,9 @@ func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 		if err != nil {
 			return fmt.Errorf("store: release lease: %w", err)
 		}
-		// River keeps a job snoozed for less than its scheduler interval
-		// available with a scheduled_at ahead rather than scheduled. A job
-		// snoozed for a slot and then for its settle time still carries the
-		// key; woken early, it only snoozes again for what is left of that.
+		// River keeps a job snoozed, or retried, for less than its
+		// scheduler interval available with a scheduled_at ahead rather
+		// than scheduled or retryable; only the key tells a slot's waiter.
 		err = tx.QueryRow(ctx, `UPDATE river_job SET state = 'available', scheduled_at = now()
 			WHERE id = (SELECT id FROM river_job WHERE kind = 'review' AND state IN ('scheduled', 'available')
 				AND scheduled_at > now() AND args->>'account_id' = $1 AND metadata->>'`+SlotWaitKey+`' = $2

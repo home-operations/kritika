@@ -96,6 +96,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
+	clearSlotWait(ctx, logger, job)
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
 	if done {
@@ -581,6 +582,20 @@ func (w *Review) snooze(ctx context.Context, e earlyEnd, job *river.Job[jobs.Rev
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
 	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
 	return river.JobSnooze(d)
+}
+
+// clearSlotWait clears the mark an earlier snooze for a slot left on the
+// job, so a release does not wake it while it waits out its settle time or
+// a retry in place of a review that waits for a slot. snooze sets it again
+// when this attempt finds every slot held.
+func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs.ReviewArgs]) {
+	var meta map[string]any
+	if json.Unmarshal(job.Metadata, &meta) != nil || meta[store.SlotWaitKey] == nil {
+		return
+	}
+	if err := river.MetadataSet(ctx, store.SlotWaitKey, nil); err != nil {
+		logger.Warn("job's slot wait mark not cleared; a release may wake it early", "error", err)
+	}
 }
 
 // botPatch is the patch id of a bot pull request's diff as its forge

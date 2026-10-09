@@ -44,7 +44,11 @@ func TestReleaseWakesSnoozedReview(t *testing.T) {
 		{name: "a review waiting on another model", state: "scheduled",
 			id: insert(alpha, "scheduled", `{"snoozes": 1, "slot_wait": "test/other-model"}`)},
 		{name: "a review snoozed for its settle time", state: "scheduled", id: insert(alpha, "scheduled", `{"snoozes": 1}`)},
+		{name: "a review snoozed for its settle time after a slot", state: "scheduled",
+			id: insert(alpha, "scheduled", `{"snoozes": 2, "slot_wait": null}`)},
 		{name: "a review waiting out a failed attempt", state: "retryable", id: insert(alpha, "retryable", waiting)},
+		{name: "a review retried soon after a failed attempt", state: "available",
+			id: insert(alpha, "available", `{"snoozes": 1, "slot_wait": null}`)},
 	}
 	jobState := func(id int64) (state string, due bool) {
 		t.Helper()

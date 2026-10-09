@@ -1668,6 +1668,15 @@ func checkSnoozeWhileSlotsHeld(
 	if status != "completed" {
 		t.Fatalf("status = %s, want completed", status)
 	}
+	waitFor(t, 30*time.Second, "the review's job to complete", func() bool {
+		var state string
+		err := appStore.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, jobID).Scan(&state)
+		return err == nil && state == "completed"
+	})
+	snoozes()
+	if waitsOn != "" {
+		t.Fatalf("the completed review still waits on %q", waitsOn)
+	}
 }
 
 // waitFor polls cond until it holds or timeout passes.
