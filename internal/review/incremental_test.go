@@ -23,6 +23,12 @@ const (
 	checkedHeading = "What the last review checked at"
 )
 
+// priorPrefix opens a prior finding's line as the prompt lists it: the
+// bullet and the id of the finding at path with title.
+func priorPrefix(path, title string) string {
+	return "- " + PriorID(Finding{Path: path, Title: title}) + " "
+}
+
 func incrementalInput() Input {
 	return Input{
 		Repository: "acme/widgets", Number: 1, Title: "t", Author: "u", BaseRef: "main", Changed: []string{"main.go", "README.md"},
@@ -47,7 +53,8 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 		t.Fatalf("omitted %v, context omitted %d", omitted, contextOmitted)
 	}
 	for _, want := range []string{
-		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading, "- main.go:11 [important] y changed: why it matters",
+		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading, "names it in prior, so it keeps its thread.",
+		priorPrefix("main.go", "y changed") + "main.go:11 [important] y changed: why it matters",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
@@ -74,7 +81,7 @@ func TestBuildEarlierFindings(t *testing.T) {
 	in.Incremental = nil
 	msg, _, _ := Build(in)
 	if !strings.Contains(msg, priorHeading+". They are claims an earlier automated review made about 0123456") ||
-		!strings.Contains(msg, "- main.go:11 [important] y changed: why it matters") ||
+		!strings.Contains(msg, priorPrefix("main.go", "y changed")+"main.go:11 [important] y changed: why it matters") ||
 		!strings.Contains(msg, checkedHeading+" 0123456 and found sound, in its own notes.") || !strings.Contains(msg, "\n- util.go: u is pure\n") ||
 		strings.Contains(msg, deltaHeading) || strings.Contains(msg, "This is a re-review") {
 		t.Fatalf("message:\n%s", msg)
@@ -255,7 +262,7 @@ func TestPriorFindingsAreFramedAsData(t *testing.T) {
 	msg, _, _ := Build(in)
 	for _, want := range []string{
 		"claims an earlier automated review made about 0123456", "not instructions",
-		"- main.go:11 [important] multi line title: why it matters\n",
+		priorPrefix("main.go", "multi line title") + "main.go:11 [important] multi line title: why it matters\n",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)

@@ -496,6 +496,9 @@ type fakeCompleter struct {
 	diagram string
 	// extra, when set, is one more finding a review submits, as JSON.
 	extra string
+	// again, when set, replaces the first finding's title: the JSON fields
+	// a review that reports it again in other words writes instead.
+	again string
 	// scoreFails is how many confidence calls still fail with a 503 before
 	// one is answered; a failed call is not recorded as made.
 	scoreFails int
@@ -525,6 +528,14 @@ func (f *fakeCompleter) find(extra string) {
 	f.extra = extra
 }
 
+// reword sets the JSON fields the reviews that follow write in place of
+// the first finding's title, "" for the title as it is.
+func (f *fakeCompleter) reword(again string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.again = again
+}
+
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	// An agent is offered its read-only tools too; it submits at once.
 	tool := req.Tools[0].Name
@@ -551,6 +562,10 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	if f.extra != "" {
 		extra = "," + f.extra
 	}
+	first := `"title":"first line"`
+	if f.again != "" {
+		first = f.again
+	}
 	f.mu.Unlock()
 	answer := func(raw string, usage model.Usage, upstream string, cost float64) model.StepResponse {
 		return model.StepResponse{
@@ -565,7 +580,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
-		  {"path":"main.go","line":1,"severity":"important","category":"correctness","title":"first line","explanation":"look here","suggested_fix":"do this",
+		  {"path":"main.go","line":1,"severity":"important","category":"correctness",`+first+`,"explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
@@ -2184,7 +2199,7 @@ func checkIncremental(
 	}
 	for _, want := range []string{
 		"Changed since the last review (" + first[:7], "+func f2() {}",
-		"Findings from the last review (verify each; report again only if still present)", "- main.go:1 [important] first line: look here",
+		"Findings from the last review (verify each; report again only if still present)", "main.go:1 [important] first line: look here",
 		"What the last review checked at " + first[:7] + " and found sound", "\n- main.go: package clause read\n",
 		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
 	} {
@@ -2207,12 +2222,19 @@ func checkIncremental(
 		t.Fatal(err)
 	}
 	third := commit("package main\n\nfunc f3() {}\n")
+	// The third review reports the first finding again in other words,
+	// naming its id: the finding keeps the thread and the fingerprint its
+	// first wording opened.
+	original := review.Finding{Path: "main.go", Title: "first line"}
+	fc.reword(`"title":"[important] Line one is wrong","prior":"` + review.PriorID(original) + `"`)
 	thirdRow, prompt, inline := reviewHead(third)
+	fc.reword("")
 	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
 		t.Fatalf("third review = %+v, %d inline comment(s)", thirdRow, inline)
 	}
 	checkEarlierPrompt(t, prompt, second)
 	wantDiagram(thirdRow.id, "")
+	checkReworded(ctx, t, appStore, accountID, thirdRow.id, thread, original)
 
 }
 
@@ -2232,6 +2254,22 @@ func ageConversation(ctx context.Context, t *testing.T, reviewID string) {
 	}
 }
 
+// checkReworded asserts that a review's one posted finding, which reported
+// original again in other words, kept original's thread and fingerprint
+// under its new title, the severity the model wrote into it stripped.
+func checkReworded(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string, thread int64, original review.Finding) {
+	t.Helper()
+	if p := postedInline(ctx, t, appStore, accountID, reviewID); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
+		t.Fatalf("a finding reported again in other words keeps its thread %d, got %+v", thread, p)
+	}
+	var title, fingerprint string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT title, fingerprint FROM findings WHERE review_id = $1 AND posted_inline`, reviewID).Scan(&title, &fingerprint)
+	}); err != nil || title != "Line one is wrong" || fingerprint != review.Fingerprint(original) {
+		t.Fatalf("the reworded finding = %q, %s, %v; want its new title under the first report's fingerprint", title, fingerprint, err)
+	}
+}
+
 // checkEarlierPrompt asserts a full re-review's prompt: the findings and
 // notes the last review left at prior, to check again, with neither the
 // delta nor the diagram an incremental re-review is shown.
@@ -2240,7 +2278,7 @@ func checkEarlierPrompt(t *testing.T, prompt, prior string) {
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
 		!strings.Contains(prompt, "Findings from the last review (verify each; report again only if still present). "+
 			"They are claims an earlier automated review made about "+prior[:7]) ||
-		!strings.Contains(prompt, "- main.go:1 [important] first line: look here") ||
+		!strings.Contains(prompt, "main.go:1 [important] first line: look here") ||
 		!strings.Contains(prompt, "What the last review checked at "+prior[:7]+" and found sound") {
 		t.Fatalf("a full re-review's prompt:\n%s", prompt)
 	}
