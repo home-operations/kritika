@@ -189,6 +189,10 @@ func (f *reactForge) Unreact(_ context.Context, _, _ string, _ forge.Comment, id
 	return nil
 }
 
+func (f *reactForge) Reaction(context.Context, string, string, forge.Comment, string) (int64, error) {
+	return 0, nil
+}
+
 // TestFollowUpUnmark: a retried attempt that finds the reply up ends the
 // marks a killed one left, as answered.
 func TestFollowUpUnmark(t *testing.T) {
@@ -200,5 +204,29 @@ func TestFollowUpUnmark(t *testing.T) {
 		if !slices.Equal(client.reacted, want) || (attempt > 1) != slices.Equal(client.removed, []int64{8}) {
 			t.Fatalf("attempt %d: reacted %v, removed %v", attempt, client.reacted, client.removed)
 		}
+	}
+}
+
+// TestFollowUpFailure: a failed answer marks the mention only once no
+// attempt follows it.
+func TestFollowUpFailure(t *testing.T) {
+	boom := errors.New("worker: runner did not start")
+	tests := []struct {
+		name    string
+		err     error
+		attempt int
+		want    outcome
+	}{
+		{"retried", boom, 1, unanswered},
+		{"the last attempt", boom, 3, failed},
+		{"final on the first attempt", finalError{boom}, 1, failed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &followUp{attempt: tt.attempt, maxAttempts: 3}
+			if got := f.failure(tt.err); got != tt.want {
+				t.Fatalf("failure = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

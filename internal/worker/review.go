@@ -134,12 +134,15 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		}
 	}()
 	// The pull request carries the bot's eyes while a review of it runs,
-	// and its thumbs up once one is posted.
-	end, outcome := pullMarks(client, owner, repo, args.Number, logger).start(ctx), store.ReviewStatus("")
+	// then its thumbs up once one is posted or its confused face when one
+	// failed. An error on the last attempt leaves the review as it is, so
+	// it counts as failed here as the commit status says.
+	end := pullMarks(client, owner, repo, args.Number, logger).start(ctx)
 	defer func() {
 		mctx, cancel := detach(ctx)
 		defer cancel()
-		end(outcome == store.ReviewCompleted, w.otherReviewRunning(mctx, logger, args.AccountID, pr.id, reviewID))
+		end(w.reviewOutcome(mctx, logger, args.AccountID, reviewID, err, job.Attempt >= job.MaxAttempts),
+			w.otherReviewRunning(mctx, logger, args.AccountID, pr.id, reviewID))
 	}()
 	deadline, resources := file.RunnerFor()
 	spec := runner.Spec{
@@ -223,7 +226,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		agent: agentOutcome,
 	}
 	status, perr := phase.run(ctx)
-	outcome = status
 	// Publishing finishes on a detached ctx, so a clean result stands even
 	// if ctx ended meanwhile: the comment and the commit status already say
 	// so. Only a publish that failed while ctx ended ends as canceled or
@@ -332,7 +334,8 @@ type earlyEnd struct {
 
 // end records a review that never ran as status, for reason, counts it,
 // and says so on the head commit, so a head no runner was spent on does
-// not read as one still waiting for its review.
+// not read as one still waiting for its review. A failed one marks the
+// pull request as one whose review ran does.
 func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus, reason string) error {
 	w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
 	err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
@@ -350,6 +353,9 @@ func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus,
 	}
 	if err := e.client.SetStatus(ctx, e.owner, e.repo, e.args.HeadSHA, state, desc); err != nil {
 		e.logger.Warn("commit status not set", "error", err)
+	}
+	if status == store.ReviewFailed {
+		pullMarks(e.client, e.owner, e.repo, e.args.Number, e.logger).settle(ctx, failed)
 	}
 	return nil
 }

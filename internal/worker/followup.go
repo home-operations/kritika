@@ -82,7 +82,8 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
-		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, attempt: job.Attempt, logger: logger}
+		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, attempt: job.Attempt, maxAttempts: job.MaxAttempts,
+		logger: logger}
 	if done, err := f.alreadyAnswered(ctx); err != nil || done {
 		return err
 	}
@@ -118,9 +119,9 @@ type followUp struct {
 	repo      string
 	botLogin  string
 	jobID     int64
-	// attempt is the job's, 1 the first time.
-	attempt int
-	logger  *slog.Logger
+	// attempt is the job's, 1 the first time, and maxAttempts its last.
+	attempt, maxAttempts int
+	logger               *slog.Logger
 }
 
 // alreadyAnswered guards a retried job: once a reply is on the forge the
@@ -160,7 +161,7 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 // the mention is answered.
 func (f *followUp) unmark(ctx context.Context) {
 	if f.attempt > 1 {
-		f.marks().start(ctx)(true, false)
+		f.marks().start(ctx)(answered, false)
 	}
 }
 
@@ -198,7 +199,7 @@ func markedReply(comments []forge.Comment, login string, commentID int64) int64 
 // run qualifies the mention, gathers the thread and the last review's
 // findings, has an agent answer, and posts the reply. Nothing after the
 // reply is posted may fail the job: a retry would answer twice.
-func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
+func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) {
 	if reason := f.disqualified(ctx); reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
@@ -236,8 +237,13 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if err != nil {
 		return store.FollowupFailed, err
 	}
-	end, answered := f.marks().start(ctx), false
-	defer func() { end(answered, false) }()
+	end, o := f.marks().start(ctx), unanswered
+	defer func() {
+		if err != nil {
+			o = f.failure(err)
+		}
+		end(o, false)
+	}()
 	agent, err := f.ask(ctx, thread, rec)
 	if err != nil {
 		return store.FollowupFailed, err
@@ -258,7 +264,7 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 	if err != nil {
 		return store.FollowupFailed, err
 	}
-	answered = true
+	o = answered
 	f.logger.Info("follow-up answered", "model", agent.Model, "reply", replyID, "steps", agent.Steps, "commands", agent.CommandsRun,
 		"input_tokens", agent.Usage.Prompt(), "output_tokens", agent.Usage.Output, "cost_usd", agent.CostUSD)
 	if err := f.record(pctx, store.FollowupAnswered, "", replyID, agent.Model); err != nil {
@@ -270,6 +276,15 @@ func (f *followUp) run(ctx context.Context) (store.FollowupStatus, error) {
 // marks are the bot's reactions on the mention: the 👀 while its agent
 // works, the 👍 once the reply is up.
 func (f *followUp) marks() marks { return commentMarks(f.client, f.owner, f.repo, f.comment, f.logger) }
+
+// failure is what the marks say of an answer that ended in err: failed
+// once no attempt follows it, unanswered while River retries the job.
+func (f *followUp) failure(err error) outcome {
+	if _, final := errors.AsType[finalError](err); final || f.attempt >= f.maxAttempts {
+		return failed
+	}
+	return unanswered
+}
 
 // ask has an agent answer the thread's last message in a runner, as a
 // review's agent is run: against the pull request's head, with the

@@ -488,6 +488,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("an agent cancelled mid-run still charges its tokens", func(t *testing.T) { checkAgentCanceledCharges(t, h) })
 	t.Run("a run that never got a Job is failed, not left created", func(t *testing.T) { checkFailRun(t, h) })
 	t.Run("an agent spec cut short by the job ending is not retried", func(t *testing.T) { checkAgentSpecFailed(t, h) })
+	t.Run("the marks say how a review of the pull request's head ended", func(t *testing.T) { checkReviewOutcome(t, h) })
 	t.Run("a runner whose pod never started is retried", func(t *testing.T) { checkRunnerNeverStarted(t, h) })
 	t.Run("a capped review is capped under the lease and lets it go", func(t *testing.T) { checkAgentCappedUnderLease(t, h) })
 	t.Run("a review model on no configured provider fails before its runner", func(t *testing.T) { checkAgentProviderMissing(t, h) })
@@ -1453,6 +1454,14 @@ func checkAgentProviderMissing(t *testing.T, h *agenticHarness) {
 	if forgeStatus != `error: kritika: review failed (provider "nowhere" is not in the configuration)` {
 		t.Fatalf("forge status = %q", forgeStatus)
 	}
+	// The pull request is marked failed as a review whose runner ran is,
+	// though no eyes went on for it.
+	waitFor(t, 5*time.Second, "the pull request to be marked as failed", func() bool {
+		h.lf.mu.Lock()
+		defer h.lf.mu.Unlock()
+		on := h.lf.pullReactions[1]
+		return on != nil && !on[forge.ReactionEyes] && !on[forge.ReactionDone] && on[forge.ReactionFailed]
+	})
 }
 
 // checkAgentCappedUnderLease caps a review on the account's daily count,
@@ -1604,6 +1613,49 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			})
 			if err != nil || status != string(tt.status) || !strings.HasPrefix(errText, tt.errPrefix) || phase != "failed" {
 				t.Fatalf("review %s (%q), run %s, err %v; want review %s (%q...), run failed", status, errText, phase, err, tt.status, tt.errPrefix)
+			}
+		})
+	}
+}
+
+// checkReviewOutcome: the marks say a review failed only of the pull
+// request's head, and say nothing of a job River retries.
+func checkReviewOutcome(t *testing.T, h *agenticHarness) {
+	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"),
+		Number: 1, Trigger: "test"}
+	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("boom")
+	tests := []struct {
+		name   string
+		head   string
+		status store.ReviewStatus
+		jobErr error
+		last   bool
+		want   outcome
+	}{
+		{"failed", pr.headSHA, store.ReviewFailed, nil, false, failed},
+		{"failed, and its job retried", pr.headSHA, store.ReviewFailed, boom, false, unanswered},
+		{"left as it is by the last attempt's error", pr.headSHA, store.ReviewSuperseded, boom, true, failed},
+		{"failed on a head the pull request moved past", strings.Repeat("7", 40), store.ReviewFailed, nil, false, unanswered},
+		{"the last attempt's error on a head moved past", strings.Repeat("6", 40), store.ReviewSuperseded, boom, true, unanswered},
+		{"superseded", pr.headSHA, store.ReviewSuperseded, nil, false, unanswered},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := args
+			a.HeadSHA = tt.head
+			reviewID, _, _, err := h.review.start(h.ctx, a, pr, h.base, "", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.review.finishReview(h.ctx, args.AccountID, reviewID, tt.status, "", ""); err != nil {
+				t.Fatal(err)
+			}
+			if got := h.review.reviewOutcome(h.ctx, slog.New(slog.DiscardHandler), args.AccountID, reviewID, tt.jobErr, tt.last); got != tt.want {
+				t.Fatalf("outcome = %d, want %d", got, tt.want)
 			}
 		})
 	}

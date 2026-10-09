@@ -394,10 +394,31 @@ func (l *localForge) UnreactToPullRequest(_ context.Context, _, _ string, number
 
 // reactionIndex numbers the reactions the bot leaves, for their fake ids.
 func reactionIndex(content string) int64 {
-	if content == forge.ReactionEyes {
+	switch content {
+	case forge.ReactionEyes:
 		return 1
+	case forge.ReactionDone:
+		return 2
 	}
-	return 2
+	return 3
+}
+
+func (l *localForge) Reaction(_ context.Context, _, _ string, on forge.Comment, content string) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reactions[on.ID] != content {
+		return 0, nil
+	}
+	return on.ID + 1, nil
+}
+
+func (l *localForge) PullRequestReaction(_ context.Context, _, _ string, number int, content string) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.pullReactions[number][content] {
+		return 0, nil
+	}
+	return int64(number)*10 + reactionIndex(content), nil
 }
 
 func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int64, _ bool) (bool, error) {
@@ -2526,6 +2547,14 @@ func checkSupervision(
 		if forgeStatus != "error: kritika: review failed" {
 			t.Fatalf("forge status = %q", forgeStatus)
 		}
+		// The pull request carries the confused face now, and no longer
+		// the thumbs up an earlier review left.
+		waitFor(t, 5*time.Second, "the pull request to be marked as failed", func() bool {
+			lf.mu.Lock()
+			defer lf.mu.Unlock()
+			on := lf.pullReactions[1]
+			return on != nil && !on[forge.ReactionEyes] && !on[forge.ReactionDone] && on[forge.ReactionFailed]
+		})
 	})
 }
 

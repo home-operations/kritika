@@ -33,7 +33,7 @@ review used; with none, nothing is left to review, and kritika says so.
 | The summary       | one comment, which each review edits                                                                                                                                 |
 | Findings          | inline comments on the lines they concern, each with its severity, category, explanation, a one-click suggestion where it has a fix, and a prompt for a coding agent |
 | The commit status | `Kritika / Review`, on the head commit                                                                                                                               |
-| Reactions         | 👀 on the pull request while a review runs, 👍 once one is posted; a mention kritika answers gets the same ([permissions](setup.md#register-the-github-app))         |
+| Reactions         | 👀 on the pull request while a review runs, then 👍 once one is posted or 😕 when it failed, until `@<bot> review` or a re-run posts one; a mention kritika answers gets the same ([permissions](setup.md#register-the-github-app)) |
 | An approval       | with `review.approve` on ([approvals](confidence.md#approvals))                                                                                                      |
 
 ### Findings
