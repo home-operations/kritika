@@ -67,7 +67,7 @@ func servedRepo(t *testing.T) (string, *fetchRepoTool) {
 	}
 	srv := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(root), false)))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport}
+	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes)}
 }
 
 func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
@@ -102,8 +102,8 @@ func TestFetchRepoTool(t *testing.T) {
 	if err != nil || !strings.Contains(string(diff), "+func A() {}") {
 		t.Fatalf("diff file = %q, %v", diff, err)
 	}
-	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); tool.written != want {
-		t.Fatalf("written = %d, want %d", tool.written, want)
+	if want := int64(len("package pkg\n\nfunc A() {}\n") + len(diff)); fetchWriteBytes-tool.budget.Left() != want {
+		t.Fatalf("written = %d, want %d", fetchWriteBytes-tool.budget.Left(), want)
 	}
 
 	if out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1"})); err != nil ||
@@ -127,7 +127,7 @@ func TestFetchRepoTool(t *testing.T) {
 		!strings.Contains(err.Error(), "made its 8 fetches") {
 		t.Fatalf("past the fetch count: err = %v", err)
 	}
-	tool.fetches, tool.written = 0, fetchWriteBytes
+	tool.fetches, tool.budget = 0, agent.NewWriteBudget(0)
 	if _, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1"})); err == nil ||
 		!strings.Contains(err.Error(), "written its 256 MiB") {
 		t.Fatalf("past the write budget: err = %v", err)
@@ -174,13 +174,13 @@ func TestFetchRepoSourcesRead(t *testing.T) {
 // past the review's budget is returned but not kept in a file.
 func TestFetchRepoDiffPastBudget(t *testing.T) {
 	url, tool := servedRepo(t)
-	tool.written = fetchWriteBytes - int64(len("package pkg\n\nfunc A() {}\n"))
+	tool.budget = agent.NewWriteBudget(int64(len("package pkg\n\nfunc A() {}\n")))
 	out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"pkg"}}))
 	if err != nil || !strings.Contains(out, "It is not kept in a file") || !strings.Contains(out, "+func A() {}") {
 		t.Fatalf("fetch = %q, %v", out, err)
 	}
-	if _, err := os.Stat(filepath.Join(tool.dir, "1-repo@v2.diff")); !os.IsNotExist(err) || tool.written != fetchWriteBytes {
-		t.Fatalf("the diff file was written past the budget: written = %d, %v", tool.written, err)
+	if _, err := os.Stat(filepath.Join(tool.dir, "1-repo@v2.diff")); !os.IsNotExist(err) || tool.budget.Left() != 0 {
+		t.Fatalf("the diff file was written past the budget: budget left = %d, %v", tool.budget.Left(), err)
 	}
 }
 
@@ -248,8 +248,8 @@ func TestFetchRepoTags(t *testing.T) {
 	if _, err := run(map[string]any{"tags": "", "from": "v1"}); err == nil || !strings.Contains(err.Error(), "give ref to fetch") {
 		t.Fatalf("tags with from and no ref: err = %v", err)
 	}
-	if tool.fetches != 0 || tool.written != 0 {
-		t.Fatalf("a listing counted as a fetch: fetches = %d, written = %d", tool.fetches, tool.written)
+	if tool.fetches != 0 || tool.budget.Left() != fetchWriteBytes {
+		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}
 
 	_, err := run(map[string]any{"ref": "release-2", "paths": []string{"pkg"}})
@@ -327,7 +327,7 @@ func TestFetchedReadFile(t *testing.T) {
 		t.Fatalf("without fetch_repo, read_file reads the head alone: %v", err)
 	}
 	read := offeredTools(Spec{Agent: &AgentLimits{}, Prompt: &Prompt{}}, head, nil, []agent.Tool{fetch})[0]
-	if d := read.Def(); d.Name != "read_file" || !strings.HasSuffix(d.Description, "It also reads the files fetch_repo wrote, at the paths it names under ../upstream/.") {
+	if d := read.Def(); d.Name != "read_file" || !strings.HasSuffix(d.Description, "It also reads the files under ../upstream/, at the paths fetch_repo and the run tool's notes name.") {
 		t.Fatalf("def = %+v", d)
 	}
 	for _, tt := range []struct {

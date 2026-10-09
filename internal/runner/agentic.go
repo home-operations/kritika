@@ -222,8 +222,8 @@ func (a *AgentLimits) limits() agent.Limits {
 }
 
 // offeredTools are every tool the agent is offered: the read-only ones over
-// head, then extra. With fetch_repo among extra, read_file reads what it
-// fetches too.
+// head, then extra. With fetch_repo, or a run tool that keeps cut outputs,
+// among extra, read_file reads what they write too.
 func offeredTools(p Spec, head *object.Tree, ignore []string, extra []agent.Tool) []agent.Tool {
 	limit := p.Agent.limits().MaxToolOutputBytes
 	tree := agent.NewTree(head, ignore)
@@ -232,10 +232,19 @@ func offeredTools(p Spec, head *object.Tree, ignore []string, extra []agent.Tool
 		issues[is.Number] = is.Body
 	}
 	read := agent.ReadFileTool(tree, limit)
+	var written string
 	for _, t := range extra {
-		if f, ok := t.(*fetchRepoTool); ok {
-			read = fetchedReadFile{Tool: read, dir: f.dir, maxBytes: limit}
+		switch t := t.(type) {
+		case *fetchRepoTool:
+			written = t.dir
+		case *agent.RunTool:
+			if k := t.Kept(); k != nil {
+				written = k.Dir
+			}
 		}
+	}
+	if written != "" {
+		read = fetchedReadFile{Tool: read, dir: written, maxBytes: limit}
 	}
 	return append([]agent.Tool{
 		read,
