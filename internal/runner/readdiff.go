@@ -11,6 +11,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/textcut"
+	"github.com/home-operations/kritika/internal/udiff"
 )
 
 var readDiffSchema = json.RawMessage(`{
@@ -84,33 +85,20 @@ func (t *readDiffTool) Run(_ context.Context, input json.RawMessage) (string, er
 // are.
 func numberDiff(section string) string {
 	var b strings.Builder
-	inHunk, next := false, 0
-	for l := range strings.SplitSeq(strings.TrimSuffix(section, "\n"), "\n") {
-		switch {
-		case strings.HasPrefix(l, "@@"):
-			next, inHunk = hunkStart(l)
-		case !inHunk:
-		case strings.HasPrefix(l, "-"), strings.HasPrefix(l, `\`):
-			l = "\t" + l
-		default:
-			l = strconv.Itoa(next) + "\t" + l
-			next++
+	for _, f := range udiff.Parse(section) {
+		b.WriteString(f.Header)
+		for _, h := range f.Hunks {
+			b.WriteString(h.Header)
+			for _, l := range h.Lines {
+				if l.Kind != '-' && l.Kind != '\\' {
+					b.WriteString(strconv.Itoa(l.NewLine))
+				}
+				b.WriteByte('\t')
+				b.WriteString(l.String())
+			}
 		}
-		b.WriteString(l + "\n")
 	}
 	return b.String()
-}
-
-// hunkStart is the head's first line in a hunk header, c in
-// "@@ -a,b +c,d @@".
-func hunkStart(header string) (int, bool) {
-	f := strings.Fields(header)
-	if len(f) < 3 || !strings.HasPrefix(f[2], "+") {
-		return 0, false
-	}
-	start, _, _ := strings.Cut(f[2][1:], ",")
-	n, err := strconv.Atoi(start)
-	return n, err == nil
 }
 
 // diffPages cuts text into pages of at most room bytes at line ends. A line

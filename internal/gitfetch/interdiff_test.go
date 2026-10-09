@@ -1,6 +1,10 @@
 package gitfetch
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/home-operations/kritika/internal/udiff"
+)
 
 const twoHunks = `diff --git a/svc.go b/svc.go
 index 1111111..2222222 100644
@@ -53,16 +57,9 @@ func TestWithoutHunks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := withoutHunks(tt.diff, hunkKeys(baseEdit)); got != tt.want {
+			if got := withoutHunks(udiff.Parse(tt.diff)[0], hunkKeys(baseEdit)); got != tt.want {
 				t.Errorf("withoutHunks() =\n%s\nwant\n%s", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestParseFileDiffNamesADeletion(t *testing.T) {
-	path, header, hunks := parseFileDiff("diff --git a/gone.go b/gone.go\ndeleted file mode 100644\n--- a/gone.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-package gone\n")
-	if path != "gone.go" || header != "diff --git a/gone.go b/gone.go\ndeleted file mode 100644\n--- a/gone.go\n+++ /dev/null\n" || len(hunks) != 1 {
-		t.Fatalf("parseFileDiff() = %q, %q, %q", path, header, hunks)
 	}
 }
