@@ -225,11 +225,13 @@ const forcedRetries = 2
 func (r Run) onlySubmitText() string { return "agent: only " + r.Submit.Name + " is available now" }
 
 // dropOutputBytes is the size from which a tool result stays in the
-// conversation only for the step after it, the one that reads it. Every
-// later step sends the whole conversation again, and a few results this
-// size, a command's output or a whole file, would make up most of its
-// tokens. Smaller results stay: they cost little, and what a later step
-// reads back, a skill, a description, an error, is one.
+// conversation only until a later step's tool results follow it: the step
+// after it reads it, and when that step calls no tool, so do the retries
+// or the nudge that answer it. Every later step sends the whole
+// conversation again, and a few results this size, a command's output or
+// a whole file, would make up most of its tokens. Smaller results stay:
+// they cost little, and what a later step reads back, a skill, a
+// description, an error, is one.
 const dropOutputBytes = 8 << 10
 
 // droppedText replaces the result of a call of tool that dropRead dropped,
