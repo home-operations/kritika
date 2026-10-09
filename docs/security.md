@@ -149,7 +149,10 @@ What bounds a command:
 - **A bare environment:** `PATH`, its own `HOME` and the gateway, and for
   `gh` the run's token as `GH_TOKEN`. The runner makes itself unreadable
   to the command first, so it cannot read the runner's credentials from
-  `/proc`.
+  `/proc`. `HOME` is apart from the checkout, so a pull request cannot
+  plant a `.curlrc`; the runner writes one that turns off `curl`'s
+  progress meter, which would otherwise land in the result, and follows
+  the redirects the gateway hands back.
 - **Refused arguments:** the run tool refuses the arguments that would
   print the token or run a program outside the list: `gh auth`, `alias`,
   `config` and `extension`, `fd -x` and `-X`, `rg --pre` and
