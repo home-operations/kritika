@@ -265,8 +265,8 @@ type ParseOptions struct {
 	// model's text keeps; RedirectReferences rewrites the others.
 	Repository string
 	// Prior are the last review's findings, as the prompt listed them: a
-	// finding that names one's id, or has one's path and title, carries
-	// its fingerprint on.
+	// finding on one's path that names its id, or that has its path and
+	// title, carries its fingerprint on, as the first such finding only.
 	Prior []Finding
 }
 
@@ -606,6 +606,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	res.Summary = normalizeSummary(res.Summary, opts)
 	kept := make([]Finding, 0, len(res.Findings))
 	var dropped []Dropped
+	claimed := map[string]bool{}
 	for _, f := range res.Findings {
 		f.Path = strings.TrimSpace(f.Path)
 		f.Title = severityPrefix.ReplaceAllString(prose(f.Title, opts.Repository), "")
@@ -616,7 +617,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
 		f.Prior = strings.TrimSpace(f.Prior)
-		f.Fingerprint, f.Prior = inherited(f, opts.Prior), ""
+		f.Fingerprint, f.Prior = inherited(f, opts.Prior, claimed), ""
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():
