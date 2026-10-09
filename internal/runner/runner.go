@@ -76,12 +76,35 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 // smaller, so the agent is sent no less for it. A variable for the tests.
 var maxPackDiffBytes = 4 << 20
 
+// priorDelta is the prior head the fetch brought, nil when none was asked
+// for or it could not be had, which tells the worker the delta is unknown,
+// not empty, and the paths of the delta since it less the ignored ones.
+func priorDelta(res *gitfetch.Result, p Spec, logger *slog.Logger) (*string, []string) {
+	deltaPaths := []string{}
+	switch {
+	case res.Prior != nil:
+		deltaPaths = notIgnored(res.DeltaChanged, p.Ignore)
+		logger.Info("fetched prior head", "prior", p.PriorHead[:7], "delta_paths", len(deltaPaths), "delta_bytes", len(res.DeltaDiff))
+		if res.PriorBaseErr != nil {
+			logger.Warn("prior merge base not fetched; what the base gained in the change's files stays in the delta",
+				"prior_base", p.PriorBase[:7], "error", res.PriorBaseErr)
+		}
+		return &p.PriorHead, deltaPaths
+	case p.PriorHead != "":
+		// Best effort: the review goes on in full. A force-push is the
+		// expected cause; the error tells it apart from auth or network.
+		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
+	}
+	return nil, deltaPaths
+}
+
 func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, logger *slog.Logger) error {
 	if err := setPhase(ctx, st, p.RunID, "fetching"); err != nil {
 		return err
 	}
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{
 		CloneURL: p.CloneURL, Token: secrets.GitToken, Head: p.Head, Base: p.Base, Prior: p.PriorHead, PriorChanged: p.PriorChanged,
+		PriorBase: p.PriorBase,
 	})
 	if err != nil {
 		return err
@@ -105,17 +128,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return err
 	}
 	ignore := p.Ignore
-	// A nil prior head tells the worker the delta is unknown, not empty.
-	var priorHead *string
-	deltaPaths := []string{}
-	if res.Prior != nil {
-		priorHead, deltaPaths = &p.PriorHead, notIgnored(res.DeltaChanged, ignore)
-		logger.Info("fetched prior head", "prior", p.PriorHead[:7], "delta_paths", len(deltaPaths), "delta_bytes", len(res.DeltaDiff))
-	} else if p.PriorHead != "" {
-		// Best effort: the review goes on in full. A force-push is the
-		// expected cause; the error tells it apart from auth or network.
-		logger.Warn("prior head not fetched", "prior", p.PriorHead[:7], "error", res.PriorErr)
-	}
+	priorHead, deltaPaths := priorDelta(res, p, logger)
 	// Everything the worker reads back is decided here, before the pack is
 	// written: whether the review is skipped, what it builds on, and what
 	// the prompt was given. A skipped review spends nothing on a model.

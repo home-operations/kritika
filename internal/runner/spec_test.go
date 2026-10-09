@@ -71,6 +71,7 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
 		{name: "bad prior head", in: func() string { s := reviewSpec(); s.PriorHead = "zz"; return encode(s) }(), wantErr: "priorHead"},
+		{name: "bad prior base", in: func() string { s := reviewSpec(); s.PriorBase = "zz"; return encode(s) }(), wantErr: "priorBase"},
 		{name: "review without base", in: func() string { s := reviewSpec(); s.Base = ""; return encode(s) }(), wantErr: "base"},
 		{name: "unknown kind", in: func() string { s := reviewSpec(); s.Kind = "lint"; return encode(s) }(), wantErr: "kind"},
 		{name: "a mode", in: strings.Replace(encode(reviewSpec()), `{`, `{"mode":"agentic",`, 1), wantErr: "unknown field"},
