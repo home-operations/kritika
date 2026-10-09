@@ -1,4 +1,8 @@
-# syntax=docker/dockerfile:1
+# syntax=mirror.gcr.io/docker/dockerfile:1
+
+# Images that live on Docker Hub are pulled through mirror.gcr.io, Google's
+# cache of it, so a build never meets Docker Hub's pull limits. Renovate
+# still resolves them on Docker Hub: the shared preset aliases the mirror.
 
 # ARGs used in a FROM must live in the global scope (before the first FROM).
 # GO_VERSION and NODE_VERSION are supplied by the release workflow from mise,
@@ -9,7 +13,7 @@ ARG NODE_VERSION
 # ---- UI build ---------------------------------------------------------------
 # The built UI is the same bytes on every platform, so it is built once, on
 # the build host, rather than per target under emulation.
-FROM --platform=$BUILDPLATFORM docker.io/library/node:${NODE_VERSION}-trixie-slim AS ui
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:${NODE_VERSION}-trixie-slim AS ui
 WORKDIR /ui
 COPY internal/web/package.json internal/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
@@ -17,7 +21,7 @@ COPY internal/web/ ./
 RUN npm run build
 
 # ---- Go build -------------------------------------------------------------
-FROM docker.io/library/golang:${GO_VERSION}-trixie AS builder
+FROM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -47,8 +51,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # linux-arm64 platforms as the repository's own lockfile. mise's image has no
 # shell to copy the binaries out with, so its static binary and the CA roots
 # it downloads with are taken from it instead.
-FROM docker.io/jdxcode/mise:2026.10.6 AS mise
-FROM docker.io/library/debian:trixie-slim AS runner-tools
+FROM mirror.gcr.io/jdxcode/mise:2026.10.6 AS mise
+FROM mirror.gcr.io/library/debian:trixie-slim AS runner-tools
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=mise /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 WORKDIR /tools
