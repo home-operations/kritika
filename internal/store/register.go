@@ -20,17 +20,6 @@ type ReachedRepository struct {
 	Traits                  *configfile.RepoTraits
 }
 
-// Now is the database's clock, for a time a query will compare a row's
-// clock_timestamp() against: the application's clock may run ahead of or
-// behind it.
-func (s *Store) Now(ctx context.Context) (time.Time, error) {
-	var now time.Time
-	if err := s.app.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
-		return time.Time{}, fmt.Errorf("store: read the clock: %w", err)
-	}
-	return now, nil
-}
-
 // RegisterRepositories records the repositories of account accountID that
 // its connection's App reaches, as a webhook from each would, so polling
 // and onboarding know them before any event arrives. repos is the

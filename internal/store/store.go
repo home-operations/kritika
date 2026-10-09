@@ -154,6 +154,17 @@ func (s *Store) Close() {
 // [Store.WithAccount].
 func (s *Store) App() *pgxpool.Pool { return s.app }
 
+// Now is the database's clock, for a time a query will compare a row's
+// clock_timestamp() against: the application's clock may run ahead of or
+// behind it.
+func (s *Store) Now(ctx context.Context) (time.Time, error) {
+	var now time.Time
+	if err := s.app.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		return time.Time{}, fmt.Errorf("store: read the clock: %w", err)
+	}
+	return now, nil
+}
+
 // LeaderEligible reports whether an owner DSN was configured.
 func (s *Store) LeaderEligible() bool { return s.owner != nil }
 
