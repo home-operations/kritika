@@ -51,10 +51,16 @@ func commandTool(
 	}
 	cleanup = func() { _ = os.RemoveAll(scratch) }
 	// HOME is apart from the checkout, or a repository could plant the
-	// ~/.curlrc curl reads before its arguments.
+	// ~/.curlrc curl reads before its arguments; the runner writes its own.
 	dir, home, up := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"), filepath.Join(scratch, upstreamDir)
 	for _, d := range []string{dir, home, up} {
 		if err := os.Mkdir(d, 0o755); err != nil {
+			logger.Warn("commands not offered: no scratch space", "error", err)
+			return nil, nil, cleanup
+		}
+	}
+	if found["curl"] != "" {
+		if err := os.WriteFile(filepath.Join(home, ".curlrc"), []byte(curlrc), 0o644); err != nil {
 			logger.Warn("commands not offered: no scratch space", "error", err)
 			return nil, nil, cleanup
 		}
@@ -95,6 +101,13 @@ func commandTool(
 	}
 	return run, fetch, cleanup
 }
+
+// curlrc is the configuration curl reads from HOME. Without a terminal
+// curl prints its progress meter to stderr, which the run tool keeps in
+// the result, and --silent would drop its warnings and errors with it.
+// The gateway hands redirects back to the client, so curl follows them
+// itself; it sends credentials only to the initial host.
+const curlrc = "no-progress-meter\nlocation\n"
 
 // markRepository gives the checkout an empty .git whose origin is the
 // repository's clone URL: no history, but enough for a tool that locates a
