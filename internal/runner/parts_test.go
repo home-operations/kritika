@@ -72,7 +72,7 @@ func TestPartSpec(t *testing.T) {
 // submission is a review a part submits: one finding on path.
 func submission(path, take string) json.RawMessage {
 	return json.RawMessage(`{"summary":{"headline":"H","take":"` + take + `","praise":["p"]},"findings":[{"path":"` + path +
-		`","line":1,"severity":"nit","category":"correctness","title":"t","explanation":"e"}]}`)
+		`","line":1,"severity":"p2","category":"correctness","title":"t","explanation":"e"}]}`)
 }
 
 func TestMergeParts(t *testing.T) {
@@ -135,7 +135,7 @@ func TestPartPrompts(t *testing.T) {
 		t.Fatalf("%d parts, %d similar requests, search %v, %d chunks, rules %q; want each part's own", len(parts), asked,
 			tools.search != nil, len(chunks), rules)
 	}
-	const earlier = "main.go:1 [nit] earlier finding"
+	const earlier = "main.go:1 [p2] earlier finding"
 	if !strings.Contains(parts[0].prompt.user, earlier) || strings.Contains(parts[1].prompt.user, earlier) ||
 		!strings.Contains(parts[0].prompt.system, "a-rule") || strings.Contains(parts[0].prompt.system, "b-rule") {
 		t.Fatalf("part 1's prompt:\n%s\n%s", parts[0].prompt.system, parts[0].prompt.user)

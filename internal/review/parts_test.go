@@ -130,7 +130,7 @@ func TestBuildPart(t *testing.T) {
 func TestCheckPart(t *testing.T) {
 	check := CheckPart([]string{"a/x.go"}, []string{"b/y.go"})
 	submit := func(path string) json.RawMessage {
-		return json.RawMessage(`{"summary":{"take":"t","praise":[]},"findings":[{"path":"` + path + `","line":1,"severity":"nit",` +
+		return json.RawMessage(`{"summary":{"take":"t","praise":[]},"findings":[{"path":"` + path + `","line":1,"severity":"p2",` +
 			`"category":"correctness","title":"t","explanation":"e"}]}`)
 	}
 	if err := check(submit("a/x.go")); err != nil {

@@ -59,7 +59,7 @@
 
   const plural = (n: number) => `${wholeNumber(n)} open ${n === 1 ? 'pull request' : 'pull requests'}`;
 
-  const found = (c: { blocking: number; important: number; nit: number }) => c.blocking + c.important + c.nit;
+  const found = (c: { p0: number; p1: number; p2: number }) => c.p0 + c.p1 + c.p2;
   const rate = (addressed: number, total: number) => (total ? (addressed / total) * 100 : null);
 
   function rows(series: AnalyticsPoint[], values: (p: AnalyticsPoint) => number[]) {
@@ -78,9 +78,9 @@
     { value: 'table', label: 'Table' },
   ] as const;
   const SEV_SERIES = [
-    { label: 'Blocking', color: 'var(--chart-sev-blocking)' },
-    { label: 'Important', color: 'var(--chart-sev-important)' },
-    { label: 'Nit', color: 'var(--chart-sev-nit)' },
+    { label: 'P0', color: 'var(--chart-sev-p0)' },
+    { label: 'P1', color: 'var(--chart-sev-p1)' },
+    { label: 'P2', color: 'var(--chart-sev-p2)' },
   ];
 </script>
 
@@ -166,7 +166,7 @@
             <StatTile
               label="Findings"
               value={wholeNumber(found(c.findings))}
-              sub={`${c.findings.blocking} blocking`}
+              sub={`${c.findings.p0} P0`}
               now={found(c.findings)}
               before={found(p.findings)}
               define="Findings first reported in the period, each counted once per pull request"
@@ -232,7 +232,7 @@
               <ColumnChart
                 label="Findings first reported per {group}, by severity"
                 series={SEV_SERIES}
-                rows={rows(d.series, (x) => [x.findings.blocking, x.findings.important, x.findings.nit])}
+                rows={rows(d.series, (x) => [x.findings.p0, x.findings.p1, x.findings.p2])}
                 format={wholeNumber}
                 whole
                 view={findingsView}

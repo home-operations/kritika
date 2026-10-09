@@ -57,7 +57,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		FROM findings f LEFT JOIN latest l
 			ON coalesce(nullif(l.fingerprint, ''), l.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
 		WHERE f.review_id = $1
-		ORDER BY CASE f.severity WHEN 'blocking' THEN 0 WHEN 'important' THEN 1 ELSE 2 END, f.path, f.line, f.id`, reviewID)
+		ORDER BY CASE f.severity WHEN 'p0' THEN 0 WHEN 'p1' THEN 1 ELSE 2 END, f.path, f.line, f.id`, reviewID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list findings: %w", err)
 	}

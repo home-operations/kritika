@@ -66,11 +66,11 @@ func ReadAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time) (An
 		t.MedianReviewMs = &ms
 	}
 	err = tx.QueryRow(ctx, `WITH `+findingIssues+`
-		SELECT count(*) FILTER (WHERE severity = 'blocking'), count(*) FILTER (WHERE severity = 'important'),
-			count(*) FILTER (WHERE severity = 'nit'), count(*) FILTER (WHERE addressed),
+		SELECT count(*) FILTER (WHERE severity = 'p0'), count(*) FILTER (WHERE severity = 'p1'),
+			count(*) FILTER (WHERE severity = 'p2'), count(*) FILTER (WHERE addressed),
 			coalesce(sum(reactions_up), 0), coalesce(sum(reactions_down), 0)
 		FROM latest WHERE first_at >= $1 AND first_at < $2`, from, to).
-		Scan(&t.Findings.Blocking, &t.Findings.Important, &t.Findings.Nit, &t.Addressed, &t.ReactionsUp, &t.ReactionsDown)
+		Scan(&t.Findings.P0, &t.Findings.P1, &t.Findings.P2, &t.Addressed, &t.ReactionsUp, &t.ReactionsDown)
 	if err != nil {
 		return t, fmt.Errorf("store: analytics findings: %w", err)
 	}
@@ -133,14 +133,14 @@ func ReadAnalyticsSeries(ctx context.Context, tx pgx.Tx, group AnalyticsGroup, f
 			SELECT date_trunc($3, created_at) AS b, count(*) AS n FROM reviews
 			WHERE status = 'completed' AND created_at >= $1 AND created_at < $2 GROUP BY 1),
 		fnd AS (
-			SELECT date_trunc($3, first_at) AS b, count(*) FILTER (WHERE severity = 'blocking') AS blocking,
-				count(*) FILTER (WHERE severity = 'important') AS important, count(*) FILTER (WHERE severity = 'nit') AS nit
+			SELECT date_trunc($3, first_at) AS b, count(*) FILTER (WHERE severity = 'p0') AS p0,
+				count(*) FILTER (WHERE severity = 'p1') AS p1, count(*) FILTER (WHERE severity = 'p2') AS p2
 			FROM latest WHERE first_at >= $1 AND first_at < $2 GROUP BY 1),
 		spend AS (
 			SELECT date_trunc($3, created_at) AS b, sum(cost_usd)::float8 AS cost FROM usage
 			WHERE created_at >= $1 AND created_at < $2 GROUP BY 1)
-		SELECT to_char(k.b, 'YYYY-MM-DD'), coalesce(rev.n, 0), coalesce(fnd.blocking, 0), coalesce(fnd.important, 0),
-			coalesce(fnd.nit, 0), coalesce(spend.cost, 0)
+		SELECT to_char(k.b, 'YYYY-MM-DD'), coalesce(rev.n, 0), coalesce(fnd.p0, 0), coalesce(fnd.p1, 0),
+			coalesce(fnd.p2, 0), coalesce(spend.cost, 0)
 		FROM buckets k LEFT JOIN rev ON rev.b = k.b LEFT JOIN fnd ON fnd.b = k.b LEFT JOIN spend ON spend.b = k.b
 		ORDER BY k.b`, from, to, string(group))
 	if err != nil {
@@ -148,7 +148,7 @@ func ReadAnalyticsSeries(ctx context.Context, tx pgx.Tx, group AnalyticsGroup, f
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AnalyticsPoint, error) {
 		var p AnalyticsPoint
-		err := row.Scan(&p.Key, &p.Reviews, &p.Findings.Blocking, &p.Findings.Important, &p.Findings.Nit, &p.CostUSD)
+		err := row.Scan(&p.Key, &p.Reviews, &p.Findings.P0, &p.Findings.P1, &p.Findings.P2, &p.CostUSD)
 		return p, err
 	})
 	if err != nil {
@@ -173,12 +173,12 @@ func ReadRepoActivity(ctx context.Context, tx pgx.Tx, from, to time.Time, limit 
 			SELECT p.repository_id AS id, count(*) AS n FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id
 			WHERE v.status = 'completed' AND v.created_at >= $1 AND v.created_at < $2 GROUP BY 1),
 		fnd AS (
-			SELECT p.repository_id AS id, count(*) FILTER (WHERE l.severity = 'blocking') AS blocking,
-				count(*) FILTER (WHERE l.severity = 'important') AS important, count(*) FILTER (WHERE l.severity = 'nit') AS nit,
+			SELECT p.repository_id AS id, count(*) FILTER (WHERE l.severity = 'p0') AS p0,
+				count(*) FILTER (WHERE l.severity = 'p1') AS p1, count(*) FILTER (WHERE l.severity = 'p2') AS p2,
 				count(*) FILTER (WHERE l.addressed) AS addressed
 			FROM latest l JOIN pull_requests p ON p.id = l.pull_request_id
 			WHERE l.first_at >= $1 AND l.first_at < $2 GROUP BY 1)
-		SELECT r.name, coalesce(rev.n, 0), coalesce(fnd.blocking, 0), coalesce(fnd.important, 0), coalesce(fnd.nit, 0),
+		SELECT r.name, coalesce(rev.n, 0), coalesce(fnd.p0, 0), coalesce(fnd.p1, 0), coalesce(fnd.p2, 0),
 			coalesce(fnd.addressed, 0)
 		FROM repositories r LEFT JOIN rev ON rev.id = r.id LEFT JOIN fnd ON fnd.id = r.id
 		WHERE rev.id IS NOT NULL OR fnd.id IS NOT NULL
@@ -188,7 +188,7 @@ func ReadRepoActivity(ctx context.Context, tx pgx.Tx, from, to time.Time, limit 
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RepoActivity, error) {
 		var a RepoActivity
-		err := row.Scan(&a.Repository, &a.Reviews, &a.Findings.Blocking, &a.Findings.Important, &a.Findings.Nit, &a.Addressed)
+		err := row.Scan(&a.Repository, &a.Reviews, &a.Findings.P0, &a.Findings.P1, &a.Findings.P2, &a.Addressed)
 		return a, err
 	})
 	if err != nil {

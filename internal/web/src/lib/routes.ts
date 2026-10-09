@@ -51,11 +51,11 @@ export const PULL_OUTCOMES: readonly ReviewStatus[] = ['running', 'prepared', 'c
 // filtered list can be linked and comes back with Back. A field is present
 // only when it differs from the default: open pulls, any last review
 // outcome, every repository and author, no search. is narrows to those
-// with automatic reviews paused, or a blocking finding in the last review.
+// with automatic reviews paused, or a P0 finding in the last review.
 export interface PullFilter {
   state?: 'closed' | 'all';
   outcome?: ReviewStatus;
-  is?: 'paused' | 'blocking';
+  is?: 'paused' | 'p0';
   repo?: string;
   author?: string;
   q?: string;
@@ -63,7 +63,7 @@ export interface PullFilter {
 
 // pullFilter drops the fields of f that are a default, so each filter has
 // one Route and one URL; undefined when nothing is left.
-export const PULL_IS = ['paused', 'blocking'] as const;
+export const PULL_IS = ['paused', 'p0'] as const;
 
 export function pullFilter(f: { state?: string; outcome?: string; is?: string; repo?: string; author?: string; q?: string }): PullFilter | undefined {
   const out: PullFilter = {};

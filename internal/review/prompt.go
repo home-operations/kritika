@@ -297,8 +297,8 @@ const deltaOmitted = "\n\n[The diff since the last review was omitted to fit the
 // reReviewLead raises the bar for a re-review: the first review set it, and
 // this one is for defects the new commits introduced or fixes they left
 // incomplete.
-const reReviewLead = "\n\nThis is a re-review: the last review set the bar, so report only blocking or important " +
-	"findings that the lines changed since it show, and none it already made. Nits and anything not worth flagging " +
+const reReviewLead = "\n\nThis is a re-review: the last review set the bar, so report only P0 or P1 " +
+	"findings that the lines changed since it show, and none it already made. P2s and anything not worth flagging " +
 	"then are not wanted now. Zero findings is the expected outcome when the new commits are sound.\n\n"
 
 // anchorsAbove reminds a re-review, beside the diff since the last

@@ -27,7 +27,7 @@ func (s *Server) getAttention(w http.ResponseWriter, r *http.Request, t *account
 }
 
 func attentionDTO(a store.Attention) Attention {
-	return Attention{Failed: a.Failed, Capped: a.Capped, Blocking: a.Blocking, Paused: a.Paused}
+	return Attention{Failed: a.Failed, Capped: a.Capped, P0: a.P0, Paused: a.Paused}
 }
 
 // pullFollowups bounds the follow-ups a pull request's detail lists.
@@ -51,7 +51,7 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 		return errBadRequest(CodeBadRequest, "outcome is not a review status")
 	}
 	if f.Is != "" && !f.Is.Valid() {
-		return errBadRequest(CodeBadRequest, "is must be paused or blocking")
+		return errBadRequest(CodeBadRequest, "is must be paused or p0")
 	}
 	ctx := r.Context()
 	var rows []store.PullRow

@@ -14,7 +14,7 @@ in configuration or infrastructure files, and also the smaller things worth chan
 write the same code, an edge case the change misses, a test the new behaviour lacks or one that cannot fail or
 asserts nothing about the behaviour it is named for, documentation the change leaves stale when it alters how the
 software is built, configured or run, a name or message a reader would misread, or a question whose answer would
-change the code. Mark those smaller ones nit or important as they deserve. Every finding names a concrete change;
+change the code. Mark those smaller ones p2 or p1 as they deserve. Every finding names a concrete change;
 an observation with nothing to do about it is not a finding. A finding is about what the change introduces or
 makes worse: a problem on an unchanged line that the change leaves as it was is not one, a fix may not ask more
 rigour of the change than the code around it has, and a finding rests on what the lines show, not on an

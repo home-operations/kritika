@@ -213,16 +213,16 @@ func TestPriorFindings(t *testing.T) {
 		prior: priorReview{
 			headSHA: "h1",
 			findings: []priorFinding{
-				{Path: "a.go", Line: 11, Severity: review.SeverityImportant, Title: "Nil map write", commentID: 42},
-				{Path: "b.go", Line: 3, Severity: review.SeverityNit, Title: "Typo", commentID: 43},
-				{Path: "c.go", Line: 5, Severity: review.SeverityNit, Title: "Never posted"},
+				{Path: "a.go", Line: 11, Severity: review.SeverityP1, Title: "Nil map write", commentID: 42},
+				{Path: "b.go", Line: 3, Severity: review.SeverityP2, Title: "Typo", commentID: 43},
+				{Path: "c.go", Line: 5, Severity: review.SeverityP2, Title: "Never posted"},
 			},
 			dismissed: []store.Dismissal{{Finding: review.Finding{Path: "d.go", Line: 8, Title: "Dismissed"}, Reason: "intended", CommentID: 44}},
 		},
 	}
 	// Nil map write is reported again outside the diff, under the prior
 	// finding's fingerprint; Typo is not reported again.
-	reported := []review.Finding{{Path: "a.go", Line: 40, Severity: review.SeverityImportant, Title: "Assignment panics",
+	reported := []review.Finding{{Path: "a.go", Line: 40, Severity: review.SeverityP1, Title: "Assignment panics",
 		Fingerprint: review.Fingerprint(review.Finding{Path: "a.go", Title: "Nil map write"})}}
 	got := p.priorFindings(reported)
 	if len(got) != 3 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||

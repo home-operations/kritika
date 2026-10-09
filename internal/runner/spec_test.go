@@ -32,7 +32,7 @@ func reviewSpec() Spec {
 			Repository: "acme/widgets",
 			PullRequest: repoconfig.PullRequest{Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main", State: "open",
 				Labels: []byte(`[{"name":"deps"}]`)},
-			MaxDeltaFiles: 25, Prior: []review.Finding{{Path: "main.go", Line: 1, Severity: review.SeverityNit, Title: "earlier finding"}}},
+			MaxDeltaFiles: 25, Prior: []review.Finding{{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "earlier finding"}}},
 	}
 }
 
@@ -186,7 +186,7 @@ func TestHeartbeatBeatsOnInterval(t *testing.T) {
 
 func TestPromptTrim(t *testing.T) {
 	finding := func(explanation string) review.Finding {
-		return review.Finding{Path: "main.go", Line: 1, Severity: review.SeverityNit, Title: "t", Explanation: explanation}
+		return review.Finding{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "t", Explanation: explanation}
 	}
 	findings := func(n int, explanation string) []review.Finding {
 		out := make([]review.Finding, n)
@@ -234,7 +234,7 @@ func TestEncodeSpecWorstCaseFits(t *testing.T) {
 	}
 	s.Prompt.Prior = make([]review.Finding, 1000)
 	for i := range s.Prompt.Prior {
-		s.Prompt.Prior[i] = review.Finding{Path: "main.go", Line: i + 1, Severity: review.SeverityNit, Title: "t",
+		s.Prompt.Prior[i] = review.Finding{Path: "main.go", Line: i + 1, Severity: review.SeverityP2, Title: "t",
 			Explanation: strings.Repeat("<", 2<<10)}
 	}
 	if _, err := EncodeSpec(s); err == nil {

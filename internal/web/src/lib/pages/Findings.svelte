@@ -57,7 +57,7 @@
 
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName) },
-    { key: 'severity', hint: 'blocking, important or nit', values: SEVERITIES },
+    { key: 'severity', hint: 'p0, p1 or p2', values: SEVERITIES },
     { key: 'category', hint: 'what kind of problem', values: CATEGORIES },
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },

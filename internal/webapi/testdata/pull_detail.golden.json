@@ -26,9 +26,9 @@
       "status": "completed",
       "scope": "full",
       "findings": {
-        "blocking": 1,
-        "important": 2,
-        "nit": 3
+        "p0": 1,
+        "p1": 2,
+        "p2": 3
       },
       "createdAt": "2026-09-01T12:00:00Z"
     },

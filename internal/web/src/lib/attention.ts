@@ -9,7 +9,7 @@ import { wholeNumber, type Tone } from './format';
 export const WANTS: readonly { key: keyof Attention; tone: Tone; label: string; why: string; filter: PullFilter }[] = [
   { key: 'failed', tone: 'danger', label: 'failed', why: 'whose last review failed', filter: { outcome: 'failed' } },
   { key: 'capped', tone: 'warn', label: 'capped', why: 'whose last review hit a limit', filter: { outcome: 'capped' } },
-  { key: 'blocking', tone: 'danger', label: 'blocking', why: 'whose last review found something blocking', filter: { is: 'blocking' } },
+  { key: 'p0', tone: 'danger', label: 'P0', why: 'whose last review found a P0', filter: { is: 'p0' } },
   { key: 'paused', tone: 'muted', label: 'paused', why: 'whose automatic reviews are paused', filter: { is: 'paused' } },
 ];
 

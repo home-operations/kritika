@@ -12,12 +12,12 @@ func TestMarkers(t *testing.T) {
 		wantOK bool
 	}{
 		{"finding marker alone", FindingMarker(fp), MarkedFinding, fp, true},
-		{"finding marker in a comment", FindingMarker(fp) + "\n**[blocking]** **nil map write**\n", MarkedFinding, fp, true},
+		{"finding marker in a comment", FindingMarker(fp) + "\n**[p0]** **nil map write**\n", MarkedFinding, fp, true},
 		{"finding marker is not a follow-up marker", FindingMarker(fp), MarkedFollowUp, "", false},
 		{"follow-up marker", FollowUpMarker(42) + "\nreply", MarkedFollowUp, "42", true},
 		{"follow-up marker is not a finding marker", FollowUpMarker(42), MarkedFinding, "", false},
 		{"sticky marker is neither", Marker(7), MarkedFinding, "", false},
-		{"no marker", "**[blocking]** **nil map write**", MarkedFinding, "", false},
+		{"no marker", "**[p0]** **nil map write**", MarkedFinding, "", false},
 		{"unterminated", "<!-- kritika:finding:" + fp, MarkedFinding, "", false},
 		{"empty id", "<!-- kritika:finding: -->", MarkedFinding, "", false},
 		{"id with a space", "<!-- kritika:followup:4 2 -->", MarkedFollowUp, "", false},

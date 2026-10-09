@@ -19,7 +19,7 @@ import (
 func TestCarryOn(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Continue = &Continuation{RunID: "run-0", Session: "run-0"}
-	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "main.go", Line: 1, Severity: review.SeverityNit, Title: "dismissed one"}}
+	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "dismissed one"}}
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	tools := offeredTools(s, head, nil, nil)
 	fresh := loopPrompt(s, false)
@@ -86,7 +86,7 @@ func TestCarryOn(t *testing.T) {
 			if got.carried == nil || got.carried.Tokens != 900 || got.system != fresh.system || got.submit.Name != fresh.submit.Name {
 				t.Fatalf("prompt = %+v", got)
 			}
-			for _, want := range []string{"moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [nit] dismissed one"} {
+			for _, want := range []string{"moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
 				if !strings.Contains(got.user, want) {
 					t.Fatalf("missing %q in the next turn:\n%s", want, got.user)
 				}

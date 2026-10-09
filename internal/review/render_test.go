@@ -14,9 +14,9 @@ func sampleData() RenderData {
 	res := Result{
 		Summary: Summary{Headline: "Adds the widget cache.", Take: "Solid change with one real bug.", Praise: []string{"Clear tests"}},
 		Findings: []Finding{
-			{Path: "main.go", Line: 11, Severity: SeverityBlocking, Category: CategoryCorrectness, Title: "nil map write", Explanation: "m is nil here.",
+			{Path: "main.go", Line: 11, Severity: SeverityP0, Category: CategoryCorrectness, Title: "nil map write", Explanation: "m is nil here.",
 				SuggestedFix: "m = map[string]int{}", URL: "https://forge.example/o/r/blob/0123456789abcdef/main.go#L11"},
-			{Path: "README.md", Line: 2, Severity: SeverityNit, Title: "typo", Explanation: "the the"},
+			{Path: "README.md", Line: 2, Severity: SeverityP2, Title: "typo", Explanation: "the the"},
 		},
 	}
 	return RenderData{Number: 42, HeadSHA: "0123456789abcdef", Model: "vendor/model-x", Reviews: 1, Result: res, Counts: res.Counts(),
@@ -206,8 +206,8 @@ func TestRenderSummaryApproval(t *testing.T) {
 		approval   *Approval
 		want       string
 	}{
-		{name: "approved on its findings", approval: &Approval{Approved: true, Reason: "nothing blocking or important found"},
-			want: "1 P2\n\n**Approved**: nothing blocking or important found\n\n## Findings\n"},
+		{name: "approved on its findings", approval: &Approval{Approved: true, Reason: "nothing at P0 or P1 found"},
+			want: "1 P2\n\n**Approved**: nothing at P0 or P1 found\n\n## Findings\n"},
 		{name: "approved on its score", confidence: &Confidence{Score: 5, Threshold: 4, Risk: RiskLow, Reason: "Clean."}, approval: &Approval{Approved: true},
 			want: "**Confidence 5/5** · low risk: Clean.\n\n**Approved**\n\n## Findings\n"},
 		{name: "withheld", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
@@ -240,12 +240,12 @@ func TestRenderSummaryLinks(t *testing.T) {
 	d.Incremental, d.PriorHeadSHA, d.PriorHeadURL = true, "fedcba9876543210", "https://forge.example/o/r/commit/fedcba9876543210"
 	d.Reviews, d.HeadSubject = 3, "fix(cache): evict stale entries"
 	d.Prior = []PriorFinding{
-		{Path: "main.go", Line: 9, Severity: SeverityBlocking, Title: "nil map write", Resolved: true,
+		{Path: "main.go", Line: 9, Severity: SeverityP0, Title: "nil map write", Resolved: true,
 			URL: "https://forge.example/o/r/blob/fedcba9876543210/main.go#L9", ThreadURL: "https://forge.example/o/r/pull/42#r2"},
-		{Path: "util.go", Line: 3, Severity: SeverityImportant, Title: "unchecked error", Resolved: true},
-		{Path: "cache.go", Line: 5, Severity: SeverityNit, Title: "terse name", Dismissed: true, DismissReason: "house style"},
+		{Path: "util.go", Line: 3, Severity: SeverityP1, Title: "unchecked error", Resolved: true},
+		{Path: "cache.go", Line: 5, Severity: SeverityP2, Title: "terse name", Dismissed: true, DismissReason: "house style"},
 	}
-	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "The cache is\nnever cleared."}}
+	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityP1, Title: "stale cache", Explanation: "The cache is\nnever cleared."}}
 	body, notes := RenderSummary(t.Context(), Templates{}, d)
 	if len(notes) != 0 {
 		t.Fatalf("notes = %v", notes)
@@ -281,9 +281,9 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings = nil
 	d.Unanchored = []Finding{
-		{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "Never cleared."},
+		{Path: "other.go", Line: 7, Severity: SeverityP1, Title: "stale cache", Explanation: "Never cleared."},
 		// Reported again off the diff, under the thread its first report opened.
-		{Path: "other.go", Line: 9, Severity: SeverityNit, Title: "terse name", Explanation: "Still.", ThreadURL: "https://forge.example/o/r/pull/42#r3"},
+		{Path: "other.go", Line: 9, Severity: SeverityP2, Title: "terse name", Explanation: "Still.", ThreadURL: "https://forge.example/o/r/pull/42#r3"},
 	}
 	d.Counts = Result{Findings: d.Unanchored}.Counts()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
@@ -299,7 +299,7 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 func TestRenderSummaryHeldBack(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings, d.Counts = nil, Counts{}
-	d.HeldBack = []Finding{{Path: "old.go", Line: 3, Severity: SeverityImportant, Category: CategoryReliability, Title: "unbounded retry",
+	d.HeldBack = []Finding{{Path: "old.go", Line: 3, Severity: SeverityP1, Category: CategoryReliability, Title: "unbounded retry",
 		URL: "https://forge.example/o/r/blob/0123456789abcdef/old.go#L3"}}
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
 	want := "**No findings**\n\n## Findings\n\n<details>\n<summary>Held back (1): not on lines changed since the last review</summary>\n\n" +
@@ -343,7 +343,7 @@ func TestRenderSummaryIncomplete(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{"No findings", "blocking"} {
+	for _, unwanted := range []string{"No findings", "p0"} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("an incomplete review must not claim %q:\n%s", unwanted, body)
 		}
@@ -359,8 +359,8 @@ func TestRenderSummaryCustom(t *testing.T) {
 	}{
 		{
 			name:     "fields render",
-			template: "#{{ .Number }} {{ .HeadSHA }} {{ .Model }} {{ .Result.Summary.Take }} {{ join \",\" .Result.Summary.Praise }} {{ .Counts.Blocking }}/{{ .Counts.Important }}/{{ .Counts.Nit }} {{ .Incremental }}\n{{ range .Result.Findings }}{{ .Severity }} {{ .Path }}:{{ .Line }} {{ .Title }} {{ .Explanation }} {{ .SuggestedFix }};{{ end }}{{ len .Notes }}",
-			want:     []string{"#42 0123456789abcdef vendor/model-x Solid change with one real bug. Clear tests 1/0/1 false", "blocking main.go:11 nil map write m is nil here. m = map[string]int{};", "nit README.md:2 typo the the ;1"},
+			template: "#{{ .Number }} {{ .HeadSHA }} {{ .Model }} {{ .Result.Summary.Take }} {{ join \",\" .Result.Summary.Praise }} {{ .Counts.P0 }}/{{ .Counts.P1 }}/{{ .Counts.P2 }} {{ .Incremental }}\n{{ range .Result.Findings }}{{ .Severity }} {{ .Path }}:{{ .Line }} {{ .Title }} {{ .Explanation }} {{ .SuggestedFix }};{{ end }}{{ len .Notes }}",
+			want:     []string{"#42 0123456789abcdef vendor/model-x Solid change with one real bug. Clear tests 1/0/1 false", "p0 main.go:11 nil map write m is nil here. m = map[string]int{};", "p2 README.md:2 typo the the ;1"},
 		},
 		{name: "sprout functions", template: `{{ trunc 7 .HeadSHA }} {{ .Model | toUpper }} {{ printf "%03d" .Number }} {{ range $i, $f := .Result.Findings }}{{ add $i 1 }}.{{ end }}`, want: []string{"0123456 VENDOR/MODEL-X 042 1.2."}},
 		{name: "template resolves nothing", template: `{{ template "secrets" }}`, note: "summary template"},
@@ -464,7 +464,7 @@ func TestRenderInline(t *testing.T) {
 	}
 
 	body, notes = RenderInline(t.Context(), Templates{Inline: "{{ .Severity }}|{{ .Path }}:{{ .Line }}|{{ .Title }}|{{ .Explanation }}|{{ .SuggestedFix }}"}, f)
-	if len(notes) != 0 || body != marker+"blocking|main.go:11|nil map write|m is nil here.|m = map[string]int{}" {
+	if len(notes) != 0 || body != marker+"p0|main.go:11|nil map write|m is nil here.|m = map[string]int{}" {
 		t.Fatalf("custom inline = %q, notes %v", body, notes)
 	}
 	body, notes = RenderInline(t.Context(), Templates{Inline: `{{ template "x" }}`}, f)

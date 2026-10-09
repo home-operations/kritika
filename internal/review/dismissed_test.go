@@ -9,20 +9,20 @@ func TestBuildDismissed(t *testing.T) {
 	in := Input{
 		Repository: "acme/widgets", Diff: "diff --git a/a.go b/a.go\n+x\n",
 		Dismissed: []DismissedFinding{
-			{Path: "a.go", Line: 3, Severity: SeverityImportant, Title: "Unchecked error", Explanation: "err is dropped.", Reason: "the caller\nchecks it"},
-			{Path: "b.go", Line: 9, Severity: SeverityNit, Title: "Naming", Explanation: "x is terse."},
+			{Path: "a.go", Line: 3, Severity: SeverityP1, Title: "Unchecked error", Explanation: "err is dropped.", Reason: "the caller\nchecks it"},
+			{Path: "b.go", Line: 9, Severity: SeverityP2, Title: "Naming", Explanation: "x is terse."},
 		},
 		References: []Reference{{Path: "ARCH.md", Description: "the shape"}},
 	}
 	for i := range 8 {
-		in.Dismissed = append(in.Dismissed, DismissedFinding{Path: "c.go", Line: i, Severity: SeverityNit, Title: "Padding",
+		in.Dismissed = append(in.Dismissed, DismissedFinding{Path: "c.go", Line: i, Severity: SeverityP2, Title: "Padding",
 			Explanation: strings.Repeat("words ", 30)})
 	}
 	msg, _, _ := Build(in)
 	for _, want := range []string{
 		"Findings a maintainer dismissed on this pull request.",
-		"- a.go:3 [important] Unchecked error: err is dropped. (dismissed: the caller checks it)\n",
-		"- b.go:9 [nit] Naming: x is terse.\n",
+		"- a.go:3 [p1] Unchecked error: err is dropped. (dismissed: the caller checks it)\n",
+		"- b.go:9 [p2] Naming: x is terse.\n",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)

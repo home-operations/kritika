@@ -23,7 +23,7 @@ const ROUTES: Route[] = [
   { name: 'review', slug: 'github/acme', id: 'r1', finding: 'f 1/2' },
   { name: 'findings', slug: 'github/acme' },
   { name: 'rules', slug: 'github/acme' },
-  { name: 'findings', slug: 'github/acme', filter: { severity: 'blocking', status: 'addressed', repo: 'kritika/kritika', q: 'nil deref' } },
+  { name: 'findings', slug: 'github/acme', filter: { severity: 'p0', status: 'addressed', repo: 'kritika/kritika', q: 'nil deref' } },
   { name: 'queue', slug: 'github/acme' },
   { name: 'usage', slug: 'github/acme' },
   { name: 'followups', slug: 'github/acme' },

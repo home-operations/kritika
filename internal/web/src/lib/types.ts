@@ -67,7 +67,7 @@ export type ReviewStatus =
 export type ReviewScope = 'full' | 'incremental';
 // The repository's own reasons, then the runner's.
 export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths' | 'unchanged_patch' | 'too_large';
-export type Severity = 'blocking' | 'important' | 'nit';
+export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
 export type Forge = 'github';
@@ -320,9 +320,9 @@ export interface Label {
 }
 
 export interface SeverityCounts {
-  blocking: number;
-  important: number;
-  nit: number;
+  p0: number;
+  p1: number;
+  p2: number;
 }
 
 export interface ReviewBrief {
@@ -364,7 +364,7 @@ export interface Pull {
 export interface Attention {
   failed: number;
   capped: number;
-  blocking: number;
+  p0: number;
   paused: number;
 }
 

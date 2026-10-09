@@ -49,7 +49,7 @@
           </th>
         {/if}
         <th scope="col">Pull request</th>
-        <th scope="col" title="Blocking, important and nit, in that order">Findings</th>
+        <th scope="col" title="P0, P1 and P2, in that order">Findings</th>
         <th scope="col">Last review</th>
         <th scope="col" class="num" title="Reviews that completed; skipped ones are not counted">Reviews</th>
         <th scope="col" class="num" title="What every review of the pull request spent">Cost</th>

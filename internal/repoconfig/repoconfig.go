@@ -69,7 +69,7 @@ type Comments struct {
 // Review is how the repository's reviews are done: the review and fallback
 // models, each a "<provider>/<model>" of a provider its account may use,
 // how hard they reason, whether a finding must carry a suggested fix,
-// whether a review that finds nothing blocking or important approves the
+// whether a review that finds nothing at P0 or P1 approves the
 // pull request, and whether the summary draws the change's flow. Effort,
 // Approve and Diagram replace the admin's; an Effort written empty leaves
 // it to the provider.

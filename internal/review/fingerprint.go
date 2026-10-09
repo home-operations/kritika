@@ -84,4 +84,4 @@ func (x *priorIndex) inherit(f Finding) string {
 
 // severityPrefix is a severity, or several, a model wrote into a title,
 // which the finding's own field already says and prompts prepend again.
-var severityPrefix = regexp.MustCompile(`^(?:\[(?i:blocking|important|nit)\]\s*)+`)
+var severityPrefix = regexp.MustCompile(`^(?:\[(?i:p[0-2]|blocking|important|nit)\]\s*)+`)

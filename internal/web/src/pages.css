@@ -282,13 +282,13 @@ a.external {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
-.sev-blocking {
+.sev-p0 {
   --sev: var(--danger);
 }
-.sev-important {
+.sev-p1 {
   --sev: var(--caution);
 }
-.sev-nit {
+.sev-p2 {
   --sev: var(--accent);
 }
 .sev {
@@ -1170,13 +1170,13 @@ table.data td.wrap {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.sev-edge-blocking {
+.sev-edge-p0 {
   box-shadow: inset 3px 0 0 var(--danger);
 }
-.sev-edge-important {
+.sev-edge-p1 {
   box-shadow: inset 3px 0 0 var(--caution);
 }
-.sev-edge-nit {
+.sev-edge-p2 {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .finding-head {

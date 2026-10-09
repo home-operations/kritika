@@ -22,13 +22,13 @@ test.describe('overview', () => {
 
   test("each account's row says what wants a look and whether its webhooks arrive, and leads there", async ({ page }) => {
     const a = g.accountSummary;
-    const quiet = { ...a, slug: 'github/quiet', attention: { failed: 0, capped: 0, blocking: 0, paused: 0 } };
+    const quiet = { ...a, slug: 'github/quiet', attention: { failed: 0, capped: 0, p0: 0, paused: 0 } };
     const polled = { ...a, slug: 'github/polled', lastWebhookAt: null, usage: { ...a.usage, tokens: a.usage.tokensPerMonth } };
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [a, quiet, polled]], ...g.defaultApi()]);
     await page.goto('/#/');
     const row = (slug: string) => page.getByRole('row').filter({ hasText: slug });
-    await expect(row(a.slug).locator('.account-wants .pill')).toHaveText([`${a.attention.failed} failed`, `${a.attention.blocking} blocking`]);
-    await expect(row(a.slug).getByRole('link', { name: /blocking/ })).toHaveAttribute('href', `#/a/${a.slug}/pulls?is=blocking`);
+    await expect(row(a.slug).locator('.account-wants .pill')).toHaveText([`${a.attention.failed} failed`, `${a.attention.p0} P0`]);
+    await expect(row(a.slug).getByRole('link', { name: /P0/ })).toHaveAttribute('href', `#/a/${a.slug}/pulls?is=p0`);
     await expect(row(a.slug)).toContainText('receiving');
     await expect(row('github/quiet').locator('.account-wants')).toHaveText('—');
     await expect(row('github/polled')).toContainText('polling only');
@@ -49,7 +49,7 @@ test.describe('overview', () => {
     await expect(spend).toContainText('$0.10 per review, mean of 24');
     const wants = tiles.locator('.tile').filter({ hasText: 'Needs attention' });
     await expect(wants.locator('.tile-value')).toHaveText('6');
-    await expect(wants).toContainText('2 failed · 4 blocking');
+    await expect(wants).toContainText('2 failed · 4 P0');
   });
 
   test('a tile says what runs and waits now and how busy the model slots are, and opens the queue', async ({ page }) => {
@@ -90,7 +90,7 @@ test.describe('overview', () => {
   });
 
   test('the attention tile says so when nothing wants a look', async ({ page }) => {
-    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, blocking: 0, paused: 0 } }]], ...g.defaultApi()]);
+    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, p0: 0, paused: 0 } }]], ...g.defaultApi()]);
     await page.goto('/#/');
     const wants = page.getByRole('region', { name: 'Across all accounts' }).locator('.tile').filter({ hasText: 'Needs attention' });
     await expect(wants.locator('.tile-value')).toHaveText('0');
@@ -121,7 +121,7 @@ test('a count of a thousand or more groups its digits, in every table', async ({
 test('a long account or App name is cut short, whole in its title, before a table of accounts runs past its card', async ({ page }) => {
   const slug = 'github/an-organization-with-a-very-long-name';
   const connection = 'an-app-with-a-very-long-name-too';
-  const long = { slug, connection, attention: { failed: 12, capped: 3, blocking: 40, paused: 7 }, lastWebhookAt: null };
+  const long = { slug, connection, attention: { failed: 12, capped: 3, p0: 40, paused: 7 }, lastWebhookAt: null };
   await g.mockApi(page, [
     [/\/api\/v1\/me$/, { ...g.me, admin: true }],
     [/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, ...long }]],
@@ -149,7 +149,7 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect(stat('Reviews').locator('.stat-value')).toHaveText(String(c.reviews));
   await expect(stat('Reviews').locator('.delta')).toHaveText('new');
   await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed`);
-  await expect(stat('Findings').locator('.stat-sub')).toHaveText(`${c.findings.blocking} blocking`);
+  await expect(stat('Findings').locator('.stat-sub')).toHaveText(`${c.findings.p0} P0`);
   // 2 of 6 findings, where the window before had none to compare.
   await expect(stat('Addressed').locator('.stat-value')).toHaveText('33%');
   await expect(stat('Addressed').locator('.stat-sub')).toHaveText('2 of 6');
@@ -162,7 +162,7 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect(stat('Spend').locator('.delta')).toHaveClass(/tone-danger/);
   await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
   const findings = page.getByRole('region', { name: 'Findings by severity' });
-  await expect(findings.getByRole('list', { name: /legend/ }).getByRole('listitem')).toHaveText(['Blocking', 'Important', 'Nit']);
+  await expect(findings.getByRole('list', { name: /legend/ }).getByRole('listitem')).toHaveText(['P0', 'P1', 'P2']);
   await findings.getByRole('radio', { name: 'Table' }).click();
   await expect(findings.locator('tbody tr')).toHaveText([/Sep 1, 2026\s*1\s*2\s*3\s*6/]);
   await expect(page.getByRole('region', { name: 'Most reviewed repositories' }).locator('tbody tr')).toContainText(g.analytics.repositories[0]!.repository);
@@ -173,7 +173,7 @@ test('analytics shows the totals against the window before, the charts and the r
 
 test('tables over time read newest first', async ({ page }) => {
   const point = g.analytics.series[0]!;
-  const series = [point, { ...point, key: '2026-09-02', reviews: 7, findings: { blocking: 4, important: 0, nit: 0 } }];
+  const series = [point, { ...point, key: '2026-09-02', reviews: 7, findings: { p0: 4, p1: 0, p2: 0 } }];
   const day = g.usageSeries.rows[0]!;
   const call = g.reviewDetail.usage[0]!;
   await g.mockApi(page, [
@@ -280,16 +280,16 @@ test('analytics says what needs attention now, each kind linking to its pull req
   await expect(attention.getByRole('listitem')).toHaveText([
     /2 open pull requests whose last review failed/,
     /1 open pull request whose last review hit a limit/,
-    /3 open pull requests whose last review found something blocking/,
+    /3 open pull requests whose last review found a P0/,
     /1 open pull request whose automatic reviews are paused/,
     /95% of the month's tokens are spent/,
   ]);
   await expect(attention.getByRole('link', { name: /tokens are spent/ })).toHaveAttribute('href', `${T}/usage`);
   await expect(attention.getByRole('link', { name: /hit a limit/ })).toHaveAttribute('href', `${T}/pulls?outcome=capped`);
-  await attention.getByRole('link', { name: /something blocking/ }).click();
-  await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?is=blocking$`));
-  await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('is:blocking');
-  await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('is') === 'blocking')).toBe(true);
+  await attention.getByRole('link', { name: /a P0/ }).click();
+  await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?is=p0$`));
+  await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('is:p0');
+  await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('is') === 'p0')).toBe(true);
 });
 
 test('analytics says when no webhook has reached the connection', async ({ page }) => {
@@ -415,7 +415,7 @@ test.describe('pulls list', () => {
     const rows = page.locator('.pull-rows .pull-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(`${g.pull.repository} · #${g.pull.number} · ${g.pull.author}`);
-    await expect(rows.first()).toContainText(`${g.pull.lastReview!.findings.blocking} blocking`);
+    await expect(rows.first()).toContainText(`${g.pull.lastReview!.findings.p0} p0`);
 
     await page.getByRole('radio', { name: 'Closed' }).click();
     await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('state') === 'closed')).toBe(true);
@@ -670,17 +670,17 @@ test.describe('findings', () => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/findings`);
     const search = page.getByRole('combobox', { name: 'Search findings' });
-    await search.fill(`severity:blocking status:addressed repo:${g.repoPage.items[0]!.fullName} deref`);
-    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?severity=blocking&status=addressed&repo=alpha%2Fone&q=deref$`));
+    await search.fill(`severity:p0 status:addressed repo:${g.repoPage.items[0]!.fullName} deref`);
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?severity=p0&status=addressed&repo=alpha%2Fone&q=deref$`));
     const last = () => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams;
-    await expect.poll(() => last()?.get('severity')).toBe('blocking');
+    await expect.poll(() => last()?.get('severity')).toBe('p0');
     expect(last()?.get('status')).toBe('addressed');
     expect(last()?.get('repo')).toBe(g.repoPage.items[0]!.fullName);
     expect(last()?.get('q')).toBe('deref');
 
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/findings$`), g.pageOf([])], ...g.defaultApi()]);
     await page.reload();
-    await expect(search).toHaveValue(`repo:${g.repoPage.items[0]!.fullName} severity:blocking status:addressed deref`);
+    await expect(search).toHaveValue(`repo:${g.repoPage.items[0]!.fullName} severity:p0 status:addressed deref`);
     await expect(page.locator('.state-msg')).toContainText('No findings match these filters.');
     await page.getByRole('button', { name: 'Clear filters' }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/findings$`));

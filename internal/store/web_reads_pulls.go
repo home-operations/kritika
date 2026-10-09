@@ -24,7 +24,7 @@ type Label struct {
 
 // SeverityCounts counts a review's findings by severity.
 type SeverityCounts struct {
-	Blocking, Important, Nit int
+	P0, P1, P2 int
 }
 
 // ReviewBrief is the newest review of a pull request as the pull request
@@ -84,14 +84,14 @@ type PullFilter struct {
 // said nothing, so what the one before it found still stands.
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged, p.paused,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
-	lr.id, lr.status, lr.scope, lr.created_at, lr.blocking, lr.important, lr.nit,
+	lr.id, lr.status, lr.scope, lr.created_at, lr.p0, lr.p1, lr.p2,
 	(SELECT count(*) FROM reviews WHERE pull_request_id = p.id AND status = 'completed'),
 	(SELECT coalesce(sum(u.cost_usd), 0)::float8 FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id)
 	FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT v.id, v.status, v.scope, v.created_at,
-		count(f.id) FILTER (WHERE f.severity = 'blocking') AS blocking,
-		count(f.id) FILTER (WHERE f.severity = 'important') AS important,
-		count(f.id) FILTER (WHERE f.severity = 'nit') AS nit
+		count(f.id) FILTER (WHERE f.severity = 'p0') AS p0,
+		count(f.id) FILTER (WHERE f.severity = 'p1') AS p1,
+		count(f.id) FILTER (WHERE f.severity = 'p2') AS p2
 		FROM reviews v LEFT JOIN findings f ON f.review_id = v.id
 		WHERE v.id = (SELECT id FROM reviews WHERE pull_request_id = p.id AND status <> 'skipped'
 			ORDER BY created_at DESC, id DESC LIMIT 1)
@@ -102,10 +102,10 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	var labels []byte
 	var id, status, scope *string
 	var at *time.Time
-	var blocking, important, nit *int
+	var p0, p1, p2 *int
 	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Fork, &p.Merged,
 		&p.Paused, &p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
-		&id, &status, &scope, &at, &blocking, &important, &nit, &p.Reviews, &p.CostUSD); err != nil {
+		&id, &status, &scope, &at, &p0, &p1, &p2, &p.Reviews, &p.CostUSD); err != nil {
 		return p, err
 	}
 	p.Labels = []Label{}
@@ -117,7 +117,7 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	if id != nil {
 		p.LastReview = &ReviewBrief{
 			ID: *id, Status: ReviewStatus(*status), Scope: review.Scope(*scope), CreatedAt: *at,
-			Findings: SeverityCounts{Blocking: *blocking, Important: *important, Nit: *nit},
+			Findings: SeverityCounts{P0: *p0, P1: *p1, P2: *p2},
 		}
 	}
 	return p, nil
@@ -147,7 +147,7 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 			AND ($4 = '' OR p.title ILIKE $5 OR p.author ILIKE $5 OR p.number = $6)
 			AND ($7 OR (p.updated_at, p.id) < ($8, $9::uuid))
 			AND ($11 = '' OR lower(p.author) = lower($11))
-			AND ($12 = '' OR CASE $12 WHEN 'paused' THEN p.paused ELSE coalesce(lr.blocking, 0) > 0 END)
+			AND ($12 = '' OR CASE $12 WHEN 'paused' THEN p.paused ELSE coalesce(lr.p0, 0) > 0 END)
 		ORDER BY p.updated_at DESC, p.id DESC LIMIT $10`,
 		uuidParam(f.RepositoryID), string(f.State), string(f.Outcome), f.Query, like, number,
 		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Author, string(f.Is))
@@ -164,22 +164,22 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 
 // Attention counts the account's open pull requests that want a look, by
 // why: the newest review that was not skipped failed, hit a cap or found
-// something blocking, or automatic reviews are paused. One pull request
+// a P0 finding, or automatic reviews are paused. One pull request
 // may count under several.
 type Attention struct {
-	Failed, Capped, Blocking, Paused int
+	Failed, Capped, P0, Paused int
 }
 
 // ReadAttention counts the open pull requests that want a look.
 func ReadAttention(ctx context.Context, tx pgx.Tx) (Attention, error) {
 	var a Attention
 	err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE lr.status = 'failed'), count(*) FILTER (WHERE lr.status = 'capped'),
-			count(*) FILTER (WHERE lr.blocking > 0), count(*) FILTER (WHERE p.paused)
+			count(*) FILTER (WHERE lr.p0 > 0), count(*) FILTER (WHERE p.paused)
 		FROM pull_requests p LEFT JOIN LATERAL (SELECT v.status,
-			(SELECT count(*) FROM findings f WHERE f.review_id = v.id AND f.severity = 'blocking') AS blocking
+			(SELECT count(*) FROM findings f WHERE f.review_id = v.id AND f.severity = 'p0') AS p0
 			FROM reviews v WHERE v.pull_request_id = p.id AND v.status <> 'skipped'
 			ORDER BY v.created_at DESC, v.id DESC LIMIT 1) lr ON true
-		WHERE p.state = 'open'`).Scan(&a.Failed, &a.Capped, &a.Blocking, &a.Paused)
+		WHERE p.state = 'open'`).Scan(&a.Failed, &a.Capped, &a.P0, &a.Paused)
 	if err != nil {
 		return a, fmt.Errorf("store: read attention: %w", err)
 	}

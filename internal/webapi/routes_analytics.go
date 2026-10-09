@@ -81,7 +81,7 @@ func categoryCounts(counts map[review.Category]int) map[review.Category]int {
 }
 
 func severityCounts(c store.SeverityCounts) SeverityCounts {
-	return SeverityCounts{Blocking: c.Blocking, Important: c.Important, Nit: c.Nit}
+	return SeverityCounts{P0: c.P0, P1: c.P1, P2: c.P2}
 }
 
 func pullRef(p store.PullRef) PullRef {

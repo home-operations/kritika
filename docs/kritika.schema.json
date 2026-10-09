@@ -27,7 +27,7 @@
         },
         "approve": {
           "type": "boolean",
-          "description": "true approves a pull request whose review finds nothing blocking or important, or, with a confidence score, whose score reaches the threshold and whose risk is within confidence.risk; a later review that no longer allows it dismisses the approval; replaces the admin's."
+          "description": "true approves a pull request whose review finds nothing at P0 or P1, or, with a confidence score, whose score reaches the threshold and whose risk is within confidence.risk; a later review that no longer allows it dismisses the approval; replaces the admin's."
         },
         "diagram": {
           "type": "boolean",
