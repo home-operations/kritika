@@ -1,4 +1,4 @@
-# syntax=mirror.gcr.io/docker/dockerfile:1
+# syntax=docker/dockerfile:1
 
 # Images that live on Docker Hub are pulled through mirror.gcr.io, Google's
 # cache of it, so a build never meets Docker Hub's pull limits. Renovate
