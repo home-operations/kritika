@@ -184,11 +184,53 @@ func TestResolvedThreads(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolvedThreads(review.Result{Findings: tt.reported}, prior)
+			got := resolvedThreads(tt.reported, prior)
 			if !slices.Equal(got, tt.want) {
 				t.Errorf("resolvedThreads() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// linkForge links files and threads as a forge would, for the summary's
+// earlier findings.
+type linkForge struct{ forge.Client }
+
+func (linkForge) FileURL(_, _, sha, path string, line, _ int) string {
+	return fmt.Sprintf("https://f/%s/%s#L%d", sha, path, line)
+}
+
+func (linkForge) ThreadURL(_, _ string, _ int, id int64) string {
+	return fmt.Sprintf("https://f/t/%d", id)
+}
+
+// TestPriorFindings: the summary's earlier findings are the last review's
+// this one did not report again, on the diff or off it, linked to their
+// threads, then the dismissed ones.
+func TestPriorFindings(t *testing.T) {
+	p := &publishPhase{
+		client: linkForge{}, pr: &pullRequest{repository: "o/r", number: 1},
+		prior: priorReview{
+			headSHA: "h1",
+			findings: []priorFinding{
+				{Path: "a.go", Line: 11, Severity: review.SeverityImportant, Title: "Nil map write", commentID: 42},
+				{Path: "b.go", Line: 3, Severity: review.SeverityNit, Title: "Typo", commentID: 43},
+				{Path: "c.go", Line: 5, Severity: review.SeverityNit, Title: "Never posted"},
+			},
+			dismissed: []store.Dismissal{{Finding: review.Finding{Path: "d.go", Line: 8, Title: "Dismissed"}, Reason: "intended", CommentID: 44}},
+		},
+	}
+	// Nil map write is reported again outside the diff, under the prior
+	// finding's fingerprint; Typo is not reported again.
+	reported := []review.Finding{{Path: "a.go", Line: 40, Severity: review.SeverityImportant, Title: "Assignment panics",
+		Fingerprint: review.Fingerprint(review.Finding{Path: "a.go", Title: "Nil map write"})}}
+	got := p.priorFindings(reported)
+	if len(got) != 3 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||
+		got[1].Title != "Never posted" || got[1].ThreadURL != "" || !got[2].Dismissed || got[2].DismissReason != "intended" || got[2].ThreadURL != "https://f/t/44" {
+		t.Fatalf("priorFindings() = %+v", got)
+	}
+	if ids := resolvedThreads(reported, p.prior.findings); !slices.Equal(ids, []int64{43}) {
+		t.Fatalf("resolvedThreads() = %v, want Typo's thread alone", ids)
 	}
 }
 
