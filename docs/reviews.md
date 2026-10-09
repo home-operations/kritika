@@ -44,6 +44,17 @@ is posted inline wherever the diff shows its line, with a one-click
 suggestion wherever the fix changes those lines or adds lines after them,
 unless `comments.inline` is off; the summary lists every finding.
 
+A finding's severity leads its comment as a badge, an image the dashboard
+serves under `config.webUrl`, so the forge must reach it; without a web
+URL the badge is its label in text. The dashboard, the API and
+`kritika_findings_total` name the severities themselves:
+
+| Badge | Severity    | Meaning                      |
+| ----- | ----------- | ---------------------------- |
+| P0    | `blocking`  | must be fixed before merging |
+| P1    | `important` | should be fixed              |
+| P2    | `nit`       | optional polish              |
+
 Every finding carries a category beside its severity, what kind of problem
 it is: `correctness`, `security`, `performance`, `reliability`,
 `maintainability` or `tests`. The comments show it, the dashboard filters

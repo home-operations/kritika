@@ -294,14 +294,16 @@ The summary template's dot is the review:
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
 | `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`                     |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                     |
-| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, and the pull request's page on it, where the built-in template's re-run badge points             |
+| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its re-run badge points |
 
-The inline template's dot is one finding:
+The inline template's dot is one finding, with the dashboard's origin
+beside it:
 
 | Field                        | What                                                             |
 | ---------------------------- | ---------------------------------------------------------------- |
 | `.Path`, `.Line`, `.EndLine` | where it is                                                      |
-| `.Severity`, `.Category`     | how much it matters, and what kind of problem it is              |
+| `.Severity`, `.Category`     | how much it matters, and what kind of problem it is; `.Severity.Label` is its badge text, P0 to P2, and `.Severity.Badge .WebURL` the badge image, or the label in bold without a dashboard |
+| `.WebURL`                    | the dashboard's origin, "" when it has no public URL             |
 | `.Title`, `.Explanation`     | what it is                                                       |
 | `.SuggestedFix`              | the fix, in prose                                                |
 | `.Replacement`               | the lines that replace the finding's, for a one-click suggestion |

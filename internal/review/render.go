@@ -177,23 +177,54 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	return marker + out, notes
 }
 
+// Label is the severity's badge text, P0 for blocking down to P2 for nit,
+// "" for an invalid one.
+func (s Severity) Label() string {
+	if !s.Valid() {
+		return ""
+	}
+	return fmt.Sprintf("P%d", s.Rank())
+}
+
+// Badge renders the severity for a comment: its badge image, which the
+// dashboard serves under webURL, with the label as the image's text, or
+// the label alone in bold where the dashboard has no public URL.
+func (s Severity) Badge(webURL string) string {
+	label := s.Label()
+	switch {
+	case label == "":
+		return ""
+	case webURL == "":
+		return "**[" + label + "]**"
+	}
+	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, webURL, strings.ToLower(label))
+}
+
+// InlineData is what an inline comment's template renders: the finding,
+// and the dashboard's origin its severity badge is served from, "" when
+// the dashboard has no public URL, as RenderData.WebURL.
+type InlineData struct {
+	Finding
+	WebURL string
+}
+
 // RenderInline renders one finding as an inline review comment, led by its
 // FindingMarker, falling back to the default template as RenderSummary
 // does.
-func RenderInline(ctx context.Context, t Templates, f Finding) (string, []string) {
-	marker := FindingMarker(Fingerprint(f)) + "\n"
+func RenderInline(ctx context.Context, t Templates, d InlineData) (string, []string) {
+	marker := FindingMarker(Fingerprint(d.Finding)) + "\n"
 	limit := MaxRenderBytes - len(marker)
 	var notes []string
 	if t.Inline != "" {
-		out, err := render(ctx, t.Inline, f, limit)
+		out, err := render(ctx, t.Inline, d, limit)
 		if err == nil {
 			return marker + out, nil
 		}
 		notes = append(notes, fallbackNote("inline", err))
 	}
-	out, err := render(context.WithoutCancel(ctx), defaultInline, f, limit)
+	out, err := render(context.WithoutCancel(ctx), defaultInline, d, limit)
 	if err != nil {
-		out = textcut.Prefix(fmt.Sprintf("**[%s]** **%s**\n\n%s\n", f.Severity, f.Title, f.Explanation), limit)
+		out = textcut.Prefix(fmt.Sprintf("%s **%s**\n\n%s\n", d.Severity.Badge(d.WebURL), d.Title, d.Explanation), limit)
 	}
 	return marker + out, notes
 }

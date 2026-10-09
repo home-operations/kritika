@@ -348,17 +348,30 @@ func TestSeverity(t *testing.T) {
 		s     Severity
 		valid bool
 		rank  int
+		label string
+		badge string
 	}{
-		{SeverityBlocking, true, 0},
-		{SeverityImportant, true, 1},
-		{SeverityNit, true, 2},
-		{"error", false, 3},
-		{"", false, 3},
+		{SeverityBlocking, true, 0, "P0", `<img alt="P0" src="https://kritika.example/k/badges/p0.svg">`},
+		{SeverityImportant, true, 1, "P1", `<img alt="P1" src="https://kritika.example/k/badges/p1.svg">`},
+		{SeverityNit, true, 2, "P2", `<img alt="P2" src="https://kritika.example/k/badges/p2.svg">`},
+		{"error", false, 3, "", ""},
+		{"", false, 3, "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.s), func(t *testing.T) {
-			if tt.s.Valid() != tt.valid || tt.s.Rank() != tt.rank {
-				t.Fatalf("Valid() = %v, Rank() = %d", tt.s.Valid(), tt.s.Rank())
+			if tt.s.Valid() != tt.valid || tt.s.Rank() != tt.rank || tt.s.Label() != tt.label {
+				t.Fatalf("Valid() = %v, Rank() = %d, Label() = %q", tt.s.Valid(), tt.s.Rank(), tt.s.Label())
+			}
+			// Without a dashboard the badge is its label in bold.
+			text := ""
+			if tt.label != "" {
+				text = "**[" + tt.label + "]**"
+			}
+			if got := tt.s.Badge("https://kritika.example/k"); got != tt.badge {
+				t.Fatalf("Badge(web) = %q, want %q", got, tt.badge)
+			}
+			if got := tt.s.Badge(""); got != text {
+				t.Fatalf("Badge(\"\") = %q, want %q", got, text)
 			}
 		})
 	}
