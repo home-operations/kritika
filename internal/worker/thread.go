@@ -17,10 +17,13 @@ import (
 
 // Thread works a review thread someone resolved or unresolved on the
 // forge. Resolving one of the bot's finding threads dismisses the finding,
-// as "@<bot> dismiss" does; unresolving it takes the dismissal back. Both
-// take write access, as the mention does: the forge lets a pull request's
-// author resolve the threads on their own pull request, which must not
-// silence the reviewer.
+// as "@<bot> dismiss" does, unless a push had changed the lines it was made
+// on by the time it was resolved: then the person is saying "fixed", not
+// "wrong", and nothing is recorded, so a later review may raise the
+// finding again should the fix be lost. Unresolving a thread takes a
+// dismissal back. Both take write access, as the mention does: the forge
+// lets a pull request's author resolve the threads on their own pull
+// request, which must not silence the reviewer.
 type Thread struct {
 	river.WorkerDefaults[jobs.ThreadArgs]
 	Base
@@ -29,6 +32,7 @@ type Thread struct {
 // Thread outcomes, as counted.
 const (
 	threadDismissed = "dismissed"
+	threadAddressed = "addressed"
 	threadRestored  = "restored"
 	threadIgnored   = "ignored"
 	threadFailed    = "failed"
@@ -86,6 +90,10 @@ func (w *Thread) apply(
 		return threadIgnored, nil
 	}
 	logger = logger.With("fingerprint", fingerprint)
+	if args.Resolved && args.Outdated {
+		logger.Info("finding addressed", "reason", "the thread's lines changed since the finding was posted")
+		return threadAddressed, nil
+	}
 	var found bool
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		if !args.Resolved {

@@ -47,7 +47,8 @@ its own Kubernetes Job pod that holds no provider key or App key.
   answer in the thread, from an agent with a review's tools that reads the
   code and looks things up before it answers. Or reply `@<bot> dismiss <reason>` in a finding's
   thread to have it resolved and never raised again on that pull request;
-  resolving the thread on the forge does the same.
+  resolving the thread on the forge does the same, unless a push has
+  changed the lines it was made on, which counts as fixed instead.
 - **Reactions.** The pull request carries the bot's 👀 while a review
   runs and its 👍 once one is posted, and a mention the bot answers the
   same, so a list of pull requests shows which have been reviewed.

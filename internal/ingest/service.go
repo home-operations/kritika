@@ -351,7 +351,7 @@ func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.ThreadArgs{
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: th.Number, CommentID: th.CommentID,
-			Resolved: th.Resolved, Sender: th.Sender,
+			Resolved: th.Resolved, Outdated: th.Outdated, Sender: th.Sender,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue thread: %w", err)

@@ -104,10 +104,14 @@ someone with write access to the repository gets an answer.
 | `@<bot> dismiss <reason>` | As a reply in one of kritika's finding threads: resolves the thread, tells later reviews of the pull request not to raise the finding again, and lists it dismissed, with the reason, on the dashboard. |
 
 Resolving one of kritika's finding threads on GitHub, as someone with
-write access, dismisses its finding too, and unresolving it takes the
-dismissal back. kritika resolves a
-thread only when its App has write access to contents; otherwise it leaves
-the thread open for a person to resolve.
+write access, dismisses its finding too, unless a push has changed the
+lines it was made on (GitHub shows the thread as outdated): then
+resolving it counts as fixed, nothing is recorded, and a later review may
+raise the finding again should the fix be lost, as when a rebase drops a
+committed suggestion. To dismiss a finding after such a push, reply
+`@<bot> dismiss` instead. Unresolving a thread takes the dismissal back.
+kritika resolves a thread only when its App has write access to contents;
+otherwise it leaves the thread open for a person to resolve.
 
 kritika answers at most five mentions of a pull request an hour, commands
 included, and says so once when it stops.

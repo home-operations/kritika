@@ -19,8 +19,9 @@ import (
 )
 
 // TestThreadWorker: resolving one of the bot's finding threads dismisses
-// the finding, for a sender with write access only, and unresolving it
-// takes the dismissal back.
+// the finding, for a sender with write access only, unless the thread's
+// lines had changed by the time it was resolved; unresolving it takes the
+// dismissal back.
 func TestThreadWorker(t *testing.T) {
 	ctx := t.Context()
 	appStore := storetest.Open(t)
@@ -115,4 +116,24 @@ func TestThreadWorker(t *testing.T) {
 	}
 	// Nothing to take back is not a failure.
 	work(root, false, "onedr0p")
+	// A push lands between a resolve and its job: the thread's lines were
+	// unchanged when it was resolved, so it still dismisses.
+	pushed := lf.threads[root]
+	pushed.Outdated = true
+	lf.threads[root] = pushed
+	work(root, true, "onedr0p")
+	if ds := dismissals(); len(ds) != 1 {
+		t.Fatalf("a push after the thread was resolved kept it from dismissing: %+v", ds)
+	}
+	work(root, false, "onedr0p")
+	// The thread's lines had changed when it was resolved: that says
+	// "fixed", and records nothing.
+	if err := w.Work(ctx, &river.Job[jobs.ThreadArgs]{Args: jobs.ThreadArgs{
+		AccountID: account.ID(), RepositoryID: repoID, Number: number, CommentID: root, Resolved: true, Outdated: true, Sender: "onedr0p",
+	}}); err != nil {
+		t.Fatalf("Work(outdated): %v", err)
+	}
+	if ds := dismissals(); len(ds) != 0 {
+		t.Fatalf("resolving an outdated thread dismissed %+v", ds)
+	}
 }

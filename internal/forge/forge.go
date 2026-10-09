@@ -42,6 +42,9 @@ type Comment struct {
 	Inline      bool
 	Path        string
 	Line        int
+	// Outdated is whether the lines an inline comment was made on have
+	// changed since, by a later push to the pull request.
+	Outdated bool
 	// InReplyTo is the root inline comment this one replies to, 0 for a
 	// root or a conversation comment.
 	InReplyTo int64

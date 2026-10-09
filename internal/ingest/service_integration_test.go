@@ -595,7 +595,7 @@ func TestDispatchCommentPush(t *testing.T) {
 	})
 
 	t.Run("thread resolved and unresolved enqueues each once, not the bot's", func(t *testing.T) {
-		th := &webhook.Thread{Number: 7, CommentID: 601, Resolved: true, Sender: "devin"}
+		th := &webhook.Thread{Number: 7, CommentID: 601, Resolved: true, Outdated: true, Sender: "devin"}
 		ev := webhook.Event{Kind: webhook.KindThread, Action: "resolved", Repository: repo("onedr0p/home-ops"), Thread: th}
 		if out, err := svc.Dispatch(ctx, request(f, ev)); err != nil || out.Status != Enqueued || out.Job != "thread" {
 			t.Fatalf("out = %+v, %v", out, err)
@@ -621,6 +621,13 @@ func TestDispatchCommentPush(t *testing.T) {
 		}
 		if count("thread") != 2 {
 			t.Fatalf("thread jobs = %d", count("thread"))
+		}
+		var outdated int
+		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'thread' AND (args->>'outdated')::bool`).Scan(&outdated)
+		})
+		if outdated != 2 {
+			t.Fatalf("thread jobs carrying the outdated state = %d, want 2", outdated)
 		}
 	})
 

@@ -59,6 +59,10 @@ func TestMarkedInline(t *testing.T) {
 	marked := func(id int64, author, fingerprint string, inReplyTo int64) forge.Comment {
 		return forge.Comment{ID: id, Author: author, Body: "**nil deref**\n\n" + review.FindingMarker(fingerprint), InReplyTo: inReplyTo}
 	}
+	outdated := func(c forge.Comment) forge.Comment {
+		c.Outdated = true
+		return c
+	}
 	tests := []struct {
 		name     string
 		comments []forge.Comment
@@ -72,6 +76,10 @@ func TestMarkedInline(t *testing.T) {
 			comments: []forge.Comment{marked(9, login, fp, 0), marked(10, login, fp, 0)}, want: map[string]int64{fp: 10}},
 		{name: "a comment without a marker contributes nothing",
 			comments: []forge.Comment{{ID: 11, Author: login, Body: "looks fine"}}, want: map[string]int64{}},
+		{name: "an outdated comment is passed over",
+			comments: []forge.Comment{outdated(marked(12, login, fp, 0))}, want: map[string]int64{}},
+		{name: "a current comment stands over a later outdated one",
+			comments: []forge.Comment{marked(13, login, fp, 0), outdated(marked(14, login, fp, 0))}, want: map[string]int64{fp: 13}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

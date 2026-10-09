@@ -206,7 +206,13 @@ func TestParseGitHubReviewThread(t *testing.T) {
 		want Thread
 	}{
 		{"resolved by a person", `{"action":"resolved","pull_request":{"number":8},"sender":{"login":"devin","type":"User"},
-		  "thread":{"comments":[{"id":100,"in_reply_to_id":null},{"id":101,"in_reply_to_id":100}]},` + repo + `}`,
+		  "thread":{"comments":[{"id":100,"in_reply_to_id":null,"line":4,"original_line":4},{"id":101,"in_reply_to_id":100}]},` + repo + `}`,
+			KindThread, Thread{Number: 8, CommentID: 100, Resolved: true, Sender: "devin"}},
+		{"resolved after a push changed its lines", `{"action":"resolved","pull_request":{"number":8},"sender":{"login":"devin","type":"User"},
+		  "thread":{"comments":[{"id":100,"in_reply_to_id":null,"line":null,"original_line":9}]},` + repo + `}`,
+			KindThread, Thread{Number: 8, CommentID: 100, Resolved: true, Outdated: true, Sender: "devin"}},
+		{"a file-level comment is not outdated", `{"action":"resolved","pull_request":{"number":8},"sender":{"login":"devin","type":"User"},
+		  "thread":{"comments":[{"id":100,"in_reply_to_id":null,"line":null,"original_line":null}]},` + repo + `}`,
 			KindThread, Thread{Number: 8, CommentID: 100, Resolved: true, Sender: "devin"}},
 		{"unresolved by the bot", `{"action":"unresolved","pull_request":{"number":8},"sender":{"login":"kritika[bot]","type":"Bot"},
 		  "thread":{"comments":[{"id":101,"in_reply_to_id":100},{"id":100}]},` + repo + `}`,

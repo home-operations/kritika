@@ -506,11 +506,14 @@ func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Findin
 
 // markedInline maps the fingerprint each of the bot's root inline comments
 // carries a FindingMarker for to the comment's id; a later comment for the
-// same finding wins, as the one a reader sees as current.
+// same finding wins, as the one a reader sees as current. An outdated
+// comment is passed over: a person may have resolved its thread as fixed,
+// and a finding raised again after the fix was lost needs a thread of its
+// own on the current lines.
 func markedInline(comments []forge.Comment, login string) map[string]int64 {
 	posted := map[string]int64{}
 	for _, c := range comments {
-		if c.InReplyTo != 0 || !strings.EqualFold(c.Author, login) {
+		if c.InReplyTo != 0 || c.Outdated || !strings.EqualFold(c.Author, login) {
 			continue
 		}
 		if fp, ok := review.MarkedFinding(c.Body); ok {
