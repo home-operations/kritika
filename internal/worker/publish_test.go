@@ -176,6 +176,11 @@ func TestResolvedThreads(t *testing.T) {
 		{name: "every finding gone resolves every posted thread", want: []int64{11, 12}},
 		{name: "a finding reported again keeps its thread", reported: []review.Finding{{Path: "a.go", Title: "unchecked  ERROR"}}, want: []int64{12}},
 		{name: "a different finding on the same path resolves nothing of it", reported: []review.Finding{{Path: "a.go", Title: "Other"}, {Path: "b.go", Title: "Stale comment"}}, want: []int64{11}},
+		{
+			name:     "a finding reported again in other words, carrying the prior's fingerprint, keeps its thread",
+			reported: []review.Finding{{Path: "a.go", Title: "Error is dropped", Fingerprint: review.Fingerprint(review.Finding{Path: "a.go", Title: "Unchecked error"})}},
+			want:     []int64{12},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -80,12 +80,12 @@ func TestCheck(t *testing.T) {
 		{name: "empty summary", raw: `{"summary":{},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "every key the contract defines", raw: `{"summary":{"headline":"h","take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B","checked":["c"]},
 			"findings":[{"path":"a","line":1,"severity":"nit","category":"tests","title":"t","explanation":"e","suggested_fix":"f",
-			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"]}]}`},
+			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"],"prior":"0a1b2c3d"}]}`},
 		{name: "a misspelled fix key and checked key", raw: `{"summary":{"headline":"h","take":"t","praise":[],"checked>":["x"]},
 			"findings":[{"path":"a.yaml","line":1,"severity":"important","category":"correctness","title":"t","explanation":"e","suggested_fix.":"the fix"}]}`,
 			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes findings, summary, ` +
 				`the summary takes checked, diagram, headline, praise, take and a finding takes agent_prompt, category, ` +
-				`end_line, explanation, insert_after, line, path, replacement, rules, severity, suggested_fix, title`},
+				`end_line, explanation, insert_after, line, path, prior, replacement, rules, severity, suggested_fix, title`},
 		{name: "broken keys across findings, each named", raw: `{"summary":{"take":"t","praise":[]},
 			"findings":[{"path":"a","line":1,"severity":"blocking","severity_":"important","title":"t","explanation":"e","suggested_fix` + "`" + `: ":"f"},
 			{": ":", ","path":"a","line":1,"severity":"important","title":"t","explanation":"e"}]}`,
@@ -645,7 +645,7 @@ func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
 		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d", Checked: []string{"c"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityNit, Title: "t", Explanation: "e", SuggestedFix: "f",
-			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, URL: "ignored"}},
+			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, Prior: "p", URL: "ignored"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -785,5 +785,42 @@ func TestBuildLargerBudgetKeepsALargeFile(t *testing.T) {
 				t.Fatalf("large file in the message = %v", kept)
 			}
 		})
+	}
+}
+
+// TestParsePrior: a finding that names a prior finding's id, or has a
+// prior finding's path and title, carries that finding's fingerprint on
+// whatever its wording now, so it keeps the thread; one that names an
+// unknown id is its own. A severity a model wrote into a title is dropped.
+func TestParsePrior(t *testing.T) {
+	first := Finding{Path: "main.go", Title: "Publish the chart tag"}
+	// The last review reported first again in other words, and carries its
+	// fingerprint.
+	reworded := Finding{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "Chart tag is not published", Explanation: "e", Fingerprint: Fingerprint(first)}
+	other := Finding{Path: "README.md", Line: 2, Severity: SeverityNit, Title: "Typo", Explanation: "e"}
+	raw := `{"summary": {"take": "t"}, "findings": [
+	  {"path": "main.go", "line": 12, "severity": "blocking", "category": "correctness", "title": "[blocking] Tag 0.0.46 is missing", "explanation": "e", "prior": " ` + PriorID(reworded) + ` "},
+	  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "chart tag is not  published", "explanation": "e"},
+	  {"path": "README.md", "line": 2, "severity": "nit", "category": "maintainability", "title": "Typo", "explanation": "e", "prior": "deadbeef"},
+	  {"path": "main.go", "line": 13, "severity": "nit", "category": "maintainability", "title": "New", "explanation": "e", "prior": "ffffffff"}
+	]}`
+	res, dropped, err := Parse(raw, Anchors(sampleDiff), ParseOptions{Prior: []Finding{reworded, other}})
+	if err != nil || len(dropped) != 0 || len(res.Findings) != 4 {
+		t.Fatalf("Parse = %+v, dropped %+v, %v", res.Findings, dropped, err)
+	}
+	want := map[string]string{
+		"Tag 0.0.46 is missing":       Fingerprint(first),
+		"chart tag is not  published": Fingerprint(first),
+		"Typo":                        Fingerprint(other),
+		"New":                         Fingerprint(Finding{Path: "main.go", Title: "New"}),
+	}
+	for _, f := range res.Findings {
+		fp, ok := want[f.Title]
+		if !ok || Fingerprint(f) != fp || f.Prior != "" {
+			t.Errorf("finding %q: fingerprint %s, prior %q; want %s, prior cleared", f.Title, Fingerprint(f), f.Prior, fp)
+		}
+		if own := f.Title == "Typo" || f.Title == "New"; (f.Fingerprint == "") != own {
+			t.Errorf("finding %q: Fingerprint field %q; want it set only when carried on", f.Title, f.Fingerprint)
+		}
 	}
 }

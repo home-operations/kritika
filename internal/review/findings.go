@@ -29,8 +29,6 @@ package review
 
 import (
 	"cmp"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -147,6 +145,16 @@ type Finding struct {
 	// Rules are the ids of the review rules the finding enforces; Parse
 	// keeps only those the review was given.
 	Rules []string `json:"rules,omitempty"`
+	// Prior is the id of the last review's finding this one reports again,
+	// as the prompt listed it; Parse resolves it into Fingerprint and
+	// clears it.
+	Prior string `json:"prior,omitempty"`
+	// Fingerprint is the finding's fingerprint when it is known apart from
+	// its path and title: Parse sets it when the finding carries on a
+	// prior one's, the worker when it reads a finding back. Fingerprint()
+	// prefers it, so a finding reported again in other words keeps the
+	// thread its first wording opened.
+	Fingerprint string `json:"fingerprint,omitempty"`
 	// URL links the finding's lines at the head commit. kritika sets it
 	// when rendering; the model never does.
 	URL string `json:"-"`
@@ -256,6 +264,10 @@ type ParseOptions struct {
 	// Repository is the "owner/repo" under review, whose references the
 	// model's text keeps; RedirectReferences rewrites the others.
 	Repository string
+	// Prior are the last review's findings, as the prompt listed them: a
+	// finding that names one's id, or has one's path and title, carries
+	// its fingerprint on.
+	Prior []Finding
 }
 
 // Field names of the contract, shared by its JSON Schema and the template
@@ -280,6 +292,7 @@ const (
 	keyInsertAfter  = "insert_after"
 	keyAgentPrompt  = "agent_prompt"
 	keyRules        = "rules"
+	keyPrior        = "prior"
 )
 
 // JSON Schema types the answer shapes use more than once.
@@ -323,6 +336,8 @@ const (
 		"the lines, the symbols and the exact change."
 	describeRules = "Ids of the review rules this finding enforces, as the Review rules section lists them; " +
 		"omit when it enforces none."
+	describePrior = "Id of the last review's finding this one reports again, as its listing opens each line with, " +
+		"whatever the wording now; the finding then keeps that one's thread. Omit it for a new finding."
 	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
 		"change adds or alters as the head commit has it, drawn as the instructions say. Omit it when the change has no " +
 		"such flow."
@@ -385,6 +400,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 						keyInsertAfter:  {Type: schemaString, Description: describeInsertAfter},
 						keyAgentPrompt:  {Type: schemaString, Description: describeAgentPrompt},
 						keyRules:        {Type: schemaArray, Description: describeRules, Items: &jsonSchema{Type: schemaString}},
+						keyPrior:        {Type: schemaString, Description: describePrior},
 					},
 					Required:             required,
 					AdditionalProperties: new(false),
@@ -592,13 +608,15 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	var dropped []Dropped
 	for _, f := range res.Findings {
 		f.Path = strings.TrimSpace(f.Path)
-		f.Title = prose(f.Title, opts.Repository)
+		f.Title = severityPrefix.ReplaceAllString(prose(f.Title, opts.Repository), "")
 		f.Explanation = prose(f.Explanation, opts.Repository)
 		f.SuggestedFix = prose(f.SuggestedFix, opts.Repository)
 		f.Replacement = stripFences(f.Replacement)
 		f.InsertAfter = stripFences(f.InsertAfter)
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
+		f.Prior = strings.TrimSpace(f.Prior)
+		f.Fingerprint, f.Prior = inherited(f, opts.Prior), ""
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():
@@ -755,16 +773,6 @@ func diagramHeader(src string) string {
 		}
 	}
 	return ""
-}
-
-// Fingerprint identifies a finding across reviews of the same pull request:
-// the path and the title, ignoring case and whitespace, so a finding that
-// moves by a few lines or is reworded in case only is recognised as the
-// same one.
-func Fingerprint(f Finding) string {
-	title := strings.ToLower(strings.Join(strings.Fields(f.Title), " "))
-	sum := sha256.Sum256([]byte(f.Path + "\x00" + title))
-	return hex.EncodeToString(sum[:])
 }
 
 // Anchors reads a unified diff and returns, per head-side path, the

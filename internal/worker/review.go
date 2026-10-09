@@ -216,7 +216,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		reviewID: reviewID, runID: runID, jobID: job.ID, lease: admitted.lease, trigger: args.Trigger, logger: logger,
 		parse: review.ParseOptions{
 			RequireSuggestedFix: prep.eff.Review.RequireSuggestedFix, Rules: prep.ruleIDs,
-			Repository: pr.repository, Diagram: prep.eff.Review.Diagram,
+			Repository: pr.repository, Diagram: prep.eff.Review.Diagram, Prior: reviewFindings(prior.findings),
 		},
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,
