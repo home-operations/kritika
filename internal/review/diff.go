@@ -1,6 +1,10 @@
 package review
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/home-operations/kritika/internal/udiff"
+)
 
 // FitDiff keeps the whole file sections of a unified diff that fit in room
 // bytes, in order, and reports the paths of those it left out.
@@ -68,26 +72,13 @@ func fileMark(section string) string {
 	return ""
 }
 
-// splitFiles cuts a unified diff at "diff --git" boundaries.
+// splitFiles is a unified diff's files, each by its head-side path, with
+// its text as it was.
 func splitFiles(diff string) []fileSection {
-	var out []fileSection
-	start, pos, path := 0, 0, "?"
-	for l := range strings.SplitSeq(diff, "\n") {
-		if strings.HasPrefix(l, "diff --git ") {
-			if pos > 0 {
-				out = append(out, fileSection{path: path, text: diff[start:pos]})
-			}
-			start, path = pos, pathFromHeader(l)
-		}
-		pos += len(l) + 1
+	files := udiff.Parse(diff)
+	out := make([]fileSection, len(files))
+	for i, f := range files {
+		out[i] = fileSection{path: f.Path(), text: f.String()}
 	}
-	return append(out, fileSection{path: path, text: diff[start:] + "\n"})
-}
-
-func pathFromHeader(l string) string {
-	// "diff --git a/x/y b/x/y"
-	if _, after, ok := strings.CutLast(l, " b/"); ok {
-		return after
-	}
-	return strings.TrimPrefix(l, "diff --git ")
+	return out
 }

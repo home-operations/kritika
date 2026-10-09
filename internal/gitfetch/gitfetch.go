@@ -23,6 +23,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
+
+	"github.com/home-operations/kritika/internal/udiff"
 )
 
 // Refs the commits are fetched into. They are private to kritika so the bare
@@ -280,7 +282,11 @@ func renderChanges(ctx context.Context, changes object.Changes, gained map[strin
 		}
 		text := patch.String()
 		if len(gained) > 0 {
-			text = withoutHunks(text, gained)
+			var kept strings.Builder
+			for _, f := range udiff.Parse(text) {
+				kept.WriteString(withoutHunks(f, gained))
+			}
+			text = kept.String()
 		}
 		if text == "" {
 			continue

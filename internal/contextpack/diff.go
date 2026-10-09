@@ -1,10 +1,10 @@
 package contextpack
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/home-operations/kritika/internal/chunk"
+	"github.com/home-operations/kritika/internal/udiff"
 )
 
 // diffLines is what a unified diff says per path: the head-side lines it
@@ -28,56 +28,18 @@ type diffLine struct {
 	hunk int
 }
 
-// walkDiff calls fn for each line of each hunk of a unified diff. A hunk's
-// lines are counted from its header, so a removed "-- x" or an added
-// "++ x", which read like file headers, stay lines of the hunk.
+// walkDiff calls fn for each added, removed and context line of each hunk
+// of a unified diff.
 func walkDiff(diff string, fn func(diffLine)) {
-	cur := diffLine{hunk: -1}
-	var oldLeft, newLeft int
-	for l := range strings.SplitSeq(diff, "\n") {
-		if oldLeft > 0 || newLeft > 0 {
-			if l == "" {
-				// A context line whose leading space was stripped.
-				l = " "
-			}
-			cur.kind, cur.text = l[0], l[1:]
-			switch cur.kind {
-			case '+':
-				fn(cur)
-				cur.newLine++
-				newLeft--
-				continue
-			case '-':
-				fn(cur)
-				cur.oldLine++
-				oldLeft--
-				continue
-			case ' ':
-				fn(cur)
-				cur.oldLine++
-				cur.newLine++
-				oldLeft--
-				newLeft--
-				continue
-			case '\\':
-				// "\ No newline at end of file"
-				continue
-			}
-			// Not a hunk line: the hunk ended short of its counts, and the
-			// line is read as a header.
-			oldLeft, newLeft = 0, 0
-		}
-		switch {
-		case strings.HasPrefix(l, "diff --git "):
-			cur.oldPath, cur.newPath = "", ""
-		case strings.HasPrefix(l, "--- "):
-			cur.oldPath = stripPrefix(l[4:], "a/")
-		case strings.HasPrefix(l, "+++ "):
-			cur.newPath = stripPrefix(l[4:], "b/")
-		case strings.HasPrefix(l, "@@"):
-			if h, ok := parseHunkHeader(l); ok {
-				cur.oldLine, oldLeft, cur.newLine, newLeft = h.oldStart, h.oldCount, h.newStart, h.newCount
-				cur.hunk++
+	hunk := -1
+	for _, f := range udiff.Parse(diff) {
+		for _, h := range f.Hunks {
+			hunk++
+			for _, l := range h.Lines {
+				switch l.Kind {
+				case '+', '-', ' ':
+					fn(diffLine{kind: l.Kind, text: l.Text, oldPath: f.OldPath, newPath: f.NewPath, oldLine: l.OldLine, newLine: l.NewLine, hunk: hunk})
+				}
 			}
 		}
 	}
@@ -159,45 +121,6 @@ func (d *diffLines) show(path string, line int, text string) {
 		d.shown[path] = map[int]string{}
 	}
 	d.shown[path][line] = text
-}
-
-func stripPrefix(p, prefix string) string {
-	p = strings.TrimSpace(p)
-	if p == "/dev/null" {
-		return ""
-	}
-	return strings.TrimPrefix(p, prefix)
-}
-
-// hunkHeader is a hunk header's "@@ -oldStart,oldCount +newStart,newCount @@".
-type hunkHeader struct {
-	oldStart, oldCount, newStart, newCount int
-}
-
-// parseHunkHeader reads a hunk header; a count left out is 1.
-func parseHunkHeader(l string) (hunkHeader, bool) {
-	fields := strings.Fields(l)
-	if len(fields) < 3 || !strings.HasPrefix(fields[1], "-") || !strings.HasPrefix(fields[2], "+") {
-		return hunkHeader{}, false
-	}
-	oldStart, oldCount, ok1 := hunkRange(fields[1][1:])
-	newStart, newCount, ok2 := hunkRange(fields[2][1:])
-	return hunkHeader{oldStart, oldCount, newStart, newCount}, ok1 && ok2
-}
-
-func hunkRange(s string) (start, count int, ok bool) {
-	first, rest, hasCount := strings.Cut(s, ",")
-	start, err := strconv.Atoi(first)
-	if err != nil {
-		return 0, 0, false
-	}
-	count = 1
-	if hasCount {
-		if count, err = strconv.Atoi(rest); err != nil {
-			return 0, 0, false
-		}
-	}
-	return start, count, true
 }
 
 // runs groups sorted line numbers into ranges, merging neighbours closer
