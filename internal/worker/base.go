@@ -94,13 +94,18 @@ func (b *Base) withLease(
 }
 
 // releaseLease releases l on a context of its own, since the job's has
-// usually ended by the time a lease is let go, and logs a failure to
-// logger, which carries whatever the caller knows of the job.
+// usually ended by the time a lease is let go, and logs a failure, and the
+// snoozed review the freed slot woke, to logger, which carries whatever the
+// caller knows of the job.
 func (b *Base) releaseLease(ctx context.Context, logger *slog.Logger, l *store.Lease, key string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	if err := l.Release(rctx); err != nil {
+	woken, err := l.Release(rctx)
+	if err != nil {
 		logger.Warn("lease not released", "key", key, "error", err)
+	}
+	if woken != 0 {
+		logger.Info("snoozed review woken: a model slot is free", "key", key, "job", woken)
 	}
 }
 

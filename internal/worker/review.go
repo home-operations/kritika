@@ -96,6 +96,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
+	clearSlotWait(ctx, logger, job)
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
 	if done {
@@ -522,7 +523,7 @@ func (w *Review) admit(
 ) (admission, bool, error) {
 	a, status, reason, err := w.agentAdmit(ctx, e.logger, file, account, settings, job.ID)
 	if errors.Is(err, errNoSlot) {
-		return admission{}, true, w.snooze(e, job, string(settings.Models.Review))
+		return admission{}, true, w.snooze(ctx, e, job, string(settings.Models.Review))
 	}
 	if err != nil {
 		return admission{}, true, err
@@ -549,32 +550,53 @@ func (w *Review) slotsHeld(
 	if free {
 		return false, nil
 	}
-	return true, w.snooze(e, job, ref)
+	return true, w.snooze(ctx, e, job, ref)
 }
 
 // A review that has not started its runner is snoozed while every model
 // slot is held, between snoozeMin and snoozeMax, and gives its worker back
-// to the queue meanwhile.
+// to the queue meanwhile. A slot let go before then wakes it (see
+// store.SlotWaitKey); the snooze bounds the wait when none is, as when
+// a holder died and its lease expired, or let its slot go before River
+// saved the snooze.
 const (
 	snoozeMin = 5 * time.Second
-	snoozeMax = 5 * time.Minute
+	snoozeMax = time.Minute
 )
 
 // snooze puts a review that found every model slot held back on the
 // queue, for longer each time, without counting an attempt: it gives its
-// worker back rather than holding it while it waits. River keeps the
-// count of a job's snoozes in its metadata.
-func (w *Review) snooze(e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey string) error {
+// worker back rather than holding it while it waits. The job is marked
+// with the model it waits for, so the next release of one of its slots
+// wakes it. River keeps the count of a job's snoozes in its metadata.
+func (w *Review) snooze(ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], modelKey string) error {
 	var meta struct {
 		Snoozes int `json:"snoozes"`
 	}
 	if err := json.Unmarshal(job.Metadata, &meta); err != nil {
 		e.logger.Warn("job metadata not read; snoozing as if for the first time", "error", err)
 	}
+	if err := river.MetadataSet(ctx, store.SlotWaitKey, modelKey); err != nil {
+		e.logger.Warn("job not marked as waiting for a slot; it wakes when its snooze ends", "error", err)
+	}
 	d := store.Backoff(meta.Snoozes, snoozeMin, snoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
 	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
 	return river.JobSnooze(d)
+}
+
+// clearSlotWait clears the mark an earlier snooze for a slot left on the
+// job, so a release does not wake it while it waits out its settle time or
+// a retry in place of a review that waits for a slot. snooze sets it again
+// when this attempt finds every slot held.
+func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs.ReviewArgs]) {
+	var meta map[string]any
+	if json.Unmarshal(job.Metadata, &meta) != nil || meta[store.SlotWaitKey] == nil {
+		return
+	}
+	if err := river.MetadataSet(ctx, store.SlotWaitKey, nil); err != nil {
+		logger.Warn("job's slot wait mark not cleared; a release may wake it early", "error", err)
+	}
 }
 
 // botPatch is the patch id of a bot pull request's diff as its forge
