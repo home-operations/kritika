@@ -288,6 +288,9 @@ func (r Run) Do(ctx context.Context) (result Result) {
 	}
 
 	result = Result{ToolCalls: map[string]int{}}
+	// Every return below that is not a submission or a cancellation is
+	// rewritten on the way out, into a submission of the fallback's input,
+	// when one was held.
 	var fb fallback
 	defer fb.end(&result)
 	nudged := false
