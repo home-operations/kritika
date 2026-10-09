@@ -104,14 +104,22 @@ func (s *Store) TakeLease(ctx context.Context, accountID, modelKey string, slots
 // runner will find one when it needs it.
 func (s *Store) SlotFree(ctx context.Context, accountID, modelKey string, slots int) (bool, error) {
 	var held int
-	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT count(*) FROM model_leases WHERE account_id = $1 AND model_key = $2 AND slot <= $3
-			AND job_id IS NOT NULL AND expires_at >= now()`, accountID, modelKey, slots).Scan(&held)
+	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) (err error) {
+		held, err = heldSlots(ctx, tx, accountID, modelKey, slots)
+		return err
 	})
+	return held < slots, err
+}
+
+// heldSlots counts the slots of (account, model) a live lease holds.
+func heldSlots(ctx context.Context, tx pgx.Tx, accountID, modelKey string, slots int) (int, error) {
+	var held int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM model_leases WHERE account_id = $1 AND model_key = $2 AND slot <= $3
+		AND job_id IS NOT NULL AND expires_at >= now()`, accountID, modelKey, slots).Scan(&held)
 	if err != nil {
-		return false, fmt.Errorf("store: read lease slots: %w", err)
+		return 0, fmt.Errorf("store: read lease slots: %w", err)
 	}
-	return held < slots, nil
+	return held, nil
 }
 
 func (l *Lease) heartbeat(ctx context.Context) {
@@ -140,12 +148,19 @@ func (l *Lease) heartbeat(ctx context.Context) {
 // slot of its model was held sets to that model key, and its next attempt
 // clears. Release wakes the oldest such review of the account, so a freed
 // slot is taken as soon as a worker gets to the job rather than when its
-// snooze runs out.
+// snooze runs out. River saves the snooze, and the key, some time after
+// the review returns them, and a release in between finds no waiter: once
+// the snooze is saved, WakeIfSlotFree looks for the slot that release let
+// go.
 const SlotWaitKey = "slot_wait"
 
 // Release frees the slot and wakes the oldest review snoozed for one on
 // the same model, returning that job's id, 0 when none waits. ctx should
 // outlive job cancellation so the slot is not left to expire.
+//
+// The slot is freed in a transaction of its own, committed before the
+// wake looks for a waiter: a review whose snooze was saved after that look
+// counts the slots after this commit, so one of the two sees the other.
 func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 	l.cancel()
 	<-l.done
@@ -155,20 +170,52 @@ func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 		if err != nil {
 			return fmt.Errorf("store: release lease: %w", err)
 		}
-		// River keeps a job snoozed, or retried, for less than its
-		// scheduler interval available with a scheduled_at ahead rather
-		// than scheduled or retryable; only the key tells a slot's waiter.
-		err = tx.QueryRow(ctx, `UPDATE river_job SET state = 'available', scheduled_at = now()
-			WHERE id = (SELECT id FROM river_job WHERE kind = 'review' AND state IN ('scheduled', 'available')
-				AND scheduled_at > now() AND args->>'account_id' = $1 AND metadata->>'`+SlotWaitKey+`' = $2
-				ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
-			RETURNING id`, l.accountID, l.modelKey).Scan(&woken)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("store: wake a snoozed review: %w", err)
-		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	err = l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) (err error) {
+		woken, err = wakeWaiter(ctx, tx, l.accountID, l.modelKey, 0)
+		return err
+	})
 	return woken, err
+}
+
+// WakeIfSlotFree wakes the review job jobID, snoozed for a slot of
+// modelKey, when a slot is free, and reports whether it did. It runs once
+// River has saved the snooze, for the slot a release let go before then.
+func (s *Store) WakeIfSlotFree(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (bool, error) {
+	var woken int64
+	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		held, err := heldSlots(ctx, tx, accountID, modelKey, slots)
+		if err != nil || held >= slots {
+			return err
+		}
+		woken, err = wakeWaiter(ctx, tx, accountID, modelKey, jobID)
+		return err
+	})
+	return woken != 0, err
+}
+
+// wakeWaiter makes the oldest review of the account snoozed for a slot of
+// modelKey, or that one of them jobID names when it is not 0, available
+// now, and returns its id, 0 when there is none.
+func wakeWaiter(ctx context.Context, tx pgx.Tx, accountID, modelKey string, jobID int64) (int64, error) {
+	var woken int64
+	// River keeps a job snoozed, or retried, for less than its scheduler
+	// interval available with a scheduled_at ahead rather than scheduled
+	// or retryable; only the key tells a slot's waiter.
+	err := tx.QueryRow(ctx, `UPDATE river_job SET state = 'available', scheduled_at = now()
+		WHERE id = (SELECT id FROM river_job WHERE kind = 'review' AND state IN ('scheduled', 'available')
+			AND scheduled_at > now() AND args->>'account_id' = $1 AND metadata->>'`+SlotWaitKey+`' = $2
+			AND ($3::bigint = 0 OR id = $3::bigint)
+			ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+		RETURNING id`, accountID, modelKey, jobID).Scan(&woken)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("store: wake a snoozed review: %w", err)
+	}
+	return woken, nil
 }
 
 // CapReason says which of the account's caps its usage has reached, or "".

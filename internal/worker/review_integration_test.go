@@ -1396,6 +1396,9 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	snoozed, unsubscribe := client.Subscribe(river.EventKindJobSnoozed)
+	t.Cleanup(unsubscribe)
+	go (&SlotWake{Store: appStore, Current: current, Logger: logger}).Run(ctx, snoozed)
 	if err := client.Start(ctx); err != nil {
 		t.Fatal(err)
 	}

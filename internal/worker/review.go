@@ -556,9 +556,9 @@ func (w *Review) slotsHeld(
 // A review that has not started its runner is snoozed while every model
 // slot is held, between snoozeMin and snoozeMax, and gives its worker back
 // to the queue meanwhile. A slot let go before then wakes it (see
-// store.SlotWaitKey); the snooze bounds the wait when none is, as when
-// a holder died and its lease expired, or let its slot go before River
-// saved the snooze.
+// store.SlotWaitKey and SlotWake); the snooze bounds the wait when none
+// is, as when a holder died and its lease expired, or River dropped the
+// event of the saved snooze.
 const (
 	snoozeMin = 5 * time.Second
 	snoozeMax = time.Minute
