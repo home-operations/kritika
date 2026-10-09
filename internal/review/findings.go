@@ -498,33 +498,61 @@ func Check(raw json.RawMessage) error {
 // misspelled key is otherwise dropped on decoding and the finding posts
 // without it, with nothing to say so.
 func unknownKeys(raw json.RawMessage) []string {
-	var top map[string]json.RawMessage
-	var body struct {
-		Summary  map[string]json.RawMessage   `json:"summary"`
-		Findings []map[string]json.RawMessage `json:"findings"`
-	}
-	// Check has decoded raw as a Result, so both decode too.
-	_ = json.Unmarshal(raw, &top)
-	_ = json.Unmarshal(raw, &body)
 	var out []string
-	for _, k := range slices.Sorted(maps.Keys(top)) {
-		if !defines(topKeys, k) {
-			out = append(out, fmt.Sprintf("%q", k))
-		}
-	}
-	for _, k := range slices.Sorted(maps.Keys(body.Summary)) {
-		if !defines(summaryKeys, k) {
-			out = append(out, fmt.Sprintf("%s.%q", keySummary, k))
-		}
-	}
-	for i, f := range body.Findings {
-		for _, k := range slices.Sorted(maps.Keys(f)) {
-			if !defines(findingKeys, k) {
-				out = append(out, fmt.Sprintf("%s[%d].%q", keyFindings, i, k))
+	eachLevel(raw, func(name string, m map[string]json.RawMessage, defined []string) {
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			if !defines(defined, k) {
+				out = append(out, fmt.Sprintf("%s%q", name, k))
 			}
 		}
-	}
+	})
 	return out
+}
+
+// knownKeys is raw without the keys unknownKeys lists, or raw itself when
+// it is not an object.
+func knownKeys(raw json.RawMessage) json.RawMessage {
+	return eachLevel(raw, func(_ string, m map[string]json.RawMessage, defined []string) {
+		maps.DeleteFunc(m, func(k string, _ json.RawMessage) bool { return !defines(defined, k) })
+	})
+}
+
+// eachLevel calls visit with each object of raw the contract defines keys
+// at, the top, then the summary, then each finding, named as unknownKeys
+// names a key under it, with the keys defined there, and returns raw with
+// what visit did to them encoded back; raw itself when it is not an
+// object.
+func eachLevel(raw json.RawMessage, visit func(name string, m map[string]json.RawMessage, defined []string)) json.RawMessage {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
+		return raw
+	}
+	visit("", top, topKeys)
+	for _, k := range fields(top, keySummary) {
+		var summary map[string]json.RawMessage
+		if json.Unmarshal(top[k], &summary) == nil && summary != nil {
+			visit(keySummary+".", summary, summaryKeys)
+			top[k], _ = json.Marshal(summary)
+		}
+	}
+	for _, k := range fields(top, keyFindings) {
+		var findings []map[string]json.RawMessage
+		if json.Unmarshal(top[k], &findings) == nil {
+			for i, f := range findings {
+				visit(fmt.Sprintf("%s[%d].", keyFindings, i), f, findingKeys)
+			}
+			top[k], _ = json.Marshal(findings)
+		}
+	}
+	out, _ := json.Marshal(top)
+	return out
+}
+
+// fields is the keys of m that fill the field named name on decoding,
+// compared regardless of case, sorted: decoding applies every one of them,
+// so each is walked, in an order that does not change between runs.
+func fields(m map[string]json.RawMessage, name string) []string {
+	return slices.DeleteFunc(slices.Sorted(maps.Keys(m)), func(k string) bool { return !strings.EqualFold(k, name) })
 }
 
 // defines says whether keys holds k, compared regardless of case as
@@ -549,41 +577,6 @@ func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
 	return func(raw json.RawMessage) bool {
 		return errors.Is(check(raw), errUnknownKeys) && check(knownKeys(raw)) == nil
 	}
-}
-
-// knownKeys is raw without the keys unknownKeys lists, or raw itself when
-// it is not an object.
-func knownKeys(raw json.RawMessage) json.RawMessage {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
-		return raw
-	}
-	keep(top, topKeys)
-	for k, v := range top {
-		switch {
-		case strings.EqualFold(k, keySummary):
-			var summary map[string]json.RawMessage
-			if json.Unmarshal(v, &summary) == nil && summary != nil {
-				keep(summary, summaryKeys)
-				top[k], _ = json.Marshal(summary)
-			}
-		case strings.EqualFold(k, keyFindings):
-			var findings []map[string]json.RawMessage
-			if json.Unmarshal(v, &findings) == nil {
-				for _, f := range findings {
-					keep(f, findingKeys)
-				}
-				top[k], _ = json.Marshal(findings)
-			}
-		}
-	}
-	out, _ := json.Marshal(top)
-	return out
-}
-
-// keep drops from m the keys keys does not define.
-func keep(m map[string]json.RawMessage, keys []string) {
-	maps.DeleteFunc(m, func(k string, _ json.RawMessage) bool { return !defines(keys, k) })
 }
 
 // Parse decodes the model's JSON and drops findings kritika cannot post: an

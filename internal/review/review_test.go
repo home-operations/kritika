@@ -92,6 +92,10 @@ func TestCheck(t *testing.T) {
 			wantErr: "unknown keys findings[0].\"severity_\", findings[0].\"suggested_fix`: \", findings[1].\": \";"},
 		{name: "keys that differ only in case, which still decode", raw: `{"Summary":{"Take":"Fine.","praise":[]},
 			"findings":[{"PATH":"a","line":1,"Suggested_Fix":"f"}]}`},
+		{name: "a summary repeated in another case, each one's keys named", raw: `{"Summary":{"take":"Fine."},"summary":{"take":"Fine.","mood":"ok"},"findings":[]}`,
+			wantErr: `unknown keys summary."mood";`},
+		{name: "findings repeated in another case, each one's keys named", raw: `{"summary":{"take":"Fine."},"Findings":[],"findings":[{"path":"a","line":1,"mood":"ok"}]}`,
+			wantErr: `unknown keys findings[0]."mood";`},
 		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
 		{name: "a flowchart", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B"},"findings":[]}`},
@@ -127,6 +131,7 @@ func TestLenient(t *testing.T) {
 		{name: "unknown keys at every level", raw: `{"verdict":"ok","summary":{"take":"Fine.","praise":[],"checked>":["x"]},
 			"findings":[{"path":"a","line":1,"suggested_fix.":"f"},null]}`, want: true},
 		{name: "unknown keys in a summary that differs in case", raw: `{"Summary":{"Take":"Fine.","praise":[],"mood":"ok"}}`, want: true},
+		{name: "unknown keys in a summary repeated in another case", raw: `{"Summary":{"take":"Fine.","mood":"ok"},"summary":{"take":"Fine.","mood":"ok"}}`, want: true},
 		{name: "unknown keys and a blank take", raw: `{"summary":{"take":" ","praise":[],"mood":"ok"},"findings":[]}`},
 		{name: "unknown keys and a field of the wrong type", raw: `{"summary":{"take":"Fine.","praise":"clear","mood":"ok"}}`},
 		// Decoding into a map keeps only the last of a repeated key, so
