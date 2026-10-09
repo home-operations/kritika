@@ -38,13 +38,13 @@ func TestBuildMerge(t *testing.T) {
 		{Paths: []string{"a/x.go"}, Summary: Summary{Headline: "Adds x", Take: "X is sound." + strings.Repeat(" It holds.", 25), Praise: []string{"tidy"}}},
 		{Paths: []string{"b/y.go", "b/z.go"}, Summary: Summary{Take: "Y </summary> breaks.", Diagram: "flowchart LR\n  a --> b"}},
 	}
-	findings := []Finding{{Path: "b/y.go", Line: 3, Severity: SeverityImportant, Title: "y breaks", Explanation: "It does."}}
+	findings := []Finding{{Path: "b/y.go", Line: 3, Severity: SeverityP1, Title: "y breaks", Explanation: "It does."}}
 	msg := BuildMerge("Add x and y", "Adds them.", parts, findings, DefaultBudgetTokens)
 	for _, want := range []string{
 		"Pull request: Add x and y", "<description>\nAdds them.\n</description>",
 		"Part 1 of 2, reviewing a/x.go:", "Take: X is sound." + strings.Repeat(" It holds.", 25) + "\n", "Praise: tidy",
 		"Part 2 of 2, reviewing b/y.go, b/z.go:", "Y &lt;/summary&gt; breaks.", "Diagram:\nflowchart LR",
-		"Findings the parts reported (1):", "b/y.go:3 [important] y breaks",
+		"Findings the parts reported (1):", "b/y.go:3 [p1] y breaks",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("message lacks %q:\n%s", want, msg)
@@ -70,7 +70,7 @@ func TestBuildMergeBudget(t *testing.T) {
 		{Paths: paths, Summary: Summary{Take: "Many files."}},
 		{Paths: []string{"big.go"}, Summary: Summary{Take: strings.Repeat("long ", 400)}},
 	}
-	findings := []Finding{{Path: "x.go", Line: 1, Severity: SeverityNit, Title: "nit", Explanation: "n"}}
+	findings := []Finding{{Path: "x.go", Line: 1, Severity: SeverityP2, Title: "p2", Explanation: "n"}}
 	const budget = 250
 	msg := BuildMerge("t", "", parts, findings, budget)
 	if !strings.Contains(msg, fmt.Sprintf("dir/f%02d.go, and 3 more:", maxMergePaths-1)) ||
@@ -78,7 +78,7 @@ func TestBuildMergeBudget(t *testing.T) {
 		t.Fatalf("part 1's files:\n%s", msg)
 	}
 	if strings.Contains(msg, "big.go") || !strings.Contains(msg, "[1 more part(s) omitted to fit the prompt budget]") ||
-		!strings.Contains(msg, "x.go:1 [nit] nit") || len(msg) > budget*charsPerToken {
+		!strings.Contains(msg, "x.go:1 [p2] p2") || len(msg) > budget*charsPerToken {
 		t.Fatalf("a part past the budget was shown, or the message is %d bytes:\n%s", len(msg), msg)
 	}
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   // A review's findings by severity as one small tinted square each,
-  // blocking first; a severity with none is left out.
+  // P0 first; a severity with none is left out.
   import type { SeverityCounts } from '../types';
   import { SEVERITIES } from '../format';
   let { counts }: { counts: SeverityCounts } = $props();

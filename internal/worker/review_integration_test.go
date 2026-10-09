@@ -602,9 +602,9 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
-		  {"path":"main.go",`+first+`,"severity":"important","category":"correctness","explanation":"look here","suggested_fix":"do this",
+		  {"path":"main.go",`+first+`,"severity":"p1","category":"correctness","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
-		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
+		  {"path":"main.go","line":500,"severity":"p0","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
@@ -1152,7 +1152,7 @@ func checkFollowUps(
 	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
 		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
 	}
-	for _, want := range []string{"Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [important] first line: look here", "<description>\nAdds b.\n</description>"} {
+	for _, want := range []string{"Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [p1] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
 		}
@@ -2226,7 +2226,7 @@ func checkIncremental(
 	// provider caches it, so the second review starts afresh.
 	ageConversation(ctx, t, firstRow.id)
 	second := commit(firstMain + "\nfunc f2() {}\n")
-	fc.find(`{"path":"main.go","line":3,"severity":"important","category":"correctness","title":"far from the push","explanation":"held back"}`)
+	fc.find(`{"path":"main.go","line":3,"severity":"p1","category":"correctness","title":"far from the push","explanation":"held back"}`)
 	secondRow, prompt, inline := reviewHead(second)
 	fc.find("")
 	if secondRow.scope != "incremental" || secondRow.reason != "" || secondRow.prior != firstRow.id || inline != 0 {
@@ -2235,7 +2235,7 @@ func checkIncremental(
 	}
 	for _, want := range []string{
 		"Changed since the last review (" + first[:7], "+func f2() {}",
-		"Findings from the last review (verify each; report again only if still present)", "main.go:1 [important] first line: look here",
+		"Findings from the last review (verify each; report again only if still present)", "main.go:1 [p1] first line: look here",
 		"What the last review checked at " + first[:7] + " and found sound", "\n- main.go: package clause read\n",
 		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
 	} {
@@ -2263,7 +2263,7 @@ func checkIncremental(
 	// the thread and the fingerprint its first wording opened, and is
 	// recorded off the diff with them.
 	original := review.Finding{Path: "main.go", Title: "first line"}
-	fc.reword(`"line":500,"title":"[important] Line one is wrong","prior":"` + review.PriorID(original) + `"`)
+	fc.reword(`"line":500,"title":"[p1] Line one is wrong","prior":"` + review.PriorID(original) + `"`)
 	thirdRow, prompt, inline := reviewHead(third)
 	fc.reword("")
 	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
@@ -2349,7 +2349,7 @@ func checkEarlierPrompt(t *testing.T, prompt, prior string) {
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
 		!strings.Contains(prompt, "Findings from the last review (verify each; report again only if still present). "+
 			"They are claims an earlier automated review made about "+prior[:7]) ||
-		!strings.Contains(prompt, "main.go:1 [important] first line: look here") ||
+		!strings.Contains(prompt, "main.go:1 [p1] first line: look here") ||
 		!strings.Contains(prompt, "What the last review checked at "+prior[:7]+" and found sound") {
 		t.Fatalf("a full re-review's prompt:\n%s", prompt)
 	}

@@ -3,6 +3,7 @@
 package store
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -339,7 +340,7 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation)
-			VALUES ($1, $2, 'a.go', 1, 'blocking', 't', 'b')`, account, completed); err != nil {
+			VALUES ($1, $2, 'a.go', 1, 'p0', 't', 'b')`, account, completed); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at)
@@ -358,13 +359,58 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].LastReview == nil || rows[0].LastReview.ID != completed || rows[0].LastReview.Findings.Blocking != 1 {
+	if len(rows) != 1 || rows[0].LastReview == nil || rows[0].LastReview.ID != completed || rows[0].LastReview.Findings.P0 != 1 {
 		t.Fatalf("pull requests = %+v, want one whose last review is the completed one with its blocking finding", rows)
 	}
 	if repo.LastReview == nil || repo.LastReview.ID != completed {
 		t.Errorf("repository's last review = %+v, want the completed one", repo.LastReview)
 	}
-	if attention.Blocking != 1 {
+	if attention.P0 != 1 {
 		t.Errorf("attention = %+v, want the blocking finding still counted", attention)
+	}
+}
+
+// TestEarlierSeverityNamesAreRenamed: a finding or a dismissal a replica
+// of an earlier release records under the earlier names lands as p0 to p2.
+func TestEarlierSeverityNamesAreRenamed(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("severitynames"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "severitynames")
+	reviewID := insertReview(t, ctx, s, account)
+	var findings, dismissals []string
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		for i, sev := range []string{"blocking", "important", "nit", "p1"} {
+			if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation)
+				VALUES ($1, $2, 'a.go', $3, $4, 't', 'b')`, account, reviewID, i+1, sev); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO dismissals (account_id, pull_request_id, fingerprint, severity, comment_id)
+				SELECT $1, pull_request_id, $3, $4, 1 FROM reviews WHERE id = $2`, account, reviewID, sev, sev); err != nil {
+				return err
+			}
+		}
+		rows, err := tx.Query(ctx, `SELECT severity FROM findings WHERE review_id = $1 ORDER BY line`, reviewID)
+		if err != nil {
+			return err
+		}
+		if findings, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		rows, err = tx.Query(ctx, `SELECT d.severity FROM dismissals d JOIN reviews r ON r.pull_request_id = d.pull_request_id
+			WHERE r.id = $1 ORDER BY array_position('{blocking,important,nit,p1}'::text[], d.fingerprint)`, reviewID)
+		if err != nil {
+			return err
+		}
+		dismissals, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"p0", "p1", "p2", "p1"}
+	if !slices.Equal(findings, want) || !slices.Equal(dismissals, want) {
+		t.Fatalf("findings %v, dismissals %v; want %v", findings, dismissals, want)
 	}
 }

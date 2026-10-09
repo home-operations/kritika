@@ -8,7 +8,7 @@
 
 {{ end -}}
 {{ if .Counts.Total -}}
-**{{ .Counts.Total }} {{ plural "finding" "findings" .Counts.Total }}**{{ if .Counts.Blocking }} · {{ .Counts.Blocking }} P0{{ end }}{{ if .Counts.Important }} · {{ .Counts.Important }} P1{{ end }}{{ if .Counts.Nit }} · {{ .Counts.Nit }} P2{{ end }}
+**{{ .Counts.Total }} {{ plural "finding" "findings" .Counts.Total }}**{{ if .Counts.P0 }} · {{ .Counts.P0 }} P0{{ end }}{{ if .Counts.P1 }} · {{ .Counts.P1 }} P1{{ end }}{{ if .Counts.P2 }} · {{ .Counts.P2 }} P2{{ end }}
 {{ else -}}
 **No findings**
 {{ end }}

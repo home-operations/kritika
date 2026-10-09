@@ -35,7 +35,7 @@ func TestThreadWorker(t *testing.T) {
 
 	const number = 7
 	const root, other int64 = commentBase + 1, commentBase + 2
-	finding := review.Finding{Path: "main.go", Line: 3, Severity: review.SeverityNit, Title: "Unchecked error", Explanation: "why"}
+	finding := review.Finding{Path: "main.go", Line: 3, Severity: review.SeverityP2, Title: "Unchecked error", Explanation: "why"}
 	fingerprint := review.Fingerprint(finding)
 	var repoID, prID string
 	if err := appStore.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {

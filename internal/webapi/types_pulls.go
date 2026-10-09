@@ -48,13 +48,13 @@ type Pull struct {
 }
 
 // Attention counts the account's open pull requests that want a look, by
-// why: their newest review failed, hit a cap or found something blocking,
+// why: their newest review failed, hit a cap or found a P0,
 // or their automatic reviews are paused. One may count under several.
 type Attention struct {
-	Failed   int `json:"failed"`
-	Capped   int `json:"capped"`
-	Blocking int `json:"blocking"`
-	Paused   int `json:"paused"`
+	Failed int `json:"failed"`
+	Capped int `json:"capped"`
+	P0     int `json:"p0"`
+	Paused int `json:"paused"`
 }
 
 // TokenCounts are input and output tokens.

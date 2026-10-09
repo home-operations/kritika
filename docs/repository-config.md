@@ -96,7 +96,7 @@ that is no level is dropped.
 ### Approvals
 
 `review.approve: true` has kritika approve a pull request its review
-allows: one with nothing blocking or important, or, with a confidence
+allows: one with nothing at P0 or P1, or, with a confidence
 score, one whose score and risk allow it. It replaces the admin's in
 either direction, so a repository can turn it on where the instance
 leaves it off ([approvals](confidence.md#approvals)).
@@ -284,7 +284,7 @@ The summary template's dot is the review:
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
 | `.Result.Summary.Diagram`                                                    | Mermaid source for the flow the change adds or alters, "" unless `review.diagram` is on and the change has one           |
 | `.Result.Findings`                                                           | the findings, each as the inline template sees one                                                                       |
-| `.Counts.Blocking`, `.Counts.Important`, `.Counts.Nit`, `.Counts.Total`      | the findings by severity and all of them, those outside the diff included                                                |
+| `.Counts.P0`, `.Counts.P1`, `.Counts.P2`, `.Counts.Total`                   | the findings by severity and all of them, those outside the diff included                                                |
 | `.Unanchored`                                                                | the findings on lines the diff does not show                                                                             |
 | `.HeldBack`                                                                  | an incremental re-review's new findings more than 3 lines from what changed since the last review, not counted           |
 | `.Notes`                                                                     | the review's notes                                                                                                       |

@@ -65,7 +65,7 @@
     { key: 'repo', hint: 'a repository', values: repoNames },
     { key: 'author', hint: "an author's login", values: authors, open: true },
     { key: 'status', hint: "the last review's status", values: PULL_OUTCOMES },
-    { key: 'is', hint: 'paused, or blocking', values: PULL_IS },
+    { key: 'is', hint: 'paused, or p0', values: PULL_IS },
   ]);
   const boxText = (f: PullFilter | undefined) => formatTokens(specs, { repo: f?.repo, author: f?.author, status: f?.outcome, is: f?.is }, f?.q);
 

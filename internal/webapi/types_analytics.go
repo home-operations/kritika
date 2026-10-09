@@ -11,9 +11,9 @@ import (
 
 // SeverityCounts counts findings by severity.
 type SeverityCounts struct {
-	Blocking  int `json:"blocking"`
-	Important int `json:"important"`
-	Nit       int `json:"nit"`
+	P0 int `json:"p0"`
+	P1 int `json:"p1"`
+	P2 int `json:"p2"`
 }
 
 // AnalyticsTotals is what the account's reviews came to over a window:

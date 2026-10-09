@@ -79,14 +79,14 @@ func (s PullState) Valid() bool { return s == PullOpen || s == PullClosed || s =
 type PullIs string
 
 // What a list may ask its pull requests to be: with automatic reviews
-// paused, or with a blocking finding in their newest review.
+// paused, or with a P0 finding in their newest review.
 const (
-	PullPaused   PullIs = "paused"
-	PullBlocking PullIs = "blocking"
+	PullPaused PullIs = "paused"
+	PullP0     PullIs = "p0"
 )
 
 // Valid reports whether i is something a list may ask for.
-func (i PullIs) Valid() bool { return i == PullPaused || i == PullBlocking }
+func (i PullIs) Valid() bool { return i == PullPaused || i == PullP0 }
 
 // Cursor is the position after the last row of a page: the sort key of that
 // row (T for a time-ordered list, S for a text-ordered one) and its id, the

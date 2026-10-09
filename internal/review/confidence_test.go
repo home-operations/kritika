@@ -18,10 +18,10 @@ func TestParseConfidence(t *testing.T) {
 		wantErr    string
 	}{
 		{name: "a clean review keeps its score", raw: `{"score": 5, "reason": "Nothing stands against it."}`, wantScore: 5, wantReason: "Nothing stands against it."},
-		{name: "nits set no ceiling", raw: `{"score": 5, "reason": "ok"}`, counts: Counts{Nit: 3}, wantScore: 5, wantReason: "ok"},
-		{name: "an important finding holds it to 3", raw: `{"score": 5, "reason": "ok"}`, counts: Counts{Important: 1}, wantScore: 3, wantReason: "ok"},
-		{name: "a blocking finding holds it to 2", raw: `{"score": 4, "reason": "ok"}`, counts: Counts{Blocking: 1, Important: 2}, wantScore: 2, wantReason: "ok"},
-		{name: "a score under the ceiling stands", raw: `{"score": 1, "reason": "ok"}`, counts: Counts{Blocking: 1}, wantScore: 1, wantReason: "ok"},
+		{name: "nits set no ceiling", raw: `{"score": 5, "reason": "ok"}`, counts: Counts{P2: 3}, wantScore: 5, wantReason: "ok"},
+		{name: "an important finding holds it to 3", raw: `{"score": 5, "reason": "ok"}`, counts: Counts{P1: 1}, wantScore: 3, wantReason: "ok"},
+		{name: "a blocking finding holds it to 2", raw: `{"score": 4, "reason": "ok"}`, counts: Counts{P0: 1, P1: 2}, wantScore: 2, wantReason: "ok"},
+		{name: "a score under the ceiling stands", raw: `{"score": 1, "reason": "ok"}`, counts: Counts{P0: 1}, wantScore: 1, wantReason: "ok"},
 		{name: "the reason is one line", raw: `{"score": 4, "reason": " two\n lines "}`, wantScore: 4, wantReason: "two lines"},
 		{name: "a long reason is cut", raw: `{"score": 4, "reason": "` + strings.Repeat("x", 600) + `"}`, wantScore: 4, wantReason: strings.Repeat("x", 500) + " …"},
 		{name: "a reference to another repository does not link", raw: `{"score": 4, "reason": "See up/stream#12."}`, wantScore: 4,
@@ -82,9 +82,9 @@ func TestBuildConfidence(t *testing.T) {
 		{
 			name: "findings follow the diff, whole",
 			res: Result{Findings: []Finding{{
-				Path: "main.go", Line: 2, Severity: SeverityBlocking, Title: "f does nothing", Explanation: "It is empty.\nCallers expect a result.",
+				Path: "main.go", Line: 2, Severity: SeverityP0, Title: "f does nothing", Explanation: "It is empty.\nCallers expect a result.",
 			}}},
-			want: []string{"Findings the review reported (1):", "- [blocking] main.go:2 f does nothing\n  It is empty.\n  Callers expect a result.\n"},
+			want: []string{"Findings the review reported (1):", "- [p0] main.go:2 f does nothing\n  It is empty.\n  Callers expect a result.\n"},
 		},
 		{
 			name: "the description and the review's account",

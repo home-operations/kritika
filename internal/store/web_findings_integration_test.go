@@ -56,12 +56,12 @@ func TestListAccountFindings(t *testing.T) {
 			return id
 		}
 		first, second = pull(7, "Add widgets"), pull(8, "More widgets")
-		earliest = reviewAt(first, "h1", "completed", t0, [3]string{"blocking", "nil deref", "fp-a"}, [3]string{"nit", "naming", "fp-b"})
+		earliest = reviewAt(first, "h1", "completed", t0, [3]string{"p0", "nil deref", "fp-a"}, [3]string{"p2", "naming", "fp-b"})
 		// The same head again: a re-run that leaves naming out did not address it.
-		reviewAt(first, "h1", "completed", t0.Add(time.Minute), [3]string{"blocking", "nil deref", "fp-a"})
-		reviewAt(first, "h2", "completed", t0.Add(2*time.Minute), [3]string{"important", "Nil deref", "fp-a"})
+		reviewAt(first, "h1", "completed", t0.Add(time.Minute), [3]string{"p0", "nil deref", "fp-a"})
+		reviewAt(first, "h2", "completed", t0.Add(2*time.Minute), [3]string{"p1", "Nil deref", "fp-a"})
 		reviewAt(first, "h3", "running", t0.Add(3*time.Minute))
-		reviewAt(second, "h1", "completed", t0.Add(4*time.Minute), [3]string{"nit", "nil deref", "fp-a"})
+		reviewAt(second, "h1", "completed", t0.Add(4*time.Minute), [3]string{"p2", "nil deref", "fp-a"})
 		// Pull 7's latest report of fp-a cites a rule its earlier ones did not.
 		_, err := tx.Exec(ctx, `UPDATE findings SET rules = CASE title WHEN 'Nil deref' THEN '{wrap-errors}'::text[]
 			ELSE '{wrap-errors,no-tokens}' END WHERE title IN ('Nil deref', 'naming')`)
@@ -111,9 +111,9 @@ func TestListAccountFindings(t *testing.T) {
 
 	all, next := list(FindingFilter{}, Page{Limit: 10})
 	check("all", all,
-		row{8, "nil deref", review.SeverityNit, FindingOpen},
-		row{7, "Nil deref", review.SeverityImportant, FindingOpen},
-		row{7, "naming", review.SeverityNit, FindingAddressed},
+		row{8, "nil deref", review.SeverityP2, FindingOpen},
+		row{7, "Nil deref", review.SeverityP1, FindingOpen},
+		row{7, "naming", review.SeverityP2, FindingAddressed},
 	)
 	if next != nil {
 		t.Fatalf("next = %+v, want the end of the list", next)
@@ -137,16 +137,16 @@ func TestListAccountFindings(t *testing.T) {
 	}
 
 	addressed, _ := list(FindingFilter{Status: FindingAddressed}, Page{Limit: 10})
-	check("addressed", addressed, row{7, "naming", review.SeverityNit, FindingAddressed})
-	important, _ := list(FindingFilter{Severity: review.SeverityImportant}, Page{Limit: 10})
-	check("important", important, row{7, "Nil deref", review.SeverityImportant, FindingOpen})
+	check("addressed", addressed, row{7, "naming", review.SeverityP2, FindingAddressed})
+	important, _ := list(FindingFilter{Severity: review.SeverityP1}, Page{Limit: 10})
+	check("p1", important, row{7, "Nil deref", review.SeverityP1, FindingOpen})
 	byPull, _ := list(FindingFilter{Query: "More"}, Page{Limit: 10})
-	check("pull title", byPull, row{8, "nil deref", review.SeverityNit, FindingOpen})
+	check("pull title", byPull, row{8, "nil deref", review.SeverityP2, FindingOpen})
 	byNumber, _ := list(FindingFilter{Query: "#7"}, Page{Limit: 10})
-	check("number", byNumber, row{7, "Nil deref", review.SeverityImportant, FindingOpen}, row{7, "naming", review.SeverityNit, FindingAddressed})
+	check("number", byNumber, row{7, "Nil deref", review.SeverityP1, FindingOpen}, row{7, "naming", review.SeverityP2, FindingAddressed})
 
 	wraps, _ := list(FindingFilter{Rule: "wrap-errors"}, Page{Limit: 10})
-	check("rule", wraps, row{7, "Nil deref", review.SeverityImportant, FindingOpen}, row{7, "naming", review.SeverityNit, FindingAddressed})
+	check("rule", wraps, row{7, "Nil deref", review.SeverityP1, FindingOpen}, row{7, "naming", review.SeverityP2, FindingAddressed})
 	if got := wraps[1].Rules; len(got) != 2 || got[0] != "wrap-errors" || got[1] != "no-tokens" {
 		t.Fatalf("naming's rules = %q", got)
 	}
@@ -204,13 +204,13 @@ func TestDismissedFindings(t *testing.T) {
 			findings := [][2]string{{"nil deref", "fp-a"}, {"naming", "fp-b"}}[:2-i]
 			for _, f := range findings {
 				if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, fingerprint)
-					VALUES ($1, $2, 'a.go', 3, 'nit', $3, 'why', $4)`, account, id, f[0], f[1]); err != nil {
+					VALUES ($1, $2, 'a.go', 3, 'p2', $3, 'why', $4)`, account, id, f[0], f[1]); err != nil {
 					return err
 				}
 			}
 		}
 		finding, found, err := LatestFinding(ctx, tx, pull, "fp-b")
-		if err != nil || !found || finding.Title != "naming" || finding.Severity != review.SeverityNit {
+		if err != nil || !found || finding.Title != "naming" || finding.Severity != review.SeverityP2 {
 			t.Fatalf("LatestFinding = %+v, %v, %v", finding, found, err)
 		}
 		if _, found, err := LatestFinding(ctx, tx, pull, "fp-none"); err != nil || found {

@@ -67,7 +67,7 @@ func (p *publishPhase) approve(ctx context.Context, counts review.Counts, curren
 // approvable reports whether a review's verdict lets kritika approve the
 // pull request, and what the approval rests on or why it is withheld.
 // Where the repository asks for no confidence score that is the findings:
-// nothing blocking and nothing important. Where it asks for one, the score
+// nothing at P0 or P1. Where it asks for one, the score
 // decides instead, with the risk the change was rated: the score must
 // reach the threshold and the risk stay within the ceiling, and a review
 // left unscored approves nothing.
@@ -76,9 +76,9 @@ func approvable(counts review.Counts, want configfile.Confidence, c *review.Conf
 	case unscored:
 		return false, "confidence was not scored"
 	case c == nil && counts.Approvable():
-		return true, "nothing blocking or important found"
+		return true, "nothing at P0 or P1 found"
 	case c == nil:
-		return false, fmt.Sprintf("%d blocking and %d important finding(s)", counts.Blocking, counts.Important)
+		return false, fmt.Sprintf("%d P0 and %d P1 finding(s)", counts.P0, counts.P1)
 	case !c.Passed():
 		return false, fmt.Sprintf("confidence %d/%d is below the threshold of %d", c.Score, review.MaxConfidence, c.Threshold)
 	case !c.Risk.Within(want.Risk):

@@ -7,9 +7,9 @@
     "reviews": 5,
     "failed": 1,
     "findings": {
-      "blocking": 1,
-      "important": 2,
-      "nit": 3
+      "p0": 1,
+      "p1": 2,
+      "p2": 3
     },
     "categories": {
       "correctness": 2,
@@ -31,9 +31,9 @@
     "reviews": 0,
     "failed": 0,
     "findings": {
-      "blocking": 0,
-      "important": 0,
-      "nit": 0
+      "p0": 0,
+      "p1": 0,
+      "p2": 0
     },
     "categories": {
       "correctness": 0,
@@ -55,9 +55,9 @@
       "key": "2026-09-01",
       "reviews": 5,
       "findings": {
-        "blocking": 1,
-        "important": 2,
-        "nit": 3
+        "p0": 1,
+        "p1": 2,
+        "p2": 3
       },
       "costUsd": 1.25
     }
@@ -67,9 +67,9 @@
       "repository": "alpha/one",
       "reviews": 5,
       "findings": {
-        "blocking": 1,
-        "important": 2,
-        "nit": 3
+        "p0": 1,
+        "p1": 2,
+        "p2": 3
       },
       "addressed": 2
     }

@@ -44,12 +44,12 @@ type Severity string
 
 // Severities a finding may carry.
 const (
-	SeverityBlocking  Severity = "blocking"
-	SeverityImportant Severity = "important"
-	SeverityNit       Severity = "nit"
+	SeverityP0 Severity = "p0"
+	SeverityP1 Severity = "p1"
+	SeverityP2 Severity = "p2"
 )
 
-var severities = []Severity{SeverityBlocking, SeverityImportant, SeverityNit}
+var severities = []Severity{SeverityP0, SeverityP1, SeverityP2}
 
 // Valid reports whether s is one of the severities.
 func (s Severity) Valid() bool { return slices.Contains(severities, s) }
@@ -206,7 +206,7 @@ type Result struct {
 
 // Counts is the number of findings at each severity.
 type Counts struct {
-	Blocking, Important, Nit int
+	P0, P1, P2 int
 }
 
 // Counts tallies the findings by severity.
@@ -214,24 +214,24 @@ func (r Result) Counts() Counts {
 	var c Counts
 	for _, f := range r.Findings {
 		switch f.Severity {
-		case SeverityBlocking:
-			c.Blocking++
-		case SeverityImportant:
-			c.Important++
-		case SeverityNit:
-			c.Nit++
+		case SeverityP0:
+			c.P0++
+		case SeverityP1:
+			c.P1++
+		case SeverityP2:
+			c.P2++
 		}
 	}
 	return c
 }
 
 // Total is the number of findings at any severity.
-func (c Counts) Total() int { return c.Blocking + c.Important + c.Nit }
+func (c Counts) Total() int { return c.P0 + c.P1 + c.P2 }
 
 // Approvable reports whether the result lets kritika approve the pull
-// request: nothing blocking and nothing important, so nits alone do not
+// request: nothing at P0 or P1, so P2s alone do not
 // withhold an approval.
-func (c Counts) Approvable() bool { return c.Blocking == 0 && c.Important == 0 }
+func (c Counts) Approvable() bool { return c.P0 == 0 && c.P1 == 0 }
 
 // DropReason says why Parse discarded a finding.
 type DropReason string
@@ -390,7 +390,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 						keyPath: {Type: schemaString, Description: "Path of the changed file, exactly as it appears in the diff header."},
 						keyLine: {Type: "integer", Description: "Line number in the new version of the file (a + or context line inside a hunk)."},
 						keySeverity: {Type: schemaString, Enum: enum,
-							Description: "blocking: must be fixed before merging. important: should be fixed. nit: optional polish."},
+							Description: "p0: must be fixed before merging. p1: should be fixed. p2: optional polish."},
 						keyCategory:     {Type: schemaString, Enum: kinds, Description: describeCategory},
 						keyTitle:        {Type: schemaString, Description: "One line, under 80 characters."},
 						keyExplanation:  {Type: schemaString, Description: "Why it matters. Markdown allowed, no headings."},

@@ -560,7 +560,7 @@ func TestPollerReadsReactions(t *testing.T) {
 				}
 				for _, id := range comments {
 					if _, err := tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation,
-						posted_inline, forge_comment_id) VALUES ($1, $2, 'a.go', 1, 'nit', 'n', '', true, $3)`, account.ID(), review, id); err != nil {
+						posted_inline, forge_comment_id) VALUES ($1, $2, 'a.go', 1, 'p2', 'n', '', true, $3)`, account.ID(), review, id); err != nil {
 						t.Fatal(err)
 					}
 				}

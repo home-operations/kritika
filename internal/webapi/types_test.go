@@ -49,7 +49,7 @@ var goldenSummary = AccountSummary{
 		Tokens: 5000, CostUSD: 1.5, TokensPerMonth: 1000000, ReviewsToday: 2, ReviewsPerDay: 50,
 		Reviews: 12, ReviewCostUSD: 1.2, MedianReviewCostUSD: new(0.08),
 	},
-	Attention: Attention{Failed: 1, Blocking: 2}, LastWebhookAt: &t0, LastPolledAt: &t1,
+	Attention: Attention{Failed: 1, P0: 2}, LastWebhookAt: &t0, LastPolledAt: &t1,
 }
 
 var goldenRepo = Repository{
@@ -95,7 +95,7 @@ var goldenPull = Pull{
 	UpdatedAt: t1, Labels: []Label{{Name: "bug", Color: "ff0000"}},
 	LastReview: &ReviewBrief{
 		ID: "rev-1", Status: store.ReviewCompleted, Scope: review.ScopeFull,
-		Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, CreatedAt: t0,
+		Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, CreatedAt: t0,
 	},
 	ReviewCount: 2, CostUSD: 0.84,
 }
@@ -162,7 +162,7 @@ var goldens = map[string]any{
 		},
 		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}, Diagram: "flowchart TD\n  A --> B"},
 		Findings: []Finding{{
-			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
+			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityP0, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",
 			Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
 			Rules: []string{"wrap-errors"}, Status: store.FindingOpen,
@@ -195,7 +195,7 @@ var goldens = map[string]any{
 	},
 	"account_finding": AccountFinding{
 		Finding: Finding{
-			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityBlocking, Title: "nil deref",
+			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityP0, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "", AgentPrompt: "", Fingerprint: "fp",
 			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
 			Rules: []string{"wrap-errors"}, Status: store.FindingAddressed,
@@ -230,18 +230,18 @@ var goldens = map[string]any{
 		Group: store.UsageByDay, From: t0, To: t1,
 		Rows: []UsagePoint{{Key: "2026-09-01", InputTokens: 100, CacheReadTokens: 50, CacheWriteTokens: 5, OutputTokens: 20, CostUSD: 0.1, Calls: 2}},
 	},
-	"attention": Attention{Failed: 2, Capped: 1, Blocking: 3, Paused: 1},
+	"attention": Attention{Failed: 2, Capped: 1, P0: 3, Paused: 1},
 	"analytics": Analytics{
 		Group: store.AnalyticsByDay, From: t0, To: t1,
 		Current: AnalyticsTotals{
-			PullRequests: 3, Reviews: 5, Failed: 1, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, Addressed: 2,
+			PullRequests: 3, Reviews: 5, Failed: 1, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, Addressed: 2,
 			Categories:  map[review.Category]int{review.CategoryCorrectness: 2, review.CategorySecurity: 1, review.CategoryPerformance: 0, review.CategoryReliability: 1, review.CategoryMaintainability: 2, review.CategoryTests: 0},
 			ReactionsUp: 4, ReactionsDown: 1, CostUSD: 1.25, MedianReviewMs: new(int64(90000)), MedianMergeMs: new(int64(129600000)),
 		},
 		Previous: AnalyticsTotals{Findings: SeverityCounts{}, Categories: categoryCounts(nil)},
-		Series:   []AnalyticsPoint{{Key: "2026-09-01", Reviews: 5, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, CostUSD: 1.25}},
+		Series:   []AnalyticsPoint{{Key: "2026-09-01", Reviews: 5, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, CostUSD: 1.25}},
 		Repositories: []RepoActivity{
-			{Repository: "alpha/one", Reviews: 5, Findings: SeverityCounts{Blocking: 1, Important: 2, Nit: 3}, Addressed: 2},
+			{Repository: "alpha/one", Reviews: 5, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, Addressed: 2},
 		},
 	},
 	"rule": Rule{

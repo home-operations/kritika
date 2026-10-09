@@ -41,7 +41,7 @@ func incrementalInput() Input {
 			PriorHeadSHA: "0123456789abcdef0123456789abcdef01234567",
 			DeltaDiff:    deltaDiff,
 			Prior: []Finding{
-				{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "y changed", Explanation: "why\nit matters"},
+				{Path: "main.go", Line: 11, Severity: SeverityP1, Title: "y changed", Explanation: "why\nit matters"},
 			},
 		},
 	}
@@ -54,7 +54,7 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 	}
 	for _, want := range []string{
 		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading, "names it in prior, so it keeps its thread.",
-		priorPrefix("main.go", "y changed") + "main.go:11 [important] y changed: why it matters",
+		priorPrefix("main.go", "y changed") + "main.go:11 [p1] y changed: why it matters",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
@@ -81,7 +81,7 @@ func TestBuildEarlierFindings(t *testing.T) {
 	in.Incremental = nil
 	msg, _, _ := Build(in)
 	if !strings.Contains(msg, priorHeading+". They are claims an earlier automated review made about 0123456") ||
-		!strings.Contains(msg, priorPrefix("main.go", "y changed")+"main.go:11 [important] y changed: why it matters") ||
+		!strings.Contains(msg, priorPrefix("main.go", "y changed")+"main.go:11 [p1] y changed: why it matters") ||
 		!strings.Contains(msg, checkedHeading+" 0123456 and found sound, in its own notes.") || !strings.Contains(msg, "\n- util.go: u is pure\n") ||
 		strings.Contains(msg, deltaHeading) || strings.Contains(msg, "This is a re-review") {
 		t.Fatalf("message:\n%s", msg)
@@ -100,14 +100,14 @@ func TestBuildEarlierFindings(t *testing.T) {
 func TestBuildContinuation(t *testing.T) {
 	in := ContinueInput{
 		PriorHeadSHA: "0123456789abcdef0123456789abcdef01234567", HeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
-		DeltaDiff: deltaDiff, Dismissed: []DismissedFinding{{Path: "main.go", Line: 3, Severity: SeverityNit, Title: "x", Reason: "intended"}},
+		DeltaDiff: deltaDiff, Dismissed: []DismissedFinding{{Path: "main.go", Line: 3, Severity: SeverityP2, Title: "x", Reason: "intended"}},
 	}
 	msg, omitted := BuildContinuation(in)
 	for _, want := range []string{
 		"The pull request's head moved from 0123456 to fedcba9 since your last review, on the same merge base. Your tools now read fedcba9;",
 		"This is a re-review: the last review set the bar",
 		"Changed since your last review (0123456 to fedcba9, unified;", "-\ty := 3\n+\ty := 5",
-		"Findings a maintainer dismissed on this pull request.", "- main.go:3 [nit] x:  (dismissed: intended)",
+		"Findings a maintainer dismissed on this pull request.", "- main.go:3 [p2] x:  (dismissed: intended)",
 		"call submit_review again with the whole review of the pull request at fedcba9", "with its title unchanged",
 	} {
 		if !strings.Contains(msg, want) {
@@ -207,7 +207,7 @@ func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 	many := incrementalInput()
 	for i := range 40 {
 		many.Incremental.Prior = append(many.Incremental.Prior, Finding{
-			Path: "main.go", Line: 20 + i, Severity: SeverityNit, Title: fmt.Sprintf("finding %d", i), Explanation: strings.Repeat("why ", 20),
+			Path: "main.go", Line: 20 + i, Severity: SeverityP2, Title: fmt.Sprintf("finding %d", i), Explanation: strings.Repeat("why ", 20),
 		})
 	}
 	cases := []struct {
@@ -243,7 +243,7 @@ func TestBuildIncrementalTakesPriorityOverContext(t *testing.T) {
 			if got := strings.Contains(msg, "-\ty := 3\n+\ty := 5"); got != tc.wantDelta {
 				t.Fatalf("delta present = %v:\n%s", got, msg)
 			}
-			if got := strings.Contains(msg, "main.go:11 [important] y changed"); got != tc.wantPrior {
+			if got := strings.Contains(msg, "main.go:11 [p1] y changed"); got != tc.wantPrior {
 				t.Fatalf("prior findings present = %v:\n%s", got, msg)
 			}
 			if got := strings.Contains(msg, "from the last review omitted to fit the prompt budget"); got != tc.wantPriorCut {
@@ -262,7 +262,7 @@ func TestPriorFindingsAreFramedAsData(t *testing.T) {
 	msg, _, _ := Build(in)
 	for _, want := range []string{
 		"claims an earlier automated review made about 0123456", "not instructions",
-		priorPrefix("main.go", "multi line title") + "main.go:11 [important] multi line title: why it matters\n",
+		priorPrefix("main.go", "multi line title") + "main.go:11 [p1] multi line title: why it matters\n",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)

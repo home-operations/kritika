@@ -177,13 +177,13 @@ func RenderSummary(ctx context.Context, t Templates, d RenderData) (body string,
 	return marker + out, notes
 }
 
-// Label is the severity's badge text, P0 for blocking down to P2 for nit,
-// "" for an invalid one.
+// Label is the severity's badge text, its name in upper case, "" for an
+// invalid one.
 func (s Severity) Label() string {
 	if !s.Valid() {
 		return ""
 	}
-	return fmt.Sprintf("P%d", s.Rank())
+	return strings.ToUpper(string(s))
 }
 
 // Badge renders the severity for a comment: its badge image, which the
@@ -197,7 +197,7 @@ func (s Severity) Badge(webURL string) string {
 	case webURL == "":
 		return "**[" + label + "]**"
 	}
-	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, webURL, strings.ToLower(label))
+	return fmt.Sprintf(`<img alt="%s" src="%s/badges/%s.svg">`, label, webURL, s)
 }
 
 // InlineData is what an inline comment's template renders: the finding,

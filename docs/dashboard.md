@@ -82,7 +82,7 @@ as you type:
 
 | List          | Tokens                                                                                                                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Pull requests | `repo:owner/name`, `author:login`, `status:` the last review's status, `is:paused` or `is:blocking`                       |
+| Pull requests | `repo:owner/name`, `author:login`, `status:` the last review's status, `is:paused` or `is:p0`                       |
 | Findings      | `repo:`, `severity:`, `category:`, `status:` open, addressed or dismissed, and `rule:<id>`, the findings that cite a rule |
 
 ### Rules

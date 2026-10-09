@@ -100,7 +100,7 @@ export function defaultApi(): [RegExp, Body][] {
     [new RegExp(`${t}/pulls/alpha/one/7$`), pullDetail],
     [new RegExp(`${t}/findings$`), pageOf([accountFinding])],
     [new RegExp(`${t}/analytics$`), analytics],
-    [new RegExp(`${t}/attention$`), { failed: 0, capped: 0, blocking: 0, paused: 0 } satisfies T.Attention],
+    [new RegExp(`${t}/attention$`), { failed: 0, capped: 0, p0: 0, paused: 0 } satisfies T.Attention],
     [new RegExp(`${t}/rules$`), [rule]],
     [new RegExp(`${t}/followups$`), pageOf([followup])],
     [new RegExp(`${t}/followups/\\d+/transcript$`), transcript],

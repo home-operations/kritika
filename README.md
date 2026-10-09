@@ -56,7 +56,7 @@ its own Kubernetes Job pod that holds no provider key or App key.
   request from 0 to 5; a repository that gates on it has the commit status
   fail under its threshold, so it can be a required check.
 - **Approvals, opt-in.** A repository or the instance can have a review that
-  finds nothing blocking or important approve the pull request, and a later
+  finds nothing at P0 or P1 approve the pull request, and a later
   review that does withdraw it. With a confidence score, a pull request is
   approved when its score and the risk of its change allow it.
 - **Flow diagrams, opt-in.** The summary can draw the flow a change adds or

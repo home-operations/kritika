@@ -16,7 +16,7 @@
   "attention": {
     "failed": 1,
     "capped": 0,
-    "blocking": 2,
+    "p0": 2,
     "paused": 0
   },
   "lastWebhookAt": "2026-09-01T12:00:00Z",

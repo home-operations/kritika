@@ -81,14 +81,14 @@ to 5.
 
 Read the description and the diff yourself before the review's account and findings, then score:
 
-5: no blocking or important finding, and you see no problem of your own. Nits do not lower the score.
-4: no blocking or important finding, but you have a concern of your own that the findings do not cover.
-3: an important finding was reported.
-2: a blocking finding was reported.
-1: several blocking findings, or one that would lose data, break security or take production down.
+5: no P0 or P1 finding, and you see no problem of your own. P2s do not lower the score.
+4: no P0 or P1 finding, but you have a concern of your own that the findings do not cover.
+3: a P1 finding was reported.
+2: a P0 finding was reported.
+1: several P0 findings, or one that would lose data, break security or take production down.
 0: the change should not merge in any form close to this one.
 
-A reported finding sets its ceiling, 3 for an important one and 2 for a blocking one, whether or not you agree
+A reported finding sets its ceiling, 3 for a P1 and 2 for a P0, whether or not you agree
 with it: a maintainer dismisses a wrong finding, you do not. When you think a finding is wrong, say so in the
 reason, so the maintainer knows to look. A finding listed as dismissed is one a maintainer has ruled on: it takes
 nothing off the score, and is no concern of your own.
@@ -258,12 +258,12 @@ func ChangedPaths(diff string) []string {
 }
 
 // ConfidenceCeiling is the highest score a review with these findings can
-// get: 2 with a blocking finding, 3 with an important one.
+// get: 2 with a P0 finding, 3 with a P1.
 func ConfidenceCeiling(c Counts) int {
 	switch {
-	case c.Blocking > 0:
+	case c.P0 > 0:
 		return 2
-	case c.Important > 0:
+	case c.P1 > 0:
 		return 3
 	}
 	return MaxConfidence

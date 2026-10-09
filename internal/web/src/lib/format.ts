@@ -123,7 +123,7 @@ export const followupTone: Record<FollowupStatus, Tone> = {
   failed: 'danger',
 };
 
-export const SEVERITIES: readonly Severity[] = ['blocking', 'important', 'nit'];
+export const SEVERITIES: readonly Severity[] = ['p0', 'p1', 'p2'];
 export const CATEGORIES: readonly Category[] = ['correctness', 'security', 'performance', 'reliability', 'maintainability', 'tests'];
 
 // isActive reports whether a review is still moving, i.e. its page should

@@ -39,8 +39,8 @@ makes it a second opinion.
 How the score is reached and used:
 
 - **Findings cap it:** the findings set the most a pull request can score,
-  however the scorer reads them: 2 with a blocking finding, 3 with an
-  important one; nits take nothing off.
+  however the scorer reads them: 2 with a P0 finding, 3 with a
+  P1; P2s take nothing off.
 - **Dismissals:** a dismissed finding stops counting at the next review,
   which a push or `@<app slug> review` starts.
 - **Unchanged rebases:** a bot's rebase that leaves its patch unchanged is
@@ -145,7 +145,7 @@ a repository can turn it on where the instance leaves it off.
 
 | Setting               | A pull request is approved when                                                                                            |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| no `confidence.model` | its review finds nothing blocking or important; nits alone do not withhold it                                              |
+| no `confidence.model` | its review finds nothing at P0 or P1; P2s alone do not withhold it                                                         |
 | a `confidence.model`  | its score reaches `confidence.threshold` and its risk is within `confidence.risk`; a review left unscored approves nothing |
 
 So one threshold decides the approval and, where gated, the check: a

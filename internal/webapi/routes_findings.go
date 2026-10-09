@@ -22,7 +22,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 		Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Query: q.Get("q"),
 	}
 	if f.Severity != "" && !f.Severity.Valid() {
-		return errBadRequest(CodeBadRequest, "severity must be blocking, important or nit")
+		return errBadRequest(CodeBadRequest, "severity must be p0, p1 or p2")
 	}
 	if f.Category != "" && !f.Category.Valid() {
 		return errBadRequest(CodeBadRequest, "category must be correctness, security, performance, reliability, maintainability or tests")

@@ -3,7 +3,7 @@
   "path": "a.go",
   "line": 3,
   "endLine": 5,
-  "severity": "blocking",
+  "severity": "p0",
   "category": "",
   "title": "nil deref",
   "explanation": "x may be nil",

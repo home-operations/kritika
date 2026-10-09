@@ -59,11 +59,11 @@ func TestReadAnalytics(t *testing.T) {
 		}
 		a, b := pull(1), pull(2)
 		// Before the window: its finding was first reported then, so it counts there.
-		review(a, "h0", "completed", day(-1, 12), time.Minute, [2]string{"blocking", "old"})
-		review(a, "h1", "completed", day(0, 12), 2*time.Minute, [2]string{"blocking", "old"}, [2]string{"nit", "naming"})
-		review(a, "h2", "completed", day(2, 12), 4*time.Minute, [2]string{"important", "race"})
+		review(a, "h0", "completed", day(-1, 12), time.Minute, [2]string{"p0", "old"})
+		review(a, "h1", "completed", day(0, 12), 2*time.Minute, [2]string{"p0", "old"}, [2]string{"p2", "naming"})
+		review(a, "h2", "completed", day(2, 12), 4*time.Minute, [2]string{"p1", "race"})
 		review(b, "h1", "failed", day(1, 12), time.Minute)
-		review(b, "h1", "completed", day(1, 13), 3*time.Minute, [2]string{"nit", "typo"})
+		review(b, "h1", "completed", day(1, 13), 3*time.Minute, [2]string{"p2", "typo"})
 		// After the window.
 		review(b, "h2", "completed", day(3, 1), time.Minute)
 		// a merged a day and a half after it opened; b closed unmerged.
@@ -103,7 +103,7 @@ func TestReadAnalytics(t *testing.T) {
 	median := int64(3 * time.Minute / time.Millisecond)
 	// The seeded findings predate categories, so every category counts zero.
 	want := AnalyticsTotals{
-		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{Important: 1, Nit: 2}, Addressed: 2, ReactionsUp: 3, CostUSD: 2,
+		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{P1: 1, P2: 2}, Addressed: 2, ReactionsUp: 3, CostUSD: 2,
 		MedianReviewMs: &median, Categories: map[review.Category]int{},
 	}
 	for _, c := range review.Categories() {
@@ -114,19 +114,19 @@ func TestReadAnalytics(t *testing.T) {
 			deref(totals.MedianMergeMs), want, median)
 	}
 	merge := int64(36 * time.Hour / time.Millisecond)
-	if before.Reviews != 1 || before.Findings.Blocking != 1 || before.Addressed != 1 || before.MedianMergeMs == nil || *before.MedianMergeMs != merge {
+	if before.Reviews != 1 || before.Findings.P0 != 1 || before.Addressed != 1 || before.MedianMergeMs == nil || *before.MedianMergeMs != merge {
 		t.Errorf("before = %+v (merge %v), want the one review and its blocking finding, addressed, and a merged in 36h",
 			before, deref(before.MedianMergeMs))
 	}
 	wantSeries := []AnalyticsPoint{
-		{Key: "2026-09-01", Reviews: 1, Findings: SeverityCounts{Nit: 1}, CostUSD: 0.5},
-		{Key: "2026-09-02", Reviews: 1, Findings: SeverityCounts{Nit: 1}, CostUSD: 1},
-		{Key: "2026-09-03", Reviews: 1, Findings: SeverityCounts{Important: 1}, CostUSD: 0.5},
+		{Key: "2026-09-01", Reviews: 1, Findings: SeverityCounts{P2: 1}, CostUSD: 0.5},
+		{Key: "2026-09-02", Reviews: 1, Findings: SeverityCounts{P2: 1}, CostUSD: 1},
+		{Key: "2026-09-03", Reviews: 1, Findings: SeverityCounts{P1: 1}, CostUSD: 0.5},
 	}
 	if !reflect.DeepEqual(series, wantSeries) {
 		t.Errorf("series = %+v, want %+v", series, wantSeries)
 	}
-	wantRepos := []RepoActivity{{Repository: "analytics/one", Reviews: 3, Findings: SeverityCounts{Important: 1, Nit: 2}, Addressed: 2}}
+	wantRepos := []RepoActivity{{Repository: "analytics/one", Reviews: 3, Findings: SeverityCounts{P1: 1, P2: 2}, Addressed: 2}}
 	if !reflect.DeepEqual(repos, wantRepos) {
 		t.Errorf("repos = %+v, want %+v", repos, wantRepos)
 	}

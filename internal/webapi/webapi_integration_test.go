@@ -151,7 +151,7 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 		VALUES ($1, $2, 'head7', 'completed', 'push', 'acme/large', now(), '{"take":"ok","praise":["tests"]}')
 		RETURNING id::text`, s.accountID, s.prID)
 	e.exec(`INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation)
-		VALUES ($1, $2, 'a.go', 3, 'blocking', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'nit', 'naming', 'y')`, s.accountID, s.reviewID)
+		VALUES ($1, $2, 'a.go', 3, 'p0', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'p2', 'naming', 'y')`, s.accountID, s.reviewID)
 	s.runID = e.scalar(`INSERT INTO runner_runs (account_id, review_id, kind, phase, log_tail)
 		VALUES ($1, $2, 'review', 'done', $3) RETURNING id::text`, s.accountID, s.reviewID, "tail of "+slug)
 	e.exec(`INSERT INTO poll_state (account_id, last_polled_at) VALUES ($1, '2026-09-01T12:00:00Z')
@@ -306,14 +306,14 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/reviews/" + e.a.reviewID + "/transcript", `"system":"sys of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID + "/raw", `"logTail":"tail of webapi-a"`},
 		{a + "/index-runs?repo=wa/one", `"commitSha":"commit7"`},
-		{a + "/findings?repo=wa/one&severity=blocking&status=open", `"title":"nil deref"`},
+		{a + "/findings?repo=wa/one&severity=p0&status=open", `"title":"nil deref"`},
 		{a + "/rules", `"path":"docs/rules-of-webapi-a.md","description":"","paths":[],"when":[],"source":"repository","repositories":["wa/one"]`},
 		{a + "/followups?repo=wa/one", fmt.Sprintf(`"commentId":%d`, followupComment)},
 		{a + fmt.Sprintf("/followups/%d/transcript", followupComment), `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
 		{a + "/analytics?group=week", `"repository":"wa/one"`},
-		{a + "/attention", `"blocking":1,"paused":0`},
-		{a + "/pulls?is=blocking", `"title":"PR of webapi-a"`},
+		{a + "/attention", `"p0":1,"paused":0`},
+		{a + "/pulls?is=p0", `"title":"PR of webapi-a"`},
 		{a + "/queue", `"repository":"wa/one"`},
 	}
 	for _, ep := range endpoints {
@@ -382,7 +382,7 @@ func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 		{"admin", "/api/v1/me", 200, []string{`"admin":true`, `"accounts":["github/wa","github/wb"]`}, nil},
 		{"member-a", "/api/v1/accounts", 200, []string{`"slug":"github/wa"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
 		{"member-b", "/api/v1/accounts", 200, []string{`"slug":"github/wb"`}, []string{"webapi-a"}},
-		{"member-a", "/api/v1/accounts", 200, []string{`"attention":{"failed":0,"capped":0,"blocking":1,"paused":0}`}, nil},
+		{"member-a", "/api/v1/accounts", 200, []string{`"attention":{"failed":0,"capped":0,"p0":1,"paused":0}`}, nil},
 		{"member-a", "/api/v1/queue", 200, []string{`"account":"github/wa"`, `"repository":"wa/one"`}, []string{"github/wb", "wb/one"}},
 		{"admin", "/api/v1/queue", 200, []string{`"account":"github/wa"`, `"account":"github/wb"`}, nil},
 		{"nobody", "/api/v1/queue", 401, nil, nil},
