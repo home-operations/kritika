@@ -67,7 +67,8 @@ type RenderData struct {
 	// again, each resolved or dismissed, when this review builds on it.
 	Prior []PriorFinding
 	// Unanchored are findings on lines the diff does not show, which
-	// have no inline comment and are listed in the summary only.
+	// this review posts no inline comment for: listed in the summary only,
+	// each linked to the thread an earlier report of it opened, if any.
 	Unanchored []Finding
 	// HeldBack are the findings in the diff an incremental re-review held
 	// back (see HoldBack): listed only, neither posted, counted nor scored.

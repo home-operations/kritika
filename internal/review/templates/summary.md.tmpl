@@ -32,7 +32,7 @@
 **Outside the diff**
 
 {{ range .Unanchored -}}
-- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** `{{ .Path }}:{{ .Line }}` {{ .Title }}
+- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}
 
 {{ .Explanation | indent 2 }}
 {{ end }}

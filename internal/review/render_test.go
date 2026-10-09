@@ -275,11 +275,16 @@ func TestRenderSummaryLinks(t *testing.T) {
 func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings = nil
-	d.Unanchored = []Finding{{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "Never cleared."}}
+	d.Unanchored = []Finding{
+		{Path: "other.go", Line: 7, Severity: SeverityImportant, Title: "stale cache", Explanation: "Never cleared."},
+		// Reported again off the diff, under the thread its first report opened.
+		{Path: "other.go", Line: 9, Severity: SeverityNit, Title: "terse name", Explanation: "Still.", ThreadURL: "https://forge.example/o/r/pull/42#r3"},
+	}
 	d.Counts = Result{Findings: d.Unanchored}.Counts()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
-	if !strings.Contains(body, "**1 finding** · 1 important\n") || strings.Contains(body, "No findings") ||
-		!strings.Contains(body, "**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n") {
+	if !strings.Contains(body, "**2 findings** · 1 important · 1 nit\n") || strings.Contains(body, "No findings") ||
+		!strings.Contains(body, "**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n") ||
+		!strings.Contains(body, "- **[nit]** `other.go:9` [terse name](https://forge.example/o/r/pull/42#r3)\n") {
 		t.Fatalf("body:\n%s", body)
 	}
 }

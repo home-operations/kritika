@@ -391,6 +391,11 @@ func (p *publishPhase) writeBack(
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, onForge[i].ID)
 		}
 	}
+	for i := range unanchored {
+		if id := onForge[len(res.Findings)+i].ID; id != 0 {
+			unanchored[i].ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, id)
+		}
+	}
 	for i := range p.heldBack {
 		f := &p.heldBack[i]
 		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
