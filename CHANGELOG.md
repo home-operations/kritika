@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.50](https://github.com/home-operations/kritika/compare/0.0.49...0.0.50) (2026-10-09)
+
+
+### Features
+
+* **agent:** keep a cut run output whole in a file ([#770](https://github.com/home-operations/kritika/issues/770)) ([2af07c1](https://github.com/home-operations/kritika/commit/2af07c19a413a92a736e5dffa55def8fd4771726))
+* **go:** update anthropic-sdk-go, openai-go and client_golang ([#777](https://github.com/home-operations/kritika/issues/777)) ([a490b36](https://github.com/home-operations/kritika/commit/a490b361cca83ef80a08c346e86fd3a8fbddcacf))
+* **npm:** update dependency simple-icons (16.33.0 → 16.34.0) ([#767](https://github.com/home-operations/kritika/issues/767)) ([0b90e3e](https://github.com/home-operations/kritika/commit/0b90e3e34f6c08257253cdcd0b99cfab03ac2bb2))
+* **review:** tighten the prompt with rules from published review rubrics ([#776](https://github.com/home-operations/kritika/issues/776)) ([224a5fb](https://github.com/home-operations/kritika/commit/224a5fb8038de0a3486af525fe8595f4d37e8a6b))
+* **runner:** keep cut run outputs beside the checkout ([#771](https://github.com/home-operations/kritika/issues/771)) ([78f2337](https://github.com/home-operations/kritika/commit/78f233715f06e2202a11adbd2461dc49de9a1911))
+
+
+### Documentation
+
+* describe the run tool's kept outputs ([#773](https://github.com/home-operations/kritika/issues/773)) ([6e7ffa9](https://github.com/home-operations/kritika/commit/6e7ffa9d64578e9f33a41589e0f5cbf7a567b7a6))
+
 ## [0.0.49](https://github.com/home-operations/kritika/compare/0.0.48...0.0.49) (2026-10-08)
 
 
