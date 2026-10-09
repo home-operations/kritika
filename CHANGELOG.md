@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.53](https://github.com/home-operations/kritika/compare/0.0.52...0.0.53) (2026-10-09)
+
+
+### Bug Fixes
+
+* **agent:** keep a large tool result in the conversation, since dropping it breaks the prompt cache ([#827](https://github.com/home-operations/kritika/issues/827)) ([b2f643d](https://github.com/home-operations/kritika/commit/b2f643d777e0f65c9c2ec7d0e7e8f60d70c95ea4))
+* **worker:** wake a review snoozed for a model slot when one freed while the snooze was saved ([#824](https://github.com/home-operations/kritika/issues/824)) ([c33b31c](https://github.com/home-operations/kritika/commit/c33b31c4e95ba38f1d2762e9222084205a60fbd6))
+
 ## [0.0.52](https://github.com/home-operations/kritika/compare/0.0.51...0.0.52) (2026-10-09)
 
 
