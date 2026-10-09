@@ -363,8 +363,8 @@ that review was made against can still be fetched. A re-run at the head
 the last review saw, a re-run someone asked for with `@<app slug> review`
 or from the dashboard, or a merge or rebase that leaves the change as it
 was, always covers the whole pull request. A re-review that covers the
-whole pull request is still shown
-the last review's findings, to report again those that still hold, except
+whole pull request is still shown the last review's findings, on the diff
+or off it, to report again those that still hold, except
 a re-run at the head the last review saw, or one someone asked for, which
 look afresh. A finding reported again keeps the inline thread its first
 report opened, however it is worded now. Each review
