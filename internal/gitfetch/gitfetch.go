@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -154,7 +155,7 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 	if err != nil {
 		return nil, err
 	}
-	diff, changed, err := renderChanges(ctx, changes)
+	diff, changed, err := renderChanges(ctx, changes, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +185,7 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 	if err != nil {
 		return nil, err
 	}
-	delta = slices.DeleteFunc(delta, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
+	delta = ownChanges(delta, own)
 	var gained map[string]int
 	if f.PriorBase != "" && f.PriorBase != f.Base && len(delta) > 0 {
 		var priorBase *object.Commit
@@ -196,7 +197,7 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 			return nil, fmt.Errorf("gitfetch: prior base: %w", ctx.Err())
 		}
 	}
-	if res.DeltaDiff, res.DeltaChanged, err = renderDelta(ctx, delta, gained); err != nil {
+	if res.DeltaDiff, res.DeltaChanged, err = renderChanges(ctx, delta, gained); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -235,35 +236,17 @@ func baseGained(ctx context.Context, priorBase, base *object.Commit, own map[str
 	if err != nil {
 		return nil, err
 	}
-	changes = slices.DeleteFunc(changes, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
-	diff, _, err := renderChanges(ctx, changes)
+	diff, _, err := renderChanges(ctx, ownChanges(changes, own), nil)
 	if err != nil {
 		return nil, err
 	}
 	return hunkKeys(diff), nil
 }
 
-// renderDelta is renderChanges less the hunks gained counts; a change left
-// with none is not of the delta.
-func renderDelta(ctx context.Context, changes object.Changes, gained map[string]int) (string, []string, error) {
-	if len(gained) == 0 {
-		return renderChanges(ctx, changes)
-	}
-	var b strings.Builder
-	var changed []string
-	for _, c := range changes {
-		patch, err := c.PatchContext(ctx)
-		if err != nil {
-			return "", nil, fmt.Errorf("gitfetch: patch: %w", err)
-		}
-		text := withoutHunks(patch.String(), gained)
-		if text == "" {
-			continue
-		}
-		b.WriteString(text)
-		changed = append(changed, cmp.Or(c.To.Name, c.From.Name))
-	}
-	return b.String(), changed, nil
+// ownChanges keeps the changes on the change's own paths, either name of
+// a rename.
+func ownChanges(changes object.Changes, own map[string]bool) object.Changes {
+	return slices.DeleteFunc(changes, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
 }
 
 // treeChanges lists what changed between two commits, renames detected.
@@ -284,18 +267,28 @@ func treeChanges(ctx context.Context, from, to *object.Commit) (object.Changes, 
 }
 
 // renderChanges is the changes as a unified diff, with the paths it
-// touches by their head-side names.
-func renderChanges(ctx context.Context, changes object.Changes) (string, []string, error) {
-	patch, err := changes.PatchContext(ctx)
-	if err != nil {
-		return "", nil, fmt.Errorf("gitfetch: patch: %w", err)
-	}
+// touches by their head-side names, less the hunks gained counts, taken
+// off a copy of it: a change left with none is not of the diff.
+func renderChanges(ctx context.Context, changes object.Changes, gained map[string]int) (string, []string, error) {
+	gained = maps.Clone(gained)
+	var b strings.Builder
 	var changed []string
 	for _, c := range changes {
-		name := cmp.Or(c.To.Name, c.From.Name)
-		changed = append(changed, name)
+		patch, err := c.PatchContext(ctx)
+		if err != nil {
+			return "", nil, fmt.Errorf("gitfetch: patch: %w", err)
+		}
+		text := patch.String()
+		if len(gained) > 0 {
+			text = withoutHunks(text, gained)
+		}
+		if text == "" {
+			continue
+		}
+		b.WriteString(text)
+		changed = append(changed, cmp.Or(c.To.Name, c.From.Name))
 	}
-	return patch.String(), changed, nil
+	return b.String(), changed, nil
 }
 
 func refSpecs(f Fetch) []config.RefSpec {
