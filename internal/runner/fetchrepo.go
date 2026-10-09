@@ -23,9 +23,10 @@ import (
 )
 
 // What fetch_repo may take: a run makes at most fetchMax fetches and writes
-// at most fetchWriteBytes of their files, beside its checkout; one fetch
-// takes at most fetchWireBytes from the server and fetchTimeout of wall
-// time, and keeps at most fetchDiffBytes of a diff. A run also lists tags
+// at most fetchWriteBytes of their files, beside its checkout, a budget
+// the run tool's kept outputs share; one fetch takes at most
+// fetchWireBytes from the server and fetchTimeout of wall time, and keeps
+// at most fetchDiffBytes of a diff, as a kept output is. A run also lists tags
 // at most listMax times, counting the listing a fetch that names a missing
 // ref makes to name the closest; an answer shows at most tagsShown names,
 // and such an error at most closestMax.
@@ -41,8 +42,8 @@ const (
 )
 
 // upstreamDir is the scratch directory fetch_repo writes to, beside the
-// checkout, and upstreamRel the same directory as the run tool's commands
-// see it from the checkout.
+// checkout, where the run tool keeps a cut output too, and upstreamRel the
+// same directory as the run tool's commands see it from the checkout.
 const (
 	upstreamDir = "upstream"
 	upstreamRel = "../" + upstreamDir
@@ -80,10 +81,11 @@ type fetchRepoTool struct {
 	// transport carries the fetches; nil is upstream's default, through the
 	// pod's proxy.
 	transport http.RoundTripper
+	// budget is what the review may still write beside the checkout.
+	budget *agent.WriteBudget
 
 	fetches  int
 	listings int
-	written  int64
 	sources  []string
 }
 
@@ -130,7 +132,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	if t.fetches >= fetchMax {
 		return "", fmt.Errorf("agent: fetch_repo: this review has made its %d fetches", fetchMax)
 	}
-	left := fetchWriteBytes - t.written
+	left := t.budget.Left()
 	if left <= 0 {
 		return "", fmt.Errorf("agent: fetch_repo: this review has written its %d MiB of fetched files", fetchWriteBytes>>20)
 	}
@@ -162,7 +164,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		}
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
-	t.written += res.Bytes
+	t.budget.Spend(res.Bytes)
 	page := "tree/" + req.Ref
 	if req.From != "" {
 		page = "compare/" + req.From + "..." + req.Ref
@@ -200,7 +202,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		b.WriteString(".")
 		return b.String(), nil
 	}
-	if t.written+int64(len(res.Diff)) > fetchWriteBytes {
+	if int64(len(res.Diff)) > t.budget.Left() {
 		fmt.Fprintf(&b, ". It is not kept in a file, past what this review may write, and follows, cut to fit when long:\n\n%s", res.Diff)
 		return b.String(), nil
 	}
@@ -208,7 +210,7 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	if err := os.WriteFile(filepath.Join(t.dir, diffFile), []byte(res.Diff), 0o644); err != nil {
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
-	t.written += int64(len(res.Diff))
+	t.budget.Spend(int64(len(res.Diff)))
 	fmt.Fprintf(&b, ". It is in %s/%s, and follows, cut to fit when long:\n\n%s", upstreamRel, diffFile, res.Diff)
 	return b.String(), nil
 }
@@ -343,9 +345,10 @@ func dirName(n int, rawURL, ref string) string {
 	return name[:min(len(name), dirNameMax)]
 }
 
-// fetchedReadFile is read_file that also reads the files fetch_repo wrote
-// to dir, at the paths it names under upstreamRel, and hands every other
-// path to the read_file it wraps, over the head commit.
+// fetchedReadFile is read_file that also reads the files fetch_repo and
+// the run tool wrote to dir, at the paths their notes name under
+// upstreamRel, and hands every other path to the read_file it wraps, over
+// the head commit.
 type fetchedReadFile struct {
 	agent.Tool
 	dir      string
@@ -354,7 +357,7 @@ type fetchedReadFile struct {
 
 func (r fetchedReadFile) Def() model.ToolDef {
 	def := r.Tool.Def()
-	def.Description += " It also reads the files fetch_repo wrote, at the paths it names under " + upstreamRel + "/."
+	def.Description += " It also reads the files under " + upstreamRel + "/, at the paths fetch_repo and the run tool's notes name."
 	return def
 }
 
@@ -386,8 +389,8 @@ func (r fetchedReadFile) Run(ctx context.Context, input json.RawMessage) (string
 
 // readFetched reads the file at rel under dir. The read stays inside dir
 // whatever rel or a link in it says. A fetch writes no file over
-// MaxBlobBytes, but keeps a diff of up to fetchDiffBytes, which is read in
-// line ranges.
+// MaxBlobBytes, but keeps a diff of up to fetchDiffBytes, as the run tool
+// keeps an output, which is read in line ranges.
 func readFetched(dir, rel string) (string, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -396,7 +399,7 @@ func readFetched(dir, rel string) (string, error) {
 	defer func() { _ = root.Close() }()
 	f, err := root.Open(rel)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", errors.New("no such file: fetch_repo names the paths it wrote")
+		return "", errors.New("no such file: fetch_repo and the run tool's notes name the paths they wrote")
 	}
 	if err != nil {
 		return "", err

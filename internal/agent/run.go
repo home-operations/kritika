@@ -127,6 +127,9 @@ func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...)
 // nil.
 func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
 
+// Kept is where the tool keeps a cut output whole, nil when it keeps none.
+func (rt *RunTool) Kept() *Kept { return rt.cfg.Keep }
+
 func (rt *RunTool) Def() model.ToolDef {
 	desc := fmt.Sprintf("Run one of these commands in a checkout of the head commit: %s. The command runs directly, "+
 		"without a shell: arguments are passed exactly as given, with no globbing, pipes or redirection. It is stopped "+

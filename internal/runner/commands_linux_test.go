@@ -105,6 +105,10 @@ func TestCommandTool(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(scratch[0], "checkout", "vendor")); !os.IsNotExist(err) {
 			t.Fatalf("ignored path checked out: %v", err)
 		}
+		k := run.Kept()
+		if k == nil || *k != (agent.Kept{Dir: filepath.Join(scratch[0], upstreamDir), Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: k.Budget}) {
+			t.Fatalf("a cut output is kept at %+v, want beside the checkout in %s", k, scratch[0])
+		}
 		repo, err := git.PlainOpen(filepath.Join(scratch[0], "checkout"))
 		if err != nil {
 			t.Fatalf("checkout is not a repository: %v", err)

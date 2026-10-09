@@ -78,15 +78,20 @@ func commandTool(
 	// gh reaches GitHub over HTTPS, which the gateway cannot add a
 	// credential to, so it carries the run's read-only token.
 	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + gitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
+	// A cut output is kept beside the checkout, where fetch_repo writes,
+	// within the budget the two share; one file holds at most what
+	// read_file reads of a diff, in line ranges.
+	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
 		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note,
 		Mask: Secrets{GitToken: gitToken}.Mask,
+		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: budget},
 	})
 	// An operator who allows only rg or fd has not let the agent reach the
 	// network, so fetch_repo comes with a command that does.
 	if found["gh"] != "" || found["curl"] != "" {
-		fetch = &fetchRepoTool{dir: up}
+		fetch = &fetchRepoTool{dir: up, budget: budget}
 	}
 	return run, fetch, cleanup
 }
