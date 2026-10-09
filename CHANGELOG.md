@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.0.51](https://github.com/home-operations/kritika/compare/0.0.50...0.0.51) (2026-10-09)
+
+
+### Bug Fixes
+
+* **model:** wait out a provider's 402 that carries a Retry-After ([#788](https://github.com/home-operations/kritika/issues/788)) ([ec91eaa](https://github.com/home-operations/kritika/commit/ec91eaaffaf895ce7aa49365cd0f8826ed0cd8b8))
+* **npm:** update dependency vite (8.3.2 → 8.3.3) ([#778](https://github.com/home-operations/kritika/issues/778)) ([710a294](https://github.com/home-operations/kritika/commit/710a294b40546b439f86dacf6e35a6178f9c01b6))
+* **poller:** take a listing's time from the database clock, and skip the run tool's check off Linux ([#801](https://github.com/home-operations/kritika/issues/801)) ([bab8edf](https://github.com/home-operations/kritika/commit/bab8edfdde19eace06730c03bc02a4ef6f1afe13))
+* **review:** keep a finding reported again outside the diff from being listed and resolved as gone ([#796](https://github.com/home-operations/kritika/issues/796)) ([6db569d](https://github.com/home-operations/kritika/commit/6db569dab2ca370572e52cddbe271843bd5a0bc7))
+* **review:** leave what the base gained in the change's own files out of an incremental delta ([#793](https://github.com/home-operations/kritika/issues/793)) ([8945f29](https://github.com/home-operations/kritika/commit/8945f299420ad722daad0b787ff2504c0a21c0ba))
+* **review:** let a finding dropped as malformed claim no prior finding's thread ([#806](https://github.com/home-operations/kritika/issues/806)) ([4126d19](https://github.com/home-operations/kritika/commit/4126d19ec0477329d26b620eaa3b7aa8b907fe34))
+* **review:** let a finding reported again in other words keep its thread ([#792](https://github.com/home-operations/kritika/issues/792)) ([7c49892](https://github.com/home-operations/kritika/commit/7c49892c82f37456bf2600802ffad20dda66f33c))
+* **review:** link a finding off the diff to the thread it carries ([#798](https://github.com/home-operations/kritika/issues/798)) ([8770d4e](https://github.com/home-operations/kritika/commit/8770d4e9d09de5fc5ceb7e9f2078a2982fe5384c))
+* **review:** record a review's findings off the diff, with the thread each carries ([#797](https://github.com/home-operations/kritika/issues/797)) ([06e0ad6](https://github.com/home-operations/kritika/commit/06e0ad63a409a225fdbd8bb82fdbcb363e98771c))
+* **review:** refuse unknown keys in a submission, posting it without them if never corrected ([#790](https://github.com/home-operations/kritika/issues/790)) ([74f4e3d](https://github.com/home-operations/kritika/commit/74f4e3dbee50db0bfab770d77f124800edb7e69a))
+* **review:** stop a carried fingerprint from merging findings or reviving a dismissal ([#794](https://github.com/home-operations/kritika/issues/794)) ([e51c0a2](https://github.com/home-operations/kritika/commit/e51c0a2b83017bb1de390527febf6f14650e3613))
+* **runner:** log each command as it starts, so a killed run names it ([#789](https://github.com/home-operations/kritika/issues/789)) ([f430832](https://github.com/home-operations/kritika/commit/f4308323d00a7561c81804fdc6dac4cf1e0dab75))
+* **runner:** write a .curlrc that drops curl's progress meter and follows redirects ([#787](https://github.com/home-operations/kritika/issues/787)) ([62df97e](https://github.com/home-operations/kritika/commit/62df97ea98ad0b2eea48137451771ea8a3d9e25c))
+* **worker:** treat resolving an outdated finding thread as fixed, and give a returning finding a fresh thread ([#791](https://github.com/home-operations/kritika/issues/791)) ([c0b1f44](https://github.com/home-operations/kritika/commit/c0b1f44c155f7214f4856502499f131dfcaf1e19))
+
+
+### Performance Improvements
+
+* **review:** look a prior finding up by its id or title fingerprint ([#805](https://github.com/home-operations/kritika/issues/805)) ([e627cbf](https://github.com/home-operations/kritika/commit/e627cbf5a32a662194f0b15da3ef046378329504))
+
+
+### Code Refactoring
+
+* **agent:** say what the deferred fallback rewrites ([#808](https://github.com/home-operations/kritika/issues/808)) ([24b1ac2](https://github.com/home-operations/kritika/commit/24b1ac2a454d3778810e6357b0228fa6a772f3d5))
+* **gitfetch:** read a file diff's header behind a flag ([#807](https://github.com/home-operations/kritika/issues/807)) ([5df2a75](https://github.com/home-operations/kritika/commit/5df2a7571e7b91bb674842e0341ad503f60ab31b))
+* **gitfetch:** render the delta and the whole diff through one function ([#802](https://github.com/home-operations/kritika/issues/802)) ([02a6122](https://github.com/home-operations/kritika/commit/02a612242ad0652772833c22572909a2157537a3))
+* read unified diffs through one package ([#812](https://github.com/home-operations/kritika/issues/812)) ([29f14cf](https://github.com/home-operations/kritika/commit/29f14cf1baf12ae470b63d9ac4c14f0722962786))
+* **review:** walk a submission's objects once for its unknown and known keys ([#803](https://github.com/home-operations/kritika/issues/803)) ([21245c7](https://github.com/home-operations/kritika/commit/21245c70f8ec47882e987af58ee3db0ae078df7f))
+* **store:** keep Now beside the other Store methods ([#809](https://github.com/home-operations/kritika/issues/809)) ([de7de0f](https://github.com/home-operations/kritika/commit/de7de0f94fc6d6cc73e8453aa8f2c12a810629b9))
+* **webhook:** name the outdated-lines rule once ([#804](https://github.com/home-operations/kritika/issues/804)) ([15fd0ef](https://github.com/home-operations/kritika/commit/15fd0efd24726d874e1e8b0d2bb92060b7ee16b2))
+
+
+### Documentation
+
+* **reviews:** say that findings off the diff are recorded and linked to their thread ([#799](https://github.com/home-operations/kritika/issues/799)) ([3cad5b9](https://github.com/home-operations/kritika/commit/3cad5b91a0ad9bc0429b6c86f5e7e33c31d05391))
+
 ## [0.0.50](https://github.com/home-operations/kritika/compare/0.0.49...0.0.50) (2026-10-09)
 
 
