@@ -836,3 +836,42 @@ func TestParsePrior(t *testing.T) {
 		}
 	}
 }
+
+// TestParsePriorDroppedClaimsNone: a finding dropped as malformed claims
+// no prior finding's fingerprint, so a later finding that names the same
+// one carries it on; one off the diff, reported all the same, does claim
+// it.
+func TestParsePriorDroppedClaimsNone(t *testing.T) {
+	prior := Finding{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "Chart tag is not published", Explanation: "e"}
+	finding := func(severity, title string, line int) string {
+		return `{"path": "main.go", "line": ` + fmt.Sprint(line) + `, "severity": "` + severity + `", "category": "correctness", "title": "` +
+			title + `", "explanation": "e", "prior": "` + PriorID(prior) + `"}`
+	}
+	tests := []struct {
+		name string
+		raw  string
+		// want is the title of the kept finding that carries prior's
+		// fingerprint, and wantDropped the fingerprint of the dropped one.
+		want, wantDropped string
+	}{
+		{name: "a malformed finding claims none", raw: `{"summary": {"take": "t"}, "findings": [` +
+			finding("severe", "Malformed", 12) + `,` + finding("blocking", "Tag is missing", 12) + `]}`, want: "Tag is missing"},
+		{name: "a finding off the diff claims it", raw: `{"summary": {"take": "t"}, "findings": [` +
+			finding("blocking", "Off the diff", 999) + `,` + finding("blocking", "Tag is missing", 12) + `]}`,
+			want: "", wantDropped: Fingerprint(prior)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, dropped, err := Parse(tt.raw, Anchors(sampleDiff), ParseOptions{Prior: []Finding{prior}})
+			if err != nil || len(res.Findings) != 1 || len(dropped) != 1 {
+				t.Fatalf("Parse = %+v, dropped %+v, %v", res.Findings, dropped, err)
+			}
+			if kept := res.Findings[0]; (kept.Fingerprint == Fingerprint(prior)) != (kept.Title == tt.want) || kept.Prior != "" {
+				t.Errorf("kept %q carries %q, prior %q; want prior's carried by %q", kept.Title, kept.Fingerprint, kept.Prior, tt.want)
+			}
+			if d := dropped[0].Finding; d.Fingerprint != tt.wantDropped {
+				t.Errorf("dropped %q carries %q, want %q", d.Title, d.Fingerprint, tt.wantDropped)
+			}
+		})
+	}
+}
