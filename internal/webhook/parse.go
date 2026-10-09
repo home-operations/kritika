@@ -226,6 +226,12 @@ type ghUser struct {
 
 func (u ghUser) isBot() bool { return IsBot(u.Type, u.Login) }
 
+// Outdated reports whether a push has changed the lines an inline comment
+// was made on, from GitHub's line and original_line of it: it nulls the
+// line of such a comment and keeps original_line; a file-level comment has
+// neither.
+func Outdated(line, originalLine *int) bool { return line == nil && originalLine != nil }
+
 // IsBot reports whether a GitHub user of userType and login is an App or
 // bot account, as the type says or the "[bot]" suffix of its login does.
 func IsBot(userType, login string) bool {
@@ -426,10 +432,8 @@ func parseReviewThread(delivery string, body []byte) (Event, error) {
 		if c.InReplyTo == 0 {
 			// The payload carries the comment as it is at the state change, so
 			// a push landing before the job runs cannot change the outcome.
-			// GitHub nulls the line of a comment whose lines changed and keeps
-			// original_line; a file-level comment has neither.
 			thread.CommentID = c.ID
-			thread.Outdated = c.Line == nil && c.OriginalLine != nil
+			thread.Outdated = Outdated(c.Line, c.OriginalLine)
 			break
 		}
 	}
