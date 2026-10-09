@@ -492,23 +492,73 @@ func unknownKeys(raw json.RawMessage) []string {
 	_ = json.Unmarshal(raw, &body)
 	var out []string
 	for _, k := range slices.Sorted(maps.Keys(top)) {
-		if !slices.Contains(topKeys, k) {
+		if !defines(topKeys, k) {
 			out = append(out, fmt.Sprintf("%q", k))
 		}
 	}
 	for _, k := range slices.Sorted(maps.Keys(body.Summary)) {
-		if !slices.Contains(summaryKeys, k) {
+		if !defines(summaryKeys, k) {
 			out = append(out, fmt.Sprintf("%s.%q", keySummary, k))
 		}
 	}
 	for i, f := range body.Findings {
 		for _, k := range slices.Sorted(maps.Keys(f)) {
-			if !slices.Contains(findingKeys, k) {
+			if !defines(findingKeys, k) {
 				out = append(out, fmt.Sprintf("%s[%d].%q", keyFindings, i, k))
 			}
 		}
 	}
 	return out
+}
+
+// defines says whether keys holds k, compared regardless of case as
+// decoding compares a key with a field's name: a key that differs only in
+// case still fills its field.
+func defines(keys []string, k string) bool {
+	return slices.ContainsFunc(keys, func(d string) bool { return strings.EqualFold(d, k) })
+}
+
+// Lenient says whether check accepts raw once the keys the contract does
+// not define are dropped, as Parse drops them on decoding: a submission
+// refused for those keys alone is still a review, which the agent loop
+// falls back on rather than end with none.
+func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
+	return func(raw json.RawMessage) bool { return check(knownKeys(raw)) == nil }
+}
+
+// knownKeys is raw without the keys unknownKeys lists, or raw itself when
+// it is not an object.
+func knownKeys(raw json.RawMessage) json.RawMessage {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
+		return raw
+	}
+	keep(top, topKeys)
+	for k, v := range top {
+		switch {
+		case strings.EqualFold(k, keySummary):
+			var summary map[string]json.RawMessage
+			if json.Unmarshal(v, &summary) == nil && summary != nil {
+				keep(summary, summaryKeys)
+				top[k], _ = json.Marshal(summary)
+			}
+		case strings.EqualFold(k, keyFindings):
+			var findings []map[string]json.RawMessage
+			if json.Unmarshal(v, &findings) == nil {
+				for _, f := range findings {
+					keep(f, findingKeys)
+				}
+				top[k], _ = json.Marshal(findings)
+			}
+		}
+	}
+	out, _ := json.Marshal(top)
+	return out
+}
+
+// keep drops from m the keys keys does not define.
+func keep(m map[string]json.RawMessage, keys []string) {
+	maps.DeleteFunc(m, func(k string, _ json.RawMessage) bool { return !defines(keys, k) })
 }
 
 // Parse decodes the model's JSON and drops findings kritika cannot post: an

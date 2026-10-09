@@ -145,6 +145,16 @@ func TestCheckPart(t *testing.T) {
 	if err := check(json.RawMessage(`{"summary":{"take":""},"findings":[]}`)); err == nil {
 		t.Fatal("a submission Check refuses passed")
 	}
+	lenient := Lenient(check)
+	misspelled := func(path string) json.RawMessage {
+		return json.RawMessage(strings.Replace(string(submit(path)), `"title"`, `"title_"`, 1))
+	}
+	if !lenient(misspelled("a/x.go")) {
+		t.Fatal("a misspelled key on the part's own file is not taken as a fallback")
+	}
+	if lenient(misspelled("b/y.go")) {
+		t.Fatal("a misspelled key on another part's file is taken as a fallback")
+	}
 }
 
 func TestMergeParts(t *testing.T) {

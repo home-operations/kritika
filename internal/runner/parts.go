@@ -106,6 +106,7 @@ func partPrompts(
 		}
 		prompt := newAgentPrompt(partSpec(p, checks), ins[i], pack, tools.commands(), tools.fetch != nil, tools.search != nil)
 		prompt.validate = review.CheckPart(paths, slices.Concat(slices.Concat(split[:i]...), slices.Concat(split[i+1:]...)))
+		prompt.fallback = review.Lenient(prompt.validate)
 		parts[i] = reviewPart{paths: paths, prompt: prompt}
 	}
 	return parts, all, rules, nil

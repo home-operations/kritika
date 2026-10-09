@@ -93,6 +93,7 @@ type runCase struct {
 	tools     []Tool
 	limits    Limits
 	validate  func(json.RawMessage) error
+	fallback  func(json.RawMessage) bool
 	setup     func(t *testing.T) (stepper model.Stepper, ctx context.Context, scripted *scriptedStepper)
 	wantStop  StopReason
 	wantSteps int
@@ -212,6 +213,98 @@ func checkForcedRejectedSubmitRetried(t *testing.T, result Result, _ []StepEvent
 	if len(results) != 1 || !results[0].IsError || !strings.Contains(results[0].Content, "verdict is required") || !toldToSubmit(last) {
 		t.Fatalf("retry request = %+v, want the rejection and the submit instruction", last.Messages)
 	}
+}
+
+// holdFallback is a Fallback that holds a refused input with a "fallback"
+// key to be an answer.
+func holdFallback(input json.RawMessage) bool { return strings.Contains(string(input), "fallback") }
+
+const fallbackSubmitInput = `{"fallback":"x"}`
+
+// setupForcedFallbackTaken submits an input rejectVerdict refuses and
+// holdFallback holds, then one it does not hold, then prose, so the forced
+// retries run out.
+func setupForcedFallbackTaken(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", fallbackSubmitInput)}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", `{"wrong":"shape"}`)}},
+		{Text: "done"},
+	}}
+	return st, nil, st
+}
+
+func checkForcedFallbackTaken(t *testing.T, result Result, _ []StepEvent, _ *scriptedStepper) {
+	if string(result.Submitted) != fallbackSubmitInput {
+		t.Fatalf("Submitted = %s, want the held input %s", result.Submitted, fallbackSubmitInput)
+	}
+	if !strings.Contains(result.Refused, "verdict is required") || result.Err != "" {
+		t.Fatalf("Refused = %q, Err = %q; want the held input's refusal and no error", result.Refused, result.Err)
+	}
+	// The conversation ends with the answer that carried the held input,
+	// as a carried conversation expects.
+	c := result.Conversation
+	if c == nil {
+		t.Fatal("Conversation = nil")
+	}
+	last := c.Messages[len(c.Messages)-1]
+	if last.Role != model.RoleAssistant || len(last.ToolCalls) != 1 || last.ToolCalls[0].ID != "1" {
+		t.Fatalf("last message = %+v, want the answer that carried the held input", last)
+	}
+}
+
+// setupForcedNothingHeld submits only inputs holdFallback does not hold.
+func setupForcedNothingHeld(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", `{"wrong":"shape"}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", `{"wrong":"shape"}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("3", "submit_review", `{"wrong":"shape"}`)}},
+	}}
+	return st, nil, st
+}
+
+func checkNothingSubmitted(t *testing.T, result Result, _ []StepEvent, _ *scriptedStepper) {
+	if result.Submitted != nil || result.Refused != "" {
+		t.Fatalf("Submitted = %s, Refused = %q; want neither", result.Submitted, result.Refused)
+	}
+}
+
+// setupStepperErrorAfterHeldInput submits a held input, then the script
+// runs out and the stepper errors.
+func setupStepperErrorAfterHeldInput(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", fallbackSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkFallbackSubmitted(t *testing.T, result Result, _ []StepEvent, _ *scriptedStepper) {
+	if string(result.Submitted) != fallbackSubmitInput || result.Refused == "" {
+		t.Fatalf("Submitted = %s, Refused = %q; want the held input and its refusal", result.Submitted, result.Refused)
+	}
+}
+
+// cancelAfterScriptStepper answers from its script, then cancels the Run's
+// ctx and reports it.
+type cancelAfterScriptStepper struct {
+	scriptedStepper
+	cancel context.CancelFunc
+}
+
+func (s *cancelAfterScriptStepper) Step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+	if len(s.calls) == len(s.steps) {
+		s.cancel()
+		return model.StepResponse{}, ctx.Err()
+	}
+	return s.scriptedStepper.Step(ctx, req)
+}
+
+func setupCanceledAfterHeldInput(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	st := &cancelAfterScriptStepper{cancel: cancel, steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", fallbackSubmitInput)}},
+	}}
+	return st, ctx, &st.scriptedStepper
 }
 
 // setupForcedNeverSubmits answers every forced step with an invalid
@@ -780,6 +873,47 @@ func TestRun(t *testing.T) {
 			check:     checkForcedRejectedSubmitRetried,
 		},
 		{
+			// The forced retries run out, and the Run ends with the last
+			// refused input Fallback held rather than with none.
+			name:      "forced_retries_spent_takes_fallback",
+			limits:    Limits{MaxSteps: 1},
+			validate:  rejectVerdict,
+			fallback:  holdFallback,
+			setup:     setupForcedFallbackTaken,
+			wantStop:  StopSubmitted,
+			wantSteps: 1 + forcedRetries,
+			check:     checkForcedFallbackTaken,
+		},
+		{
+			name:      "forced_retries_spent_nothing_held",
+			limits:    Limits{MaxSteps: 1},
+			validate:  rejectVerdict,
+			fallback:  holdFallback,
+			setup:     setupForcedNothingHeld,
+			wantStop:  StopMaxSteps,
+			wantSteps: 1 + forcedRetries,
+			check:     checkNothingSubmitted,
+		},
+		{
+			name:      "stepper_error_takes_fallback",
+			validate:  rejectVerdict,
+			fallback:  holdFallback,
+			setup:     setupStepperErrorAfterHeldInput,
+			wantStop:  StopSubmitted,
+			wantSteps: 1,
+			check:     checkFallbackSubmitted,
+		},
+		{
+			// A canceled Run posts nothing, whatever it held.
+			name:      "canceled_does_not_take_fallback",
+			validate:  rejectVerdict,
+			fallback:  holdFallback,
+			setup:     setupCanceledAfterHeldInput,
+			wantStop:  StopCanceled,
+			wantSteps: 1,
+			check:     checkNothingSubmitted,
+		},
+		{
 			name:      "text_only_twice_stops_no_submit",
 			setup:     setupTextOnlyTwiceStopsNoSubmit,
 			wantStop:  StopNoSubmit,
@@ -984,6 +1118,7 @@ func TestRun(t *testing.T) {
 				Tools:    tt.tools,
 				Submit:   testSubmitDef,
 				Validate: tt.validate,
+				Fallback: tt.fallback,
 				Limits:   tt.limits,
 				OnStep:   func(e StepEvent) { events = append(events, e) },
 			}

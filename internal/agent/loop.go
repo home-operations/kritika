@@ -86,6 +86,9 @@ type Result struct {
 	// sets it to the Stepper's error for StopError, and a caller that
 	// bounds ctx may set it to explain a StopCanceled.
 	Err string
+	// Refused is Validate's refusal of Submitted when the Run took it as
+	// its Fallback, empty when Submitted was accepted.
+	Refused string
 }
 
 // Run is a bounded, read-only tool loop over a git commit's tree: on each
@@ -105,6 +108,11 @@ type Run struct {
 	// its being JSON. A rejected input goes back to the model as the
 	// tool's error, so it can correct it, like invalid JSON.
 	Validate func(input json.RawMessage) error
+	// Fallback, if set, says whether an input Validate refused is still an
+	// answer. A Run that would end without a valid submission, other than
+	// by cancellation, ends with the last such input instead, so a slip the
+	// model never corrects does not cost the whole answer.
+	Fallback func(input json.RawMessage) bool
 	Limits   Limits
 	// OnStep, if set, is called after each step completes.
 	OnStep func(StepEvent)
@@ -233,8 +241,39 @@ func (r Run) checkSubmit(input json.RawMessage) error {
 	return nil
 }
 
+// holds says whether Fallback holds input, which Validate refused, to be
+// an answer.
+func (r Run) holds(input json.RawMessage) bool { return r.Fallback != nil && r.Fallback(input) }
+
+// fallback is the last input Validate refused and Fallback held to be an
+// answer, with the conversation its answer ends and its refusal.
+type fallback struct {
+	input   json.RawMessage
+	conv    *Conversation
+	refused string
+}
+
+// end ends result with fb when the Run is ending without a valid
+// submission, other than by cancellation, and fb holds an input.
+func (fb *fallback) end(result *Result) {
+	if fb.input == nil || result.Stop == StopSubmitted || result.Stop == StopCanceled {
+		return
+	}
+	result.Stop, result.Err = StopSubmitted, ""
+	result.Submitted, result.Conversation, result.Refused = fb.input, fb.conv, fb.refused
+}
+
+// endedWith is the conversation of messages ended by resp, the answer that
+// carries the submission.
+func (r Run) endedWith(toolDefs []model.ToolDef, messages []model.Message, resp model.StepResponse) *Conversation {
+	return &Conversation{
+		System: r.System, Tools: toolDefs, Tokens: resp.Usage.Prompt() + resp.Usage.Output,
+		Messages: append(slices.Clone(messages), model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls}),
+	}
+}
+
 // Do runs the loop to completion.
-func (r Run) Do(ctx context.Context) Result {
+func (r Run) Do(ctx context.Context) (result Result) {
 	limits := r.Limits.WithDefaults()
 
 	toolDefs := r.ToolDefs()
@@ -248,7 +287,9 @@ func (r Run) Do(ctx context.Context) Result {
 		messages = append(slices.Clone(c.Messages), carriedTurn(c, r.Submit.Name, r.User))
 	}
 
-	result := Result{ToolCalls: map[string]int{}}
+	result = Result{ToolCalls: map[string]int{}}
+	var fb fallback
+	defer fb.end(&result)
 	nudged := false
 	// cutOffs counts the steps in a row, up to the last, that the output
 	// cap cut off before any tool call.
@@ -367,6 +408,9 @@ func (r Run) Do(ctx context.Context) Result {
 						truncated = true
 						break
 					}
+					if r.holds(call.Input) {
+						fb = fallback{input: call.Input, conv: r.endedWith(toolDefs, messages, resp), refused: err.Error()}
+					}
 					toolResults = append(toolResults, model.ToolResult{
 						CallID: call.ID, IsError: true,
 						Content: textcut.Truncate(fmt.Sprintf("agent: %s: %s", r.Submit.Name, err), limits.MaxToolOutputBytes),
@@ -394,10 +438,7 @@ func (r Run) Do(ctx context.Context) Result {
 		if submitted != nil {
 			result.Stop = StopSubmitted
 			result.Submitted = submitted
-			result.Conversation = &Conversation{
-				System: r.System, Tools: toolDefs, Tokens: resp.Usage.Prompt() + resp.Usage.Output,
-				Messages: append(slices.Clone(messages), model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls}),
-			}
+			result.Conversation = r.endedWith(toolDefs, messages, resp)
 			return result
 		}
 		if truncated {

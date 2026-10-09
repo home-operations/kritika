@@ -90,6 +90,8 @@ func TestCheck(t *testing.T) {
 			"findings":[{"path":"a","line":1,"severity":"blocking","severity_":"important","title":"t","explanation":"e","suggested_fix` + "`" + `: ":"f"},
 			{": ":", ","path":"a","line":1,"severity":"important","title":"t","explanation":"e"}]}`,
 			wantErr: "unknown keys findings[0].\"severity_\", findings[0].\"suggested_fix`: \", findings[1].\": \";"},
+		{name: "keys that differ only in case, which still decode", raw: `{"Summary":{"Take":"Fine.","praise":[]},
+			"findings":[{"PATH":"a","line":1,"Suggested_Fix":"f"}]}`},
 		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
 		{name: "a flowchart", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B"},"findings":[]}`},
@@ -110,6 +112,32 @@ func TestCheck(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Check() = %v, want an error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLenient(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "the contract's shape", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[]}`, want: true},
+		{name: "unknown keys at every level", raw: `{"verdict":"ok","summary":{"take":"Fine.","praise":[],"checked>":["x"]},
+			"findings":[{"path":"a","line":1,"suggested_fix.":"f"},null]}`, want: true},
+		{name: "unknown keys in a summary that differs in case", raw: `{"Summary":{"Take":"Fine.","praise":[],"mood":"ok"}}`, want: true},
+		{name: "unknown keys and a blank take", raw: `{"summary":{"take":" ","praise":[],"mood":"ok"},"findings":[]}`},
+		{name: "unknown keys and a field of the wrong type", raw: `{"summary":{"take":"Fine.","praise":"clear","mood":"ok"}}`},
+		{name: "the summary's keys flattened to the top", raw: `{"take":"Fine.","praise":[],"findings":[]}`},
+		{name: "not JSON", raw: `{"summary":`},
+		{name: "an array", raw: `[]`},
+	}
+	lenient := Lenient(Check)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lenient(json.RawMessage(tt.raw)); got != tt.want {
+				t.Fatalf("Lenient(Check)(%s) = %v, want %v", tt.raw, got, tt.want)
 			}
 		})
 	}
