@@ -87,8 +87,9 @@ variables of their own
 
 `retries` is how many more times a review's model step, the scorer's call
 or a split review's summary call is tried when the provider fails it in a
-way another attempt may get past: a 5xx, a 429, a timeout or a cut
-connection.
+way another attempt may get past: a 5xx, a 429, a 402 that carries a
+`Retry-After` (OpenRouter's answer while the account's in-flight requests
+would exceed its balance), a timeout or a cut connection.
 
 - kritika waits up to a second, then up to twice as long each time, to at
   most 30 seconds, and waits out a longer `Retry-After` the provider
