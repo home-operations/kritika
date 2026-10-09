@@ -58,25 +58,27 @@ func splitFileDiffs(diff string) []string {
 // first hunk, and its hunks, each from its "@@" line, and names the file by
 // its new path, or its old one for a deletion.
 func parseFileDiff(fileDiff string) (path, header string, hunks []string) {
-	var h strings.Builder
-	var cur strings.Builder
+	var h, cur strings.Builder
+	inHeader := true
 	for _, line := range strings.SplitAfter(fileDiff, "\n") {
 		if strings.HasPrefix(line, "@@") {
+			inHeader = false
 			if cur.Len() > 0 {
 				hunks = append(hunks, cur.String())
 				cur.Reset()
 			}
 		}
-		if len(hunks) == 0 && cur.Len() == 0 && !strings.HasPrefix(line, "@@") {
-			h.WriteString(line)
-			if name, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "+++ "); ok && name != "/dev/null" {
-				path = strings.TrimPrefix(name, "b/")
-			} else if name, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "--- "); ok && path == "" && name != "/dev/null" {
-				path = strings.TrimPrefix(name, "a/")
-			}
+		if !inHeader {
+			cur.WriteString(line)
 			continue
 		}
-		cur.WriteString(line)
+		h.WriteString(line)
+		name := strings.TrimRight(line, "\n")
+		if n, ok := strings.CutPrefix(name, "+++ "); ok && n != "/dev/null" {
+			path = strings.TrimPrefix(n, "b/")
+		} else if n, ok := strings.CutPrefix(name, "--- "); ok && path == "" && n != "/dev/null" {
+			path = strings.TrimPrefix(n, "a/")
+		}
 	}
 	if cur.Len() > 0 {
 		hunks = append(hunks, cur.String())
