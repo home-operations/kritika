@@ -123,12 +123,18 @@ func TestLenient(t *testing.T) {
 		raw  string
 		want bool
 	}{
-		{name: "the contract's shape", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[]}`, want: true},
+		{name: "the contract's shape, which check does not refuse", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[]}`},
 		{name: "unknown keys at every level", raw: `{"verdict":"ok","summary":{"take":"Fine.","praise":[],"checked>":["x"]},
 			"findings":[{"path":"a","line":1,"suggested_fix.":"f"},null]}`, want: true},
 		{name: "unknown keys in a summary that differs in case", raw: `{"Summary":{"Take":"Fine.","praise":[],"mood":"ok"}}`, want: true},
 		{name: "unknown keys and a blank take", raw: `{"summary":{"take":" ","praise":[],"mood":"ok"},"findings":[]}`},
 		{name: "unknown keys and a field of the wrong type", raw: `{"summary":{"take":"Fine.","praise":"clear","mood":"ok"}}`},
+		// Decoding into a map keeps only the last of a repeated key, so
+		// dropping the unknown keys would hide the type error.
+		{name: "a repeated key whose first value is of the wrong type", raw: `{"summary":{"take":"Fine.","praise":[]},
+			"findings":[{"path":"a","line":"bad","line":3,"mood":"ok"}]}`},
+		{name: "a repeated key of the wrong type and no unknown key", raw: `{"summary":{"take":"Fine.","praise":[]},
+			"findings":[{"path":"a","line":"bad","line":3}]}`},
 		{name: "the summary's keys flattened to the top", raw: `{"take":"Fine.","praise":[],"findings":[]}`},
 		{name: "not JSON", raw: `{"summary":`},
 		{name: "an array", raw: `[]`},

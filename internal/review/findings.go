@@ -463,7 +463,7 @@ func Check(raw json.RawMessage) error {
 		return fmt.Errorf("review: %w; the input is an object with a summary object {headline, take, praise} and a findings array", err)
 	}
 	if unknown := unknownKeys(raw); len(unknown) > 0 {
-		return fmt.Errorf("review: unknown keys %s; the input takes %s, the summary takes %s and a finding takes %s",
+		return fmt.Errorf("review: %w %s; the input takes %s, the summary takes %s and a finding takes %s", errUnknownKeys,
 			strings.Join(unknown, ", "), strings.Join(topKeys, ", "), strings.Join(summaryKeys, ", "), strings.Join(findingKeys, ", "))
 	}
 	if strings.TrimSpace(res.Summary.Take) == "" {
@@ -518,12 +518,21 @@ func defines(keys []string, k string) bool {
 	return slices.ContainsFunc(keys, func(d string) bool { return strings.EqualFold(d, k) })
 }
 
-// Lenient says whether check accepts raw once the keys the contract does
-// not define are dropped, as Parse drops them on decoding: a submission
-// refused for those keys alone is still a review, which the agent loop
-// falls back on rather than end with none.
+// errUnknownKeys is what Check's refusal of keys the contract does not
+// define wraps.
+var errUnknownKeys = errors.New("unknown keys")
+
+// Lenient says whether check refused raw for keys the contract does not
+// define and accepts it once they are dropped, as Parse drops them on
+// decoding: a submission refused for those keys alone is still a review,
+// which the agent loop falls back on rather than end with none. The
+// refusal must be for those keys because knownKeys keeps only the last
+// of a repeated key, which can hide a type error Check found in an
+// earlier one, and Check reports a type error before any unknown key.
 func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
-	return func(raw json.RawMessage) bool { return check(knownKeys(raw)) == nil }
+	return func(raw json.RawMessage) bool {
+		return errors.Is(check(raw), errUnknownKeys) && check(knownKeys(raw)) == nil
+	}
 }
 
 // knownKeys is raw without the keys unknownKeys lists, or raw itself when
