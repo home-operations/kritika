@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -165,8 +166,8 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	ruleIDs := in.ruleIDs()
 	if skip == "" {
 		tools.diff = newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)
-		if len(in.skills) > 0 {
-			tools.skills = &skillTool{base: baseTree, skills: in.skills, maxBytes: p.Agent.limits().MaxToolOutputBytes}
+		if skills := slices.Concat(in.skills, in.loaded); len(skills) > 0 {
+			tools.skills = &skillTool{base: baseTree, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: skillNames(in.loaded)}
 		}
 		var cleanup func()
 		tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken,

@@ -47,7 +47,10 @@
   // Conditions are parted by a semicolon: a condition's globs are already parted by commas.
   const conditions = (cs: Condition[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
   const narrows = (sc: SkillScope) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
-  const scopes = (scope: Record<string, SkillScope>) => Object.entries(scope).map(([name, sc]) => `${name}: ${narrows(sc)}`).join('; ') || '—';
+  const scopes = (scope: Record<string, SkillScope>) =>
+    Object.entries(scope)
+      .map(([name, sc]) => `${name}${sc.load ? ' (loaded)' : ''}: ${narrows(sc)}`)
+      .join('; ') || '—';
   const yes = (b: boolean) => (b ? 'yes' : 'no');
   const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 

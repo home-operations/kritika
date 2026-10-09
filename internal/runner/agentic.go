@@ -66,18 +66,20 @@ const (
 	noteContextOmitted        = "%d context chunk(s) left out of the prompt to fit its budget"
 	noteDiffNotKept           = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
 	noteSplit                 = "Reviewed in %d parts, each by an agent of its own"
+	noteSkillsUnloaded        = "%d skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"
 )
 
 // promptInputs is what the repository's files and the settings give the
 // review prompt for this change: the rules and reference files that apply
-// to its paths, and the instructions of its agent files. notes say what
-// was left out.
+// to its paths, the skills it is offered by name and the ones it is given
+// whole, and the instructions of its agent files. notes say what was left
+// out.
 type promptInputs struct {
-	rules        []review.Rule
-	skills       []repoconfig.Skill
-	instructions []string
-	references   []review.Reference
-	notes        []string
+	rules          []review.Rule
+	skills, loaded []repoconfig.Skill
+	instructions   []string
+	references     []review.Reference
+	notes          []string
 }
 
 // ruleIDs is the ids of the rules the prompt was given.
@@ -95,9 +97,13 @@ func (in promptInputs) ruleIDs() []string {
 func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, changed []string) promptInputs {
 	var in promptInputs
 	if sk := p.Prompt.Skills; sk != nil {
-		var left int
-		if in.skills, left = repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed); left > 0 {
-			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, left))
+		offered := repoconfig.OfferedSkills(found, sk.Scope, sk.Off, changed)
+		in.skills, in.loaded = offered.Listed, offered.Loaded
+		if offered.Left > 0 {
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsLeft, offered.Left))
+		}
+		if offered.Unloaded > 0 {
+			in.notes = append(in.notes, fmt.Sprintf(noteSkillsUnloaded, offered.Unloaded))
 		}
 	}
 	var truncated bool
@@ -158,7 +164,9 @@ func (a agentPrompt) notes() []string {
 // the run tool offers, fetch says fetch_repo is offered, and search
 // search_code.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
-	system := review.SystemPrompt(in.rules, repoconfig.PromptSkills(in.skills), in.instructions, commands, fetch, search, p.Prompt.Diagram)
+	system := review.SystemPrompt(
+		in.rules, repoconfig.PromptSkills(in.skills, in.loaded), in.instructions, commands, fetch, search, p.Prompt.Diagram,
+	)
 	var incremental *review.IncrementalInput
 	var earlier *review.EarlierInput
 	switch {

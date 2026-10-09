@@ -23,32 +23,34 @@ const SkillFile = "SKILL.md"
 
 // Bounds on a repository's skills: how many are read, how long a
 // description may be, and how much of the system prompt their names and
-// descriptions may take together.
+// descriptions may take together, and the instructions of the loaded ones.
 const (
 	MaxSkills            = 50
 	MaxSkillDescription  = 1024
 	MaxSkillListingBytes = 4 << 10
+	MaxSkillLoadedBytes  = 32 << 10
 )
 
 // skillNameRe is what a skill's name may be, as the format has it.
 var skillNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)
 
-// Skill is a skill a repository keeps: the folder it lives in, and the
-// name and description its SkillFile gives.
+// Skill is a skill a repository keeps: the folder it lives in, the name
+// and description its SkillFile gives, and Text, the instructions after
+// the frontmatter.
 type Skill struct {
-	Name, Description, Dir string
+	Name, Description, Dir, Text string
 }
 
-// ParseSkill reads the frontmatter of the SkillFile in dir. The name
-// defaults to the folder's; a file with no frontmatter, no description or a
-// name that is not one is an error. Every other key, allowed-tools among
-// them, is left unread: a skill guides a review and grants it nothing.
+// ParseSkill reads the SkillFile in dir. The name defaults to the folder's;
+// a file with no frontmatter, no description or a name that is not one is
+// an error. Every other frontmatter key, allowed-tools among them, is left
+// unread: a skill guides a review and grants it nothing.
 func ParseSkill(dir string, data []byte) (Skill, error) {
 	rest, ok := bytes.CutPrefix(bytes.TrimLeft(data, "\ufeff \t\r\n"), []byte("---"))
 	if !ok {
 		return Skill{}, errors.New("no frontmatter")
 	}
-	front, _, ok := bytes.Cut(rest, []byte("\n---"))
+	front, text, ok := bytes.Cut(rest, []byte("\n---"))
 	if !ok {
 		return Skill{}, errors.New("frontmatter is not closed")
 	}
@@ -59,7 +61,10 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 	if err := yaml.Unmarshal(front, &meta); err != nil {
 		return Skill{}, fmt.Errorf("frontmatter: %w", err)
 	}
-	s := Skill{Name: strings.TrimSpace(meta.Name), Description: strings.Join(strings.Fields(meta.Description), " "), Dir: dir}
+	s := Skill{
+		Name: strings.TrimSpace(meta.Name), Description: strings.Join(strings.Fields(meta.Description), " "), Dir: dir,
+		Text: strings.TrimSpace(string(text)),
+	}
 	if s.Name == "" {
 		s.Name = path.Base(dir)
 	}
@@ -74,13 +79,26 @@ func ParseSkill(dir string, data []byte) (Skill, error) {
 	return s, nil
 }
 
+// Offered is what a review is given of a repository's skills: Listed by
+// name and description, to read on demand, and Loaded whole, in the system
+// prompt. Left counts the skills that applied and did not fit the listing,
+// and Unloaded the ones their scope loads that did not fit MaxSkillLoadedBytes
+// and were listed instead.
+type Offered struct {
+	Listed, Loaded []Skill
+	Left, Unloaded int
+}
+
 // OfferedSkills is the skills of found a review of a change of the changed
-// paths is offered, in order: each that scope does not keep from it, by
+// paths is given, each in order: each that scope does not keep from it, by
 // its paths or because the worker found none of its conditions to hold
-// (off), while their names and descriptions fit MaxSkillListingBytes. left
-// is how many applied and did not fit.
-func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, changed []string) (out []Skill, left int) {
-	room := MaxSkillListingBytes
+// (off). One its scope loads is given whole while the instructions of
+// those fit MaxSkillLoadedBytes; the rest, and a loaded one that did not
+// fit, are listed while their names and descriptions fit
+// MaxSkillListingBytes.
+func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, changed []string) Offered {
+	var out Offered
+	room, loadRoom := MaxSkillListingBytes, MaxSkillLoadedBytes
 	for _, s := range found {
 		sc := scope[s.Name]
 		if slices.Contains(off, s.Name) {
@@ -89,14 +107,22 @@ func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, c
 		if len(sc.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(sc.Paths, c) }) {
 			continue
 		}
+		if sc.Load {
+			if len(s.Text) <= loadRoom {
+				loadRoom -= len(s.Text)
+				out.Loaded = append(out.Loaded, s)
+				continue
+			}
+			out.Unloaded++
+		}
 		if size := len(s.Name) + len(s.Description); size <= room {
 			room -= size
-			out = append(out, s)
+			out.Listed = append(out.Listed, s)
 		} else {
-			left++
+			out.Left++
 		}
 	}
-	return out, left
+	return out
 }
 
 // SkillsOff names the skills of scope none of whose when conditions holds
@@ -113,11 +139,15 @@ func SkillsOff(scope map[string]configfile.SkillScope, vars map[string]any) []st
 	return off
 }
 
-// PromptSkills is skills as the system prompt lists them.
-func PromptSkills(skills []Skill) []review.Skill {
-	out := make([]review.Skill, len(skills))
-	for i, s := range skills {
-		out[i] = review.Skill{Name: s.Name, Description: s.Description}
+// PromptSkills is the skills as the system prompt gives them: listed by
+// name and description, then loaded with their instructions.
+func PromptSkills(listed, loaded []Skill) []review.Skill {
+	out := make([]review.Skill, 0, len(listed)+len(loaded))
+	for _, s := range listed {
+		out = append(out, review.Skill{Name: s.Name, Description: s.Description})
+	}
+	for _, s := range loaded {
+		out = append(out, review.Skill{Name: s.Name, Description: s.Description, Text: s.Text})
 	}
 	return out
 }

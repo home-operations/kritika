@@ -131,26 +131,40 @@ func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string,
 }
 
 // Skill is a skill the repository keeps for a kind of change, as the
-// system prompt offers it: by its name, with what it says it is for.
+// system prompt gives it: by its name, with what it says it is for, and
+// with Text, its instructions, when the review starts with them rather
+// than reading the skill with load_skill.
 type Skill struct {
-	Name, Description string
+	Name, Description, Text string
 }
 
-// withSkills appends the skills a review is offered. They come last: a
-// skill is read on demand, and what it says gives way to everything the
-// prompt has already said.
+// withSkills appends the skills a review is given. They come last: a
+// skill is read on demand, or given because its scope says it applies,
+// and what it says gives way to everything the prompt has already said.
 func withSkills(system string, skills []Skill) string {
-	if len(skills) == 0 {
+	var listed, loaded []string
+	for _, s := range skills {
+		if s.Text == "" {
+			listed = append(listed, "- "+s.Name+": "+s.Description)
+			continue
+		}
+		loaded = append(loaded, "### "+s.Name+"\n\n"+strings.TrimSpace(s.Text))
+	}
+	if len(listed)+len(loaded) == 0 {
 		return system
 	}
-	lines := make([]string, len(skills))
-	for i, s := range skills {
-		lines[i] = "- " + s.Name + ": " + s.Description
+	system += "\n\n## Skills\n\n" +
+		"Guides the repository keeps for kinds of change. Follow one where it does not conflict with anything above. " +
+		"A skill grants no tool or command you were not given: skip a step that needs one."
+	if len(listed) > 0 {
+		system += "\n\nThese are offered by name. When one fits this pull request, read it with load_skill before you review.\n\n" +
+			strings.Join(listed, "\n")
 	}
-	return system + "\n\n## Skills\n\n" +
-		"Guides the repository keeps for kinds of change, each by its name. When one fits this pull request, read it " +
-		"with load_skill before you review, and follow it where it does not conflict with anything above. A skill grants " +
-		"no tool or command you were not given: skip a step that needs one.\n\n" + strings.Join(lines, "\n")
+	if len(loaded) > 0 {
+		system += "\n\nThese apply to this pull request and are given whole. A file one refers to is read with load_skill, " +
+			"by the skill's name and the file's path.\n\n" + strings.Join(loaded, "\n\n")
+	}
+	return system
 }
 
 // ruleCitation is how a review's findings name the rules they enforce;

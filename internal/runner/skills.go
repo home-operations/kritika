@@ -85,7 +85,8 @@ var skillSchema = json.RawMessage(`{
 // skillTool is load_skill: it returns a skill the review was offered, or a
 // file of the skill's folder, from the merge base. The agent's file tools
 // read the head, where the pull request under review may have rewritten
-// the skill.
+// the skill. opened starts with the skills the system prompt gives whole:
+// the review has read those before its first step.
 type skillTool struct {
 	base     *object.Tree
 	skills   []repoconfig.Skill
@@ -146,13 +147,16 @@ func (s *skillTool) Run(_ context.Context, input json.RawMessage) (string, error
 	return string(data), nil
 }
 
-// names lists the skills the tool offers, and Opened the ones it has
-// returned, each in the order first seen, never nil: the run's row takes
-// no NULL for either.
-func (s *skillTool) names() []string {
-	out := make([]string, len(s.skills))
-	for i, o := range s.skills {
-		out[i] = o.Name
+// names lists the skills the tool offers, and Opened the ones the review
+// has read, given whole or returned, each in the order first seen, never
+// nil: the run's row takes no NULL for either.
+func (s *skillTool) names() []string { return skillNames(s.skills) }
+
+// skillNames is the names of skills, in their order, never nil.
+func skillNames(skills []repoconfig.Skill) []string {
+	out := make([]string, len(skills))
+	for i, s := range skills {
+		out[i] = s.Name
 	}
 	return out
 }
