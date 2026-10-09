@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -170,6 +172,32 @@ func TestRunTool(t *testing.T) {
 			t.Fatalf("out = %q, err = %v", out, err)
 		}
 	})
+}
+
+func TestRunToolLogsACommandAsItStarts(t *testing.T) {
+	rt, dir := newTestRunTool(t, false)
+	var log bytes.Buffer
+	logged := NewRunTool(RunConfig{
+		Dir: dir, Env: rt.cfg.Env, Commands: rt.cfg.Commands, Timeout: 2 * time.Second, MaxOutputBytes: 64,
+		Mask:   func(s string) string { return strings.ReplaceAll(s, "ghs_run", "***") },
+		Logger: slog.New(slog.NewJSONHandler(&log, nil)),
+	})
+	if _, err := logged.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["a b","-n","token=ghs_run"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	var line struct {
+		Msg     string   `json:"msg"`
+		Call    int      `json:"call"`
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}
+	if err := json.Unmarshal(log.Bytes(), &line); err != nil {
+		t.Fatalf("log = %q: %v", log.String(), err)
+	}
+	if line.Msg != "command started" || line.Call != 1 || line.Command != "rg" ||
+		!slices.Equal(line.Args, []string{"a b", "-n", "token=***"}) {
+		t.Fatalf("log = %q", log.String())
+	}
 }
 
 func TestRunToolRecordsCurlSources(t *testing.T) {
