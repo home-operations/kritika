@@ -638,14 +638,14 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	lf.mu.Unlock()
 	sticky := comments[commentBase+1]
 	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritika:pr-1 -->\n") ||
-		!strings.Contains(sticky, "- **[important · correctness]** [`main.go:1`](local://onedr0p/home-ops/") ||
-		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001)") ||
-		!strings.Contains(sticky, "**2 findings** · 1 blocking · 1 important\n") || strings.Contains(sticky, "What's good") ||
-		!strings.Contains(sticky, "**Outside the diff**\n\n- **[blocking · correctness]** `main.go:500` off the diff\n\n  dropped\n") ||
+		!strings.Contains(sticky, "- **[P1]** [`main.go:1`](local://onedr0p/home-ops/") ||
+		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001) · correctness\n") ||
+		!strings.Contains(sticky, "**2 findings** · 1 P0 · 1 P1\n") || strings.Contains(sticky, "What's good") ||
+		!strings.Contains(sticky, "**Outside the diff**\n\n- **[P0]** `main.go:500` off the diff · correctness\n\n  dropped\n") ||
 		strings.Contains(sticky, "were dropped") {
 		t.Fatalf("comments = %v", comments)
 	}
-	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[important · correctness]** **first line**") ||
+	if len(inline) != 1 || inline[0].Line != 1 || !strings.Contains(inline[0].Body, "**[P1]** **first line** · correctness") ||
 		!strings.Contains(inline[0].Body, "do this") || forgeStatus != "success: kritika: 2 finding(s)" {
 		t.Fatalf("inline = %+v status = %q", inline, forgeStatus)
 	}
@@ -2309,7 +2309,7 @@ func checkReworded(
 		}
 	}
 	lf.mu.Unlock()
-	if want := fmt.Sprintf("**Outside the diff**\n\n- **[important · correctness]** `main.go:500` [Line one is wrong](local://onedr0p/home-ops/pull/5#r%d)\n", thread); !strings.Contains(sticky, want) {
+	if want := fmt.Sprintf("**Outside the diff**\n\n- **[P1]** `main.go:500` [Line one is wrong](local://onedr0p/home-ops/pull/5#r%d) · correctness\n", thread); !strings.Contains(sticky, want) {
 		t.Fatalf("sticky comment lacks %q:\n%s", want, sticky)
 	}
 	var title, fingerprint string
@@ -2437,9 +2437,9 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 	}
 	// The new finding far from the pushed lines is listed apart and
 	// counted nowhere.
-	if !strings.Contains(sticky, "**2 findings** · 1 blocking · 1 important\n") ||
-		!strings.Contains(sticky, "<summary>Held back (1): not on lines changed since the last review</summary>\n\n- **[important · correctness]** [`main.go:3`](") ||
-		!strings.Contains(sticky, ") far from the push\n") {
+	if !strings.Contains(sticky, "**2 findings** · 1 P0 · 1 P1\n") ||
+		!strings.Contains(sticky, "<summary>Held back (1): not on lines changed since the last review</summary>\n\n- **[P1]** [`main.go:3`](") ||
+		!strings.Contains(sticky, ") far from the push · correctness\n") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
 

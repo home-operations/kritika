@@ -8,7 +8,7 @@
 
 {{ end -}}
 {{ if .Counts.Total -}}
-**{{ .Counts.Total }} {{ plural "finding" "findings" .Counts.Total }}**{{ if .Counts.Blocking }} · {{ .Counts.Blocking }} blocking{{ end }}{{ if .Counts.Important }} · {{ .Counts.Important }} important{{ end }}{{ if .Counts.Nit }} · {{ .Counts.Nit }} nit{{ end }}
+**{{ .Counts.Total }} {{ plural "finding" "findings" .Counts.Total }}**{{ if .Counts.Blocking }} · {{ .Counts.Blocking }} P0{{ end }}{{ if .Counts.Important }} · {{ .Counts.Important }} P1{{ end }}{{ if .Counts.Nit }} · {{ .Counts.Nit }} P2{{ end }}
 {{ else -}}
 **No findings**
 {{ end }}
@@ -25,14 +25,14 @@
 
 {{ if .Result.Findings -}}
 {{ range .Result.Findings -}}
-- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}
 {{ end }}
 {{ end -}}
 {{ if .Unanchored -}}
 **Outside the diff**
 
 {{ range .Unanchored -}}
-- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}
+- {{ .Severity.Badge $.WebURL }} `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}
 
 {{ .Explanation | indent 2 }}
 {{ end }}
@@ -42,7 +42,7 @@
 <summary>Held back ({{ len .HeldBack }}): not on lines changed since the last review</summary>
 
 {{ range .HeldBack -}}
-- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}{{ if .Category }} · {{ .Category }}{{ end }}
 {{ end }}
 </details>
 
@@ -54,7 +54,7 @@
 <summary>Earlier findings ({{ if $resolved }}{{ $resolved }} resolved{{ end }}{{ if and $resolved $dismissed }}, {{ end }}{{ if $dismissed }}{{ $dismissed }} dismissed{{ end }})</summary>
 
 {{ range .Prior -}}
-- **[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else }}resolved{{ end }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else }}resolved{{ end }}
 {{ end }}
 </details>
 

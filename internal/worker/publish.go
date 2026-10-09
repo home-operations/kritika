@@ -403,6 +403,7 @@ func (p *publishPhase) writeBack(
 	// Inline comments render first so a failing inline template is noted
 	// in the summary. After one failure the rest use the default, so a
 	// template that times out costs one deadline, not one per finding.
+	web, pull := p.dashboard(owner, repo)
 	templates := p.templates
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
@@ -410,7 +411,7 @@ func (p *publishPhase) writeBack(
 		if onForge[i].Posted || !p.settings.Review.InlineComments {
 			continue
 		}
-		body, inlineNotes := review.RenderInline(ctx, templates, f)
+		body, inlineNotes := review.RenderInline(ctx, templates, review.InlineData{Finding: f, WebURL: web})
 		if len(inlineNotes) > 0 {
 			templates.Inline = ""
 			notes = append(notes, inlineNotes...)
@@ -426,7 +427,6 @@ func (p *publishPhase) writeBack(
 	if p.agent != nil {
 		sources = review.SourceLinks(p.agent.Sources)
 	}
-	web, pull := p.dashboard(owner, repo)
 	counts := review.Result{Findings: reported}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,

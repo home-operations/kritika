@@ -43,7 +43,7 @@ func TestFooterSubject(t *testing.T) {
 func TestRenderSummaryRerunBadge(t *testing.T) {
 	d := sampleData()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
-	if strings.Contains(body, "badges/rerun") || !strings.Contains(body, "\n## Kritika Review\n") {
+	if strings.Contains(body, "badges/") || !strings.Contains(body, "\n## Kritika Review\n") {
 		t.Fatalf("without a dashboard the heading is bare:\n%s", body)
 	}
 	d.WebURL, d.PullURL = "https://kritika.example/k", "https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42"
@@ -53,6 +53,11 @@ func TestRenderSummaryRerunBadge(t *testing.T) {
 		"<img alt=\"Re-run\" src=\"https://kritika.example/k/badges/rerun.svg\" align=\"right\"></picture></a>Kritika Review\n"
 	if !strings.Contains(body, want) {
 		t.Fatalf("missing %q in:\n%s", want, body)
+	}
+	// With a dashboard each listed finding leads with its severity badge.
+	if !strings.Contains(body, "\n- <img alt=\"P0\" src=\"https://kritika.example/k/badges/p0.svg\"> [`main.go:11`]") ||
+		!strings.Contains(body, "\n- <img alt=\"P2\" src=\"https://kritika.example/k/badges/p2.svg\"> `README.md:2` typo\n") {
+		t.Fatalf("findings without their badges:\n%s", body)
 	}
 }
 
@@ -87,12 +92,12 @@ func TestRenderSummaryDefault(t *testing.T) {
 		t.Fatalf("first line = %q", first)
 	}
 	for _, want := range []string{
-		"## Kritika Review\n\nAdds the widget cache.\n\n**2 findings** · 1 blocking · 1 nit\n\n## Findings\n",
-		"**2 findings** · 1 blocking · 1 nit\n",
-		"## Findings\n\n- **[blocking",
+		"## Kritika Review\n\nAdds the widget cache.\n\n**2 findings** · 1 P0 · 1 P2\n\n## Findings\n",
+		"**2 findings** · 1 P0 · 1 P2\n",
+		"## Findings\n\n- **[P0]**",
 		"### Summary\n\nSolid change with one real bug.\n\n**What's good**\n\n- Clear tests\n",
-		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write",
-		"- **[nit]** `README.md:2` typo",
+		"- **[P0]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write · correctness",
+		"- **[P2]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
 		// Without the head's subject the footer names it by hash.
 		"<sub>Reviews (1) · Last reviewed commit: `0123456` · vendor/model-x</sub>",
@@ -149,13 +154,13 @@ func TestRenderSummaryConfidence(t *testing.T) {
 	}{
 		{
 			name: "a score that passes", confidence: &Confidence{Score: 5, Threshold: 5, Risk: RiskLow, Reason: "Nothing stands against it."},
-			want: "1 nit\n\n**Confidence 5/5** · low risk: Nothing stands against it.\n\n## Findings\n",
+			want: "1 P2\n\n**Confidence 5/5** · low risk: Nothing stands against it.\n\n## Findings\n",
 		},
 		{
 			name: "a score under the threshold", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
-			want: "1 nit\n\n**Confidence 2/5**: The nil map write stands.\n\n## Findings\n",
+			want: "1 P2\n\n**Confidence 2/5**: The nil map write stands.\n\n## Findings\n",
 		},
-		{name: "no score", want: "1 nit\n\n## Findings\n"},
+		{name: "no score", want: "1 P2\n\n## Findings\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -202,13 +207,13 @@ func TestRenderSummaryApproval(t *testing.T) {
 		want       string
 	}{
 		{name: "approved on its findings", approval: &Approval{Approved: true, Reason: "nothing blocking or important found"},
-			want: "1 nit\n\n**Approved**: nothing blocking or important found\n\n## Findings\n"},
+			want: "1 P2\n\n**Approved**: nothing blocking or important found\n\n## Findings\n"},
 		{name: "approved on its score", confidence: &Confidence{Score: 5, Threshold: 4, Risk: RiskLow, Reason: "Clean."}, approval: &Approval{Approved: true},
 			want: "**Confidence 5/5** · low risk: Clean.\n\n**Approved**\n\n## Findings\n"},
 		{name: "withheld", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
 			approval: &Approval{Reason: "confidence 2/5 is below the threshold of 4"},
 			want:     "**Confidence 2/5**: The nil map write stands.\n\n**Not approved**: confidence 2/5 is below the threshold of 4\n\n## Findings\n"},
-		{name: "not asked to approve", want: "1 nit\n\n## Findings\n"},
+		{name: "not asked to approve", want: "1 P2\n\n## Findings\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -246,13 +251,13 @@ func TestRenderSummaryLinks(t *testing.T) {
 		t.Fatalf("notes = %v", notes)
 	}
 	for _, want := range []string{
-		"- **[blocking · correctness]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1)\n",
-		"- **[nit]** `README.md:2` typo\n",
-		"**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
+		"- **[P0]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) [nil map write](https://forge.example/o/r/pull/42#r1) · correctness\n",
+		"- **[P2]** `README.md:2` typo\n",
+		"**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n\n  The cache is\n  never cleared.\n",
 		"<details>\n<summary>Earlier findings (2 resolved, 1 dismissed)</summary>\n\n" +
-			"- **[blocking]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n" +
-			"- **[important]** `util.go:3` unchecked error · resolved\n" +
-			"- **[nit]** `cache.go:5` terse name · dismissed: house style\n\n</details>\n\n### Summary",
+			"- **[P0]** [`main.go:9`](https://forge.example/o/r/blob/fedcba9876543210/main.go#L9) [nil map write](https://forge.example/o/r/pull/42#r2) · resolved\n" +
+			"- **[P1]** `util.go:3` unchecked error · resolved\n" +
+			"- **[P2]** `cache.go:5` terse name · dismissed: house style\n\n</details>\n\n### Summary",
 		"<sub>Reviews (3) · Last reviewed commit: [\"fix(cache): evict stale entries\"](https://forge.example/o/r/commit/0123456789abcdef) · vendor/model-x</sub>",
 	} {
 		if !strings.Contains(body, want) {
@@ -282,9 +287,9 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	}
 	d.Counts = Result{Findings: d.Unanchored}.Counts()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
-	if !strings.Contains(body, "**2 findings** · 1 important · 1 nit\n") || strings.Contains(body, "No findings") ||
-		!strings.Contains(body, "**Outside the diff**\n\n- **[important]** `other.go:7` stale cache\n") ||
-		!strings.Contains(body, "- **[nit]** `other.go:9` [terse name](https://forge.example/o/r/pull/42#r3)\n") {
+	if !strings.Contains(body, "**2 findings** · 1 P1 · 1 P2\n") || strings.Contains(body, "No findings") ||
+		!strings.Contains(body, "**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n") ||
+		!strings.Contains(body, "- **[P2]** `other.go:9` [terse name](https://forge.example/o/r/pull/42#r3)\n") {
 		t.Fatalf("body:\n%s", body)
 	}
 }
@@ -298,7 +303,7 @@ func TestRenderSummaryHeldBack(t *testing.T) {
 		URL: "https://forge.example/o/r/blob/0123456789abcdef/old.go#L3"}}
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
 	want := "**No findings**\n\n## Findings\n\n<details>\n<summary>Held back (1): not on lines changed since the last review</summary>\n\n" +
-		"- **[important · reliability]** [`old.go:3`](https://forge.example/o/r/blob/0123456789abcdef/old.go#L3) unbounded retry\n\n" +
+		"- **[P1]** [`old.go:3`](https://forge.example/o/r/blob/0123456789abcdef/old.go#L3) unbounded retry · reliability\n\n" +
 		"</details>\n\n### Summary\n"
 	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
 		t.Fatalf("missing %q in:\n%s", want, body)
@@ -419,8 +424,8 @@ func TestRenderSummaryMarkerCannotBeRemoved(t *testing.T) {
 }
 
 func TestRenderInline(t *testing.T) {
-	f := sampleData().Result.Findings[0]
-	marker := FindingMarker(Fingerprint(f)) + "\n"
+	f := InlineData{Finding: sampleData().Result.Findings[0]}
+	marker := FindingMarker(Fingerprint(f.Finding)) + "\n"
 	body, notes := RenderInline(t.Context(), Templates{}, f)
 	if len(notes) != 0 {
 		t.Fatalf("notes = %v", notes)
@@ -428,10 +433,16 @@ func TestRenderInline(t *testing.T) {
 	if !strings.HasPrefix(body, marker) {
 		t.Fatalf("inline comment does not lead with its marker:\n%s", body)
 	}
-	for _, want := range []string{"**[blocking · correctness]** **nil map write**", "m is nil here.", "m = map[string]int{}"} {
+	for _, want := range []string{"**[P0]** **nil map write** · correctness", "m is nil here.", "m = map[string]int{}"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
+	}
+	badged := f
+	badged.WebURL = "https://kritika.example/k"
+	if body, _ := RenderInline(t.Context(), Templates{}, badged); !strings.Contains(body,
+		"\n<img alt=\"P0\" src=\"https://kritika.example/k/badges/p0.svg\"> **nil map write** · correctness\n") {
+		t.Fatalf("with a dashboard the severity is its badge image:\n%s", body)
 	}
 	noFix := f
 	noFix.SuggestedFix = ""

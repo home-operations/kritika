@@ -1,4 +1,4 @@
-**[{{ .Severity }}{{ if .Category }} · {{ .Category }}{{ end }}]** **{{ .Title }}**
+{{ .Severity.Badge .WebURL }} **{{ .Title }}**{{ if .Category }} · {{ .Category }}{{ end }}
 
 {{ .Explanation }}
 {{ if .SuggestedFix }}
