@@ -353,18 +353,21 @@ func checkRequest(req StepRequest) error {
 }
 
 // Transient reports whether a step failed in a way another attempt may
-// not: the provider answered 408, 429 or a 5xx, or the connection failed,
-// timed out or was cut. A provider's refusal of the request itself, any
-// other 4xx, and a spent budget fail the same way again.
+// not: the provider answered 408, 429 or a 5xx, or a 402 with a Retry-After
+// header, or the connection failed, timed out or was cut. A provider's
+// refusal of the request itself, any other 4xx, and a spent budget fail the
+// same way again.
+//
+// OpenRouter answers 402 with a Retry-After when the account's in-flight
+// requests would exceed its balance, and says to retry once they settle;
+// its 402 for an empty balance carries none.
 func Transient(err error) bool {
 	if err == nil || errors.Is(err, ErrBudget) {
 		return false
 	}
-	status := 0
-	if e, ok := errors.AsType[*openai.Error](err); ok {
-		status = e.StatusCode
-	} else if e, ok := errors.AsType[*anthropic.Error](err); ok {
-		status = e.StatusCode
+	status, resp := providerResponse(err)
+	if status == http.StatusPaymentRequired {
+		return resp != nil && resp.Header.Get("Retry-After") != ""
 	}
 	if status != 0 {
 		return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
@@ -378,12 +381,7 @@ func Transient(err error) bool {
 // before the next request, from the Retry-After header of its answer, in
 // seconds as the model providers send it; zero when it asked nothing.
 func RetryAfter(err error) time.Duration {
-	var resp *http.Response
-	if e, ok := errors.AsType[*openai.Error](err); ok {
-		resp = e.Response
-	} else if e, ok := errors.AsType[*anthropic.Error](err); ok {
-		resp = e.Response
-	}
+	_, resp := providerResponse(err)
 	if resp == nil {
 		return 0
 	}
@@ -392,6 +390,18 @@ func RetryAfter(err error) time.Duration {
 		return 0
 	}
 	return time.Duration(secs) * time.Second
+}
+
+// providerResponse is the status and the response of the provider's error
+// in err, zero and nil when it holds none.
+func providerResponse(err error) (int, *http.Response) {
+	if e, ok := errors.AsType[*openai.Error](err); ok {
+		return e.StatusCode, e.Response
+	}
+	if e, ok := errors.AsType[*anthropic.Error](err); ok {
+		return e.StatusCode, e.Response
+	}
+	return 0, nil
 }
 
 // eachModel calls step with Model, then each fallback in turn until one

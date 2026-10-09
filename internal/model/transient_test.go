@@ -33,6 +33,11 @@ func TestTransient(t *testing.T) {
 		{"a 400 refusing the request", &openai.Error{StatusCode: http.StatusBadRequest}, false},
 		{"a 401 for a bad key", &anthropic.Error{StatusCode: http.StatusUnauthorized}, false},
 		{"a 404 for an unknown model", &openai.Error{StatusCode: http.StatusNotFound}, false},
+		{"a 402 for an empty balance", &openai.Error{StatusCode: http.StatusPaymentRequired, Response: &http.Response{Header: http.Header{}}}, false},
+		{"a 402 without a response", &openai.Error{StatusCode: http.StatusPaymentRequired}, false},
+		{"a 402 for the in-flight budget, with a Retry-After", fmt.Errorf("model: x: %w", &openai.Error{
+			StatusCode: http.StatusPaymentRequired, Response: &http.Response{Header: http.Header{"Retry-After": {"120"}}},
+		}), true},
 		{"the run's budget", fmt.Errorf("%w: spent", ErrBudget), false},
 		{"a dial failure", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, true},
 		{"a timeout", timeoutErr{}, true},

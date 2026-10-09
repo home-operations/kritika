@@ -373,6 +373,51 @@ func TestOpenAIErrors(t *testing.T) {
 	}
 }
 
+// TestOpenRouterInFlightBudgetIsTransient: OpenRouter's 402 for the
+// account's in-flight requests, which says when to come back, is waited out
+// and sent again; its 402 for an empty balance is a refusal.
+func TestOpenRouterInFlightBudgetIsTransient(t *testing.T) {
+	const inFlight = `{"error":{"message":"This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.","code":402,"metadata":{"reason":"in_flight_budget_exhausted","headers":{"Retry-After":"120"}}}}`
+	const empty = `{"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}`
+	tests := []struct {
+		name       string
+		body       string
+		retryAfter string
+		want       bool
+	}{
+		{"in-flight budget", inFlight, "120", true},
+		{"empty balance", empty, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if tt.retryAfter != "" {
+					w.Header().Set("Retry-After", tt.retryAfter)
+				}
+				w.WriteHeader(http.StatusPaymentRequired)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(srv.Close)
+			c := newTestOpenAI(t, srv, true, nil)
+			_, err := c.Step(t.Context(), StepRequest{Model: "acme/large", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+			if err == nil || !strings.Contains(err.Error(), "402") {
+				t.Fatalf("err = %v, want the 402", err)
+			}
+			if got := Transient(err); got != tt.want {
+				t.Fatalf("Transient = %v, want %v", got, tt.want)
+			}
+			var want time.Duration
+			if tt.want {
+				want = 120 * time.Second
+			}
+			if got := RetryAfter(err); got != want {
+				t.Fatalf("RetryAfter = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
 func TestStalledProviderTimesOut(t *testing.T) {
 	old := StepTimeout
 	StepTimeout = 50 * time.Millisecond

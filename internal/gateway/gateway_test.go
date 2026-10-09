@@ -20,6 +20,10 @@ func TestUpstreamStatus(t *testing.T) {
 	}{
 		{"an overloaded provider", &openai.Error{StatusCode: http.StatusServiceUnavailable}, http.StatusBadGateway},
 		{"a rate limit", &openai.Error{StatusCode: http.StatusTooManyRequests}, http.StatusBadGateway},
+		{"a temporary budget refusal", &openai.Error{
+			StatusCode: http.StatusPaymentRequired, Response: &http.Response{Header: http.Header{"Retry-After": {"120"}}},
+		}, http.StatusBadGateway},
+		{"an empty balance", &openai.Error{StatusCode: http.StatusPaymentRequired, Response: &http.Response{Header: http.Header{}}}, http.StatusUnprocessableEntity},
 		{"a timeout", context.DeadlineExceeded, http.StatusBadGateway},
 		{"a refused request", &openai.Error{StatusCode: http.StatusBadRequest}, http.StatusUnprocessableEntity},
 	}
