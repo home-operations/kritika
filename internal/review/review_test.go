@@ -75,7 +75,21 @@ func TestCheck(t *testing.T) {
 			wantErr: "cannot unmarshal string into Go struct field"},
 		{name: "a finding's line as a string", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[{"path":"a","line":"3"}]}`,
 			wantErr: "cannot unmarshal string into Go struct field"},
-		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`, wantErr: "summary.take is required"},
+		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`,
+			wantErr: `unknown keys "praise", "take"; the input takes findings, summary`},
+		{name: "empty summary", raw: `{"summary":{},"findings":[]}`, wantErr: "summary.take is required"},
+		{name: "every key the contract defines", raw: `{"summary":{"headline":"h","take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B","checked":["c"]},
+			"findings":[{"path":"a","line":1,"severity":"nit","category":"tests","title":"t","explanation":"e","suggested_fix":"f",
+			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"]}]}`},
+		{name: "a misspelled fix key and checked key", raw: `{"summary":{"headline":"h","take":"t","praise":[],"checked>":["x"]},
+			"findings":[{"path":"a.yaml","line":1,"severity":"important","category":"correctness","title":"t","explanation":"e","suggested_fix.":"the fix"}]}`,
+			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes findings, summary, ` +
+				`the summary takes checked, diagram, headline, praise, take and a finding takes agent_prompt, category, ` +
+				`end_line, explanation, insert_after, line, path, replacement, rules, severity, suggested_fix, title`},
+		{name: "broken keys across findings, each named", raw: `{"summary":{"take":"t","praise":[]},
+			"findings":[{"path":"a","line":1,"severity":"blocking","severity_":"important","title":"t","explanation":"e","suggested_fix` + "`" + `: ":"f"},
+			{": ":", ","path":"a","line":1,"severity":"important","title":"t","explanation":"e"}]}`,
+			wantErr: "unknown keys findings[0].\"severity_\", findings[0].\"suggested_fix`: \", findings[1].\": \";"},
 		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
 		{name: "a flowchart", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B"},"findings":[]}`},
@@ -494,23 +508,32 @@ func TestBuildRendersDescriptionAsData(t *testing.T) {
 }
 
 type node struct {
-	Type       string           `json:"type"`
-	Enum       []string         `json:"enum"`
-	Properties map[string]*node `json:"properties"`
-	Items      *node            `json:"items"`
-	Required   []string         `json:"required"`
-	MaxItems   int              `json:"maxItems"`
+	Type                 string           `json:"type"`
+	Enum                 []string         `json:"enum"`
+	Properties           map[string]*node `json:"properties"`
+	Items                *node            `json:"items"`
+	Required             []string         `json:"required"`
+	MaxItems             int              `json:"maxItems"`
+	AdditionalProperties *bool            `json:"additionalProperties"`
+}
+
+// closed reports whether n refuses keys beyond its properties.
+func (n *node) closed() bool {
+	return n != nil && n.AdditionalProperties != nil && !*n.AdditionalProperties
 }
 
 func checkContract(t *testing.T, n node, required []string) {
 	t.Helper()
+	if !n.closed() {
+		t.Fatalf("the input is open to unknown keys: %+v", n)
+	}
 	summary := n.Properties["summary"]
-	if summary == nil || summary.Type != "object" || !slices.Equal(summary.Required, []string{"headline", "take", "praise"}) ||
+	if !summary.closed() || summary.Type != "object" || !slices.Equal(summary.Required, []string{"headline", "take", "praise"}) ||
 		summary.Properties["praise"].Type != "array" || summary.Properties["praise"].MaxItems != 3 {
 		t.Fatalf("summary = %+v", summary)
 	}
 	items := n.Properties["findings"].Items
-	if n.Properties["findings"].Type != "array" || items == nil || items.Type != "object" ||
+	if n.Properties["findings"].Type != "array" || !items.closed() || items.Type != "object" ||
 		!slices.Equal(items.Required, required) ||
 		items.Properties["line"].Type != "integer" || items.Properties["suggested_fix"].Type != "string" ||
 		!slices.Equal(items.Properties["severity"].Enum, []string{"blocking", "important", "nit"}) ||
