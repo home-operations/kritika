@@ -191,6 +191,10 @@ func TestRunPriorDelta(t *testing.T) {
 		{name: "brought up to date, the prior merge base unreachable", head: r.merged, base: r.touched, prior: r.prior,
 			priorBase: "0123456789abcdef0123456789abcdef01234567", priorChanged: []string{"svc.go"}, wantPrior: true,
 			wantChanged: []string{"svc.go"}, wantInDelta: "+// svc is the service.", wantBaseErr: true, wantHeadChanged: "svc.go"},
+		// With no delta there is no hunk of the base's to leave out, so the
+		// prior merge base is not fetched and cannot fail.
+		{name: "nothing moved, the prior merge base not fetched", prior: r.rebased,
+			priorBase: "0123456789abcdef0123456789abcdef01234567", wantPrior: true},
 		{name: "unknown prior", prior: "0123456789abcdef0123456789abcdef01234567"},
 		{name: "no prior"},
 	}

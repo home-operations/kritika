@@ -186,7 +186,7 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 	}
 	delta = slices.DeleteFunc(delta, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
 	var gained map[string]int
-	if f.PriorBase != "" && f.PriorBase != f.Base {
+	if f.PriorBase != "" && f.PriorBase != f.Base && len(delta) > 0 {
 		var priorBase *object.Commit
 		if priorBase, res.PriorBaseErr = fetchCommit(ctx, repo, opts, f.PriorBase, priorBaseRef); priorBase != nil {
 			if gained, err = baseGained(ctx, priorBase, base, own); err != nil {
