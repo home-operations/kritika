@@ -121,8 +121,8 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if dismissed += dismissedOff; dismissed > 0 {
 		notes = append(notes, fmt.Sprintf("%d finding(s) a maintainer dismissed were left out", dismissed))
 	}
-	// Findings outside the diff are never held back: the last review's are
-	// not stored, so a new one cannot be told from one it made.
+	// Findings outside the diff are never held back: they are listed apart
+	// and never posted inline, so there is nothing to spare the reader.
 	if p.scope == review.ScopeIncremental {
 		held := review.HoldBack(reviewFindings(p.prior.findings), slices.Concat(res.Findings, unanchored), delta, deltaPaths)
 		if res.Findings, p.heldBack = splitHeld(res.Findings, held); len(p.heldBack) > 0 {
@@ -183,7 +183,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if c := p.confidence; c != nil {
 		p.w.Metrics.ConfidenceScored(p.account.Key(), c.Score, string(c.Risk))
 	}
-	if err := p.persist(ctx, res, inline, run.Model, commentID); err != nil {
+	if err := p.persist(ctx, res, unanchored, inline, run.Model, commentID); err != nil {
 		return store.ReviewFailed, err
 	}
 	return store.ReviewCompleted, nil
@@ -311,7 +311,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 		p.logger.Warn("commit status not set", "error", err)
 	}
 	p.statusReported = true
-	return p.persist(ctx, review.Result{}, nil, modelName, commentID)
+	return p.persist(ctx, review.Result{}, nil, nil, modelName, commentID)
 }
 
 func (p *publishPhase) countFindings(res review.Result) {
@@ -369,15 +369,20 @@ func splitHeld(findings []review.Finding, held func(review.Finding) bool) (kept,
 // the last review already posted inline, or any finding when inline
 // comments are off, is listed in the summary only. Once the inline review
 // is posted, the sticky comment is edited again to link each finding to
-// its thread. The returned comments say, per finding, whether an inline
-// comment for it is on the forge, and its id there.
+// its thread. The returned comments say, per finding, those on the diff
+// then those off it, whether an inline comment for it is on the forge, and
+// its id there: a finding off the diff is never posted, but carries the
+// thread an earlier report of it opened.
 func (p *publishPhase) writeBack(
 	ctx context.Context, res review.Result, unanchored []review.Finding, modelName string, notes []string,
 ) (int64, []store.InlinePosted, error) {
 	owner, repo := p.pr.ownerRepo()
-	onForge := alreadyInline(res.Findings, p.prior.findings)
-	if p.settings.Review.InlineComments && len(res.Findings) > 0 {
-		p.markOnForge(ctx, res.Findings, onForge)
+	// A finding reported again outside the diff is reported again all the
+	// same: it is neither resolved nor listed so, and keeps its thread.
+	reported := slices.Concat(res.Findings, unanchored)
+	onForge := alreadyInline(reported, p.prior.findings)
+	if p.settings.Review.InlineComments && len(reported) > 0 {
+		p.markOnForge(ctx, reported, onForge)
 	}
 	for i := range res.Findings {
 		f := &res.Findings[i]
@@ -417,9 +422,6 @@ func (p *publishPhase) writeBack(
 		sources = review.SourceLinks(p.agent.Sources)
 	}
 	web, pull := p.dashboard(owner, repo)
-	// A finding reported again outside the diff is reported again all the
-	// same: it is neither resolved nor listed so.
-	reported := slices.Concat(res.Findings, unanchored)
 	counts := review.Result{Findings: reported}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
@@ -669,12 +671,17 @@ func (p *publishPhase) writeSticky(ctx context.Context, stored int64, body strin
 	return commentID, nil
 }
 
+// persist records the review: its summary and its findings on the diff
+// then off it, with the inline state of each as writeBack returned them,
+// so the next review is told of every finding and resolves the thread of
+// one found gone, wherever it was reported.
 func (p *publishPhase) persist(
-	ctx context.Context, res review.Result, inline []store.InlinePosted, modelName string, commentID int64,
+	ctx context.Context, res review.Result, unanchored []review.Finding, inline []store.InlinePosted, modelName string, commentID int64,
 ) error {
+	recorded := review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return store.RecordReviewResult(ctx, tx, store.ReviewResult{
-			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: res, Inline: inline, Model: modelName,
+			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: recorded, Inline: inline, Model: modelName,
 			CommentID: commentID, Confidence: p.confidence, Partial: p.unfinished > 0,
 		})
 	})

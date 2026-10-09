@@ -496,8 +496,9 @@ type fakeCompleter struct {
 	diagram string
 	// extra, when set, is one more finding a review submits, as JSON.
 	extra string
-	// again, when set, replaces the first finding's title: the JSON fields
-	// a review that reports it again in other words writes instead.
+	// again, when set, replaces the first finding's line and title: the
+	// JSON fields a review that reports it again, in other words or
+	// elsewhere, writes instead.
 	again string
 	// scoreFails is how many confidence calls still fail with a 503 before
 	// one is answered; a failed call is not recorded as made.
@@ -529,7 +530,7 @@ func (f *fakeCompleter) find(extra string) {
 }
 
 // reword sets the JSON fields the reviews that follow write in place of
-// the first finding's title, "" for the title as it is.
+// the first finding's line and title, "" for them as they are.
 func (f *fakeCompleter) reword(again string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -562,7 +563,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	if f.extra != "" {
 		extra = "," + f.extra
 	}
-	first := `"title":"first line"`
+	first := `"line":1,"title":"first line"`
 	if f.again != "" {
 		first = f.again
 	}
@@ -580,7 +581,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
-		  {"path":"main.go","line":1,"severity":"important","category":"correctness",`+first+`,"explanation":"look here","suggested_fix":"do this",
+		  {"path":"main.go",`+first+`,"severity":"important","category":"correctness","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"blocking","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
@@ -669,7 +670,8 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, account
 	var modelName, take, explanation, fix, fingerprint string
 	var tokens int64
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT count(*), min(explanation), min(suggested_fix), min(fingerprint) FROM findings`).
+		if err := tx.QueryRow(ctx, `SELECT count(*), min(explanation) FILTER (WHERE posted_inline),
+			min(suggested_fix) FILTER (WHERE posted_inline), min(fingerprint) FILTER (WHERE posted_inline) FROM findings`).
 			Scan(&findings, &explanation, &fix, &fingerprint); err != nil {
 			return err
 		}
@@ -684,9 +686,10 @@ func checkReviewRows(ctx context.Context, t *testing.T, st *store.Store, account
 		}
 		return tx.QueryRow(ctx, `SELECT model FROM reviews WHERE head_sha = $1`, head).Scan(&modelName)
 	})
-	// Two usage rows for the review: the completion and the stage 4
-	// embedding; index runs add their own.
-	if err != nil || findings != 1 || usage < 2 || tokens < 15 || leasesHeld != 0 || modelName != "reviewer" {
+	// The finding off the diff is recorded beside the posted one. Two usage
+	// rows for the review: the completion and the stage 4 embedding; index
+	// runs add their own.
+	if err != nil || findings != 2 || usage < 2 || tokens < 15 || leasesHeld != 0 || modelName != "reviewer" {
 		t.Fatalf("rows: err=%v findings=%d usage=%d tokens=%d leases=%d model=%s", err, findings, usage, tokens, leasesHeld, modelName)
 	}
 	wantPrint := review.Fingerprint(review.Finding{Path: "main.go", Title: "first line"})
@@ -2222,11 +2225,12 @@ func checkIncremental(
 		t.Fatal(err)
 	}
 	third := commit("package main\n\nfunc f3() {}\n")
-	// The third review reports the first finding again in other words,
-	// naming its id: the finding keeps the thread and the fingerprint its
-	// first wording opened.
+	// The third review reports the first finding again in other words and
+	// at a line the diff does not show, naming its id: the finding keeps
+	// the thread and the fingerprint its first wording opened, and is
+	// recorded off the diff with them.
 	original := review.Finding{Path: "main.go", Title: "first line"}
-	fc.reword(`"title":"[important] Line one is wrong","prior":"` + review.PriorID(original) + `"`)
+	fc.reword(`"line":500,"title":"[important] Line one is wrong","prior":"` + review.PriorID(original) + `"`)
 	thirdRow, prompt, inline := reviewHead(third)
 	fc.reword("")
 	if thirdRow.scope != "full" || thirdRow.reason != "prior head unreachable" || thirdRow.prior != secondRow.id || inline != 0 {
@@ -2235,7 +2239,27 @@ func checkIncremental(
 	checkEarlierPrompt(t, prompt, second)
 	wantDiagram(thirdRow.id, "")
 	checkReworded(ctx, t, appStore, accountID, thirdRow.id, thread, original)
+	checkBackOnDiff(ctx, t, appStore, accountID, thirdRow, thread, commit, reviewHead)
+}
 
+// checkBackOnDiff pushes once more and asserts the review that builds on
+// third, which reports the finding third recorded off the diff on the diff
+// again under its first title, keeps the thread that record carried and
+// posts nothing twice.
+func checkBackOnDiff(
+	ctx context.Context, t *testing.T, appStore *store.Store, accountID string, third reviewScopeRow, thread int64,
+	commit func(string) string, reviewHead func(string) (reviewScopeRow, string, int),
+) {
+	t.Helper()
+	ageConversation(ctx, t, third.id)
+	fourth := commit("package main\n\nfunc f3() {}\n\nfunc f4() {}\n")
+	fourthRow, _, inline := reviewHead(fourth)
+	if fourthRow.scope != "incremental" || fourthRow.prior != third.id || inline != 0 {
+		t.Fatalf("fourth review = %+v, %d inline comment(s)", fourthRow, inline)
+	}
+	if p := postedInline(ctx, t, appStore, accountID, fourthRow.id); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
+		t.Fatalf("a finding back on the diff keeps the thread %d its report off the diff carried, got %+v", thread, p)
+	}
 }
 
 // ageConversation makes the conversation reviewID's run kept an hour old,
@@ -2327,11 +2351,14 @@ func scopeRow(ctx context.Context, t *testing.T, appStore *store.Store, accountI
 	return out
 }
 
+// postedInline is the inline state of a review's findings recorded as
+// posted inline: those the review posted, and those carrying the thread
+// an earlier review opened.
 func postedInline(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string) []store.InlinePosted {
 	t.Helper()
 	var out []store.InlinePosted
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT posted_inline, coalesce(forge_comment_id, 0) FROM findings WHERE review_id = $1`, reviewID)
+		rows, err := tx.Query(ctx, `SELECT posted_inline, coalesce(forge_comment_id, 0) FROM findings WHERE review_id = $1 AND posted_inline`, reviewID)
 		if err != nil {
 			return err
 		}
