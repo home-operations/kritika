@@ -219,6 +219,16 @@ one, with nothing to configure.
 - **Follow-ups** are answered by an agent with the review's tools and
   commands, under the same `agent` limits, in a runner of its own; it is
   offered no skills.
+- **A worked example:** Sentry's
+  [`gha-security-review`](https://github.com/getsentry/skills/blob/main/skills/gha-security-review/SKILL.md)
+  skill reviews GitHub Actions workflows with an explicit threat model, a
+  table of safe patterns not to flag and a concrete exploit required of
+  every finding; its `references/` load through `load_skill` as any file
+  in the folder does. Scope it with
+  `skills.scope.gha-security-review.paths: [".github/workflows/**"]`, and
+  check its exceptions against your own policy: it leaves first-party
+  actions on version tags alone, which a repository that pins every
+  action to a digest would not.
 
 Rules, context and skills compared:
 
