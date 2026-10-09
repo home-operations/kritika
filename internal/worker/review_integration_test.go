@@ -2238,7 +2238,7 @@ func checkIncremental(
 	}
 	checkEarlierPrompt(t, prompt, second)
 	wantDiagram(thirdRow.id, "")
-	checkReworded(ctx, t, appStore, accountID, thirdRow.id, thread, original)
+	checkReworded(ctx, t, appStore, lf, accountID, thirdRow.id, thread, original)
 	checkBackOnDiff(ctx, t, appStore, accountID, thirdRow, thread, commit, reviewHead)
 }
 
@@ -2281,10 +2281,24 @@ func ageConversation(ctx context.Context, t *testing.T, reviewID string) {
 // checkReworded asserts that a review's one posted finding, which reported
 // original again in other words, kept original's thread and fingerprint
 // under its new title, the severity the model wrote into it stripped.
-func checkReworded(ctx context.Context, t *testing.T, appStore *store.Store, accountID, reviewID string, thread int64, original review.Finding) {
+func checkReworded(
+	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, accountID, reviewID string, thread int64, original review.Finding,
+) {
 	t.Helper()
 	if p := postedInline(ctx, t, appStore, accountID, reviewID); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
 		t.Fatalf("a finding reported again in other words keeps its thread %d, got %+v", thread, p)
+	}
+	// The summary lists it off the diff, linked to that thread.
+	lf.mu.Lock()
+	var sticky string
+	for _, body := range lf.comments {
+		if strings.HasPrefix(body, "<!-- kritika:pr-5 -->\n") {
+			sticky = body
+		}
+	}
+	lf.mu.Unlock()
+	if want := fmt.Sprintf("**Outside the diff**\n\n- **[important · correctness]** `main.go:500` [Line one is wrong](local://onedr0p/home-ops/pull/5#r%d)\n", thread); !strings.Contains(sticky, want) {
+		t.Fatalf("sticky comment lacks %q:\n%s", want, sticky)
 	}
 	var title, fingerprint string
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
