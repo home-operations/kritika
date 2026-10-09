@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.52](https://github.com/home-operations/kritika/compare/0.0.51...0.0.52) (2026-10-09)
+
+
+### Features
+
+* **go:** update module golang.org/x/sync (v0.23.0 → v0.24.0) ([#822](https://github.com/home-operations/kritika/issues/822)) ([6018ccc](https://github.com/home-operations/kritika/commit/6018ccc669f8a95312a2214fd0d4faffcca14ea6))
+* **review:** give a review a skill its scope loads in the system prompt ([#823](https://github.com/home-operations/kritika/issues/823)) ([2c81737](https://github.com/home-operations/kritika/commit/2c817375e0b38680a393fd7d1e35980aec18d458))
+
+
+### Bug Fixes
+
+* **agent:** drop a large tool result from the conversation once it has been read ([#821](https://github.com/home-operations/kritika/issues/821)) ([561b4db](https://github.com/home-operations/kritika/commit/561b4db24b9dbab084c500d1c04bf00374f8644b))
+* **container:** update image docker.io/jdxcode/mise (2026.10.5 → 2026.10.6) ([#813](https://github.com/home-operations/kritika/issues/813)) ([2a293e5](https://github.com/home-operations/kritika/commit/2a293e5ff9e07f5da7b26f3d2c9af244c6b1697f))
+* **npm:** update dependency svelte (5.57.1 → 5.57.2) ([#818](https://github.com/home-operations/kritika/issues/818)) ([1e2499b](https://github.com/home-operations/kritika/commit/1e2499b12dd857acdb837cf487b57fabc6ed8a25))
+* **worker:** wake a review snoozed for a model slot when one frees ([#819](https://github.com/home-operations/kritika/issues/819)) ([069e7c4](https://github.com/home-operations/kritika/commit/069e7c4e97875316b751a252ba5d1ce2287883fa))
+
 ## [0.0.51](https://github.com/home-operations/kritika/compare/0.0.50...0.0.51) (2026-10-09)
 
 
