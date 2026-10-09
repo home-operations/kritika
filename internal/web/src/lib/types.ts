@@ -246,6 +246,9 @@ export interface ReviewBlock {
 export interface SkillScope {
   paths?: string[];
   when?: { name: string; expr: string }[];
+  // load gives a review the skill applies to its instructions in the
+  // system prompt, rather than its name to read.
+  load: boolean;
 }
 
 export interface RepoSettings {

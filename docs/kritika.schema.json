@@ -190,6 +190,10 @@
                 "type": "array",
                 "description": "Conditions on the pull request: the skill is offered only when one of them holds.",
                 "items": { "$ref": "#/$defs/when" }
+              },
+              "load": {
+                "type": "boolean",
+                "description": "true gives a review the skill applies to its instructions in the system prompt, rather than its name to read with load_skill."
               }
             }
           }

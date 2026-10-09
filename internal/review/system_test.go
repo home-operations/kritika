@@ -1,6 +1,7 @@
 package review
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -244,17 +245,22 @@ func TestSystemPromptFileRules(t *testing.T) {
 }
 
 // TestSystemPromptSkills: the skills come last, after the rules and the
-// instructions, each by its name with its description; with none the
-// prompt has no such section.
+// instructions, each listed by its name with its description, or given
+// whole under its name when it has text; with none the prompt has no such
+// section.
 func TestSystemPromptSkills(t *testing.T) {
 	rules := []Rule{{ID: "wrap-errors", Text: "Wrap errors."}}
 	instructions := []string{"Check errors."}
 	skills := []Skill{{Name: "review-go", Description: "How Go is reviewed here."}, {Name: "migrations", Description: "What a migration must keep."}}
-	const listing = "\n\n## Skills\n\n" +
-		"Guides the repository keeps for kinds of change, each by its name. When one fits this pull request, read it " +
-		"with load_skill before you review, and follow it where it does not conflict with anything above. A skill grants " +
-		"no tool or command you were not given: skip a step that needs one.\n\n" +
+	loaded := []Skill{{Name: "renovate", Description: "Bumps.", Text: "\n# Renovate\n\nRead the release notes.\n"}, {Name: "db", Description: "DB.", Text: "Reversible."}}
+	const lead = "\n\n## Skills\n\n" +
+		"Guides the repository keeps for kinds of change. Follow one where it does not conflict with anything above. " +
+		"A skill grants no tool or command you were not given: skip a step that needs one."
+	const listing = lead + "\n\nThese are offered by name. When one fits this pull request, read it with load_skill before you review.\n\n" +
 		"- review-go: How Go is reviewed here.\n- migrations: What a migration must keep."
+	const given = "\n\nThese apply to this pull request and are given whole. A file one refers to is read with load_skill, " +
+		"by the skill's name and the file's path.\n\n" +
+		"### renovate\n\n# Renovate\n\nRead the release notes.\n\n### db\n\nReversible."
 	tests := []struct {
 		name         string
 		rules        []Rule
@@ -270,6 +276,9 @@ func TestSystemPromptSkills(t *testing.T) {
 		{name: "after the rules and the instructions", rules: rules, skills: skills, instructions: instructions, want: listing},
 		{name: "after the tools", skills: skills, instructions: instructions, commands: []string{"rg"}, search: true, want: listing},
 		{name: "one skill", skills: skills[:1], want: strings.TrimSuffix(listing, "\n- migrations: What a migration must keep.")},
+		{name: "skills given whole", skills: loaded, want: lead + given},
+		{name: "listed, then given whole", skills: slices.Concat(skills, loaded), want: listing + given},
+		{name: "given whole in the order they come", skills: slices.Concat(loaded[:1], skills, loaded[1:]), want: listing + given},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

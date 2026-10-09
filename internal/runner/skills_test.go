@@ -31,7 +31,7 @@ func TestDiscoverSkills(t *testing.T) {
 		".claude/skills/huge/SKILL.md":      skillDoc("description: Huge.", strings.Repeat("x", repoconfig.MaxFileBytes)),
 		"docs/skills/release/SKILL.md":      skillDoc("description: Cutting a release.", ""),
 	}
-	goSkill := repoconfig.Skill{Name: "review-go", Description: "How Go is reviewed here.", Dir: ".agents/skills/review-go"}
+	goSkill := repoconfig.Skill{Name: "review-go", Description: "How Go is reviewed here.", Dir: ".agents/skills/review-go", Text: "# Go"}
 	migrations := repoconfig.Skill{Name: "migrations", Description: "What a migration must keep.", Dir: ".agents/skills/db"}
 	renovate := repoconfig.Skill{Name: "renovate", Description: "Dependency bumps.", Dir: ".claude/skills/renovate"}
 	const (
@@ -122,16 +122,19 @@ func TestSkillTool(t *testing.T) {
 	tool := &skillTool{base: base, maxBytes: 64, skills: []repoconfig.Skill{
 		{Name: "review-go", Description: "How Go is reviewed here.", Dir: ".agents/skills/review-go"},
 		{Name: "migrations", Description: "Migrations.", Dir: ".agents/skills/db"},
-	}}
+	}, opened: []string{"migrations"}}
 	if def := tool.Def(); def.Name != "load_skill" || !json.Valid(def.InputSchema) {
 		t.Fatalf("def = %+v", def)
 	}
 	if got := tool.names(); !slices.Equal(got, []string{"review-go", "migrations"}) {
 		t.Fatalf("names = %q", got)
 	}
+	if got := tool.Opened(); !slices.Equal(got, []string{"migrations"}) {
+		t.Fatalf("opened before any call = %#v, want the skill given whole", got)
+	}
 	// Not nil either: the run's row takes no NULL for the list.
-	if got := tool.Opened(); got == nil || len(got) != 0 {
-		t.Fatalf("opened before any call = %#v, want an empty list", got)
+	if got := (&skillTool{}).Opened(); got == nil || len(got) != 0 {
+		t.Fatalf("opened with none given = %#v, want an empty list", got)
 	}
 	tests := []struct {
 		name    string
@@ -177,28 +180,31 @@ func TestSkillTool(t *testing.T) {
 		})
 	}
 	if got := tool.Opened(); !slices.Equal(got, []string{"migrations", "review-go"}) {
-		t.Fatalf("opened = %q, want each once in the order first read", got)
+		t.Fatalf("opened = %q, want the one given whole, then each once in the order first read", got)
 	}
 }
 
 // TestPromptInputsSkills: a review is offered the skills found only when
-// its spec has skills, less the ones its scope keeps from this change.
+// its spec has skills, less the ones its scope keeps from this change, and
+// given whole the ones its scope loads.
 func TestPromptInputsSkills(t *testing.T) {
 	found := []repoconfig.Skill{
-		{Name: "review-go", Description: "Go.", Dir: ".agents/skills/review-go"},
-		{Name: "migrations", Description: "Migrations.", Dir: ".agents/skills/db"},
-		{Name: "renovate", Description: "Bumps.", Dir: ".claude/skills/renovate"},
+		{Name: "review-go", Description: "Go.", Dir: ".agents/skills/review-go", Text: "Wrap errors."},
+		{Name: "migrations", Description: "Migrations.", Dir: ".agents/skills/db", Text: "Reversible."},
+		{Name: "renovate", Description: "Bumps.", Dir: ".claude/skills/renovate", Text: "Read the release notes."},
 	}
 	big := make([]repoconfig.Skill, 0, 6)
 	for i := range 6 {
 		big = append(big, repoconfig.Skill{Name: fmt.Sprintf("big-%d", i), Description: strings.Repeat("x", 1000)})
 	}
+	huge := repoconfig.Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", repoconfig.MaxSkillLoadedBytes+1)}
 	tests := []struct {
-		name      string
-		skills    *Skills
-		found     []repoconfig.Skill
-		want      []string
-		wantNotes []string
+		name       string
+		skills     *Skills
+		found      []repoconfig.Skill
+		want       []string
+		wantLoaded []string
+		wantNotes  []string
 	}{
 		{name: "a spec without skills offers none", found: found},
 		{name: "every skill found", skills: &Skills{Paths: configfile.DefaultSkillPaths}, found: found, want: []string{"review-go", "migrations", "renovate"}},
@@ -216,25 +222,47 @@ func TestPromptInputsSkills(t *testing.T) {
 			want:      []string{"big-0", "big-1", "big-2", "big-3"},
 			wantNotes: []string{"2 skill(s) left out, past the 4 KiB their names and descriptions are given"},
 		},
+		{
+			name: "the skills the scope loads are given whole",
+			skills: &Skills{
+				Paths: configfile.DefaultSkillPaths, Off: []string{"migrations"},
+				Scope: map[string]configfile.SkillScope{"renovate": {Load: true}, "migrations": {Load: true}},
+			},
+			found: found, want: []string{"review-go"}, wantLoaded: []string{"renovate"},
+		},
+		{
+			name:   "a skill past the loaded skills' budget is listed and noted",
+			skills: &Skills{Paths: configfile.DefaultSkillPaths, Scope: map[string]configfile.SkillScope{"huge": {Load: true}}},
+			found:  append(slices.Clone(found[:1]), huge), want: []string{"review-go", "huge"},
+			wantNotes: []string{"1 skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := agentPromptSpec()
 			s.Prompt.Skills = tt.skills
 			in := newPromptInputs(s, repoconfig.Files{}, tt.found, []string{"main.go"})
-			var got []string
+			var got, loaded []string
 			for _, sk := range in.skills {
 				got = append(got, sk.Name)
 			}
-			if !slices.Equal(got, tt.want) || !slices.Equal(in.notes, tt.wantNotes) {
-				t.Fatalf("skills = %q, notes = %q; want %q, %q", got, in.notes, tt.want, tt.wantNotes)
+			for _, sk := range in.loaded {
+				loaded = append(loaded, sk.Name)
+			}
+			if !slices.Equal(got, tt.want) || !slices.Equal(loaded, tt.wantLoaded) || !slices.Equal(in.notes, tt.wantNotes) {
+				t.Fatalf("skills = %q, loaded = %q, notes = %q; want %q, %q, %q", got, loaded, in.notes, tt.want, tt.wantLoaded, tt.wantNotes)
 			}
 			system := newAgentPrompt(s, in, packView{Diff: agentDiff, Changed: []string{"main.go"}}, nil, false, false).system
-			if want := review.SystemPrompt(nil, repoconfig.PromptSkills(in.skills), nil, nil, false, false, false); system != want {
+			if want := review.SystemPrompt(nil, repoconfig.PromptSkills(in.skills, in.loaded), nil, nil, false, false, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
-			if strings.Contains(system, "## Skills") != (len(tt.want) > 0) {
+			if strings.Contains(system, "## Skills") != (len(tt.want)+len(tt.wantLoaded) > 0) {
 				t.Fatalf("system prompt lists skills = %v:\n%s", len(tt.want) == 0, system)
+			}
+			for _, name := range tt.wantLoaded {
+				if !strings.Contains(system, "\n\n### "+name+"\n\n") {
+					t.Fatalf("system prompt does not give %s whole:\n%s", name, system)
+				}
 			}
 		})
 	}

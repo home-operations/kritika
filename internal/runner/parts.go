@@ -76,12 +76,18 @@ func partPrompts(
 	}
 	ins := make([]promptInputs, len(split))
 	var skills []repoconfig.Skill
+	var loaded []string
 	rules := []string{}
 	for i, paths := range split {
 		ins[i] = newPromptInputs(p, files, found, paths)
-		for _, s := range ins[i].skills {
+		for _, s := range slices.Concat(ins[i].skills, ins[i].loaded) {
 			if !slices.ContainsFunc(skills, func(o repoconfig.Skill) bool { return o.Name == s.Name }) {
 				skills = append(skills, s)
+			}
+		}
+		for _, s := range ins[i].loaded {
+			if !slices.Contains(loaded, s.Name) {
+				loaded = append(loaded, s.Name)
 			}
 		}
 		for _, id := range ins[i].ruleIDs() {
@@ -92,7 +98,7 @@ func partPrompts(
 	}
 	tools.skills = nil
 	if len(skills) > 0 {
-		tools.skills = &skillTool{base: base, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes}
+		tools.skills = &skillTool{base: base, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: loaded}
 	}
 	parts := make([]reviewPart, len(split))
 	for i, paths := range split {

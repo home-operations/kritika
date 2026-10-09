@@ -21,10 +21,13 @@ type SkillsSpec struct {
 
 // SkillScope narrows when a skill is offered to a review: with Paths only
 // when a changed path matches one of them, and with When only to a pull
-// request one of those conditions holds for.
+// request one of those conditions holds for. Load gives a review the
+// skill applies to its instructions in the system prompt, rather than its
+// name to read with load_skill.
 type SkillScope struct {
 	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
 	When  []When   `yaml:"when,omitempty" json:"when,omitempty"`
+	Load  bool     `yaml:"load,omitempty" json:"load,omitempty"`
 }
 
 // Skills are a repository's skills as resolved: the directories they are

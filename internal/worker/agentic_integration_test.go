@@ -497,6 +497,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 	t.Run("the agent runs curl and the comment lists what it fetched", func(t *testing.T) { checkAgentRunsCommands(t, h) })
 	t.Run("a path the file's exclusion names is skipped even when asked for", func(t *testing.T) { checkFilePathsExcluded(t, h) })
 	t.Run("the agent is offered the merge base's skills and reads one", func(t *testing.T) { checkAgentReadsSkill(t, h) })
+	t.Run("the agent is given a skill its scope loads without reading it", func(t *testing.T) { checkAgentLoadsSkill(t, h) })
 	t.Run("the agent reads a changed file's part of the diff", func(t *testing.T) { checkAgentReadsDiff(t, h) })
 	t.Run("a large pull request's run is sized for its parts", func(t *testing.T) { checkAgentSizedForParts(t, h) })
 	t.Run("a large change is reviewed in parts and published as one", func(t *testing.T) { checkAgentSplitsALargeReview(t, h) })
@@ -512,7 +513,7 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 		}
 		// One review per check that ran an agent; the runner-only skips ran
 		// none, and the pr.lines check's asked-for review ran one.
-		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 20 || foreign != 0 {
+		if own, foreign := count(h.account.ID()), count(h.other.ID()); own != 21 || foreign != 0 {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
@@ -2028,6 +2029,51 @@ func checkAgentReadsSkill(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
+	if !strings.Contains(sticky, "Skills offered: review-go; read: review-go") {
+		t.Fatalf("sticky:\n%s", sticky)
+	}
+}
+
+// checkAgentLoadsSkill keeps a skill at the merge base whose scope loads
+// it: the system prompt carries its instructions, the agent submits without
+// a load_skill call, and the run and the summary count the skill as read.
+func checkAgentLoadsSkill(t *testing.T, h *agenticHarness) {
+	h.sm.reset(scriptSubmit)
+	const skill = "---\nname: review-go\ndescription: How Go changes are reviewed here.\n---\n# Reviewing Go\n\nWrap every error, and name the function.\n"
+	if err := os.MkdirAll(filepath.Join(h.dir, ".agents", "skills", "review-go"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.commit(t, ".agents/skills/review-go/SKILL.md", skill)
+	h.lf.setBase(h.commit(t, ".kritika.yaml", "skills:\n  scope:\n    review-go: { load: true }\n"))
+	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n\nfunc v3() {}\n\nfunc loaded() {}\n")
+	h.dispatch(t, next)
+	reviewID, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	run := h.agentRow(t, reviewID)
+	var tools map[string]int
+	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
+	var offered, opened []string
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT a.skills_offered, a.skills_opened FROM agent_runs a
+			JOIN runner_runs r ON r.id = a.runner_run_id WHERE r.review_id = $1`, reviewID).Scan(&offered, &opened)
+	})
+	h.lf.mu.Lock()
+	sticky := h.lf.comments[commentBase+1]
+	h.lf.mu.Unlock()
+	if err != nil || run.stop != "submitted" || tools["load_skill"] != 0 ||
+		!slices.Equal(offered, []string{"review-go"}) || !slices.Equal(opened, []string{"review-go"}) {
+		t.Fatalf("agent run = %+v offered=%q opened=%q err=%v\nsticky:\n%s", run, offered, opened, err, sticky)
+	}
+	h.sm.mu.Lock()
+	system := h.sm.systems[len(h.sm.systems)-1]
+	h.sm.mu.Unlock()
+	if !strings.Contains(system, "\n\n## Skills\n\n") ||
+		!strings.HasSuffix(system, "\n\n### review-go\n\n# Reviewing Go\n\nWrap every error, and name the function.") ||
+		strings.Contains(system, "- review-go:") {
+		t.Fatalf("system prompt does not end with the skill given whole:\n%s", system)
+	}
 	if !strings.Contains(sticky, "Skills offered: review-go; read: review-go") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
