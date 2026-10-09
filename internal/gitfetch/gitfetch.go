@@ -185,7 +185,7 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 		return nil, err
 	}
 	delta = slices.DeleteFunc(delta, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
-	var gained map[string]bool
+	var gained map[string]int
 	if f.PriorBase != "" && f.PriorBase != f.Base {
 		var priorBase *object.Commit
 		if priorBase, res.PriorBaseErr = fetchCommit(ctx, repo, opts, f.PriorBase, priorBaseRef); priorBase != nil {
@@ -227,10 +227,10 @@ func fetchCommit(ctx context.Context, repo *git.Repository, opts []client.Option
 }
 
 // baseGained is the hunks the base gained in the change's own paths
-// between the merge base the last review saw and this one's, keyed as
-// hunkKeys keys them. A merge or a rebase carries them to the head without
+// between the merge base the last review saw and this one's, counted as
+// hunkKeys counts them. A merge or a rebase carries them to the head without
 // their being the change's, so the delta leaves them out.
-func baseGained(ctx context.Context, priorBase, base *object.Commit, own map[string]bool) (map[string]bool, error) {
+func baseGained(ctx context.Context, priorBase, base *object.Commit, own map[string]bool) (map[string]int, error) {
 	changes, err := treeChanges(ctx, priorBase, base)
 	if err != nil {
 		return nil, err
@@ -243,9 +243,9 @@ func baseGained(ctx context.Context, priorBase, base *object.Commit, own map[str
 	return hunkKeys(diff), nil
 }
 
-// renderDelta is renderChanges less the hunks gained keys; a change left
+// renderDelta is renderChanges less the hunks gained counts; a change left
 // with none is not of the delta.
-func renderDelta(ctx context.Context, changes object.Changes, gained map[string]bool) (string, []string, error) {
+func renderDelta(ctx context.Context, changes object.Changes, gained map[string]int) (string, []string, error) {
 	if len(gained) == 0 {
 		return renderChanges(ctx, changes)
 	}

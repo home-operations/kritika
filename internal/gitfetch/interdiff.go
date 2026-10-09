@@ -2,31 +2,34 @@ package gitfetch
 
 import "strings"
 
-// hunkKeys keys each hunk of a unified diff by its path and its added and
-// removed lines, with everything positional left out as PatchID leaves it
-// out: a hunk the base gained sits at other lines, under other context, in
-// the diff since the prior head than in the diff between the merge bases.
-func hunkKeys(diff string) map[string]bool {
-	keys := map[string]bool{}
+// hunkKeys counts the hunks of a unified diff by their path and their added
+// and removed lines, with everything positional left out as PatchID leaves
+// it out: a hunk the base gained sits at other lines, under other context,
+// in the diff since the prior head than in the diff between the merge bases.
+func hunkKeys(diff string) map[string]int {
+	keys := map[string]int{}
 	for _, file := range splitFileDiffs(diff) {
 		path, _, hunks := parseFileDiff(file)
 		for _, h := range hunks {
-			keys[hunkKey(path, h)] = true
+			keys[hunkKey(path, h)]++
 		}
 	}
 	return keys
 }
 
-// withoutHunks is one file's unified diff less the hunks drop keys, "" when
-// none of its hunks remain. A file diff with no hunks, a rename or a mode
-// change alone, stands.
-func withoutHunks(fileDiff string, drop map[string]bool) string {
+// withoutHunks is one file's unified diff less as many hunks of each key as
+// drop counts, each one dropped taken off drop, "" when none of its hunks
+// remain: the change may make an edit the base made too, and that one
+// stays. A file diff with no hunks, a rename or a mode change alone, stands.
+func withoutHunks(fileDiff string, drop map[string]int) string {
 	path, header, hunks := parseFileDiff(fileDiff)
 	var kept []string
 	for _, h := range hunks {
-		if !drop[hunkKey(path, h)] {
-			kept = append(kept, h)
+		if key := hunkKey(path, h); drop[key] > 0 {
+			drop[key]--
+			continue
 		}
+		kept = append(kept, h)
 	}
 	if len(hunks) > 0 && len(kept) == 0 {
 		return ""
