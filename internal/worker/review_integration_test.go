@@ -1624,31 +1624,27 @@ func checkSnoozeWhileSlotsHeld(
 	}
 	head := commit.String()
 	lf.setBase(base)
-	setSlots := func(jobID *int64) {
-		t.Helper()
-		if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot, job_id, expires_at)
-				VALUES ($1, $2, 1, $3, CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() + interval '1 hour' END)
-				ON CONFLICT (account_id, model_key, slot) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`,
-				accountID, modelKey, jobID)
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
+	lease, err := appStore.TakeLease(ctx, accountID, modelKey, 1, -1)
+	if err != nil || lease == nil {
+		t.Fatalf("TakeLease = %v, %v", lease, err)
 	}
-	holder := int64(-1)
-	setSlots(&holder)
 	dispatchPR(40, head, false)
 
+	var jobID int64
+	var waitsOn string
 	snoozes := func() int {
 		var n int
-		if err := appStore.App().QueryRow(ctx, `SELECT coalesce(max((metadata->>'snoozes')::int), 0) FROM river_job
-			WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&n); err != nil {
+		err := appStore.App().QueryRow(ctx, `SELECT id, coalesce((metadata->>'snoozes')::int, 0), coalesce(metadata->>'slot_wait', '')
+			FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&jobID, &n, &waitsOn)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatal(err)
 		}
 		return n
 	}
 	waitFor(t, 30*time.Second, "the review to snooze", func() bool { return snoozes() >= 1 })
+	if waitsOn != modelKey {
+		t.Fatalf("the snoozed review waits on %q, want %q", waitsOn, modelKey)
+	}
 	var reviews, runs int
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*), (SELECT count(*) FROM runner_runs rr JOIN reviews r2 ON r2.id = rr.review_id
@@ -1657,7 +1653,11 @@ func checkSnoozeWhileSlotsHeld(
 		t.Fatalf("a snoozed review recorded %d reviews and %d runner runs, %v", reviews, runs, err)
 	}
 
-	setSlots(nil)
+	// The review was snoozed for at least half of snoozeMin a moment ago,
+	// so it is still asleep: letting the slot go wakes it.
+	if woken, err := lease.Release(ctx); err != nil || woken != jobID {
+		t.Fatalf("Release woke job %d, %v, want the snoozed review's job %d", woken, err, jobID)
+	}
 	var status string
 	waitFor(t, 30*time.Second, "the review to complete once the slot was free", func() bool {
 		err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {

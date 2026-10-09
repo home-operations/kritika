@@ -164,7 +164,7 @@ func (g *Server) similar(
 	vectors, tokens, err = embedder.Embed(ctx, r.queries)
 	g.Metrics.ModelCall(r.account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), tokens, 0, 0, 0)
 	rctx, cancel := detach(ctx)
-	if rerr := lease.Release(rctx); rerr != nil {
+	if _, rerr := lease.Release(rctx); rerr != nil {
 		logger.Warn("lease not released", "key", "embed:"+emb.Model, "error", rerr)
 	}
 	cancel()

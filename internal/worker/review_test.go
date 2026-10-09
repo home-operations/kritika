@@ -53,7 +53,7 @@ func TestSnooze(t *testing.T) {
 			w := &Review{}
 			e := earlyEnd{accountKey: "acct", logger: slog.New(slog.DiscardHandler)}
 			job := &river.Job[jobs.ReviewArgs]{JobRow: &rivertype.JobRow{Metadata: []byte(tt.metadata)}}
-			err := w.snooze(e, job, "review-model")
+			err := w.snooze(t.Context(), e, job, "review-model")
 			snooze, ok := errors.AsType[*river.JobSnoozeError](err)
 			if !ok {
 				t.Fatalf("snooze returned %T (%v), want *river.JobSnoozeError", err, err)

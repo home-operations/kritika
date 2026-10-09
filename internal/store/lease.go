@@ -136,19 +136,39 @@ func (l *Lease) heartbeat(ctx context.Context) {
 	}
 }
 
-// Release frees the slot. ctx should outlive job cancellation so the slot
-// is not left to expire.
-func (l *Lease) Release(ctx context.Context) error {
+// SlotWaitKey is the river_job metadata key a review snoozed because every
+// slot of its model was held sets to that model key. Release wakes the
+// oldest such review of the account, so a freed slot is taken as soon as a
+// worker gets to the job rather than when its snooze runs out.
+const SlotWaitKey = "slot_wait"
+
+// Release frees the slot and wakes the oldest review snoozed for one on
+// the same model, returning that job's id, 0 when none waits. ctx should
+// outlive job cancellation so the slot is not left to expire.
+func (l *Lease) Release(ctx context.Context) (woken int64, err error) {
 	l.cancel()
 	<-l.done
-	return l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) error {
+	err = l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE model_leases SET job_id = NULL, expires_at = NULL
 			WHERE account_id = $1 AND model_key = $2 AND slot = $3 AND job_id = $4`, l.accountID, l.modelKey, l.slot, l.jobID)
 		if err != nil {
 			return fmt.Errorf("store: release lease: %w", err)
 		}
+		// River keeps a job snoozed for less than its scheduler interval
+		// available with a scheduled_at ahead rather than scheduled. A job
+		// snoozed for a slot and then for its settle time still carries the
+		// key; woken early, it only snoozes again for what is left of that.
+		err = tx.QueryRow(ctx, `UPDATE river_job SET state = 'available', scheduled_at = now()
+			WHERE id = (SELECT id FROM river_job WHERE kind = 'review' AND state IN ('scheduled', 'available')
+				AND scheduled_at > now() AND args->>'account_id' = $1 AND metadata->>'`+SlotWaitKey+`' = $2
+				ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+			RETURNING id`, l.accountID, l.modelKey).Scan(&woken)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("store: wake a snoozed review: %w", err)
+		}
 		return nil
 	})
+	return woken, err
 }
 
 // CapReason says which of the account's caps its usage has reached, or "".
