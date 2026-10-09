@@ -429,14 +429,6 @@ a new title.
   all before it calls a tool. Such a step is told to go on rather than to
   submit, up to twice in a row; a third in a row is taken as an answer in
   prose.
-- **Tool results:** a result of 8 KiB or more, a command's output or a
-  whole file, is sent whole to the step after it, the one that reads it,
-  and when that step calls no tool, to the retries or the nudge that
-  answer it. Once a later step's tool results follow it, it is sent as a
-  note of its size, and the model can call the tool again for it: every
-  step sends the whole conversation again, and a few results that size
-  would make up most of its tokens. Smaller results stay in the
-  conversation.
 - **The prompt** holds the system prompt, the pull request, as much of the
   diff as fits, whole files only, and then the context. A file left out is
   named in the review's notes, and a review's or a follow-up's agent reads

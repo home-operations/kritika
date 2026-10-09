@@ -38,10 +38,7 @@ type scriptedStepper struct {
 	calls []model.StepRequest
 }
 
-// Step records req with its messages cloned: the loop rewrites its own
-// slice in place as it goes, and a recorded request must stay as sent.
 func (s *scriptedStepper) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
-	req.Messages = slices.Clone(req.Messages)
 	s.calls = append(s.calls, req)
 	if len(s.calls) > len(s.steps) {
 		return model.StepResponse{}, fmt.Errorf("scriptedStepper: no script for call %d", len(s.calls))
@@ -762,34 +759,6 @@ func checkStepEventToolsAndOutputBytesPopulated(t *testing.T, _ Result, events [
 	}
 }
 
-func setupLargeResultDroppedAfterRead(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
-	st := &scriptedStepper{steps: []model.StepResponse{
-		{ToolCalls: []model.ToolCall{toolCall("1", "big", `{}`), toolCall("2", "small", `{}`)}},
-		{ToolCalls: []model.ToolCall{toolCall("3", "big", `{}`)}},
-		{ToolCalls: []model.ToolCall{toolCall("4", "submit_review", validSubmitInput)}},
-	}}
-	return st, nil, st
-}
-
-func checkLargeResultDroppedAfterRead(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
-	big := strings.Repeat("x", dropOutputBytes)
-	// The step after the calls read the big result whole.
-	if results := scripted.calls[1].Messages[2].ToolResults; results[0].Content != big || results[1].Content != "small" {
-		t.Fatalf("step 1's results = %+v, want both whole", results)
-	}
-	// From the step after that on, the big result is a note and the small
-	// one stays; the step's own results are whole, however big.
-	dropped := droppedText("big", dropOutputBytes)
-	for i, msgs := range [][]model.Message{scripted.calls[2].Messages, result.Conversation.Messages} {
-		if results := msgs[2].ToolResults; results[0].Content != dropped || results[1].Content != "small" {
-			t.Fatalf("%d: step 0's results = %+v, want the big one dropped", i, results)
-		}
-		if results := msgs[4].ToolResults; results[0].Content != big {
-			t.Fatalf("%d: step 1's result = %q, want it whole", i, results[0].Content)
-		}
-	}
-}
-
 // outageStepper fails transiently outage times, then answers with a
 // submit_review.
 type outageStepper struct {
@@ -1135,19 +1104,6 @@ func TestRun(t *testing.T) {
 			wantStop:  StopSubmitted,
 			wantSteps: 2,
 			check:     checkStepEventToolsAndOutputBytesPopulated,
-		},
-		{
-			// A result of dropOutputBytes or more is sent whole to the step
-			// after it and as a note to every later one.
-			name: "large_result_dropped_after_read",
-			tools: []Tool{
-				&fakeTool{name: "big", output: strings.Repeat("x", dropOutputBytes)},
-				&fakeTool{name: "small", output: "small"},
-			},
-			setup:     setupLargeResultDroppedAfterRead,
-			wantStop:  StopSubmitted,
-			wantSteps: 3,
-			check:     checkLargeResultDroppedAfterRead,
 		},
 	}
 
