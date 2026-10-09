@@ -19,8 +19,8 @@ import (
 )
 
 // TestThreadWorker: resolving one of the bot's finding threads dismisses
-// the finding, for a sender with write access only, and unresolving it
-// takes the dismissal back.
+// the finding, for a sender with write access only, unless the thread's
+// lines have changed since; unresolving it takes the dismissal back.
 func TestThreadWorker(t *testing.T) {
 	ctx := t.Context()
 	appStore := storetest.Open(t)
@@ -115,4 +115,13 @@ func TestThreadWorker(t *testing.T) {
 	}
 	// Nothing to take back is not a failure.
 	work(root, false, "onedr0p")
+	// A push changed the lines the finding was made on: resolving the
+	// thread now says "fixed", and records nothing.
+	gone := lf.threads[root]
+	gone.Outdated = true
+	lf.threads[root] = gone
+	work(root, true, "onedr0p")
+	if ds := dismissals(); len(ds) != 0 {
+		t.Fatalf("resolving an outdated thread dismissed %+v", ds)
+	}
 }

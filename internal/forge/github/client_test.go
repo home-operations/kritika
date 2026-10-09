@@ -410,6 +410,22 @@ func TestListInlineReactions(t *testing.T) {
 	}
 }
 
+// TestGetCommentOutdated: GitHub nulls the line of an inline comment once a
+// push changes the lines it was made on; a current one keeps it.
+func TestGetCommentOutdated(t *testing.T) {
+	f, c := newFakeAPI(t)
+	f.reply("GET /api/v3/repos/o/r/pulls/comments/2", 200, `{"id":2,"body":"inline","path":"a.go","line":4,"original_line":4,"user":{"login":"b[bot]","type":"Bot"}}`)
+	f.reply("GET /api/v3/repos/o/r/pulls/comments/3", 200, `{"id":3,"body":"old","path":"a.go","line":null,"original_line":9,"user":{"login":"b[bot]","type":"Bot"}}`)
+	current, err := c.GetComment(t.Context(), "o", "r", 2, true)
+	if err != nil || current.Outdated || current.Line != 4 {
+		t.Fatalf("current inline GetComment = %+v, %v", current, err)
+	}
+	outdated, err := c.GetComment(t.Context(), "o", "r", 3, true)
+	if err != nil || !outdated.Outdated || outdated.Line != 0 {
+		t.Fatalf("outdated inline GetComment = %+v, %v", outdated, err)
+	}
+}
+
 // openPullsJSON is a listing of two open pull requests, the newer one from
 // a fork and a bot.
 const openPullsJSON = `[

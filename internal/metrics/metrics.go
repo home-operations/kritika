@@ -89,7 +89,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, lblOutcome}),
 		threads: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_threads_total",
-			Help: "Finding threads a person resolved or unresolved, by outcome: dismissed, restored, ignored, failed.",
+			Help: "Finding threads a person resolved or unresolved, by outcome: dismissed, addressed, restored, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
 		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_findings_total", Help: "Findings posted, by severity and category.",
