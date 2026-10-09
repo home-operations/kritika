@@ -276,16 +276,16 @@ func agentLoop(
 		Fallback: prompt.fallback,
 		Limits:   p.Agent.limits(),
 		OnStep: func(e agent.StepEvent) {
-			tools := e.Tools
-			if tools == nil {
-				tools = []string{}
+			tools, outputBytes := make([]string, len(e.Calls)), 0
+			for i, c := range e.Calls {
+				tools[i], outputBytes = c.Name, outputBytes+c.OutputBytes
 			}
 			timeline = append(timeline, store.TimelineStep{
-				Index: e.Index, Tools: tools, DurationMS: e.Duration.Milliseconds(), OutputBytes: e.OutputBytes,
+				Index: e.Index, Tools: tools, DurationMS: e.Duration.Milliseconds(), OutputBytes: outputBytes,
 				InputTokens: e.Usage.Prompt(), OutputTokens: e.Usage.Output,
 			})
-			logger.Info("agent step", "step", e.Index, "tools", tools, "duration", e.Duration.Round(time.Millisecond),
-				"output_bytes", e.OutputBytes, "input_tokens", e.Usage.Prompt(), "output_tokens", e.Usage.Output)
+			logger.Info("agent step", "step", e.Index, "calls", e.Calls, "duration", e.Duration.Round(time.Millisecond),
+				"output_bytes", outputBytes, "input_tokens", e.Usage.Prompt(), "output_tokens", e.Usage.Output)
 		},
 	}.Do(actx)
 	if res.Stop == agent.StopCanceled && ctx.Err() == nil && errors.Is(actx.Err(), context.DeadlineExceeded) {

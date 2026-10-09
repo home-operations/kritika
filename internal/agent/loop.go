@@ -61,11 +61,17 @@ type Tool interface {
 
 // StepEvent reports one completed step, for a timeline or a heartbeat.
 type StepEvent struct {
-	Index       int
-	Tools       []string
-	Duration    time.Duration
-	OutputBytes int
-	Usage       model.Usage
+	Index    int
+	Calls    []StepCall
+	Duration time.Duration
+	Usage    model.Usage
+}
+
+// StepCall is one tool call of a step: the tool, and how many bytes its
+// result had, 0 for an error or a call the loop did not run.
+type StepCall struct {
+	Name        string `json:"name"`
+	OutputBytes int    `json:"output_bytes"`
 }
 
 // Result is how a Run ended.
@@ -218,6 +224,55 @@ const forcedRetries = 2
 // was told to submit on; the tool is not run.
 func (r Run) onlySubmitText() string { return "agent: only " + r.Submit.Name + " is available now" }
 
+// dropOutputBytes is the size from which a tool result stays in the
+// conversation only until a later step's tool results follow it: the step
+// after it reads it, and when that step calls no tool, so do the retries
+// or the nudge that answer it. Every later step sends the whole
+// conversation again, and a few results this size, a command's output or
+// a whole file, would make up most of its tokens. Smaller results stay:
+// they cost little, and what a later step reads back, a skill, a
+// description, an error, is one.
+const dropOutputBytes = 8 << 10
+
+// droppedText replaces the result of a call of tool that dropRead dropped,
+// n bytes long.
+func droppedText(tool string, n int) string {
+	return fmt.Sprintf("agent: dropped this result's %d bytes, which the step after it read; call %s again for them", n, tool)
+}
+
+// dropRead replaces, in every message of messages but the last that holds
+// tool results, each result of dropOutputBytes or more with droppedText. A
+// message it changes gets a new results slice: a conversation handed out
+// earlier, the fallback's, keeps the results as its step sent them.
+func dropRead(messages []model.Message) {
+	last := -1
+	for i, m := range messages {
+		if len(m.ToolResults) > 0 {
+			last = i
+		}
+	}
+	tools := map[string]string{}
+	for i := range messages[:max(last, 0)] {
+		m := &messages[i]
+		for _, call := range m.ToolCalls {
+			tools[call.ID] = call.Name
+		}
+		var dropped []model.ToolResult
+		for j, r := range m.ToolResults {
+			if len(r.Content) < dropOutputBytes {
+				continue
+			}
+			if dropped == nil {
+				dropped = slices.Clone(m.ToolResults)
+			}
+			dropped[j].Content = droppedText(cmp.Or(tools[r.CallID], "the tool"), len(r.Content))
+		}
+		if dropped != nil {
+			m.ToolResults = dropped
+		}
+	}
+}
+
 // noResponseText replaces an empty Text on an appended assistant message, so
 // the conversation never carries a message with neither text nor tool calls.
 const noResponseText = "(no response)"
@@ -332,6 +387,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 			last.Text += r.submitNowText()
 		}
 
+		dropRead(messages)
 		req := model.StepRequest{
 			Model:     r.Model,
 			System:    r.System,
@@ -399,7 +455,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 		var truncated bool
 
 		for _, call := range resp.ToolCalls {
-			event.Tools = append(event.Tools, call.Name)
+			event.Calls = append(event.Calls, StepCall{Name: call.Name})
 			result.ToolCalls[call.Name]++
 
 			if call.Name == r.Submit.Name {
@@ -430,7 +486,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 			}
 			res := runTool(ctx, toolsByName[call.Name], call, limits.MaxToolOutputBytes)
 			if !res.IsError {
-				event.OutputBytes += len(res.Content)
+				event.Calls[len(event.Calls)-1].OutputBytes = len(res.Content)
 			}
 			toolResults = append(toolResults, res)
 		}
