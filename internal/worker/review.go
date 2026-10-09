@@ -143,8 +143,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	deadline, resources := file.RunnerFor()
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
-		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, Ignore: settings.Ignore,
-		RepoFiles: eff.repoFiles(),
+		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, PriorBase: prior.mergeBase,
+		Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),
 	}
 	secrets := runner.Secrets{GitToken: b.token}
 	ended := endedReview{

@@ -1,8 +1,8 @@
 // Package gitfetch fetches exactly the commits a review needs, the head and
-// the merge-base and, for a re-review, the head of the last review, at
-// depth one into a throwaway bare repository, and diffs their trees. Trees
-// are enough: `git diff` compares trees and needs no history. It is pure
-// go-git; the runner image has no git binary.
+// the merge-base and, for a re-review, the head and merge base of the last
+// review, at depth one into a throwaway bare repository, and diffs their
+// trees. Trees are enough: `git diff` compares trees and needs no history.
+// It is pure go-git; the runner image has no git binary.
 package gitfetch
 
 import (
@@ -27,9 +27,10 @@ import (
 // Refs the commits are fetched into. They are private to kritika so the bare
 // repository never gains a branch a later fetch could confuse.
 const (
-	headRef  = "refs/kritika/head"
-	baseRef  = "refs/kritika/base"
-	priorRef = "refs/kritika/prior"
+	headRef      = "refs/kritika/head"
+	baseRef      = "refs/kritika/base"
+	priorRef     = "refs/kritika/prior"
+	priorBaseRef = "refs/kritika/prior-base"
 )
 
 const remoteName = "origin"
@@ -45,9 +46,11 @@ type Fetch struct {
 	Head, Base string
 	// Prior, when set, is the full SHA of the head the last review saw. It
 	// is fetched best effort: a force-push may have made it unreachable.
-	// PriorChanged are the paths the change touched at Prior.
+	// PriorChanged are the paths the change touched at Prior, and PriorBase
+	// the merge base it was reviewed against, also fetched best effort.
 	Prior        string
 	PriorChanged []string
+	PriorBase    string
 }
 
 // Result is the two fetched commits and the diff between them.
@@ -66,10 +69,14 @@ type Result struct {
 	// Prior is the fetched prior head, nil when none was asked for or it
 	// could not be fetched, in which case PriorErr says why. DeltaDiff and
 	// DeltaChanged are the diff from it to head and the paths that diff
-	// touches, kept to the paths the change touches at either end: what
-	// else moved between the two heads is the base, under a rebase.
+	// touches, kept to the paths the change touches at either end, less
+	// the hunks the base gained in them between the two merge bases: what
+	// else moved between the two heads is the base, under a merge or a
+	// rebase. PriorBaseErr is why the prior merge base could not be
+	// fetched, in which case those hunks stay in.
 	Prior        *object.Commit
 	PriorErr     error
+	PriorBaseErr error
 	DeltaDiff    string
 	DeltaChanged []string
 	// Dir is the bare repository on disk; the caller removes it.
@@ -85,8 +92,9 @@ func (r *Result) Close() error { return errors.Join(r.repo.Close(), os.RemoveAll
 // Run fetches head and base at depth one and diffs them. The temp dir is
 // removed on error; on success the caller owns it through Result.Close.
 func Run(ctx context.Context, f Fetch) (*Result, error) {
-	if !IsSHA(f.Head) || (f.Base != "" && !IsSHA(f.Base)) || (f.Prior != "" && !IsSHA(f.Prior)) {
-		return nil, fmt.Errorf("gitfetch: head %q, base %q and prior %q must be full commit SHAs", f.Head, f.Base, f.Prior)
+	if !IsSHA(f.Head) || (f.Base != "" && !IsSHA(f.Base)) || (f.Prior != "" && !IsSHA(f.Prior)) || (f.PriorBase != "" && !IsSHA(f.PriorBase)) {
+		return nil, fmt.Errorf("gitfetch: head %q, base %q, prior %q and prior base %q must be full commit SHAs",
+			f.Head, f.Base, f.Prior, f.PriorBase)
 	}
 	dir, err := os.MkdirTemp("", "kritika-fetch-")
 	if err != nil {
@@ -154,7 +162,7 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 	if f.Prior == "" {
 		return res, nil
 	}
-	if res.Prior, res.PriorErr = fetchPrior(ctx, repo, opts, f.Prior); res.Prior == nil {
+	if res.Prior, res.PriorErr = fetchCommit(ctx, repo, opts, f.Prior, priorRef); res.Prior == nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("gitfetch: prior: %w", ctx.Err())
 		}
@@ -177,17 +185,28 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 		return nil, err
 	}
 	delta = slices.DeleteFunc(delta, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
-	if res.DeltaDiff, res.DeltaChanged, err = renderChanges(ctx, delta); err != nil {
+	var gained map[string]bool
+	if f.PriorBase != "" && f.PriorBase != f.Base {
+		var priorBase *object.Commit
+		if priorBase, res.PriorBaseErr = fetchCommit(ctx, repo, opts, f.PriorBase, priorBaseRef); priorBase != nil {
+			if gained, err = baseGained(ctx, priorBase, base, own); err != nil {
+				return nil, err
+			}
+		} else if ctx.Err() != nil {
+			return nil, fmt.Errorf("gitfetch: prior base: %w", ctx.Err())
+		}
+	}
+	if res.DeltaDiff, res.DeltaChanged, err = renderDelta(ctx, delta, gained); err != nil {
 		return nil, err
 	}
 	return res, nil
 }
 
-// fetchPrior fetches the prior head in a fetch of its own, so that an
-// unreachable prior cannot fail the fetch of head and base. The error says
-// why the prior could not be had; the caller decides whether that matters.
-func fetchPrior(ctx context.Context, repo *git.Repository, opts []client.Option, prior string) (*object.Commit, error) {
-	if c, err := repo.CommitObject(plumbing.NewHash(prior)); err == nil {
+// fetchCommit fetches one commit into ref in a fetch of its own, so that an
+// unreachable commit cannot fail the fetch of head and base. The error says
+// why it could not be had; the caller decides whether that matters.
+func fetchCommit(ctx context.Context, repo *git.Repository, opts []client.Option, sha, ref string) (*object.Commit, error) {
+	if c, err := repo.CommitObject(plumbing.NewHash(sha)); err == nil {
 		return c, nil
 	}
 	err := repo.FetchContext(ctx, &git.FetchOptions{
@@ -195,16 +214,56 @@ func fetchPrior(ctx context.Context, repo *git.Repository, opts []client.Option,
 		ClientOptions: opts,
 		Depth:         1,
 		Tags:          git.NoTags,
-		RefSpecs:      []config.RefSpec{config.RefSpec(prior + ":" + priorRef)},
+		RefSpecs:      []config.RefSpec{config.RefSpec(sha + ":" + ref)},
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil, fmt.Errorf("gitfetch: fetch prior %s: %w", prior, err)
+		return nil, fmt.Errorf("gitfetch: fetch %s: %w", sha, err)
 	}
-	c, err := repo.CommitObject(plumbing.NewHash(prior))
+	c, err := repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
-		return nil, fmt.Errorf("gitfetch: prior %s: %w", prior, err)
+		return nil, fmt.Errorf("gitfetch: %s: %w", sha, err)
 	}
 	return c, nil
+}
+
+// baseGained is the hunks the base gained in the change's own paths
+// between the merge base the last review saw and this one's, keyed as
+// hunkKeys keys them. A merge or a rebase carries them to the head without
+// their being the change's, so the delta leaves them out.
+func baseGained(ctx context.Context, priorBase, base *object.Commit, own map[string]bool) (map[string]bool, error) {
+	changes, err := treeChanges(ctx, priorBase, base)
+	if err != nil {
+		return nil, err
+	}
+	changes = slices.DeleteFunc(changes, func(c *object.Change) bool { return !own[c.From.Name] && !own[c.To.Name] })
+	diff, _, err := renderChanges(ctx, changes)
+	if err != nil {
+		return nil, err
+	}
+	return hunkKeys(diff), nil
+}
+
+// renderDelta is renderChanges less the hunks gained keys; a change left
+// with none is not of the delta.
+func renderDelta(ctx context.Context, changes object.Changes, gained map[string]bool) (string, []string, error) {
+	if len(gained) == 0 {
+		return renderChanges(ctx, changes)
+	}
+	var b strings.Builder
+	var changed []string
+	for _, c := range changes {
+		patch, err := c.PatchContext(ctx)
+		if err != nil {
+			return "", nil, fmt.Errorf("gitfetch: patch: %w", err)
+		}
+		text := withoutHunks(patch.String(), gained)
+		if text == "" {
+			continue
+		}
+		b.WriteString(text)
+		changed = append(changed, cmp.Or(c.To.Name, c.From.Name))
+	}
+	return b.String(), changed, nil
 }
 
 // treeChanges lists what changed between two commits, renames detected.

@@ -23,6 +23,12 @@ import (
 type repo struct {
 	dir                                 string
 	base, head, other, rebased, renamed string
+	// On a third branch, the base gains a file the change then edits at
+	// its end: long is the merge base the change (prior) was reviewed
+	// against, touched the merge base after the base edited the file's
+	// start, merged the change brought up to date with it as it was, and
+	// moved the change brought up to date and extended.
+	long, prior, touched, merged, moved string
 }
 
 func build(t *testing.T) repo {
@@ -67,6 +73,22 @@ func build(t *testing.T) repo {
 		t.Fatal(err)
 	}
 	out.renamed = commit("rename", nil)
+	branch := func(name, from string) {
+		t.Helper()
+		if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(name), Create: true, Hash: plumbing.NewHash(from)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const svc = "package svc\n\nfunc one() {}\n\nfunc two() {}\n\nfunc three() {}\n\nfunc four() {}\n\nfunc five() {}\n"
+	const touchedSvc = "package svc\n\n// svc is the service.\n\nfunc one() {}\n\nfunc two() {}\n\nfunc three() {}\n\nfunc four() {}\n\nfunc five() {}\n"
+	branch("long", out.base)
+	out.long = commit("base adds svc.go", map[string]string{"svc.go": svc})
+	branch("prior", out.long)
+	out.prior = commit("change edits svc.go", map[string]string{"svc.go": svc + "\nfunc b() {}\n"})
+	branch("merged", out.long)
+	out.touched = commit("base edits svc.go", map[string]string{"svc.go": touchedSvc})
+	out.merged = commit("change brought up to date", map[string]string{"svc.go": touchedSvc + "\nfunc b() {}\n"})
+	out.moved = commit("change brought up to date and extended", map[string]string{"svc.go": touchedSvc + "\nfunc b() {}\n\nfunc c() {}\n"})
 	return out
 }
 
@@ -136,11 +158,15 @@ func TestRunPriorDelta(t *testing.T) {
 	r := build(t)
 	cases := []struct {
 		name            string
-		head, prior     string
+		head, base      string
+		prior           string
 		priorChanged    []string
+		priorBase       string
 		wantPrior       bool
 		wantChanged     []string
 		wantInDelta     string
+		wantNotInDelta  string
+		wantBaseErr     bool
 		wantHeadChanged string
 	}{
 		// head and rebased carry the same main.go; README.md moved between
@@ -152,12 +178,26 @@ func TestRunPriorDelta(t *testing.T) {
 		{name: "prior already fetched as the base", prior: r.other, wantPrior: true, wantChanged: []string{"main.go"}, wantInDelta: "+func b() {}"},
 		{name: "the changed file renamed since", head: r.renamed, prior: r.rebased, priorChanged: []string{"main.go"}, wantPrior: true, wantChanged: []string{"lib.go"}, wantInDelta: "lib.go", wantHeadChanged: "lib.go"},
 		{name: "prior is the head", prior: r.rebased, wantPrior: true},
+		// The base edited the start of the file the change edits at its end,
+		// and the change was brought up to date: what the base gained in the
+		// file is no change of the pull request's.
+		{name: "brought up to date, the change as it was", head: r.merged, base: r.touched, prior: r.prior, priorBase: r.long,
+			priorChanged: []string{"svc.go"}, wantPrior: true, wantHeadChanged: "svc.go"},
+		{name: "brought up to date, the change extended", head: r.moved, base: r.touched, prior: r.prior, priorBase: r.long,
+			priorChanged: []string{"svc.go"}, wantPrior: true, wantChanged: []string{"svc.go"}, wantInDelta: "+func c() {}",
+			wantNotInDelta: "svc is the service", wantHeadChanged: "svc.go"},
+		// Without the merge base the last review saw, what the base gained
+		// cannot be told from the change's and stays in the delta.
+		{name: "brought up to date, the prior merge base unreachable", head: r.merged, base: r.touched, prior: r.prior,
+			priorBase: "0123456789abcdef0123456789abcdef01234567", priorChanged: []string{"svc.go"}, wantPrior: true,
+			wantChanged: []string{"svc.go"}, wantInDelta: "+// svc is the service.", wantBaseErr: true, wantHeadChanged: "svc.go"},
 		{name: "unknown prior", prior: "0123456789abcdef0123456789abcdef01234567"},
 		{name: "no prior"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: cmp.Or(tc.head, r.rebased), Base: r.other, Prior: tc.prior, PriorChanged: tc.priorChanged})
+			res, err := Run(t.Context(), Fetch{CloneURL: r.dir, Head: cmp.Or(tc.head, r.rebased), Base: cmp.Or(tc.base, r.other), Prior: tc.prior,
+				PriorChanged: tc.priorChanged, PriorBase: tc.priorBase})
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
@@ -174,8 +214,12 @@ func TestRunPriorDelta(t *testing.T) {
 			if strings.Join(res.DeltaChanged, ",") != strings.Join(tc.wantChanged, ",") {
 				t.Fatalf("delta changed = %v, want %v", res.DeltaChanged, tc.wantChanged)
 			}
-			if !strings.Contains(res.DeltaDiff, tc.wantInDelta) || (!tc.wantPrior && res.DeltaDiff != "") {
+			if !strings.Contains(res.DeltaDiff, tc.wantInDelta) || (!tc.wantPrior && res.DeltaDiff != "") ||
+				(tc.wantNotInDelta != "" && strings.Contains(res.DeltaDiff, tc.wantNotInDelta)) {
 				t.Fatalf("delta diff = %q", res.DeltaDiff)
+			}
+			if (res.PriorBaseErr != nil) != tc.wantBaseErr {
+				t.Fatalf("prior base error = %v, want one %v", res.PriorBaseErr, tc.wantBaseErr)
 			}
 			if want := cmp.Or(tc.wantHeadChanged, "main.go"); len(res.Changed) != 1 || res.Changed[0] != want {
 				t.Fatalf("the merge-base diff must not change: %v, want %s", res.Changed, want)
