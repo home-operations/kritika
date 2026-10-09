@@ -330,6 +330,22 @@ func startWorker(
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
+	// A review this replica snoozed for a model slot looks once more for
+	// one once its snooze is saved (see worker.SlotWake). A queue start
+	// that fails partway closes every subscription, so a closed one is made
+	// again for startQueue's retry.
+	wake := &worker.SlotWake{Store: st, Current: current, Logger: logger}
+	snoozed, unsubscribe := queue.Subscribe(river.EventKindJobSnoozed)
+	g.Go(func() error {
+		for {
+			wake.Run(ctx, snoozed)
+			unsubscribe()
+			if ctx.Err() != nil {
+				return nil
+			}
+			snoozed, unsubscribe = queue.Subscribe(river.EventKindJobSnoozed)
+		}
+	})
 	g.Go(func() error { return workQueues(ctx, st, queue, cfg, logger) })
 	return nil
 }
