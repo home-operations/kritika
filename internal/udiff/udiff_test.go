@@ -40,6 +40,9 @@ func TestParse(t *testing.T) {
 			paths: []string{"x"}, hunks: []int{1}, lines: "  1 1,- 2 2,+ 3 2"},
 		{name: "what comes before the first diff line is a file of its own", diff: "stray\ndiff --git a/x b/x\n+x\n",
 			paths: []string{"", "x"}, hunks: []int{0, 0}},
+		{name: "a path keeps a space at its end, and not the tab git ends a name with a space with",
+			diff:  "diff --git a/x.go  b/x.go \n--- a/x.go \n+++ b/x.go \n" + "diff --git a/x y.go b/x y.go\n--- a/x y.go\t\n+++ b/x y.go\t\n",
+			paths: []string{"x.go ", "x y.go"}, hunks: []int{0, 0}},
 		{name: "nothing", diff: ""},
 	}
 	for _, tt := range tests {

@@ -143,9 +143,10 @@ func (h Hunk) String() string {
 func (l Line) String() string { return l.raw }
 
 // sidePath is the path a "---" or "+++" line names, its prefix off, ""
-// for /dev/null.
+// for /dev/null. Git ends a name that has a space in it with a tab, which
+// is not the name's; a space at its end is, and go-git writes it bare.
 func sidePath(p, prefix string) string {
-	p = strings.TrimSpace(p)
+	p = strings.TrimSuffix(p, "\t")
 	if p == "/dev/null" {
 		return ""
 	}
