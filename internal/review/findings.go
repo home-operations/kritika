@@ -610,7 +610,6 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
 		f.Prior = strings.TrimSpace(f.Prior)
-		f.Fingerprint, f.Prior = prior.inherit(f), ""
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():
@@ -626,6 +625,13 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		if reason == "" && !anchored {
 			reason = DropUnanchored
 		}
+		// A finding off the diff is reported all the same and keeps its
+		// thread; one dropped as malformed claims no prior finding's, which
+		// a later finding may then carry on.
+		if reason == "" || reason == DropUnanchored {
+			f.Fingerprint = prior.inherit(f)
+		}
+		f.Prior = ""
 		if reason != "" {
 			dropped = append(dropped, Dropped{Finding: f, Reason: reason})
 			continue
