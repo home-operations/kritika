@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/url"
 	"os"
@@ -55,6 +56,11 @@ type RunConfig struct {
 	Mask func(string) string
 	// Keep, when set, says where a cut output is kept whole.
 	Keep *Kept
+	// Logger, when set, logs each command as it starts, its arguments
+	// masked, since the pod's own log is not. A step is logged when it
+	// completes, so a runner killed mid-command, as by the memory limit,
+	// would otherwise leave no trace of what it was running.
+	Logger *slog.Logger
 }
 
 // Kept says where the run tool keeps a cut output whole, masked, for the
@@ -193,6 +199,13 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	}
 
 	rt.calls++
+	if rt.cfg.Logger != nil {
+		args := make([]string, len(req.Args))
+		for i, a := range req.Args {
+			args[i] = rt.mask(a)
+		}
+		rt.cfg.Logger.Info("command started", "call", rt.calls, "command", req.Command, "args", args)
+	}
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
 	defer cancel()
 	out := &cappedBuffer{max: rt.cfg.MaxOutputBytes, keep: rt.cfg.MaxOutputBytes}

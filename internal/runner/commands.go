@@ -90,7 +90,7 @@ func commandTool(
 	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
-		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note,
+		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note, Logger: logger,
 		Mask: Secrets{GitToken: gitToken}.Mask,
 		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: budget},
 	})
