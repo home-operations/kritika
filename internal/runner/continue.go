@@ -105,6 +105,7 @@ func carryOn(
 	logger.Info("carrying on the last review's conversation", "run", review.ShortSHA(p.Prompt.Continue.RunID), "tokens", c.Tokens,
 		"messages", len(c.Messages))
 	return agentPrompt{
-		system: prompt.system, user: user, submit: prompt.submit, validate: prompt.validate, omitted: omitted, carried: c,
+		system: prompt.system, user: user, submit: prompt.submit, validate: prompt.validate, fallback: prompt.fallback,
+		omitted: omitted, carried: c,
 	}
 }

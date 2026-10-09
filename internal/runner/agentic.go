@@ -115,14 +115,16 @@ func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, c
 }
 
 // agentPrompt is what the agent is sent: the system prompt, the first user
-// message, and the tool it answers with, whose input validate checks.
-// omitted names the diff files, and contextOmitted counts the chunks, the
+// message, and the tool it answers with, whose input validate checks and
+// fallback, when set, holds to be an answer validate refused only for a
+// slip. omitted names the diff files, and contextOmitted counts the chunks, the
 // budget left out of the message. carried, when set, is the conversation
 // the agent carries on, and user then its next turn.
 type agentPrompt struct {
 	system, user   string
 	submit         model.ToolDef
 	validate       func(json.RawMessage) error
+	fallback       func(json.RawMessage) bool
 	omitted        []string
 	contextOmitted int
 	carried        *agent.Conversation
@@ -177,7 +179,7 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 	})
 	return agentPrompt{
 		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,
-		omitted: omitted, contextOmitted: contextOmitted,
+		fallback: review.Lenient(review.Check), omitted: omitted, contextOmitted: contextOmitted,
 	}
 }
 
@@ -271,6 +273,7 @@ func agentLoop(
 		Tools:    tools,
 		Submit:   prompt.submit,
 		Validate: prompt.validate,
+		Fallback: prompt.fallback,
 		Limits:   p.Agent.limits(),
 		OnStep: func(e agent.StepEvent) {
 			tools := e.Tools
@@ -287,6 +290,9 @@ func agentLoop(
 	}.Do(actx)
 	if res.Stop == agent.StopCanceled && ctx.Err() == nil && errors.Is(actx.Err(), context.DeadlineExceeded) {
 		res.Err = fmt.Sprintf("agent timeout (%s) reached", timeout)
+	}
+	if res.Refused != "" {
+		logger.Warn("agent ended without a valid submission; taking its last refused one", "refusal", res.Refused)
 	}
 	return res, timeline
 }

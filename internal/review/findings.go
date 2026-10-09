@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -293,6 +294,10 @@ type jsonSchema struct {
 	Items       *jsonSchema            `json:"items,omitempty"`
 	Required    []string               `json:"required,omitempty"`
 	MaxItems    int                    `json:"maxItems,omitempty"`
+	// AdditionalProperties is false on an object that takes no key beyond
+	// Properties, so a provider that enforces the schema refuses a
+	// misspelled key before Check has to.
+	AdditionalProperties *bool `json:"additionalProperties,omitempty"`
 }
 
 func (s jsonSchema) mustMarshal() json.RawMessage {
@@ -333,7 +338,7 @@ const (
 // contractSchema is kept minimal on purpose: every extra field is something
 // a model can get wrong. diagram adds summary.diagram, which a review is
 // asked for only where the repository opts in.
-func contractSchema(requireFix, diagram bool) json.RawMessage {
+func contractSchema(requireFix, diagram bool) jsonSchema {
 	required := []string{keyPath, keyLine, keySeverity, keyCategory, keyTitle, keyExplanation}
 	fix := "A concrete fix: replacement code or a precise instruction. Markdown allowed, no headings."
 	if requireFix {
@@ -357,9 +362,10 @@ func contractSchema(requireFix, diagram bool) json.RawMessage {
 		Type: schemaObject,
 		Properties: map[string]*jsonSchema{
 			keySummary: {
-				Type:       schemaObject,
-				Properties: summary,
-				Required:   []string{keyHeadline, keyTake, keyPraise},
+				Type:                 schemaObject,
+				Properties:           summary,
+				Required:             []string{keyHeadline, keyTake, keyPraise},
+				AdditionalProperties: new(false),
 			},
 			keyFindings: {
 				Type: schemaArray,
@@ -380,12 +386,14 @@ func contractSchema(requireFix, diagram bool) json.RawMessage {
 						keyAgentPrompt:  {Type: schemaString, Description: describeAgentPrompt},
 						keyRules:        {Type: schemaArray, Description: describeRules, Items: &jsonSchema{Type: schemaString}},
 					},
-					Required: required,
+					Required:             required,
+					AdditionalProperties: new(false),
 				},
 			},
 		},
-		Required: []string{keySummary, keyFindings},
-	}.mustMarshal()
+		Required:             []string{keySummary, keyFindings},
+		AdditionalProperties: new(false),
+	}
 }
 
 // summaryProperties are a summary's headline, take and praise, and its
@@ -417,10 +425,22 @@ func summaryProperties(diagram bool) map[string]*jsonSchema {
 type contract struct{ strict, diagram bool }
 
 var contracts = map[contract]json.RawMessage{
-	{false, false}: contractSchema(false, false),
-	{false, true}:  contractSchema(false, true),
-	{true, false}:  contractSchema(true, false),
-	{true, true}:   contractSchema(true, true),
+	{false, false}: contractSchema(false, false).mustMarshal(),
+	{false, true}:  contractSchema(false, true).mustMarshal(),
+	{true, false}:  contractSchema(true, false).mustMarshal(),
+	{true, true}:   contractSchema(true, true).mustMarshal(),
+}
+
+// The keys the fullest contract defines at each level. Check holds every
+// submission to them whichever schema it was asked with: a diagram it was
+// not asked for is Parse's to drop, not a misspelling to send back.
+var topKeys, summaryKeys, findingKeys = contractKeys()
+
+func contractKeys() (top, summary, finding []string) {
+	s := contractSchema(true, true)
+	return slices.Sorted(maps.Keys(s.Properties)),
+		slices.Sorted(maps.Keys(s.Properties[keySummary].Properties)),
+		slices.Sorted(maps.Keys(s.Properties[keyFindings].Items.Properties))
 }
 
 // Schema is the JSON Schema of the answer the model must produce, with
@@ -433,14 +453,18 @@ func SchemaStrict(diagram bool) json.RawMessage {
 }
 
 // Check says why raw is not a review in the contract's shape: a field of
-// the wrong type, or no summary take. It is what the agent loop answers a
-// submit_review call with, so the model can correct it before the review
-// ends; Parse applies the rest of the contract to the submission that
-// ended it.
+// the wrong type, a key the contract does not define, or no summary take.
+// It is what the agent loop answers a submit_review call with, so the
+// model can correct it before the review ends; Parse applies the rest of
+// the contract to the submission that ended it.
 func Check(raw json.RawMessage) error {
 	var res Result
 	if err := json.Unmarshal(raw, &res); err != nil {
 		return fmt.Errorf("review: %w; the input is an object with a summary object {headline, take, praise} and a findings array", err)
+	}
+	if unknown := unknownKeys(raw); len(unknown) > 0 {
+		return fmt.Errorf("review: %w %s; the input takes %s, the summary takes %s and a finding takes %s", errUnknownKeys,
+			strings.Join(unknown, ", "), strings.Join(topKeys, ", "), strings.Join(summaryKeys, ", "), strings.Join(findingKeys, ", "))
 	}
 	if strings.TrimSpace(res.Summary.Take) == "" {
 		return errors.New("review: summary.take is required: two to four sentences on the change")
@@ -450,6 +474,100 @@ func Check(raw json.RawMessage) error {
 			maxDiagramBytes, strings.Join(diagramKinds, ", "))
 	}
 	return nil
+}
+
+// unknownKeys lists the keys raw carries that the contract does not
+// define, each with its path, so one error names them all and the model
+// can correct every one in a single resubmission. A value under a
+// misspelled key is otherwise dropped on decoding and the finding posts
+// without it, with nothing to say so.
+func unknownKeys(raw json.RawMessage) []string {
+	var top map[string]json.RawMessage
+	var body struct {
+		Summary  map[string]json.RawMessage   `json:"summary"`
+		Findings []map[string]json.RawMessage `json:"findings"`
+	}
+	// Check has decoded raw as a Result, so both decode too.
+	_ = json.Unmarshal(raw, &top)
+	_ = json.Unmarshal(raw, &body)
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(top)) {
+		if !defines(topKeys, k) {
+			out = append(out, fmt.Sprintf("%q", k))
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(body.Summary)) {
+		if !defines(summaryKeys, k) {
+			out = append(out, fmt.Sprintf("%s.%q", keySummary, k))
+		}
+	}
+	for i, f := range body.Findings {
+		for _, k := range slices.Sorted(maps.Keys(f)) {
+			if !defines(findingKeys, k) {
+				out = append(out, fmt.Sprintf("%s[%d].%q", keyFindings, i, k))
+			}
+		}
+	}
+	return out
+}
+
+// defines says whether keys holds k, compared regardless of case as
+// decoding compares a key with a field's name: a key that differs only in
+// case still fills its field.
+func defines(keys []string, k string) bool {
+	return slices.ContainsFunc(keys, func(d string) bool { return strings.EqualFold(d, k) })
+}
+
+// errUnknownKeys is what Check's refusal of keys the contract does not
+// define wraps.
+var errUnknownKeys = errors.New("unknown keys")
+
+// Lenient says whether check refused raw for keys the contract does not
+// define and accepts it once they are dropped, as Parse drops them on
+// decoding: a submission refused for those keys alone is still a review,
+// which the agent loop falls back on rather than end with none. The
+// refusal must be for those keys because knownKeys keeps only the last
+// of a repeated key, which can hide a type error Check found in an
+// earlier one, and Check reports a type error before any unknown key.
+func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
+	return func(raw json.RawMessage) bool {
+		return errors.Is(check(raw), errUnknownKeys) && check(knownKeys(raw)) == nil
+	}
+}
+
+// knownKeys is raw without the keys unknownKeys lists, or raw itself when
+// it is not an object.
+func knownKeys(raw json.RawMessage) json.RawMessage {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
+		return raw
+	}
+	keep(top, topKeys)
+	for k, v := range top {
+		switch {
+		case strings.EqualFold(k, keySummary):
+			var summary map[string]json.RawMessage
+			if json.Unmarshal(v, &summary) == nil && summary != nil {
+				keep(summary, summaryKeys)
+				top[k], _ = json.Marshal(summary)
+			}
+		case strings.EqualFold(k, keyFindings):
+			var findings []map[string]json.RawMessage
+			if json.Unmarshal(v, &findings) == nil {
+				for _, f := range findings {
+					keep(f, findingKeys)
+				}
+				top[k], _ = json.Marshal(findings)
+			}
+		}
+	}
+	out, _ := json.Marshal(top)
+	return out
+}
+
+// keep drops from m the keys keys does not define.
+func keep(m map[string]json.RawMessage, keys []string) {
+	maps.DeleteFunc(m, func(k string, _ json.RawMessage) bool { return !defines(keys, k) })
 }
 
 // Parse decodes the model's JSON and drops findings kritika cannot post: an

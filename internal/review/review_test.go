@@ -75,7 +75,23 @@ func TestCheck(t *testing.T) {
 			wantErr: "cannot unmarshal string into Go struct field"},
 		{name: "a finding's line as a string", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[{"path":"a","line":"3"}]}`,
 			wantErr: "cannot unmarshal string into Go struct field"},
-		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`, wantErr: "summary.take is required"},
+		{name: "summary left out", raw: `{"take":"Fine.","praise":[],"findings":[]}`,
+			wantErr: `unknown keys "praise", "take"; the input takes findings, summary`},
+		{name: "empty summary", raw: `{"summary":{},"findings":[]}`, wantErr: "summary.take is required"},
+		{name: "every key the contract defines", raw: `{"summary":{"headline":"h","take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B","checked":["c"]},
+			"findings":[{"path":"a","line":1,"severity":"nit","category":"tests","title":"t","explanation":"e","suggested_fix":"f",
+			"end_line":2,"replacement":"r","insert_after":"i","agent_prompt":"p","rules":["r"]}]}`},
+		{name: "a misspelled fix key and checked key", raw: `{"summary":{"headline":"h","take":"t","praise":[],"checked>":["x"]},
+			"findings":[{"path":"a.yaml","line":1,"severity":"important","category":"correctness","title":"t","explanation":"e","suggested_fix.":"the fix"}]}`,
+			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes findings, summary, ` +
+				`the summary takes checked, diagram, headline, praise, take and a finding takes agent_prompt, category, ` +
+				`end_line, explanation, insert_after, line, path, replacement, rules, severity, suggested_fix, title`},
+		{name: "broken keys across findings, each named", raw: `{"summary":{"take":"t","praise":[]},
+			"findings":[{"path":"a","line":1,"severity":"blocking","severity_":"important","title":"t","explanation":"e","suggested_fix` + "`" + `: ":"f"},
+			{": ":", ","path":"a","line":1,"severity":"important","title":"t","explanation":"e"}]}`,
+			wantErr: "unknown keys findings[0].\"severity_\", findings[0].\"suggested_fix`: \", findings[1].\": \";"},
+		{name: "keys that differ only in case, which still decode", raw: `{"Summary":{"Take":"Fine.","praise":[]},
+			"findings":[{"PATH":"a","line":1,"Suggested_Fix":"f"}]}`},
 		{name: "blank take", raw: `{"summary":{"take":"  ","praise":[]},"findings":[]}`, wantErr: "summary.take is required"},
 		{name: "an array", raw: `[]`, wantErr: "cannot unmarshal array"},
 		{name: "a flowchart", raw: `{"summary":{"take":"Fine.","praise":[],"diagram":"flowchart TD\n  A --> B"},"findings":[]}`},
@@ -96,6 +112,38 @@ func TestCheck(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Check() = %v, want an error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLenient(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "the contract's shape, which check does not refuse", raw: `{"summary":{"take":"Fine.","praise":[]},"findings":[]}`},
+		{name: "unknown keys at every level", raw: `{"verdict":"ok","summary":{"take":"Fine.","praise":[],"checked>":["x"]},
+			"findings":[{"path":"a","line":1,"suggested_fix.":"f"},null]}`, want: true},
+		{name: "unknown keys in a summary that differs in case", raw: `{"Summary":{"Take":"Fine.","praise":[],"mood":"ok"}}`, want: true},
+		{name: "unknown keys and a blank take", raw: `{"summary":{"take":" ","praise":[],"mood":"ok"},"findings":[]}`},
+		{name: "unknown keys and a field of the wrong type", raw: `{"summary":{"take":"Fine.","praise":"clear","mood":"ok"}}`},
+		// Decoding into a map keeps only the last of a repeated key, so
+		// dropping the unknown keys would hide the type error.
+		{name: "a repeated key whose first value is of the wrong type", raw: `{"summary":{"take":"Fine.","praise":[]},
+			"findings":[{"path":"a","line":"bad","line":3,"mood":"ok"}]}`},
+		{name: "a repeated key of the wrong type and no unknown key", raw: `{"summary":{"take":"Fine.","praise":[]},
+			"findings":[{"path":"a","line":"bad","line":3}]}`},
+		{name: "the summary's keys flattened to the top", raw: `{"take":"Fine.","praise":[],"findings":[]}`},
+		{name: "not JSON", raw: `{"summary":`},
+		{name: "an array", raw: `[]`},
+	}
+	lenient := Lenient(Check)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lenient(json.RawMessage(tt.raw)); got != tt.want {
+				t.Fatalf("Lenient(Check)(%s) = %v, want %v", tt.raw, got, tt.want)
 			}
 		})
 	}
@@ -494,23 +542,32 @@ func TestBuildRendersDescriptionAsData(t *testing.T) {
 }
 
 type node struct {
-	Type       string           `json:"type"`
-	Enum       []string         `json:"enum"`
-	Properties map[string]*node `json:"properties"`
-	Items      *node            `json:"items"`
-	Required   []string         `json:"required"`
-	MaxItems   int              `json:"maxItems"`
+	Type                 string           `json:"type"`
+	Enum                 []string         `json:"enum"`
+	Properties           map[string]*node `json:"properties"`
+	Items                *node            `json:"items"`
+	Required             []string         `json:"required"`
+	MaxItems             int              `json:"maxItems"`
+	AdditionalProperties *bool            `json:"additionalProperties"`
+}
+
+// closed reports whether n refuses keys beyond its properties.
+func (n *node) closed() bool {
+	return n != nil && n.AdditionalProperties != nil && !*n.AdditionalProperties
 }
 
 func checkContract(t *testing.T, n node, required []string) {
 	t.Helper()
+	if !n.closed() {
+		t.Fatalf("the input is open to unknown keys: %+v", n)
+	}
 	summary := n.Properties["summary"]
-	if summary == nil || summary.Type != "object" || !slices.Equal(summary.Required, []string{"headline", "take", "praise"}) ||
+	if !summary.closed() || summary.Type != "object" || !slices.Equal(summary.Required, []string{"headline", "take", "praise"}) ||
 		summary.Properties["praise"].Type != "array" || summary.Properties["praise"].MaxItems != 3 {
 		t.Fatalf("summary = %+v", summary)
 	}
 	items := n.Properties["findings"].Items
-	if n.Properties["findings"].Type != "array" || items == nil || items.Type != "object" ||
+	if n.Properties["findings"].Type != "array" || !items.closed() || items.Type != "object" ||
 		!slices.Equal(items.Required, required) ||
 		items.Properties["line"].Type != "integer" || items.Properties["suggested_fix"].Type != "string" ||
 		!slices.Equal(items.Properties["severity"].Enum, []string{"blocking", "important", "nit"}) ||
