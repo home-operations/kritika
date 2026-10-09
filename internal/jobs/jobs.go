@@ -134,6 +134,9 @@ type ThreadArgs struct {
 	CommentID int64 `json:"comment_id" river:"unique"`
 	// Resolved is the thread's state now.
 	Resolved bool `json:"resolved" river:"unique"`
+	// Outdated is whether a push had changed the lines the comment was made
+	// on by the time the thread changed state.
+	Outdated bool `json:"outdated"`
 	// Sender is who changed it.
 	Sender string `json:"sender"`
 }

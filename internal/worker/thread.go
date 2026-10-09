@@ -17,13 +17,13 @@ import (
 
 // Thread works a review thread someone resolved or unresolved on the
 // forge. Resolving one of the bot's finding threads dismisses the finding,
-// as "@<bot> dismiss" does, unless the lines it was made on have changed
-// since: then the person is saying "fixed", not "wrong", and nothing is
-// recorded, so a later review may raise the finding again should the fix
-// be lost. Unresolving a thread takes a dismissal back. Both take write
-// access, as the mention does: the forge lets a pull request's author
-// resolve the threads on their own pull request, which must not silence
-// the reviewer.
+// as "@<bot> dismiss" does, unless a push had changed the lines it was made
+// on by the time it was resolved: then the person is saying "fixed", not
+// "wrong", and nothing is recorded, so a later review may raise the
+// finding again should the fix be lost. Unresolving a thread takes a
+// dismissal back. Both take write access, as the mention does: the forge
+// lets a pull request's author resolve the threads on their own pull
+// request, which must not silence the reviewer.
 type Thread struct {
 	river.WorkerDefaults[jobs.ThreadArgs]
 	Base
@@ -81,7 +81,7 @@ func (w *Thread) apply(
 		logger.Info("thread change ignored", "reason", "sender has "+string(perm)+" access, write is required")
 		return threadIgnored, nil
 	}
-	fingerprint, outdated, err := threadFinding(ctx, client, owner, repo, args.CommentID)
+	fingerprint, err := threadFinding(ctx, client, owner, repo, args.CommentID)
 	if err != nil {
 		return "", err
 	}
@@ -90,7 +90,7 @@ func (w *Thread) apply(
 		return threadIgnored, nil
 	}
 	logger = logger.With("fingerprint", fingerprint)
-	if args.Resolved && outdated {
+	if args.Resolved && args.Outdated {
 		logger.Info("finding addressed", "reason", "the thread's lines changed since the finding was posted")
 		return threadAddressed, nil
 	}
@@ -130,22 +130,21 @@ func (w *Thread) apply(
 }
 
 // threadFinding is the fingerprint of the finding the thread opened by
-// inline comment id holds, the one the bot's comment carries a
-// FindingMarker for, and whether the lines the comment was made on have
-// changed since. The fingerprint is "" when the thread is not one of the
-// bot's finding threads.
-func threadFinding(ctx context.Context, client forge.Client, owner, repo string, id int64) (fingerprint string, outdated bool, err error) {
+// inline comment id holds: the one the bot's comment carries a
+// FindingMarker for. "" when the thread is not one of the bot's finding
+// threads.
+func threadFinding(ctx context.Context, client forge.Client, owner, repo string, id int64) (string, error) {
 	login, err := client.BotLogin(ctx)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	root, err := client.GetComment(ctx, owner, repo, id, true)
 	if err != nil {
-		return "", false, fmt.Errorf("worker: read the comment opening the thread: %w", err)
+		return "", fmt.Errorf("worker: read the comment opening the thread: %w", err)
 	}
 	if !strings.EqualFold(root.Author, login) {
-		return "", false, nil
+		return "", nil
 	}
-	fingerprint, _ = review.MarkedFinding(root.Body)
-	return fingerprint, root.Outdated, nil
+	fingerprint, _ := review.MarkedFinding(root.Body)
+	return fingerprint, nil
 }

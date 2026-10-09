@@ -160,7 +160,10 @@ type Thread struct {
 	// payload lists none.
 	CommentID int64
 	// Resolved is the thread's state now.
-	Resolved    bool
+	Resolved bool
+	// Outdated is whether a push had changed the lines that comment was
+	// made on by the time the thread changed state.
+	Outdated    bool
 	Sender      string
 	SenderIsBot bool
 }
@@ -404,8 +407,10 @@ func parseReviewThread(delivery string, body []byte) (Event, error) {
 		Sender ghUser `json:"sender"`
 		Thread struct {
 			Comments []struct {
-				ID        int64 `json:"id"`
-				InReplyTo int64 `json:"in_reply_to_id"`
+				ID           int64 `json:"id"`
+				InReplyTo    int64 `json:"in_reply_to_id"`
+				Line         *int  `json:"line"`
+				OriginalLine *int  `json:"original_line"`
 			} `json:"comments"`
 		} `json:"thread"`
 	}
@@ -419,7 +424,12 @@ func parseReviewThread(delivery string, body []byte) (Event, error) {
 	thread := &Thread{Number: p.PullRequest.Number, Resolved: resolved, Sender: p.Sender.Login, SenderIsBot: p.Sender.isBot()}
 	for _, c := range p.Thread.Comments {
 		if c.InReplyTo == 0 {
+			// The payload carries the comment as it is at the state change, so
+			// a push landing before the job runs cannot change the outcome.
+			// GitHub nulls the line of a comment whose lines changed and keeps
+			// original_line; a file-level comment has neither.
 			thread.CommentID = c.ID
+			thread.Outdated = c.Line == nil && c.OriginalLine != nil
 			break
 		}
 	}
