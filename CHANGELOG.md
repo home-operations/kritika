@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.54](https://github.com/home-operations/kritika/compare/0.0.53...0.0.54) (2026-10-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** name severities p0, p1 and p2 ([#833](https://github.com/home-operations/kritika/issues/833))
+
+### Features
+
+* **review:** lead a finding with its severity badge, P0 to P2 ([#828](https://github.com/home-operations/kritika/issues/828)) ([f819225](https://github.com/home-operations/kritika/commit/f81922552db3c2c4881f440b362948ed00b1aa5b))
+* **review:** mark a failed review with a confused reaction ([#829](https://github.com/home-operations/kritika/issues/829)) ([6dca25d](https://github.com/home-operations/kritika/commit/6dca25d230575756d3800addf226b0456923a925))
+* **review:** name severities p0, p1 and p2 ([#833](https://github.com/home-operations/kritika/issues/833)) ([0025476](https://github.com/home-operations/kritika/commit/00254769cbfaee3faa4fd63a9a33a170582d74da))
+
+
+### Build System
+
+* **container:** pull the Docker Hub base images through the gcr mirror ([#831](https://github.com/home-operations/kritika/issues/831)) ([fb97c64](https://github.com/home-operations/kritika/commit/fb97c64a691ae16871ce82fbd38751f48d22bdfb))
+
 ## [0.0.53](https://github.com/home-operations/kritika/compare/0.0.52...0.0.53) (2026-10-09)
 
 
