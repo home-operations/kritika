@@ -417,7 +417,10 @@ func (p *publishPhase) writeBack(
 		sources = review.SourceLinks(p.agent.Sources)
 	}
 	web, pull := p.dashboard(owner, repo)
-	counts := review.Result{Findings: slices.Concat(res.Findings, unanchored)}.Counts()
+	// A finding reported again outside the diff is reported again all the
+	// same: it is neither resolved nor listed so.
+	reported := slices.Concat(res.Findings, unanchored)
+	counts := review.Result{Findings: reported}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
@@ -427,8 +430,8 @@ func (p *publishPhase) writeBack(
 	}
 	if data.Incremental {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
-		data.Prior = p.priorFindings(res)
-		p.resolveThreads(ctx, resolvedThreads(res, p.recheckedPrior()))
+		data.Prior = p.priorFindings(reported)
+		p.resolveThreads(ctx, resolvedThreads(reported, p.recheckedPrior()))
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -527,18 +530,15 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 // lists them: those the model, asked to report each again only if still
 // present, did not, linked to their threads where they have one, then the
 // findings maintainers dismissed, each linked to the comment that
-// dismissed it. A finding reported again is left out, as the summary
-// already lists it among this review's.
-func (p *publishPhase) priorFindings(res review.Result) []review.PriorFinding {
-	reported := make(map[string]bool, len(res.Findings))
-	for _, f := range res.Findings {
-		reported[review.Fingerprint(f)] = true
-	}
+// dismissed it. A finding among reported, this review's findings on and
+// off the diff, is left out, as the summary already lists it among them.
+func (p *publishPhase) priorFindings(reported []review.Finding) []review.PriorFinding {
+	again := reportedSet(reported)
 	owner, repo := p.pr.ownerRepo()
 	out := make([]review.PriorFinding, 0, len(p.prior.findings))
 	for _, pf := range p.recheckedPrior() {
 		f := pf.Finding
-		if reported[review.Fingerprint(f)] {
+		if again[review.Fingerprint(f)] {
 			continue
 		}
 		f.URL = p.client.FileURL(owner, repo, p.prior.headSHA, f.Path, f.Line, f.EndLine)
@@ -582,19 +582,26 @@ func recheckedBy(parts []store.AgentPart) func(path string) bool {
 
 // resolvedThreads is the inline comment id of each of the last review's
 // findings this review, asked to report each again only if still present,
-// did not report: the threads the summary lists as resolved.
-func resolvedThreads(res review.Result, prior []priorFinding) []int64 {
-	reported := make(map[string]bool, len(res.Findings))
-	for _, f := range res.Findings {
-		reported[review.Fingerprint(f)] = true
-	}
+// did not report, on or off the diff: the threads the summary lists as
+// resolved.
+func resolvedThreads(reported []review.Finding, prior []priorFinding) []int64 {
+	again := reportedSet(reported)
 	var ids []int64
 	for _, pf := range prior {
-		if pf.commentID != 0 && !reported[review.Fingerprint(pf.Finding)] {
+		if pf.commentID != 0 && !again[review.Fingerprint(pf.Finding)] {
 			ids = append(ids, pf.commentID)
 		}
 	}
 	return ids
+}
+
+// reportedSet is the fingerprints of findings.
+func reportedSet(findings []review.Finding) map[string]bool {
+	set := make(map[string]bool, len(findings))
+	for _, f := range findings {
+		set[review.Fingerprint(f)] = true
+	}
+	return set
 }
 
 // resolveThreads resolves the threads of the findings this review found
