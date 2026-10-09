@@ -486,7 +486,7 @@ func TestStderrTail(t *testing.T) {
 		{"whole lines past the tail's length", []write{{false, "0123456789"}, {true, "1\n2\n3\n4\n5\n6\n7\n"}}, "4\n5\n6\n7\n"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			out := &cappedBuffer{max: 8}
+			out := &cappedBuffer{max: 8, keep: 8}
 			errs := &stderrTail{out: out, max: 9, last: '\n'}
 			for _, w := range tt.writes {
 				if w.stderr {
@@ -499,5 +499,79 @@ func TestStderrTail(t *testing.T) {
 				t.Fatalf("end of stderr = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestRunToolKeepsCutOutput: a cut output, even one cut only because its
+// first line takes it past the limit, is kept whole, masked, in a file
+// numbered by the call, which a note after the cut's names; one that fits
+// writes no file, and one over what a file may hold or past the budget is
+// not kept, which the note says instead.
+func TestRunToolKeepsCutOutput(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, budget := t.TempDir(), NewWriteBudget(20_000)
+	rt := NewRunTool(RunConfig{
+		Dir: t.TempDir(), Env: []string{helperEnv + "=1", "GOCOVERDIR=" + t.TempDir()},
+		Commands: map[string]string{"rg": self}, Timeout: 2 * time.Second, MaxOutputBytes: 4096,
+		Mask: func(s string) string { return strings.ReplaceAll(s, "the end", "***") },
+		Keep: &Kept{Dir: kept, Rel: "../upstream", FileBytes: 10_000, Budget: budget},
+	})
+	if d := rt.Def().Description; !strings.Contains(d, "An output cut to 4 KiB is kept whole in a file its note names, under ../upstream/: "+
+		"search that file with the commands, or read it with read_file in line ranges, rather than run the command again") {
+		t.Fatalf("description = %q", d)
+	}
+	files := func() []string {
+		t.Helper()
+		entries, err := os.ReadDir(kept)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		return names
+	}
+
+	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["fail-after","10"]}`))
+	if err != nil || out != "exit code 1\nxxxxxxxxxxfailed: ***\n" || len(files()) != 0 {
+		t.Fatalf("an output that fits = %q, %v; files %v", out, err, files())
+	}
+
+	out, err = rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["fail-after","8000"]}`))
+	if err != nil || len(out) > 4096 || !strings.HasPrefix(out, "exit code 1\nxxx") ||
+		!strings.HasSuffix(out, "]\n[the whole output is in ../upstream/run-2.out]\n[the end of stderr, from the part cut above:]\nfailed: ***\n") {
+		t.Fatalf("a cut output = %d bytes ending %q, %v", len(out), out[max(len(out)-160, 0):], err)
+	}
+	b, err := os.ReadFile(filepath.Join(kept, "run-2.out"))
+	if err != nil || string(b) != strings.Repeat("x", 8000)+"failed: ***\n" {
+		t.Fatalf("run-2.out = %d bytes ending %q, %v; want the whole output, masked", len(b), b[max(len(b)-20, 0):], err)
+	}
+	if left := budget.Left(); left != 20_000-int64(len(b)) {
+		t.Fatalf("budget left = %d, want the file's %d bytes spent", left, len(b))
+	}
+
+	out, err = rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["flood","4090"]}`))
+	if err != nil || len(out) > 4096 || !strings.HasSuffix(out, "]\n[the whole output is in ../upstream/run-3.out]") {
+		t.Fatalf("an output its first line takes past the limit = %d bytes ending %q, %v", len(out), out[max(len(out)-120, 0):], err)
+	}
+	if b, err := os.ReadFile(filepath.Join(kept, "run-3.out")); err != nil || string(b) != strings.Repeat("x", 4090) {
+		t.Fatalf("run-3.out = %d bytes, %v; want the whole output", len(b), err)
+	}
+
+	out, err = rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["flood","12000"]}`))
+	if err != nil || len(out) > 4096 || !strings.HasSuffix(out, "]\n[the whole output is not kept: 12000 bytes, over the 10000 one file may hold]") {
+		t.Fatalf("an output over the file's limit = %d bytes ending %q, %v", len(out), out[max(len(out)-120, 0):], err)
+	}
+	budget.Spend(budget.Left() - 100)
+	out, err = rt.Run(t.Context(), json.RawMessage(`{"command":"rg","args":["flood","8000"]}`))
+	if err != nil || len(out) > 4096 || !strings.HasSuffix(out, "]\n[the whole output is not kept: 8000 bytes, past what this review may write]") {
+		t.Fatalf("an output past the budget = %d bytes ending %q, %v", len(out), out[max(len(out)-120, 0):], err)
+	}
+	if got := files(); !slices.Equal(got, []string{"run-2.out", "run-3.out"}) || budget.Left() != 100 {
+		t.Fatalf("files = %v, budget left = %d; want only run-2.out and run-3.out, nothing spent", got, budget.Left())
 	}
 }
