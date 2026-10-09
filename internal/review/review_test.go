@@ -788,38 +788,45 @@ func TestBuildLargerBudgetKeepsALargeFile(t *testing.T) {
 	}
 }
 
-// TestParsePrior: a finding that names a prior finding's id, or has a
-// prior finding's path and title, carries that finding's fingerprint on
+// TestParsePrior: a finding on a prior finding's path that names its id,
+// or that has its path and title, carries that finding's fingerprint on
 // whatever its wording now, so it keeps the thread; one that names an
-// unknown id is its own. A severity a model wrote into a title is dropped.
+// unknown id or another path's is its own, as is one whose prior finding an
+// earlier one carried on. A severity a model wrote into a title, once or
+// more, is dropped, and a prior finding's title written with one matches.
 func TestParsePrior(t *testing.T) {
 	first := Finding{Path: "main.go", Title: "Publish the chart tag"}
 	// The last review reported first again in other words, and carries its
 	// fingerprint.
 	reworded := Finding{Path: "main.go", Line: 11, Severity: SeverityImportant, Title: "Chart tag is not published", Explanation: "e", Fingerprint: Fingerprint(first)}
 	other := Finding{Path: "README.md", Line: 2, Severity: SeverityNit, Title: "Typo", Explanation: "e"}
+	prefixed := Finding{Path: "main.go", Line: 14, Severity: SeverityBlocking, Title: "[blocking] Unsigned tag", Explanation: "e", Fingerprint: "0123456789abcdef"}
 	raw := `{"summary": {"take": "t"}, "findings": [
 	  {"path": "main.go", "line": 12, "severity": "blocking", "category": "correctness", "title": "[blocking] Tag 0.0.46 is missing", "explanation": "e", "prior": " ` + PriorID(reworded) + ` "},
 	  {"path": "main.go", "line": 11, "severity": "important", "category": "correctness", "title": "chart tag is not  published", "explanation": "e"},
 	  {"path": "README.md", "line": 2, "severity": "nit", "category": "maintainability", "title": "Typo", "explanation": "e", "prior": "deadbeef"},
-	  {"path": "main.go", "line": 13, "severity": "nit", "category": "maintainability", "title": "New", "explanation": "e", "prior": "ffffffff"}
+	  {"path": "main.go", "line": 13, "severity": "nit", "category": "maintainability", "title": "New", "explanation": "e", "prior": "ffffffff"},
+	  {"path": "README.md", "line": 3, "severity": "nit", "category": "maintainability", "title": "Elsewhere", "explanation": "e", "prior": "` + PriorID(prefixed) + `"},
+	  {"path": "main.go", "line": 14, "severity": "blocking", "category": "correctness", "title": "[blocking] [Blocking] Unsigned tag", "explanation": "e"}
 	]}`
-	res, dropped, err := Parse(raw, Anchors(sampleDiff), ParseOptions{Prior: []Finding{reworded, other}})
-	if err != nil || len(dropped) != 0 || len(res.Findings) != 4 {
+	res, dropped, err := Parse(raw, Anchors(sampleDiff), ParseOptions{Prior: []Finding{reworded, other, prefixed}})
+	if err != nil || len(dropped) != 0 || len(res.Findings) != 6 {
 		t.Fatalf("Parse = %+v, dropped %+v, %v", res.Findings, dropped, err)
 	}
 	want := map[string]string{
 		"Tag 0.0.46 is missing":       Fingerprint(first),
-		"chart tag is not  published": Fingerprint(first),
+		"chart tag is not  published": Fingerprint(Finding{Path: "main.go", Title: "chart tag is not published"}),
 		"Typo":                        Fingerprint(other),
 		"New":                         Fingerprint(Finding{Path: "main.go", Title: "New"}),
+		"Elsewhere":                   Fingerprint(Finding{Path: "README.md", Title: "Elsewhere"}),
+		"Unsigned tag":                prefixed.Fingerprint,
 	}
 	for _, f := range res.Findings {
 		fp, ok := want[f.Title]
 		if !ok || Fingerprint(f) != fp || f.Prior != "" {
 			t.Errorf("finding %q: fingerprint %s, prior %q; want %s, prior cleared", f.Title, Fingerprint(f), f.Prior, fp)
 		}
-		if own := f.Title == "Typo" || f.Title == "New"; (f.Fingerprint == "") != own {
+		if carried := f.Title == "Tag 0.0.46 is missing" || f.Title == "Unsigned tag"; (f.Fingerprint != "") != carried {
 			t.Errorf("finding %q: Fingerprint field %q; want it set only when carried on", f.Title, f.Fingerprint)
 		}
 	}

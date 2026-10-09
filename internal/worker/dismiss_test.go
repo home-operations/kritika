@@ -47,9 +47,15 @@ func TestWithDismissals(t *testing.T) {
 func TestDropDismissed(t *testing.T) {
 	a := review.Finding{Path: "a.go", Line: 3, Title: "Unchecked error"}
 	b := review.Finding{Path: "b.go", Line: 9, Title: "stale COMMENT"}
-	dismissed := []store.Dismissal{{Fingerprint: review.Fingerprint(review.Finding{Path: "b.go", Title: "Stale comment"})}}
-	kept, n := dropDismissed([]review.Finding{a, b}, dismissed)
-	if n != 1 || len(kept) != 1 || kept[0].Title != a.Title {
+	// c was first reported as "Nil map write", and dismissed after a later
+	// review reported it again in other words, carrying that fingerprint on.
+	c := review.Finding{Path: "c.go", Line: 4, Title: "Assignment panics"}
+	dismissed := []store.Dismissal{
+		{Fingerprint: review.Fingerprint(review.Finding{Path: "b.go", Title: "Stale comment"})},
+		{Fingerprint: review.Fingerprint(review.Finding{Path: "c.go", Title: "Nil map write"}), Finding: review.Finding{Path: "c.go", Line: 4, Title: "Assignment panics"}},
+	}
+	kept, n := dropDismissed([]review.Finding{a, b, c}, dismissed)
+	if n != 2 || len(kept) != 1 || kept[0].Title != a.Title {
 		t.Fatalf("dropDismissed = %+v, %d; want the dismissed finding left out", kept, n)
 	}
 	if kept, n := dropDismissed([]review.Finding{a, b}, nil); n != 0 || len(kept) != 2 {

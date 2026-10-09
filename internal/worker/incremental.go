@@ -109,14 +109,18 @@ func dismissedFindings(dismissed []store.Dismissal) []review.DismissedFinding {
 }
 
 // dropDismissed leaves out the findings maintainers dismissed on the pull
-// request, should the model raise one again, and counts them.
+// request, should the model raise one again, and counts them. A dismissed
+// finding is not among the prior findings a raised one carries a
+// fingerprint on from, so it is also known by the path and title it was
+// dismissed under, which may not be the ones its fingerprint was made of.
 func dropDismissed(findings []review.Finding, dismissed []store.Dismissal) ([]review.Finding, int) {
 	if len(dismissed) == 0 {
 		return findings, 0
 	}
-	gone := make(map[string]bool, len(dismissed))
+	gone := make(map[string]bool, 2*len(dismissed))
 	for _, d := range dismissed {
 		gone[d.Fingerprint] = true
+		gone[review.Fingerprint(review.Finding{Path: d.Finding.Path, Title: d.Finding.Title})] = true
 	}
 	kept := slices.DeleteFunc(slices.Clone(findings), func(f review.Finding) bool { return gone[review.Fingerprint(f)] })
 	return kept, len(findings) - len(kept)
