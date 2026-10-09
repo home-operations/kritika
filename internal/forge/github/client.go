@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"iter"
 	"net/http"
 	"net/url"
 	"slices"
@@ -461,6 +462,49 @@ func (c *Client) UnreactToPullRequest(ctx context.Context, owner, repo string, n
 		return fmt.Errorf("github: remove reaction %d from #%d: %w", id, number, err)
 	}
 	return nil
+}
+
+// Reaction implements forge.Client.
+func (c *Client) Reaction(ctx context.Context, owner, repo string, on forge.Comment, content string) (int64, error) {
+	list := c.api.Reactions.ListIssueCommentReactionsIter
+	if on.Inline {
+		list = c.api.Reactions.ListPullRequestCommentReactionsIter
+	}
+	opts := &gh.ListReactionOptions{Content: content, PerPage: 100}
+	id, err := c.ownReaction(ctx, list(ctx, owner, repo, on.ID, opts))
+	if err != nil {
+		return 0, fmt.Errorf("github: list reactions on comment %d: %w", on.ID, err)
+	}
+	return id, nil
+}
+
+// PullRequestReaction implements forge.Client. A pull request's own
+// reactions are its issue's.
+func (c *Client) PullRequestReaction(ctx context.Context, owner, repo string, number int, content string) (int64, error) {
+	opts := &gh.ListReactionOptions{Content: content, PerPage: 100}
+	id, err := c.ownReaction(ctx, c.api.Reactions.ListIssueReactionsIter(ctx, owner, repo, number, opts))
+	if err != nil {
+		return 0, fmt.Errorf("github: list reactions on #%d: %w", number, err)
+	}
+	return id, nil
+}
+
+// ownReaction returns the id of the first of reactions the bot left, 0
+// when none is its.
+func (c *Client) ownReaction(ctx context.Context, reactions iter.Seq2[*gh.Reaction, error]) (int64, error) {
+	login, err := c.BotLogin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for r, err := range reactions {
+		if err != nil {
+			return 0, err
+		}
+		if r.GetUser().GetLogin() == login {
+			return r.GetID(), nil
+		}
+	}
+	return 0, nil
 }
 
 func conversationComment(cm *gh.IssueComment) forge.Comment {

@@ -10,11 +10,14 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 )
 
-// fakeMarks records what marks react and unreact were asked.
+// fakeMarks records what marks react, unreact and find were asked.
 type fakeMarks struct {
 	reactErr error
-	reacted  []string
-	removed  []int64
+	// on are the bot's reactions already there, by content, as find
+	// answers them.
+	on      map[string]int64
+	reacted []string
+	removed []int64
 	// ctxErr is the error of the ctx the last call was made on.
 	ctxErr error
 }
@@ -34,28 +37,41 @@ func (f *fakeMarks) marks() marks {
 			f.removed = append(f.removed, id)
 			return nil
 		},
+		find: func(ctx context.Context, content string) (int64, error) {
+			f.ctxErr = ctx.Err()
+			return f.on[content], nil
+		},
 		logger: slog.New(slog.DiscardHandler),
 	}
 }
 
 func TestMarks(t *testing.T) {
 	tests := []struct {
-		name           string
-		reactErr       error
-		answered, busy bool
-		reacted        []string
-		removed        []int64
+		name     string
+		reactErr error
+		on       map[string]int64
+		outcome  outcome
+		busy     bool
+		reacted  []string
+		removed  []int64
 	}{
-		{name: "answered: the eyes come off and the thumbs up goes on", answered: true,
+		{name: "answered: the eyes come off and the thumbs up goes on", outcome: answered,
 			reacted: []string{forge.ReactionEyes, forge.ReactionDone}, removed: []int64{1}},
-		{name: "not answered: the eyes come off alone", reacted: []string{forge.ReactionEyes}, removed: []int64{1}},
-		{name: "busy: the eyes stay on for the job still at work", answered: true, busy: true,
+		{name: "answered after a failure: its mark comes off too", outcome: answered, on: map[string]int64{forge.ReactionFailed: 9},
+			reacted: []string{forge.ReactionEyes, forge.ReactionDone}, removed: []int64{1, 9}},
+		{name: "failed: the eyes come off and the confused face goes on", outcome: failed,
+			reacted: []string{forge.ReactionEyes, forge.ReactionFailed}, removed: []int64{1}},
+		{name: "failed after an answer: its thumbs up comes off too", outcome: failed, on: map[string]int64{forge.ReactionDone: 8},
+			reacted: []string{forge.ReactionEyes, forge.ReactionFailed}, removed: []int64{1, 8}},
+		{name: "unanswered: the eyes come off alone", on: map[string]int64{forge.ReactionDone: 8, forge.ReactionFailed: 9},
+			reacted: []string{forge.ReactionEyes}, removed: []int64{1}},
+		{name: "busy: the eyes stay on for the job still at work", outcome: answered, busy: true,
 			reacted: []string{forge.ReactionEyes, forge.ReactionDone}},
-		{name: "a refused reaction leaves nothing to end", reactErr: errors.New("Resource not accessible by integration"), answered: true},
+		{name: "a refused reaction leaves nothing to end", reactErr: errors.New("Resource not accessible by integration"), outcome: answered},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeMarks{reactErr: tt.reactErr}
+			f := &fakeMarks{reactErr: tt.reactErr, on: tt.on}
 			ctx, cancel := context.WithCancel(t.Context())
 			end := f.marks().start(ctx)
 			if !slices.Equal(f.reacted, tt.reacted[:min(len(tt.reacted), 1)]) || len(f.removed) != 0 {
@@ -63,7 +79,7 @@ func TestMarks(t *testing.T) {
 			}
 			// The end lands once the job's ctx has ended.
 			cancel()
-			end(tt.answered, tt.busy)
+			end(tt.outcome, tt.busy)
 			if !slices.Equal(f.reacted, tt.reacted) || !slices.Equal(f.removed, tt.removed) {
 				t.Fatalf("after end: reacted %v, removed %v; want %v and %v", f.reacted, f.removed, tt.reacted, tt.removed)
 			}

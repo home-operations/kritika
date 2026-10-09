@@ -591,3 +591,43 @@ func TestPullRequestReactions(t *testing.T) {
 		t.Fatalf("UnreactToPullRequest = %v, requests %v", err, f.requests)
 	}
 }
+
+// TestFindReactions: the bot's own reaction of a content is found among
+// the reactions of that content on a comment or a pull request, and none
+// of someone else's counts.
+func TestFindReactions(t *testing.T) {
+	const listed = `[{"id":70,"content":"confused","user":{"login":"someone"}},{"id":71,"content":"confused","user":{"login":"kritika[bot]"}}]`
+	tests := []struct {
+		name string
+		path string
+		find func(c *Client) (int64, error)
+	}{
+		{name: "conversation comment", path: "/api/v3/repos/o/r/issues/comments/5/reactions", find: func(c *Client) (int64, error) {
+			return c.Reaction(t.Context(), "o", "r", forge.Comment{ID: 5}, forge.ReactionFailed)
+		}},
+		{name: "inline comment", path: "/api/v3/repos/o/r/pulls/comments/6/reactions", find: func(c *Client) (int64, error) {
+			return c.Reaction(t.Context(), "o", "r", forge.Comment{ID: 6, Inline: true}, forge.ReactionFailed)
+		}},
+		{name: "pull request", path: "/api/v3/repos/o/r/issues/7/reactions", find: func(c *Client) (int64, error) {
+			return c.PullRequestReaction(t.Context(), "o", "r", 7, forge.ReactionFailed)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			c.login = "kritika[bot]"
+			f.reply("GET "+tt.path, 200, listed)
+			if id, err := tt.find(c); err != nil || id != 71 || !f.saw("GET "+tt.path+"?content=confused") {
+				t.Fatalf("found %d, %v, requests %v", id, err, f.requests)
+			}
+		})
+	}
+	t.Run("none of the bot's", func(t *testing.T) {
+		f, c := newFakeAPI(t)
+		c.login = "kritika[bot]"
+		f.reply("GET /api/v3/repos/o/r/issues/7/reactions", 200, `[{"id":70,"content":"confused","user":{"login":"someone"}}]`)
+		if id, err := c.PullRequestReaction(t.Context(), "o", "r", 7, forge.ReactionFailed); err != nil || id != 0 {
+			t.Fatalf("found %d, %v", id, err)
+		}
+	})
+}
