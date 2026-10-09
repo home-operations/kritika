@@ -160,6 +160,15 @@ What bounds a command:
   `origin` is the repository's clone URL, with no history, lets a tool
   that locates a repository by its working tree, such as flate, find this
   one.
+- **Bounded output:** a command's output is cut to the agent's `output`
+  (32 KiB by default), keeping the end of its stderr past the cut. A cut
+  output is kept whole, with the token masked, in a file beside the
+  checkout under `../upstream/`, which the note after the cut names, so
+  the agent searches a long render or page with `rg` or reads it with
+  `read_file` in line ranges rather than running the command again with
+  narrower arguments. One file holds at most 4 MiB, and the files count
+  against the 256 MiB `fetch_repo` may write there; past either, the note
+  says the output was not kept.
 
 ### Other repositories
 
@@ -184,12 +193,14 @@ repository and a ref, never git arguments.
   counted among the listings, and its error names the closest.
 - **Bounded:** 8 fetches and 8 tag listings a review, each taking at most
   128 MiB from the server and two minutes, and 256 MiB of files written
-  across the fetches, beside the checkout. Symlinks, submodules and files
-  over 1 MiB are left out, and the files are written without execute bits.
-- **Read in place:** `read_file` reads a fetched file at the path the fetch
-  names, under `../upstream/`, opening it through a root confined to that
-  directory, so neither a path nor a link reaches past it. Every other path
-  it reads from the head commit's git objects.
+  across the fetches and the run tool's kept outputs, beside the checkout.
+  Symlinks, submodules and files over 1 MiB are left out, and the files
+  are written without execute bits.
+- **Read in place:** `read_file` reads a fetched file, or a kept output,
+  at the path the fetch or the run tool names, under `../upstream/`,
+  opening it through a root confined to that directory, so neither a path
+  nor a link reaches past it. Every other path it reads from the head
+  commit's git objects.
 
 ### More tools
 

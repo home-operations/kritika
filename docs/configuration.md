@@ -405,7 +405,7 @@ a new title.
 | Key              | Default              | What                                                                                         |
 | ---------------- | -------------------- | -------------------------------------------------------------------------------------------- |
 | `steps`          | 60                   | model calls the loop may make                                                                |
-| `output`         | 32768                | bytes one tool call may return                                                               |
+| `output`         | 32768                | bytes one tool call may return; a command's output cut to it is kept whole beside the checkout |
 | `tokens`         | 4,000,000            | prompt and output tokens the review, or each part of a split one, may spend across its steps |
 | `prompt`         | 24000, at least 8000 | tokens of the prompt a review, its confidence score and a follow-up start from               |
 | `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                    |
