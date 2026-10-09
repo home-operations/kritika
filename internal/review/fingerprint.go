@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -37,33 +38,46 @@ func PriorID(f Finding) string {
 	return fp[:min(len(fp), priorIDLen)]
 }
 
-// inherited is the fingerprint a finding carries on from one of prior, the
-// last review's findings, that no earlier finding of the review claimed:
-// the one on its path whose id it names, else the one with its path and
-// title, which may itself carry an earlier finding's. The one it carries on
-// is added to claimed, so two findings never share a thread. "" when its
-// own path and title identify it.
-func inherited(f Finding, prior []Finding, claimed map[string]bool) string {
+// priorIndex is the last review's findings as a finding of this review
+// names one: by its path and the id the prompt listed it under, and by the
+// fingerprint its path and title make, with the ones a finding of this
+// review has carried on, so two findings never share a thread.
+type priorIndex struct {
+	byID, byTitle map[string][]Finding
+	claimed       map[string]bool
+}
+
+func indexPrior(prior []Finding) *priorIndex {
+	x := &priorIndex{byID: map[string][]Finding{}, byTitle: map[string][]Finding{}, claimed: map[string]bool{}}
+	for _, p := range prior {
+		id, title := p.Path+"\x00"+PriorID(p), titleFingerprint(p)
+		x.byID[id] = append(x.byID[id], p)
+		x.byTitle[title] = append(x.byTitle[title], p)
+	}
+	return x
+}
+
+// inherit is the fingerprint f carries on from a prior finding no earlier
+// finding of the review claimed: the one on its path whose id it names,
+// else the one with its path and title, which may itself carry an earlier
+// finding's. The one it carries on is claimed. "" when its own path and
+// title identify it.
+func (x *priorIndex) inherit(f Finding) string {
 	own := titleFingerprint(f)
-	claim := func(p Finding) string {
+	candidates := x.byTitle[own]
+	if f.Prior != "" {
+		candidates = slices.Concat(x.byID[f.Path+"\x00"+f.Prior], candidates)
+	}
+	for _, p := range candidates {
 		fp := Fingerprint(p)
-		claimed[fp] = true
+		if x.claimed[fp] {
+			continue
+		}
+		x.claimed[fp] = true
 		if fp != own {
 			return fp
 		}
 		return ""
-	}
-	if f.Prior != "" {
-		for _, p := range prior {
-			if p.Path == f.Path && PriorID(p) == f.Prior && !claimed[Fingerprint(p)] {
-				return claim(p)
-			}
-		}
-	}
-	for _, p := range prior {
-		if titleFingerprint(p) == own && !claimed[Fingerprint(p)] {
-			return claim(p)
-		}
 	}
 	return ""
 }
