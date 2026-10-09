@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -913,6 +914,12 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	reviewID, status, errText := h.waitReview(t, next)
 	if status != "completed" {
 		t.Fatalf("status = %s (%s)", status, errText)
+	}
+	// The review ran and counts among the agent runs, but the run tool is
+	// offered on Linux alone, where hideEnviron is implemented: elsewhere
+	// the agent's call gets "unknown tool" and fetches nothing.
+	if runtime.GOOS != "linux" {
+		t.Skip("the run tool is offered on Linux alone")
 	}
 	run := h.agentRow(t, reviewID)
 	var tools map[string]int

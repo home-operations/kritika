@@ -105,7 +105,13 @@ func (p *Poller) SyncRepositories(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		listedAt := time.Now()
+		// The listing's time is the database's, which stamps the rows a
+		// webhook names meanwhile; this clock may differ from it.
+		listedAt, err := p.Store.Now(ctx)
+		if err != nil {
+			p.Logger.Warn("repositories not synced", "connection", in.Name, "error", err)
+			continue
+		}
 		reachCtx, cancel := context.WithTimeout(ctx, reachTimeout)
 		reach, err := p.Reach(reachCtx, in)
 		cancel()
