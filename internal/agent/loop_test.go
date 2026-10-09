@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,10 @@ type scriptedStepper struct {
 	calls []model.StepRequest
 }
 
+// Step records req with its messages cloned: the loop rewrites its own
+// slice in place as it goes, and a recorded request must stay as sent.
 func (s *scriptedStepper) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
+	req.Messages = slices.Clone(req.Messages)
 	s.calls = append(s.calls, req)
 	if len(s.calls) > len(s.steps) {
 		return model.StepResponse{}, fmt.Errorf("scriptedStepper: no script for call %d", len(s.calls))
@@ -77,6 +81,15 @@ const validSubmitInput = `{"verdict":"approve"}`
 
 func toolCall(id, name, input string) model.ToolCall {
 	return model.ToolCall{ID: id, Name: name, Input: json.RawMessage(input)}
+}
+
+// outputBytes is the tool output e's calls produced, in all.
+func outputBytes(e StepEvent) int {
+	n := 0
+	for _, c := range e.Calls {
+		n += c.OutputBytes
+	}
+	return n
 }
 
 // runCase is one TestRun table row. setup builds this case's Stepper and
@@ -334,7 +347,7 @@ func checkForcedNeverSubmits(t *testing.T, result Result, events []StepEvent, sc
 	if results := scripted.calls[2].Messages[len(scripted.calls[2].Messages)-1].ToolResults; len(results) != 0 {
 		t.Fatalf("the prose step's retry carries tool results: %+v", results)
 	}
-	if events[2].OutputBytes != 0 || !strings.Contains(result.Err, "3 step(s)") {
+	if outputBytes(events[2]) != 0 || !strings.Contains(result.Err, "3 step(s)") {
 		t.Fatalf("event = %+v, err = %q; want the tool refused and the forced steps counted", events[2], result.Err)
 	}
 }
@@ -353,7 +366,7 @@ func checkForcedToolCallRefused(t *testing.T, result Result, events []StepEvent,
 	}
 	last := scripted.calls[1]
 	results := last.Messages[len(last.Messages)-1].ToolResults
-	if len(results) != 1 || !results[0].IsError || results[0].Content != (Run{Submit: testSubmitDef}).onlySubmitText() || events[0].OutputBytes != 0 {
+	if len(results) != 1 || !results[0].IsError || results[0].Content != (Run{Submit: testSubmitDef}).onlySubmitText() || outputBytes(events[0]) != 0 {
 		t.Fatalf("retry request = %+v, events = %+v; want the tool refused unrun", last.Messages, events)
 	}
 }
@@ -743,18 +756,37 @@ func checkStepEventToolsAndOutputBytesPopulated(t *testing.T, _ Result, events [
 	if len(events) == 0 {
 		t.Fatal("events is empty, want at least 1")
 	}
-	first := events[0]
-	wantTools := []string{"alpha", "beta"}
-	if len(first.Tools) != len(wantTools) {
-		t.Fatalf("Tools = %v, want %v", first.Tools, wantTools)
+	want := []StepCall{{Name: "alpha", OutputBytes: len("aaaaa")}, {Name: "beta", OutputBytes: len("bbb")}}
+	if !slices.Equal(events[0].Calls, want) {
+		t.Fatalf("Calls = %+v, want %+v", events[0].Calls, want)
 	}
-	for i, name := range wantTools {
-		if first.Tools[i] != name {
-			t.Fatalf("Tools[%d] = %q, want %q", i, first.Tools[i], name)
+}
+
+func setupLargeResultDroppedAfterRead(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{ToolCalls: []model.ToolCall{toolCall("1", "big", `{}`), toolCall("2", "small", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("3", "big", `{}`)}},
+		{ToolCalls: []model.ToolCall{toolCall("4", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkLargeResultDroppedAfterRead(t *testing.T, result Result, _ []StepEvent, scripted *scriptedStepper) {
+	big := strings.Repeat("x", dropOutputBytes)
+	// The step after the calls read the big result whole.
+	if results := scripted.calls[1].Messages[2].ToolResults; results[0].Content != big || results[1].Content != "small" {
+		t.Fatalf("step 1's results = %+v, want both whole", results)
+	}
+	// From the step after that on, the big result is a note and the small
+	// one stays; the step's own results are whole, however big.
+	dropped := droppedText("big", dropOutputBytes)
+	for i, msgs := range [][]model.Message{scripted.calls[2].Messages, result.Conversation.Messages} {
+		if results := msgs[2].ToolResults; results[0].Content != dropped || results[1].Content != "small" {
+			t.Fatalf("%d: step 0's results = %+v, want the big one dropped", i, results)
 		}
-	}
-	if want := len("aaaaa") + len("bbb"); first.OutputBytes != want {
-		t.Fatalf("OutputBytes = %d, want %d", first.OutputBytes, want)
+		if results := msgs[4].ToolResults; results[0].Content != big {
+			t.Fatalf("%d: step 1's result = %q, want it whole", i, results[0].Content)
+		}
 	}
 }
 
@@ -1103,6 +1135,19 @@ func TestRun(t *testing.T) {
 			wantStop:  StopSubmitted,
 			wantSteps: 2,
 			check:     checkStepEventToolsAndOutputBytesPopulated,
+		},
+		{
+			// A result of dropOutputBytes or more is sent whole to the step
+			// after it and as a note to every later one.
+			name: "large_result_dropped_after_read",
+			tools: []Tool{
+				&fakeTool{name: "big", output: strings.Repeat("x", dropOutputBytes)},
+				&fakeTool{name: "small", output: "small"},
+			},
+			setup:     setupLargeResultDroppedAfterRead,
+			wantStop:  StopSubmitted,
+			wantSteps: 3,
+			check:     checkLargeResultDroppedAfterRead,
 		},
 	}
 
