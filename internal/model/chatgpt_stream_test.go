@@ -30,10 +30,10 @@ func TestChatGPTStreamedOutput(t *testing.T) {
 		{"text from a done item", sse(outputItemDone(0, message)) + completed("[]", responseUsage), "hello", nil, StopEndTurn},
 		{"tool from a done item", sse(outputItemDone(0, call)) + completed("[]", responseUsage), "", []ToolCall{readCall}, StopToolUse},
 		{"completed output omitted", sse(outputItemDone(0, message), responseEvent("response.completed", `{"status":"completed","usage":`+responseUsage+`}`)), "hello", nil, StopEndTurn},
-		{"done items ordered by output index", sse(outputItemDone(3, submit), outputItemDone(0, reasoning), outputItemDone(2, call), outputItemDone(1, message)) + completed("[]", responseUsage), "hello", []ToolCall{readCall, submitCall}, StopToolUse},
-		{"repeated done item", sse(outputItemDone(0, call), outputItemDone(0, call)) + completed("[]", responseUsage), "", []ToolCall{readCall}, StopToolUse},
+		{"done items in arrival order whatever their index", sse(outputItemDone(0, reasoning), outputItemDone(0, message), outputItemDone(0, submit), outputItemDone(0, call)) + completed("[]", responseUsage), "hello", []ToolCall{submitCall, readCall}, StopToolUse},
 		{"completed snapshot is not duplicated", sse(outputItemDone(0, message), outputItemDone(1, call)) + completed("["+message+","+call+"]", responseUsage), "hello", []ToolCall{readCall}, StopToolUse},
-		{"populated snapshot wins", sse(outputItemDone(0, message)) + completed(`[{"type":"message","content":[{"type":"output_text","text":"final"}]}]`, responseUsage), "final", nil, StopEndTurn},
+		{"partial snapshot", sse(outputItemDone(0, reasoning), outputItemDone(1, message), outputItemDone(2, submit)) + completed("["+reasoning+"]", responseUsage), "hello", []ToolCall{submitCall}, StopToolUse},
+		{"done items win over the snapshot", sse(outputItemDone(0, message)) + completed(`[{"type":"message","content":[{"type":"output_text","text":"final"}]}]`, responseUsage), "hello", nil, StopEndTurn},
 		{"text retained at the output cap", sse(outputItemDone(0, message)) + incomplete, "hello", nil, StopMaxTokens},
 		{"tool retained at the output cap", sse(outputItemDone(0, call)) + incomplete, "", []ToolCall{readCall}, StopMaxTokens},
 		{"refusal from a done item", sse(outputItemDone(0, `{"type":"message","content":[{"type":"refusal","refusal":"no"}]}`)) + completed("[]", responseUsage), "no", nil, StopEndTurn},
@@ -63,12 +63,9 @@ func TestChatGPTEmptyResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, _ := fakeProvider(t, http.StatusOK, tt.body)
 			resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: "gpt-x"})
-			if !errors.Is(err, ErrUnavailable) || !Transient(err) {
-				t.Fatalf("Step error = %v, want a transient unavailable response", err)
-			}
-			if resp.Text != "" || len(resp.ToolCalls) != 0 || resp.Model != "gpt-x" || !resp.ChatGPTPlan ||
-				resp.Usage != (Usage{Input: 200, CacheRead: 500, Output: 59}) {
-				t.Fatalf("failed response = %+v", resp)
+			want := StepResponse{Stop: StopEndTurn, Model: "gpt-x", ChatGPTPlan: true, Usage: Usage{Input: 200, CacheRead: 500, Output: 59}}
+			if err != nil || !reflect.DeepEqual(resp, want) {
+				t.Fatalf("Step = %+v, %v; want %+v", resp, err, want)
 			}
 		})
 	}

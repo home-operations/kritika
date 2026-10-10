@@ -50,7 +50,9 @@ func TestRunChatGPTStreamedTools(t *testing.T) {
 			name, id, args = "submit_review", "submit_1", validSubmitInput
 		default:
 			t.Error("review did not submit after two steps")
-			w.WriteHeader(http.StatusInternalServerError)
+			// A refusal the loop does not retry, so an extra step fails the
+			// test at once instead of after stepRetryWaits.
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		item := fmt.Sprintf(`{"type":"function_call","call_id":%q,"name":%q,"namespace":"kritika","arguments":%q,"status":"completed"}`, id, name, args)

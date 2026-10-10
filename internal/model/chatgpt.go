@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -42,8 +40,7 @@ var ErrPlanLimit = errors.New("model: chatgpt: the plan's usage limit is reached
 // ErrUnavailable is a provider that could not serve a request for a
 // passing reason of its own: the ChatGPT route that could not check the
 // plan's usage, or a response that failed on a server error or a rate
-// limit after its stream opened, or a completed response with no answer.
-// Transient.
+// limit after its stream opened. Transient.
 var ErrUnavailable = errors.New("model: provider unavailable")
 
 // PlanPause is how long the adapter sends nothing on the plan after
@@ -135,15 +132,7 @@ func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, erro
 	if err != nil {
 		return StepResponse{}, fmt.Errorf("model: chatgpt: %w", err)
 	}
-	var last StepResponse
-	resp, err := eachModel(ctx, req, func(id string) (StepResponse, error) {
-		r, err := c.step(ctx, params, id, token)
-		last = r
-		return r, err
-	})
-	if err != nil {
-		resp = last
-	}
+	resp, err := eachModel(ctx, req, func(id string) (StepResponse, error) { return c.step(ctx, params, id, token) })
 	// A provider may echo its bearer token in an error or response. Dynamic
 	// credentials are absent from the configuration's transcript mask.
 	mask := func(s string) string { return strings.ReplaceAll(s, token, "***") }
@@ -193,7 +182,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 		}
 	}()
 	var completed *responses.Response
-	output := make(map[int64]responses.ResponseOutputItemUnion)
+	var done []responses.ResponseOutputItemUnion
 	for stream.Next() {
 		ev := stream.Current()
 		switch ev.Type {
@@ -204,7 +193,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 		case "response.completed":
 			completed = &ev.Response
 		case "response.output_item.done":
-			output[ev.OutputIndex] = ev.Item
+			done = append(done, ev.Item)
 		case "response.failed":
 			return StepResponse{}, c.failed(ev.Response.Error)
 		case "response.incomplete":
@@ -212,7 +201,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 			// still cuts answers off; what it said goes back as the other
 			// adapters return a cut-off answer.
 			if ev.Response.IncompleteDetails.Reason == "max_output_tokens" {
-				resp := c.response(ev.Response, modelID, output)
+				resp := c.response(ev.Response, modelID, done)
 				resp.Stop = StopMaxTokens
 				return resp, nil
 			}
@@ -227,22 +216,18 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 	if completed == nil {
 		return StepResponse{}, fmt.Errorf("stream ended before response.completed: %w", io.ErrUnexpectedEOF)
 	}
-	resp := c.response(*completed, modelID, output)
-	if resp.Text == "" && len(resp.ToolCalls) == 0 {
-		return resp, fmt.Errorf("%w: chatgpt response completed without text or tool calls", ErrUnavailable)
-	}
-	return resp, nil
+	return c.response(*completed, modelID, done), nil
 }
 
-// response reads the completed response's output: its message's text and
-// refusal, and its function calls, whose call ids the tool results answer.
-// The final event can carry usage without output; finished stream items
-// supply the missing output in that case.
-func (c *ChatGPT) response(r responses.Response, modelID string, output map[int64]responses.ResponseOutputItemUnion) StepResponse {
-	if len(r.Output) == 0 {
-		for _, i := range slices.Sorted(maps.Keys(output)) {
-			r.Output = append(r.Output, output[i])
-		}
+// response reads the response's output: its message's text and refusal,
+// and its function calls, whose call ids the tool results answer. The
+// route sends each finished item as response.output_item.done and may
+// leave the final response's output empty or partial, so those items, in
+// the order they came, are the output whenever any came, as Codex reads
+// them; the final response's output only when none did.
+func (c *ChatGPT) response(r responses.Response, modelID string, done []responses.ResponseOutputItemUnion) StepResponse {
+	if len(done) > 0 {
+		r.Output = done
 	}
 	out := StepResponse{Stop: StopEndTurn, Model: modelID}
 	for _, item := range r.Output {
