@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
+	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
@@ -39,6 +40,8 @@ type FollowUp struct {
 	river.WorkerDefaults[jobs.FollowUpArgs]
 	Base
 	Executor executor.Executor
+	// Steppers pin the models a run is granted (pinModels).
+	Steppers *adapter.Steppers
 	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
 	// long its run token outlives the Job's deadline.
 	GatewayURL      string
@@ -338,9 +341,10 @@ func (f *followUp) runAgent(
 	limits, ref := f.settings.Agent, f.settings.Models.Review
 	deadline, resources := f.file.RunnerFor()
 	deadline = agentDeadline(deadline, limits.Timeout)
+	models := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, f.settings.Models)
 	token, err := f.w.Store.MintGatewayToken(ctx, store.GatewayGrant{
 		RunID: runID, AccountID: f.account.ID(), ReviewID: rec.id, RepositoryID: f.pr.repositoryID, FollowupCommentID: f.comment.ID,
-		Model: string(ref), Fallback: string(f.settings.Models.Fallback), Effort: string(f.settings.Models.Effort), Budget: limits.MaxTokens,
+		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort), Budget: limits.MaxTokens,
 	}, time.Now().Add(deadline+f.w.GatewayTokenTTL))
 	if err != nil {
 		dctx, cancel := detach(ctx)

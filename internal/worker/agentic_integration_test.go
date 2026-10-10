@@ -139,6 +139,9 @@ type scriptedModel struct {
 	failMerges int
 	// merges are the models the summary calls asked for.
 	merges []string
+	// catalog is the model IDs it lists, and models those each chat
+	// request asked for.
+	catalog, models []string
 }
 
 func (m *scriptedModel) reset(script modelScript) {
@@ -156,6 +159,18 @@ func (m *scriptedModel) failMerge(asked string) bool {
 	}
 	m.failMerges--
 	return true
+}
+
+// serveCatalog lists m.catalog as the Models API does.
+func (m *scriptedModel) serveCatalog(w http.ResponseWriter, _ *http.Request) {
+	m.mu.Lock()
+	data := make([]map[string]string, 0, len(m.catalog))
+	for _, id := range m.catalog {
+		data = append(data, map[string]string{"id": id, "object": "model"})
+	}
+	m.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
 }
 
 func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +195,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.sessions = append(m.sessions, r.Header.Get("x-opencode-session"))
 	m.maxTokens = append(m.maxTokens, req.MaxCompletionTokens)
 	m.efforts = append(m.efforts, req.ReasoningEffort)
+	m.models = append(m.models, req.Model)
 	if len(req.Messages) > 0 && req.Messages[0].Role == "system" {
 		m.systems = append(m.systems, fmt.Sprint(req.Messages[0].Content))
 	}
@@ -324,7 +340,10 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	t.Cleanup(runnerStore.Close)
 
 	h := &agenticHarness{ctx: ctx, st: appStore, runner: runnerStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
-	srv := httptest.NewServer(h.sm)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/models", h.sm.serveCatalog)
+	mux.Handle("/", h.sm)
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
@@ -518,6 +537,60 @@ func TestAgenticReviewEndToEnd(t *testing.T) {
 			t.Fatalf("acme sees %d agent runs, globex sees %d", own, foreign)
 		}
 	})
+	t.Run("a run on a floating alias is pinned to the model it selects", func(t *testing.T) { checkAgentAliasPinned(t, h) })
+}
+
+// checkAgentAliasPinned: a review whose model is a floating alias is
+// granted the model the alias selects, which every step goes to and its
+// kept conversation names, so it does not carry on one kept under another
+// model, and the next review, whose alias selects the same model, carries
+// its conversation on.
+func checkAgentAliasPinned(t *testing.T, h *agenticHarness) {
+	h.sm.mu.Lock()
+	h.sm.catalog = []string{"agent-1", "agent-1.1", "agent-2-preview"}
+	h.sm.mu.Unlock()
+	aliased := *h.file
+	aliased.Defaults.Review.Model = new(configfile.ModelRef("gateway/~agent-latest"))
+	h.review.Current.Set(&aliased)
+	t.Cleanup(func() { h.review.Current.Set(h.file) })
+	review := func(name string) (runID, continued string) {
+		t.Helper()
+		h.sm.reset(scriptSubmit)
+		h.sm.mu.Lock()
+		h.sm.models = nil
+		h.sm.mu.Unlock()
+		head := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc "+name+"() {}\n")
+		h.dispatch(t, head)
+		reviewID, status, errText := h.waitReview(t, head)
+		if status != "completed" {
+			t.Fatalf("status = %s (%s)", status, errText)
+		}
+		_, _, runID, found := h.conversation(t, reviewID)
+		var kept string
+		if err := h.runner.WithRunnerJob(h.ctx, runID, func(tx pgx.Tx) error {
+			return tx.QueryRow(h.ctx, `SELECT model FROM agent_conversations WHERE runner_run_id = $1`, runID).Scan(&kept)
+		}); err != nil || !found || kept != "gateway/~agent-latest@agent-1.1" {
+			t.Fatalf("conversation kept %v under %q, err %v", found, kept, err)
+		}
+		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(h.ctx, `SELECT coalesce(continued_from::text, '') FROM agent_runs WHERE runner_run_id = $1`, runID).Scan(&continued)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		h.sm.mu.Lock()
+		defer h.sm.mu.Unlock()
+		if len(h.sm.models) == 0 || slices.ContainsFunc(h.sm.models, func(m string) bool { return m != "agent-1.1" }) {
+			t.Fatalf("steps asked for %v", h.sm.models)
+		}
+		return runID, continued
+	}
+	first, continued := review("pinned")
+	if continued != "" {
+		t.Fatalf("the first review on the alias carried on %s, kept under another model", continued)
+	}
+	if _, continued := review("pinnedAgain"); continued != first {
+		t.Fatalf("the next review carried on %q, want %s", continued, first)
+	}
 }
 
 func checkAgentSubmits(t *testing.T, h *agenticHarness) {

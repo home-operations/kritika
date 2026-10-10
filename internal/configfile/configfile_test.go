@@ -308,6 +308,30 @@ func with(pr map[string]any, k string, v any) map[string]any {
 // minimal is the smallest valid file; cases mutate it.
 var minimal = githubMinimal("clientId: Iv1.acme, ")
 
+// aliasProviders declares a provider of each type that does, or does not,
+// take floating aliases.
+const aliasProviders = `providers:
+  a: { type: anthropic, apiKey: { env: TEST_WEBHOOK_SECRET } }
+  o: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }
+  or: { type: openrouter, apiKey: { env: TEST_WEBHOOK_SECRET } }
+  oc: { type: opencode, apiKey: { env: TEST_WEBHOOK_SECRET } }
+`
+
+func TestParseFloatingAliases(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	doc := aliasProviders + `  priced:
+    type: openai
+    apiKey: { env: TEST_WEBHOOK_SECRET }
+    pricing: { ~sol-latest: { input: 3 }, gpt-6-sol: { input: 2 } }
+review: { model: a/~opus-latest, fallback: o/~sol-latest }
+confidence: { model: priced/~astra-latest, fallback: a/claude-3-5-sonnet-latest }
+` + minimal
+	if _, err := Parse([]byte(doc)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // githubMinimal is the smallest configuration: one app serving acme;
 // clientFields is spliced into the app's entry.
 func githubMinimal(clientFields string) string {
@@ -530,6 +554,18 @@ func TestParseRejects(t *testing.T) {
 			"must be an absolute URL"},
 		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
 		{"model without provider", "review:\n  model: gpt\n" + minimal, "<provider>/<model>"},
+		{"a floating alias without -latest", aliasProviders + "review:\n  model: a/~opus\n" + minimal,
+			`review.model: a floating alias must be ~<family>-latest, got "~opus"`},
+		{"a pinned floating alias", aliasProviders + "review:\n  fallback: a/~opus-latest@claude-opus-4-6\n" + minimal,
+			"review.fallback: a floating alias must be ~<family>-latest"},
+		{"a floating alias on openrouter", aliasProviders + "confidence:\n  model: or/~sol-latest\n" + minimal,
+			"confidence.model: a provider of type openrouter takes no floating alias"},
+		{"a floating alias on opencode", aliasProviders + "confidence:\n  fallback: oc/~sol-latest\n" + minimal,
+			"confidence.fallback: a provider of type opencode takes no floating alias"},
+		{"a malformed floating alias price", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    pricing: { ~opus: { input: 3 } }\n" + minimal, "providers.p.pricing: a floating alias must be ~<family>-latest"},
+		{"a floating alias price on openrouter", "providers:\n  p:\n    type: openrouter\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    pricing: { ~sol-latest: { input: 3 } }\n" + minimal, "providers.p.pricing: a provider of type openrouter takes no floating alias"},
 		{"model referencing undeclared provider", "review:\n  model: nope/gpt\n" + minimal, "not declared under providers"},
 		{"owner/* model referencing undeclared provider", acme("  acme/*: { review: { model: nope/gpt } }\n"), "not declared under providers"},
 		{"negative limit", "limits:\n  reviewsPerDay: -1\n" + minimal, "must not be negative"},

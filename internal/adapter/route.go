@@ -27,6 +27,29 @@ func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfi
 	return Route{Ref: ref, Stepper: stepper, Provider: provider}, nil
 }
 
+// Pin pins ref, when it is a floating alias, to the model it selects now
+// for effort (model.Pinner); any other ref comes back as it is.
+func (c *Steppers) Pin(
+	ctx context.Context, f *configfile.File, t *configfile.Account, ref configfile.ModelRef, effort model.Effort,
+) (configfile.ModelRef, error) {
+	if !model.Floating(ref.Model()) {
+		return ref, nil
+	}
+	stepper, err := c.Stepper(f, t, ref.Provider())
+	if err != nil {
+		return ref, err
+	}
+	pinner, ok := stepper.(model.Pinner)
+	if !ok {
+		return ref, nil
+	}
+	id, err := pinner.Pin(ctx, ref.Model(), effort)
+	if err != nil {
+		return ref, err
+	}
+	return configfile.ModelRef(ref.Provider() + "/" + id), nil
+}
+
 // Call is one model call as the configuration routes it: a step on Route,
 // tried again with its provider's retries (Step), and, when Fallback is
 // set, the same step on the fallback once those attempts are spent, with

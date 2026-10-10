@@ -16,7 +16,6 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/home-operations/kritika/internal/chatgpt"
 )
@@ -85,11 +84,7 @@ type ChatGPT struct {
 	tokens            TokenSource
 	now               func() time.Time
 	observeAllowances func(context.Context, []chatgpt.Allowance)
-	catalogMu         sync.Mutex
-	catalogToken      string
-	catalogExpiresAt  time.Time
-	catalogModels     []chatGPTCatalogModel
-	catalogFetch      singleflight.Group
+	catalogCache      modelCatalog[string]
 
 	mu          sync.Mutex
 	pausedUntil time.Time
@@ -163,15 +158,12 @@ func (e *chatGPTError) Unwrap() error { return e.err }
 // succeeds only on response.completed; a stream that ends before it is a
 // cut connection, which is transient.
 func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, modelID, token string) (StepResponse, error) {
-	if until, paused := c.paused(); paused {
-		return StepResponse{}, fmt.Errorf("%w; nothing is sent on the plan until %s", ErrPlanLimit, until.UTC().Format(time.TimeOnly))
+	if err := c.pausedError(); err != nil {
+		return StepResponse{}, err
 	}
-	if family, latest := strings.CutSuffix(modelID, "-latest"); latest {
-		var err error
-		modelID, err = c.resolveLatest(ctx, token, family)
-		if err != nil {
-			return StepResponse{}, err
-		}
+	modelID, _, err := resolve(modelID, func(family string) (string, error) { return c.resolveLatest(ctx, token, family) })
+	if err != nil {
+		return StepResponse{}, err
 	}
 	params.Model = modelID
 	var raw *http.Response
@@ -302,6 +294,13 @@ func (c *ChatGPT) paused() (time.Time, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.pausedUntil, c.now().Before(c.pausedUntil)
+}
+
+func (c *ChatGPT) pausedError() error {
+	if until, paused := c.paused(); paused {
+		return fmt.Errorf("%w; nothing is sent on the plan until %s", ErrPlanLimit, until.UTC().Format(time.TimeOnly))
+	}
+	return nil
 }
 
 // chatGPTParams maps everything but the model, which each attempt sets.

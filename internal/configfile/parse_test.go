@@ -94,6 +94,7 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"an embedder of an undeclared provider", embeddingDoc("model: other/voyage-code-3"), `references provider "other"`},
 		{"an embedder of an anthropic provider", "providers:\n  a: { type: anthropic, apiKey: { env: TEST_KEY } }\nembedding: { model: a/x, dims: 8 }\n",
 			"embeddings need an openrouter or openai one"},
+		{"an embedder alias", embeddingDoc("model: or/~voyage-latest"), `embedding.model takes no floating alias, got "or/~voyage-latest"`},
 		{"an embedder too wide for the index", embeddingDoc("dims: 4096"), "embedding.dims must be between 1 and 4000"},
 		{"an embedder with a negative bound", embeddingDoc("maxBatch: -1"), "must not be negative"},
 		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},

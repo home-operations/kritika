@@ -60,9 +60,9 @@ func TestChatGPTLatestModels(t *testing.T) {
 			t.Fatalf("%s = %s, %+v, %v; want %s", alias, chosen.Load(), resp, err, want)
 		}
 	}
-	step("sol-latest", "gpt-6.10-sol")
-	step("astra-latest", "gpt-6.1-astra")
-	step("newfamily-latest", "newfamily-1.1")
+	step("~sol-latest", "gpt-6.10-sol")
+	step("~astra-latest", "gpt-6.1-astra")
+	step("~newfamily-latest", "newfamily-1.1")
 	step("gpt-5.6-sol", "gpt-5.6-sol")
 	if reads.Load() != 1 {
 		t.Fatalf("catalog read %d times, want one shared across aliases", reads.Load())
@@ -70,9 +70,11 @@ func TestChatGPTLatestModels(t *testing.T) {
 	catalogMu.Lock()
 	catalog[4].Visibility = "list"
 	catalogMu.Unlock()
-	step("sol-latest", "gpt-6.10-sol")
-	now = now.Add(chatGPTCatalogTTL)
-	step("sol-latest", "gpt-7-sol")
+	step("~sol-latest", "gpt-6.10-sol")
+	now = now.Add(modelCatalogTTL)
+	step("~sol-latest", "gpt-6.10-sol")
+	settle(&c.catalogCache, "at-1")
+	step("~sol-latest", "gpt-7-sol")
 	if reads.Load() != 2 {
 		t.Fatal("new models were not discovered after cache expiry")
 	}
@@ -80,11 +82,11 @@ func TestChatGPTLatestModels(t *testing.T) {
 	catalog = []chatGPTCatalogModel{{Slug: "gpt-5.6-sol", Visibility: "list"}}
 	catalogMu.Unlock()
 	src.token = "at-2"
-	step("sol-latest", "gpt-5.6-sol")
+	step("~sol-latest", "gpt-5.6-sol")
 	if reads.Load() != 3 {
 		t.Fatal("a new token reused the earlier account's catalog")
 	}
-	if _, err := c.Step(t.Context(), StepRequest{Model: "astra-latest"}); err == nil || !strings.Contains(err.Error(), "no versioned astra model") {
+	if _, err := c.Step(t.Context(), StepRequest{Model: "~astra-latest"}); err == nil || !strings.Contains(err.Error(), "no versioned astra model") {
 		t.Fatalf("unavailable family = %v", err)
 	}
 }
@@ -111,7 +113,7 @@ func TestChatGPTCatalogSharedFetch(t *testing.T) {
 	impatient, cancel := context.WithCancel(t.Context())
 	errs := make(chan error, 3)
 	go func() {
-		_, err := c.Step(impatient, StepRequest{Model: "sol-latest"})
+		_, err := c.Step(impatient, StepRequest{Model: "~sol-latest"})
 		errs <- err
 	}()
 	for reads.Load() == 0 {
@@ -119,7 +121,7 @@ func TestChatGPTCatalogSharedFetch(t *testing.T) {
 	}
 	for range 2 {
 		go func() {
-			resp, err := c.Step(t.Context(), StepRequest{Model: "sol-latest"})
+			resp, err := c.Step(t.Context(), StepRequest{Model: "~sol-latest"})
 			if err == nil && resp.Model != "gpt-6-sol" {
 				err = fmt.Errorf("resolved %s", resp.Model)
 			}
@@ -142,43 +144,56 @@ func TestChatGPTCatalogSharedFetch(t *testing.T) {
 }
 
 func TestChatGPTPinnedModelSkipsCatalog(t *testing.T) {
-	srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
-	resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: "gpt-5.6-sol"})
-	if err != nil || got.path != "/v1/responses" || resp.Model != "gpt-5.6-sol" {
-		t.Fatalf("explicit model = %+v, %v, path %s", resp, err, got.path)
+	for _, id := range []string{"gpt-5.6-sol", "sol-latest", "astra-latest"} {
+		t.Run(id, func(t *testing.T) {
+			srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
+			resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: id})
+			if err != nil || got.path != "/v1/responses" || field(got.body, "model") != id || resp.Model != id {
+				t.Fatalf("explicit model = %+v, %v, path %s, body %v", resp, err, got.path, got.body)
+			}
+		})
 	}
 }
 
 func TestChatGPTCatalogAuthenticationFailure(t *testing.T) {
 	srv, _ := fakeProvider(t, http.StatusUnauthorized, `{"error":{"message":"expired","type":"invalid_request_error"}}`)
 	src := &tokens{token: "at-1"}
-	if _, err := newTestChatGPT(t, srv, src).Step(t.Context(), StepRequest{Model: "sol-latest"}); err == nil || src.expired.Load() != 1 {
+	if _, err := newTestChatGPT(t, srv, src).Step(t.Context(), StepRequest{Model: "~sol-latest"}); err == nil || src.expired.Load() != 1 {
 		t.Fatalf("catalog refusal = %v, expired %d", err, src.expired.Load())
 	}
 }
 
-func TestFamilyVersion(t *testing.T) {
-	for _, tt := range []struct {
-		slug, family string
-		version      [3]int
-		ok           bool
-	}{
-		{"gpt-6-sol", "sol", [3]int{6, 0, 0}, true},
-		{"gpt-6.10.1-sol", "sol", [3]int{6, 10, 1}, true},
-		{"astra-6.0", "astra", [3]int{6, 0, 0}, true},
-		{"gpt-6-sol", "astra", [3]int{}, false},
-		{"gpt-6-sol-preview", "sol", [3]int{}, false},
-		{"gpt-+6-sol", "sol", [3]int{}, false},
-		{"gpt-6.1.2.3-sol", "sol", [3]int{}, false},
-		{"gpt-sol", "sol", [3]int{}, false},
-		{"gpt-5.2", "gpt", [3]int{5, 2, 0}, true},
-		{"gpt-5.2-sol", "gpt", [3]int{}, false},
-	} {
-		t.Run(tt.slug+"/"+tt.family, func(t *testing.T) {
-			got, ok := familyVersion(tt.slug, tt.family)
-			if ok != tt.ok || (ok && got != tt.version) {
-				t.Fatalf("version = %v, %v", got, ok)
-			}
-		})
+func TestChatGPTCatalogPlanLimit(t *testing.T) {
+	srv, got := fakeProvider(t, http.StatusTooManyRequests, planLimitBody)
+	c := newTestChatGPT(t, srv, nil)
+	_, err := c.Step(t.Context(), StepRequest{Model: "~sol-latest"})
+	if !errors.Is(err, ErrPlanLimit) || strings.Count(err.Error(), "model: chatgpt:") != 1 || got.path != "/v1/models" {
+		t.Fatalf("catalog at the plan's limit = %v", err)
+	}
+	got.path = ""
+	if _, err := c.Pin(t.Context(), "~sol-latest", ""); !errors.Is(err, ErrPlanLimit) || got.path != "" {
+		t.Fatalf("pin on a paused plan = %v, request to %q", err, got.path)
+	}
+}
+
+func TestChatGPTPin(t *testing.T) {
+	var reads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
+		if r.Header.Get("Authorization") != "Bearer at-1" {
+			t.Error("model catalog request did not use the plan token")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"models":[{"slug":"gpt-6-sol","visibility":"list"},{"slug":"gpt-6.1-sol","visibility":"list"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	src := &tokens{token: "at-1"}
+	c := newTestChatGPT(t, srv, src)
+	if got, err := c.Pin(t.Context(), "~sol-latest", EffortHigh); err != nil || got != "~sol-latest@gpt-6.1-sol" {
+		t.Fatalf("Pin = %q, %v", got, err)
+	}
+	src.err = errors.New("signed out")
+	if got, err := c.Pin(t.Context(), "gpt-6-sol", EffortHigh); err != nil || got != "gpt-6-sol" || reads.Load() != 1 {
+		t.Fatalf("Pin of a model ID = %q, %v after %d catalog reads", got, err, reads.Load())
 	}
 }
