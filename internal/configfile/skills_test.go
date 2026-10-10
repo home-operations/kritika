@@ -60,6 +60,13 @@ func TestSkillsResolve(t *testing.T) {
 			repo: "acme/y",
 			want: Skills{Paths: []string{".agents/skills", ".claude/skills"}, Scope: map[string]SkillScope{"db": {Paths: []string{"db/**"}}}},
 		},
+		{
+			name: "a written load is kept, false apart from unset",
+			yaml: "skills: { scope: { db: { paths: ['db/**'], load: false }, docs: { load: true } } }\n" + minimal, repo: "acme/x",
+			want: Skills{Paths: []string{".agents/skills", ".claude/skills"}, Scope: map[string]SkillScope{
+				"db": {Paths: []string{"db/**"}, Load: new(false)}, "docs": {Load: new(true)},
+			}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,6 +76,33 @@ func TestSkillsResolve(t *testing.T) {
 			}
 			if !reflect.DeepEqual(DefaultSkillPaths, []string{".agents/skills", ".claude/skills"}) {
 				t.Fatalf("resolving changed the default paths: %q", DefaultSkillPaths)
+			}
+		})
+	}
+}
+
+func TestSkillScopeLoads(t *testing.T) {
+	t.Parallel()
+	when := []When{{Expr: `pr.headRef.startsWith("renovate/")`}}
+	tests := []struct {
+		name  string
+		scope SkillScope
+		want  bool
+	}{
+		{"no scope", SkillScope{}, false},
+		{"paths", SkillScope{Paths: []string{"db/**"}}, true},
+		{"conditions", SkillScope{When: when}, true},
+		{"paths and conditions", SkillScope{Paths: []string{"db/**"}, When: when}, true},
+		{"load: false over paths", SkillScope{Paths: []string{"db/**"}, Load: new(false)}, false},
+		{"load: false over conditions", SkillScope{When: when, Load: new(false)}, false},
+		{"load: true with neither", SkillScope{Load: new(true)}, true},
+		{"load: false with neither", SkillScope{Load: new(false)}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.scope.Loads(); got != tt.want {
+				t.Fatalf("Loads() = %v, want %v", got, tt.want)
 			}
 		})
 	}

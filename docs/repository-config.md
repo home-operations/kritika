@@ -49,8 +49,8 @@ skills:
   scope:
     review-renovate-pr:
       when: [{ expr: pr.headRef.startsWith("renovate/") }]
-      load: true
     migrations: { paths: ["db/migrations/**"] }
+    go-reference: { paths: ["**/*.go"], load: false }
 ```
 
 | Key                                                          | What it sets                                                       | Against the admin's value                       |
@@ -197,18 +197,21 @@ one, with nothing to configure.
 | Key                   | What                                                                                                                                                                                                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skills.paths`        | the directories whose folders are skills, replacing the admin's; `paths: []` looks nowhere, which turns skills off for the repository                                                                                                                                     |
-| `skills.scope.<name>` | narrows when the skill of that name is offered: its `paths` are globs, one of which a changed path must match, and its `when` conditions as a rule's, one of which must hold; with both, both must. `load: true` gives a review the skill applies to its instructions in the system prompt, rather than its name to read. Added to the admin's scopes, a skill named in both taking this file's |
+| `skills.scope.<name>` | narrows when the skill of that name is offered: its `paths` are globs, one of which a changed path must match, and its `when` conditions as a rule's, one of which must hold; with both, both must. A scope with `paths` or `when` gives a review the skill applies to its instructions in the system prompt, rather than its name to read; `load: false` offers it by name instead, and `load: true` gives a skill whose scope has neither whole to every review. Added to the admin's scopes, a skill named in both taking this file's |
 
 - **Read from the merge base**, as this file and the rules are, so a pull
   request cannot add or rewrite a skill to steer its own review.
 - **Offered by name, or given whole:** the system prompt lists each skill's
   name and description; the review reads a skill's instructions, or a file
   in its folder, with its `load_skill` tool when the skill fits the pull
-  request, from the merge base too. A skill whose scope says `load: true`
-  skips that step: when its `paths` and `when` hold, the review starts with
-  its instructions in the system prompt, and `load_skill` still serves the
-  files in its folder. Set it on a skill whose scope already decides it
-  applies; one that only sometimes helps is better offered by name.
+  request, from the merge base too. A skill whose scope has `paths` or
+  `when`, already deciding where it applies, skips that step, as does one
+  whose scope says `load: true`: when its `paths` and `when` hold, the
+  review starts with its instructions in the system prompt, and
+  `load_skill` still serves the files in its folder. A scope that narrows
+  without deciding, such as every Go change for a reference skill that
+  only sometimes helps there, says `load: false` to keep it offered by
+  name.
 - **Left out, not fatal:** a skill past a [limit](#limits), or whose
   `SKILL.md` has no frontmatter, no description or a name another skill
   has, is left out and noted rather than failing the review.

@@ -193,7 +193,7 @@
               },
               "load": {
                 "type": "boolean",
-                "description": "true gives a review the skill applies to its instructions in the system prompt, rather than its name to read with load_skill."
+                "description": "Whether a review the skill applies to is given its instructions in the system prompt, rather than its name to read with load_skill. Unset, a scope with paths or when gives them, and one with neither offers the skill by name."
               }
             }
           }

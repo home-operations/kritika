@@ -215,7 +215,15 @@ func TestPromptInputsSkills(t *testing.T) {
 				Paths: configfile.DefaultSkillPaths, Off: []string{"renovate"},
 				Scope: map[string]configfile.SkillScope{"migrations": {Paths: []string{"db/**"}}, "review-go": {Paths: []string{"**/*.go"}}},
 			},
-			found: found, want: []string{"review-go"},
+			found: found, wantLoaded: []string{"review-go"},
+		},
+		{
+			name: "a scope that says load: false offers its skill by name",
+			skills: &Skills{
+				Paths: configfile.DefaultSkillPaths, Off: []string{"renovate"},
+				Scope: map[string]configfile.SkillScope{"review-go": {Paths: []string{"**/*.go"}, Load: new(false)}},
+			},
+			found: found, want: []string{"review-go", "migrations"},
 		},
 		{
 			name: "the skills past the listing's budget are noted", skills: &Skills{Paths: configfile.DefaultSkillPaths}, found: big,
@@ -226,13 +234,13 @@ func TestPromptInputsSkills(t *testing.T) {
 			name: "the skills the scope loads are given whole",
 			skills: &Skills{
 				Paths: configfile.DefaultSkillPaths, Off: []string{"migrations"},
-				Scope: map[string]configfile.SkillScope{"renovate": {Load: true}, "migrations": {Load: true}},
+				Scope: map[string]configfile.SkillScope{"renovate": {Load: new(true)}, "migrations": {Load: new(true)}},
 			},
 			found: found, want: []string{"review-go"}, wantLoaded: []string{"renovate"},
 		},
 		{
 			name:   "a skill past the loaded skills' budget is listed and noted",
-			skills: &Skills{Paths: configfile.DefaultSkillPaths, Scope: map[string]configfile.SkillScope{"huge": {Load: true}}},
+			skills: &Skills{Paths: configfile.DefaultSkillPaths, Scope: map[string]configfile.SkillScope{"huge": {Load: new(true)}}},
 			found:  append(slices.Clone(found[:1]), huge), want: []string{"review-go", "huge"},
 			wantNotes: []string{"1 skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"},
 		},

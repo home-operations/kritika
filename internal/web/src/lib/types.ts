@@ -246,8 +246,9 @@ export interface ReviewBlock {
 export interface SkillScope {
   paths?: string[];
   when?: { name: string; expr: string }[];
-  // load gives a review the skill applies to its instructions in the
-  // system prompt, rather than its name to read.
+  // load is whether a review the skill applies to is given its
+  // instructions in the system prompt, rather than its name to read: as
+  // the scope sets it, or as its paths and when conditions decide.
   load: boolean;
 }
 

@@ -107,7 +107,7 @@ func OfferedSkills(found []Skill, scope map[string]configfile.SkillScope, off, c
 		if len(sc.Paths) > 0 && !slices.ContainsFunc(changed, func(c string) bool { return chunk.Matches(sc.Paths, c) }) {
 			continue
 		}
-		if sc.Load {
+		if sc.Loads() {
 			if len(s.Text) <= loadRoom {
 				loadRoom -= len(s.Text)
 				out.Loaded = append(out.Loaded, s)
