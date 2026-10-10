@@ -18,5 +18,12 @@ func (p Price) Cost(u Usage) float64 {
 // namespace.
 type Pricing map[string]Price
 
-// cost is what u costs on modelID, zero for a model without a price.
-func (p Pricing) cost(modelID string, u Usage) float64 { return p[modelID].Cost(u) }
+// cost is what u costs on modelID, priced under alias, the floating alias
+// that selected it, when it has no price of its own; zero without either.
+func (p Pricing) cost(modelID, alias string, u Usage) float64 {
+	price, ok := p[modelID]
+	if !ok {
+		price = p[alias]
+	}
+	return price.Cost(u)
+}

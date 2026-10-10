@@ -87,6 +87,9 @@ func (p Provider) validate(where string) error {
 		if price := p.Pricing[id]; price.Input < 0 || price.Output < 0 || price.CacheRead < 0 || price.CacheWrite < 0 {
 			return fmt.Errorf("configfile: %s.pricing.%s: prices must not be negative", where, id)
 		}
+		if err := checkAlias(where+".pricing", p.Type, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }

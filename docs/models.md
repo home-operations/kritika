@@ -32,13 +32,13 @@ embedding:
   dims: 1024
 ```
 
-| Key       | What                                                                                              |
-| --------- | ------------------------------------------------------------------------------------------------- |
-| `type`    | `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`                                      |
-| `apiKey`  | its key, required except for `chatgpt`, which uses a stored sign-in                              |
-| `baseUrl` | its API's URL, the type's default unless set                                                      |
-| `pricing` | per model id, the prices of a provider that reports no cost ([local models](#local-models))       |
-| `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries)) |
+| Key       | What                                                                                                                                     |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`    | `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`                                                                             |
+| `apiKey`  | its key, required except for `chatgpt`, which uses a stored sign-in                                                                      |
+| `baseUrl` | its API's URL, the type's default unless set                                                                                             |
+| `pricing` | per model id or [floating alias](#floating-model-aliases), the prices of a provider that reports no cost ([local models](#local-models)) |
+| `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries))                                        |
 
 Provider credentials never enter a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](security.md#the-model-endpoint)).
@@ -62,6 +62,99 @@ A model named `<key name>/<model>` in the account's `owner/*` or
 `owner/name` entries, or in one of its repositories' `.kritika.yaml`, runs
 on that key and the account pays for it. A key's name may not be one the
 instance's providers use.
+
+### Floating model aliases
+
+Providers of type `anthropic`, `openai` and `chatgpt` accept
+`<provider>/~<family>-latest` in `review.model`, `review.fallback`,
+`confidence.model` and `confidence.fallback`. The `~` makes the alias a
+kritika lookup. Model IDs without it, including a provider's own `*-latest`
+aliases, are sent unchanged. OpenRouter and OpenCode keep their own model
+selection behavior.
+
+The first alias request after startup fetches the provider's catalog and
+waits for it; concurrent requests share one fetch. Each provider uses its
+catalog for five minutes. After that, the next alias request gets the
+cached catalog at once and starts a refresh. While refreshing fails,
+kritika keeps the cached catalog and tries again a minute later. There is
+no background polling. A failed first fetch, or a family with no model
+available, uses the usual [retries](#retries) and [fallback](#fallback).
+
+A review or follow-up resolves its aliases once, when its run starts, and
+every step of the run goes to the models they selected, whichever replica
+serves it. A review carries on the last review's conversation only when
+its alias still selects the same model. An alias that cannot be resolved
+when the run starts is resolved again at each step.
+
+Usage records the selected model ID. `pricing` prices that model under its
+own ID or, without an entry of its own, under the alias, so an entry keyed
+`~opus-latest` also prices models released later. With a
+[reasoning effort](#effort) set, an Anthropic alias skips models whose
+catalog entry lacks that level; the model an OpenAI or ChatGPT alias
+selects must support it.
+
+Use an explicit model ID to pin a version. Floating aliases apply to review
+and confidence calls; use explicit IDs for embedding models. Loading the
+configuration fails on an alias that is not `~<family>-latest`, on an alias
+for a provider of another type, and on an alias in `embedding.model`.
+
+If you configured a ChatGPT alias such as `plan/sol-latest`, change it to
+`plan/~sol-latest` to keep kritika's floating selection.
+
+#### Anthropic
+
+A provider of type `anthropic` accepts aliases such as `~opus-latest`,
+`~sonnet-latest` and `~haiku-latest`:
+
+```yaml
+providers:
+  anthropic:
+    type: anthropic
+    apiKey: { env: ANTHROPIC_API_KEY }
+review:
+  model: anthropic/~opus-latest
+  fallback: anthropic/~sonnet-latest
+  effort: high
+confidence:
+  model: anthropic/~haiku-latest
+```
+
+An alias selects the first active model of the requested family in that
+API key's [model catalog](https://platform.claude.com/docs/en/api/models/list),
+which lists newer models first, using its `line` and `lifecycle` fields.
+Release dates are not compared, since the catalog may not know one. It
+needs no mapping of model versions or families in kritika. Models with no
+family, or marked deprecated or retired, are excluded.
+
+kritika reads all catalog pages before choosing a model. A gateway serving
+this provider must implement the Models API, list newer models first and
+return those fields to support these aliases. A catalog that lists a model
+twice, as one that ignores its page cursor does, fails the request.
+
+#### OpenAI
+
+A provider of type `openai` accepts aliases such as `~sol-latest` and
+`~astra-latest`:
+
+```yaml
+providers:
+  openai:
+    type: openai
+    apiKey: { env: OPENAI_API_KEY }
+review:
+  model: openai/~sol-latest
+  fallback: openai/~astra-latest
+  effort: high
+```
+
+The adapter lists models available to that API key through the
+[Models API](https://developers.openai.com/api/reference/resources/models/methods/list/),
+then uses the same numeric version selection as [ChatGPT](#chatgpt-plans).
+For example, `gpt-6.10-sol` ranks above `sol-6.9`. IDs with preview,
+date or other nonnumeric suffixes are excluded. Any matching family works
+without a mapping in kritika. An OpenAI-compatible server must expose
+`/models` with versioned IDs to support these aliases. The selected model
+must support the Chat Completions API this provider uses.
 
 ### ChatGPT plans
 
@@ -121,16 +214,16 @@ repeated as the same client. A returning sign-in must use the same ChatGPT
 account.
 
 Use a concrete model ID to pin a version, or a family alias such as
-`plan/sol-latest` or `plan/astra-latest` to select the newest visible version
+`plan/~sol-latest` or `plan/~astra-latest` to select the newest visible version
 in that account's authenticated model catalog. Aliases compare numeric
 versions in `gpt-<version>-<family>` or `<family>-<version>` IDs and exclude
 preview suffixes. They work for any matching family without a mapping in
-kritika. The first alias request after startup fetches the catalog; requests
-refresh it after five minutes or when the access token changes, and
-concurrent requests share one fetch. There is no background polling. If no matching model is available, the request fails
-and a configured fallback can take over. Usage records the concrete model
-selected. Model and reasoning effort use the same configuration fields as
-other providers; the selected model must support the requested effort.
+kritika. The catalog follows the [floating alias cache](#floating-model-aliases)
+and also refreshes when the access token changes. If no matching model is
+available, the request fails and a configured fallback can take over. Usage
+records the concrete model selected. Model and reasoning effort use the
+same configuration fields as other providers; the selected model must
+support the requested effort.
 
 The adapter uses streamed Responses requests with `store: false` and the
 full conversation, keying the prompt cache by that conversation. The plan route

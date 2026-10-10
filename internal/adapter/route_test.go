@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -45,6 +46,58 @@ apps:
 	}
 	if _, err := c.Route(f, &f.Accounts[0], "nowhere/small"); err == nil {
 		t.Fatal("Route resolved a provider the configuration lacks")
+	}
+}
+
+type pinner struct {
+	stepperFunc
+	asked []string
+	err   error
+}
+
+func (p *pinner) Pin(_ context.Context, id string, effort model.Effort) (string, error) {
+	p.asked = append(p.asked, id+" "+string(effort))
+	return id + "@pinned", p.err
+}
+
+func TestStepperPin(t *testing.T) {
+	t.Setenv("TEST_PROVIDER_KEY", "sk-provider")
+	f, err := configfiletest.Parse(t, `providers:
+  p: { type: anthropic, apiKey: { env: TEST_PROVIDER_KEY } }
+  plain: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }
+apps:
+  acme-bot: { accounts: [acme], clientId: Iv1.test, privateKey: { env: TEST_PROVIDER_KEY }, webhookSecret: { env: TEST_PROVIDER_KEY } }
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("no catalog")
+	for _, tt := range []struct {
+		name  string
+		ref   configfile.ModelRef
+		err   error
+		want  configfile.ModelRef
+		asked []string
+	}{
+		{"alias", "p/~opus-latest", nil, "p/~opus-latest@pinned", []string{"~opus-latest high"}},
+		{"model id", "p/claude-opus-4-6", nil, "p/claude-opus-4-6", nil},
+		{"no fallback", "", nil, "", nil},
+		{"unpinned", "p/~opus-latest", refused, "p/~opus-latest", []string{"~opus-latest high"}},
+		{"an adapter that pins nothing", "plain/~opus-latest", nil, "plain/~opus-latest", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pin := &pinner{err: tt.err}
+			c := &Steppers{Build: func(p configfile.Provider) (model.Stepper, error) {
+				if p.Type == configfile.ProviderAnthropic {
+					return pin, nil
+				}
+				return &stepperFunc{}, nil
+			}}
+			got, err := c.Pin(t.Context(), f, &f.Accounts[0], tt.ref, model.EffortHigh)
+			if got != tt.want || !errors.Is(err, tt.err) || !slices.Equal(pin.asked, tt.asked) {
+				t.Fatalf("Pin = %q, %v after %v", got, err, pin.asked)
+			}
+		})
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -29,8 +30,10 @@ type AnthropicConfig struct {
 
 // Anthropic is a Stepper over the Anthropic Messages API.
 type Anthropic struct {
-	client  anthropic.Client
-	pricing Pricing
+	client       anthropic.Client
+	pricing      Pricing
+	now          func() time.Time
+	catalogCache modelCatalog[anthropic.ModelInfo]
 }
 
 // NewAnthropic builds the adapter. It ignores the SDK's environment and
@@ -52,7 +55,7 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
-	return &Anthropic{client: anthropic.NewClient(opts...), pricing: cfg.Pricing}, nil
+	return &Anthropic{client: anthropic.NewClient(opts...), pricing: cfg.Pricing, now: time.Now}, nil
 }
 
 // Step implements Stepper.
@@ -65,6 +68,10 @@ func (a *Anthropic) Step(ctx context.Context, req StepRequest) (StepResponse, er
 		return StepResponse{}, err
 	}
 	return eachModel(ctx, req, func(id string) (StepResponse, error) {
+		id, alias, err := resolve(id, func(family string) (string, error) { return a.resolveLatest(ctx, family, req.Effort) })
+		if err != nil {
+			return StepResponse{}, err
+		}
 		params.Model = id
 		msg, err := a.client.Messages.New(ctx, params)
 		if err != nil {
@@ -81,7 +88,7 @@ func (a *Anthropic) Step(ctx context.Context, req StepRequest) (StepResponse, er
 		}
 		u := msg.Usage
 		out.Usage = Usage{Input: u.InputTokens, CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens, Output: u.OutputTokens}
-		out.CostUSD = a.pricing.cost(id, out.Usage)
+		out.CostUSD = a.pricing.cost(id, alias, out.Usage)
 		return out, nil
 	})
 }

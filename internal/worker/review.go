@@ -34,7 +34,8 @@ type Review struct {
 	Base
 	Executor executor.Executor
 	// Steppers reach the model that scores a review's confidence, and the
-	// review model that writes a split review's summary from its parts'.
+	// review model that writes a split review's summary from its parts';
+	// they also pin the models a run is granted (pinModels).
 	Steppers *adapter.Steppers
 	// GatewayURL is where a runner calls its model, and GatewayTokenTTL how
 	// long its run token outlives the Job's deadline.
@@ -156,11 +157,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
 	provider, _ := file.Provider(account, settings.Models.Review.Provider())
-	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, settings.Models.Review, provider.Type)
+	granted := pinModels(ctx, logger, w.Steppers, file, account, settings.Models)
+	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, granted.Review, provider.Type)
 	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
 	extra, releaseExtra := w.freeSlots(ctx, logger, account, settings, parts-1, job.ID)
 	defer releaseExtra()
-	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, prior, cont, admitted,
+	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, granted, prior, cont, admitted,
 		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger)
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)

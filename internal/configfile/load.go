@@ -240,6 +240,9 @@ func (f *File) resolveEmbedding() error {
 		return fmt.Errorf("configfile: embedding.model names a %s provider; embeddings need an %s or %s one",
 			p.Type, ProviderOpenRouter, ProviderOpenAI)
 	}
+	if model.Floating(e.Ref.Model()) {
+		return fmt.Errorf("configfile: embedding.model takes no floating alias, got %q", e.Ref)
+	}
 	e.Model, e.apiKey = e.Ref.Model(), p.apiKey
 	return nil
 }
@@ -637,14 +640,29 @@ func (i *Connection) validate(where string) error {
 
 // checkModelRef rejects a model reference that is not
 // "<provider>/<model>" of a provider declared for account t or the
-// instance.
+// instance, or a floating alias that provider cannot resolve.
 func (f *File) checkModelRef(where string, t *Account, ref ModelRef) error {
-	p := ref.Provider()
-	if p == "" || ref.Model() == "" {
+	name := ref.Provider()
+	if name == "" || ref.Model() == "" {
 		return fmt.Errorf("configfile: %s must be \"<provider>/<model>\", got %q", where, ref)
 	}
-	if _, ok := f.Provider(t, p); !ok {
-		return fmt.Errorf("configfile: %s references provider %q, which is not declared under providers", where, p)
+	p, ok := f.Provider(t, name)
+	if !ok {
+		return fmt.Errorf("configfile: %s references provider %q, which is not declared under providers", where, name)
+	}
+	return checkAlias(where, p.Type, ref.Model())
+}
+
+// checkAlias rejects a floating alias, a model ID starting with ~, that is
+// not ~<family>-latest or that a provider of type t would send as it is.
+func checkAlias(where string, t ProviderType, id string) error {
+	switch {
+	case !model.Floating(id):
+		return nil
+	case !t.TakesAliases():
+		return fmt.Errorf("configfile: %s: a provider of type %s takes no floating alias, got %q", where, t, id)
+	case !model.ValidAlias(id):
+		return fmt.Errorf("configfile: %s: a floating alias must be ~<family>-latest, got %q", where, id)
 	}
 	return nil
 }

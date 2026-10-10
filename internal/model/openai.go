@@ -79,6 +79,8 @@ type OpenAI struct {
 	reportsModel bool
 	openCode     bool
 	pricing      Pricing
+	now          func() time.Time
+	catalogCache modelCatalog[string]
 }
 
 // NewOpenAI builds the adapter.
@@ -106,7 +108,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	}
 	return &OpenAI{
 		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel,
-		openCode: cfg.OpenCode, pricing: cfg.Pricing,
+		openCode: cfg.OpenCode, pricing: cfg.Pricing, now: time.Now,
 	}, nil
 }
 
@@ -152,17 +154,28 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 			// nearest level each model in the list takes.
 			opts = append(opts, option.WithJSONSet("reasoning", map[string]any{"effort": string(req.Effort)}))
 		}
-		resp, err := o.step(ctx, params, req.Model, opts...)
+		resp, err := o.step(ctx, params, req.Model, "", opts...)
 		if err != nil {
 			return StepResponse{}, fmt.Errorf("model: %s: %w", req.Model, err)
 		}
 		return resp, nil
 	}
-	return eachModel(ctx, req, func(id string) (StepResponse, error) { return o.step(ctx, params, id, opts...) })
+	return eachModel(ctx, req, func(id string) (StepResponse, error) {
+		var alias string
+		if !o.openCode {
+			var err error
+			if id, alias, err = resolve(id, func(family string) (string, error) { return o.resolveLatest(ctx, family) }); err != nil {
+				return StepResponse{}, err
+			}
+		}
+		return o.step(ctx, params, id, alias, opts...)
+	})
 }
 
+// step sends modelID, priced under alias, the floating alias that
+// selected it, when it has no price of its own.
 func (o *OpenAI) step(
-	ctx context.Context, params openai.ChatCompletionNewParams, modelID string, opts ...option.RequestOption,
+	ctx context.Context, params openai.ChatCompletionNewParams, modelID, alias string, opts ...option.RequestOption,
 ) (StepResponse, error) {
 	params.Model = modelID
 	cc, err := o.client.Chat.Completions.New(ctx, params, opts...)
@@ -214,7 +227,7 @@ func (o *OpenAI) step(
 	if extra.Usage.Cost != nil {
 		out.CostUSD = *extra.Usage.Cost
 	} else {
-		out.CostUSD = o.pricing.cost(modelID, out.Usage)
+		out.CostUSD = o.pricing.cost(modelID, alias, out.Usage)
 	}
 	return out, nil
 }

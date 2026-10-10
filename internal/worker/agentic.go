@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
@@ -278,16 +279,38 @@ func (b *Base) readAgentRun(
 	return &run, nil
 }
 
+// pinModels is models as a run's grant names them: each floating alias
+// pinned to the model it selects now (adapter.Steppers.Pin), so every step
+// of the run goes to that model, whichever replica's gateway serves it,
+// and a conversation the run keeps names it. An alias that cannot be
+// pinned is granted as it is, which each step then resolves.
+func pinModels(
+	ctx context.Context, logger *slog.Logger, steppers *adapter.Steppers, file *configfile.File, account *configfile.Account,
+	models configfile.Models,
+) configfile.Models {
+	for _, ref := range []*configfile.ModelRef{&models.Review, &models.Fallback} {
+		pinned, err := steppers.Pin(ctx, file, account, *ref, models.Effort)
+		if err != nil {
+			provider, _ := file.Provider(account, ref.Provider())
+			logger.Warn("floating alias not pinned; each step resolves it", "model", *ref,
+				"error", adapter.Mask(file, provider)(err.Error()))
+			continue
+		}
+		*ref = pinned
+	}
+	return models
+}
+
 // agentSpec gives spec its agent: the prompt, the gateway and a run
-// token for it, which lets it carry on cont when that is set, and the
-// agent's bounds, for a review sized for size's parts. The token is
-// minted last, so an error leaves none behind; the caller revokes it once
-// the run ends. It returns the runner Job's deadline, which the agent's
-// timeout may lengthen, and the prompt's notes.
+// token for it, granting models, which lets it carry on cont when that is
+// set, and the agent's bounds, for a review sized for size's parts. The
+// token is minted last, so an error leaves none behind; the caller
+// revokes it once the run ends. It returns the runner Job's deadline,
+// which the agent's timeout may lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
-	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, prior priorReview,
-	cont *runner.Continuation, admitted admission, size sizing, spec *runner.Spec, secrets *runner.Secrets, deadline time.Duration,
-	client forge.Client, logger *slog.Logger,
+	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, models configfile.Models,
+	prior priorReview, cont *runner.Continuation, admitted admission, size sizing, spec *runner.Spec, secrets *runner.Secrets,
+	deadline time.Duration, client forge.Client, logger *slog.Logger,
 ) (time.Duration, []string, error) {
 	settings := eff.Settings
 	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior, client, logger)
@@ -297,7 +320,7 @@ func (w *Review) agentSpec(
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
-		Model: string(settings.Models.Review), Fallback: string(settings.Models.Fallback), Effort: string(settings.Models.Effort),
+		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort),
 		Budget: admitted.budget(size.parts),
 	}
 	if cont != nil {

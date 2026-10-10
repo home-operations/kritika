@@ -1400,7 +1400,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
 	river.AddWorker(workers, &FollowUp{
-		Base: wb, Executor: exec, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
+		Base: wb, Executor: exec, Steppers: steppers, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 	})
 	river.AddWorker(workers, &Index{
 		Base: wb, Executor: exec, Embedders: embedders,
