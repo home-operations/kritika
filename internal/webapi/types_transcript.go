@@ -68,6 +68,7 @@ type Turn struct {
 	Response     Response   `json:"response"`
 	Usage        Usage      `json:"usage"`
 	CostUSD      float64    `json:"costUsd"`
+	ChatGPTPlan  bool       `json:"chatgptPlan,omitzero"`
 	DurationMs   int64      `json:"durationMs"`
 	Error        string     `json:"error"`
 	Truncated    bool       `json:"truncated"`

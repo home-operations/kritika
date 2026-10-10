@@ -37,13 +37,17 @@ func parseTime(s string) (time.Time, bool) {
 func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.Time, error) {
 	group := cmp.Or(store.UsageGroup(r.URL.Query().Get("group")), store.UsageByDay)
 	if !group.Valid() {
-		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be day, model, repo or role")
+		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be hour, day, week, model, repo or role")
 	}
 	from, to, err := s.window(r)
 	return group, from, to, err
 }
 
 func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	billing := r.URL.Query().Get("billing")
+	if billing != "" && billing != "all" && billing != "chatgpt" {
+		return errBadRequest(CodeBadRequest, "billing must be all or chatgpt")
+	}
 	group, from, to, err := s.usageQuery(r)
 	if err != nil {
 		return err
@@ -51,7 +55,7 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScop
 	ctx := r.Context()
 	var rows []store.UsageSeriesRow
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		rows, err = store.UsageSeries(ctx, tx, group, from, to)
+		rows, err = store.UsageSeries(ctx, tx, group, from, to, billing == "chatgpt")
 		return err
 	}); err != nil {
 		return err
@@ -60,7 +64,7 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScop
 	for i, u := range rows {
 		out.Rows[i] = UsagePoint{
 			Key: u.Key, InputTokens: u.InputTokens, CacheReadTokens: u.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens,
-			OutputTokens: u.OutputTokens, CostUSD: u.CostUSD, Calls: u.Calls,
+			OutputTokens: u.OutputTokens, CostUSD: u.CostUSD, Calls: u.Calls, PlanCalls: u.PlanCalls,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

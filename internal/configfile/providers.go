@@ -12,26 +12,46 @@ import (
 func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
 		if p, ok := t.Providers[name]; ok {
+			p.sessionKey = t.Key() + "/" + name
 			return p, true
 		}
 	}
 	p, ok := f.Providers[name]
+	p.sessionKey = name
 	return p, ok
+}
+
+func (p *Provider) resolve(where string, s *secrets) error {
+	if p.Type == ProviderChatGPT {
+		if !p.APIKey.empty() {
+			return fmt.Errorf("configfile: %s.apiKey: a chatgpt provider uses a stored sign-in", where)
+		}
+		return nil
+	}
+	v, err := s.read(p.APIKey)
+	if err != nil {
+		return fmt.Errorf("configfile: %s.apiKey: %w", where, err)
+	}
+	p.apiKey = v
+	return nil
 }
 
 // validate checks a provider's type, endpoint, key and prices.
 func (p Provider) validate(where string) error {
 	if !p.Type.Valid() {
-		return fmt.Errorf("configfile: %s.type must be %s, %s, %s or %s, got %q",
-			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, p.Type)
+		return fmt.Errorf("configfile: %s.type must be %s, %s, %s, %s or %s, got %q",
+			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, ProviderChatGPT, p.Type)
 	}
 	if p.BaseURL != "" {
 		if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("configfile: %s.baseUrl %q must be an absolute URL", where, p.BaseURL)
 		}
 	}
-	if p.apiKey.Value() == "" {
+	if p.Type != ProviderChatGPT && p.apiKey.Value() == "" {
 		return fmt.Errorf("configfile: %s.apiKey resolved to an empty value", where)
+	}
+	if p.Type == ProviderChatGPT && len(p.Pricing) > 0 {
+		return fmt.Errorf("configfile: %s.pricing: a chatgpt provider is covered by a plan", where)
 	}
 	if p.Retries < 0 || p.Retries > MaxProviderRetries {
 		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, MaxProviderRetries, p.Retries)

@@ -126,7 +126,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 	for i, u := range usage {
 		d.Usage[i] = UsageRow{
 			Role: u.Role, Model: u.Model, Upstream: u.Upstream, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
-			CostUSD: u.CostUSD, CreatedAt: u.CreatedAt,
+			CostUSD: u.CostUSD, ChatGPTPlan: u.ChatGPTPlan, CreatedAt: u.CreatedAt, RunnerRunID: u.RunnerRunID,
 		}
 	}
 	if x := rec.run; x != nil {
@@ -267,7 +267,7 @@ func transcriptOf(c transcript.Conversation) Transcript {
 			Reset: t.Reset, MessagesFrom: t.MessagesFrom, Messages: make([]Message, len(t.Messages)),
 			Response: Response{Text: t.Response.Text, ToolCalls: toolCalls(t.Response.ToolCalls), Stop: t.Response.Stop},
 			Usage:    usageOf(t.Usage), CostUSD: t.CostUSD, DurationMs: t.Duration.Milliseconds(), Error: t.Error,
-			Truncated: t.Truncated, CreatedAt: t.CreatedAt, RunnerRunID: t.RunnerRunID,
+			Truncated: t.Truncated, CreatedAt: t.CreatedAt, RunnerRunID: t.RunnerRunID, ChatGPTPlan: t.ChatGPTPlan,
 		}
 		if t.Tools != nil {
 			turn.Tools = new(toolDefs(*t.Tools))

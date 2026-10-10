@@ -147,7 +147,8 @@ func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *accountScope
 func reviewItem(v store.ReviewRow) Review {
 	out := Review{
 		ID: v.ID, Status: v.Status, Trigger: v.Trigger, Scope: v.Scope, Model: v.Model, HeadSHA: v.HeadSHA,
-		CostUSD: v.CostUSD, Tokens: TokenCounts{Input: v.InputTokens, Output: v.OutputTokens}, CreatedAt: v.CreatedAt,
+		CostUSD: v.CostUSD, Calls: v.Calls, PlanCalls: v.PlanCalls, Tokens: TokenCounts{Input: v.InputTokens, Output: v.OutputTokens},
+		CreatedAt:  v.CreatedAt,
 		FinishedAt: v.FinishedAt, SkipReason: v.SkipReason, Error: v.Error,
 	}
 	if v.FinishedAt != nil {

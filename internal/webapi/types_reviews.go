@@ -138,12 +138,14 @@ type AgentPart struct {
 
 // UsageRow is one usage row charged to a review.
 type UsageRow struct {
+	RunnerRunID  string    `json:"runnerRunId,omitzero"`
 	Role         string    `json:"role"`
 	Model        string    `json:"model"`
 	Upstream     string    `json:"upstream"`
 	InputTokens  int64     `json:"inputTokens"`
 	OutputTokens int64     `json:"outputTokens"`
 	CostUSD      float64   `json:"costUsd"`
+	ChatGPTPlan  bool      `json:"chatgptPlan,omitzero"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 

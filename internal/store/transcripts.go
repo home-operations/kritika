@@ -41,19 +41,23 @@ type ModelCall struct {
 	Step    int
 	// Part is the part of a split review an agent step belongs to, from 1,
 	// and 0 for a review that was not split.
-	Part     int
-	Model    string
-	Upstream string
-	Row      transcript.Encoded
-	Stop     model.StopReason
-	Usage    model.Usage
-	CostUSD  float64
-	Duration time.Duration
-	Error    string
+	Part        int
+	Model       string
+	Upstream    string
+	Row         transcript.Encoded
+	Stop        model.StopReason
+	Usage       model.Usage
+	CostUSD     float64
+	ChatGPTPlan bool
+	Duration    time.Duration
+	Error       string
 }
 
 // InsertModelCall records c in tx, which must be scoped to c's account.
 func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
+	if c.ChatGPTPlan {
+		c.CostUSD = 0
+	}
 	if !c.Kind.Valid() {
 		return fmt.Errorf("store: model call kind %q", c.Kind)
 	}
@@ -66,13 +70,13 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	_, err := tx.Exec(ctx, `INSERT INTO model_calls
 		(account_id, review_id, runner_run_id, followup_comment_id, kind, step, model, upstream, system, tools,
 		 messages_from, messages, response, stop_reason, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
-		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes, carried_from, part)
+		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes, carried_from, part, chatgpt_plan)
 		VALUES ($1, nullif($2, '')::uuid, nullif($3, '')::uuid, nullif($4::bigint, 0), $5, $6, $7, $8, $9, $10::jsonb,
-		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, nullif($28, '')::uuid, $29)`,
+		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, nullif($28, '')::uuid, $29, $30)`,
 		c.AccountID, c.ReviewID, c.RunnerRunID, c.FollowupCommentID, string(c.Kind), c.Step, c.Model, c.Upstream, c.Row.System, tools,
 		c.Row.MessagesFrom, string(c.Row.Messages), string(c.Row.Response), string(c.Stop),
 		c.Usage.Input, c.Usage.CacheRead, c.Usage.CacheWrite, c.Usage.Output, c.CostUSD, c.Duration.Milliseconds(), c.Error,
-		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes, c.Carries, c.Part)
+		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes, c.Carries, c.Part, c.ChatGPTPlan)
 	if err != nil {
 		return fmt.Errorf("store: insert model call: %w", err)
 	}
@@ -118,7 +122,7 @@ func scanModelCall(row pgx.CollectableRow) (transcript.StoredRow, error) {
 	var ms int64
 	if err := row.Scan(&r.ID, &kind, &r.Step, &r.Part, &r.ReviewID, &r.RunnerRunID, &r.FollowupCommentID, &r.Model, &r.Upstream, &r.System,
 		&tools, &r.MessagesFrom, &msgs, &resp, &r.Usage.Input, &r.Usage.CacheRead, &r.Usage.CacheWrite, &r.Usage.Output,
-		&r.CostUSD, &ms, &r.Error, &r.Truncated, &r.CreatedAt, &r.CarriedReviewID); err != nil {
+		&r.CostUSD, &ms, &r.Error, &r.Truncated, &r.CreatedAt, &r.CarriedReviewID, &r.ChatGPTPlan); err != nil {
 		return r, err
 	}
 	r.Kind, r.Duration = ModelCallKind(kind), time.Duration(ms)*time.Millisecond

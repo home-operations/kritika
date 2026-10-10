@@ -52,7 +52,7 @@
         <th scope="col" title="P0, P1 and P2, in that order">Findings</th>
         <th scope="col">Last review</th>
         <th scope="col" class="num" title="Reviews that completed; skipped ones are not counted">Reviews</th>
-        <th scope="col" class="num" title="What every review of the pull request spent">Cost</th>
+        <th scope="col" class="num" title="API spend across every review; subscription fees excluded">API spend</th>
         <th scope="col" class="num">Updated</th>
       </tr>
     </thead>

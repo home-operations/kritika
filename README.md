@@ -62,9 +62,9 @@ its own Kubernetes Job pod that holds no provider key or App key.
 - **Flow diagrams, opt-in.** The summary can draw the flow a change adds or
   alters as a Mermaid diagram, so a reviewer sees the path before reading
   the code.
-- **Providers and limits.** OpenRouter, OpenAI, Anthropic and OpenCode adapters, with
+- **Providers and limits.** OpenRouter, OpenAI, Anthropic, OpenCode and ChatGPT plan adapters, with
   per-account concurrency, daily review and monthly token caps. The provider
-  key never enters a runner pod: the agent reaches its model through
+  credentials never enter a runner pod: the agent reaches its model through
   kritika's gateway.
 - **Repository overrides.** A `.kritika.yaml`, read from the merge-base, can
   narrow the admin's settings and bring its own rules, context files and

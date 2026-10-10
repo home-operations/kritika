@@ -49,7 +49,7 @@
                   <th scope="col" class="num">Repos</th>
                   <th scope="col" class="num">Reviews 7d</th>
                   <th scope="col" class="num">Tokens (month)</th>
-                  <th scope="col" class="num">Spend (month)</th>
+                  <th scope="col" class="num wrap">API spend (month)</th>
                 </tr>
               </thead>
               <tbody>

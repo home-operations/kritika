@@ -47,6 +47,7 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}/transcript", s.account(s.getReviewTranscript))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/reviews/{id}/raw", s.account(s.getReviewRaw))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/usage", s.account(s.getUsage))
+	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/chatgpt/allowances", s.account(s.getChatGPTAllowances))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/analytics", s.account(s.getAnalytics))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/attention", s.account(s.getAttention))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}/queue", s.account(s.listQueue))
@@ -145,6 +146,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 		Slug: t.Slug(), Repositories: stats.Repositories,
 		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
 		Attention: attentionDTO(attention), LastPolledAt: polled,
+		ChatGPTEnabled: len(chatGPTProviders(file, t)) > 0,
 	}
 	if in := file.ConnectionFor(t); in != nil {
 		sum.Connection = in.Name

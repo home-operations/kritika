@@ -17,6 +17,7 @@ type UsagePoint struct {
 	OutputTokens     int64   `json:"outputTokens"`
 	CostUSD          float64 `json:"costUsd"`
 	Calls            int64   `json:"calls"`
+	PlanCalls        int64   `json:"planCalls,omitzero"`
 }
 
 // UsageSeries is the account's usage in [From, To) grouped by Group.

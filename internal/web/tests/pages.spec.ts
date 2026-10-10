@@ -43,7 +43,7 @@ test.describe('overview', () => {
     const tiles = page.getByRole('region', { name: 'Across all accounts' });
     await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
     await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.accountSummary.repositories));
-    const spend = tiles.locator('.tile').filter({ hasText: 'Spend this month' });
+    const spend = tiles.locator('.tile').filter({ hasText: 'API spend this month' });
     await expect(spend.locator('.tile-value')).toHaveText('$3.00');
     // The per-review figure is a mean over both accounts' reviews, not a sum of their medians.
     await expect(spend).toContainText('$0.10 per review, mean of 24');
@@ -158,8 +158,8 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h');
   await expect(stat('Reactions').locator('.stat-value')).toHaveText(`${c.reactionsUp} up`);
   await expect(stat('Reactions').locator('.stat-sub')).toHaveText(`${c.reactionsDown} down`);
-  await expect(stat('Spend').locator('.delta')).toHaveText('new');
-  await expect(stat('Spend').locator('.delta')).toHaveClass(/tone-danger/);
+  await expect(stat('API spend').locator('.delta')).toHaveText('new');
+  await expect(stat('API spend').locator('.delta')).toHaveClass(/tone-danger/);
   await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
   const findings = page.getByRole('region', { name: 'Findings by severity' });
   await expect(findings.getByRole('list', { name: /legend/ }).getByRole('listitem')).toHaveText(['P0', 'P1', 'P2']);
@@ -243,7 +243,7 @@ test('the spend page says what a review costs this month, median and mean, or th
   const a = g.accountSummary;
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/usage`);
-  const tile = page.locator('.stat').filter({ hasText: 'Spend this month' });
+  const tile = page.locator('.stat').filter({ hasText: 'API spend this month' });
   await expect(tile.locator('.stat-value')).toHaveText('$1.50');
   await expect(tile.locator('.stat-sub')).toHaveText('$0.08 per review (median) · $0.10 mean of 12');
 
@@ -260,7 +260,7 @@ test("a chart's axis has room for its longest label", async ({ page }) => {
   await page.goto(`/${T}/usage`);
   const ticks = page.locator('.chart-tick').filter({ hasText: '$' });
   await expect(ticks).toHaveText(['$0', '$1,000.00', '$2,000.00']);
-  const svg = (await page.getByRole('img', { name: /^Cost by day/ }).boundingBox())!;
+  const svg = (await page.getByRole('img', { name: /^API spend by day/ }).boundingBox())!;
   for (const t of await ticks.all()) expect((await t.boundingBox())!.x).toBeGreaterThanOrEqual(svg.x);
 });
 
@@ -537,7 +537,7 @@ test.describe('pulls list', () => {
     const none = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), lastReview: null, reviewCount: 0, costUsd: 0 };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([g.pull, none])], ...g.defaultApi()]);
     await page.goto(`/${T}/pulls`);
-    await expect(page.getByRole('columnheader')).toContainText(['Pull request', 'Findings', 'Last review', 'Reviews', 'Cost', 'Updated']);
+    await expect(page.getByRole('columnheader')).toContainText(['Pull request', 'Findings', 'Last review', 'Reviews', 'API spend', 'Updated']);
     const rows = page.locator('.pull-rows .pull-row');
     await expect(rows.nth(0).locator('td.num')).toContainText([String(g.pull.reviewCount), '$0.84']);
     await expect(rows.nth(1).locator('td.num')).toContainText(['0', '$0']);
@@ -1312,7 +1312,7 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
 
   await page.goto(`/${T}/usage`);
   await expect(page.locator('tbody tr')).toContainText('Sep 1, 2026');
-  await expect(page.getByRole('img', { name: /Cost by day/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /API spend by day/ })).toBeVisible();
   await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
   await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
   await page.getByRole('radio', { name: '7 days' }).click();

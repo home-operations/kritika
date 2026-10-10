@@ -17,7 +17,9 @@ type UsageGroup string
 
 // Usage series groupings.
 const (
+	UsageByHour  UsageGroup = "hour"
 	UsageByDay   UsageGroup = "day"
+	UsageByWeek  UsageGroup = "week"
 	UsageByModel UsageGroup = "model"
 	UsageByRepo  UsageGroup = "repo"
 	UsageByRole  UsageGroup = "role"
@@ -25,7 +27,8 @@ const (
 
 // Valid reports whether g is a usage grouping.
 func (g UsageGroup) Valid() bool {
-	return g == UsageByDay || g == UsageByModel || g == UsageByRepo || g == UsageByRole
+	_, ok := usageKeys[g]
+	return ok
 }
 
 // usageKeys are the SQL key expressions of each grouping: over usage u
@@ -33,7 +36,15 @@ func (g UsageGroup) Valid() bool {
 // review to the repository mr. A model call's kind maps to the usage role
 // it is charged as, and a follow-up's agent step to the follow-up's.
 var usageKeys = map[UsageGroup][2]string{
-	UsageByDay:   {`to_char(u.created_at, 'YYYY-MM-DD')`, `to_char(m.created_at, 'YYYY-MM-DD')`},
+	UsageByHour: {
+		`to_char(date_trunc('hour', u.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`,
+		`to_char(date_trunc('hour', m.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`,
+	},
+	UsageByDay: {`to_char(u.created_at, 'YYYY-MM-DD')`, `to_char(m.created_at, 'YYYY-MM-DD')`},
+	UsageByWeek: {
+		`to_char(date_trunc('week', u.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+		`to_char(date_trunc('week', m.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+	},
 	UsageByModel: {`u.model`, `m.model`},
 	UsageByRepo:  {`coalesce(ur.name, '')`, `coalesce(mr.name, '')`},
 	UsageByRole: {`u.role`, `CASE WHEN m.followup_comment_id IS NOT NULL THEN 'followup' WHEN m.kind = 'agent_step' THEN 'review'
@@ -52,34 +63,35 @@ type UsageSeriesRow struct {
 	OutputTokens     int64
 	CostUSD          float64
 	Calls            int64
+	PlanCalls        int64
 }
 
 // UsageSeries sums the account's usage in [from, to) by group, ordered by
 // key.
-func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time.Time) ([]UsageSeriesRow, error) {
+func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time.Time, chatgptOnly bool) ([]UsageSeriesRow, error) {
 	keys, ok := usageKeys[group]
 	if !ok {
 		return nil, ErrFilter
 	}
 	rows, err := tx.Query(ctx, `WITH billed AS (
 			SELECT `+keys[0]+` AS key, sum(u.input_tokens) AS input, sum(u.output_tokens) AS output,
-				sum(u.cost_usd)::float8 AS cost, count(*) AS calls
+				sum(u.cost_usd)::float8 AS cost, count(*) AS calls, count(*) FILTER (WHERE u.chatgpt_plan) AS plan_calls
 			FROM usage u LEFT JOIN repositories ur ON ur.id = u.repository_id
-			WHERE u.created_at >= $1 AND u.created_at < $2 GROUP BY 1),
+			WHERE u.created_at >= $1 AND u.created_at < $2 AND (NOT $3::boolean OR u.chatgpt_plan) GROUP BY 1),
 		cached AS (
 			SELECT `+keys[1]+` AS key, sum(m.cache_read_tokens) AS cache_read, sum(m.cache_write_tokens) AS cache_write
 			FROM model_calls m LEFT JOIN reviews mv ON mv.id = m.review_id
 				LEFT JOIN pull_requests mp ON mp.id = mv.pull_request_id LEFT JOIN repositories mr ON mr.id = mp.repository_id
-			WHERE m.created_at >= $1 AND m.created_at < $2 GROUP BY 1)
+			WHERE m.created_at >= $1 AND m.created_at < $2 AND (NOT $3::boolean OR m.chatgpt_plan) GROUP BY 1)
 		SELECT coalesce(b.key, c.key), coalesce(b.input, 0), coalesce(c.cache_read, 0), coalesce(c.cache_write, 0),
-			coalesce(b.output, 0), coalesce(b.cost, 0), coalesce(b.calls, 0)
-		FROM billed b FULL JOIN cached c ON c.key = b.key ORDER BY 1`, from, to)
+			coalesce(b.output, 0), coalesce(b.cost, 0), coalesce(b.calls, 0), coalesce(b.plan_calls, 0)
+		FROM billed b FULL JOIN cached c ON c.key = b.key ORDER BY 1`, from, to, chatgptOnly)
 	if err != nil {
 		return nil, fmt.Errorf("store: usage series: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (UsageSeriesRow, error) {
 		var u UsageSeriesRow
-		err := row.Scan(&u.Key, &u.InputTokens, &u.CacheReadTokens, &u.CacheWriteTokens, &u.OutputTokens, &u.CostUSD, &u.Calls)
+		err := row.Scan(&u.Key, &u.InputTokens, &u.CacheReadTokens, &u.CacheWriteTokens, &u.OutputTokens, &u.CostUSD, &u.Calls, &u.PlanCalls)
 		return u, err
 	})
 	if err != nil {

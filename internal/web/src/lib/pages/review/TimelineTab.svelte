@@ -96,7 +96,7 @@
   <section class="panel" aria-labelledby="tl-agent">
     <header class="panel-head">
       <h2 id="tl-agent">Agent steps</h2>
-      <span class="small muted">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {usd(a.costUsd)}</span>
+      <span class="small muted">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {usd(a.costUsd)} API spend</span>
     </header>
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />

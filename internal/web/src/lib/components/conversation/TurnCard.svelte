@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Turn } from '../../types';
-  import { duration, pretty, tokens, usd, wholeNumber } from '../../format';
+  import { callCost, duration, pretty, tokens, wholeNumber } from '../../format';
   import Collapsible from '../Collapsible.svelte';
   import CodeBlock from '../CodeBlock.svelte';
   import MessageView from './MessageView.svelte';
@@ -19,13 +19,14 @@
     <span class="badge">{turn.kind.replace('_', ' ')}{turn.kind === 'agent_step' ? ` ${turn.step}` : ''}</span>
     <span class="mono small">{turn.model}</span>
     {#if turn.upstream}<span class="mono small muted">via {turn.upstream}</span>{/if}
+    {#if turn.chatgptPlan}<span class="badge">ChatGPT plan</span>{/if}
     {#if turn.reset}<span class="badge" title="The request was sent in full rather than as new messages">full request</span>{/if}
     {#if turn.truncated}<span class="badge badge-warn" title="The recorded request or response was truncated">truncated</span>{/if}
     <span class="spacer"></span>
     <span class="small muted turn-usage" title="input / cache read / cache write / output tokens">
       {tokens(u.input)} in · {tokens(u.cacheRead)} cache read · {tokens(u.cacheWrite)} cache write · {tokens(u.output)} out
     </span>
-    <span class="small" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{usd(turn.costUsd)}</span>
+    <span class="small" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{callCost(turn.costUsd, turn.chatgptPlan)}</span>
     <span class="small muted">{duration(turn.durationMs)}</span>
     <button class="btn btn-small" aria-pressed={raw} onclick={() => (raw = !raw)}>raw JSON</button>
   </header>

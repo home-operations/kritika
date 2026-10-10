@@ -33,12 +33,13 @@ const (
 	ProviderOpenAI     ProviderType = "openai"
 	ProviderAnthropic  ProviderType = "anthropic"
 	ProviderOpenCode   ProviderType = "opencode"
+	ProviderChatGPT    ProviderType = "chatgpt"
 )
 
 // Valid reports whether p is a provider type kritika implements.
 func (p ProviderType) Valid() bool {
 	switch p {
-	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode:
+	case ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, ProviderChatGPT:
 		return true
 	}
 	return false
@@ -212,6 +213,8 @@ type StepResponse struct {
 	// CostUSD is the provider's reported cost, else the cost Pricing gives,
 	// else zero.
 	CostUSD float64
+	// ChatGPTPlan identifies calls covered by a plan, whose per-call cost is zero.
+	ChatGPTPlan bool
 	// Model is the model that answered: the one OpenRouter reports after
 	// its server-side fallback, else the one kritika asked for.
 	Model string
@@ -315,6 +318,8 @@ func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client 
 	case ProviderOpenCode:
 		baseURL = cmp.Or(baseURL, OpenCodeBaseURL)
 		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenCode: true, Pricing: pricing})
+	case ProviderChatGPT:
+		return nil, errors.New("model: a chatgpt provider takes a token source, not a key")
 	default:
 		return nil, fmt.Errorf("model: provider type %q has no adapter", t)
 	}
@@ -364,6 +369,9 @@ func checkRequest(req StepRequest) error {
 func Transient(err error) bool {
 	if err == nil || errors.Is(err, ErrBudget) {
 		return false
+	}
+	if errors.Is(err, ErrUnavailable) {
+		return true
 	}
 	status, resp := providerResponse(err)
 	if status == http.StatusPaymentRequired {

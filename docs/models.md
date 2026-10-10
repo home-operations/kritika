@@ -1,7 +1,7 @@
 # Models
 
 kritika calls models through the providers the configuration file
-declares, each with its own key. A model is named `<provider>/<model>`, on
+declares, each with its own credentials. A model is named `<provider>/<model>`, on
 a provider the file declares:
 
 | Setting            | The model that                                                                                  |
@@ -34,13 +34,13 @@ embedding:
 
 | Key       | What                                                                                              |
 | --------- | ------------------------------------------------------------------------------------------------- |
-| `type`    | `openrouter`, `openai`, `anthropic` or `opencode`                                                 |
-| `apiKey`  | its key, required                                                                                 |
+| `type`    | `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`                                      |
+| `apiKey`  | its key, required except for `chatgpt`, which uses a stored sign-in                              |
 | `baseUrl` | its API's URL, the type's default unless set                                                      |
 | `pricing` | per model id, the prices of a provider that reports no cost ([local models](#local-models))       |
 | `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries)) |
 
-The provider key never enters a runner pod: the agent reaches its model
+Provider credentials never enter a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](security.md#the-model-endpoint)).
 
 ### An account's own keys
@@ -62,6 +62,98 @@ A model named `<key name>/<model>` in the account's `owner/*` or
 `owner/name` entries, or in one of its repositories' `.kritika.yaml`, runs
 on that key and the account pays for it. A key's name may not be one the
 instance's providers use.
+
+### ChatGPT plans
+
+A provider of type `chatgpt` uses a ChatGPT Plus or Pro plan through
+[Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
+Configure it without `apiKey`, and choose a model the plan serves:
+
+```yaml
+providers:
+  plan:
+    type: chatgpt
+  openrouter:
+    type: openrouter
+    apiKey: { env: OPENROUTER_API_KEY }
+review:
+  model: plan/<model-id>
+  fallback: openrouter/<model-id>
+```
+
+After deploying this configuration, select a running kritika pod. Replace
+`POD_NAME` in both commands below with its name. On the machine with your
+browser, forward port 1455 from that pod:
+
+```sh
+kubectl -n kritika get pods
+kubectl -n kritika port-forward pod/POD_NAME 1455:1455 --address 127.0.0.1
+```
+
+Leave the forward running. In another terminal, run the login command in
+the **same pod** and open the URL it prints in your browser:
+
+```sh
+kubectl -n kritika exec -it POD_NAME -- /kritika chatgpt login plan
+```
+
+For a provider declared under an account, include its forge and account
+name before the provider name, for example:
+
+```sh
+kubectl -n kritika exec -it POD_NAME -- /kritika chatgpt login github/acme plan
+```
+
+The browser returns to `http://127.0.0.1:1455/auth/callback`; the forward
+delivers it to the command in the pod. Wait for the terminal to confirm
+the provider is connected, then stop the forward. No chart service or
+ingress needs to expose the callback port. If the pod exits, repeat both
+commands against another pod.
+
+The command saves the registration and tokens in Postgres. All replicas
+read the current access token per request; only the elected leader renews
+the rotating refresh token. The runner database role cannot read these
+credentials. A terminal refresh error clears the unusable tokens; repeat
+the login command to reconnect with the saved client and host IDs. A
+returning sign-in must use the same ChatGPT account.
+
+Use a concrete model ID to pin a version, or a family alias such as
+`plan/sol-latest` or `plan/astra-latest` to select the newest visible version
+in that account's authenticated model catalog. Aliases compare numeric
+versions in `gpt-<version>-<family>` or `<family>-<version>` IDs and exclude
+preview suffixes. They work for any matching family without a mapping in
+kritika. The first alias request after startup fetches the catalog; requests
+refresh it after five minutes or when the access token changes. There is no
+background polling. If no matching model is available, the request fails
+and a configured fallback can take over. Usage records the concrete model
+selected. Model and reasoning effort use the same configuration fields as
+other providers; the selected model must support the requested effort.
+
+The adapter uses streamed Responses requests with `store: false` and the
+full conversation. The plan route does not accept an output-token cap,
+so the adapter omits it. It cannot serve embeddings. Calls report token
+usage and are marked as covered by a ChatGPT plan. The dashboard shows
+“ChatGPT plan” and “Included in plan” alongside their token counts. `pricing`
+is not accepted for this provider. API spend totals exclude subscription
+fees; calls made through a paid fallback still contribute their API costs.
+The account's Usage page shows ChatGPT controls only when a ChatGPT provider
+is configured for that account. It can filter to plan calls and group token
+usage by hour or week. Review usage also totals ChatGPT calls and tokens by
+run; older records without a run ID are labelled “Run not recorded”. Token
+counts do not measure the percentage of a plan allowance consumed.
+
+When OpenAI supplies quota headers or rate-limit events on an inference
+response, the dashboard shows the reported allowance windows, remaining
+percentages, reset times and observation time. Windows keep their upstream
+duration, which can differ from one hour. These snapshots update with model
+calls. A passed reset time is shown as awaiting an update, and connections
+without quota data show “Allowance data unavailable”. The sign-in route may
+not expose this data; kritika does not estimate allowances from tokens.
+
+After a plan usage limit, each replica pauses that provider for 15 minutes and a
+configured fallback can take over. This delay is a retry pause, not a
+prediction of when the plan's allowance resets. Check your allowance in
+[ChatGPT Settings → Usage](https://chatgpt.com/settings/usage).
 
 ### From the environment
 
@@ -175,6 +267,7 @@ Each provider type gets the level in its own form:
 | -------------------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | `openrouter`         | `reasoning.effort`     | OpenRouter maps a level a model lacks to the nearest it takes, for each model in the request's list |
 | `openai`, `opencode` | `reasoning_effort`     | a model that takes no reasoning effort refuses the request; leave its effort unset                  |
+| `chatgpt`           | `reasoning.effort`     | the model must support the chosen level                                                            |
 | `anthropic`          | `output_config.effort` | the Messages API runs from `low` to `max`, so `none` and `minimal` go out as `low`; unset as above  |
 
 The environment sets both (`KRITIKA_REVIEW_EFFORT`, `KRITIKA_CONFIDENCE_EFFORT`,

@@ -3,7 +3,7 @@
   // confidence, risk, head, cost, tokens, duration. Shared by the pull request page and
   // the review page.
   import type { Review } from '../types';
-  import { duration, tokens, usd, wholeNumber, shortSha } from '../format';
+  import { callCost, duration, tokens, wholeNumber, shortSha } from '../format';
   let { r, scopeReason = '' }: { r: Review; scopeReason?: string } = $props();
 </script>
 
@@ -21,7 +21,13 @@
     {#if r.confidence.risk}<div><dt>Risk</dt><dd>{r.confidence.risk}</dd></div>{/if}
   {/if}
   <div><dt>Head</dt><dd class="mono" title={r.headSha}>{shortSha(r.headSha)}</dd></div>
-  <div><dt>Cost</dt><dd>{usd(r.costUsd)}</dd></div>
+  <div>
+    <dt>API spend</dt>
+    <dd>
+      {callCost(r.costUsd, !!r.planCalls && r.planCalls === r.calls)}
+      {#if r.planCalls}<span class="badge">ChatGPT plan</span>{/if}
+    </dd>
+  </div>
   <div>
     <dt>Tokens</dt>
     <dd title="{wholeNumber(r.tokens.input)} in / {wholeNumber(r.tokens.output)} out">{tokens(r.tokens.input)} in · {tokens(r.tokens.output)} out</dd>

@@ -183,11 +183,9 @@ func Parse(raw []byte) (*File, error) {
 func (f *File) resolve(accounts []Account, s *secrets) error {
 	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
 		p := f.Providers[name]
-		v, err := s.read(p.APIKey)
-		if err != nil {
-			return fmt.Errorf("configfile: providers.%s.apiKey: %w", name, err)
+		if err := p.resolve("providers."+name, s); err != nil {
+			return err
 		}
-		p.apiKey = v
 		f.Providers[name] = p
 	}
 	f.Egress.credentials = make(map[string]Secret, len(f.Egress.Credentials))
@@ -303,11 +301,9 @@ func (a *Account) resolve(s *secrets) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
-		v, err := s.read(p.APIKey)
-		if err != nil {
-			return fmt.Errorf("configfile: %s.providers.%s.apiKey: %w", a.entry, name, err)
+		if err := p.resolve(a.entry+".providers."+name, s); err != nil {
+			return err
 		}
-		p.apiKey = v
 		a.Providers[name] = p
 	}
 	for ri := range a.Repositories {
