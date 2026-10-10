@@ -256,7 +256,9 @@ full conversation, keying the prompt cache by that conversation. The plan route
 does not accept an output-token cap, so the adapter omits it; an answer
 the model's own cap cuts off is returned as cut off, as with other
 providers. A server error or rate limit reported after the stream opened
-is retried like a 5xx or 429. It cannot serve embeddings. Calls report token
+is retried like a 5xx or 429. A completed reply with no text or tool calls
+also fails transiently; a configured fallback takes over once retries are
+spent. It cannot serve embeddings. Calls report token
 usage and are marked as covered by a ChatGPT plan. The dashboard shows
 “ChatGPT plan” and “Included in plan” alongside their token counts. `pricing`
 is not accepted for this provider. API spend totals exclude subscription

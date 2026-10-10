@@ -427,11 +427,14 @@ func TestChatGPTMasksToken(t *testing.T) {
 		{"stream failure", http.StatusOK, sse(responseEvent("response.failed", `{"error":{"code":"invalid_prompt","message":"at-secret"}}`))},
 		{"text and tool input", http.StatusOK, completed(`[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"at-secret"}]},`+
 			`{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\"path\":\"at-secret\"}"}]`, responseUsage)},
+		{"streamed text and tool input", http.StatusOK, sse(
+			outputItemDone(0, `{"type":"message","content":[{"type":"output_text","text":"at-secret"}]}`),
+			outputItemDone(1, `{"type":"function_call","call_id":"call_1","name":"read_file","arguments":"{\"path\":\"at-secret\"}"}`)) + completed("[]", responseUsage)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, _ := fakeProvider(t, tt.status, tt.body)
 			resp, err := newTestChatGPT(t, srv, &tokens{token: "at-secret"}).Step(t.Context(), StepRequest{Model: "m"})
-			if tt.name == "text and tool input" {
+			if strings.HasSuffix(tt.name, "text and tool input") {
 				if err != nil || resp.Text != "***" || len(resp.ToolCalls) != 1 || string(resp.ToolCalls[0].Input) != `{"path":"***"}` {
 					t.Fatalf("masked response = %+v, %v", resp, err)
 				}

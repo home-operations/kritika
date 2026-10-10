@@ -31,10 +31,12 @@ func TestChatGPTProviderFallback(t *testing.T) {
 		name, body string
 		status     int
 		requests   int32
+		limit      bool
 	}{
-		{"HTTP plan limit", `{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"spent"}}`, 429, 1},
-		{"stream plan limit", "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"subscription_sharing_usage_limit_exceeded\",\"message\":\"spent\"}}}\n\n", 200, 1},
-		{"provider unavailable", `{"error":{"message":"temporarily unavailable"}}`, 503, 4},
+		{"HTTP plan limit", `{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"spent"}}`, 429, 1, true},
+		{"stream plan limit", "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"subscription_sharing_usage_limit_exceeded\",\"message\":\"spent\"}}}\n\n", 200, 1, true},
+		{"provider unavailable", `{"error":{"message":"temporarily unavailable"}}`, 503, 4, false},
+		{"empty response", "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[],\"usage\":{\"input_tokens\":100,\"output_tokens\":135}}}\n\n", 200, 4, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var planCalls, apiCalls atomic.Int32
@@ -84,7 +86,7 @@ func TestChatGPTProviderFallback(t *testing.T) {
 			if planCalls.Load() != tt.requests || apiCalls.Load() != 2 {
 				t.Fatalf("plan requests = %d, API requests = %d; want %d and 2", planCalls.Load(), apiCalls.Load(), tt.requests)
 			}
-			if tt.status != 503 {
+			if tt.limit {
 				call.Fallback = nil
 				if _, _, _, err := call.Do(t.Context(), model.StepRequest{}); !errors.Is(err, model.ErrPlanLimit) {
 					t.Fatalf("no fallback = %v", err)
