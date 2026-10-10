@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.55](https://github.com/home-operations/kritika/compare/0.0.54...0.0.55) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** load a scoped skill when its paths or when conditions hold ([#836](https://github.com/home-operations/kritika/issues/836))
+
+### Features
+
+* **review:** load a scoped skill when its paths or when conditions hold ([#836](https://github.com/home-operations/kritika/issues/836)) ([376395f](https://github.com/home-operations/kritika/commit/376395f817c438dc6d30d5b0a2714d300ab499d7))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.6 → 2026.10.7) ([#834](https://github.com/home-operations/kritika/issues/834)) ([3038d72](https://github.com/home-operations/kritika/commit/3038d72f94dfb7558acc5c000345f4b8f0e32bcf))
+
 ## [0.0.54](https://github.com/home-operations/kritika/compare/0.0.53...0.0.54) (2026-10-09)
 
 
