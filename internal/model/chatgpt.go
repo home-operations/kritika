@@ -182,6 +182,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 		}
 	}()
 	var completed *responses.Response
+	var done []responses.ResponseOutputItemUnion
 	for stream.Next() {
 		ev := stream.Current()
 		switch ev.Type {
@@ -191,6 +192,8 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 			}
 		case "response.completed":
 			completed = &ev.Response
+		case "response.output_item.done":
+			done = append(done, ev.Item)
 		case "response.failed":
 			return StepResponse{}, c.failed(ev.Response.Error)
 		case "response.incomplete":
@@ -198,7 +201,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 			// still cuts answers off; what it said goes back as the other
 			// adapters return a cut-off answer.
 			if ev.Response.IncompleteDetails.Reason == "max_output_tokens" {
-				resp := c.response(ev.Response, modelID)
+				resp := c.response(ev.Response, modelID, done)
 				resp.Stop = StopMaxTokens
 				return resp, nil
 			}
@@ -213,12 +216,19 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 	if completed == nil {
 		return StepResponse{}, fmt.Errorf("stream ended before response.completed: %w", io.ErrUnexpectedEOF)
 	}
-	return c.response(*completed, modelID), nil
+	return c.response(*completed, modelID, done), nil
 }
 
-// response reads the completed response's output: its message's text and
-// refusal, and its function calls, whose call ids the tool results answer.
-func (c *ChatGPT) response(r responses.Response, modelID string) StepResponse {
+// response reads the response's output: its message's text and refusal,
+// and its function calls, whose call ids the tool results answer. The
+// route sends each finished item as response.output_item.done and may
+// leave the final response's output empty or partial, so those items, in
+// the order they came, are the output whenever any came, as Codex reads
+// them; the final response's output only when none did.
+func (c *ChatGPT) response(r responses.Response, modelID string, done []responses.ResponseOutputItemUnion) StepResponse {
+	if len(done) > 0 {
+		r.Output = done
+	}
 	out := StepResponse{Stop: StopEndTurn, Model: modelID}
 	for _, item := range r.Output {
 		switch item.Type {
