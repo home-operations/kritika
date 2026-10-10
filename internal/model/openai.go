@@ -237,6 +237,9 @@ func (o *OpenAI) step(
 	} else {
 		if out.Model != modelID {
 			alias = ""
+			if o.openRouter && ValidOpenRouterAlias(modelID) {
+				alias = modelID
+			}
 		}
 		out.CostUSD, out.Unpriced = o.pricing.cost(out.Model, alias, out.Usage)
 	}

@@ -49,22 +49,27 @@ func TestUnpricedModels(t *testing.T) {
 func TestReportedCost(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
+		ref      string
 		usage    string
 		pricing  Pricing
 		cost     float64
 		unpriced bool
 	}{
-		{"reported zero", `{"prompt_tokens":1000000,"cost":0}`, Pricing{"requested": {Input: 2}}, 0, false},
-		{"reported paid", `{"prompt_tokens":1000000,"cost":0.25}`, nil, 0.25, false},
-		{"null cost", `{"prompt_tokens":1000000,"cost":null}`, nil, 0, true},
-		{"unpriced server fallback", `{"prompt_tokens":1000000}`, Pricing{"requested": {Input: 2}}, 0, true},
-		{"priced server fallback", `{"prompt_tokens":1000000}`, Pricing{"acme/large": {Input: 3}}, 3, false},
+		{"reported zero", "requested", `{"prompt_tokens":1000000,"cost":0}`, Pricing{"requested": {Input: 2}}, 0, false},
+		{"reported paid", "requested", `{"prompt_tokens":1000000,"cost":0.25}`, nil, 0.25, false},
+		{"null cost", "requested", `{"prompt_tokens":1000000,"cost":null}`, nil, 0, true},
+		{"unpriced server fallback", "requested", `{"prompt_tokens":1000000}`, Pricing{"requested": {Input: 2}}, 0, true},
+		{"priced server fallback", "requested", `{"prompt_tokens":1000000}`, Pricing{"acme/large": {Input: 3}}, 3, false},
+		{"native alias priced", "~acme/large-latest", `{"prompt_tokens":1000000}`, Pricing{"~acme/large-latest": {Input: 2}}, 2, false},
+		{"native alias zero", "~acme/large-latest", `{"prompt_tokens":1000000}`, Pricing{"~acme/large-latest": {}}, 0, false},
+		{"concrete overrides native alias", "~acme/large-latest", `{"prompt_tokens":1000000}`,
+			Pricing{"acme/large": {Input: 3}, "~acme/large-latest": {Input: 2}}, 3, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			body := chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", tt.usage, "")
 			srv, _ := fakeProvider(t, http.StatusOK, body)
 			c := newTestOpenAI(t, srv, true, tt.pricing)
-			resp, err := c.Step(t.Context(), StepRequest{Model: "requested", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+			resp, err := c.Step(t.Context(), StepRequest{Model: tt.ref, Messages: []Message{{Role: RoleUser, Text: "hi"}}})
 			if err != nil {
 				t.Fatal(err)
 			}
