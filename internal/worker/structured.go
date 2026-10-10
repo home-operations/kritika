@@ -76,7 +76,6 @@ func (p *publishPhase) structured(
 		req.Model = served.Ref.Model()
 		p.w.recorder().Record(ctx, p.logger, store.ModelCall{
 			AccountID: p.account.ID(), ReviewID: p.reviewID, Kind: kind, Duration: d,
-			ChatGPTPlan: served.Provider.Type == configfile.ProviderChatGPT,
 		}, req, resp, err, adapter.Mask(p.file, served.Provider))
 		p.charge(ctx, resp, role)
 	}}

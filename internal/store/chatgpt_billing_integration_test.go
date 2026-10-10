@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,8 +28,8 @@ func TestChatGPTBilling(t *testing.T) {
 		wantCost  float64
 		wantPlans int64
 	}{
-		{"plan", []Usage{{ChatGPTPlan: true, CostUSD: 99}}, 0, 1},
-		{"mixed", []Usage{{ChatGPTPlan: true, CostUSD: 99}, {CostUSD: 0.25}, {}}, 0.25, 1},
+		{"plan", []Usage{{ChatGPTPlan: true}}, 0, 1},
+		{"mixed", []Usage{{ChatGPTPlan: true}, {CostUSD: 0.25}, {}}, 0.25, 1},
 		{"free API", []Usage{{}}, 0, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,6 +113,40 @@ func TestChatGPTBilling(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestChatGPTPlanCostRefused(t *testing.T) {
+	s := openStore(t)
+	if err := s.ApplyConfig(t.Context(), parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "alpha")
+	ctx := t.Context()
+	id := insertReview(t, ctx, s, account)
+	t.Cleanup(func() {
+		deleteModelCalls(t, s, `review_id = $1`, id)
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM usage WHERE review_id = $1`, id); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var repo string
+		if err := tx.QueryRow(ctx, `SELECT p.repository_id FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id
+			WHERE v.id = $1`, id).Scan(&repo); err != nil {
+			return err
+		}
+		return InsertUsage(ctx, tx, Usage{AccountID: account, RepositoryID: repo, ReviewID: id, Role: RoleReview, ChatGPTPlan: true, CostUSD: 99})
+	}); err == nil || !strings.Contains(err.Error(), "usage_plan_cost") {
+		t.Fatalf("a plan usage row with a cost = %v", err)
+	}
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		return InsertModelCall(ctx, tx, ModelCall{
+			AccountID: account, ReviewID: id, Kind: ModelCallConfidence, Row: transcript.Delta(transcript.State{}, model.StepRequest{}, nil).Encode(),
+			CostUSD: 99, ChatGPTPlan: true,
+		})
+	}); err == nil || !strings.Contains(err.Error(), "model_calls_plan_cost") {
+		t.Fatalf("a plan model call with a cost = %v", err)
 	}
 }
 

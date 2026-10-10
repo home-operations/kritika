@@ -16,6 +16,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/home-operations/kritika/internal/chatgpt"
 )
@@ -39,7 +40,8 @@ var ErrPlanLimit = errors.New("model: chatgpt: the plan's usage limit is reached
 
 // ErrUnavailable is a provider that could not serve a request for a
 // passing reason of its own: the ChatGPT route that could not check the
-// plan's usage. Transient.
+// plan's usage, or a response that failed on a server error or a rate
+// limit after its stream opened. Transient.
 var ErrUnavailable = errors.New("model: provider unavailable")
 
 // PlanPause is how long the adapter sends nothing on the plan after
@@ -69,7 +71,7 @@ type ChatGPTConfig struct {
 	// HTTPClient may be nil.
 	HTTPClient *http.Client
 	// ObserveAllowances receives quota data when the upstream supplies it.
-	ObserveAllowances func(context.Context, string, []chatgpt.Allowance)
+	ObserveAllowances func(context.Context, []chatgpt.Allowance)
 }
 
 // ChatGPT is a Stepper over the Responses API on a ChatGPT Plus or Pro
@@ -82,11 +84,12 @@ type ChatGPT struct {
 	client            openai.Client
 	tokens            TokenSource
 	now               func() time.Time
-	observeAllowances func(context.Context, string, []chatgpt.Allowance)
+	observeAllowances func(context.Context, []chatgpt.Allowance)
 	catalogMu         sync.Mutex
 	catalogToken      string
 	catalogExpiresAt  time.Time
 	catalogModels     []chatGPTCatalogModel
+	catalogFetch      singleflight.Group
 
 	mu          sync.Mutex
 	pausedUntil time.Time
@@ -114,8 +117,15 @@ func NewChatGPT(cfg ChatGPTConfig) (*ChatGPT, error) {
 		observeAllowances: cfg.ObserveAllowances}, nil
 }
 
-// Step implements Stepper.
+// Step implements Stepper. Every call on the plan, failed or not, is
+// marked as the plan's.
 func (c *ChatGPT) Step(ctx context.Context, req StepRequest) (StepResponse, error) {
+	resp, err := c.send(ctx, req)
+	resp.ChatGPTPlan = true
+	return resp, err
+}
+
+func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, error) {
 	if err := checkRequest(req); err != nil {
 		return StepResponse{}, err
 	}
@@ -176,7 +186,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 			for i := range allowances {
 				allowances[i].LimitID = strings.ReplaceAll(allowances[i].LimitID, token, "***")
 			}
-			c.observeAllowances(ctx, token, allowances)
+			c.observeAllowances(ctx, allowances)
 		}
 	}()
 	var completed *responses.Response
@@ -192,6 +202,14 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 		case "response.failed":
 			return StepResponse{}, c.failed(ev.Response.Error)
 		case "response.incomplete":
+			// The route takes no max_output_tokens, but the model's own cap
+			// still cuts answers off; what it said goes back as the other
+			// adapters return a cut-off answer.
+			if ev.Response.IncompleteDetails.Reason == "max_output_tokens" {
+				resp := c.response(ev.Response, modelID)
+				resp.Stop = StopMaxTokens
+				return resp, nil
+			}
 			return StepResponse{}, fmt.Errorf("response incomplete: %s", cmp.Or(ev.Response.IncompleteDetails.Reason, "no reason given"))
 		case "error":
 			return StepResponse{}, c.failed(responses.ResponseError{Code: responses.ResponseErrorCode(ev.Code), Message: ev.Message})
@@ -209,7 +227,7 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 // response reads the completed response's output: its message's text and
 // refusal, and its function calls, whose call ids the tool results answer.
 func (c *ChatGPT) response(r responses.Response, modelID string) StepResponse {
-	out := StepResponse{Stop: StopEndTurn, Model: modelID, ChatGPTPlan: true}
+	out := StepResponse{Stop: StopEndTurn, Model: modelID}
 	for _, item := range r.Output {
 		switch item.Type {
 		case messageItem:
@@ -237,7 +255,8 @@ func (c *ChatGPT) failed(e responses.ResponseError) error {
 	case planLimitCode:
 		c.pause()
 		return fmt.Errorf("%w: %s", ErrPlanLimit, e.Message)
-	case planUnavailableCode, planUserUnavailableCode:
+	case planUnavailableCode, planUserUnavailableCode,
+		string(responses.ResponseErrorCodeServerError), string(responses.ResponseErrorCodeRateLimitExceeded):
 		return fmt.Errorf("%w: %s: %s", ErrUnavailable, code, e.Message)
 	default:
 		return fmt.Errorf("response failed: %s: %s", code, e.Message)
@@ -287,11 +306,15 @@ func (c *ChatGPT) paused() (time.Time, bool) {
 
 // chatGPTParams maps everything but the model, which each attempt sets.
 // The system prompt goes as instructions, since the route rejects system
-// messages, and the tools in one namespace.
+// messages, and the tools in one namespace. The session keys the prompt
+// cache, since every step resends the whole conversation unstored.
 func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
 	p := responses.ResponseNewParams{Store: openai.Bool(false)}
 	if req.System != "" {
 		p.Instructions = openai.String(req.System)
+	}
+	if req.Session != "" {
+		p.PromptCacheKey = openai.String(req.Session)
 	}
 	items := make(responses.ResponseInputParam, 0, len(req.Messages))
 	for _, m := range req.Messages {

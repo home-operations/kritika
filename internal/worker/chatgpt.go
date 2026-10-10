@@ -45,6 +45,16 @@ func (r *ChatGPTRefresher) Run(ctx context.Context) {
 	}
 }
 
+// chatGPTRefreshTimeout bounds one session's refresh and the write that
+// saves it, which run on past the leader's cancellation: once OpenAI
+// answers, the refresh token it rotated is spent, and only the saved
+// replacement can renew the session again.
+const chatGPTRefreshTimeout = time.Minute
+
+// chatGPTSaveAttempts is how many times a refreshed token set is written
+// before it is given up, a second apart and more each time.
+const chatGPTSaveAttempts = 4
+
 // Refresh renews due sessions, preserving credentials on transient failures
 // and clearing unusable tokens after a terminal refresh error.
 func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
@@ -54,7 +64,7 @@ func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 	}
 	sessions, err := r.Store.ChatGPTSessions(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("worker: chatgpt refresh: %w", err)
 	}
 	now := time.Now()
 	if r.now != nil {
@@ -66,45 +76,55 @@ func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 	}
 	var errs []error
 	for _, s := range sessions {
+		if ctx.Err() != nil {
+			break
+		}
 		c := s.Credentials
 		if !configured[s.Key] || s.SignedOut() || c.RefreshToken == "" || !c.Due(now) {
 			continue
 		}
-		renewed, err := chatgpt.Refresh(ctx, client, cmp.Or(r.TokenURL, chatgpt.TokenURL), c, now)
-		switch {
-		case errors.Is(err, chatgpt.ErrSignedOut):
-			r.Logger.Warn("chatgpt provider disconnected; run kritika chatgpt login", "provider", s.Key)
-			if err := r.Store.SignOutChatGPTSession(ctx, s.Key, c.RefreshToken, err.Error()); err != nil {
-				errs = append(errs, err)
-			}
-		case err != nil:
-			errs = append(errs, fmt.Errorf("%s: %w", s.Key, err))
-		default:
-			if _, err := r.Store.RefreshChatGPTSession(ctx, s.Key, renewed, c.RefreshToken); err != nil {
-				errs = append(errs, err)
-			}
+		if err := r.refresh(ctx, client, s.Key, c, now); err != nil {
+			errs = append(errs, fmt.Errorf("worker: chatgpt refresh of %s: %w", s.Key, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
+func (r *ChatGPTRefresher) refresh(ctx context.Context, client *http.Client, key string, c chatgpt.Credentials, now time.Time) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chatGPTRefreshTimeout)
+	defer cancel()
+	renewed, err := chatgpt.Refresh(ctx, client, cmp.Or(r.TokenURL, chatgpt.TokenURL), c, now)
+	if errors.Is(err, chatgpt.ErrSignedOut) {
+		r.Logger.Warn("chatgpt provider disconnected; run kritika chatgpt login", "provider", key)
+		return r.Store.SignOutChatGPTSession(ctx, key, c.RefreshToken, err.Error())
+	}
+	if err != nil {
+		return err
+	}
+	for attempt := 1; ; attempt++ {
+		_, err := r.Store.RefreshChatGPTSession(ctx, key, renewed, c.RefreshToken)
+		if err == nil || attempt == chatGPTSaveAttempts {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+}
+
 func (r *ChatGPTRefresher) configured() map[string]bool {
 	f := r.Current.Get()
 	out := map[string]bool{}
-	for name, p := range f.Providers {
-		if p.Type == configfile.ProviderChatGPT {
-			resolved, _ := f.Provider(nil, name)
-			out[resolved.ChatGPTSessionKey()] = true
+	add := func(t *configfile.Account) {
+		for _, p := range f.ChatGPTProviders(t) {
+			out[p.ChatGPTSessionKey()] = true
 		}
 	}
+	add(nil)
 	for i := range f.Accounts {
-		a := &f.Accounts[i]
-		for name, p := range a.Providers {
-			if p.Type == configfile.ProviderChatGPT {
-				resolved, _ := f.Provider(a, name)
-				out[resolved.ChatGPTSessionKey()] = true
-			}
-		}
+		add(&f.Accounts[i])
 	}
 	return out
 }

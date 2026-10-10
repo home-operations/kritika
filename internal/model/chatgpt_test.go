@@ -101,6 +101,22 @@ func TestChatGPTStepResponses(t *testing.T) {
 			wantUsage: Usage{Input: 200, CacheRead: 500, Output: 59},
 		},
 		{
+			name: "an answer the model's own cap cut off returns what it has",
+			body: sse(responseEvent("response.incomplete", `{"id":"resp_1","object":"response","status":"incomplete","model":"gpt-x",`+
+				`"incomplete_details":{"reason":"max_output_tokens"},"output":`+textOutput+`,"usage":`+responseUsage+`}`)),
+			wantText:  "hello",
+			wantStop:  StopMaxTokens,
+			wantUsage: Usage{Input: 200, CacheRead: 500, Output: 59},
+		},
+		{
+			name: "a tool call the cap cut off is still the cap's",
+			body: sse(responseEvent("response.incomplete", `{"id":"resp_1","object":"response","status":"incomplete","model":"gpt-x",`+
+				`"incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"function_call","call_id":"call_1","name":"submit","arguments":"{\"find","status":"incomplete"}],"usage":`+responseUsage+`}`)),
+			wantCalls: []ToolCall{{ID: "call_1", Name: "submit", Input: json.RawMessage(`{"find`)}},
+			wantStop:  StopMaxTokens,
+			wantUsage: Usage{Input: 200, CacheRead: 500, Output: 59},
+		},
+		{
 			name:      "plan token usage has no per-call cost",
 			body:      completed(textOutput, `{"input_tokens":1000000,"input_tokens_details":{"cached_tokens":0},"output_tokens":100000,"total_tokens":1100000}`),
 			wantText:  "hello",
@@ -157,10 +173,13 @@ func TestChatGPTRequest(t *testing.T) {
 	if b["store"] != false || b["stream"] != true || b["instructions"] != "be brief" || b["model"] != "gpt-x" {
 		t.Fatalf("body = %v", b)
 	}
-	for _, key := range []string{"max_output_tokens", "temperature", "previous_response_id", "prompt_cache_key"} {
+	for _, key := range []string{"max_output_tokens", "temperature", "previous_response_id"} {
 		if _, ok := b[key]; ok {
 			t.Fatalf("the request carries %s, which the route refuses", key)
 		}
+	}
+	if b["prompt_cache_key"] != "run-1" {
+		t.Fatalf("prompt_cache_key = %v, want the session", b["prompt_cache_key"])
 	}
 	if field(b, "reasoning", "effort") != "high" || b["tool_choice"] != "required" {
 		t.Fatalf("reasoning = %v, tool_choice = %v", b["reasoning"], b["tool_choice"])
@@ -305,11 +324,33 @@ func TestChatGPTErrors(t *testing.T) {
 	})
 	t.Run("a token source that fails fails the step without a request", func(t *testing.T) {
 		srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
-		_, err := newTestChatGPT(t, srv, &tokens{err: errors.New("signed out")}).Step(t.Context(), StepRequest{Model: "m"})
+		resp, err := newTestChatGPT(t, srv, &tokens{err: errors.New("signed out")}).Step(t.Context(), StepRequest{Model: "m"})
 		if err == nil || !strings.Contains(err.Error(), "signed out") || got.path != "" {
 			t.Fatalf("err = %v, request to %q", err, got.path)
 		}
+		if !resp.ChatGPTPlan {
+			t.Fatal("a failed step on the plan is not marked as the plan's")
+		}
 	})
+}
+
+// TestChatGPTStreamFailuresRetry: a server error or rate limit after the
+// stream opened is retried as the same failure before it would be.
+func TestChatGPTStreamFailuresRetry(t *testing.T) {
+	for _, code := range []string{"server_error", "rate_limit_exceeded"} {
+		for name, body := range map[string]string{
+			"response.failed": sse(responseEvent("response.failed", `{"id":"resp_1","object":"response","status":"failed","error":{"code":"`+code+`","message":"later"}}`)),
+			"error event":     sse(`{"type":"error","code":"` + code + `","message":"later"}`),
+		} {
+			t.Run(code+"/"+name, func(t *testing.T) {
+				srv, _ := fakeProvider(t, http.StatusOK, body)
+				_, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}})
+				if !Transient(err) || !strings.Contains(err.Error(), code) {
+					t.Fatalf("err = %v, want transient", err)
+				}
+			})
+		}
+	}
 }
 
 // TestChatGPTPause: after the plan refuses a step at its limit, the adapter
@@ -441,12 +482,7 @@ func TestChatGPTObservesAllowances(t *testing.T) {
 			t.Cleanup(srv.Close)
 			var observed []chatgpt.Allowance
 			c, err := NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Tokens: &tokens{token: "at-1"},
-				ObserveAllowances: func(_ context.Context, token string, a []chatgpt.Allowance) {
-					if token != "at-1" {
-						t.Errorf("observed token %q", token)
-					}
-					observed = a
-				},
+				ObserveAllowances: func(_ context.Context, a []chatgpt.Allowance) { observed = a },
 			})
 			if err != nil {
 				t.Fatal(err)

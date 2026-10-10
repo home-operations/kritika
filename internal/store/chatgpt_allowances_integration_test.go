@@ -44,36 +44,36 @@ func TestChatGPTAllowanceLifecycle(t *testing.T) {
 	}
 	check(true, nil)
 	now := time.Now().UTC()
-	update := func(token, id string, used float64, observed time.Time) {
+	update := func(id string, used float64, observed time.Time) {
 		t.Helper()
-		if err := st.UpdateChatGPTAllowances(ctx, key, token, []chatgpt.Allowance{{
+		if err := st.UpdateChatGPTAllowances(ctx, key, []chatgpt.Allowance{{
 			LimitID: id, Primary: &chatgpt.AllowanceWindow{UsedPercent: used}, ObservedAt: observed,
 		}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	update("at-1", "codex", 20, now)
-	update("at-1", "codex_other", 30, now)
-	update("at-1", "codex", 10, now.Add(-time.Second))
-	update("stale-token", "codex", 99, now.Add(time.Second))
+	update("codex", 20, now)
+	update("codex_other", 30, now)
+	update("codex", 10, now.Add(-time.Second))
 	check(true, map[string]float64{"codex": 20, "codex_other": 30})
-	update("at-1", "codex", 40, now.Add(time.Second))
+	update("codex", 40, now.Add(time.Second))
 	renewed := credentials
 	renewed.AccessToken, renewed.RefreshToken = "at-2", "rt-2"
 	if changed, err := st.RefreshChatGPTSession(ctx, key, renewed, credentials.RefreshToken); err != nil || !changed {
 		t.Fatalf("refresh = %v, %v", changed, err)
 	}
-	update("at-1", "codex", 99, now.Add(2*time.Second))
-	check(true, map[string]float64{"codex": 40, "codex_other": 30})
+	// A step that started on the replaced token still reports the account's quota.
+	update("codex", 45, now.Add(2*time.Second))
+	check(true, map[string]float64{"codex": 45, "codex_other": 30})
 	if err := st.SignOutChatGPTSession(ctx, key, renewed.RefreshToken, "invalid_grant"); err != nil {
 		t.Fatal(err)
 	}
-	update("at-2", "codex", 99, now.Add(3*time.Second))
+	update("codex", 99, now.Add(3*time.Second))
 	check(false, nil)
 	if err := st.ConnectChatGPTSession(ctx, key, renewed, credentials.ClientID); err != nil {
 		t.Fatal(err)
 	}
-	update("at-2", "codex", 50, now.Add(4*time.Second))
+	update("codex", 50, now.Add(4*time.Second))
 	check(true, map[string]float64{"codex": 50})
 	if err := st.ConnectChatGPTSession(ctx, key, renewed, credentials.ClientID); err != nil {
 		t.Fatal(err)

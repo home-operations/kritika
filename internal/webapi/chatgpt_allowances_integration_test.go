@@ -43,7 +43,7 @@ accounts:
 	if err := e.st.ConnectChatGPTSession(ctx, key, credentials, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.st.UpdateChatGPTAllowances(ctx, key, credentials.AccessToken, []chatgpt.Allowance{{
+	if err := e.st.UpdateChatGPTAllowances(ctx, key, []chatgpt.Allowance{{
 		LimitID: "codex", ObservedAt: time.Now().UTC(), Primary: &chatgpt.AllowanceWindow{UsedPercent: 25},
 	}}); err != nil {
 		t.Fatal(err)

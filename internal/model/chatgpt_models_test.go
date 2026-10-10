@@ -1,7 +1,10 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,6 +89,58 @@ func TestChatGPTLatestModels(t *testing.T) {
 	}
 }
 
+// TestChatGPTCatalogSharedFetch: alias steps that find the catalog stale
+// share one fetch, and one that gives up waiting leaves it running for the
+// others.
+func TestChatGPTCatalogSharedFetch(t *testing.T) {
+	var reads atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			reads.Add(1)
+			<-release
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"models":[{"slug":"gpt-6-sol","visibility":"list"}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(completed(textOutput, responseUsage)))
+	}))
+	t.Cleanup(srv.Close)
+	c := newTestChatGPT(t, srv, nil)
+	impatient, cancel := context.WithCancel(t.Context())
+	errs := make(chan error, 3)
+	go func() {
+		_, err := c.Step(impatient, StepRequest{Model: "sol-latest"})
+		errs <- err
+	}()
+	for reads.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	for range 2 {
+		go func() {
+			resp, err := c.Step(t.Context(), StepRequest{Model: "sol-latest"})
+			if err == nil && resp.Model != "gpt-6-sol" {
+				err = fmt.Errorf("resolved %s", resp.Model)
+			}
+			errs <- err
+		}()
+	}
+	cancel()
+	if err := <-errs; !errors.Is(err, context.Canceled) {
+		t.Fatalf("the step that gave up = %v, want canceled", err)
+	}
+	close(release)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reads.Load() != 1 {
+		t.Fatalf("catalog read %d times, want one shared fetch", reads.Load())
+	}
+}
+
 func TestChatGPTPinnedModelSkipsCatalog(t *testing.T) {
 	srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
 	resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: "gpt-5.6-sol"})
@@ -116,6 +171,8 @@ func TestFamilyVersion(t *testing.T) {
 		{"gpt-+6-sol", "sol", [3]int{}, false},
 		{"gpt-6.1.2.3-sol", "sol", [3]int{}, false},
 		{"gpt-sol", "sol", [3]int{}, false},
+		{"gpt-5.2", "gpt", [3]int{5, 2, 0}, true},
+		{"gpt-5.2-sol", "gpt", [3]int{}, false},
 	} {
 		t.Run(tt.slug+"/"+tt.family, func(t *testing.T) {
 			got, ok := familyVersion(tt.slug, tt.family)

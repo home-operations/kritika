@@ -146,7 +146,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 		Slug: t.Slug(), Repositories: stats.Repositories,
 		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
 		Attention: attentionDTO(attention), LastPolledAt: polled,
-		ChatGPTEnabled: len(chatGPTProviders(file, t)) > 0,
+		ChatGPTEnabled: len(file.ChatGPTProviders(t)) > 0,
 	}
 	if in := file.ConnectionFor(t); in != nil {
 		sum.Connection = in.Name

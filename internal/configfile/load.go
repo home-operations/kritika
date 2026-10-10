@@ -183,7 +183,7 @@ func Parse(raw []byte) (*File, error) {
 func (f *File) resolve(accounts []Account, s *secrets) error {
 	for _, name := range slices.Sorted(maps.Keys(f.Providers)) {
 		p := f.Providers[name]
-		if err := p.resolve("providers."+name, s); err != nil {
+		if err := p.resolve("providers."+name, chatGPTSessionKey(nil, name), s); err != nil {
 			return err
 		}
 		f.Providers[name] = p
@@ -301,7 +301,7 @@ func (a *Account) resolve(s *secrets) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(a.Providers)) {
 		p := a.Providers[name]
-		if err := p.resolve(a.entry+".providers."+name, s); err != nil {
+		if err := p.resolve(a.entry+".providers."+name, chatGPTSessionKey(a, name), s); err != nil {
 			return err
 		}
 		a.Providers[name] = p

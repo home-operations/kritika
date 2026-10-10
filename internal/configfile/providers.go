@@ -9,19 +9,46 @@ import (
 
 // Provider is the model provider name refers to for account t: the account's
 // own when it declares one by that name, else the instance's. t may be nil.
+// A file not built by Parse gets its session keys here.
 func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
 		if p, ok := t.Providers[name]; ok {
-			p.sessionKey = t.Key() + "/" + name
+			p.sessionKey = chatGPTSessionKey(t, name)
 			return p, true
 		}
 	}
 	p, ok := f.Providers[name]
-	p.sessionKey = name
+	p.sessionKey = chatGPTSessionKey(nil, name)
 	return p, ok
 }
 
-func (p *Provider) resolve(where string, s *secrets) error {
+// ChatGPTProviders returns the chatgpt providers account t can use, the
+// instance's and its own, by name. t may be nil.
+func (f *File) ChatGPTProviders(t *Account) map[string]Provider {
+	out := map[string]Provider{}
+	names := slices.Collect(maps.Keys(f.Providers))
+	if t != nil {
+		names = slices.AppendSeq(names, maps.Keys(t.Providers))
+	}
+	for _, name := range names {
+		if p, _ := f.Provider(t, name); p.Type == ProviderChatGPT {
+			out[name] = p
+		}
+	}
+	return out
+}
+
+// chatGPTSessionKey keeps the sign-ins of accounts' providers of one name
+// apart from each other and from the instance's.
+func chatGPTSessionKey(t *Account, name string) string {
+	if t == nil {
+		return name
+	}
+	return t.Key() + "/" + name
+}
+
+func (p *Provider) resolve(where, sessionKey string, s *secrets) error {
+	p.sessionKey = sessionKey
 	if p.Type == ProviderChatGPT {
 		if !p.APIKey.empty() {
 			return fmt.Errorf("configfile: %s.apiKey: a chatgpt provider uses a stored sign-in", where)

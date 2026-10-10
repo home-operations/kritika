@@ -44,8 +44,12 @@
 
   const total = (p: UsagePoint) => p.inputTokens + p.outputTokens;
 
+  // The 24-hour period is the last 24 hours, not a whole day: a date would
+  // start it at midnight UTC.
   const res = new Resource(() => {
-    const p = new URLSearchParams({ group, from: daysAgo(Number(days), Date.now()), billing: chatgptEnabled ? billing : 'all' });
+    const now = Date.now();
+    const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
+    const p = new URLSearchParams({ group, from, billing: chatgptEnabled ? billing : 'all' });
     return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`);
   });
   // The month so far against the account's caps.

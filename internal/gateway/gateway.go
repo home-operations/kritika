@@ -306,7 +306,6 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
 		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part, Duration: took,
-		ChatGPTPlan: served.Provider.Type == configfile.ProviderChatGPT,
 	}, req, resp, err, adapter.Mask(c.file, served.Provider, c.token))
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;

@@ -55,9 +55,6 @@ type ModelCall struct {
 
 // InsertModelCall records c in tx, which must be scoped to c's account.
 func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
-	if c.ChatGPTPlan {
-		c.CostUSD = 0
-	}
 	if !c.Kind.Valid() {
 		return fmt.Errorf("store: model call kind %q", c.Kind)
 	}

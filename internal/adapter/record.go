@@ -108,7 +108,7 @@ func (r Recorder) Record(
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer cancel()
 	c.Model, c.Upstream, c.Stop, c.Usage, c.CostUSD = resp.Model, resp.Upstream, resp.Stop, resp.Usage, resp.CostUSD
-	c.ChatGPTPlan = c.ChatGPTPlan || resp.ChatGPTPlan
+	c.ChatGPTPlan = resp.ChatGPTPlan
 	c.Model = cmp.Or(c.Model, req.Model)
 	if stepErr != nil {
 		c.Error = mask(stepErr.Error())

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +43,10 @@ type Login struct {
 	Out io.Writer
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Registered, if set, saves the client ID a first sign-in's callback
+	// issued, before the code exchange: OpenAI asks that a failed attempt
+	// be repeated as that client rather than register another.
+	Registered func(ctx context.Context, clientID string) error
 }
 
 // callback is what the browser brought back.
@@ -72,7 +75,7 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 	if err != nil {
 		return Credentials{}, fmt.Errorf("chatgpt: login: discovery: %w", err)
 	}
-	state, nonce, verifier := random(), random(), oauth2.GenerateVerifier()
+	state, nonce, verifier := rand.Text(), rand.Text(), oauth2.GenerateVerifier()
 	hostID := current.HostID
 
 	listener, err := net.Listen("tcp", cmp.Or(l.Addr, "127.0.0.1:1455"))
@@ -103,6 +106,11 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 	if err != nil {
 		return Credentials{}, err
 	}
+	if current.ClientID == "" && l.Registered != nil {
+		if err := l.Registered(ctx, cb.clientID); err != nil {
+			return Credentials{}, fmt.Errorf("chatgpt: login: save the registration: %w", err)
+		}
+	}
 	conf := oauth2.Config{
 		ClientID:    cb.clientID,
 		Endpoint:    oauth2.Endpoint{TokenURL: discovered.Endpoint().TokenURL, AuthStyle: oauth2.AuthStyleInParams},
@@ -130,7 +138,8 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 	if idt.Subject == "" {
 		return Credentials{}, errors.New("chatgpt: login: id token: subject is missing")
 	}
-	if current.ClientID != "" && idt.Subject != current.Subject {
+	// A registration whose first sign-in failed has no identity yet.
+	if current.Subject != "" && idt.Subject != current.Subject {
 		return Credentials{}, errors.New("chatgpt: login: the signed-in identity differs from the saved account")
 	}
 	var claims struct {
@@ -217,13 +226,4 @@ func awaitCallback(ctx context.Context, listener net.Listener, state, clientID s
 	case <-ctx.Done():
 		return callback{}, fmt.Errorf("chatgpt: login: the browser did not come back: %w", ctx.Err())
 	}
-}
-
-// random is a fresh value for a state or a nonce.
-func random() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err) // the system's randomness is gone; nothing to sign in with
-	}
-	return hex.EncodeToString(b[:])
 }

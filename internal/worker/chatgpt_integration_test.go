@@ -3,6 +3,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -92,5 +93,44 @@ func TestChatGPTRefresher(t *testing.T) {
 	}
 	if err := r.Refresh(ctx); err == nil || requests.Load() != 4 {
 		t.Fatalf("second pass = %v, %d requests; only the transient failure should retry", err, requests.Load())
+	}
+}
+
+// TestChatGPTRefresherOutlivesTenure: a refresh OpenAI has answered is
+// saved even when the leader's tenure ends meanwhile, since the refresh
+// token it replaced is spent.
+func TestChatGPTRefresherOutlivesTenure(t *testing.T) {
+	st := storetest.Open(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	now := time.Now().UTC()
+	key := "tenure-" + uuid.NewString()
+	s, err := st.PrepareChatGPTSession(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.Credentials
+	c.ClientID, c.AccessToken, c.RefreshToken = "oaiapp_tenure", "at-1", "rt-1"
+	c.Scopes, c.ExpiresIn, c.SavedAt = []string{chatgpt.PlanScope}, 3600, now.Add(-56*time.Minute)
+	if err := st.ConnectChatGPTSession(ctx, key, c, ""); err != nil {
+		t.Fatal(err)
+	}
+	tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"access_token":"at-2","refresh_token":"rt-2","expires_in":3600}`)
+	}))
+	t.Cleanup(tokens.Close)
+	f := &configfile.File{Providers: map[string]configfile.Provider{key: {Type: configfile.ProviderChatGPT}}}
+	r := &ChatGPTRefresher{
+		Store: st, Current: configfile.NewCurrent(f), Logger: slog.New(slog.DiscardHandler),
+		Client: tokens.Client(), TokenURL: tokens.URL, now: func() time.Time { return now },
+	}
+	if err := r.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := st.ChatGPTSession(t.Context(), key)
+	if err != nil || saved.Credentials.RefreshToken != "rt-2" || saved.SignedOut() {
+		t.Fatalf("session after the tenure ended = %+v, %v", saved, err)
 	}
 }

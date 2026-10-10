@@ -39,6 +39,10 @@ type fakeOpenAI struct {
 	subject string
 	// exchange is the last token request's form.
 	exchange url.Values
+	// registered is the client IDs the login saved before the exchange,
+	// and registerErr what saving one returns.
+	registered  []string
+	registerErr error
 }
 
 func newFakeOpenAI(t *testing.T) *fakeOpenAI {
@@ -142,7 +146,11 @@ func signIn(t *testing.T, f *fakeOpenAI, current Credentials, query url.Values) 
 	}
 	done := make(chan result, 1)
 	go func() {
-		c, err := Login{Addr: "127.0.0.1:0", Issuer: f.srv.URL, Client: f.srv.Client(), Out: &out}.Run(ctx, current)
+		registered := func(_ context.Context, clientID string) error {
+			f.registered = append(f.registered, clientID)
+			return f.registerErr
+		}
+		c, err := Login{Addr: "127.0.0.1:0", Issuer: f.srv.URL, Client: f.srv.Client(), Out: &out, Registered: registered}.Run(ctx, current)
 		done <- result{c, err}
 	}()
 	// The URL is printed once the listener is up.
@@ -217,6 +225,16 @@ func TestLogin(t *testing.T) {
 	if ex := f.exchange; ex.Get("grant_type") != "authorization_code" || ex.Get("client_id") != issuedClient || ex.Get("resource") != Resource || ex.Get("redirect_uri") == "" || ex.Get("client_secret") != "" {
 		t.Fatalf("exchange = %v", ex)
 	}
+	if len(f.registered) != 1 || f.registered[0] != issuedClient {
+		t.Fatalf("registered = %v, want the issued client saved once", f.registered)
+	}
+	t.Run("a registration that cannot be saved ends the sign-in", func(t *testing.T) {
+		f := newFakeOpenAI(t)
+		f.registerErr = errors.New("database unavailable")
+		if _, _, err := signIn(t, f, Credentials{HostID: "urn:uuid:host"}, nil); err == nil || !strings.Contains(err.Error(), "save the registration") || f.exchange != nil {
+			t.Fatalf("err = %v, exchange %v", err, f.exchange)
+		}
+	})
 }
 
 func TestLoginReauthorize(t *testing.T) {
@@ -245,8 +263,19 @@ func TestLoginReauthorize(t *testing.T) {
 			if err != nil || c.ClientID != current.ClientID || c.HostID != current.HostID {
 				t.Fatalf("credentials = %+v, err = %v", c, err)
 			}
+			if len(f.registered) != 0 {
+				t.Fatalf("reauthorization registered %v", f.registered)
+			}
 		})
 	}
+	t.Run("a registration whose first sign-in failed takes the identity", func(t *testing.T) {
+		f := newFakeOpenAI(t)
+		f.subject = "user-2"
+		c, _, err := signIn(t, f, Credentials{ClientID: issuedClient, HostID: "urn:uuid:host"}, nil)
+		if err != nil || c.ClientID != issuedClient || c.Subject != "user-2" {
+			t.Fatalf("credentials = %+v, err = %v", c, err)
+		}
+	})
 }
 
 func TestLoginRefuses(t *testing.T) {
@@ -255,12 +284,15 @@ func TestLoginRefuses(t *testing.T) {
 		setup func(*fakeOpenAI)
 		query url.Values
 		want  string
+		// registered is whether the callback had issued a client, which a
+		// later attempt signs in as.
+		registered bool
 	}{
-		{"plan usage not granted", func(f *fakeOpenAI) { f.scope = "openid profile email" }, nil, "did not grant " + PlanScope},
-		{"a nonce for another attempt", func(f *fakeOpenAI) { f.nonce = "stale" }, nil, "nonce mismatch"},
-		{"no identity", func(f *fakeOpenAI) { f.subject = "" }, nil, "subject is missing"},
-		{"the user declined", nil, url.Values{"error": {"access_denied"}, "code": {""}}, "refused: access_denied"},
-		{"no client registered", nil, url.Values{"client_id": {registrationClient}}, "registered no client"},
+		{"plan usage not granted", func(f *fakeOpenAI) { f.scope = "openid profile email" }, nil, "did not grant " + PlanScope, true},
+		{"a nonce for another attempt", func(f *fakeOpenAI) { f.nonce = "stale" }, nil, "nonce mismatch", true},
+		{"no identity", func(f *fakeOpenAI) { f.subject = "" }, nil, "subject is missing", true},
+		{"the user declined", nil, url.Values{"error": {"access_denied"}, "code": {""}}, "refused: access_denied", false},
+		{"no client registered", nil, url.Values{"client_id": {registrationClient}}, "registered no client", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFakeOpenAI(t)
@@ -270,6 +302,9 @@ func TestLoginRefuses(t *testing.T) {
 			_, _, err := signIn(t, f, Credentials{HostID: "urn:uuid:host"}, tt.query)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %s", err, tt.want)
+			}
+			if (len(f.registered) == 1 && f.registered[0] == issuedClient) != tt.registered {
+				t.Fatalf("registered = %v, want %v", f.registered, tt.registered)
 			}
 		})
 	}

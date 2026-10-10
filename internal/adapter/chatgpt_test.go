@@ -17,11 +17,13 @@ import (
 )
 
 type planSessions struct {
-	session store.ChatGPTSession
-	found   bool
-	err     error
-	key     string
-	expired string
+	session  store.ChatGPTSession
+	found    bool
+	err      error
+	key      string
+	expired  string
+	reads    int
+	observed chan []chatgpt.Allowance
 }
 
 func TestChatGPTProviderFallback(t *testing.T) {
@@ -60,7 +62,7 @@ func TestChatGPTProviderFallback(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 			sessions := &planSessions{found: true, session: store.ChatGPTSession{Credentials: chatgpt.Credentials{AccessToken: "at-1"}}}
-			primary, err := model.NewChatGPT(model.ChatGPTConfig{BaseURL: srv.URL + "/v1", Tokens: planTokens{sessions: sessions, key: "plan"}})
+			primary, err := model.NewChatGPT(model.ChatGPTConfig{BaseURL: srv.URL + "/v1", Tokens: &planTokens{sessions: sessions, key: "plan"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -94,6 +96,7 @@ func TestChatGPTProviderFallback(t *testing.T) {
 
 func (s *planSessions) ChatGPTSession(_ context.Context, key string) (store.ChatGPTSession, bool, error) {
 	s.key = key
+	s.reads++
 	return s.session, s.found, s.err
 }
 
@@ -102,14 +105,14 @@ func (s *planSessions) ExpireChatGPTSession(_ context.Context, key, token string
 	return s.err
 }
 
-func (s *planSessions) UpdateChatGPTAllowances(_ context.Context, key, token string, _ []chatgpt.Allowance) error {
-	s.key = key
-	return s.err
+func (s *planSessions) UpdateChatGPTAllowances(_ context.Context, _ string, allowances []chatgpt.Allowance) error {
+	s.observed <- allowances
+	return nil
 }
 
 func TestPlanTokens(t *testing.T) {
 	sessions := &planSessions{found: true, session: store.ChatGPTSession{Credentials: chatgpt.Credentials{AccessToken: "at-1"}}}
-	src := planTokens{sessions: sessions, key: "github/acme/plan"}
+	src := &planTokens{sessions: sessions, key: "github/acme/plan"}
 	for _, token := range []string{"at-1", "at-2"} {
 		sessions.session.Credentials.AccessToken = token
 		got, err := src.Token(t.Context())
@@ -138,6 +141,54 @@ func TestPlanTokens(t *testing.T) {
 	sessions.err = errors.New("database unavailable")
 	if _, err := src.Token(t.Context()); !errors.Is(err, sessions.err) {
 		t.Fatalf("database error = %v", err)
+	}
+}
+
+func TestPlanTokensCache(t *testing.T) {
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	sessions := &planSessions{found: true, session: store.ChatGPTSession{Credentials: chatgpt.Credentials{
+		AccessToken: "at-1", SavedAt: now, ExpiresIn: 3600,
+	}}}
+	src := &planTokens{sessions: sessions, key: "plan", now: func() time.Time { return now }}
+	token := func(want string, reads int) {
+		t.Helper()
+		if got, err := src.Token(t.Context()); err != nil || got != want || sessions.reads != reads {
+			t.Fatalf("Token = %q, %v after %d reads; want %q after %d", got, err, sessions.reads, want, reads)
+		}
+	}
+	token("at-1", 1)
+	sessions.session.Credentials.AccessToken = "at-2"
+	token("at-1", 1)
+	now = now.Add(planTokenTTL)
+	token("at-2", 2)
+	if err := src.Expire(t.Context(), "at-2"); err != nil {
+		t.Fatal(err)
+	}
+	token("at-2", 3)
+	// Within the refresh lead of expiry, every step reads until the leader
+	// stores the renewed token.
+	now = now.Add(time.Hour - chatgpt.RefreshLead - planTokenTTL)
+	token("at-2", 4)
+	token("at-2", 5)
+}
+
+func TestPlanTokensObserveOffThePath(t *testing.T) {
+	sessions := &planSessions{observed: make(chan []chatgpt.Allowance)}
+	src := &planTokens{sessions: sessions, key: "plan"}
+	ctx, cancel := context.WithCancel(t.Context())
+	returned := make(chan struct{})
+	go func() {
+		src.observe(ctx, []chatgpt.Allowance{{LimitID: "codex"}})
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("observe waited for the write")
+	}
+	cancel()
+	if got := <-sessions.observed; len(got) != 1 || got[0].LimitID != "codex" {
+		t.Fatalf("observed %+v", got)
 	}
 }
 

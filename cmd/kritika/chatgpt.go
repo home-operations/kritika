@@ -42,11 +42,14 @@ func loginChatGPT(ctx context.Context, cfg *config.Config, args []string, logger
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	c, err := (chatgpt.Login{Out: os.Stdout}).Run(ctx, session.Credentials)
+	login := chatgpt.Login{Out: os.Stdout, Registered: func(ctx context.Context, clientID string) error {
+		return st.RegisterChatGPTClient(ctx, key, clientID)
+	}}
+	c, err := login.Run(ctx, session.Credentials)
 	if err != nil {
 		return err
 	}
-	if err := st.ConnectChatGPTSession(ctx, key, c, session.Credentials.ClientID); err != nil {
+	if err := st.ConnectChatGPTSession(ctx, key, c, c.ClientID); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(os.Stdout, "\nConnected provider %s as %s. Credentials are saved in Postgres. "+

@@ -123,6 +123,10 @@ test("ChatGPT filtering supports hour and week and counts cached input once", as
       ),
     )
     .toBe(true);
+  const hourly = seen.find((u) => u.searchParams.get("group") === "hour")!;
+  const since = Date.now() - Date.parse(hourly.searchParams.get("from")!);
+  expect(since).toBeGreaterThan(23.9 * 3_600_000);
+  expect(since).toBeLessThan(24.1 * 3_600_000);
   await page.getByRole("radio", { name: "Week", exact: true }).click();
   await expect(page.getByRole("img", { name: "Tokens by week, last 24 hours" })).toBeVisible();
   await expect(page.locator("tbody")).toContainText("Week of");

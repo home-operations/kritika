@@ -110,12 +110,15 @@ the provider is connected, then stop the forward. No chart service or
 ingress needs to expose the callback port. If the pod exits, repeat both
 commands against another pod.
 
-The command saves the registration and tokens in Postgres. All replicas
-read the current access token per request; only the elected leader renews
-the rotating refresh token. The runner database role cannot read these
-credentials. A terminal refresh error clears the unusable tokens; repeat
-the login command to reconnect with the saved client and host IDs. A
-returning sign-in must use the same ChatGPT account.
+The command saves the registration and tokens in Postgres. Each replica
+reads the current access token and reuses it for up to a minute, or until
+it is due for renewal; only the elected leader renews the rotating refresh
+token. The runner database role cannot read these credentials. A terminal
+refresh error clears the unusable tokens; repeat the login command to
+reconnect with the saved client and host IDs. The client ID is saved as
+soon as the browser returns, so a first sign-in that fails after that is
+repeated as the same client. A returning sign-in must use the same ChatGPT
+account.
 
 Use a concrete model ID to pin a version, or a family alias such as
 `plan/sol-latest` or `plan/astra-latest` to select the newest visible version
@@ -123,15 +126,18 @@ in that account's authenticated model catalog. Aliases compare numeric
 versions in `gpt-<version>-<family>` or `<family>-<version>` IDs and exclude
 preview suffixes. They work for any matching family without a mapping in
 kritika. The first alias request after startup fetches the catalog; requests
-refresh it after five minutes or when the access token changes. There is no
-background polling. If no matching model is available, the request fails
+refresh it after five minutes or when the access token changes, and
+concurrent requests share one fetch. There is no background polling. If no matching model is available, the request fails
 and a configured fallback can take over. Usage records the concrete model
 selected. Model and reasoning effort use the same configuration fields as
 other providers; the selected model must support the requested effort.
 
 The adapter uses streamed Responses requests with `store: false` and the
-full conversation. The plan route does not accept an output-token cap,
-so the adapter omits it. It cannot serve embeddings. Calls report token
+full conversation, keying the prompt cache by that conversation. The plan route
+does not accept an output-token cap, so the adapter omits it; an answer
+the model's own cap cuts off is returned as cut off, as with other
+providers. A server error or rate limit reported after the stream opened
+is retried like a 5xx or 429. It cannot serve embeddings. Calls report token
 usage and are marked as covered by a ChatGPT plan. The dashboard shows
 “ChatGPT plan” and “Included in plan” alongside their token counts. `pricing`
 is not accepted for this provider. API spend totals exclude subscription

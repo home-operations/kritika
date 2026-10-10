@@ -40,6 +40,23 @@ func (s *Store) PrepareChatGPTSession(ctx context.Context, key string) (ChatGPTS
 	return session, err
 }
 
+// RegisterChatGPTClient saves the client ID a first sign-in's callback
+// issued, before the code exchange, so an attempt that fails after it
+// signs in again as that client rather than registering another. A
+// concurrent first registration must not overwrite a different client.
+func (s *Store) RegisterChatGPTClient(ctx context.Context, key, clientID string) error {
+	tag, err := s.app.Exec(ctx, `UPDATE chatgpt_sessions
+		SET credentials = credentials || jsonb_build_object('client_id', $2::text), updated_at = now()
+		WHERE key = $1 AND credentials->>'client_id' IN ('', $2)`, key, clientID)
+	if err != nil {
+		return fmt.Errorf("store: register chatgpt client: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("store: chatgpt registration changed during sign-in; try again")
+	}
+	return nil
+}
+
 // ConnectChatGPTSession saves a validated sign-in. A concurrent first
 // registration must not overwrite a different client established meanwhile.
 func (s *Store) ConnectChatGPTSession(ctx context.Context, key string, c chatgpt.Credentials, wasClientID string) error {
@@ -145,9 +162,11 @@ func (s *Store) ExpireChatGPTSession(ctx context.Context, key, token string) err
 	return nil
 }
 
-// UpdateChatGPTAllowances retains the newest observation of each quota bucket.
-// A response from a replaced sign-in must not repopulate its allowances.
-func (s *Store) UpdateChatGPTAllowances(ctx context.Context, key, token string, allowances []chatgpt.Allowance) error {
+// UpdateChatGPTAllowances retains the newest observation of each quota
+// bucket. A provider keeps its account across refreshes and sign-ins, so a
+// response on a token since replaced still counts; a signed-out provider
+// takes none.
+func (s *Store) UpdateChatGPTAllowances(ctx context.Context, key string, allowances []chatgpt.Allowance) error {
 	updates := make(map[string]chatgpt.Allowance, len(allowances))
 	for _, a := range allowances {
 		updates[a.LimitID] = a
@@ -158,10 +177,10 @@ func (s *Store) UpdateChatGPTAllowances(ctx context.Context, key, token string, 
 	}
 	if _, err := s.app.Exec(ctx, `UPDATE chatgpt_sessions SET allowances = allowances || (
 		SELECT coalesce(jsonb_object_agg(incoming.key, incoming.value), '{}'::jsonb)
-		FROM jsonb_each($3::jsonb) incoming
+		FROM jsonb_each($2::jsonb) incoming
 		WHERE coalesce((allowances -> incoming.key ->> 'observedAt')::timestamptz, 'epoch'::timestamptz)
 			<= (incoming.value ->> 'observedAt')::timestamptz)
-		WHERE key = $1 AND credentials->>'access_token' = $2 AND signed_out_at IS NULL`, key, token, raw); err != nil {
+		WHERE key = $1 AND signed_out_at IS NULL AND credentials->>'access_token' <> ''`, key, raw); err != nil {
 		return fmt.Errorf("store: update chatgpt allowances: %w", err)
 	}
 	return nil

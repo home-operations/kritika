@@ -122,3 +122,32 @@ func TestChatGPTSessionRenewal(t *testing.T) {
 		t.Fatalf("reconnected session = %+v, %v", s, err)
 	}
 }
+
+func TestRegisterChatGPTClient(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	key := "plan-" + uuid.NewString()
+	initial, err := st.PrepareChatGPTSession(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RegisterChatGPTClient(ctx, key, "oaiapp_1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RegisterChatGPTClient(ctx, key, "oaiapp_1"); err != nil {
+		t.Fatalf("registering the same client again = %v", err)
+	}
+	if err := st.RegisterChatGPTClient(ctx, key, "oaiapp_2"); err == nil {
+		t.Fatal("a concurrent registration replaced the saved client")
+	}
+	registered, err := st.PrepareChatGPTSession(ctx, key)
+	if err != nil || registered.Credentials.ClientID != "oaiapp_1" || registered.Credentials.HostID != initial.Credentials.HostID ||
+		registered.Credentials.AccessToken != "" || registered.Credentials.Subject != "" {
+		t.Fatalf("a failed first sign-in kept %+v, %v", registered, err)
+	}
+	c := registered.Credentials
+	c.Subject, c.AccessToken, c.RefreshToken, c.Scopes = "user-1", "at-1", "rt-1", []string{chatgpt.PlanScope}
+	if err := st.ConnectChatGPTSession(ctx, key, c, c.ClientID); err != nil {
+		t.Fatal(err)
+	}
+}
