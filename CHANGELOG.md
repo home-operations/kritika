@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.57](https://github.com/home-operations/kritika/compare/0.0.56...0.0.57) (2026-10-10)
+
+
+### Bug Fixes
+
+* **chatgpt:** preserve streamed response output ([#852](https://github.com/home-operations/kritika/issues/852)) ([745d380](https://github.com/home-operations/kritika/commit/745d380092b07d778d78b0ff3b6dc1831e89f276))
+* **model:** restore native OpenRouter floating aliases ([#850](https://github.com/home-operations/kritika/issues/850)) ([fcc79a7](https://github.com/home-operations/kritika/commit/fcc79a72dbed80197cb5c5256a31d40734211454))
+
 ## [0.0.56](https://github.com/home-operations/kritika/compare/0.0.55...0.0.56) (2026-10-10)
 
 
