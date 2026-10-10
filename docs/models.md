@@ -161,6 +161,36 @@ configured fallback can take over. This delay is a retry pause, not a
 prediction of when the plan's allowance resets. Check your allowance in
 [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage).
 
+#### Tradeoffs and limitations
+
+A ChatGPT plan can cover review calls within its included allowance. Compared
+with API-key providers, consider these tradeoffs:
+
+- **Shared capacity.** Reviews share the plan's allowance with other apps
+  using that plan. Available capacity depends on the plan, model and task;
+  kritika does not receive a separate allowance. Check OpenAI's
+  [current plan limits](https://learn.chatgpt.com/docs/pricing) and
+  [app usage settings](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions#tracking-usage).
+- **Sign-in maintenance.** Initial setup requires a browser login. Tokens
+  refresh automatically, but a revoked or unusable session requires an
+  admin to repeat the login command. API keys are simpler to provision for
+  an unattended service.
+- **Model availability.** Only models in the signed-in account's catalog
+  are available. A family alias selects among those models; it cannot make
+  an unavailable model accessible. Other vendors need another provider.
+- **Request controls.** The plan route does not accept an output-token
+  cap, and this provider cannot serve embeddings. OpenAI documents further
+  [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+- **Usage accounting.** Per-review and per-run token counts cannot reliably
+  predict how much plan allowance a review consumes. Allowance snapshots
+  depend on quota data OpenAI supplies and may be unavailable or stale.
+  API spend totals exclude the subscription fee.
+
+Configure `review.fallback`, and `confidence.fallback` if the scorer uses
+ChatGPT, with an API-key provider so it can take over when the plan is
+exhausted or unavailable. Paid fallback calls still incur API charges.
+For sustained team workloads, consider an API-key provider as the primary.
+
 ### From the environment
 
 One provider and the embedder can come from the environment instead:
