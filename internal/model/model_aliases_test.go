@@ -28,6 +28,7 @@ func TestParseAlias(t *testing.T) {
 		{"~-latest", alias{}, true, false},
 		{"~sol", alias{}, true, false},
 		{"~sol@gpt-6-sol", alias{}, true, false},
+		{"~anthropic/claude-sonnet-latest", alias{}, true, false},
 	} {
 		t.Run(tt.id, func(t *testing.T) {
 			got, floating, err := parseAlias(tt.id)
@@ -47,10 +48,32 @@ func TestValidAlias(t *testing.T) {
 		{"claude-opus-4-6", false},
 		{"~opus", false},
 		{"~opus-latest@claude-opus-4-6", false},
+		{"~anthropic/claude-sonnet-latest", false},
 	} {
 		t.Run(tt.id, func(t *testing.T) {
 			if got := ValidAlias(tt.id); got != tt.valid {
 				t.Fatalf("ValidAlias = %v", got)
+			}
+		})
+	}
+}
+
+func TestValidOpenRouterAlias(t *testing.T) {
+	for _, tt := range []struct {
+		id    string
+		valid bool
+	}{
+		{"~anthropic/claude-sonnet-latest", true},
+		{"anthropic/claude-sonnet-4.6", false},
+		{"~sol-latest", false},
+		{"~/claude-sonnet-latest", false},
+		{"~anthropic/claude-sonnet", false},
+		{"~anthropic/claude/sonnet-latest", false},
+		{"~anthropic/claude-sonnet-latest@claude-sonnet-4.6", false},
+	} {
+		t.Run(tt.id, func(t *testing.T) {
+			if got := ValidOpenRouterAlias(tt.id); got != tt.valid {
+				t.Fatalf("ValidOpenRouterAlias = %v", got)
 			}
 		})
 	}

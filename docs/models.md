@@ -67,21 +67,24 @@ instance's providers use.
 
 Providers of type `anthropic`, `openai` and `chatgpt` accept
 `<provider>/~<family>-latest` in `review.model`, `review.fallback`,
-`confidence.model` and `confidence.fallback`. The `~` makes the alias a
-kritika lookup. Model IDs without it, including a provider's own `*-latest`
-aliases, are sent unchanged. OpenRouter and OpenCode keep their own model
-selection behavior.
+`confidence.model` and `confidence.fallback`. For these provider types,
+the `~` makes the alias a kritika lookup. Model IDs without it, including
+a provider's own `*-latest` aliases, are sent unchanged.
 
-The first alias request after startup fetches the provider's catalog and
-waits for it; concurrent requests share one fetch. Each provider uses its
+OpenRouter resolves its own [aliases](#openrouter),
+`~<author>/<family>-latest`, on the server. OpenCode takes no floating
+aliases.
+
+The first kritika alias request after startup fetches the provider's catalog
+and waits for it; concurrent requests share one fetch. Each provider uses its
 catalog for five minutes. After that, the next alias request gets the
 cached catalog at once and starts a refresh. While refreshing fails,
 kritika keeps the cached catalog and tries again a minute later. There is
 no background polling. A failed first fetch, or a family with no model
 available, uses the usual [retries](#retries) and [fallback](#fallback).
 
-A review or follow-up resolves its aliases once, when its run starts, and
-every step of the run goes to the models they selected, whichever replica
+A review or follow-up resolves its kritika aliases once, when its run starts.
+Every step of the run goes to the models they selected, whichever replica
 serves it. A review carries on the last review's conversation only when
 its alias still selects the same model. An alias that cannot be resolved
 when the run starts is resolved again at each step.
@@ -93,13 +96,36 @@ own ID or, without an entry of its own, under the alias, so an entry keyed
 catalog entry lacks that level; the model an OpenAI or ChatGPT alias
 selects must support it.
 
-Use an explicit model ID to pin a version. Floating aliases apply to review
-and confidence calls; use explicit IDs for embedding models. Loading the
-configuration fails on an alias that is not `~<family>-latest`, on an alias
-for a provider of another type, and on an alias in `embedding.model`.
+Use an explicit model ID to pin a version. Floating aliases, kritika's and
+OpenRouter's, apply to review and confidence calls; use explicit IDs for
+embedding models, since an alias rollover does not trigger an index rebuild.
+Loading the configuration fails on:
+
+- an alias in `embedding.model`;
+- an `anthropic`, `openai` or `chatgpt` alias that is not `~<family>-latest`;
+- an `openrouter` alias that is not `~<author>/<family>-latest`;
+- an alias for an `opencode` provider.
 
 If you configured a ChatGPT alias such as `plan/sol-latest`, change it to
 `plan/~sol-latest` to keep kritika's floating selection.
+
+#### OpenRouter
+
+OpenRouter's [native aliases](https://openrouter.ai/docs/guides/routing/routers/latest-resolution)
+use `~<author>/<family>-latest`:
+
+```yaml
+review:
+  model: openrouter/~anthropic/claude-sonnet-latest
+  fallback: openrouter/~google/gemini-flash-latest
+```
+
+Kritika passes these aliases to OpenRouter without fetching a catalog or
+pinning a version. OpenRouter chooses the model on each request, so the
+version can change between steps of a review. Usage records the concrete
+model returned by OpenRouter. A review carries on the last review's
+conversation while the alias is unchanged, even after OpenRouter has moved
+it to a newer model, which has none of that conversation cached.
 
 #### Anthropic
 

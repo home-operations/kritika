@@ -653,12 +653,18 @@ func (f *File) checkModelRef(where string, t *Account, ref ModelRef) error {
 	return checkAlias(where, p.Type, ref.Model())
 }
 
-// checkAlias rejects a floating alias, a model ID starting with ~, that is
-// not ~<family>-latest or that a provider of type t would send as it is.
+// checkAlias rejects a floating alias, a model ID starting with ~, that a
+// provider of type t cannot resolve: OpenRouter resolves its own
+// ~<author>/<family>-latest, kritika ~<family>-latest for the types that
+// take aliases, and the others would send one as it is.
 func checkAlias(where string, t ProviderType, id string) error {
 	switch {
 	case !model.Floating(id):
 		return nil
+	case t == ProviderOpenRouter:
+		if !model.ValidOpenRouterAlias(id) {
+			return fmt.Errorf("configfile: %s: an openrouter alias must be ~<author>/<family>-latest, got %q", where, id)
+		}
 	case !t.TakesAliases():
 		return fmt.Errorf("configfile: %s: a provider of type %s takes no floating alias, got %q", where, t, id)
 	case !model.ValidAlias(id):
