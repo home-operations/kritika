@@ -107,7 +107,9 @@ the zone.
 
 A dot in the top bar shows whether live updates are connected. Once they
 have been down for two seconds it reads "Reconnecting…", and the page may
-be out of date until they are back.
+be out of date until they are back. If they come back from a kritika that
+serves another build of the dashboard, as after an upgrade, the page
+reloads itself rather than show the new data with its old code.
 
 ## First run
 

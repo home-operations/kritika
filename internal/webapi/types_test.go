@@ -254,8 +254,9 @@ var goldens = map[string]any{
 		Jobs:  []InstanceJob{{Job: goldenJob, Account: "github/alpha"}},
 		Slots: []ModelSlots{{Account: "github/alpha", Model: "openrouter/acme-large", Held: 2, Slots: 2}},
 	},
-	"event": Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
-	"error": ErrorBody{Code: CodeNotFound, Message: "account not found"},
+	"event":  Event{Kind: store.EventReview, Account: "alpha", ID: "rev-1", ReviewID: new("rev-1")},
+	"resync": Resync{Entry: "assets/index-abc123.js"},
+	"error":  ErrorBody{Code: CodeNotFound, Message: "account not found"},
 }
 
 func TestDTOGolden(t *testing.T) {

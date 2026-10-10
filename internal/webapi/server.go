@@ -9,6 +9,9 @@ package webapi
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -78,7 +81,11 @@ func New(cfg Config) *Server {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	h := newHub(cfg.Current, cfg.Logger)
+	entry, err := uiEntry(cfg.UI)
+	if err != nil {
+		cfg.Logger.Warn("webapi: open tabs will not reload for a new dashboard build", "error", err)
+	}
+	h := newHub(cfg.Current, cfg.Logger, entry)
 	h.stands = cfg.Auth.Stands
 	return &Server{
 		store: cfg.Store, current: cfg.Current, auth: cfg.Auth, actions: cfg.Actions, version: cfg.Version,
@@ -204,6 +211,31 @@ func (s *Server) uiHandler() http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// uiEntry returns the path of the dashboard's entry script, as the build
+// manifest Vite writes beside it names it, or "" for no UI or one built
+// without the manifest. Vite names the script after its content, which
+// takes in the names of every chunk it imports, so any change to the
+// dashboard's scripts renames it.
+func uiEntry(ui fs.FS) (string, error) {
+	if ui == nil {
+		return "", nil
+	}
+	data, err := fs.ReadFile(ui, ".vite/manifest.json")
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("webapi: read the UI's build manifest: %w", err)
+	}
+	var manifest map[string]struct {
+		File string `json:"file"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return "", fmt.Errorf("webapi: read the UI's build manifest: %w", err)
+	}
+	return manifest["index.html"].File, nil
 }
 
 // isBareDir reports whether urlPath names a directory of ui with no

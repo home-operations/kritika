@@ -1337,30 +1337,71 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
 
 test('a server-sent event for the account refetches the page', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
+  // No resync opens this stream, so only the event can refetch.
   await page.route('**/api/events', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
-      body: `event: ${g.liveEvent.kind}\ndata: ${JSON.stringify(g.liveEvent)}\n\n`,
+      body: `event: ${g.liveEvent.kind}\ndata: ${JSON.stringify({ ...g.liveEvent, account: g.SLUG })}\n\n`,
     }),
   );
   await page.goto(`/${T}/queue`);
   await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/queue')).length).toBeGreaterThan(1);
 });
 
-test('a stream that (re)opens refetches the page, event or not', async ({ page }) => {
-  const seen = await g.mockApi(page, g.defaultApi());
+for (const [label, entry] of [
+  ["the page's own build", () => g.builtEntry()],
+  ['no build', () => ''],
+] as const) {
+  test(`a stream that (re)opens refetches the page, its resync naming ${label}`, async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    let opens = 0;
+    await page.route('**/api/events', (route) => {
+      opens++;
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: g.resyncFrame(entry()) });
+    });
+    let loads = 0;
+    page.on('request', (r) => {
+      if (r.isNavigationRequest()) loads++;
+    });
+    await page.goto(`/${T}/queue`);
+    const queues = () => seen.filter((u) => u.pathname.endsWith('/queue')).length;
+    // The first fetch, then one refetch per open: the reconnect backoff
+    // (at least 500ms) outlasts live()'s 300ms debounce, so none merge.
+    await expect.poll(() => opens).toBeGreaterThan(1);
+    await expect.poll(queues).toBeGreaterThanOrEqual(3);
+    expect(loads).toBe(1);
+  });
+}
+
+test('a stream from a server running another build reloads the page instead of refetching it', async ({ page }) => {
+  await g.mockApi(page, g.defaultApi());
+  const log: string[] = [];
+  let fetched!: () => void;
+  const firstFetch = new Promise<void>((r) => (fetched = r));
+  page.on('request', (r) => {
+    if (r.isNavigationRequest()) log.push('page');
+    else if (new URL(r.url()).pathname.endsWith(`/accounts/${g.SLUG}/queue`)) {
+      log.push('queue');
+      fetched();
+    }
+  });
   let opens = 0;
-  await page.route('**/api/events', (route) => {
-    opens++;
-    return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+  // The first stream, once the page has fetched, comes from a server that
+  // runs another build; the page reloads into the build it serves.
+  await page.route('**/api/events', async (route) => {
+    const first = ++opens === 1;
+    if (first) await firstFetch;
+    await route.fulfill({ status: 200, contentType: 'text/event-stream', body: g.resyncFrame(first ? g.resync.entry : g.builtEntry()) });
   });
   await page.goto(`/${T}/queue`);
-  const queues = () => seen.filter((u) => u.pathname.endsWith('/queue')).length;
-  // The first fetch, then one refetch per open: the reconnect backoff
-  // (at least 500ms) outlasts live()'s 300ms debounce, so none merge.
-  await expect.poll(() => opens).toBeGreaterThan(1);
-  await expect.poll(queues).toBeGreaterThanOrEqual(3);
+  const loads = () => log.filter((l) => l === 'page').length;
+  await expect.poll(loads).toBe(2);
+  const reload = log.lastIndexOf('page');
+  expect(log.slice(0, reload)).toEqual(['page', 'queue']);
+  // The reloaded page runs the server's build, so its resync refetches.
+  await expect.poll(() => log.slice(reload).filter((l) => l === 'queue').length).toBeGreaterThanOrEqual(2);
+  expect(loads()).toBe(2);
 });
 
 test('the user menu shows the version the server reports', async ({ page }) => {
@@ -1488,7 +1529,7 @@ test.describe('pulls load more', () => {
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
-        body: `event: review\ndata: ${JSON.stringify(g.liveEvent)}\n\n`,
+        body: `event: review\ndata: ${JSON.stringify({ ...g.liveEvent, account: g.SLUG })}\n\n`,
       });
     });
     await page.goto(`/${T}/pulls`);

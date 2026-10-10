@@ -21,7 +21,7 @@ import (
 func testHub(t *testing.T) (*hub, *configfile.File) {
 	t.Helper()
 	f := testFile(t)
-	return newHub(configfile.NewCurrent(f), slog.New(slog.DiscardHandler)), f
+	return newHub(configfile.NewCurrent(f), slog.New(slog.DiscardHandler), testEntry), f
 }
 
 func TestHubPublishFiltersByAccount(t *testing.T) {
@@ -101,14 +101,15 @@ func sseLine(t *testing.T, r *bufio.Reader) string {
 
 // expectResync reads the frame every stream opens with: a resync, since
 // whatever happened before this connection (a previous one dropping, or
-// the page's first fetch racing it) was never delivered.
+// the page's first fetch racing it) was never delivered. It names the
+// dashboard's entry script.
 func expectResync(t *testing.T, br *bufio.Reader) {
 	t.Helper()
 	if got := sseLine(t, br); got != "event: resync" {
 		t.Fatalf("first frame = %q, want a resync", got)
 	}
-	if got := sseLine(t, br); got != "data: {}" {
-		t.Fatalf("resync data = %q", got)
+	if got, want := sseLine(t, br), `data: {"entry":"`+testEntry+`"}`; got != want {
+		t.Fatalf("resync data = %q, want %q", got, want)
 	}
 }
 

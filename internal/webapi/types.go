@@ -284,6 +284,16 @@ type Event struct {
 	ReviewID *string         `json:"reviewId"`
 }
 
+// Resync is the data of the resync event, which opens every stream and
+// stands for events the client missed: it refetches everything it shows.
+type Resync struct {
+	// Entry is the path of the dashboard's entry script, as the build
+	// manifest names it, "" when the server serves a UI built without one.
+	// A tab that booted from another script runs another build of the
+	// dashboard, and reloads instead.
+	Entry string `json:"entry"`
+}
+
 // ErrorBody is every API error.
 type ErrorBody struct {
 	Code    ErrorCode `json:"code"`

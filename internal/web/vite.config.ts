@@ -7,5 +7,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // dist/.vite/manifest.json names the entry script, which the server
+    // tells every event stream so a tab running another build reloads.
+    manifest: true,
   },
 });

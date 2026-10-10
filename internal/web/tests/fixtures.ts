@@ -5,6 +5,7 @@
 // (200, text/html) for it, which is rarely what the page under test expects.
 import { test as base, expect } from '@playwright/test';
 import type { Me, SignInProvider } from '../src/lib/types';
+import { builtEntry, resyncFrame } from './golden';
 
 export const DEFAULT_ME: Me = {
   user: { id: 'u1', displayName: 'Ada Lovelace', email: 'ada@example.com', avatarUrl: '' },
@@ -24,10 +25,12 @@ export const test = base.extend<Fixtures>({
   // Auto-mock /api/events for every test: events.svelte.ts opens a real
   // EventSource against it, and against an unmocked preview server that's an
   // HTML document, not an event stream, which just churns the reconnect
-  // backoff in the background for the life of the test.
+  // backoff in the background for the life of the test. Like the server, the
+  // mock opens every stream with a resync naming the build under test; it
+  // then ends the stream, so the page refetches on every reopen.
   page: async ({ page }, use) => {
     await page.route('**/api/events', (route) =>
-      route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }),
+      route.fulfill({ status: 200, contentType: 'text/event-stream', body: resyncFrame(builtEntry()) }),
     );
     await use(page);
   },
