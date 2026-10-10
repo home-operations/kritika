@@ -335,14 +335,27 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 }
 
 // repoSettings is s as the API serves it; the slices the dashboard reads
-// are never null.
+// are never null, and each skill scope's load is the one it applies.
 func repoSettings(s configfile.Settings) RepoSettings {
 	return RepoSettings{
 		Enabled: s.Enabled, Models: s.Models, Filters: s.Filters,
 		Ignore: s.Ignore, SettleSeconds: int64(s.Settle.Seconds()), MaxAutoReviews: s.MaxAutoReviews,
 		MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
-		Review:        s.Review, Confidence: s.Confidence, Skills: s.Skills, Agent: s.Agent, Limits: s.Limits,
+		Review:        s.Review, Confidence: s.Confidence, Skills: loadedScopes(s.Skills), Agent: s.Agent, Limits: s.Limits,
 	}
+}
+
+func loadedScopes(s configfile.Skills) configfile.Skills {
+	if len(s.Scope) == 0 {
+		return s
+	}
+	scope := make(map[string]configfile.SkillScope, len(s.Scope))
+	for name, sc := range s.Scope {
+		sc.Load = new(sc.Loads())
+		scope[name] = sc
+	}
+	s.Scope = scope
+	return s
 }
 
 func indexRuns(rows []store.IndexRunRow) []IndexRun {

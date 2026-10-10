@@ -84,7 +84,7 @@
               "expr": "pr.headRef.startsWith(\"renovate/\")"
             }
           ],
-          "load": false
+          "load": true
         }
       }
     },
@@ -179,7 +179,7 @@
                 "expr": "pr.headRef.startsWith(\"renovate/\")"
               }
             ],
-            "load": false
+            "load": true
           }
         }
       },

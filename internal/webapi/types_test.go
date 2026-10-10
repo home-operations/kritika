@@ -80,7 +80,7 @@ var goldenRepoSettings = RepoSettings{
 	Limits: configfile.Limits{Concurrency: 2},
 	Skills: configfile.Skills{
 		Paths: []string{".agents/skills", ".claude/skills"},
-		Scope: map[string]configfile.SkillScope{"review-renovate-pr": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}}},
+		Scope: map[string]configfile.SkillScope{"review-renovate-pr": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}, Load: new(true)}},
 	},
 }
 
@@ -314,5 +314,24 @@ func TestTurnTools(t *testing.T) {
 				t.Errorf("got %s, want %s", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestRepoSettingsSkillLoads: each skill scope is served with the load it
+// applies, written or decided by its paths and conditions, without
+// writing through to the settings.
+func TestRepoSettingsSkillLoads(t *testing.T) {
+	scope := map[string]configfile.SkillScope{
+		"paths": {Paths: []string{"db/**"}}, "conditions": {When: []configfile.When{{Expr: "pr.draft"}}}, "neither": {},
+		"off": {Paths: []string{"db/**"}, Load: new(false)}, "on": {Load: new(true)},
+	}
+	got := repoSettings(configfile.Settings{Skills: configfile.Skills{Scope: scope}}).Skills.Scope
+	for name, want := range map[string]bool{"paths": true, "conditions": true, "neither": false, "off": false, "on": true} {
+		if load := got[name].Load; load == nil || *load != want {
+			t.Errorf("%s: load = %v, want %v", name, load != nil && *load, want)
+		}
+	}
+	if scope["paths"].Load != nil {
+		t.Error("serving the settings wrote a load into their scope")
 	}
 }

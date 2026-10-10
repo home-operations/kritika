@@ -106,11 +106,14 @@ func TestOfferedSkills(t *testing.T) {
 	t.Parallel()
 	found := []Skill{{Name: "review-go", Description: "Go."}, {Name: "db", Description: "Migrations."}, {Name: "renovate", Description: "Bumps."}}
 	scope := map[string]configfile.SkillScope{
-		"db":       {Paths: []string{"db/**", "**/*.sql"}},
-		"unknown":  {Paths: []string{"nothing/**"}},
-		"renovate": {Load: true},
-		"huge":     {Load: true, Paths: []string{"db/**"}},
+		"db":          {Paths: []string{"db/**", "**/*.sql"}, Load: new(false)},
+		"unknown":     {Paths: []string{"nothing/**"}},
+		"renovate":    {Load: new(true)},
+		"huge":        {Load: new(true), Paths: []string{"db/**"}},
+		"go":          {Paths: []string{"**/*.go"}},
+		"conditioned": {When: []configfile.When{{Expr: `pr.headRef.startsWith("renovate/")`}}},
 	}
+	scoped := []Skill{{Name: "go", Description: "Go."}, {Name: "conditioned", Description: "Bumps."}}
 	// The loaded skills' budget holds the whole of one at most.
 	huge := Skill{Name: "huge", Description: "Big.", Text: strings.Repeat("h", MaxSkillLoadedBytes/2+1)}
 	// Each of the big skills takes 1000 bytes of the listing, so four fit.
@@ -149,6 +152,8 @@ func TestOfferedSkills(t *testing.T) {
 			name: "a skill that does not apply takes no room and is not counted", found: append([]Skill{{Name: "db", Description: strings.Repeat("z", 1000)}}, big...),
 			changed: []string{"main.go"}, want: []string{"big-0", "big-1", "big-2", "big-3"}, wantLeft: 2,
 		},
+		{name: "a scope's paths or conditions load its skill", found: scoped, changed: []string{"main.go"}, wantLoaded: []string{"go", "conditioned"}},
+		{name: "a skill its paths keep from the change is not loaded", found: scoped, changed: []string{"db/x"}, wantLoaded: []string{"conditioned"}},
 		{name: "a loaded skill its paths keep from the change", found: []Skill{huge}, changed: []string{"main.go"}},
 		{name: "a loaded skill within the budget", found: []Skill{huge}, changed: []string{"db/x"}, wantLoaded: []string{"huge"}},
 		{

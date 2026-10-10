@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 )
@@ -66,7 +68,7 @@ func TestDecodeSpec(t *testing.T) {
 			wantErr: "a followup spec needs a base"},
 		{name: "a follow-up without a prompt", in: func() string { s := followUpSpec(); s.Prompt = nil; return encode(s) }(),
 			wantErr: "a followup spec needs a prompt"},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":23`, `"version":24`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":24`, `"version":25`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
@@ -128,6 +130,26 @@ func TestSpecRoundTripKeepsAgentFields(t *testing.T) {
 	if got.Agent.MaxSteps != 30 || got.Model.Model != "review" ||
 		got.Model.GatewayURL != "http://kritika-gateway:8082" || got.Prompt.PullRequest.Title != "Add b" || len(got.Prompt.Prior) != 1 {
 		t.Fatalf("round trip = %+v %+v %+v", got, got.Agent, got.Model)
+	}
+}
+
+// TestSpecRoundTripKeepsSkillLoads: a scope's load reaches the runner as
+// written, an unset one apart from false.
+func TestSpecRoundTripKeepsSkillLoads(t *testing.T) {
+	want := reviewSpec()
+	want.Prompt.Skills = &Skills{Paths: configfile.DefaultSkillPaths, Scope: map[string]configfile.SkillScope{
+		"unset": {Paths: []string{"db/**"}}, "off": {Paths: []string{"db/**"}, Load: new(false)}, "on": {Load: new(true)},
+	}}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecodeSpec(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Prompt.Skills.Scope, want.Prompt.Skills.Scope) {
+		t.Fatalf("scope = %+v, want %+v", got.Prompt.Skills.Scope, want.Prompt.Skills.Scope)
 	}
 }
 
