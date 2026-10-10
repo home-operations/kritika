@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.0.56](https://github.com/home-operations/kritika/compare/0.0.55...0.0.56) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **model:** resolve floating aliases from provider catalogs ([#847](https://github.com/home-operations/kritika/issues/847))
+
+### Features
+
+* **chatgpt:** add plan login, model aliases and usage reporting ([#846](https://github.com/home-operations/kritika/issues/846)) ([87a66b0](https://github.com/home-operations/kritika/commit/87a66b09a1d5a0702d1c0d26137dae603232a2a3))
+* **model:** resolve floating aliases from provider catalogs ([#847](https://github.com/home-operations/kritika/issues/847)) ([b81527e](https://github.com/home-operations/kritika/commit/b81527eb60b4bee0839febd26bfb91cd1133859b))
+
+
+### Bug Fixes
+
+* **web:** reload a dashboard tab left open through an upgrade, since its old code misreads the new API ([#843](https://github.com/home-operations/kritika/issues/843)) ([8ea4035](https://github.com/home-operations/kritika/commit/8ea4035cdfcb2dc7b3240306aaa9ac712e0afe7a))
+
+
+### Continuous Integration
+
+* **renovate:** remove the dispatch workflow ([2eee737](https://github.com/home-operations/kritika/commit/2eee737c8071ea081b9554663ca61a0cc017dc6a))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action actions/upload-artifact (v7.0.1 → v7.0.2) ([#838](https://github.com/home-operations/kritika/issues/838)) ([3ef06ca](https://github.com/home-operations/kritika/commit/3ef06caf42886afd9900f48135eadc302f388b52))
+
 ## [0.0.55](https://github.com/home-operations/kritika/compare/0.0.54...0.0.55) (2026-10-10)
 
 
