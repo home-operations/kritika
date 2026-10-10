@@ -39,6 +39,7 @@ export const attention = golden<T.Attention>('attention');
 export const rule = golden<T.Rule>('rule');
 export const usageSeries = golden<T.UsageSeries>('usage_series');
 export const liveEvent = golden<T.LiveEvent>('event');
+export const resync = golden<T.Resync>('resync');
 export const meta = golden<T.Meta>('meta');
 export const appInstallation = golden<T.AppInstallation>('app_installation');
 export const setupStatus = golden<T.SetupStatus>('setup_status');
@@ -56,6 +57,20 @@ export const diffWithHunk: T.ReviewDiff = {
 
 export function pageOf<V>(items: V[], nextCursor: string | null = null): T.Page<V> {
   return { items, nextCursor };
+}
+
+// builtEntry is the entry script the build manifest in dist/ names, as the
+// server reads it. It is read when called rather than when this file loads,
+// so it names the build the preview server serves.
+export function builtEntry(): string {
+  const manifest = JSON.parse(readFileSync(new URL('../dist/.vite/manifest.json', import.meta.url), 'utf8')) as Record<string, { file: string }>;
+  return manifest['index.html']!.file;
+}
+
+// resyncFrame is the frame a stream opens with, from a server whose
+// dashboard's entry script is entry.
+export function resyncFrame(entry: string): string {
+  return `event: resync\ndata: ${JSON.stringify({ ...resync, entry })}\n\n`;
 }
 
 type Body = unknown | ((url: URL) => unknown);

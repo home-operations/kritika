@@ -845,12 +845,20 @@ export interface InstanceQueue {
 }
 
 // One server-sent event's data; the SSE event name is its kind, plus
-// "resync" (data {}) when the client should refetch everything it shows.
+// "resync" (Resync) when the client should refetch everything it shows.
 export interface LiveEvent {
   kind: EventKind;
   account: string;
   id: string;
   reviewId: string | null;
+}
+
+// The data of the resync event, which opens every stream. entry is the
+// path of the dashboard's entry script, "" when the server serves a UI
+// built without the manifest; a tab that booted from another script runs
+// another build, and reloads instead.
+export interface Resync {
+  entry: string;
 }
 
 // The management API: actions, connections and the audit log.

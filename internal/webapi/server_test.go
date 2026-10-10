@@ -1,7 +1,9 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -51,6 +53,9 @@ type testServer struct {
 	h    http.Handler
 }
 
+// testEntry is the entry script the test UI's build manifest names.
+const testEntry = "assets/app-1.js"
+
 func newTestServer(t *testing.T, webURL string) *testServer {
 	t.Helper()
 	f := testFile(t)
@@ -64,10 +69,11 @@ func newTestServer(t *testing.T, webURL string) *testServer {
 		t.Fatalf("auth.New: %v", err)
 	}
 	ui := fstest.MapFS{
-		"index.html":       {Data: []byte("<!doctype html><title>kritika</title>")},
-		"assets/app-1.js":  {Data: []byte("console.log(1)")},
-		"favicon.svg":      {Data: []byte("<svg/>")},
-		"assets/app-1.css": {Data: []byte("body{}")},
+		"index.html":          {Data: []byte("<!doctype html><title>kritika</title>")},
+		"assets/app-1.js":     {Data: []byte("console.log(1)")},
+		"favicon.svg":         {Data: []byte("<svg/>")},
+		"assets/app-1.css":    {Data: []byte("body{}")},
+		".vite/manifest.json": {Data: []byte(`{"index.html":{"file":"` + testEntry + `","isEntry":true}}`)},
 	}
 	srv := New(Config{Current: cur, Auth: a, UI: ui, WebURL: u, Logger: slog.New(slog.DiscardHandler)})
 	return &testServer{srv: srv, file: f, h: srv.Handler()}
@@ -354,6 +360,51 @@ func TestUIServesFilesOnly(t *testing.T) {
 				t.Errorf("asset with a session cookie = %d, want 200", w.Code)
 			}
 		})
+	}
+}
+
+func TestUIEntry(t *testing.T) {
+	manifest := func(s string) fs.FS { return fstest.MapFS{".vite/manifest.json": {Data: []byte(s)}} }
+	tests := []struct {
+		name    string
+		ui      fs.FS
+		want    string
+		wantErr bool
+	}{
+		{name: "no UI"},
+		{name: "a UI built without a manifest", ui: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}},
+		{
+			name: "the chunk built for index.html",
+			ui:   manifest(`{"src/lang.ts":{"file":"assets/lang-B2.js"},"index.html":{"file":"assets/index-A1.js","isEntry":true}}`),
+			want: "assets/index-A1.js",
+		},
+		{name: "a manifest without index.html", ui: manifest(`{"src/lang.ts":{"file":"assets/lang-B2.js"}}`)},
+		{name: "a manifest that does not parse", ui: manifest(`{"index.html":`), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := uiEntry(tt.ui)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, want an error: %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("entry = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEventStreamNamesTheUIEntry: the server tells every stream which
+// build of the dashboard it serves, so a tab running another reloads.
+func TestEventStreamNamesTheUIEntry(t *testing.T) {
+	ts := newTestServer(t, "https://kritika.example")
+	ctx, cancel := context.WithCancel(t.Context())
+	// The stream still writes the frame it opens with, then ends with the
+	// request.
+	cancel()
+	w := ts.as(&auth.Principal{Admin: true}, httptest.NewRequestWithContext(ctx, "GET", "/api/events", nil))
+	if want := "event: resync\ndata: {\"entry\":\"" + testEntry + "\"}\n\n"; w.Body.String() != want {
+		t.Errorf("stream = %q, want %q", w.Body, want)
 	}
 }
 

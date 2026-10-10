@@ -32,6 +32,9 @@ type hub struct {
 	logger    *slog.Logger
 	heartbeat time.Duration
 	buffer    int
+	// resyncFrame is the frame every stream opens with, and is sent again
+	// when it missed events.
+	resyncFrame []byte
 	// stands, when set, is asked at every heartbeat whether the stream's
 	// session still stands; a stream whose session ended is closed, and
 	// the browser's reconnect is refused.
@@ -53,10 +56,18 @@ type client struct {
 	resync    chan struct{}
 }
 
-func newHub(current *configfile.Current, logger *slog.Logger) *hub {
+// newHub builds a hub whose resyncs name entry, the dashboard's entry
+// script (see Resync).
+func newHub(current *configfile.Current, logger *slog.Logger, entry string) *hub {
+	data, err := json.Marshal(Resync{Entry: entry})
+	if err != nil {
+		// A struct of one string always marshals.
+		panic(err)
+	}
 	return &hub{
 		current: current, logger: logger, heartbeat: heartbeatInterval, buffer: clientBuffer,
 		clients: map[*client]struct{}{}, done: make(chan struct{}),
+		resyncFrame: fmt.Appendf(nil, "event: resync\ndata: %s\n\n", data),
 	}
 }
 
@@ -150,8 +161,7 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 	// Every stream opens with a resync: events published while the browser
 	// was reconnecting, or between its first fetch and this stream opening,
 	// were never delivered to it.
-	resync := []byte("event: resync\ndata: {}\n\n")
-	frame := resync
+	frame := h.resyncFrame
 	for {
 		if !extend() {
 			return
@@ -169,7 +179,7 @@ func (h *hub) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-c.resync:
 			c.drain()
-			frame = resync
+			frame = h.resyncFrame
 		case e := <-c.events:
 			var err error
 			if frame, err = eventFrame(e); err != nil {

@@ -5,6 +5,7 @@
 // tab in lockstep a couple seconds later.
 import { toSignIn } from './api.svelte';
 import { basePath } from './base';
+import type { Resync } from './types';
 
 type Listener = (data: unknown) => void;
 
@@ -12,6 +13,15 @@ const listeners = new Map<string, Set<Listener>>();
 let source: EventSource | null = null;
 let attempt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
+let entry = '';
+
+// bootedFrom records the URL of the script this page booted from. main.ts,
+// the bundle's entry module, passes its own import.meta.url: Vite names the
+// file after the content of the whole bundle, so it says which build of the
+// dashboard this tab runs.
+export function bootedFrom(url: string): void {
+  entry = url;
+}
 
 // stream is what the topbar says of the connection. It only reads as down
 // once the stream has stayed closed for DOWN_AFTER_MS, so the routine
@@ -52,9 +62,23 @@ function dispatch(kind: string, e: MessageEvent<string>): void {
 // attachKind wires one server-sent event "kind" (the `event:` field) to
 // dispatch. Called once per kind per connection: on a fresh subscribe if
 // already connected, and for every known kind when a new EventSource opens
-// after a reconnect.
+// after a reconnect. connect() wires resync itself.
 function attachKind(kind: string): void {
+  if (kind === 'resync') return;
   source?.addEventListener(kind, (e) => dispatch(kind, e as MessageEvent<string>));
+}
+
+function isResync(v: unknown): v is Resync {
+  return typeof v === 'object' && v !== null && typeof (v as Resync).entry === 'string';
+}
+
+// runsOtherBuild reports whether a resync names an entry script other than
+// the one this page booted from. A resync that names none, from a server
+// whose UI was built without the manifest or from a release before resyncs
+// named one, is no reason to reload.
+function runsOtherBuild(data: unknown): boolean {
+  if (!entry || !isResync(data) || !data.entry) return false;
+  return new URL(data.entry, document.baseURI).href !== entry;
 }
 
 function scheduleReconnect(): void {
@@ -82,13 +106,23 @@ async function probeSession(): Promise<void> {
 
 function connect(): void {
   source = new EventSource(`${basePath}/api/events`);
-  // Anything published while this stream was down, or before it first
-  // opened, never reached it: every open is a resync. The server also opens
-  // each stream with one; live() debounces the pair into one refetch.
   source.addEventListener('open', () => {
     attempt = 0;
     clearDown();
-    for (const fn of listeners.get('resync') ?? []) fn({});
+  });
+  // The server opens every stream with a resync, since anything published
+  // while the stream was down, or before it first opened, never reached it,
+  // and sends another when the stream falls behind. A resync naming another
+  // build means the server was upgraded under this tab, whose code may no
+  // longer fit its API: the tab reloads rather than refetch.
+  source.addEventListener('resync', (e) => {
+    const data = parseData(e as MessageEvent<string>);
+    if (runsOtherBuild(data)) {
+      closeEvents();
+      location.reload();
+      return;
+    }
+    for (const fn of listeners.get('resync') ?? []) fn(data);
   });
   // EventSource retries on its own after 'error', but only at a fixed
   // interval; close it and drive the reconnect ourselves so the backoff
