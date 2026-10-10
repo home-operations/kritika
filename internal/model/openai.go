@@ -42,7 +42,8 @@ type OpenAIConfig struct {
 	// ReportsModel.
 	OpenRouter bool
 	// ReportsModel trusts the response's model field to name the model
-	// that answered, as kritika's model gateway sets it.
+	// that answered and carries opaque ChatGPT output through kritika's
+	// model gateway.
 	ReportsModel bool
 	// OpenCode names the step's conversation in the header OpenCode Go
 	// and Zen route and cache prompts by; without it they refuse the
@@ -77,6 +78,7 @@ type OpenAI struct {
 	client       openai.Client
 	openRouter   bool
 	reportsModel bool
+	gateway      bool
 	openCode     bool
 	pricing      Pricing
 	now          func() time.Time
@@ -108,7 +110,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	}
 	return &OpenAI{
 		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel,
-		openCode: cfg.OpenCode, pricing: cfg.Pricing, now: time.Now,
+		gateway: cfg.ReportsModel, openCode: cfg.OpenCode, pricing: cfg.Pricing, now: time.Now,
 	}, nil
 }
 
@@ -213,8 +215,9 @@ func (o *OpenAI) step(
 	// Cost and the serving provider are OpenRouter's additions to the
 	// response, which the SDK's types do not carry.
 	var extra struct {
-		Provider string `json:"provider"`
-		Usage    struct {
+		Provider      string            `json:"provider"`
+		ChatGPTOutput []json.RawMessage `json:"kritika_chatgpt_output"`
+		Usage         struct {
 			Cost *float64 `json:"cost"`
 		} `json:"usage"`
 	}
@@ -224,6 +227,9 @@ func (o *OpenAI) step(
 		}
 	}
 	out.Upstream = extra.Provider
+	if o.gateway {
+		out.ChatGPTOutput = extra.ChatGPTOutput
+	}
 	if extra.Usage.Cost != nil {
 		out.CostUSD = *extra.Usage.Cost
 	} else {
@@ -261,7 +267,11 @@ func (o *OpenAI) params(req StepRequest) (openai.ChatCompletionNewParams, error)
 		p.Messages = append(p.Messages, openai.SystemMessage(req.System))
 	}
 	for _, m := range req.Messages {
-		p.Messages = append(p.Messages, openAIMessages(m)...)
+		messages := openAIMessages(m)
+		if o.gateway && m.Role == RoleAssistant && len(m.ChatGPTOutput) > 0 {
+			messages[0].OfAssistant.SetExtraFields(map[string]any{"kritika_chatgpt_output": m.ChatGPTOutput})
+		}
+		p.Messages = append(p.Messages, messages...)
 	}
 	if req.MaxTokens > 0 {
 		// OpenAI's own API has deprecated max_tokens; OpenRouter documents

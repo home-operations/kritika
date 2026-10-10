@@ -43,10 +43,11 @@ type toolJSON struct {
 }
 
 type messageJSON struct {
-	Role        model.Role   `json:"role"`
-	Text        string       `json:"text,omitempty"`
-	ToolCalls   []callJSON   `json:"toolCalls,omitempty"`
-	ToolResults []resultJSON `json:"toolResults,omitempty"`
+	Role          model.Role        `json:"role"`
+	Text          string            `json:"text,omitempty"`
+	ToolCalls     []callJSON        `json:"toolCalls,omitempty"`
+	ToolResults   []resultJSON      `json:"toolResults,omitempty"`
+	ChatGPTOutput []json.RawMessage `json:"chatgptOutput,omitempty"`
 }
 
 type callJSON struct {
@@ -69,7 +70,7 @@ func (c Conversation) MarshalJSON() ([]byte, error) {
 		out.Tools[i] = toolJSON{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema}
 	}
 	for i, m := range c.Messages {
-		msg := messageJSON{Role: m.Role, Text: m.Text}
+		msg := messageJSON{Role: m.Role, Text: m.Text, ChatGPTOutput: m.ChatGPTOutput}
 		for _, call := range m.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, callJSON{ID: call.ID, Name: call.Name, Input: string(call.Input)})
 		}
@@ -97,7 +98,7 @@ func (c *Conversation) UnmarshalJSON(b []byte) error {
 		out.Tools[i] = model.ToolDef{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema}
 	}
 	for i, m := range in.Messages {
-		msg := model.Message{Role: m.Role, Text: m.Text}
+		msg := model.Message{Role: m.Role, Text: m.Text, ChatGPTOutput: m.ChatGPTOutput}
 		for _, call := range m.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, model.ToolCall{ID: call.ID, Name: call.Name, Input: json.RawMessage(call.Input)})
 		}

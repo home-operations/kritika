@@ -274,7 +274,9 @@ func (fb *fallback) end(result *Result) {
 func (r Run) endedWith(toolDefs []model.ToolDef, messages []model.Message, resp model.StepResponse) *Conversation {
 	return &Conversation{
 		System: r.System, Tools: toolDefs, Tokens: resp.Usage.Prompt() + resp.Usage.Output,
-		Messages: append(slices.Clone(messages), model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls}),
+		Messages: append(slices.Clone(messages), model.Message{
+			Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls, ChatGPTOutput: resp.ChatGPTOutput,
+		}),
 	}
 }
 
@@ -369,24 +371,25 @@ func (r Run) Do(ctx context.Context) (result Result) {
 
 		event := StepEvent{Index: step, Usage: resp.Usage}
 		cutOffs = cutOffStreak(cutOffs, resp)
+		assistant := model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls, ChatGPTOutput: resp.ChatGPTOutput}
 
 		if len(resp.ToolCalls) == 0 {
 			event.Duration = time.Since(start)
 			r.reportStep(event)
 
-			text := cmp.Or(resp.Text, noResponseText)
+			assistant.Text = cmp.Or(resp.Text, noResponseText)
 			if forced {
 				if forcedSteps > forcedRetries {
 					return forcedEnd(lastStep)
 				}
 				// The next step is told to submit again, in the user
 				// message the loop's head completes.
-				messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
+				messages = append(messages, assistant)
 				messages = append(messages, model.Message{Role: model.RoleUser})
 				continue
 			}
 			if 0 < cutOffs && cutOffs <= cutOffRetries {
-				messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
+				messages = append(messages, assistant)
 				messages = append(messages, model.Message{Role: model.RoleUser, Text: r.cutOffText(limits.MaxOutputTokensPerStep)})
 				continue
 			}
@@ -395,7 +398,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 				return result
 			}
 			nudged = true
-			messages = append(messages, model.Message{Role: model.RoleAssistant, Text: text})
+			messages = append(messages, assistant)
 			messages = append(messages, model.Message{Role: model.RoleUser, Text: r.nudgeText()})
 			continue
 		}
@@ -459,7 +462,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 			return forcedEnd(lastStep)
 		}
 
-		messages = append(messages, model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls})
+		messages = append(messages, assistant)
 		messages = append(messages, model.Message{Role: model.RoleUser, ToolResults: toolResults})
 	}
 }

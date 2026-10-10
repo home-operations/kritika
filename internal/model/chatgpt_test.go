@@ -181,6 +181,9 @@ func TestChatGPTRequest(t *testing.T) {
 	if b["prompt_cache_key"] != "run-1" {
 		t.Fatalf("prompt_cache_key = %v, want the session", b["prompt_cache_key"])
 	}
+	if string(mustJSON(b["include"])) != `["reasoning.encrypted_content"]` {
+		t.Fatalf("include = %v", b["include"])
+	}
 	if field(b, "reasoning", "effort") != "high" || b["tool_choice"] != "required" {
 		t.Fatalf("reasoning = %v, tool_choice = %v", b["reasoning"], b["tool_choice"])
 	}
@@ -453,6 +456,11 @@ func TestChatGPTMasksToken(t *testing.T) {
 			for _, call := range resp.ToolCalls {
 				if strings.Contains(string(call.Input), "at-secret") {
 					t.Fatal("tool input contains token")
+				}
+			}
+			for _, item := range resp.ChatGPTOutput {
+				if strings.Contains(string(item), "at-secret") {
+					t.Fatal("replay output contains token")
 				}
 			}
 		})

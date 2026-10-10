@@ -14,6 +14,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
@@ -140,6 +141,9 @@ func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, erro
 	for i := range resp.ToolCalls {
 		resp.ToolCalls[i].Input = json.RawMessage(mask(string(resp.ToolCalls[i].Input)))
 	}
+	for i := range resp.ChatGPTOutput {
+		resp.ChatGPTOutput[i] = json.RawMessage(mask(string(resp.ChatGPTOutput[i])))
+	}
 	if err != nil {
 		err = &chatGPTError{err: err, text: mask(err.Error())}
 	}
@@ -231,6 +235,7 @@ func (c *ChatGPT) response(r responses.Response, modelID string, done []response
 	}
 	out := StepResponse{Stop: StopEndTurn, Model: modelID}
 	for _, item := range r.Output {
+		out.ChatGPTOutput = append(out.ChatGPTOutput, json.RawMessage(item.RawJSON()))
 		switch item.Type {
 		case messageItem:
 			for _, part := range item.AsMessage().Content {
@@ -318,7 +323,9 @@ func (c *ChatGPT) pausedError() error {
 // messages, and the tools in one namespace. The session keys the prompt
 // cache, since every step resends the whole conversation unstored.
 func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
-	p := responses.ResponseNewParams{Store: openai.Bool(false)}
+	p := responses.ResponseNewParams{
+		Store: openai.Bool(false), Include: []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent},
+	}
 	if req.System != "" {
 		p.Instructions = openai.String(req.System)
 	}
@@ -368,6 +375,13 @@ func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
 // namespace they were made in. A tool error is marked in the output's
 // text, as chat completions marks it.
 func chatGPTItems(m Message) []responses.ResponseInputItemUnionParam {
+	if m.Role == RoleAssistant && len(m.ChatGPTOutput) > 0 {
+		items := make([]responses.ResponseInputItemUnionParam, 0, len(m.ChatGPTOutput))
+		for _, item := range m.ChatGPTOutput {
+			items = append(items, param.Override[responses.ResponseInputItemUnionParam](item))
+		}
+		return items
+	}
 	items := make([]responses.ResponseInputItemUnionParam, 0, 1+len(m.ToolCalls)+len(m.ToolResults))
 	for _, r := range m.ToolResults {
 		content := r.Content

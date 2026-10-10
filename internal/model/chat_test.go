@@ -38,12 +38,13 @@ func fakeGateway(t *testing.T, resp StepResponse) (*httptest.Server, *[]StepRequ
 
 func TestChatRoundTrip(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
+	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
 	sent := StepRequest{
 		Model:  "review",
 		System: "You are kritika.",
 		Messages: []Message{
 			{Role: RoleUser, Text: "Review this diff."},
-			{Role: RoleAssistant, Text: "Reading two files.", ToolCalls: []ToolCall{
+			{Role: RoleAssistant, Text: "Reading two files.", ChatGPTOutput: output, ToolCalls: []ToolCall{
 				{ID: "c1", Name: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
 				{ID: "c2", Name: "run", Input: json.RawMessage(`{"command":"rg","args":["x"]}`)},
 			}},
@@ -58,13 +59,14 @@ func TestChatRoundTrip(t *testing.T) {
 		MaxTokens: 8192,
 	}
 	answer := StepResponse{
-		Text:      "Submitting.",
-		ToolCalls: []ToolCall{{ID: "s1", Name: "submit_review", Input: json.RawMessage(`{"summary":{"take":"ok"}}`)}},
-		Stop:      StopToolUse,
-		Usage:     Usage{Input: 900, CacheRead: 4000, CacheWrite: 100, Output: 55},
-		CostUSD:   0.0125,
-		Model:     "openai/gpt-6-sol",
-		Upstream:  "OpenAI",
+		ChatGPTOutput: output,
+		Text:          "Submitting.",
+		ToolCalls:     []ToolCall{{ID: "s1", Name: "submit_review", Input: json.RawMessage(`{"summary":{"take":"ok"}}`)}},
+		Stop:          StopToolUse,
+		Usage:         Usage{Input: 900, CacheRead: 4000, CacheWrite: 100, Output: 55},
+		CostUSD:       0.0125,
+		Model:         "openai/gpt-6-sol",
+		Upstream:      "OpenAI",
 	}
 	for _, choice := range []ToolChoice{{Mode: ToolChoiceAuto}, {Mode: ToolChoiceRequired}, {Mode: ToolChoiceTool, Name: "submit_review"}} {
 		t.Run(string(choice.Mode), func(t *testing.T) {
@@ -95,6 +97,29 @@ func TestChatRoundTrip(t *testing.T) {
 			}
 			if !reflect.DeepEqual(decoded, req) {
 				t.Fatalf("decoded request = %+v\nwant %+v", decoded, req)
+			}
+		})
+	}
+}
+
+func TestOpenAIIgnoresChatGPTOutput(t *testing.T) {
+	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
+	for _, tt := range []struct {
+		name       string
+		openRouter bool
+	}{{"OpenAI", false}, {"OpenRouter", true}} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, got := fakeGateway(t, StepResponse{Text: "ok", Stop: StopEndTurn, ChatGPTOutput: output})
+			client, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "key", OpenRouter: tt.openRouter})
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := client.Step(t.Context(), StepRequest{Model: "m", Messages: []Message{{Role: RoleAssistant, Text: "reading", ChatGPTOutput: output}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len((*got)[0].Messages[0].ChatGPTOutput) > 0 || len(resp.ChatGPTOutput) > 0 {
+				t.Fatal("a provider's chat adapter carried ChatGPT output")
 			}
 		})
 	}

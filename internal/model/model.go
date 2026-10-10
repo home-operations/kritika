@@ -80,6 +80,9 @@ type Message struct {
 	Text        string
 	ToolCalls   []ToolCall
 	ToolResults []ToolResult
+	// ChatGPTOutput preserves Responses output items, including encrypted
+	// reasoning, for replay on the ChatGPT route. Other providers ignore it.
+	ChatGPTOutput []json.RawMessage
 }
 
 // ToolDef describes a tool the model may call. InputSchema is a JSON Schema
@@ -208,8 +211,10 @@ type StepRequest struct {
 type StepResponse struct {
 	Text      string
 	ToolCalls []ToolCall
-	Stop      StopReason
-	Usage     Usage
+	// ChatGPTOutput is the ordered Responses output to replay with this turn.
+	ChatGPTOutput []json.RawMessage
+	Stop          StopReason
+	Usage         Usage
 	// CostUSD is the provider's reported cost, else the cost Pricing gives,
 	// else zero.
 	CostUSD float64
