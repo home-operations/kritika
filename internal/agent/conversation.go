@@ -43,11 +43,11 @@ type toolJSON struct {
 }
 
 type messageJSON struct {
-	Role          model.Role        `json:"role"`
-	Text          string            `json:"text,omitempty"`
-	ToolCalls     []callJSON        `json:"toolCalls,omitempty"`
-	ToolResults   []resultJSON      `json:"toolResults,omitempty"`
-	ChatGPTOutput []json.RawMessage `json:"chatgptOutput,omitempty"`
+	Role          model.Role           `json:"role"`
+	Text          string               `json:"text,omitempty"`
+	ToolCalls     []callJSON           `json:"toolCalls,omitempty"`
+	ToolResults   []resultJSON         `json:"toolResults,omitempty"`
+	ChatGPTOutput *model.ChatGPTOutput `json:"chatgptOutput,omitempty"`
 }
 
 type callJSON struct {

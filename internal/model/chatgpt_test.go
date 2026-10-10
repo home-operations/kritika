@@ -50,6 +50,8 @@ func completed(output, usage string) string {
 const (
 	textOutput    = `[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello","annotations":[]}]}]`
 	responseUsage = `{"input_tokens":700,"input_tokens_details":{"cached_tokens":500},"output_tokens":59,"output_tokens_details":{"reasoning_tokens":40},"total_tokens":759}`
+	// testPlan is the provider newTestChatGPT serves.
+	testPlan = "plan"
 )
 
 func newTestChatGPT(t *testing.T, srv *httptest.Server, src TokenSource) *ChatGPT {
@@ -57,7 +59,7 @@ func newTestChatGPT(t *testing.T, srv *httptest.Server, src TokenSource) *ChatGP
 	if src == nil {
 		src = &tokens{token: "at-1"}
 	}
-	c, err := NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Tokens: src})
+	c, err := NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Provider: testPlan, Tokens: src})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,9 +460,11 @@ func TestChatGPTMasksToken(t *testing.T) {
 					t.Fatal("tool input contains token")
 				}
 			}
-			for _, item := range resp.ChatGPTOutput {
-				if strings.Contains(string(item), "at-secret") {
-					t.Fatal("replay output contains token")
+			if out := resp.ChatGPTOutput; out != nil {
+				for _, item := range out.Items {
+					if strings.Contains(string(item), "at-secret") {
+						t.Fatal("replay output contains token")
+					}
 				}
 			}
 		})

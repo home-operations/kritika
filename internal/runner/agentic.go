@@ -416,7 +416,7 @@ func runAgentic(
 // of a split review its steps are for, or none when part is 0.
 func gatewayStepper(p Spec, secrets Secrets, part int) (model.Stepper, error) {
 	s, err := model.NewOpenAI(model.OpenAIConfig{
-		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true,
+		BaseURL: strings.TrimSuffix(p.Model.GatewayURL, "/") + "/v1", APIKey: secrets.GatewayToken, ReportsModel: true, Gateway: true,
 		Retries: gatewayRetries, RequestTimeout: model.GatewayRequestTimeout, Part: part,
 	})
 	if err != nil {

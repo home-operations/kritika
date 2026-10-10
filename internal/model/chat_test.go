@@ -38,7 +38,7 @@ func fakeGateway(t *testing.T, resp StepResponse) (*httptest.Server, *[]StepRequ
 
 func TestChatRoundTrip(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`)
-	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
+	output := &ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	sent := StepRequest{
 		Model:  "review",
 		System: "You are kritika.",
@@ -71,7 +71,7 @@ func TestChatRoundTrip(t *testing.T) {
 	for _, choice := range []ToolChoice{{Mode: ToolChoiceAuto}, {Mode: ToolChoiceRequired}, {Mode: ToolChoiceTool, Name: "submit_review"}} {
 		t.Run(string(choice.Mode), func(t *testing.T) {
 			srv, got := fakeGateway(t, answer)
-			c, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "krk_token", ReportsModel: true})
+			c, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "krk_token", ReportsModel: true, Gateway: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,14 +103,20 @@ func TestChatRoundTrip(t *testing.T) {
 }
 
 func TestOpenAIIgnoresChatGPTOutput(t *testing.T) {
-	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
+	output := &ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	for _, tt := range []struct {
-		name       string
-		openRouter bool
-	}{{"OpenAI", false}, {"OpenRouter", true}} {
+		name string
+		cfg  OpenAIConfig
+	}{
+		{"OpenAI", OpenAIConfig{}},
+		{"OpenRouter", OpenAIConfig{OpenRouter: true}},
+		{"a model report alone", OpenAIConfig{ReportsModel: true}},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, got := fakeGateway(t, StepResponse{Text: "ok", Stop: StopEndTurn, ChatGPTOutput: output})
-			client, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "key", OpenRouter: tt.openRouter})
+			cfg := tt.cfg
+			cfg.BaseURL, cfg.APIKey = srv.URL+"/v1", "key"
+			client, err := NewOpenAI(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +124,7 @@ func TestOpenAIIgnoresChatGPTOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len((*got)[0].Messages[0].ChatGPTOutput) > 0 || len(resp.ChatGPTOutput) > 0 {
+			if (*got)[0].Messages[0].ChatGPTOutput != nil || resp.ChatGPTOutput != nil {
 				t.Fatal("a provider's chat adapter carried ChatGPT output")
 			}
 		})

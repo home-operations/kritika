@@ -14,7 +14,7 @@ import (
 // it encodes and decodes to itself, a malformed tool input included.
 func TestRunKeepsItsConversation(t *testing.T) {
 	submit := toolCall("2", "submit_review", validSubmitInput)
-	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
+	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	st := &scriptedStepper{steps: []model.StepResponse{
 		{ToolCalls: []model.ToolCall{toolCall("1", "grep", `{"pattern":`)}, ChatGPTOutput: output},
 		{Text: "Done.", ToolCalls: []model.ToolCall{submit}, ChatGPTOutput: output, Usage: model.Usage{Input: 100, CacheRead: 900, Output: 50}},
@@ -44,7 +44,7 @@ func TestRunKeepsItsConversation(t *testing.T) {
 		t.Fatalf("malformed input = %s", back.Messages[1].ToolCalls[0].Input)
 	}
 	if !reflect.DeepEqual(back.Messages[1].ChatGPTOutput, output) {
-		t.Fatalf("replay output = %s", back.Messages[1].ChatGPTOutput)
+		t.Fatalf("replay output = %+v", back.Messages[1].ChatGPTOutput)
 	}
 
 	unsubmitted := Run{Stepper: &scriptedStepper{}, Model: "m", User: "u", Submit: testSubmitDef}.Do(t.Context())
@@ -58,7 +58,7 @@ func TestRunKeepsItsConversation(t *testing.T) {
 // text, and keeps the longer conversation in turn.
 func TestRunCarriesOnAConversation(t *testing.T) {
 	grep := &fakeTool{name: "grep", output: "hit"}
-	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
+	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	carried := &Conversation{
 		System: "Review it.", Tools: Run{Tools: []Tool{grep}, Submit: testSubmitDef}.ToolDefs(), Tokens: 500,
 		Messages: []model.Message{
@@ -104,7 +104,7 @@ func TestRunCarriesOnAConversation(t *testing.T) {
 }
 
 func TestRunRetainsChatGPTOutput(t *testing.T) {
-	output := []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}
+	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	for _, tt := range []struct {
 		name   string
 		first  model.StepResponse
@@ -124,7 +124,7 @@ func TestRunRetainsChatGPTOutput(t *testing.T) {
 				t.Fatalf("stop = %s after %d calls", res.Stop, len(st.calls))
 			}
 			if got := st.calls[1].Messages[1].ChatGPTOutput; !reflect.DeepEqual(got, output) {
-				t.Fatalf("replay output = %s, want %s", got, output)
+				t.Fatalf("replay output = %+v, want %+v", got, output)
 			}
 		})
 	}

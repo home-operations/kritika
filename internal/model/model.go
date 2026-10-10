@@ -80,9 +80,18 @@ type Message struct {
 	Text        string
 	ToolCalls   []ToolCall
 	ToolResults []ToolResult
-	// ChatGPTOutput preserves Responses output items, including encrypted
-	// reasoning, for replay on the ChatGPT route. Other providers ignore it.
-	ChatGPTOutput []json.RawMessage
+	// ChatGPTOutput preserves the turn's Responses output for replay on
+	// the ChatGPT route. Other providers ignore it.
+	ChatGPTOutput *ChatGPTOutput
+}
+
+// ChatGPTOutput is a turn's Responses output items in the order the
+// ChatGPT route returned them. Their encrypted reasoning can be read back
+// only by the account that produced it, so Provider names that account's
+// provider.
+type ChatGPTOutput struct {
+	Provider string            `json:"provider"`
+	Items    []json.RawMessage `json:"items"`
 }
 
 // ToolDef describes a tool the model may call. InputSchema is a JSON Schema
@@ -211,8 +220,8 @@ type StepRequest struct {
 type StepResponse struct {
 	Text      string
 	ToolCalls []ToolCall
-	// ChatGPTOutput is the ordered Responses output to replay with this turn.
-	ChatGPTOutput []json.RawMessage
+	// ChatGPTOutput is the output to replay with this turn.
+	ChatGPTOutput *ChatGPTOutput
 	Stop          StopReason
 	Usage         Usage
 	// CostUSD is the provider's reported cost, else the cost Pricing gives,

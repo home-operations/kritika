@@ -42,9 +42,11 @@ type OpenAIConfig struct {
 	// ReportsModel.
 	OpenRouter bool
 	// ReportsModel trusts the response's model field to name the model
-	// that answered and carries opaque ChatGPT output through kritika's
-	// model gateway.
+	// that answered, as kritika's model gateway sets it.
 	ReportsModel bool
+	// Gateway carries the ChatGPT output kritika's model gateway returns
+	// with a turn back to it on the turn's later steps.
+	Gateway bool
 	// OpenCode names the step's conversation in the header OpenCode Go
 	// and Zen route and cache prompts by; without it they refuse the
 	// request.
@@ -110,7 +112,7 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	}
 	return &OpenAI{
 		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel,
-		gateway: cfg.ReportsModel, openCode: cfg.OpenCode, pricing: cfg.Pricing, now: time.Now,
+		gateway: cfg.Gateway, openCode: cfg.OpenCode, pricing: cfg.Pricing, now: time.Now,
 	}, nil
 }
 
@@ -215,11 +217,11 @@ func (o *OpenAI) step(
 	// Cost and the serving provider are OpenRouter's additions to the
 	// response, which the SDK's types do not carry.
 	var extra struct {
-		Provider      string            `json:"provider"`
-		ChatGPTOutput []json.RawMessage `json:"kritika_chatgpt_output"`
-		Usage         struct {
+		Provider string `json:"provider"`
+		Usage    struct {
 			Cost *float64 `json:"cost"`
 		} `json:"usage"`
+		chatGPTCarry
 	}
 	if raw := cc.RawJSON(); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &extra); err != nil {
@@ -268,8 +270,8 @@ func (o *OpenAI) params(req StepRequest) (openai.ChatCompletionNewParams, error)
 	}
 	for _, m := range req.Messages {
 		messages := openAIMessages(m)
-		if o.gateway && m.Role == RoleAssistant && len(m.ChatGPTOutput) > 0 {
-			messages[0].OfAssistant.SetExtraFields(map[string]any{"kritika_chatgpt_output": m.ChatGPTOutput})
+		if o.gateway && m.Role == RoleAssistant && m.ChatGPTOutput != nil {
+			messages[0].OfAssistant.SetExtraFields(map[string]any{chatGPTOutputField: m.ChatGPTOutput})
 		}
 		p.Messages = append(p.Messages, messages...)
 	}

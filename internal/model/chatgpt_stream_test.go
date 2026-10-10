@@ -6,12 +6,27 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 )
 
 func outputItemDone(index int, item string) string {
 	return fmt.Sprintf(`{"type":"response.output_item.done","output_index":%d,"item":%s}`, index, item)
+}
+
+// planOutput is newTestChatGPT's output of items, a JSON array; nil for
+// "null".
+func planOutput(t *testing.T, items string) *ChatGPTOutput {
+	t.Helper()
+	var raw []json.RawMessage
+	if err := json.Unmarshal([]byte(items), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw == nil {
+		return nil
+	}
+	return &ChatGPTOutput{Provider: testPlan, Items: raw}
 }
 
 func TestChatGPTReplaysOutput(t *testing.T) {
@@ -36,7 +51,7 @@ func TestChatGPTReplaysOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []json.RawMessage{json.RawMessage(reasoning), json.RawMessage(call), json.RawMessage(message)}
+			want := &ChatGPTOutput{Provider: testPlan, Items: []json.RawMessage{json.RawMessage(reasoning), json.RawMessage(call), json.RawMessage(message)}}
 			if !reflect.DeepEqual(resp.ChatGPTOutput, want) {
 				t.Fatalf("output = %s, want %s", mustJSON(resp.ChatGPTOutput), output)
 			}
@@ -92,9 +107,7 @@ func TestChatGPTStreamedOutput(t *testing.T) {
 			}
 			want := StepResponse{Text: tt.text, ToolCalls: tt.calls, Stop: tt.stop, Model: "gpt-x", ChatGPTPlan: true,
 				Usage: Usage{Input: 200, CacheRead: 500, Output: 59}}
-			if err := json.Unmarshal([]byte(tt.output), &want.ChatGPTOutput); err != nil {
-				t.Fatal(err)
-			}
+			want.ChatGPTOutput = planOutput(t, tt.output)
 			if !reflect.DeepEqual(resp, want) {
 				t.Fatalf("Step = %+v, want %+v", resp, want)
 			}
@@ -114,9 +127,7 @@ func TestChatGPTEmptyResponse(t *testing.T) {
 			srv, _ := fakeProvider(t, http.StatusOK, tt.body)
 			resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: "gpt-x"})
 			want := StepResponse{Stop: StopEndTurn, Model: "gpt-x", ChatGPTPlan: true, Usage: Usage{Input: 200, CacheRead: 500, Output: 59}}
-			if err := json.Unmarshal([]byte(tt.output), &want.ChatGPTOutput); err != nil {
-				t.Fatal(err)
-			}
+			want.ChatGPTOutput = planOutput(t, tt.output)
 			if err != nil || !reflect.DeepEqual(resp, want) {
 				t.Fatalf("Step = %+v, %v; want %+v", resp, err, want)
 			}
@@ -156,5 +167,186 @@ func TestChatGPTStreamedConfidence(t *testing.T) {
 	want := CompletionResponse{Raw: answer, Model: "gpt-x", InputTokens: 700, CachedTokens: 500, OutputTokens: 59}
 	if resp != want {
 		t.Fatalf("Complete = %+v, want %+v", resp, want)
+	}
+}
+
+func TestChatGPTReplayable(t *testing.T) {
+	const reasoning = `{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"plan"}],"encrypted_content":"opaque"}`
+	const call = `{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","namespace":"kritika","arguments":"{}"}`
+	const message = `{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"reading"}]}`
+	turn := func(items ...string) Message {
+		out := &ChatGPTOutput{Provider: testPlan}
+		for _, item := range items {
+			out.Items = append(out.Items, json.RawMessage(item))
+		}
+		return Message{Role: RoleAssistant, Text: "reading", ToolCalls: []ToolCall{{ID: "call_1", Name: "read_file"}}, ChatGPTOutput: out}
+	}
+	with := func(m Message, edit func(*Message)) Message { edit(&m); return m }
+	for _, tt := range []struct {
+		name     string
+		m        Message
+		provider string
+		want     bool
+	}{
+		{"a turn as it came", turn(reasoning, call, message), testPlan, true},
+		{"another provider's output", turn(reasoning, call, message), "other", false},
+		{"an adapter serving no provider", turn(reasoning, call, message), "", false},
+		{"a user turn", with(turn(message), func(m *Message) { m.Role, m.ToolCalls = RoleUser, nil }), testPlan, false},
+		{"reasoning without its encrypted content", turn(`{"type":"reasoning","id":"rs_1","summary":[]}`, call, message), testPlan, false},
+		{"reasoning that leads to no item", with(turn(reasoning), func(m *Message) { m.Text, m.ToolCalls = "(no response)", nil }), testPlan, false},
+		{"reasoning after the calls", with(turn(call, reasoning), func(m *Message) { m.Text = "" }), testPlan, false},
+		{"text the loop changed", with(turn(reasoning, call, message), func(m *Message) { m.Text = "edited" }), testPlan, false},
+		{"calls that differ", with(turn(reasoning, call, message), func(m *Message) { m.ToolCalls[0].ID = "call_2" }), testPlan, false},
+		{"a user message", turn(reasoning, call, `{"type":"message","role":"user","content":[{"type":"output_text","text":"reading"}]}`), testPlan, false},
+		{"a developer message", turn(reasoning, call, `{"type":"message","role":"developer","content":[{"type":"output_text","text":"reading"}]}`), testPlan, false},
+		{"an image part", turn(reasoning, call, `{"type":"message","role":"assistant","content":[{"type":"input_image","image_url":"https://example.com/x"},{"type":"output_text","text":"reading"}]}`), testPlan, false},
+		{"an image in a reasoning summary", turn(`{"type":"reasoning","summary":[{"type":"input_image","image_url":"https://example.com/x"}],"encrypted_content":"opaque"}`, call, message), testPlan, false},
+		{"an item reference", turn(reasoning, call, message, `{"type":"item_reference","id":"msg_0"}`), testPlan, false},
+		{"a call in another namespace", turn(reasoning, `{"type":"function_call","call_id":"call_1","name":"read_file","namespace":"other","arguments":"{}"}`, message), testPlan, false},
+		{"a malformed item", turn(reasoning, call, message, `{"type":`), testPlan, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := replayable(tt.m, tt.provider); got != tt.want {
+				t.Fatalf("replayable = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestChatGPTSendsUnreplayableTurnsAsTextAndCalls: a turn whose output the
+// route would refuse goes as the loop recorded it, reasoning left out.
+func TestChatGPTSendsUnreplayableTurnsAsTextAndCalls(t *testing.T) {
+	const reasoning = `{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`
+	const call = `{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","namespace":"kritika","arguments":"{}"}`
+	for _, tt := range []struct {
+		name  string
+		turn  []Message
+		types []string
+	}{
+		{"reasoning that leads to no item", []Message{
+			{Role: RoleAssistant, Text: "(no response)", ChatGPTOutput: &ChatGPTOutput{Provider: testPlan, Items: []json.RawMessage{json.RawMessage(reasoning)}}},
+			{Role: RoleUser, Text: "go on"},
+		}, []string{"message", "message", "message"}},
+		{"another provider's output", []Message{
+			{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call_1", Name: "read_file", Input: json.RawMessage(`{}`)}},
+				ChatGPTOutput: &ChatGPTOutput{Provider: "other", Items: []json.RawMessage{json.RawMessage(reasoning), json.RawMessage(call)}}},
+			{Role: RoleUser, ToolResults: []ToolResult{{CallID: "call_1", Content: "file contents"}}},
+		}, []string{"message", "function_call", "function_call_output"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
+			req := StepRequest{Model: "gpt-x", Messages: append([]Message{{Role: RoleUser, Text: "look"}}, tt.turn...)}
+			if _, err := newTestChatGPT(t, srv, nil).Step(t.Context(), req); err != nil {
+				t.Fatal(err)
+			}
+			input := got.body["input"].([]any)
+			types := make([]string, 0, len(input))
+			for i := range input {
+				// A turn sent as its text is an easy input message, which
+				// has a role and no type.
+				kind, _ := field(input, i, "type").(string)
+				if kind == "" && field(input, i, "role") != nil {
+					kind = "message"
+				}
+				types = append(types, kind)
+			}
+			if !reflect.DeepEqual(types, tt.types) {
+				t.Fatalf("input = %s, want items of types %v", mustJSON(input), tt.types)
+			}
+			for i := range input {
+				if field(input, i, "id") != nil {
+					t.Fatalf("input = %s, want no item replayed as it came", mustJSON(input))
+				}
+			}
+		})
+	}
+}
+
+// answer is one response of a sequence.
+type answer struct {
+	status int
+	body   string
+}
+
+// sequence answers each request with the next of answers and records the
+// body of every request.
+func sequence(t *testing.T, answers ...answer) (*httptest.Server, *[]map[string]any) {
+	t.Helper()
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		bodies = append(bodies, body)
+		a := answers[min(len(bodies), len(answers))-1]
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("x-should-retry", "false")
+		w.WriteHeader(a.status)
+		_, _ = w.Write([]byte(a.body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &bodies
+}
+
+func TestChatGPTResendsWithoutRefusedReasoning(t *testing.T) {
+	const reasoning = `{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`
+	const call = `{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","namespace":"kritika","arguments":"{}"}`
+	refusedBody := `{"error":{"message":"The encrypted content could not be verified.","type":"invalid_request_error","param":null,"code":"invalid_encrypted_content"}}`
+	refused := answer{http.StatusBadRequest, refusedBody}
+	failed := answer{http.StatusOK, sse(responseEvent("response.failed", `{"id":"resp_1","object":"response","status":"failed","error":{"code":"invalid_encrypted_content","message":"could not be verified"}}`))}
+	ok := answer{http.StatusOK, completed(textOutput, responseUsage)}
+	turn := Message{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call_1", Name: "read_file", Input: json.RawMessage(`{}`)}},
+		ChatGPTOutput: &ChatGPTOutput{Provider: testPlan, Items: []json.RawMessage{json.RawMessage(reasoning), json.RawMessage(call)}}}
+	result := Message{Role: RoleUser, ToolResults: []ToolResult{{CallID: "call_1", Content: "file contents"}}}
+	for _, tt := range []struct {
+		name     string
+		answers  []answer
+		replayed bool
+	}{
+		{"refused before the stream", []answer{refused, ok}, true},
+		{"refused in the stream", []answer{failed, ok}, true},
+		{"refused with nothing replayed", []answer{refused, ok}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, bodies := sequence(t, tt.answers...)
+			sent := turn
+			if !tt.replayed {
+				sent.ChatGPTOutput = &ChatGPTOutput{Provider: "other", Items: turn.ChatGPTOutput.Items}
+			}
+			req := StepRequest{Model: "gpt-x", Messages: []Message{{Role: RoleUser, Text: "look"}, sent, result}}
+			resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), req)
+			if !tt.replayed {
+				if !errors.Is(err, errEncryptedContent) || len(*bodies) != 1 {
+					t.Fatalf("Step = %v after %d requests, want the refusal after one", err, len(*bodies))
+				}
+				return
+			}
+			if err != nil || resp.Text != "hello" || len(*bodies) != 2 {
+				t.Fatalf("Step = %+v, %v after %d requests", resp, err, len(*bodies))
+			}
+			first, second := (*bodies)[0]["input"].([]any), (*bodies)[1]["input"].([]any)
+			if field(first, 1, "type") != "reasoning" {
+				t.Fatalf("first input = %s, want the replayed reasoning", mustJSON(first))
+			}
+			for i := range second {
+				if field(second, i, "type") == "reasoning" {
+					t.Fatalf("second input = %s, want no reasoning", mustJSON(second))
+				}
+			}
+			if field(second, 1, "type") != "function_call" || field(second, 1, "call_id") != "call_1" {
+				t.Fatalf("second input = %s, want the call as recorded", mustJSON(second))
+			}
+		})
+	}
+}
+
+func TestChatGPTOnceKeepsNoOutput(t *testing.T) {
+	srv, got := fakeProvider(t, http.StatusOK, completed(textOutput, responseUsage))
+	resp, err := newTestChatGPT(t, srv, nil).Step(t.Context(), StepRequest{Model: "gpt-x", Once: true, Messages: []Message{{Role: RoleUser, Text: "look"}}})
+	if err != nil || resp.Text != "hello" {
+		t.Fatalf("Step = %+v, %v", resp, err)
+	}
+	if _, ok := got.body["include"]; ok || resp.ChatGPTOutput != nil {
+		t.Fatalf("include = %v, output = %+v; want neither on a step no later one reads", got.body["include"], resp.ChatGPTOutput)
 	}
 }

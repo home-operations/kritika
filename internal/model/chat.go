@@ -36,11 +36,21 @@ type chatRequest struct {
 }
 
 type chatMessage struct {
-	Role          string            `json:"role"`
-	Content       json.RawMessage   `json:"content"`
-	ToolCalls     []chatToolCall    `json:"tool_calls"`
-	ToolCallID    string            `json:"tool_call_id"`
-	ChatGPTOutput []json.RawMessage `json:"kritika_chatgpt_output,omitempty"`
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCalls  []chatToolCall  `json:"tool_calls"`
+	ToolCallID string          `json:"tool_call_id"`
+	chatGPTCarry
+}
+
+// chatGPTOutputField carries a turn's ChatGPT output between kritika's
+// model gateway and its runners, on the response and on the assistant
+// message that later repeats it.
+const chatGPTOutputField = "kritika_chatgpt_output"
+
+// chatGPTCarry reads chatGPTOutputField.
+type chatGPTCarry struct {
+	ChatGPTOutput *ChatGPTOutput `json:"kritika_chatgpt_output,omitempty"`
 }
 
 type chatToolCall struct {
@@ -213,8 +223,8 @@ func EncodeChatResponse(id string, resp StepResponse) ([]byte, error) {
 	if resp.Upstream != "" {
 		out["provider"] = resp.Upstream
 	}
-	if len(resp.ChatGPTOutput) > 0 {
-		out["kritika_chatgpt_output"] = resp.ChatGPTOutput
+	if resp.ChatGPTOutput != nil {
+		out[chatGPTOutputField] = resp.ChatGPTOutput
 	}
 	return json.Marshal(out)
 }
