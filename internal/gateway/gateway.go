@@ -401,6 +401,7 @@ func (g *Server) charge(ctx context.Context, c runCall, reserved int64, resp mod
 		return store.InsertUsage(ctx, tx, store.Usage{
 			AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, ReviewID: c.usageReview(), Role: c.role(), Model: resp.Model,
 			Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
+			ChatGPTPlan: resp.ChatGPTPlan, RunnerRunID: grant.RunID,
 		})
 	})
 	return errors.Join(budgetErr, usageErr)

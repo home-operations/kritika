@@ -88,7 +88,7 @@
             <span class="small muted">{wholeNumber(all.reviewsToday)} today</span>
           </div>
           <div class="tile">
-            <span class="tile-label">Spend this month</span>
+            <span class="tile-label">API spend this month</span>
             <span class="tile-value">{usd(all.costUsd)}</span>
             <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
             <span class="small muted">{all.reviews ? `${usd(all.reviewCostUsd / all.reviews)} per review, mean of ${wholeNumber(all.reviews)}` : 'no review completed this month'}</span>
@@ -112,7 +112,7 @@
                   <th scope="col" title="Reviews done today, against the account's daily cap where it has one">Today</th>
                   <th scope="col" title="Open pull requests whose last review failed, hit a limit or found a P0, or whose automatic reviews are paused; and a cap that is close">Needs attention</th>
                   <th scope="col" title="Whether GitHub's webhooks reach kritika, and when it last polled instead">Webhooks</th>
-                  <th scope="col" class="num">Spend</th>
+                  <th scope="col" class="num wrap">API spend</th>
                   <th scope="col">Tokens this month</th>
                 </tr>
               </thead>

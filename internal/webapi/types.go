@@ -65,6 +65,7 @@ type MonthUsage struct {
 // verified and unsigned, and when the account was last polled, each null
 // for never.
 type AccountSummary struct {
+	ChatGPTEnabled        bool       `json:"chatgptEnabled,omitzero"`
 	Slug                  string     `json:"slug"`
 	Connection            string     `json:"connection"`
 	Repositories          int        `json:"repositories"`
@@ -254,6 +255,8 @@ type Review struct {
 	Model      string             `json:"model"`
 	HeadSHA    string             `json:"headSha"`
 	CostUSD    float64            `json:"costUsd"`
+	Calls      int64              `json:"calls,omitzero"`
+	PlanCalls  int64              `json:"planCalls,omitzero"`
 	Tokens     TokenCounts        `json:"tokens"`
 	DurationMs *int64             `json:"durationMs"`
 	CreatedAt  time.Time          `json:"createdAt"`

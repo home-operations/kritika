@@ -9,29 +9,76 @@ import (
 
 // Provider is the model provider name refers to for account t: the account's
 // own when it declares one by that name, else the instance's. t may be nil.
+// A file not built by Parse gets its session keys here.
 func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	if t != nil {
 		if p, ok := t.Providers[name]; ok {
+			p.sessionKey = chatGPTSessionKey(t, name)
 			return p, true
 		}
 	}
 	p, ok := f.Providers[name]
+	p.sessionKey = chatGPTSessionKey(nil, name)
 	return p, ok
+}
+
+// ChatGPTProviders returns the chatgpt providers account t can use, the
+// instance's and its own, by name. t may be nil.
+func (f *File) ChatGPTProviders(t *Account) map[string]Provider {
+	out := map[string]Provider{}
+	names := slices.Collect(maps.Keys(f.Providers))
+	if t != nil {
+		names = slices.AppendSeq(names, maps.Keys(t.Providers))
+	}
+	for _, name := range names {
+		if p, _ := f.Provider(t, name); p.Type == ProviderChatGPT {
+			out[name] = p
+		}
+	}
+	return out
+}
+
+// chatGPTSessionKey keeps the sign-ins of accounts' providers of one name
+// apart from each other and from the instance's.
+func chatGPTSessionKey(t *Account, name string) string {
+	if t == nil {
+		return name
+	}
+	return t.Key() + "/" + name
+}
+
+func (p *Provider) resolve(where, sessionKey string, s *secrets) error {
+	p.sessionKey = sessionKey
+	if p.Type == ProviderChatGPT {
+		if !p.APIKey.empty() {
+			return fmt.Errorf("configfile: %s.apiKey: a chatgpt provider uses a stored sign-in", where)
+		}
+		return nil
+	}
+	v, err := s.read(p.APIKey)
+	if err != nil {
+		return fmt.Errorf("configfile: %s.apiKey: %w", where, err)
+	}
+	p.apiKey = v
+	return nil
 }
 
 // validate checks a provider's type, endpoint, key and prices.
 func (p Provider) validate(where string) error {
 	if !p.Type.Valid() {
-		return fmt.Errorf("configfile: %s.type must be %s, %s, %s or %s, got %q",
-			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, p.Type)
+		return fmt.Errorf("configfile: %s.type must be %s, %s, %s, %s or %s, got %q",
+			where, ProviderOpenRouter, ProviderOpenAI, ProviderAnthropic, ProviderOpenCode, ProviderChatGPT, p.Type)
 	}
 	if p.BaseURL != "" {
 		if u, err := url.Parse(p.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("configfile: %s.baseUrl %q must be an absolute URL", where, p.BaseURL)
 		}
 	}
-	if p.apiKey.Value() == "" {
+	if p.Type != ProviderChatGPT && p.apiKey.Value() == "" {
 		return fmt.Errorf("configfile: %s.apiKey resolved to an empty value", where)
+	}
+	if p.Type == ProviderChatGPT && len(p.Pricing) > 0 {
+		return fmt.Errorf("configfile: %s.pricing: a chatgpt provider is covered by a plan", where)
 	}
 	if p.Retries < 0 || p.Retries > MaxProviderRetries {
 		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, MaxProviderRetries, p.Retries)

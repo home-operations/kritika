@@ -279,6 +279,8 @@ func TestWebAPI(t *testing.T) {
 	t.Run("pull requests by author", func(t *testing.T) { testPullsByAuthor(t, e) })
 	t.Run("pull numbers outside int4", func(t *testing.T) { testPullNumbersOutsideInt4(t, e) })
 	t.Run("event stream scopes to the account", func(t *testing.T) { testEventStreamScopesToAccount(t, e) })
+	t.Run("plan billing reaches the dashboard", func(t *testing.T) { testChatGPTBilling(t, e) })
+	t.Run("plan allowances respect provider and account scope", func(t *testing.T) { testChatGPTAllowances(t, e) })
 }
 
 func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {

@@ -71,7 +71,7 @@ export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
 export type Forge = 'github';
-export type UsageGroup = 'day' | 'model' | 'repo' | 'role';
+export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role';
 export type JobState =
   | 'available'
   | 'scheduled'
@@ -106,6 +106,7 @@ export interface MonthUsage {
 // webhook last delivered, verified and unsigned, and when the account was
 // last polled, each null for never.
 export interface AccountSummary {
+  chatgptEnabled?: boolean;
   slug: string;
   connection: string;
   repositories: number;
@@ -382,6 +383,8 @@ export interface Review {
   model: string;
   headSha: string;
   costUsd: number;
+  calls?: number;
+  planCalls?: number;
   tokens: TokenCounts;
   durationMs: number | null;
   createdAt: string;
@@ -638,12 +641,14 @@ export interface AgentPart {
 }
 
 export interface UsageRow {
+  runnerRunId?: string;
   role: string;
   model: string;
   upstream: string;
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  chatgptPlan?: boolean;
   createdAt: string;
 }
 
@@ -768,6 +773,7 @@ export interface Turn {
   response: Response;
   usage: Usage;
   costUsd: number;
+  chatgptPlan?: boolean;
   durationMs: number;
   error: string;
   truncated: boolean;
@@ -791,6 +797,7 @@ export interface UsagePoint {
   outputTokens: number;
   costUsd: number;
   calls: number;
+  planCalls?: number;
 }
 
 export interface UsageSeries {
@@ -798,6 +805,25 @@ export interface UsageSeries {
   from: string;
   to: string;
   rows: UsagePoint[];
+}
+
+export interface ChatGPTAllowanceWindow {
+  usedPercent: number;
+  windowDurationMins: number | null;
+  resetsAt: number | null;
+}
+
+export interface ChatGPTAllowance {
+  limitId: string;
+  primary: ChatGPTAllowanceWindow | null;
+  secondary: ChatGPTAllowanceWindow | null;
+  observedAt: string;
+}
+
+export interface ChatGPTProviderUsage {
+  provider: string;
+  connected: boolean;
+  allowances: ChatGPTAllowance[];
 }
 
 export interface JobArgs {

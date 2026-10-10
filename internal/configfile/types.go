@@ -36,6 +36,7 @@ const (
 	ProviderOpenAI     = model.ProviderOpenAI
 	ProviderAnthropic  = model.ProviderAnthropic
 	ProviderOpenCode   = model.ProviderOpenCode
+	ProviderChatGPT    = model.ProviderChatGPT
 )
 
 // Forge identifies which forge a connection talks to.
@@ -124,7 +125,8 @@ type Provider struct {
 	// use it.
 	Retries int `yaml:"retries,omitempty"`
 
-	apiKey Secret
+	apiKey     Secret
+	sessionKey string
 }
 
 // MaxProviderRetries bounds Provider.Retries: with backoff, five more
@@ -133,6 +135,11 @@ const MaxProviderRetries = 5
 
 // APIKeyValue returns the resolved API key.
 func (p Provider) APIKeyValue() Secret { return p.apiKey }
+
+// ChatGPTSessionKey identifies this provider's stored sign-in, assigned
+// when the file is parsed, so accounts with the same provider name stay
+// separate.
+func (p Provider) ChatGPTSessionKey() string { return p.sessionKey }
 
 // ModelRef names a model as "<provider>/<model>", where provider is a key of
 // the account's or the instance's providers map and model is whatever the

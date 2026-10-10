@@ -206,7 +206,7 @@
               good="up"
               define="The thumbs up and down on the inline comments of the findings reported in the period"
             />
-            <StatTile label="Spend" value={usd(c.costUsd)} now={c.costUsd} before={p.costUsd} good="down" define="Model spend in the period" />
+            <StatTile label="API spend" value={usd(c.costUsd)} now={c.costUsd} before={p.costUsd} good="down" define="API spend in the period; subscription fees excluded" />
           </section>
 
           <div class="grid-2">

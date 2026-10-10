@@ -200,25 +200,29 @@ func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunR
 
 // UsageRow is one usage row.
 type UsageRow struct {
+	RunnerRunID  string
 	Role         string
 	Model        string
 	Upstream     string
 	InputTokens  int64
 	OutputTokens int64
 	CostUSD      float64
+	ChatGPTPlan  bool
 	CreatedAt    time.Time
 }
 
 // ListReviewUsage returns the usage rows charged to a review, oldest first.
 func ListReviewUsage(ctx context.Context, tx pgx.Tx, reviewID string) ([]UsageRow, error) {
-	rows, err := tx.Query(ctx, `SELECT role, model, upstream, input_tokens, output_tokens, cost_usd::float8, created_at
+	rows, err := tx.Query(ctx, `SELECT role, model, upstream, input_tokens, output_tokens, cost_usd::float8, created_at, chatgpt_plan,
+		coalesce(runner_run_id::text, '')
 		FROM usage WHERE review_id = $1 ORDER BY created_at, id`, reviewID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list review usage: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (UsageRow, error) {
 		var u UsageRow
-		err := row.Scan(&u.Role, &u.Model, &u.Upstream, &u.InputTokens, &u.OutputTokens, &u.CostUSD, &u.CreatedAt)
+		err := row.Scan(&u.Role, &u.Model, &u.Upstream, &u.InputTokens, &u.OutputTokens, &u.CostUSD, &u.CreatedAt, &u.ChatGPTPlan,
+			&u.RunnerRunID)
 		return u, err
 	})
 	if err != nil {
@@ -349,7 +353,7 @@ func modelCallsWhere(ctx context.Context, tx pgx.Tx, where string, args ...any) 
 	rows, err := tx.Query(ctx, `SELECT id, kind, step, part, coalesce(review_id::text, ''), coalesce(runner_run_id::text, ''),
 		coalesce(followup_comment_id, 0), model, upstream, system, tools, messages_from, messages, response,
 		input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd::float8, duration_ms, error, truncated, created_at,
-		coalesce((SELECT r.review_id::text FROM runner_runs r WHERE r.id = model_calls.carried_from), '')
+		coalesce((SELECT r.review_id::text FROM runner_runs r WHERE r.id = model_calls.carried_from), ''), chatgpt_plan
 		FROM model_calls WHERE `+where+` ORDER BY created_at, step, id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list model calls: %w", err)

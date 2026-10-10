@@ -24,6 +24,10 @@ export function usd(n: number): string {
   return `$${cents.format(n)}`;
 }
 
+export function callCost(n: number, chatgptPlan = false): string {
+  return chatgptPlan ? 'Included in plan' : usd(n);
+}
+
 export function duration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return '';
   if (ms < 1000) return `${Math.round(ms)}ms`;

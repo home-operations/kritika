@@ -101,6 +101,9 @@ func run() (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	context.AfterFunc(ctx, stop)
+	if command == config.CommandChatGPTLogin {
+		return loginChatGPT(ctx, cfg, os.Args[3:], logger)
+	}
 
 	// The management listener comes up first so liveness answers while the
 	// database is still starting.
@@ -280,7 +283,7 @@ func startWorker(
 	forges *worker.ForgeCache, m *metrics.Metrics, logger *slog.Logger,
 ) error {
 	embedders := &adapter.Embedders{Build: adapter.BuildEmbedder}
-	steppers := &adapter.Steppers{Build: adapter.BuildStepper}
+	steppers := &adapter.Steppers{Build: adapter.StepperBuilder(st)}
 	workers := river.NewWorkers()
 	base := worker.Base{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
 	// The gateway: runner pods' one route out, allowed by the hosts the
@@ -366,6 +369,9 @@ const (
 // validate checks what command needs of cfg beyond the common set, and
 // reads a runner's spec.
 func validate(command config.Command, cfg *config.Config) (runner.Spec, error) {
+	if command == config.CommandChatGPTLogin {
+		return runner.Spec{}, nil
+	}
 	if command == config.CommandServe {
 		return runner.Spec{}, cfg.ValidateServe()
 	}
@@ -520,6 +526,8 @@ func lead(
 		Store: st, Current: current, Forges: forges, Reach: apps.Reach, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
 	duties.Go(func() { poll.Run(pollCtx) })
+	plans := &worker.ChatGPTRefresher{Store: st, Current: current, Logger: logger}
+	duties.Go(func() { plans.Run(pollCtx) })
 	// So is deleting, by name, run Secrets a dead worker left without an
 	// owner. Like the poller it walks the configured accounts, each under
 	// its own row-level security scope.
