@@ -110,20 +110,25 @@ func TestPin(t *testing.T) {
 }
 
 func TestPricingCost(t *testing.T) {
-	p := Pricing{"gpt-6-sol": {Input: 2}, "~sol-latest": {Input: 3}}
+	p := Pricing{"gpt-6-sol": {Input: 2}, "~sol-latest": {Input: 3}, "free": {}, "~free-latest": {}}
 	u := Usage{Input: 1_000_000}
 	for _, tt := range []struct {
 		id, alias string
 		want      float64
+		unpriced  bool
 	}{
-		{"gpt-6-sol", "~sol-latest", 2},
-		{"gpt-7-sol", "~sol-latest", 3},
-		{"gpt-7-sol", "", 0},
-		{"gpt-7-astra", "~astra-latest", 0},
+		{"gpt-6-sol", "~sol-latest", 2, false},
+		{"gpt-7-sol", "~sol-latest", 3, false},
+		{"gpt-7-sol", "", 0, true},
+		{"gpt-7-astra", "~astra-latest", 0, true},
+		{"free", "", 0, false},
+		{"new-free", "~free-latest", 0, false},
 	} {
-		if got := p.cost(tt.id, tt.alias, u); got != tt.want {
-			t.Errorf("cost(%s, %s) = %v, want %v", tt.id, tt.alias, got, tt.want)
-		}
+		t.Run(tt.id+"/"+tt.alias, func(t *testing.T) {
+			if got, unpriced := p.cost(tt.id, tt.alias, u); got != tt.want || unpriced != tt.unpriced {
+				t.Errorf("cost = %v, unpriced = %v; want %v, %v", got, unpriced, tt.want, tt.unpriced)
+			}
+		})
 	}
 }
 

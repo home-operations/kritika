@@ -144,6 +144,7 @@ type AgentRunRow struct {
 	CommandsOffered, CommandsRun []string
 	Usage                        model.Usage
 	CostUSD                      float64
+	UnpricedCalls                int64
 	Model                        string
 	Error                        string
 	CreatedAt                    time.Time
@@ -172,11 +173,12 @@ func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunR
 	var result, calls, timeline, sources, parts []byte
 	err := tx.QueryRow(ctx, `SELECT a.stop_reason, a.result, a.steps, a.tool_calls, a.timeline, a.sources, a.input_tokens,
 		a.cache_read_tokens, a.cache_write_tokens, a.output_tokens, a.cost_usd::float8, a.model, a.error, a.created_at,
-		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text, a.parts
+		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text, a.parts,
+		(SELECT count(*) FROM usage WHERE runner_run_id = a.runner_run_id AND role = 'review' AND unpriced)
 		FROM agent_runs a LEFT JOIN runner_runs c ON c.id = a.continued_from WHERE a.runner_run_id = $1`, runnerRunID).
 		Scan(&a.StopReason, &result, &a.Steps, &calls, &timeline, &sources, &a.Usage.Input, &a.Usage.CacheRead,
 			&a.Usage.CacheWrite, &a.Usage.Output, &a.CostUSD, &a.Model, &a.Error, &a.CreatedAt, &a.SkillsOffered, &a.SkillsOpened,
-			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID, &parts)
+			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID, &parts, &a.UnpricedCalls)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -208,13 +210,14 @@ type UsageRow struct {
 	OutputTokens int64
 	CostUSD      float64
 	ChatGPTPlan  bool
+	Unpriced     bool
 	CreatedAt    time.Time
 }
 
 // ListReviewUsage returns the usage rows charged to a review, oldest first.
 func ListReviewUsage(ctx context.Context, tx pgx.Tx, reviewID string) ([]UsageRow, error) {
 	rows, err := tx.Query(ctx, `SELECT role, model, upstream, input_tokens, output_tokens, cost_usd::float8, created_at, chatgpt_plan,
-		coalesce(runner_run_id::text, '')
+		coalesce(runner_run_id::text, ''), unpriced
 		FROM usage WHERE review_id = $1 ORDER BY created_at, id`, reviewID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list review usage: %w", err)
@@ -222,7 +225,7 @@ func ListReviewUsage(ctx context.Context, tx pgx.Tx, reviewID string) ([]UsageRo
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (UsageRow, error) {
 		var u UsageRow
 		err := row.Scan(&u.Role, &u.Model, &u.Upstream, &u.InputTokens, &u.OutputTokens, &u.CostUSD, &u.CreatedAt, &u.ChatGPTPlan,
-			&u.RunnerRunID)
+			&u.RunnerRunID, &u.Unpriced)
 		return u, err
 	})
 	if err != nil {
@@ -353,7 +356,7 @@ func modelCallsWhere(ctx context.Context, tx pgx.Tx, where string, args ...any) 
 	rows, err := tx.Query(ctx, `SELECT id, kind, step, part, coalesce(review_id::text, ''), coalesce(runner_run_id::text, ''),
 		coalesce(followup_comment_id, 0), model, upstream, system, tools, messages_from, messages, response,
 		input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd::float8, duration_ms, error, truncated, created_at,
-		coalesce((SELECT r.review_id::text FROM runner_runs r WHERE r.id = model_calls.carried_from), ''), chatgpt_plan
+		coalesce((SELECT r.review_id::text FROM runner_runs r WHERE r.id = model_calls.carried_from), ''), chatgpt_plan, unpriced
 		FROM model_calls WHERE `+where+` ORDER BY created_at, step, id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list model calls: %w", err)

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ReviewDetail } from '../../types';
-  import { callCost, tokens, usd, wholeNumber } from '../../format';
+  import { callCost, tokens, costTotal, wholeNumber } from '../../format';
   import Time from '../../components/Time.svelte';
   import StatTile from '../../components/StatTile.svelte';
 
@@ -8,6 +8,7 @@
   const total = $derived(
     d.usage.reduce((a, u) => ({ in: a.in + u.inputTokens, out: a.out + u.outputTokens, cost: a.cost + u.costUsd }), { in: 0, out: 0, cost: 0 }),
   );
+  const unpricedCalls = $derived(d.usage.filter((u) => u.unpriced).length);
   const planUsage = $derived(d.usage.filter((u) => u.chatgptPlan));
   const planTotal = $derived(planUsage.reduce((a, u) => ({ in: a.in + u.inputTokens, out: a.out + u.outputTokens }), { in: 0, out: 0 }));
   const showRuns = $derived(d.usage.some((u) => u.runnerRunId));
@@ -72,7 +73,7 @@
             {#if showRuns}<td class="mono small" title={u.runnerRunId}>{u.runnerRunId ? u.runnerRunId.slice(0, 8) : '—'}</td>{/if}
             <td class="num" title={wholeNumber(u.inputTokens)}>{tokens(u.inputTokens)}</td>
             <td class="num" title={wholeNumber(u.outputTokens)}>{tokens(u.outputTokens)}</td>
-            <td class="num">{callCost(u.costUsd, u.chatgptPlan)}</td>
+            <td class="num">{callCost(u.costUsd, u.chatgptPlan, u.unpriced)}</td>
             <td><Time iso={u.createdAt} /></td>
           </tr>
         {/each}
@@ -82,11 +83,12 @@
           <th scope="row" colspan={showRuns ? 5 : 4}>Total API spend</th>
           <td class="num" title={wholeNumber(total.in)}>{tokens(total.in)}</td>
           <td class="num" title={wholeNumber(total.out)}>{tokens(total.out)}</td>
-          <td class="num">{usd(total.cost)}</td>
+          <td class="num">{costTotal(total.cost, unpricedCalls)}</td>
           <td></td>
         </tr>
       </tfoot>
     </table>
   </div>
   <p class="small muted">API spend excludes subscription fees.</p>
+  {#if unpricedCalls}<p class="small muted">API spend is incomplete: {wholeNumber(unpricedCalls)} unpriced calls.</p>{/if}
 {/if}

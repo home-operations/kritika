@@ -24,15 +24,17 @@ type Usage struct {
 	Input, Output                                            int64
 	CostUSD                                                  float64
 	ChatGPTPlan                                              bool
+	Unpriced                                                 bool
 }
 
 // InsertUsage records u, where the caps count it.
 func InsertUsage(ctx context.Context, tx pgx.Tx, u Usage) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO usage
-		(account_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd, chatgpt_plan, runner_run_id)
-		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, nullif($11, '')::uuid)`,
+		(account_id, repository_id, review_id, role, model, upstream, input_tokens, output_tokens, cost_usd,
+		 chatgpt_plan, runner_run_id, unpriced)
+		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10, nullif($11, '')::uuid, $12)`,
 		u.AccountID, u.RepositoryID, u.ReviewID, u.Role, u.Model, u.Upstream, u.Input, u.Output, u.CostUSD, u.ChatGPTPlan,
-		u.RunnerRunID); err != nil {
+		u.RunnerRunID, u.Unpriced); err != nil {
 		return fmt.Errorf("store: insert usage: %w", err)
 	}
 	return nil

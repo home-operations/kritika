@@ -4,7 +4,7 @@
   import { getJSON } from '../api.svelte';
   import { Resource, live } from '../resource.svelte';
   import { stamp } from '../time.svelte';
-  import { callCost, daysAgo, tokens, usd, wholeNumber } from '../format';
+  import { callCost, costTotal, daysAgo, tokens, usd, wholeNumber } from '../format';
   import type { AccountSummary, UsageGroup, UsagePoint, UsageSeries } from '../types';
   import StateView from '../components/StateView.svelte';
   import ColumnChart from '../components/ColumnChart.svelte';
@@ -75,6 +75,7 @@
       z.costUsd += r.costUsd;
       z.calls += r.calls;
       z.planCalls = (z.planCalls ?? 0) + (r.planCalls ?? 0);
+      z.unpricedCalls = (z.unpricedCalls ?? 0) + (r.unpricedCalls ?? 0);
     }
     return z;
   }
@@ -106,10 +107,10 @@
       <section class="stats stats-3" aria-label="This month">
         <StatTile
           label="API spend this month"
-          value={usd(month.costUsd)}
+          value={costTotal(month.costUsd, month.unpricedCalls)}
           sub={month.medianReviewCostUsd === null
             ? 'no review completed this month'
-            : `${usd(month.medianReviewCostUsd)} per review (median) · ${usd(month.reviewCostUsd / month.reviews)} mean of ${wholeNumber(month.reviews)}`}
+            : `${costTotal(month.medianReviewCostUsd, month.reviewUnpricedCalls)} per review (median) · ${costTotal(month.reviewCostUsd / month.reviews, month.reviewUnpricedCalls)} mean of ${wholeNumber(month.reviews)}`}
         />
         <div class="stat">
           <span class="stat-label">Tokens this month</span>
@@ -136,6 +137,7 @@
     <StateView {res} retry={() => res.load()} isEmpty={(s) => s.rows.length === 0} empty="No model usage in this range.">
       {#snippet children(s)}
         {@const t = sum(s.rows)}
+        {#if t.unpricedCalls}<p class="small muted">API spend is incomplete: {wholeNumber(t.unpricedCalls)} unpriced calls. Charts show priced spend only.</p>{/if}
         {#if chatgptEnabled && billing === 'chatgpt'}
           <section class="stats stats-3" aria-label="ChatGPT usage in this period">
             <StatTile label="ChatGPT calls" value={wholeNumber(t.calls)} sub={`Last ${periodLabel}`} />
@@ -177,7 +179,7 @@
                     {:else if r.planCalls}API + ChatGPT plan
                     {:else}API{/if}
                   </td>
-                  <td class="num">{callCost(r.costUsd, r.planCalls === r.calls && r.calls > 0)}</td>
+                  <td class="num">{callCost(r.costUsd, r.planCalls === r.calls && r.calls > 0, !!r.unpricedCalls)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -190,7 +192,7 @@
                 <td class="num" title={wholeNumber(t.cacheWriteTokens)}>{tokens(t.cacheWriteTokens)}</td>
                 <td class="num" title={wholeNumber(t.outputTokens)}>{tokens(t.outputTokens)}</td>
                 <td></td>
-                <td class="num">{usd(t.costUsd)}</td>
+                <td class="num">{costTotal(t.costUsd, t.unpricedCalls)}</td>
               </tr>
             </tfoot>
           </table>

@@ -45,7 +45,9 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 		out.Current, out.Previous = analyticsTotals(cur), analyticsTotals(prev)
 		out.Series = make([]AnalyticsPoint, len(series))
 		for i, p := range series {
-			out.Series[i] = AnalyticsPoint{Key: p.Key, Reviews: p.Reviews, Findings: severityCounts(p.Findings), CostUSD: p.CostUSD}
+			out.Series[i] = AnalyticsPoint{
+				Key: p.Key, Reviews: p.Reviews, Findings: severityCounts(p.Findings), CostUSD: p.CostUSD, UnpricedCalls: p.UnpricedCalls,
+			}
 		}
 		out.Repositories = make([]RepoActivity, len(repos))
 		for i, a := range repos {
@@ -65,7 +67,7 @@ func analyticsTotals(t store.AnalyticsTotals) AnalyticsTotals {
 	return AnalyticsTotals{
 		PullRequests: t.PullRequests, Reviews: t.Reviews, Failed: t.Failed, Findings: severityCounts(t.Findings),
 		Categories: categoryCounts(t.Categories), Addressed: t.Addressed, ReactionsUp: t.ReactionsUp, ReactionsDown: t.ReactionsDown,
-		CostUSD:        t.CostUSD,
+		CostUSD: t.CostUSD, UnpricedCalls: t.UnpricedCalls,
 		MedianReviewMs: t.MedianReviewMs, MedianMergeMs: t.MedianMergeMs,
 	}
 }

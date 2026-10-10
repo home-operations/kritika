@@ -51,11 +51,13 @@ type UserSettings struct {
 type MonthUsage struct {
 	Tokens              int64    `json:"tokens"`
 	CostUSD             float64  `json:"costUsd"`
+	UnpricedCalls       int64    `json:"unpricedCalls,omitzero"`
 	TokensPerMonth      int64    `json:"tokensPerMonth"`
 	ReviewsToday        int64    `json:"reviewsToday"`
 	ReviewsPerDay       int      `json:"reviewsPerDay"`
 	Reviews             int64    `json:"reviews"`
 	ReviewCostUSD       float64  `json:"reviewCostUsd"`
+	ReviewUnpricedCalls int64    `json:"reviewUnpricedCalls,omitzero"`
 	MedianReviewCostUSD *float64 `json:"medianReviewCostUsd"`
 }
 
@@ -248,19 +250,20 @@ type Label struct {
 // Review is one review pass as lists show it. DurationMs is null while
 // the review runs.
 type Review struct {
-	ID         string             `json:"id"`
-	Status     store.ReviewStatus `json:"status"`
-	Trigger    string             `json:"trigger"`
-	Scope      review.Scope       `json:"scope"`
-	Model      string             `json:"model"`
-	HeadSHA    string             `json:"headSha"`
-	CostUSD    float64            `json:"costUsd"`
-	Calls      int64              `json:"calls,omitzero"`
-	PlanCalls  int64              `json:"planCalls,omitzero"`
-	Tokens     TokenCounts        `json:"tokens"`
-	DurationMs *int64             `json:"durationMs"`
-	CreatedAt  time.Time          `json:"createdAt"`
-	FinishedAt *time.Time         `json:"finishedAt"`
+	ID            string             `json:"id"`
+	Status        store.ReviewStatus `json:"status"`
+	Trigger       string             `json:"trigger"`
+	Scope         review.Scope       `json:"scope"`
+	Model         string             `json:"model"`
+	HeadSHA       string             `json:"headSha"`
+	CostUSD       float64            `json:"costUsd"`
+	UnpricedCalls int64              `json:"unpricedCalls,omitzero"`
+	Calls         int64              `json:"calls,omitzero"`
+	PlanCalls     int64              `json:"planCalls,omitzero"`
+	Tokens        TokenCounts        `json:"tokens"`
+	DurationMs    *int64             `json:"durationMs"`
+	CreatedAt     time.Time          `json:"createdAt"`
+	FinishedAt    *time.Time         `json:"finishedAt"`
 	// SkipReason is why a skipped review was: disabled, filtered or
 	// only_skipped_paths from the repository's configuration, or the
 	// runner's unchanged_patch or too_large.

@@ -157,7 +157,7 @@ func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse, role
 		return store.InsertUsage(ctx, tx, store.Usage{
 			AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID, Role: role,
 			Model: resp.Model, Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
-			ChatGPTPlan: resp.ChatGPTPlan, RunnerRunID: p.runID,
+			ChatGPTPlan: resp.ChatGPTPlan, Unpriced: resp.Unpriced, RunnerRunID: p.runID,
 		})
 	})
 	if err != nil {

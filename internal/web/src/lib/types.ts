@@ -93,11 +93,13 @@ export type MessageRole = 'user' | 'assistant';
 export interface MonthUsage {
   tokens: number;
   costUsd: number;
+  unpricedCalls?: number;
   tokensPerMonth: number;
   reviewsToday: number;
   reviewsPerDay: number;
   reviews: number;
   reviewCostUsd: number;
+  reviewUnpricedCalls?: number;
   medianReviewCostUsd: number | null;
 }
 
@@ -359,6 +361,7 @@ export interface Pull {
   // Reviews that completed, and what every review of it spent.
   reviewCount: number;
   costUsd: number;
+  unpricedCalls?: number;
 }
 
 // The account's open pull requests that want a look, by why; one may count
@@ -383,6 +386,7 @@ export interface Review {
   model: string;
   headSha: string;
   costUsd: number;
+  unpricedCalls?: number;
   calls?: number;
   planCalls?: number;
   tokens: TokenCounts;
@@ -501,6 +505,7 @@ export interface AnalyticsTotals {
   reactionsUp: number;
   reactionsDown: number;
   costUsd: number;
+  unpricedCalls?: number;
   medianReviewMs: number | null;
   medianMergeMs: number | null;
 }
@@ -510,6 +515,7 @@ export interface AnalyticsPoint {
   reviews: number;
   findings: SeverityCounts;
   costUsd: number;
+  unpricedCalls?: number;
 }
 
 export interface RepoActivity {
@@ -621,6 +627,7 @@ export interface AgentRun {
   commandsRun: string[];
   usage: Usage;
   costUsd: number;
+  unpricedCalls?: number;
   model: string;
   error: string;
   createdAt: string;
@@ -649,6 +656,7 @@ export interface UsageRow {
   outputTokens: number;
   costUsd: number;
   chatgptPlan?: boolean;
+  unpriced?: boolean;
   createdAt: string;
 }
 
@@ -774,6 +782,7 @@ export interface Turn {
   usage: Usage;
   costUsd: number;
   chatgptPlan?: boolean;
+  unpriced?: boolean;
   durationMs: number;
   error: string;
   truncated: boolean;
@@ -796,6 +805,7 @@ export interface UsagePoint {
   cacheWriteTokens: number;
   outputTokens: number;
   costUsd: number;
+  unpricedCalls?: number;
   calls: number;
   planCalls?: number;
 }

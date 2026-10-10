@@ -235,7 +235,10 @@ func (o *OpenAI) step(
 	if extra.Usage.Cost != nil {
 		out.CostUSD = *extra.Usage.Cost
 	} else {
-		out.CostUSD = o.pricing.cost(modelID, alias, out.Usage)
+		if out.Model != modelID {
+			alias = ""
+		}
+		out.CostUSD, out.Unpriced = o.pricing.cost(out.Model, alias, out.Usage)
 	}
 	return out, nil
 }

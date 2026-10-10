@@ -23,22 +23,27 @@ func TestChatGPTBilling(t *testing.T) {
 	}
 	account := accountID(t, s, "alpha")
 	for _, tt := range []struct {
-		name      string
-		calls     []Usage
-		wantCost  float64
-		wantPlans int64
+		name         string
+		calls        []Usage
+		wantCost     float64
+		wantPlans    int64
+		wantUnpriced int64
 	}{
-		{"plan", []Usage{{ChatGPTPlan: true}}, 0, 1},
-		{"mixed", []Usage{{ChatGPTPlan: true}, {CostUSD: 0.25}, {}}, 0.25, 1},
-		{"free API", []Usage{{}}, 0, 0},
+		{"plan", []Usage{{ChatGPTPlan: true}}, 0, 1, 0},
+		{"mixed", []Usage{{ChatGPTPlan: true}, {CostUSD: 0.25}, {}}, 0.25, 1, 0},
+		{"free API", []Usage{{}}, 0, 0, 0},
+		{"unpriced", []Usage{{Unpriced: true}}, 0, 0, 1},
+		{"mixed with unpriced", []Usage{{ChatGPTPlan: true}, {CostUSD: 0.25}, {}, {Unpriced: true}}, 0.25, 1, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			id := insertReview(t, ctx, s, account)
 			run := uuid.NewString()
 			wantPlan := make(map[string]bool)
+			wantUnpriced := make(map[string]bool)
 			for i, u := range tt.calls {
 				wantPlan[strconv.Itoa(i)] = u.ChatGPTPlan
+				wantUnpriced[strconv.Itoa(i)] = u.Unpriced
 			}
 			t.Cleanup(func() {
 				deleteModelCalls(t, s, `review_id = $1`, id)
@@ -62,7 +67,7 @@ func TestChatGPTBilling(t *testing.T) {
 					if err := InsertModelCall(ctx, tx, ModelCall{
 						AccountID: account, ReviewID: id, Kind: ModelCallConfidence, Step: i, Model: id, Upstream: u.Upstream,
 						Row:   transcript.Delta(transcript.State{}, model.StepRequest{}, nil).Encode(),
-						Usage: model.Usage{Input: 100, Output: 10}, CostUSD: u.CostUSD, ChatGPTPlan: u.ChatGPTPlan,
+						Usage: model.Usage{Input: 100, Output: 10}, CostUSD: u.CostUSD, ChatGPTPlan: u.ChatGPTPlan, Unpriced: u.Unpriced,
 					}); err != nil {
 						return err
 					}
@@ -76,7 +81,7 @@ func TestChatGPTBilling(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if v.CostUSD != tt.wantCost || v.PlanCalls != tt.wantPlans || v.Calls != int64(len(tt.calls)) {
+				if v.CostUSD != tt.wantCost || v.PlanCalls != tt.wantPlans || v.Calls != int64(len(tt.calls)) || v.UnpricedCalls != tt.wantUnpriced {
 					t.Errorf("review billing = %v, %d/%d plan calls", v.CostUSD, v.PlanCalls, v.Calls)
 				}
 				usage, err := ListReviewUsage(ctx, tx, id)
@@ -86,8 +91,8 @@ func TestChatGPTBilling(t *testing.T) {
 				if len(usage) != len(tt.calls) {
 					t.Fatalf("usage rows = %d", len(usage))
 				}
-				checkPlanUsage(t, usage, wantPlan, run)
-				checkPlanTranscript(t, tx, id, wantPlan)
+				checkPlanUsage(t, usage, wantPlan, wantUnpriced, run)
+				checkPlanTranscript(t, tx, id, wantPlan, wantUnpriced)
 				return nil
 			}); err != nil {
 				t.Fatal(err)
@@ -102,7 +107,7 @@ func TestChatGPTBilling(t *testing.T) {
 						continue
 					}
 					if u.CostUSD != tt.wantCost || u.PlanCalls != tt.wantPlans || u.Calls != int64(len(tt.calls)) ||
-						u.InputTokens != 100*u.Calls || u.OutputTokens != 10*u.Calls {
+						u.UnpricedCalls != tt.wantUnpriced || u.InputTokens != 100*u.Calls || u.OutputTokens != 10*u.Calls {
 						t.Errorf("usage series billing = %+v", u)
 					}
 					return nil
@@ -150,16 +155,16 @@ func TestChatGPTPlanCostRefused(t *testing.T) {
 	}
 }
 
-func checkPlanUsage(t *testing.T, usage []UsageRow, wantPlan map[string]bool, run string) {
+func checkPlanUsage(t *testing.T, usage []UsageRow, wantPlan, wantUnpriced map[string]bool, run string) {
 	t.Helper()
 	for i, u := range usage {
-		if u.RunnerRunID != run || u.ChatGPTPlan != wantPlan[u.Upstream] || (u.ChatGPTPlan && u.CostUSD != 0) {
+		if u.RunnerRunID != run || u.ChatGPTPlan != wantPlan[u.Upstream] || u.Unpriced != wantUnpriced[u.Upstream] || (u.ChatGPTPlan && u.CostUSD != 0) {
 			t.Errorf("usage %d = %+v", i, u)
 		}
 	}
 }
 
-func checkPlanTranscript(t *testing.T, tx pgx.Tx, id string, wantPlan map[string]bool) {
+func checkPlanTranscript(t *testing.T, tx pgx.Tx, id string, wantPlan, wantUnpriced map[string]bool) {
 	t.Helper()
 	rows, err := ReviewModelCalls(t.Context(), tx, id)
 	if err != nil {
@@ -170,7 +175,7 @@ func checkPlanTranscript(t *testing.T, tx pgx.Tx, id string, wantPlan map[string
 		t.Fatalf("turns = %d", len(turns))
 	}
 	for i, turn := range turns {
-		if turn.ChatGPTPlan != wantPlan[turn.Upstream] || (turn.ChatGPTPlan && turn.CostUSD != 0) {
+		if turn.ChatGPTPlan != wantPlan[turn.Upstream] || turn.Unpriced != wantUnpriced[turn.Upstream] || (turn.ChatGPTPlan && turn.CostUSD != 0) {
 			t.Errorf("turn %d = %+v", i, turn)
 		}
 	}

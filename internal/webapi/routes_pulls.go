@@ -77,7 +77,7 @@ func pull(p store.PullRow) Pull {
 	out := Pull{
 		Repository: p.Repository, Number: p.Number, Title: p.Title, Author: p.Author, State: p.State, Draft: p.Draft, Fork: p.Fork,
 		Merged: p.Merged, Paused: p.Paused, HeadSHA: p.HeadSHA, HeadRef: p.HeadRef, BaseRef: p.BaseRef, URL: p.URL, OpenedAt: p.OpenedAt,
-		UpdatedAt: p.UpdatedAt, Labels: make([]Label, len(p.Labels)), ReviewCount: p.Reviews, CostUSD: p.CostUSD,
+		UpdatedAt: p.UpdatedAt, Labels: make([]Label, len(p.Labels)), ReviewCount: p.Reviews, CostUSD: p.CostUSD, UnpricedCalls: p.UnpricedCalls,
 	}
 	for i, l := range p.Labels {
 		out.Labels[i] = Label{Name: l.Name, Color: l.Color}
@@ -147,7 +147,8 @@ func (s *Server) getPull(w http.ResponseWriter, r *http.Request, t *accountScope
 func reviewItem(v store.ReviewRow) Review {
 	out := Review{
 		ID: v.ID, Status: v.Status, Trigger: v.Trigger, Scope: v.Scope, Model: v.Model, HeadSHA: v.HeadSHA,
-		CostUSD: v.CostUSD, Calls: v.Calls, PlanCalls: v.PlanCalls, Tokens: TokenCounts{Input: v.InputTokens, Output: v.OutputTokens},
+		CostUSD: v.CostUSD, Calls: v.Calls, PlanCalls: v.PlanCalls, UnpricedCalls: v.UnpricedCalls,
+		Tokens:     TokenCounts{Input: v.InputTokens, Output: v.OutputTokens},
 		CreatedAt:  v.CreatedAt,
 		FinishedAt: v.FinishedAt, SkipReason: v.SkipReason, Error: v.Error,
 	}

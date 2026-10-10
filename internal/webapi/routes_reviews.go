@@ -126,7 +126,7 @@ func reviewDetail(rec reviewRecord, findings []store.FindingRow, usage []store.U
 	for i, u := range usage {
 		d.Usage[i] = UsageRow{
 			Role: u.Role, Model: u.Model, Upstream: u.Upstream, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
-			CostUSD: u.CostUSD, ChatGPTPlan: u.ChatGPTPlan, CreatedAt: u.CreatedAt, RunnerRunID: u.RunnerRunID,
+			CostUSD: u.CostUSD, ChatGPTPlan: u.ChatGPTPlan, Unpriced: u.Unpriced, CreatedAt: u.CreatedAt, RunnerRunID: u.RunnerRunID,
 		}
 	}
 	if x := rec.run; x != nil {
@@ -148,7 +148,8 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 		StopReason: a.StopReason, Steps: a.Steps, ToolCalls: a.ToolCalls, Timeline: make([]TimelineStep, len(a.Timeline)),
 		Sources: a.Sources, SkillsOffered: a.SkillsOffered, SkillsOpened: a.SkillsOpened,
 		CommandsOffered: a.CommandsOffered, CommandsRun: a.CommandsRun, Usage: usageOf(a.Usage),
-		CostUSD: a.CostUSD, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt, Result: a.Result, CarriedReviewID: a.CarriedReviewID,
+		CostUSD: a.CostUSD, UnpricedCalls: a.UnpricedCalls, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt,
+		Result: a.Result, CarriedReviewID: a.CarriedReviewID,
 		Parts: make([]AgentPart, len(a.Parts)),
 	}
 	for i, st := range a.Timeline {
@@ -267,7 +268,7 @@ func transcriptOf(c transcript.Conversation) Transcript {
 			Reset: t.Reset, MessagesFrom: t.MessagesFrom, Messages: make([]Message, len(t.Messages)),
 			Response: Response{Text: t.Response.Text, ToolCalls: toolCalls(t.Response.ToolCalls), Stop: t.Response.Stop},
 			Usage:    usageOf(t.Usage), CostUSD: t.CostUSD, DurationMs: t.Duration.Milliseconds(), Error: t.Error,
-			Truncated: t.Truncated, CreatedAt: t.CreatedAt, RunnerRunID: t.RunnerRunID, ChatGPTPlan: t.ChatGPTPlan,
+			Truncated: t.Truncated, CreatedAt: t.CreatedAt, RunnerRunID: t.RunnerRunID, ChatGPTPlan: t.ChatGPTPlan, Unpriced: t.Unpriced,
 		}
 		if t.Tools != nil {
 			turn.Tools = new(toolDefs(*t.Tools))

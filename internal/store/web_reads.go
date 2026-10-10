@@ -162,9 +162,11 @@ type AccountStats struct {
 type MonthUsage struct {
 	Tokens              int64
 	CostUSD             float64
+	UnpricedCalls       int64
 	ReviewsToday        int64
 	Reviews             int64
 	ReviewCostUSD       float64
+	ReviewUnpricedCalls int64
 	MedianReviewCostUSD *float64
 }
 
@@ -201,18 +203,21 @@ func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName stri
 func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	var m MonthUsage
 	err := tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0), coalesce(sum(cost_usd), 0)::float8,
-		(SELECT count(*) FROM reviews WHERE status = 'completed' AND created_at >= date_trunc('day', now()))
+		(SELECT count(*) FROM reviews WHERE status = 'completed' AND created_at >= date_trunc('day', now())),
+		count(*) FILTER (WHERE unpriced)
 		FROM usage WHERE created_at >= date_trunc('month', now())`).
-		Scan(&m.Tokens, &m.CostUSD, &m.ReviewsToday)
+		Scan(&m.Tokens, &m.CostUSD, &m.ReviewsToday, &m.UnpricedCalls)
 	if err != nil {
 		return m, fmt.Errorf("store: month usage: %w", err)
 	}
 	var median *float64
 	err = tx.QueryRow(ctx, `WITH costs AS (
-			SELECT (SELECT coalesce(sum(cost_usd), 0) FROM usage WHERE review_id = v.id) AS cost
+			SELECT (SELECT coalesce(sum(cost_usd), 0) FROM usage WHERE review_id = v.id) AS cost,
+				(SELECT count(*) FROM usage WHERE review_id = v.id AND unpriced) AS unpriced_calls
 			FROM reviews v WHERE v.status = 'completed' AND v.created_at >= date_trunc('month', now()))
-		SELECT count(*), coalesce(sum(cost), 0)::float8, percentile_cont(0.5) WITHIN GROUP (ORDER BY cost)::float8 FROM costs`).
-		Scan(&m.Reviews, &m.ReviewCostUSD, &median)
+		SELECT count(*), coalesce(sum(cost), 0)::float8, percentile_cont(0.5) WITHIN GROUP (ORDER BY cost)::float8,
+			coalesce(sum(unpriced_calls), 0)::bigint FROM costs`).
+		Scan(&m.Reviews, &m.ReviewCostUSD, &median, &m.ReviewUnpricedCalls)
 	if err != nil {
 		return m, fmt.Errorf("store: month review costs: %w", err)
 	}

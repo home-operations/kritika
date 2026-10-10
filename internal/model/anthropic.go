@@ -88,7 +88,7 @@ func (a *Anthropic) Step(ctx context.Context, req StepRequest) (StepResponse, er
 		}
 		u := msg.Usage
 		out.Usage = Usage{Input: u.InputTokens, CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens, Output: u.OutputTokens}
-		out.CostUSD = a.pricing.cost(id, alias, out.Usage)
+		out.CostUSD, out.Unpriced = a.pricing.cost(id, alias, out.Usage)
 		return out, nil
 	})
 }

@@ -8,7 +8,7 @@
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { day } from '../dates';
-  import { daysAgo, duration, usd, wholeNumber, CATEGORIES } from '../format';
+  import { daysAgo, duration, costTotal, wholeNumber, CATEGORIES } from '../format';
   import type { AccountDetail, Analytics, AnalyticsPoint, Attention } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
@@ -206,7 +206,15 @@
               good="up"
               define="The thumbs up and down on the inline comments of the findings reported in the period"
             />
-            <StatTile label="API spend" value={usd(c.costUsd)} now={c.costUsd} before={p.costUsd} good="down" define="API spend in the period; subscription fees excluded" />
+            <StatTile
+              label="API spend"
+              value={costTotal(c.costUsd, c.unpricedCalls)}
+              now={c.costUsd}
+              before={c.unpricedCalls || p.unpricedCalls ? undefined : p.costUsd}
+              good="down"
+              define="API spend in the period; subscription fees excluded"
+              sub={c.unpricedCalls ? `${wholeNumber(c.unpricedCalls)} unpriced calls; spend is incomplete` : undefined}
+            />
           </section>
 
           <div class="grid-2">

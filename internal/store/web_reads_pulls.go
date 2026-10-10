@@ -65,7 +65,8 @@ type PullRow struct {
 	Reviews int
 	// CostUSD is what every review of the pull request spent, whatever
 	// became of it.
-	CostUSD float64
+	CostUSD       float64
+	UnpricedCalls int64
 }
 
 // PullFilter narrows ListPulls. Zero fields match everything; Author is
@@ -86,7 +87,8 @@ const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.scope, lr.created_at, lr.p0, lr.p1, lr.p2,
 	(SELECT count(*) FROM reviews WHERE pull_request_id = p.id AND status = 'completed'),
-	(SELECT coalesce(sum(u.cost_usd), 0)::float8 FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id)
+	(SELECT coalesce(sum(u.cost_usd), 0)::float8 FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id),
+	(SELECT count(*) FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id AND u.unpriced)
 	FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT v.id, v.status, v.scope, v.created_at,
 		count(f.id) FILTER (WHERE f.severity = 'p0') AS p0,
@@ -105,7 +107,7 @@ func scanPull(row pgx.CollectableRow) (PullRow, error) {
 	var p0, p1, p2 *int
 	if err := row.Scan(&p.ID, &p.RepositoryID, &p.Repository, &p.Number, &p.Title, &p.Author, &p.State, &p.Draft, &p.Fork, &p.Merged,
 		&p.Paused, &p.HeadSHA, &p.HeadRef, &p.BaseRef, &p.URL, &p.OpenedAt, &p.UpdatedAt, &labels,
-		&id, &status, &scope, &at, &p0, &p1, &p2, &p.Reviews, &p.CostUSD); err != nil {
+		&id, &status, &scope, &at, &p0, &p1, &p2, &p.Reviews, &p.CostUSD, &p.UnpricedCalls); err != nil {
 		return p, err
 	}
 	p.Labels = []Label{}
@@ -237,24 +239,25 @@ type ReviewRow struct {
 	Summary *review.Summary
 	// Confidence is the reviews.confidence JSON, nil when the review was
 	// not scored.
-	Confidence   *review.Confidence
-	CostUSD      float64
-	InputTokens  int64
-	OutputTokens int64
-	Calls        int64
-	PlanCalls    int64
+	Confidence    *review.Confidence
+	CostUSD       float64
+	InputTokens   int64
+	OutputTokens  int64
+	Calls         int64
+	PlanCalls     int64
+	UnpricedCalls int64
 }
 
 const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.scope, v.scope_reason,
 	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, v.skip_reason, v.error, v.created_at, v.finished_at,
 	v.cancel_requested_at, v.summary, v.confidence, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0),
-	coalesce(u.calls, 0), coalesce(u.plan_calls, 0),
+	coalesce(u.calls, 0), coalesce(u.plan_calls, 0), coalesce(u.unpriced_calls, 0),
 	(SELECT n.id FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND n.status <> 'skipped'
 		AND (n.created_at, n.id) > (v.created_at, v.id)
 		ORDER BY n.created_at DESC, n.id DESC LIMIT 1), p.state, p.merged
 	FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id JOIN repositories r ON r.id = p.repository_id
 	LEFT JOIN LATERAL (SELECT sum(cost_usd)::float8 AS cost, sum(input_tokens) AS input, sum(output_tokens) AS output,
-		count(*) AS calls, count(*) FILTER (WHERE chatgpt_plan) AS plan_calls
+		count(*) AS calls, count(*) FILTER (WHERE chatgpt_plan) AS plan_calls, count(*) FILTER (WHERE unpriced) AS unpriced_calls
 		FROM usage WHERE review_id = v.id) u ON true`
 
 func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
@@ -263,7 +266,8 @@ func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var summary, confidence []byte
 	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &scope, &v.ScopeReason,
 		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &v.SkipReason, &v.Error, &v.CreatedAt, &v.FinishedAt,
-		&v.CancelRequestedAt, &summary, &confidence, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.Calls, &v.PlanCalls, &v.NewestReviewID,
+		&v.CancelRequestedAt, &summary, &confidence, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.Calls, &v.PlanCalls, &v.UnpricedCalls,
+		&v.NewestReviewID,
 		&v.PullState, &v.PullMerged); err != nil {
 		return v, err
 	}

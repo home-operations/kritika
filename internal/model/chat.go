@@ -217,8 +217,12 @@ func EncodeChatResponse(id string, resp StepResponse) ([]byte, error) {
 		"usage": map[string]any{
 			"prompt_tokens": u.Prompt(), "completion_tokens": u.Output, "total_tokens": u.Prompt() + u.Output,
 			"prompt_tokens_details": map[string]any{"cached_tokens": u.CacheRead, "cache_write_tokens": u.CacheWrite},
-			"cost":                  resp.CostUSD,
 		},
+	}
+	// Omitting cost preserves missing pricing through the gateway rather
+	// than turning it into an upstream-reported zero for the runner.
+	if !resp.Unpriced {
+		out["usage"].(map[string]any)["cost"] = resp.CostUSD
 	}
 	if resp.Upstream != "" {
 		out["provider"] = resp.Upstream

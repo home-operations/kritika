@@ -16,6 +16,7 @@ type UsagePoint struct {
 	CacheWriteTokens int64   `json:"cacheWriteTokens"`
 	OutputTokens     int64   `json:"outputTokens"`
 	CostUSD          float64 `json:"costUsd"`
+	UnpricedCalls    int64   `json:"unpricedCalls,omitzero"`
 	Calls            int64   `json:"calls"`
 	PlanCalls        int64   `json:"planCalls,omitzero"`
 }
