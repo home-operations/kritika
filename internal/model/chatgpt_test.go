@@ -50,6 +50,8 @@ func completed(output, usage string) string {
 const (
 	textOutput    = `[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello","annotations":[]}]}]`
 	responseUsage = `{"input_tokens":700,"input_tokens_details":{"cached_tokens":500},"output_tokens":59,"output_tokens_details":{"reasoning_tokens":40},"total_tokens":759}`
+	// testPlan is the provider newTestChatGPT serves.
+	testPlan = "plan"
 )
 
 func newTestChatGPT(t *testing.T, srv *httptest.Server, src TokenSource) *ChatGPT {
@@ -57,7 +59,7 @@ func newTestChatGPT(t *testing.T, srv *httptest.Server, src TokenSource) *ChatGP
 	if src == nil {
 		src = &tokens{token: "at-1"}
 	}
-	c, err := NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Tokens: src})
+	c, err := NewChatGPT(ChatGPTConfig{BaseURL: srv.URL + "/v1", Provider: testPlan, Tokens: src})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,6 +182,9 @@ func TestChatGPTRequest(t *testing.T) {
 	}
 	if b["prompt_cache_key"] != "run-1" {
 		t.Fatalf("prompt_cache_key = %v, want the session", b["prompt_cache_key"])
+	}
+	if string(mustJSON(b["include"])) != `["reasoning.encrypted_content"]` {
+		t.Fatalf("include = %v", b["include"])
 	}
 	if field(b, "reasoning", "effort") != "high" || b["tool_choice"] != "required" {
 		t.Fatalf("reasoning = %v, tool_choice = %v", b["reasoning"], b["tool_choice"])
@@ -453,6 +458,13 @@ func TestChatGPTMasksToken(t *testing.T) {
 			for _, call := range resp.ToolCalls {
 				if strings.Contains(string(call.Input), "at-secret") {
 					t.Fatal("tool input contains token")
+				}
+			}
+			if out := resp.ChatGPTOutput; out != nil {
+				for _, item := range out.Items {
+					if strings.Contains(string(item), "at-secret") {
+						t.Fatal("replay output contains token")
+					}
 				}
 			}
 		})

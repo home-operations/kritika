@@ -14,9 +14,10 @@ import (
 // it encodes and decodes to itself, a malformed tool input included.
 func TestRunKeepsItsConversation(t *testing.T) {
 	submit := toolCall("2", "submit_review", validSubmitInput)
+	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	st := &scriptedStepper{steps: []model.StepResponse{
-		{ToolCalls: []model.ToolCall{toolCall("1", "grep", `{"pattern":`)}},
-		{Text: "Done.", ToolCalls: []model.ToolCall{submit}, Usage: model.Usage{Input: 100, CacheRead: 900, Output: 50}},
+		{ToolCalls: []model.ToolCall{toolCall("1", "grep", `{"pattern":`)}, ChatGPTOutput: output},
+		{Text: "Done.", ToolCalls: []model.ToolCall{submit}, ChatGPTOutput: output, Usage: model.Usage{Input: 100, CacheRead: 900, Output: 50}},
 	}}
 	res := Run{
 		Stepper: st, Model: "m", System: "Review it.", User: "The diff.", Tools: []Tool{&fakeTool{name: "grep", output: "hit"}},
@@ -27,7 +28,7 @@ func TestRunKeepsItsConversation(t *testing.T) {
 		t.Fatalf("stop = %s, conversation = %v", res.Stop, c)
 	}
 	last := st.calls[len(st.calls)-1]
-	want := append(slices.Clone(last.Messages), model.Message{Role: model.RoleAssistant, Text: "Done.", ToolCalls: []model.ToolCall{submit}})
+	want := append(slices.Clone(last.Messages), model.Message{Role: model.RoleAssistant, Text: "Done.", ToolCalls: []model.ToolCall{submit}, ChatGPTOutput: output})
 	if c.System != "Review it." || !reflect.DeepEqual(c.Tools, last.Tools) || !reflect.DeepEqual(c.Messages, want) || c.Tokens != 1050 {
 		t.Fatalf("conversation = %+v", c)
 	}
@@ -42,6 +43,9 @@ func TestRunKeepsItsConversation(t *testing.T) {
 	if string(back.Messages[1].ToolCalls[0].Input) != `{"pattern":` {
 		t.Fatalf("malformed input = %s", back.Messages[1].ToolCalls[0].Input)
 	}
+	if !reflect.DeepEqual(back.Messages[1].ChatGPTOutput, output) {
+		t.Fatalf("replay output = %+v", back.Messages[1].ChatGPTOutput)
+	}
 
 	unsubmitted := Run{Stepper: &scriptedStepper{}, Model: "m", User: "u", Submit: testSubmitDef}.Do(t.Context())
 	if unsubmitted.Conversation != nil {
@@ -54,11 +58,12 @@ func TestRunKeepsItsConversation(t *testing.T) {
 // text, and keeps the longer conversation in turn.
 func TestRunCarriesOnAConversation(t *testing.T) {
 	grep := &fakeTool{name: "grep", output: "hit"}
+	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
 	carried := &Conversation{
 		System: "Review it.", Tools: Run{Tools: []Tool{grep}, Submit: testSubmitDef}.ToolDefs(), Tokens: 500,
 		Messages: []model.Message{
 			{Role: model.RoleUser, Text: "The diff."},
-			{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{toolCall("1", "grep", `{}`), toolCall("2", "submit_review", validSubmitInput)}},
+			{Role: model.RoleAssistant, ChatGPTOutput: output, ToolCalls: []model.ToolCall{toolCall("1", "grep", `{}`), toolCall("2", "submit_review", validSubmitInput)}},
 		},
 	}
 	st := &scriptedStepper{steps: []model.StepResponse{{ToolCalls: []model.ToolCall{toolCall("3", "submit_review", validSubmitInput)}}}}
@@ -95,5 +100,32 @@ func TestRunCarriesOnAConversation(t *testing.T) {
 	}
 	if run.Carries(nil) {
 		t.Error("a run carries no conversation")
+	}
+}
+
+func TestRunRetainsChatGPTOutput(t *testing.T) {
+	output := &model.ChatGPTOutput{Provider: "plan", Items: []json.RawMessage{json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"}`)}}
+	for _, tt := range []struct {
+		name   string
+		first  model.StepResponse
+		limits Limits
+	}{
+		{"tool result", model.StepResponse{ToolCalls: []model.ToolCall{toolCall("1", "unknown", `{}`)}}, Limits{}},
+		{"nudge", model.StepResponse{Text: "looking"}, Limits{}},
+		{"empty answer", model.StepResponse{}, Limits{}},
+		{"output cap", model.StepResponse{Text: "looking", Stop: model.StopMaxTokens}, Limits{}},
+		{"forced submission retry", model.StepResponse{Text: "looking"}, Limits{MaxSteps: 1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.first.ChatGPTOutput = output
+			st := &scriptedStepper{steps: []model.StepResponse{tt.first, {ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}}}}
+			res := Run{Stepper: st, Model: "m", User: "review", Submit: testSubmitDef, Limits: tt.limits}.Do(t.Context())
+			if res.Stop != StopSubmitted || len(st.calls) != 2 {
+				t.Fatalf("stop = %s after %d calls", res.Stop, len(st.calls))
+			}
+			if got := st.calls[1].Messages[1].ChatGPTOutput; !reflect.DeepEqual(got, output) {
+				t.Fatalf("replay output = %+v, want %+v", got, output)
+			}
+		})
 	}
 }

@@ -101,6 +101,21 @@ func stepPart(h string) (int, error) {
 	return int(n), nil
 }
 
+// promptEstimate is a step's prompt at four characters a token of its
+// request, leaving out replayed ChatGPT output: it repeats its turn's text
+// and calls, and its encrypted reasoning is no measure of tokens.
+func promptEstimate(body []byte, req model.StepRequest) int64 {
+	size := len(body)
+	for _, m := range req.Messages {
+		if m.ChatGPTOutput != nil {
+			for _, item := range m.ChatGPTOutput.Items {
+				size -= len(item)
+			}
+		}
+	}
+	return int64(max(size, 0)) / 4
+}
+
 // refuse answers a step with an error. Only a 500, the gateway's own
 // trouble reaching its database, is worth the runner's retry; every other
 // refusal is final: the provider was already retried, the budget is spent,
@@ -274,10 +289,9 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if req.MaxTokens <= 0 || req.MaxTokens > MaxStepOutput {
 		req.MaxTokens = MaxStepOutput
 	}
-	// The step is reserved before it runs, its prompt estimated at four
-	// characters a token of the request; its actual spend replaces the
+	// The step is reserved before it runs; its actual spend replaces the
 	// estimate once the provider answers.
-	reserved := int64(len(body))/4 + req.MaxTokens
+	reserved := promptEstimate(body, req) + req.MaxTokens
 	if !g.reserve(ctx, w, c, reserved) {
 		return
 	}

@@ -98,3 +98,31 @@ func TestStepPart(t *testing.T) {
 		}
 	}
 }
+
+func TestPromptEstimate(t *testing.T) {
+	const reasoning = `{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"` + "0123456789abcdef0123456789abcdef" + `"}`
+	const call = `{"type":"function_call","id":"fc_1","call_id":"c1","name":"read_file","namespace":"kritika","arguments":"{}"}`
+	plain := `{"model":"kritika","messages":[{"role":"user","content":"review"},` +
+		`{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"read_file","arguments":"{}"}}]}]}`
+	replayed := `{"model":"kritika","messages":[{"role":"user","content":"review"},` +
+		`{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"read_file","arguments":"{}"}}],` +
+		`"kritika_chatgpt_output":{"provider":"plan","items":[` + reasoning + `,` + call + `]}}]}`
+	for _, tt := range []struct {
+		name string
+		body string
+		want int
+	}{
+		{"a request without replayed output", plain, len(plain) / 4},
+		{"replayed output left out", replayed, (len(replayed) - len(reasoning) - len(call)) / 4},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := model.DecodeChatRequest([]byte(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := promptEstimate([]byte(tt.body), req); got != int64(tt.want) {
+				t.Fatalf("promptEstimate = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

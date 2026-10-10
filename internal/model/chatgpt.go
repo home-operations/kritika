@@ -14,6 +14,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
@@ -53,7 +54,14 @@ const (
 	planLimitCode           = "subscription_sharing_usage_limit_exceeded"
 	planUnavailableCode     = "subscription_sharing_usage_unavailable"
 	planUserUnavailableCode = "subscription_sharing_user_unavailable"
+	// encryptedContentCode refuses encrypted reasoning the route cannot
+	// read back.
+	encryptedContentCode = "invalid_encrypted_content"
 )
+
+// errEncryptedContent is a step the route refused for its replayed
+// reasoning.
+var errEncryptedContent = errors.New("model: chatgpt: replayed reasoning refused")
 
 // toolNamespace groups kritika's tools: the route takes function tools
 // in a namespace, not at the top level.
@@ -62,11 +70,17 @@ const toolNamespace = "kritika"
 // messageItem is the output item that carries the model's text.
 const messageItem = "message"
 
+// functionCallItem is the output item that carries one of its calls.
+const functionCallItem = "function_call"
+
 // ChatGPTConfig configures a ChatGPT plan adapter.
 type ChatGPTConfig struct {
 	// BaseURL is the API root, ".../v1"; empty means OpenAI's.
 	BaseURL string
-	Tokens  TokenSource
+	// Provider names the provider the adapter serves. Its output is
+	// replayed only to the same provider.
+	Provider string
+	Tokens   TokenSource
 	// HTTPClient may be nil.
 	HTTPClient *http.Client
 	// ObserveAllowances receives quota data when the upstream supplies it.
@@ -81,6 +95,7 @@ type ChatGPTConfig struct {
 // retrying.
 type ChatGPT struct {
 	client            openai.Client
+	provider          string
 	tokens            TokenSource
 	now               func() time.Time
 	observeAllowances func(context.Context, []chatgpt.Allowance)
@@ -108,7 +123,7 @@ func NewChatGPT(cfg ChatGPTConfig) (*ChatGPT, error) {
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
-	return &ChatGPT{client: openai.NewClient(opts...), tokens: cfg.Tokens, now: time.Now,
+	return &ChatGPT{client: openai.NewClient(opts...), provider: cfg.Provider, tokens: cfg.Tokens, now: time.Now,
 		observeAllowances: cfg.ObserveAllowances}, nil
 }
 
@@ -124,7 +139,7 @@ func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, erro
 	if err := checkRequest(req); err != nil {
 		return StepResponse{}, err
 	}
-	params, err := chatGPTParams(req)
+	params, replayed, err := chatGPTParams(req, c.provider)
 	if err != nil {
 		return StepResponse{}, err
 	}
@@ -132,13 +147,34 @@ func (c *ChatGPT) send(ctx context.Context, req StepRequest) (StepResponse, erro
 	if err != nil {
 		return StepResponse{}, fmt.Errorf("model: chatgpt: %w", err)
 	}
-	resp, err := eachModel(ctx, req, func(id string) (StepResponse, error) { return c.step(ctx, params, id, token) })
+	resp, err := eachModel(ctx, req, func(id string) (StepResponse, error) {
+		resp, err := c.step(ctx, params, id, token)
+		if replayed && errors.Is(err, errEncryptedContent) {
+			// The route refuses reasoning it can no longer read, as after
+			// its keys rotate; the step goes again with every turn as its
+			// text and calls.
+			plain, _, perr := chatGPTParams(req, "")
+			if perr != nil {
+				return resp, err
+			}
+			return c.step(ctx, plain, id, token)
+		}
+		return resp, err
+	})
+	if req.Once {
+		resp.ChatGPTOutput = nil
+	}
 	// A provider may echo its bearer token in an error or response. Dynamic
 	// credentials are absent from the configuration's transcript mask.
 	mask := func(s string) string { return strings.ReplaceAll(s, token, "***") }
 	resp.Text = mask(resp.Text)
 	for i := range resp.ToolCalls {
 		resp.ToolCalls[i].Input = json.RawMessage(mask(string(resp.ToolCalls[i].Input)))
+	}
+	if out := resp.ChatGPTOutput; out != nil {
+		for i := range out.Items {
+			out.Items[i] = json.RawMessage(mask(string(out.Items[i])))
+		}
 	}
 	if err != nil {
 		err = &chatGPTError{err: err, text: mask(err.Error())}
@@ -220,23 +256,28 @@ func (c *ChatGPT) step(ctx context.Context, params responses.ResponseNewParams, 
 }
 
 // response reads the response's output: its message's text and refusal,
-// and its function calls, whose call ids the tool results answer. The
-// route sends each finished item as response.output_item.done and may
-// leave the final response's output empty or partial, so those items, in
-// the order they came, are the output whenever any came, as Codex reads
-// them; the final response's output only when none did.
+// its function calls, whose call ids the tool results answer, and every
+// item as it came, for the next step to replay. The route sends each
+// finished item as response.output_item.done and may leave the final
+// response's output empty or partial, so those items, in the order they
+// came, are the output whenever any came, as Codex reads them; the final
+// response's output only when none did.
 func (c *ChatGPT) response(r responses.Response, modelID string, done []responses.ResponseOutputItemUnion) StepResponse {
 	if len(done) > 0 {
 		r.Output = done
 	}
 	out := StepResponse{Stop: StopEndTurn, Model: modelID}
+	if len(r.Output) > 0 {
+		out.ChatGPTOutput = &ChatGPTOutput{Provider: c.provider}
+	}
 	for _, item := range r.Output {
+		out.ChatGPTOutput.Items = append(out.ChatGPTOutput.Items, json.RawMessage(item.RawJSON()))
 		switch item.Type {
 		case messageItem:
 			for _, part := range item.AsMessage().Content {
 				out.Text += part.Text + part.Refusal
 			}
-		case "function_call":
+		case functionCallItem:
 			call := item.AsFunctionCall()
 			out.ToolCalls = append(out.ToolCalls, ToolCall{ID: call.CallID, Name: call.Name, Input: json.RawMessage(cmp.Or(call.Arguments, "{}"))})
 		}
@@ -260,6 +301,8 @@ func (c *ChatGPT) failed(e responses.ResponseError) error {
 	case planUnavailableCode, planUserUnavailableCode,
 		string(responses.ResponseErrorCodeServerError), string(responses.ResponseErrorCodeRateLimitExceeded):
 		return fmt.Errorf("%w: %s: %s", ErrUnavailable, code, e.Message)
+	case encryptedContentCode:
+		return fmt.Errorf("%w: %s", errEncryptedContent, e.Message)
 	default:
 		return fmt.Errorf("response failed: %s: %s", code, e.Message)
 	}
@@ -282,6 +325,8 @@ func (c *ChatGPT) refused(ctx context.Context, token string, err error) error {
 		if expireErr := c.tokens.Expire(ctx, token); expireErr != nil {
 			return fmt.Errorf("model: chatgpt: mark rejected token: %w", errors.Join(err, expireErr))
 		}
+	case apiErr.Code == encryptedContentCode:
+		return fmt.Errorf("%w: %w", errEncryptedContent, openAIError(err))
 	}
 	if apiErr.RawJSON() == "" && apiErr.Response != nil && apiErr.Response.Body != nil {
 		// A refusal before the Responses layer, admission or routing, comes
@@ -313,12 +358,17 @@ func (c *ChatGPT) pausedError() error {
 	return nil
 }
 
-// chatGPTParams maps everything but the model, which each attempt sets.
-// The system prompt goes as instructions, since the route rejects system
-// messages, and the tools in one namespace. The session keys the prompt
-// cache, since every step resends the whole conversation unstored.
-func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
+// chatGPTParams maps everything but the model, which each attempt sets,
+// replaying the output provider produced, and reports whether it replayed
+// any. The system prompt goes as instructions, since the route rejects
+// system messages, and the tools in one namespace. The session keys the
+// prompt cache, since every step resends the whole conversation unstored;
+// a step no later one reads back has no reasoning to carry.
+func chatGPTParams(req StepRequest, provider string) (responses.ResponseNewParams, bool, error) {
 	p := responses.ResponseNewParams{Store: openai.Bool(false)}
+	if !req.Once {
+		p.Include = []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent}
+	}
 	if req.System != "" {
 		p.Instructions = openai.String(req.System)
 	}
@@ -326,7 +376,15 @@ func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
 		p.PromptCacheKey = openai.String(req.Session)
 	}
 	items := make(responses.ResponseInputParam, 0, len(req.Messages))
+	replayed := false
 	for _, m := range req.Messages {
+		if replayable(m, provider) {
+			replayed = true
+			for _, item := range m.ChatGPTOutput.Items {
+				items = append(items, param.Override[responses.ResponseInputItemUnionParam](item))
+			}
+			continue
+		}
 		items = append(items, chatGPTItems(m)...)
 	}
 	p.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: items}
@@ -334,7 +392,7 @@ func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
 		p.Reasoning = shared.ReasoningParam{Effort: shared.ReasoningEffort(req.Effort)}
 	}
 	if len(req.Tools) == 0 {
-		return p, nil
+		return p, replayed, nil
 	}
 	ns := responses.NamespaceToolParam{Name: toolNamespace, Description: "The tools of kritika, the code reviewer running this conversation."}
 	for _, t := range req.Tools {
@@ -345,7 +403,7 @@ func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
 		if len(t.InputSchema) > 0 {
 			var schema map[string]any
 			if err := json.Unmarshal(t.InputSchema, &schema); err != nil {
-				return p, fmt.Errorf("model: tool %s: input schema: %w", t.Name, err)
+				return p, false, fmt.Errorf("model: tool %s: input schema: %w", t.Name, err)
 			}
 			fn.Parameters = schema
 		}
@@ -360,7 +418,90 @@ func chatGPTParams(req StepRequest) (responses.ResponseNewParams, error) {
 	default:
 		p.ToolChoice.OfToolChoiceMode = openai.Opt(responses.ToolChoiceOptionsAuto)
 	}
-	return p, nil
+	return p, replayed, nil
+}
+
+// chatGPTItem is what replayable reads of an output item.
+type chatGPTItem struct {
+	Type             string `json:"type"`
+	Role             string `json:"role"`
+	CallID           string `json:"call_id"`
+	Namespace        string `json:"namespace"`
+	EncryptedContent string `json:"encrypted_content"`
+	Content          []struct {
+		Type    string `json:"type"`
+		Text    string `json:"text"`
+		Refusal string `json:"refusal"`
+	} `json:"content"`
+	Summary []struct {
+		Type string `json:"type"`
+	} `json:"summary"`
+}
+
+// replayable reports whether m's output can go back to provider as it
+// came, rather than as m's text and calls. The route refuses reasoning it
+// cannot read, which is any without its encrypted content or from another
+// account, and reasoning that leads to no item. The items it forwards are
+// only the kinds a turn returns, with text alone, since a runner sends
+// them, and they must add up to m's text and calls, which the loop may
+// have changed since.
+func replayable(m Message, provider string) bool {
+	out := m.ChatGPTOutput
+	if m.Role != RoleAssistant || out == nil || provider == "" || out.Provider != provider || len(out.Items) == 0 {
+		return false
+	}
+	var text strings.Builder
+	var calls []string
+	var last string
+	for _, raw := range out.Items {
+		var item chatGPTItem
+		if err := json.Unmarshal(raw, &item); err != nil {
+			return false
+		}
+		switch item.Type {
+		case "reasoning":
+			if item.EncryptedContent == "" {
+				return false
+			}
+			for _, part := range item.Summary {
+				if part.Type != "summary_text" {
+					return false
+				}
+			}
+			for _, part := range item.Content {
+				if part.Type != "reasoning_text" {
+					return false
+				}
+			}
+		case messageItem:
+			if item.Role != string(RoleAssistant) {
+				return false
+			}
+			for _, part := range item.Content {
+				if part.Type != "output_text" && part.Type != "refusal" {
+					return false
+				}
+				text.WriteString(part.Text + part.Refusal)
+			}
+		case functionCallItem:
+			if item.Namespace != "" && item.Namespace != toolNamespace {
+				return false
+			}
+			calls = append(calls, item.CallID)
+		default:
+			return false
+		}
+		last = item.Type
+	}
+	if last == "reasoning" || text.String() != m.Text || len(calls) != len(m.ToolCalls) {
+		return false
+	}
+	for i, call := range m.ToolCalls {
+		if calls[i] != call.ID {
+			return false
+		}
+	}
+	return true
 }
 
 // chatGPTItems maps one message to input items: tool results first, as

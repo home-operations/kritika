@@ -212,3 +212,32 @@ func TestChatGPTStepperSessionKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestChatGPTStepperTagsOutput: a plan's output names its provider's
+// session, which only that provider replays.
+func TestChatGPTStepperTagsOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: response.completed\ndata: " +
+			`{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],` +
+			`"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n"))
+	}))
+	t.Cleanup(srv.Close)
+	plan := configfile.Provider{Type: configfile.ProviderChatGPT, BaseURL: srv.URL + "/v1"}
+	f := &configfile.File{Providers: map[string]configfile.Provider{"plan": plan}}
+	a := &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme", Providers: map[string]configfile.Provider{"own": plan}}
+	sessions := &planSessions{found: true, session: store.ChatGPTSession{Credentials: chatgpt.Credentials{AccessToken: "at-1"}}}
+	steppers := &Steppers{Build: StepperBuilder(sessions)}
+	for _, tt := range []struct{ provider, key string }{{"plan", "plan"}, {"own", "github/acme/own"}} {
+		t.Run(tt.provider, func(t *testing.T) {
+			s, err := steppers.Stepper(f, a, tt.provider)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := s.Step(t.Context(), model.StepRequest{Model: "m"})
+			if err != nil || resp.ChatGPTOutput == nil || resp.ChatGPTOutput.Provider != tt.key {
+				t.Fatalf("Step = %+v, %v; want output of provider %q", resp.ChatGPTOutput, err, tt.key)
+			}
+		})
+	}
+}
