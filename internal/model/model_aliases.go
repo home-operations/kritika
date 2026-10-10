@@ -47,6 +47,13 @@ func ValidAlias(id string) bool {
 	return ok && err == nil && a.name == id
 }
 
+// ValidOpenRouterAlias reports whether id is one of OpenRouter's own
+// floating aliases, ~<author>/<family>-latest, which OpenRouter resolves.
+func ValidOpenRouterAlias(id string) bool {
+	author, family, ok := strings.Cut(strings.TrimPrefix(id, "~"), "/")
+	return Floating(id) && ok && author != "" && ValidAlias("~"+family)
+}
+
 type alias struct {
 	// name is ~<family>-latest, and pinned the model a grant pinned it to,
 	// "" for none.
@@ -61,7 +68,7 @@ func parseAlias(id string) (a alias, ok bool, err error) {
 	}
 	name, pinned, _ := strings.Cut(rest, "@")
 	family, latest := strings.CutSuffix(name, "-latest")
-	if !latest || family == "" {
+	if !latest || family == "" || strings.Contains(family, "/") {
 		return alias{}, true, fmt.Errorf("model: floating alias %q must be ~<family>-latest", id)
 	}
 	return alias{name: "~" + name, family: family, pinned: pinned}, true, nil

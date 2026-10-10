@@ -105,7 +105,7 @@ func TestOpenAIPin(t *testing.T) {
 	}{
 		{"alias", "~sol-latest", "~sol-latest@gpt-6.1-sol", false, false},
 		{"pinned", "gpt-6-sol", "gpt-6-sol", false, false},
-		{"openrouter", "~sol-latest", "~sol-latest", true, false},
+		{"openrouter", "~anthropic/claude-sonnet-latest", "~anthropic/claude-sonnet-latest", true, false},
 		{"opencode", "~sol-latest", "~sol-latest", false, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestOpenAIModelIDsPassThrough(t *testing.T) {
 		{"native alias", "chatgpt-sol-latest", false, false},
 		{"unprefixed family", "sol-latest", false, false},
 		{"local", "local-model", false, false},
-		{"openrouter", "~sol-latest", true, false},
+		{"openrouter", "~anthropic/claude-sonnet-latest", true, false},
 		{"opencode", "~sol-latest", false, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -142,6 +142,27 @@ func TestOpenAIModelIDsPassThrough(t *testing.T) {
 				t.Fatalf("explicit model = %v, path %s, body %v", err, got.path, got.body)
 			}
 		})
+	}
+}
+
+func TestOpenRouterNativeAliases(t *testing.T) {
+	const primary = "~anthropic/claude-sonnet-latest"
+	const fallback = "~google/gemini-flash-latest"
+	const served = "google/gemini-flash-3"
+	body := strings.Replace(chatCompletion(`{"role":"assistant","content":"ok"}`, "stop",
+		`{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150,"cost":0.25}`, ""), "acme/large", served, 1)
+	srv, got := fakeProvider(t, http.StatusOK, body)
+	c := newTestOpenAI(t, srv, true, nil)
+	resp, err := c.Step(t.Context(), StepRequest{Model: primary, Fallbacks: []string{fallback}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.path != "/gw/v1/chat/completions" || field(got.body, "model") != primary ||
+		field(got.body, "models", 0) != primary || field(got.body, "models", 1) != fallback {
+		t.Fatalf("request path %s, body %v", got.path, got.body)
+	}
+	if resp.Model != served || resp.CostUSD != 0.25 {
+		t.Fatalf("response model = %q, cost = %g", resp.Model, resp.CostUSD)
 	}
 }
 

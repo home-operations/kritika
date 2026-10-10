@@ -16,6 +16,7 @@ func TestCarryWindow(t *testing.T) {
 	}{
 		{"an OpenAI model on OpenRouter", configfile.ProviderOpenRouter, "openrouter/openai/gpt-6.1-sol", continueWindow},
 		{"an Anthropic model on OpenRouter", configfile.ProviderOpenRouter, "openrouter/anthropic/claude-opus-5", anthropicContinueWindow},
+		{"an Anthropic alias on OpenRouter", configfile.ProviderOpenRouter, "openrouter/~anthropic/claude-opus-latest", anthropicContinueWindow},
 		{"Anthropic's own API", configfile.ProviderAnthropic, "anthropic/claude-opus-5", anthropicContinueWindow},
 		{"OpenAI's own API", configfile.ProviderOpenAI, "openai/gpt-6.1-sol", continueWindow},
 	} {

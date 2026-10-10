@@ -83,7 +83,7 @@ apps:
 		{"model id", "p/claude-opus-4-6", nil, "p/claude-opus-4-6", nil},
 		{"no fallback", "", nil, "", nil},
 		{"unpinned", "p/~opus-latest", refused, "p/~opus-latest", []string{"~opus-latest high"}},
-		{"an adapter that pins nothing", "plain/~opus-latest", nil, "plain/~opus-latest", nil},
+		{"an OpenRouter alias", "plain/~anthropic/claude-opus-latest", nil, "plain/~anthropic/claude-opus-latest", nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			pin := &pinner{err: tt.err}
@@ -91,7 +91,7 @@ apps:
 				if p.Type == configfile.ProviderAnthropic {
 					return pin, nil
 				}
-				return &stepperFunc{}, nil
+				return nil, errors.New("built an adapter that resolves no aliases")
 			}}
 			got, err := c.Pin(t.Context(), f, &f.Accounts[0], tt.ref, model.EffortHigh)
 			if got != tt.want || !errors.Is(err, tt.err) || !slices.Equal(pin.asked, tt.asked) {

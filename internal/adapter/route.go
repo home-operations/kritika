@@ -27,12 +27,13 @@ func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfi
 	return Route{Ref: ref, Stepper: stepper, Provider: provider}, nil
 }
 
-// Pin pins ref, when it is a floating alias, to the model it selects now
-// for effort (model.Pinner); any other ref comes back as it is.
+// Pin pins ref, when it is a floating alias kritika resolves, to the model
+// it selects now for effort (model.Pinner); any other ref comes back as it
+// is.
 func (c *Steppers) Pin(
 	ctx context.Context, f *configfile.File, t *configfile.Account, ref configfile.ModelRef, effort model.Effort,
 ) (configfile.ModelRef, error) {
-	if !model.Floating(ref.Model()) {
+	if p, _ := f.Provider(t, ref.Provider()); !p.Type.TakesAliases() || !model.Floating(ref.Model()) {
 		return ref, nil
 	}
 	stepper, err := c.Stepper(f, t, ref.Provider())

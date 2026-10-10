@@ -27,7 +27,8 @@ const (
 // carryWindow is how recently a conversation on ref, whose provider is of
 // type t, must have been kept for a review to carry it on.
 func carryWindow(t configfile.ProviderType, ref configfile.ModelRef) time.Duration {
-	if t == configfile.ProviderAnthropic || (t == configfile.ProviderOpenRouter && strings.HasPrefix(ref.Model(), "anthropic/")) {
+	if t == configfile.ProviderAnthropic ||
+		(t == configfile.ProviderOpenRouter && strings.HasPrefix(strings.TrimPrefix(ref.Model(), "~"), "anthropic/")) {
 		return anthropicContinueWindow
 	}
 	return continueWindow
