@@ -46,9 +46,8 @@ the App is installed on.
   👀 while it works and a 👍 once it has answered. GitHub documents a
   reaction on a pull request itself, or on a conversation comment, as
   needing write access to issues. With read-only, those may go without
-  them, and an `@<bot> review` that cannot carry them gets a reply
-  instead; a mention in an inline thread gets them either way, under the
-  pull requests permission.
+  them; a mention in an inline thread gets them either way, under the pull
+  requests permission.
 - A permission changed on an App already installed takes effect once each
   account it is installed on approves it. kritika picks it up within the
   hour, or at once when restarted.

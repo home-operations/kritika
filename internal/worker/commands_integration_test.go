@@ -26,10 +26,14 @@ import (
 
 type reviewRequestForge struct {
 	*localForge
-	onEyes func()
+	onEyes  func()
+	refused bool
 }
 
 func (f *reviewRequestForge) React(ctx context.Context, owner, repo string, comment forge.Comment, content string) (int64, error) {
+	if f.refused {
+		return 0, errors.New("Resource not accessible by integration")
+	}
 	id, err := f.localForge.React(ctx, owner, repo, comment, content)
 	if content == forge.ReactionEyes && f.onEyes != nil {
 		fn := f.onEyes
@@ -60,6 +64,7 @@ func TestReviewRequestLifecycle(t *testing.T) {
 		name    string
 		status  store.ReviewStatus
 		pollErr bool
+		refused bool
 		mark    string
 	}{
 		{name: "initial polling error", status: store.ReviewCompleted, pollErr: true, mark: forge.ReactionDone},
@@ -70,6 +75,7 @@ func TestReviewRequestLifecycle(t *testing.T) {
 		{name: "superseded", status: store.ReviewSuperseded},
 		{name: "capped", status: store.ReviewCapped},
 		{name: "canceled", status: store.ReviewCanceled},
+		{name: "reactions refused", status: store.ReviewCompleted, refused: true},
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,7 +91,7 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			lf := &reviewRequestForge{localForge: &localForge{
 				comments: map[int64]string{commentID: "@kritika review"}, authors: map[int64]string{commentID: "onedr0p"},
 				permissions: map[string]forge.Permission{"onedr0p": forge.PermissionWrite},
-			}}
+			}, refused: tt.refused}
 			w := &FollowUp{
 				Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: lf}, Logger: slog.New(slog.DiscardHandler),
 			}

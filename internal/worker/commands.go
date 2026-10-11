@@ -177,9 +177,9 @@ const reviewRequested = "review requested"
 // review of the head already queued or running stands in for it. The
 // request is answered with the bot's marks rather than a reply: its eyes
 // now, and its job then waits to end them as the review ends (awaitReview).
-// A forge that refuses the eyes, as GitHub may on a conversation comment
-// without write access to issues, has it reply instead. It counts against
-// the hourly follow-up limit.
+// Like every mark, the eyes are best effort: a forge that refuses them
+// costs the request its marks and nothing else. It counts against the
+// hourly follow-up limit.
 func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, error) {
 	limited, err := f.rateLimited(ctx)
 	if err != nil {
@@ -214,8 +214,7 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	}
 	f.logger.Info("review requested", "already_queued", already)
 	if _, err := f.client.React(ctx, f.owner, f.repo, f.comment, forge.ReactionEyes); err != nil {
-		f.logger.Info("not marked as being worked on; replying instead", "error", err)
-		return f.answer(ctx, review.ReviewQueuedBody(f.pr.headSHA, already), reviewRequested)
+		f.logger.Info("not marked as being worked on", "error", err)
 	}
 	// Unlike a reply, the record is all a retry has to tell the request is
 	// answered, so one that cannot be written fails the attempt.
