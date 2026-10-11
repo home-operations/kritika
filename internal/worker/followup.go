@@ -47,9 +47,11 @@ type FollowUp struct {
 	GatewayURL      string
 	GatewayTokenTTL time.Duration
 
-	// superviseEvery overrides superviseInterval, and rowWait agentRowWait.
+	// superviseEvery overrides superviseInterval, rowWait agentRowWait, and
+	// awaitEvery awaitInterval.
 	superviseEvery time.Duration
 	rowWait        time.Duration
+	awaitEvery     time.Duration
 }
 
 // finalError is a follow-up's failure once its runner has run: a retry
@@ -76,27 +78,41 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	owner, repo := pr.ownerRepo()
-	comment, err := client.GetComment(ctx, owner, repo, args.CommentID, args.Inline)
-	if err != nil {
-		return err
-	}
-	login, err := client.BotLogin(ctx)
-	if err != nil {
-		return err
-	}
 	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
-		comment: comment, owner: owner, repo: repo, botLogin: login, jobID: job.ID, attempt: job.Attempt, maxAttempts: job.MaxAttempts,
-		logger: logger}
+		comment: forge.Comment{ID: args.CommentID, Inline: args.Inline}, owner: owner, repo: repo, jobID: job.ID,
+		attempt: job.Attempt, maxAttempts: job.MaxAttempts, requested: job.CreatedAt, logger: logger}
+	// The job of an answered review request wakes until the review ends,
+	// with nothing to read from the forge each time.
+	awaiting, err := f.awaitingReview(ctx)
+	if err != nil {
+		return err
+	}
+	if awaiting {
+		return f.awaitReview(ctx)
+	}
+	if f.comment, err = client.GetComment(ctx, owner, repo, args.CommentID, args.Inline); err != nil {
+		return err
+	}
+	if f.botLogin, err = client.BotLogin(ctx); err != nil {
+		return err
+	}
 	if done, err := f.alreadyAnswered(ctx); err != nil || done {
 		return err
 	}
 	outcome, err := f.run(ctx)
 	w.Metrics.FollowUp(account.Key(), string(outcome))
+	if _, waits := errors.AsType[*river.JobSnoozeError](err); waits {
+		logger.Info("follow-up " + string(outcome))
+		return err
+	}
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
-		// The failure itself is what goes back to River; a record of it that
-		// could not be written is lost with it, and the retry records anew.
-		_ = f.record(ctx, store.FollowupFailed, err.Error(), 0, "")
+		// An answered review request keeps its durable marker so a retry
+		// resumes polling. Other failures are recorded best effort, since
+		// River retries even if the record cannot be written.
+		if outcome != store.FollowupAnswered {
+			_ = f.record(ctx, store.FollowupFailed, err.Error(), 0, "")
+		}
 		if _, final := errors.AsType[finalError](err); final {
 			return river.JobCancel(err)
 		}
@@ -124,7 +140,10 @@ type followUp struct {
 	jobID     int64
 	// attempt is the job's, 1 the first time, and maxAttempts its last.
 	attempt, maxAttempts int
-	logger               *slog.Logger
+	// requested is when the job was queued: a review that ended since may
+	// be the one a review request waits for.
+	requested time.Time
+	logger    *slog.Logger
 }
 
 // alreadyAnswered guards a retried job: once a reply is on the forge the
@@ -144,7 +163,9 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	}
 	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
-		f.unmark(ctx)
+		if replyID != nil {
+			f.unmark(ctx)
+		}
 		return true, nil
 	}
 	if f.attempt <= 1 {

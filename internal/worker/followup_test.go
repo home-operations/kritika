@@ -10,6 +10,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // threadForge answers the comment listings from fixed comments and counts
@@ -226,6 +227,31 @@ func TestFollowUpFailure(t *testing.T) {
 			f := &followUp{attempt: tt.attempt, maxAttempts: 3}
 			if got := f.failure(tt.err); got != tt.want {
 				t.Fatalf("failure = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRequestOutcome: a review request's marks say what became of the
+// review that ended last since it was made, and a failure when none did.
+func TestRequestOutcome(t *testing.T) {
+	tests := []struct {
+		name   string
+		status store.ReviewStatus
+		want   outcome
+	}{
+		{"posted", store.ReviewCompleted, answered},
+		{"failed", store.ReviewFailed, failed},
+		{"none ended", "", failed},
+		{"skipped", store.ReviewSkipped, unanswered},
+		{"superseded", store.ReviewSuperseded, unanswered},
+		{"capped", store.ReviewCapped, unanswered},
+		{"canceled", store.ReviewCanceled, unanswered},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := requestOutcome(tt.status); got != tt.want {
+				t.Fatalf("requestOutcome(%q) = %d, want %d", tt.status, got, tt.want)
 			}
 		})
 	}

@@ -125,6 +125,21 @@ func HeadQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, 
 	return queued, nil
 }
 
+// PullQueued reports whether a review job for any head of the pull request
+// has yet to finish.
+func PullQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, number int) (bool, error) {
+	var queued bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM river_job
+		WHERE kind = $4 AND state IN (`+LiveStatesSQL()+`)
+			AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3)`,
+		accountID, repositoryID, number, ReviewArgs{}.Kind()).Scan(&queued)
+	if err != nil {
+		return false, fmt.Errorf("jobs: look up queued reviews: %w", err)
+	}
+	return queued, nil
+}
+
 // RequestCancel asks the worker running reviewID to stop. It only applies
 // when the review is still running or queued (prepared) and recorded the
 // River job it started as, and that job has not ended; otherwise there is
