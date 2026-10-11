@@ -63,7 +63,6 @@ func TestRepoFiles(t *testing.T) {
 		name      string
 		files     map[string]string
 		paths     []string
-		changed   []string
 		wantFiles []string
 		wantNotes int
 	}{
@@ -81,28 +80,26 @@ func TestRepoFiles(t *testing.T) {
 			wantNotes: 3,
 		},
 		{
-			name:  "no agent file is read without the switch",
-			files: map[string]string{"AGENTS.md": "root", "a/b.go": "package a\n"},
-		},
-		{
-			name: "the agent files of the root and each changed directory, a CLAUDE.md only where there is no AGENTS.md",
+			name: "root and nested agent files are not discovered",
 			files: map[string]string{
-				"AGENTS.md": "root", "CLAUDE.md": "@AGENTS.md", "svc/AGENTS.md": "svc", "svc/api/CLAUDE.md": "api",
-				"svc/api/handler.go": "package api\n", "other/AGENTS.md": "other",
+				"AGENTS.md": "root", "CLAUDE.md": "claude", "svc/AGENTS.md": "svc", "svc/api/CLAUDE.md": "api",
+				"svc/api/handler.go": "package api\n",
 			},
-			changed:   []string{"svc/api/handler.go"},
-			wantFiles: []string{"AGENTS.md", "svc/AGENTS.md", "svc/api/CLAUDE.md"},
 		},
 		{
-			name:      "an oversized agent file is noted, a missing one is not",
-			files:     map[string]string{"AGENTS.md": big, "a/b.go": "package a\n"},
-			changed:   []string{"a/b.go"},
-			wantNotes: 1,
+			name:      "an explicitly named agent file is read like any rule file",
+			files:     map[string]string{"AGENTS.md": "root", "CLAUDE.md": "claude", "svc/CLAUDE.md": "svc"},
+			paths:     []string{"svc/CLAUDE.md"},
+			wantFiles: []string{"svc/CLAUDE.md"},
+		},
+		{
+			name:  "an unrequested oversized agent file produces no note",
+			files: map[string]string{"AGENTS.md": big, "a/b.go": "package a\n"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			files, notes, err := repoFiles(tree(t, tt.files), tt.paths, tt.changed)
+			files, notes, err := repoFiles(tree(t, tt.files), tt.paths)
 			if err != nil {
 				t.Fatal(err)
 			}

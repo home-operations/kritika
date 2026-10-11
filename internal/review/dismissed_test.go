@@ -18,7 +18,7 @@ func TestBuildDismissed(t *testing.T) {
 		in.Dismissed = append(in.Dismissed, DismissedFinding{Path: "c.go", Line: i, Severity: SeverityP2, Title: "Padding",
 			Explanation: strings.Repeat("words ", 30)})
 	}
-	msg, _, _ := Build(in)
+	msg, _, _, _ := Build(in)
 	for _, want := range []string{
 		"Findings a maintainer dismissed on this pull request.",
 		"- a.go:3 [p1] Unchecked error: err is dropped. (dismissed: the caller checks it)\n",
@@ -32,7 +32,7 @@ func TestBuildDismissed(t *testing.T) {
 		t.Fatalf("the dismissed findings must precede the references:\n%s", msg)
 	}
 	in.BudgetTokens = (strings.Index(msg, "\n\nReference files") + 20) / charsPerToken
-	if cut, _, _ := Build(in); strings.Contains(cut, "Reference files") || !strings.Contains(cut, "Unchecked error") || !strings.Contains(cut, "+x") {
-		t.Fatalf("over budget, the references give way before the dismissed findings:\n%s", cut)
+	if cut, _, _, _ := Build(in); !strings.Contains(cut, "### ARCH.md: the shape") || !strings.Contains(cut, "Unchecked error") || !strings.Contains(cut, "+x") {
+		t.Fatalf("references keep their reserved room alongside dismissed findings:\n%s", cut)
 	}
 }

@@ -80,6 +80,8 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	for _, c := range f.Context {
 		if !slices.ContainsFunc(m.Review.Context, func(o configfile.ContextFile) bool { return o.Path == c.Path }) {
 			m.Review.Context = append(m.Review.Context, c)
+		} else {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: context %s was dropped: an admin context entry has that path", FileName, c.Path))
 		}
 	}
 	for _, r := range f.Rules {

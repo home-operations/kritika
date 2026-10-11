@@ -1167,11 +1167,10 @@ func checkFollowUps(
 	if strings.Contains(system, "submit_reply") || !strings.Contains(system, "read_file, grep and list_files") {
 		t.Fatalf("follow-up system prompt lacks its tools:\n%s", system)
 	}
-	// The root's AGENTS.md, as the review's runner read it.
-	if !strings.Contains(system, "\n\n## Repository instructions\n\n") || !strings.HasSuffix(system, "\n\nKeep functions small.") {
-		t.Fatalf("follow-up system prompt lacks AGENTS.md:\n%s", system)
+	if strings.Contains(system, "Repository instructions") || strings.Contains(system, "Keep functions small.") {
+		t.Fatalf("follow-up system prompt carries AGENTS.md:\n%s", system)
 	}
-	for _, want := range []string{"Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [p1] first line: look here", "<description>\nAdds b.\n</description>"} {
+	for _, want := range []string{"### AGENTS.md: Follow-up conventions", "Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [p1] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
 		}
@@ -1544,6 +1543,17 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
+		followConfig := configfiletest.Load(t, configYAML+"\ncontext:\n  - { path: AGENTS.md, description: Follow-up conventions }\n")
+		if err := appStore.ApplyConfig(ctx, followConfig); err != nil {
+			t.Fatal(err)
+		}
+		current.Set(followConfig)
+		t.Cleanup(func() {
+			current.Set(file)
+			if err := appStore.ApplyConfig(ctx, file); err != nil {
+				t.Fatal(err)
+			}
+		})
 		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account}, account.ID())
 	})
 
@@ -1763,6 +1773,25 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 	}
 }
 
+func checkRepoConfigPrompt(t *testing.T, system, user string) {
+	t.Helper()
+	if strings.Contains(system, "Repository instructions") ||
+		strings.Contains(system, "table-driven tests") || strings.Contains(system, "inline styles") {
+		t.Fatalf("system prompt carries agent-file instructions:\n%s", system)
+	}
+	if !strings.Contains(user, "### AGENTS.md: Repository conventions\n") ||
+		strings.Contains(user, "web/AGENTS.md") || strings.Contains(user, "Prefer table-driven tests.") {
+		t.Fatalf("context must offer only the applicable agent-file reference:\n%s", user)
+	}
+	// Only the rules whose paths the change matches and whose conditions the
+	// pull request meets, the file rule under its own heading.
+	if !strings.HasSuffix(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
+		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.") ||
+		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
+		t.Fatalf("system prompt does not carry the rules:\n%s", system)
+	}
+}
+
 // checkRepoConfig commits a .kritika.yaml with ignore globs, rules, one of
 // them a file, and a summary template onto a new merge base, then reviews
 // pull requests against it.
@@ -1799,6 +1828,9 @@ func checkRepoConfig(
 		".kritika.yaml": `trigger:
   exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
 ignore: ["docs/**", ".kritika.yaml"]
+context:
+  - { path: AGENTS.md, description: Repository conventions }
+  - { path: web/AGENTS.md, description: Frontend conventions, paths: ["web/**"] }
 rules:
   - { id: todos, file: .kritika/rules.md }
   - { id: no-panics, rule: Return an error rather than panic. }
@@ -1865,19 +1897,9 @@ review:
 	// The review's own prompt is the one before its confidence call's.
 	fc.mu.Lock()
 	system := fc.systems[len(fc.systems)-2]
+	user := fc.users[len(fc.users)-2]
 	fc.mu.Unlock()
-	// The root's AGENTS.md is the instructions; web/ is untouched.
-	if !strings.Contains(system, "\n\n## Repository instructions\n\n") ||
-		!strings.HasSuffix(system, "\n\nPrefer table-driven tests.") || strings.Contains(system, "inline styles") {
-		t.Fatalf("system prompt does not carry the instructions:\n%s", system)
-	}
-	// Only the rules whose paths the change matches and whose conditions the
-	// pull request meets, the file rule under its own heading.
-	if !strings.Contains(system, "\n\n- no-panics: Return an error rather than panic.\n- into-main: Keep main releasable.\n\n"+
-		"### todos (.kritika/rules.md)\n\nFlag every TODO left in code.\n\n## Repository instructions") ||
-		strings.Contains(system, "sql-placeholders") || strings.Contains(system, "- renovate:") {
-		t.Fatalf("system prompt does not carry the rules:\n%s", system)
-	}
+	checkRepoConfigPrompt(t, system, user)
 	// The finding keeps the rule it was given and loses the one it was not.
 	var cited []string
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {

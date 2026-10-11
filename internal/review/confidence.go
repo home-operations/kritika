@@ -248,7 +248,7 @@ func BuildConfidence(in Input, res Result, sources []string, earlier *EarlierRis
 		tail.WriteString("\n")
 	}
 	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/charsPerToken, minUserBudget)
-	msg, _, _ := Build(in)
+	msg, _, _, _ := Build(in)
 	return msg + tail.String()
 }
 

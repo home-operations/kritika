@@ -51,7 +51,7 @@ func TestAgentPrompt(t *testing.T) {
 		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 2, Text: "func u() {}"}},
 		Scope:   review.ScopeFull,
 	}
-	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritika/rules.md": "Repository rules.", "AGENTS.md": "Agent notes."}
+	files := repoconfig.Files{"docs/rules.md": "Admin rules.", ".kritika/rules.md": "Repository rules."}
 	tests := []struct {
 		name    string
 		scope   review.Scope
@@ -110,7 +110,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false, false)
 			system, user := prompt.system, prompt.user
-			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, false, false, tt.diagram); system != want {
+			if want := review.SystemPrompt(tt.active, nil, nil, false, false, tt.diagram); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -122,7 +122,7 @@ func TestAgentPrompt(t *testing.T) {
 			case !fresh:
 				earlier = &review.EarlierInput{HeadSHA: shaB, Findings: s.Prompt.Prior, Checked: s.Prompt.PriorChecked}
 			}
-			want, _, _ := review.Build(review.Input{
+			want, _, _, _ := review.Build(review.Input{
 				Repository: "acme/widgets", Number: 7, Title: "Add b", Author: "octocat", Body: "Adds b.", BaseRef: "main",
 				Changed: pack.Changed, Diff: agentDiff, Context: pack.Context, Incremental: inc, Earlier: earlier,
 				BudgetTokens: review.UserBudget(system, 0),
@@ -144,16 +144,49 @@ func TestAgentPrompt(t *testing.T) {
 }
 
 func TestAgentPromptPointsAtContext(t *testing.T) {
-	s := agentPromptSpec()
-	s.Prompt.Context = []configfile.ContextFile{
-		{Path: "docs/arch.md", Description: "how the parts fit"},
-		{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}},
-	}
-	files := repoconfig.Files{"docs/arch.md": "never inlined"}
-	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}}
-	user := newAgentPrompt(s, newPromptInputs(s, files, nil, pack.Changed), pack, nil, false, false).user
-	if !strings.Contains(user, "### docs/arch.md: how the parts fit\n") || strings.Contains(user, "never inlined") || strings.Contains(user, "schema") {
-		t.Fatalf("user message:\n%s", user)
+	for _, tt := range []struct {
+		name    string
+		context []configfile.ContextFile
+		want    string
+	}{
+		{name: "not offered by default"},
+		{name: "ordinary reference", context: []configfile.ContextFile{{Path: "docs/arch.md", Description: "architecture"}},
+			want: "### docs/arch.md: architecture\n"},
+		{
+			name:    "explicit root reference",
+			context: []configfile.ContextFile{{Path: "AGENTS.md", Description: "coding conventions"}},
+			want:    "### AGENTS.md: coding conventions\n",
+		},
+		{
+			name:    "explicit directory reference",
+			context: []configfile.ContextFile{{Path: "svc/CLAUDE.md", Description: "service conventions", Paths: []string{"svc/**"}}},
+			want:    "### svc/CLAUDE.md: service conventions\n",
+		},
+		{
+			name:    "unmatched reference",
+			context: []configfile.ContextFile{{Path: "web/AGENTS.md", Description: "web conventions", Paths: []string{"web/**"}}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := agentPromptSpec()
+			s.Prompt.Context = tt.context
+			files := repoconfig.Files{"AGENTS.md": "Root workflow.", "svc/CLAUDE.md": "Service workflow."}
+			pack := packView{Changed: []string{"svc/main.go"}}
+			in := newPromptInputs(s, files, nil, pack.Changed)
+			prompt := newAgentPrompt(s, in, pack, nil, false, false)
+			user := prompt.user
+			for _, unwanted := range []string{"Repository instructions", "Root workflow.", "Service workflow."} {
+				if strings.Contains(prompt.system+user, unwanted) {
+					t.Fatalf("agent file injected into prompt: %q", unwanted)
+				}
+			}
+			if tt.want != "" && !strings.Contains(user, tt.want) {
+				t.Fatalf("context reference missing from prompt:\n%s", user)
+			}
+			if tt.want == "" && len(in.references) != 0 {
+				t.Fatalf("unexpected references: %v", in.references)
+			}
+		})
 	}
 }
 
@@ -170,9 +203,8 @@ func ruleIDs(rules []review.Rule) []string {
 func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
-	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxInstructionBytes+1)}
-	in := newPromptInputs(s, files, nil, []string{"main.go"})
-	if want := []string{noteInstructionsTruncated, "1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
+	in := newPromptInputs(s, nil, nil, []string{"main.go"})
+	if want := []string{"1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
 		t.Fatalf("notes = %q, want %q", in.notes, want)
 	}
 	const lines = 60_000
@@ -563,5 +595,16 @@ func TestAgentPromptBudget(t *testing.T) {
 				t.Fatalf("large file in the prompt = %v, want %v", kept, tt.kept)
 			}
 		})
+	}
+}
+
+func TestAgentPromptNotesReferenceOmissions(t *testing.T) {
+	s := agentPromptSpec()
+	s.Agent.MaxPromptTokens = 8_000
+	s.Prompt.Context = []configfile.ContextFile{{Path: "AGENTS.md", Description: strings.Repeat("x", 32_000)}}
+	pack := packView{Changed: []string{"main.go"}, Diff: agentDiff}
+	prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
+	if !slices.Contains(prompt.notes(), "1 reference file(s) left out of the prompt to fit its budget") {
+		t.Fatalf("notes = %v", prompt.notes())
 	}
 }
