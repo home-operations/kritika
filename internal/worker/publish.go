@@ -75,17 +75,33 @@ type publishPhase struct {
 	resolved []priorFinding
 }
 
+// publicationAnswer is the finalized model output passed to delivery. Delivery
+// can use it without another merge or confidence call.
+type publicationAnswer struct {
+	result     review.Result
+	unanchored []review.Finding
+	notes      []string
+	model      string
+}
+
 // run publishes what the runner's agent submitted; the run's usage is
-// already recorded. An agent that stopped without submitting fails the
-// review, and the sticky comment says this head was not fully reviewed so
-// an earlier verdict does not stand in for it.
+// already recorded.
 func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
+	answer, err := p.prepare(job)
+	if err != nil {
+		return store.ReviewFailed, err
+	}
+	return p.deliver(job, answer)
+}
+
+// prepare settles the findings, summary and confidence before delivery.
+func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) {
 	// The agent has already answered, so publishing runs to the end even if
 	// the job's ctx ends meanwhile.
 	ctx, cancel := detach(job)
 	defer cancel()
 	if p.agent == nil {
-		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
+		return nil, errors.New("worker: the runner wrote no agent run")
 	}
 	run := *p.agent
 	var diff, delta string
@@ -98,16 +114,16 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		return tx.QueryRow(ctx, `SELECT delta_paths FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&deltaPaths)
 	})
 	if err != nil {
-		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
+		return nil, fmt.Errorf("worker: read context pack: %w", err)
 	}
 	p.logger.Info("agent answered", "stop", run.StopReason, "steps", run.Steps, "model", run.Model, "input_tokens", run.Usage.Prompt(),
 		"cached_tokens", run.Usage.CacheRead, "output_tokens", run.Usage.Output, "cost_usd", run.CostUSD)
 	if stopErr := stopError(run); stopErr != nil {
-		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
+		return nil, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
 	}
 	res, dropped, err := review.Parse(string(run.Result), review.Anchors(diff), p.parse)
 	if err != nil {
-		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.Model))
+		return nil, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.Model))
 	}
 	for _, d := range dropped {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
@@ -161,14 +177,19 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
 		notes = append(notes, note)
 	}
+	return &publicationAnswer{result: res, unanchored: unanchored, notes: notes, model: run.Model}, nil
+}
+
+func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (store.ReviewStatus, error) {
 	// A fenced job may be another replica's by now, its review on the way:
 	// the detached write-back must not post beside that one.
 	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
 		return store.ReviewSuperseded, cause
 	}
 	// Scoring had its own time; the write-back gets a whole bound after it.
-	ctx, cancel = detach(job)
+	ctx, cancel := detach(job)
 	defer cancel()
+	res, unanchored, notes := answer.result, answer.unanchored, answer.notes
 	pauseNote, err := p.autoReviewPauses(ctx)
 	if err != nil {
 		return store.ReviewFailed, err
@@ -176,7 +197,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if pauseNote != "" {
 		notes = append(notes, pauseNote)
 	}
-	commentID, inline, err := p.writeBack(ctx, res, unanchored, run.Model, append(notes, p.repoNotes...))
+	commentID, inline, err := p.writeBack(ctx, res, unanchored, answer.model, append(notes, p.repoNotes...))
 	if err != nil {
 		return store.ReviewFailed, err
 	}
@@ -193,7 +214,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if c := p.confidence; c != nil {
 		p.w.Metrics.ConfidenceScored(p.account.Key(), c.Score, string(c.Risk))
 	}
-	if err := p.persist(ctx, res, unanchored, inline, run.Model, commentID); err != nil {
+	if err := p.persist(ctx, res, unanchored, inline, answer.model, commentID); err != nil {
 		return store.ReviewFailed, err
 	}
 	return store.ReviewCompleted, nil
