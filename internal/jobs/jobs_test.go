@@ -54,6 +54,7 @@ func TestJobArgs(t *testing.T) {
 		wantKind    string
 		wantQueue   string
 		wantRequest bool
+		wantCatchUp bool
 	}{
 		{name: "review", args: ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "push"},
 			wantKind: "review", wantQueue: QueueReview},
@@ -65,6 +66,8 @@ func TestJobArgs(t *testing.T) {
 			wantKind: "thread", wantQueue: QueueFollowUp},
 		{name: "index", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush},
 			wantKind: "index", wantQueue: QueueIndex},
+		{name: "index catch-up", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush, CatchUp: "run"},
+			wantKind: "index", wantQueue: QueueIndex, wantCatchUp: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -85,6 +88,9 @@ func TestJobArgs(t *testing.T) {
 			}
 			if _, ok := m["request"]; ok != tt.wantRequest {
 				t.Fatalf("json = %s, want a %q key: %v", data, "request", tt.wantRequest)
+			}
+			if _, ok := m["catch_up"]; ok != tt.wantCatchUp {
+				t.Fatalf("json = %s, want a %q key: %v", data, "catch_up", tt.wantCatchUp)
 			}
 		})
 	}
@@ -136,10 +142,11 @@ func TestLabelChange(t *testing.T) {
 
 // TestIndexArgsUniqueTags pins the key an index job is unique on: the
 // repository, not the commit, so a burst of pushes is one job; and Full, so
-// a forced rebuild is never folded into an update.
+// a forced rebuild is never folded into an update. CatchUp keeps the
+// rebuild's follow-up distinct from pushes that may publish before it.
 func TestIndexArgsUniqueTags(t *testing.T) {
 	got := uniqueFields(IndexArgs{})
-	want := map[string]bool{"RepositoryID": true, "Full": true}
+	want := map[string]bool{"RepositoryID": true, "Full": true, "CatchUp": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("river:\"unique\" fields = %v, want %v", got, want)
 	}

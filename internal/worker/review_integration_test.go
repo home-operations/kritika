@@ -1526,6 +1526,11 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkRebuildOverUpdate(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, head, newer)
 	})
 
+	t.Run("a forced rebuild rolls back when catch-up cannot be queued", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "tip during queue failure", "package main\n\nfunc newest() {}\n")
+		checkRebuildQueueFailure(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, head, newer)
+	})
+
 	t.Run("an update over a replaced generation snoozes and builds again", func(t *testing.T) {
 		checkUpdateOverRebuild(ctx, t, appStore, insertOnly, exec, account.ID(), repoID, head)
 	})

@@ -170,6 +170,9 @@ type IndexArgs struct {
 	// queued beside an update rather than folded into it, and dedupes only
 	// onto another forced rebuild.
 	Full bool `json:"full,omitempty" river:"unique"`
+	// CatchUp identifies the rebuild whose publication needs a tip check.
+	// Its update must not dedupe onto a push that published before the rebuild.
+	CatchUp string `json:"catch_up,omitempty" river:"unique"`
 }
 
 // Kind implements river.JobArgs.

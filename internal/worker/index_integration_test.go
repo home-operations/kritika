@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
 // checkRebuildOverUpdate runs a forced rebuild while an update advances the
@@ -24,7 +26,16 @@ func checkRebuildOverUpdate(
 	account, repository, head, newer string,
 ) {
 	t.Helper()
+	waitFor(t, 20*time.Second, "previous index jobs to finish", func() bool {
+		var live int
+		if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'index' AND args->>'repository_id' = $1
+    AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')`, repository).Scan(&live); err != nil {
+			t.Fatal(err)
+		}
+		return live == 0
+	})
 	var once atomic.Bool
+	var running atomic.Int64
 	var advanced, rebuild string
 	exec.setBeforeIndex(func() error {
 		if once.Swap(true) {
@@ -32,6 +43,18 @@ func checkRebuildOverUpdate(
 		}
 		lf.setTip(newer)
 		return st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			push, err := queue.InsertTx(ctx, tx, jobs.IndexArgs{
+				AccountID: account, RepositoryID: repository, CommitSHA: newer, Trigger: jobs.TriggerPush,
+			}, nil)
+			if err != nil {
+				return err
+			}
+			running.Store(push.Job.ID)
+			// Another replica has published its update but has yet to return
+			// from Work, so River still includes it in the live unique key.
+			if _, err := tx.Exec(ctx, `UPDATE river_job SET state = 'running', attempted_at = now(), attempt = 1 WHERE id = $1`, push.Job.ID); err != nil {
+				return err
+			}
 			repo, err := store.FindIndexRepo(ctx, tx, repository)
 			if err != nil {
 				return err
@@ -59,7 +82,13 @@ func checkRebuildOverUpdate(
 			return store.FinishIndexRun(ctx, tx, step, store.IndexCompleted, 1, "")
 		})
 	})
-	t.Cleanup(func() { exec.setBeforeIndex(nil); lf.setTip(head) })
+	t.Cleanup(func() {
+		exec.setBeforeIndex(nil)
+		lf.setTip(head)
+		if _, err := st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id = $1`, running.Load()); err != nil {
+			t.Error(err)
+		}
+	})
 	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerReindex, Full: true}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -67,16 +96,123 @@ func checkRebuildOverUpdate(
 	if attempt, snoozes := indexJobDone(ctx, t, st, job.Job.ID); attempt != 1 || snoozes != 0 {
 		t.Fatalf("rebuild attempt=%d snoozes=%d, want 1 and 0", attempt, snoozes)
 	}
-	waitFor(t, 30*time.Second, "the update the rebuild queued", func() bool {
-		var n int
-		if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind = 'index' AND id > $1 AND state = 'completed'
-    AND args->>'repository_id' = $2 AND args->>'trigger' = 'push' AND args->>'commit_sha' = $3`, job.Job.ID, repository, newer).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n == 1
-	})
+	catchUp := indexCatchUpDone(ctx, t, st, rebuild)
+	var state string
+	if err := st.App().QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, running.Load()).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "running" || catchUp == running.Load() {
+		t.Fatalf("catch-up job=%d, push job=%d state=%s, want distinct jobs with the push still running", catchUp, running.Load(), state)
+	}
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`, running.Load()); err != nil {
+		t.Fatal(err)
+	}
 	checkIndexAt(ctx, t, st, account, repository, job.Job.CreatedAt, rebuild, newer, "func newer()")
 	checkRunStatus(ctx, t, st, account, advanced, store.IndexSuperseded)
+}
+
+func checkRebuildQueueFailure(
+	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], lf *localForge, exec *gateExecutor,
+	account, repository, head, newer string,
+) {
+	t.Helper()
+	active := activeIndexGeneration(ctx, t, st, account, repository)
+	live := runChunks(ctx, t, st, account, active)
+	exec.setBeforeIndex(func() error { lf.setTip(newer); return nil })
+	t.Cleanup(func() { exec.setBeforeIndex(nil); lf.setTip(head) })
+	owner, err := pgx.Connect(ctx, storetest.Env(t, "KRITIKA_TEST_OWNER_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := owner.Close(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	// Reject only catch-up inserts; the rebuild job and its error updates
+	// must still reach River normally. Existing completed jobs are exempt.
+	if _, err := owner.Exec(ctx, `ALTER TABLE river_job ADD CONSTRAINT test_reject_index_catch_up
+    CHECK (kind <> 'index' OR args->>'trigger' <> 'push') NOT VALID`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := owner.Exec(context.Background(), `ALTER TABLE river_job DROP CONSTRAINT IF EXISTS test_reject_index_catch_up`); err != nil {
+			t.Error(err)
+		}
+	})
+	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerReindex, Full: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := queue.JobCancel(context.Background(), job.Job.ID); err != nil {
+			t.Error(err)
+		}
+	})
+	var attempt int
+	waitFor(t, 20*time.Second, "the rebuild to fail when catch-up cannot be queued", func() bool {
+		var state string
+		var reason string
+		if err := st.App().QueryRow(ctx, `SELECT state, attempt, coalesce(errors[array_length(errors, 1)]->>'error', '')
+    FROM river_job WHERE id = $1`, job.Job.ID).Scan(&state, &attempt, &reason); err != nil {
+			t.Fatal(err)
+		}
+		if state == "completed" || state == "discarded" {
+			t.Fatalf("rebuild state=%s, want retryable after catch-up insertion failed: %s", state, reason)
+		}
+		return state == "retryable" && strings.Contains(reason, "worker: queue index catch-up")
+	})
+	if now := activeIndexGeneration(ctx, t, st, account, repository); now != active || runChunks(ctx, t, st, account, active) != live {
+		t.Fatalf("queue failure changed the live index: generation %s, was %s", now, active)
+	}
+	checkRunStatus(ctx, t, st, account, active, store.IndexCompleted)
+	var queued int
+	if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job WHERE id > $1 AND args->>'repository_id' = $2
+    AND kind = 'index' AND args->>'trigger' = 'push'`, job.Job.ID, repository).Scan(&queued); err != nil || queued != 0 {
+		t.Fatalf("catch-up jobs after rollback = %d, %v", queued, err)
+	}
+	if _, err := owner.Exec(ctx, `ALTER TABLE river_job DROP CONSTRAINT test_reject_index_catch_up`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.JobRetry(ctx, job.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, snoozes := indexJobDone(ctx, t, st, job.Job.ID); got != attempt+1 || snoozes != 0 {
+		t.Fatalf("rebuild attempt=%d snoozes=%d, want %d and 0", got, snoozes, attempt+1)
+	}
+	rebuilt := activeIndexGeneration(ctx, t, st, account, repository)
+	if rebuilt == active {
+		t.Fatal("the recovered rebuild did not replace the generation")
+	}
+	catchUp := indexCatchUpDone(ctx, t, st, rebuilt)
+	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		var commit string
+		if err := tx.QueryRow(ctx, `SELECT commit_sha FROM index_runs WHERE id = $1`, rebuilt).Scan(&commit); err != nil {
+			return err
+		}
+		var runs int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM runner_runs WHERE river_job_id = $1`, catchUp).Scan(&runs); err != nil {
+			return err
+		}
+		if commit != newer || runs != 0 {
+			t.Fatalf("rebuild commit=%s, catch-up runner runs=%d, want %s and no work for an unchanged tip", commit, runs, newer)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func indexCatchUpDone(ctx context.Context, t *testing.T, st *store.Store, rebuild string) int64 {
+	t.Helper()
+	var id int64
+	if err := st.App().QueryRow(ctx, `SELECT id FROM river_job WHERE kind = 'index' AND args->>'catch_up' = $1`, rebuild).Scan(&id); err != nil {
+		t.Fatalf("catch-up for rebuild %s: %v", rebuild, err)
+	}
+	if attempt, snoozes := indexJobDone(ctx, t, st, id); attempt != 1 || snoozes != 0 {
+		t.Fatalf("catch-up attempt=%d snoozes=%d, want 1 and 0", attempt, snoozes)
+	}
+	return id
 }
 
 // checkUpdateOverRebuild runs an update while a forced rebuild replaces the
@@ -144,10 +280,14 @@ func checkUpdateOverRebuild(
 // and snooze counts.
 func indexJobDone(ctx context.Context, t *testing.T, st *store.Store, id int64) (attempt, snoozes int) {
 	t.Helper()
-	waitFor(t, 30*time.Second, "the index job to complete", func() bool {
-		var state string
-		if err := st.App().QueryRow(ctx, `SELECT state, attempt, coalesce((metadata->>'snoozes')::int, 0) FROM river_job WHERE id = $1`, id).Scan(&state, &attempt, &snoozes); err != nil {
+	waitFor(t, 30*time.Second, fmt.Sprintf("index job %d to complete", id), func() bool {
+		var state, errs string
+		if err := st.App().QueryRow(ctx, `SELECT state, attempt, coalesce((metadata->>'snoozes')::int, 0), coalesce(array_to_json(errors)::text, '[]')
+    FROM river_job WHERE id = $1`, id).Scan(&state, &attempt, &snoozes, &errs); err != nil {
 			t.Fatal(err)
+		}
+		if state == "cancelled" || state == "discarded" {
+			t.Fatalf("index job %d ended %s after attempt %d: %s", id, state, attempt, errs)
 		}
 		return state == "completed"
 	})
