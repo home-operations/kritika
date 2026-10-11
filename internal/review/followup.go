@@ -195,8 +195,9 @@ func NothingToReviewBody(headSHA, baseRef string) string {
 		ShortSHA(headSHA), baseRef)
 }
 
-// ReviewQueuedBody is the reply to a request for a review of headSHA:
-// queued, or already queued or running.
+// ReviewQueuedBody is the reply to a request for a review of headSHA where
+// the forge refuses the reactions it is otherwise answered with: queued, or
+// already queued or running.
 func ReviewQueuedBody(headSHA string, already bool) string {
 	if already {
 		return fmt.Sprintf("A review of `%s` is already queued or running.\n", ShortSHA(headSHA))

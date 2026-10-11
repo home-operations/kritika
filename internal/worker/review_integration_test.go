@@ -1252,7 +1252,8 @@ func checkFollowUpRun(ctx context.Context, t *testing.T, st *store.Store, accoun
 }
 
 // checkReviewRequest: "@kritika review" queues a review of the head for
-// someone with write access, and replies; anyone else is ignored as for a
+// someone with write access, and answers with the bot's marks as the
+// review ends rather than a reply; anyone else is ignored as for a
 // question. It runs last, as the review it queues changes pull request 1's
 // last review, and first clears the thread's follow-ups, so the hourly
 // limit earlier checks spent does not apply, and reopens the pull request.
@@ -1324,11 +1325,24 @@ func checkReviewRequest(
 	if status, reason := waitFollowUp(id); status != "answered" || reason != "review requested" {
 		t.Fatalf("review request: status = %s (%s)", status, reason)
 	}
-	if _, body := lastComment(); !strings.Contains(body, "Reviewing `") {
-		t.Fatalf("reply to the review request = %q", body)
-	}
 	if after, _ := manual(); after != before+1 {
 		t.Fatalf("manual review jobs %d -> %d; want the request to queue one", before, after)
+	}
+	// The request is answered with the bot's marks alone: its eyes while the
+	// review runs, then its thumbs up once the review is posted.
+	waitFor(t, 30*time.Second, "the review request to be marked as answered", func() bool {
+		lf.mu.Lock()
+		defer lf.mu.Unlock()
+		return slices.Contains(lf.reacted, id) && lf.reactions[id] == forge.ReactionDone
+	})
+	var replied bool
+	lf.mu.Lock()
+	for _, body := range lf.comments {
+		replied = replied || strings.Contains(body, review.FollowUpMarker(id))
+	}
+	lf.mu.Unlock()
+	if replied {
+		t.Fatal("the review request got a reply")
 	}
 }
 
@@ -1401,6 +1415,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 	river.AddWorker(workers, &FollowUp{
 		Base: wb, Executor: exec, Steppers: steppers, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
+		awaitEvery: 100 * time.Millisecond,
 	})
 	river.AddWorker(workers, &Index{
 		Base: wb, Executor: exec, Embedders: embedders,

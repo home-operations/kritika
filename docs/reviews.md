@@ -33,7 +33,7 @@ review used; with none, nothing is left to review, and kritika says so.
 | The summary       | one comment, which each review edits                                                                                                                                 |
 | Findings          | inline comments on the lines they concern, each with its severity, category, explanation, a one-click suggestion where it has a fix, and a prompt for a coding agent |
 | The commit status | `Kritika / Review`, on the head commit                                                                                                                               |
-| Reactions         | 👀 on the pull request while a review runs, then 👍 once one is posted or 😕 when it failed, until `@<bot> review` or a re-run posts one; a mention kritika answers gets the same ([permissions](setup.md#register-the-github-app)) |
+| Reactions         | 👀 on the pull request while a review runs, then 👍 once one is posted or 😕 when it failed, until `@<bot> review` or a re-run posts one; a mention kritika answers gets the same, and an `@<bot> review` comment the same for the review it asked for ([permissions](setup.md#register-the-github-app)) |
 | An approval       | with `review.approve` on ([approvals](confidence.md#approvals))                                                                                                      |
 
 ### Findings
@@ -112,7 +112,7 @@ someone with write access to the repository gets an answer.
 | Comment                   | What it does                                                                                                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@<bot> <question>`       | An agent with a review's tools and commands reads the code, looks things up, and answers in the thread.                                                                                                 |
-| `@<bot> review`           | Queues a review of the head, even one the admin's trigger lists keep out, such as a fork's where forks are excluded, or a paused pull request's.                                                        |
+| `@<bot> review`           | Queues a review of the head, even one the admin's trigger lists keep out, such as a fork's where forks are excluded, or a paused pull request's. A review of the head already queued or running stands in for it. kritika answers with reactions rather than a reply: 👀 on the comment until the review ends, then 👍 once it is posted or 😕 when it failed. |
 | `@<bot> pause`            | Stops the pull request's automatic reviews.                                                                                                                                                             |
 | `@<bot> resume`           | Starts them again.                                                                                                                                                                                      |
 | `@<bot> dismiss <reason>` | As a reply in one of kritika's finding threads: resolves the thread, tells later reviews of the pull request not to raise the finding again, and lists it dismissed, with the reason, on the dashboard. |
