@@ -6,7 +6,7 @@ require (
 	cel.dev/cel-go v0.32.0
 	github.com/KimMachineGun/automemlimit v1.0.0
 	github.com/anthropics/anthropic-sdk-go v1.79.1
-	github.com/bmatcuk/doublestar/v4 v4.10.2
+	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
