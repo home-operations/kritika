@@ -18,6 +18,7 @@ func TestFileWindow(t *testing.T) {
 		{name: "unterminated", src: "one\ntwo", first: 2, last: 2, start: 2, end: 2, text: "two"},
 		{name: "trailing newline", src: "one\ntwo\n", first: 2, last: 2, start: 2, end: 2, text: "two"},
 		{name: "blank final line", src: "one\n\n", first: 1, last: 2, start: 1, end: 2, text: "one\n"},
+		{name: "radius", src: "l1\nl2\nl3\nl4\nl5\n", first: 3, last: 3, radius: 1, start: 2, end: 4, text: "l2\nl3\nl4"},
 		{name: "clamped", src: "one\ntwo\nthree\n", first: 2, last: 2, radius: 9, start: 1, end: 3, text: "one\ntwo\nthree"},
 		{name: "past end", src: "one\n", first: 2, last: 3},
 		{name: "reversed", src: "one\ntwo\n", first: 2, last: 1},
@@ -175,21 +176,6 @@ func TestParseFallsBackForConfigAndUnknown(t *testing.T) {
 	}
 	if name, decls := Language("Dockerfile"); name != "dockerfile" || decls {
 		t.Fatalf("Language(Dockerfile) = %q %v; want a grammar without declarations", name, decls)
-	}
-}
-
-func TestWindow(t *testing.T) {
-	src := []byte("l1\nl2\nl3\nl4\nl5\n")
-	s, e, text := Window(src, 3, 3, 1)
-	if s != 2 || e != 4 || text != "l2\nl3\nl4" {
-		t.Fatalf("Window = %d %d %q", s, e, text)
-	}
-	s, e, text = Window(src, 1, 5, 10)
-	if s != 1 || e != 5 || !strings.HasSuffix(text, "l5") {
-		t.Fatalf("clamped Window = %d %d %q", s, e, text)
-	}
-	if Text(src, 4, 5) != "l4\nl5" {
-		t.Fatal("Text")
 	}
 }
 

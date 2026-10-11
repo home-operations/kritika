@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"log/slog"
 	"reflect"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestBuildIndexFallsBackOnTruncation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := indexer.DefaultOptions
 			opts.MaxFiles, opts.MaxBytes, opts.MaxChunks = tc.files, tc.bytes, tc.chunks
-			got, changed, stats, mode, err := buildIndex(t.Context(), head, base, nil, opts)
+			got, changed, stats, mode, err := buildIndex(t.Context(), head, base, nil, opts, slog.New(slog.DiscardHandler))
 			if err != nil || mode != store.IndexModeFull || changed != nil || !stats.Truncated {
 				t.Fatalf("buildIndex = %v, %v, %+v, %s, %v", got, changed, stats, mode, err)
 			}
@@ -82,7 +83,7 @@ func TestBuildIndexFallsBackOnTruncation(t *testing.T) {
 			}
 		})
 	}
-	_, changed, stats, mode, err := buildIndex(t.Context(), head, base, nil, indexer.DefaultOptions)
+	_, changed, stats, mode, err := buildIndex(t.Context(), head, base, nil, indexer.DefaultOptions, slog.New(slog.DiscardHandler))
 	if err != nil || mode != store.IndexModeIncremental || len(changed) != 3 || stats.Truncated {
 		t.Fatalf("unlimited build = %v, %+v, %s, %v", changed, stats, mode, err)
 	}

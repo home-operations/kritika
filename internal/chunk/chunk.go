@@ -355,30 +355,6 @@ func (f *File) Identifiers(lines []int) []string {
 	return out
 }
 
-// Window returns the fixed-size fallback: the lines from first-radius to
-// last+radius, clamped to the file. Lines are 1-based, inclusive.
-func Window(src []byte, first, last, radius int) (startLine, endLine int, text string) {
-	startLine = max(first-radius, 1)
-	endLine = min(last+radius, lineCount(src))
-	if startLine > endLine {
-		return 0, 0, ""
-	}
-	start := 0
-	for range startLine - 1 {
-		start += bytes.IndexByte(src[start:], '\n') + 1
-	}
-	end := start
-	for range endLine - startLine {
-		end += bytes.IndexByte(src[end:], '\n') + 1
-	}
-	if i := bytes.IndexByte(src[end:], '\n'); i >= 0 {
-		end += i
-	} else {
-		end = len(src)
-	}
-	return startLine, endLine, string(src[start:end])
-}
-
 // lineCount is the number of lines in src, a final newline ending the last
 // line rather than starting an empty one.
 func lineCount(src []byte) int {
@@ -389,14 +365,9 @@ func lineCount(src []byte) int {
 	return n
 }
 
-// Text returns the source of a line range, 1-based and inclusive.
-func Text(src []byte, startLine, endLine int) string {
-	_, _, text := Window(src, startLine, endLine, 0)
-	return text
-}
-
-// Window returns a line range with radius lines of surrounding source.
-// Repeated calls reuse the file's line offsets, including after Close.
+// Window returns the fixed-size fallback: the lines from first-radius to
+// last+radius, clamped to the file. Lines are 1-based, inclusive. Repeated
+// calls reuse the file's line offsets, including after Close.
 func (f *File) Window(first, last, radius int) (startLine, endLine int, text string) {
 	if f.lineOffsets == nil && len(f.Source) > 0 {
 		f.lineOffsets = make([]int, 1, lineCount(f.Source))

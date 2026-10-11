@@ -27,10 +27,27 @@ func TestGenerationPublication(t *testing.T) {
    DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
 	account := accountID(t, s, "generation")
-	for _, order := range []string{"full first", "incremental first", "no initial generation", "concurrent", "concurrent incremental first"} {
-		t.Run(order, func(t *testing.T) {
-			repository := configfile.RepositoryID(account, order)
-			if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name, managed_by) VALUES ($1, $2, $3, 'file')`, repository, account, order); err != nil {
+	tests := []struct {
+		name string
+		// first publishes before second; concurrent holds first's
+		// transaction open until second waits on the repository lock.
+		first, second string
+		concurrent    bool
+		// stale is whether second is refused; active is the run left
+		// active at commit, and superseded the generation it replaced.
+		stale                      bool
+		active, commit, superseded string
+	}{
+		{name: "update after a full build", first: "full", second: "update", stale: true, active: "full", commit: "A", superseded: "initial"},
+		{name: "full build after an update", first: "update", second: "full", active: "full", commit: "A", superseded: "initial"},
+		{name: "two full builds", first: "full", second: "rebuild", active: "rebuild", commit: "B", superseded: "full"},
+		{name: "update waits for a full build", first: "full", second: "update", concurrent: true, stale: true, active: "full", commit: "A", superseded: "initial"},
+		{name: "full build waits for an update", first: "update", second: "full", concurrent: true, active: "full", commit: "A", superseded: "initial"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := configfile.RepositoryID(account, tt.name)
+			if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name, managed_by) VALUES ($1, $2, $3, 'file')`, repository, account, tt.name); err != nil {
 				t.Fatal(err)
 			}
 			makeRun := func(commit, mode, status string) string {
@@ -46,67 +63,54 @@ func TestGenerationPublication(t *testing.T) {
 				}
 				return id
 			}
-			full := makeRun("A", IndexModeFull, "running")
-			var initial *Generation
-			if order != "no initial generation" {
-				initial = &Generation{ID: makeRun("A", IndexModeFull, "completed"), Commit: "A"}
-				if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repository, initial.ID, nil) }); err != nil {
+			runs := map[string]string{
+				"initial": makeRun("A", IndexModeFull, "completed"),
+				"full":    makeRun("A", IndexModeFull, "running"),
+				"rebuild": makeRun("B", IndexModeFull, "running"),
+				"update":  makeRun("B", IndexModeIncremental, "running"),
+			}
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repository, runs["initial"]) }); err != nil {
+				t.Fatal(err)
+			}
+			publish := func(name string) func(pgx.Tx) error {
+				return func(tx pgx.Tx) error {
+					if name == "update" {
+						return AdvanceGeneration(ctx, tx, repository, Generation{ID: runs["initial"], Commit: "A"}, runs[name], "B", []string{"main.go"})
+					}
+					if err := ActivateGeneration(ctx, tx, repository, runs[name]); err != nil {
+						return err
+					}
+					return FinishIndexRun(ctx, tx, runs[name], IndexCompleted, 1, "")
+				}
+			}
+			var err error
+			if tt.concurrent {
+				err = publishConcurrently(t, s, account, publish(tt.first), publish(tt.second))
+			} else {
+				if err := s.WithAccount(ctx, account, publish(tt.first)); err != nil {
 					t.Fatal(err)
 				}
+				err = s.WithAccount(ctx, account, publish(tt.second))
 			}
-			step := makeRun("B", IndexModeIncremental, "running")
-			publishFull := func(tx pgx.Tx) error {
-				if err := ActivateGeneration(ctx, tx, repository, full, initial); err != nil {
-					return err
-				}
-				return FinishIndexRun(ctx, tx, full, IndexCompleted, 1, "")
-			}
-			publishStep := func(tx pgx.Tx) error {
-				return AdvanceGeneration(ctx, tx, repository, *initial, step, "B", []string{"main.go"})
-			}
-			wantID, wantCommit := full, "A"
-			var stale error
-			switch order {
-			case "incremental first":
-				if err := s.WithAccount(ctx, account, publishStep); err != nil {
-					t.Fatal(err)
-				}
-				stale = s.WithAccount(ctx, account, publishFull)
-				wantID, wantCommit = initial.ID, "B"
-			case "concurrent":
-				stale = publishConcurrently(t, s, account, publishFull, publishStep)
-			case "concurrent incremental first":
-				stale = publishConcurrently(t, s, account, publishStep, publishFull)
-				wantID, wantCommit = initial.ID, "B"
-			default:
-				if err := s.WithAccount(ctx, account, publishFull); err != nil {
-					t.Fatal(err)
-				}
-				if initial == nil {
-					stale = s.WithAccount(ctx, account, func(tx pgx.Tx) error { return ActivateGeneration(ctx, tx, repository, step, nil) })
-				} else {
-					stale = s.WithAccount(ctx, account, publishStep)
-				}
-			}
-			if !errors.Is(stale, ErrGenerationChanged) {
-				t.Fatalf("stale publication = %v, want ErrGenerationChanged", stale)
+			if errors.Is(err, ErrGenerationChanged) != tt.stale || (!tt.stale && err != nil) {
+				t.Fatalf("second publication = %v, want stale %v", err, tt.stale)
 			}
 			var id, commit, text string
 			if err := s.owner.QueryRow(ctx, `SELECT r.active_index_run_id::text, g.commit_sha, c.text FROM repositories r
     JOIN index_runs g ON g.id = r.active_index_run_id JOIN index_chunks c ON c.index_run_id = g.id WHERE r.id = $1`, repository).Scan(&id, &commit, &text); err != nil {
 				t.Fatal(err)
 			}
-			if id != wantID || commit != wantCommit || text != wantCommit {
-				t.Fatalf("active = %s/%s/%s, want %s/%s", id, commit, text, wantID, wantCommit)
+			if id != runs[tt.active] || commit != tt.commit || text != tt.commit {
+				t.Fatalf("active = %s/%s/%s, want %s/%s", id, commit, text, runs[tt.active], tt.commit)
 			}
-			if initial != nil && wantID != initial.ID {
-				var n int
-				if err := s.owner.QueryRow(ctx, `SELECT count(*) FROM index_chunks WHERE index_run_id = $1`, initial.ID).Scan(&n); err != nil {
-					t.Fatal(err)
-				}
-				if n != 0 {
-					t.Fatalf("superseded generation retained %d chunks", n)
-				}
+			var status string
+			var n int
+			if err := s.owner.QueryRow(ctx, `SELECT status, (SELECT count(*) FROM index_chunks WHERE index_run_id = $1) FROM index_runs WHERE id = $1`,
+				runs[tt.superseded]).Scan(&status, &n); err != nil {
+				t.Fatal(err)
+			}
+			if status != string(IndexSuperseded) || n != 0 {
+				t.Fatalf("replaced generation = %s with %d chunks, want superseded with none", status, n)
 			}
 		})
 	}

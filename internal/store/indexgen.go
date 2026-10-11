@@ -198,57 +198,45 @@ func InsertIndexChunks(
 	return nil
 }
 
-// ErrGenerationChanged means another index run published after this run
-// read its base generation. The caller must rebuild against the new base.
+// ErrGenerationChanged means another index run published after an
+// incremental step read its base generation. The step must be built again
+// against the new base.
 var ErrGenerationChanged = errors.New("store: index generation changed")
 
-func lockGeneration(ctx context.Context, tx pgx.Tx, repositoryID string, expected *Generation) error {
+// lockActiveGeneration locks the repository's row, so that publications to
+// it take turns, and returns its active generation, "" for none.
+func lockActiveGeneration(ctx context.Context, tx pgx.Tx, repositoryID string) (string, error) {
 	var active *string
 	err := tx.QueryRow(ctx, `SELECT active_index_run_id::text FROM repositories WHERE id = $1 FOR UPDATE`, repositoryID).Scan(&active)
 	if err != nil {
-		return fmt.Errorf("store: lock generation: %w", err)
+		return "", fmt.Errorf("store: lock generation: %w", err)
 	}
-	if expected == nil {
-		if active != nil {
-			return ErrGenerationChanged
-		}
-		return nil
+	if active == nil {
+		return "", nil
 	}
-	if active == nil || *active != expected.ID {
-		return ErrGenerationChanged
-	}
-	// Read after acquiring the repository lock: an incremental publication
-	// changes the commit without changing the active generation's ID.
-	current, err := FindGeneration(ctx, tx, *active)
-	if errors.Is(err, ErrNotFound) {
-		return ErrGenerationChanged
-	}
-	if err != nil {
-		return err
-	}
-	if current.Commit != expected.Commit {
-		return ErrGenerationChanged
-	}
-	return nil
+	return *active, nil
 }
 
-// ActivateGeneration makes a full build active if its base is still current,
-// superseding the previous generation and dropping its chunks.
-func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID string, previous *Generation) error {
-	if err := lockGeneration(ctx, tx, repositoryID, previous); err != nil {
+// ActivateGeneration makes a full build the active generation, superseding
+// whichever generation is active when it publishes and dropping its chunks.
+// A full build replaces every chunk, so it does not depend on the
+// generation it started from.
+func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID string) error {
+	previous, err := lockActiveGeneration(ctx, tx, repositoryID)
+	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE repositories SET active_index_run_id = $2 WHERE id = $1`, repositoryID, runID); err != nil {
 		return fmt.Errorf("store: activate generation: %w", err)
 	}
-	if previous == nil {
+	if previous == "" {
 		return nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = 'superseded', finished_at = coalesce(finished_at, now()) WHERE id = $1`,
-		previous.ID); err != nil {
+		previous); err != nil {
 		return fmt.Errorf("store: supersede generation: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, previous.ID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1`, previous); err != nil {
 		return fmt.Errorf("store: drop superseded chunks: %w", err)
 	}
 	return nil
@@ -256,12 +244,30 @@ func ActivateGeneration(ctx context.Context, tx pgx.Tx, repositoryID, runID stri
 
 // AdvanceGeneration moves an incremental step's chunks into the active
 // generation in place of the changed paths' chunks, and moves the
-// generation to the commit the step indexed.
+// generation to the commit the step indexed. It returns
+// ErrGenerationChanged unless active is still the active generation at
+// the same commit.
 func AdvanceGeneration(
 	ctx context.Context, tx pgx.Tx, repositoryID string, active Generation, stepRunID, commit string, changedPaths []string,
 ) error {
-	if err := lockGeneration(ctx, tx, repositoryID, &active); err != nil {
+	current, err := lockActiveGeneration(ctx, tx, repositoryID)
+	if err != nil {
 		return err
+	}
+	if current != active.ID {
+		return ErrGenerationChanged
+	}
+	// Read after acquiring the repository lock: an incremental publication
+	// changes the commit without changing the active generation's ID.
+	g, err := FindGeneration(ctx, tx, current)
+	if errors.Is(err, ErrNotFound) {
+		return ErrGenerationChanged
+	}
+	if err != nil {
+		return err
+	}
+	if g.Commit != active.Commit {
+		return ErrGenerationChanged
 	}
 	activeRunID := active.ID
 	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id = $1 AND path = ANY($2)`, activeRunID, changedPaths); err != nil {

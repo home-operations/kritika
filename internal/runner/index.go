@@ -47,7 +47,7 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 			return fmt.Errorf("runner: base tree: %w", err)
 		}
 	}
-	chunks, changed, stats, mode, err := buildIndex(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions)
+	chunks, changed, stats, mode, err := buildIndex(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions, logger)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 }
 
 func buildIndex(
-	ctx context.Context, head, base *object.Tree, ignore []string, opts indexer.Options,
+	ctx context.Context, head, base *object.Tree, ignore []string, opts indexer.Options, logger *slog.Logger,
 ) ([]indexer.Chunk, []string, indexer.Stats, string, error) {
 	mode := store.IndexModeFull
 	if base != nil {
@@ -90,6 +90,7 @@ func buildIndex(
 	}
 	chunks, changed, stats, err := indexer.Build(ctx, head, base, ignore, opts)
 	if errors.Is(err, indexer.ErrBudgetReached) {
+		logger.Warn("incremental build over budget, building the index in full", "files", stats.Files, "bytes", stats.Bytes)
 		mode = store.IndexModeFull
 		chunks, changed, stats, err = indexer.Build(ctx, head, nil, ignore, opts)
 	}

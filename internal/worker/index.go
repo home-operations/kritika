@@ -199,15 +199,31 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
 	// A push while this ran was absorbed into this job: if the branch has
-	// moved, index again at once, as a snooze that is not an attempt. A
-	// forced rebuild leaves the new tip to the update job the push queued.
-	if !args.Full {
-		if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
+	// moved, index again at once, as a snooze that is not an attempt.
+	if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
+		if !args.Full {
 			logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
 			return river.JobSnooze(0)
 		}
+		queueUpdate(ctx, logger, args, tip)
 	}
 	return nil
+}
+
+// queueUpdate queues an update to tip after a forced rebuild: a snooze
+// would build in full again, and the update the push queued may have
+// published before the rebuild replaced its generation. A failure leaves
+// the index behind only until the next push.
+func queueUpdate(ctx context.Context, logger *slog.Logger, args jobs.IndexArgs, tip string) {
+	res, err := river.ClientFromContext[pgx.Tx](ctx).Insert(ctx, jobs.IndexArgs{
+		AccountID: args.AccountID, RepositoryID: args.RepositoryID, CommitSHA: tip, Trigger: jobs.TriggerPush,
+	}, nil)
+	if err != nil {
+		logger.Warn("index update not queued after the rebuild", "tip", review.ShortSHA(tip), "error", err)
+		return
+	}
+	logger.Info("index update queued: the branch moved during the rebuild", "tip", review.ShortSHA(tip),
+		"already_queued", res.UniqueSkippedAsDuplicate)
 }
 
 // activeGeneration reads the repository's active generation, nil when it
@@ -323,7 +339,7 @@ func (w *Index) embed(
 				return err
 			}
 		} else {
-			if err := store.ActivateGeneration(ctx, tx, args.RepositoryID, runID, active); err != nil {
+			if err := store.ActivateGeneration(ctx, tx, args.RepositoryID, runID); err != nil {
 				return err
 			}
 		}
