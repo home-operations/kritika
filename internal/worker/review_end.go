@@ -129,3 +129,24 @@ func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID strin
 	}
 	return errors.Join(err, w.failReview(dctx, e, "", err.Error()), runErr)
 }
+
+// preparationContext lets a completed runner answer reach its publication
+// checkpoint during shutdown. Explicit cancellation, job timeout and fencing
+// still stop preparation; the detached timeout bounds shutdown work.
+func preparationContext(job context.Context) (context.Context, context.CancelFunc) {
+	bounded, stopBound := detach(job)
+	ctx, cancel := context.WithCancelCause(bounded)
+	forward := func() {
+		cause := context.Cause(job)
+		if cause != nil && (!stoppingCause(cause) || errors.Is(cause, errJobFenced)) {
+			cancel(cause)
+		}
+	}
+	stopForward := context.AfterFunc(job, forward)
+	forward()
+	return ctx, func() {
+		stopForward()
+		cancel(context.Canceled)
+		stopBound()
+	}
+}

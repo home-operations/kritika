@@ -1,0 +1,175 @@
+//go:build integration
+
+package worker
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertest"
+	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/store"
+)
+
+func filteredPreparation(t *testing.T, number int) (*agenticHarness, *river.Job[jobs.ReviewArgs], *pullRequest, string, string) {
+	t.Helper()
+	h := newAgenticHarness(t, number)
+	job := queuedOutcomeReview(t, h)
+	pr, err := loadPullRequest(h.ctx, h.st, h.account.ID(), job.Args.RepositoryID, h.number)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewID, runID, _, err := h.review.start(h.ctx, job.Args, pr, h.base, "", job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		if _, err := tx.Exec(h.ctx, `UPDATE river_job SET state = 'running', attempt = 1, attempted_at = now() WHERE id = $1`, job.ID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(h.ctx, `UPDATE pull_requests SET labels = '[]' WHERE id = $1`, pr.id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(h.ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, skip_reason)
+			VALUES ($1, $2, $3, $4, 'patch', '', 'filtered')`, runID, h.account.ID(), h.head, h.base)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.State = rivertype.JobStateRunning
+	return h, job, pr, reviewID, runID
+}
+
+func TestFilteredPreparation(t *testing.T) {
+	for i, tt := range []struct {
+		name, labels    string
+		failCompletion  bool
+		wantStatus      store.ReviewStatus
+		wantJob         rivertype.JobState
+		wantDisposition reviewDisposition
+	}{
+		{"stable", `[]`, false, store.ReviewSkipped, rivertype.JobStateCompleted, reviewFinish},
+		{"changed", `["review"]`, false, store.ReviewSkipped, rivertype.JobStateRunning, reviewSnooze},
+		{"completion failure rolls back skip", `[]`, true, store.ReviewRunning, rivertype.JobStateRunning, reviewFinish},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h, job, pr, reviewID, runID := filteredPreparation(t, 986+i)
+			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+				_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET labels = $2 WHERE id = $1`, pr.id, tt.labels)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if tt.failCompletion {
+				job.State = rivertype.JobStateAvailable
+			}
+			ctx := rivertest.WorkContext(h.ctx, h.insertOnly)
+			_, decision, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`))
+			if (err != nil) != tt.failCompletion {
+				t.Fatalf("preparation = %v", err)
+			}
+			if err == nil {
+				checkReviewDecision(t, decision, reviewDecision{end: store.ReviewEnd{Status: store.ReviewSkipped, SkipReason: "filtered", PatchID: "patch"}, disposition: tt.wantDisposition})
+			}
+			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+				var status store.ReviewStatus
+				var state rivertype.JobState
+				var attempt int
+				if err := tx.QueryRow(h.ctx, `SELECT r.status, j.state, j.attempt FROM reviews r JOIN river_job j ON j.id = r.river_job_id WHERE r.id = $1`, reviewID).Scan(&status, &state, &attempt); err != nil {
+					return err
+				}
+				if status != tt.wantStatus || state != tt.wantJob || attempt != 1 {
+					t.Fatalf("review=%s job=%s attempt=%d", status, state, attempt)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFilteredPreparationConcurrentLabelChange(t *testing.T) {
+	h, job, pr, reviewID, runID := filteredPreparation(t, 989)
+	ctx, cancel := context.WithTimeout(rivertest.WorkContext(h.ctx, h.insertOnly), 10*time.Second)
+	defer cancel()
+	owner, observer := publicationTestOwner(t), publicationTestOwner(t)
+	tx, err := owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := tx.Rollback(context.Background()); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			t.Error(err)
+		}
+	}()
+	if _, err := tx.Exec(ctx, `SELECT id FROM river_job WHERE id = $1 FOR UPDATE`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`))
+		done <- err
+	}()
+	waitFor(t, 5*time.Second, "skip waiting to complete its River job", func() bool {
+		var blocked bool
+		if err := observer.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, owner.PgConn().PID()).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		return blocked
+	})
+	changed := make(chan error, 1)
+	go func() {
+		changed <- h.st.WithAccount(ctx, h.account.ID(), func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `UPDATE pull_requests SET labels = '["review"]' WHERE id = $1`, pr.id); err != nil {
+				return err
+			}
+			_, err := jobs.EnqueueLabelChange(ctx, tx, h.insertOnly, h.account.ID(), job.Args.RepositoryID, h.number, "labeled")
+			return err
+		})
+	}()
+	waitFor(t, 5*time.Second, "label update waiting on skip transaction", func() bool {
+		var blocked bool
+		if err := observer.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity worker, pg_stat_activity labels
+			WHERE $1 = ANY(pg_blocking_pids(worker.pid)) AND worker.pid = ANY(pg_blocking_pids(labels.pid)))`, owner.PgConn().PID()).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		return blocked
+	})
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range []<-chan error{done, changed} {
+		select {
+		case err := <-result:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-ctx.Done():
+			t.Fatal(context.Cause(ctx))
+		}
+	}
+	if err := h.st.WithAccount(ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var completed bool
+		var queued int
+		if err := tx.QueryRow(ctx, `SELECT state = 'completed',
+			(SELECT count(*) FROM river_job WHERE kind = 'review' AND id <> $1 AND state = 'available' AND (args->>'number')::int = $2)
+			FROM river_job WHERE id = $1`, job.ID, h.number).Scan(&completed, &queued); err != nil {
+			return err
+		}
+		if !completed || queued != 1 {
+			t.Fatalf("completed=%v queued=%d; label change was lost", completed, queued)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

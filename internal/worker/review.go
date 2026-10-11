@@ -178,13 +178,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	// The parts are done with the slots they ran in.
 	releaseExtra()
 	res, cause, agentOutcome, agentErr := out.res, out.cause, out.agent, out.agentErr
-	// A River cancel (JobCancelTx from a web request) cancels ctx itself,
-	// unlike supervise's own errSuperseded/errHeartbeatLost, which only
-	// cancel the child ctx passed to the executor. ctx is left live from here
-	// on so a cancel that arrives during afterRun (review status "prepared")
-	// still takes effect there. cctx is a detached copy for the terminal
-	// writes up to afterRun, which must still land once ctx itself has
-	// ended.
 	cctx, cancel := detach(ctx)
 	defer cancel()
 	ended.jobName = res.JobName
@@ -195,11 +188,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	if judged, err := w.judgeRun(ctx, cctx, job, ended, res, cause, agentErr); judged {
 		return err
 	}
-	prep, status, err := w.afterRun(ctx, job, account, pr, eff, b.notes, client, reviewID, runID, prior,
+	pctx, stopPreparation := preparationContext(ctx)
+	defer stopPreparation()
+	prep, status, err := w.afterRun(pctx, job, account, pr, eff, b.notes, client, reviewID, runID, prior,
 		spec.Prompt.PullRequest.Labels, logger)
 	if err != nil {
-		// ctx stayed live through afterRun, so a cancel or a timeout that
-		// arrived while it ran surfaces here as a plain error; the review
+		// Cancellation and timeout still reach afterRun; the review
 		// ends rather than staying running while River retries the job.
 		return w.finishEnded(ctx, ended, err)
 	}

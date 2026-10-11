@@ -48,7 +48,7 @@ func TestDecideRunnerReview(t *testing.T) {
 		want                         reviewDecision
 	}{
 		{name: "successful runner continues", want: reviewDecision{disposition: reviewContinue}},
-		{name: "successful runner defers interruption handling to afterRun", jobCause: stopped, want: reviewDecision{disposition: reviewContinue}},
+		{name: "successful runner preserves its answer during shutdown", jobCause: stopped, want: reviewDecision{disposition: reviewContinue}},
 		{name: "cancel beats a successful runner", jobCause: river.ErrJobCancelledRemotely,
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review canceled"}},
 		{name: "cancel beats missing agent and superseded runner", jobCause: river.ErrJobCancelledRemotely, runCause: errSuperseded, agentErr: agentErr, result: executor.Result{Err: runErr},
@@ -200,5 +200,51 @@ func checkReviewDecision(t *testing.T, got, want reviewDecision) {
 		}
 	} else if !errors.Is(err, want.err) {
 		t.Fatalf("job error = %v; want %v", err, want.err)
+	}
+}
+
+func TestPreparationContext(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		cause error
+		stops bool
+	}{
+		{"shutdown", errors.New("stop initiated"), false},
+		{"plain cancellation", context.Canceled, false},
+		{"remote cancel", river.ErrJobCancelledRemotely, true},
+		{"timeout", context.DeadlineExceeded, true},
+		{"fencing", errJobFenced, true},
+	} {
+		for _, alreadyEnded := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/alreadyEnded=%v", tt.name, alreadyEnded), func(t *testing.T) {
+				job, endJob := context.WithCancelCause(t.Context())
+				defer endJob(nil)
+				if alreadyEnded {
+					endJob(tt.cause)
+				}
+				ctx, stop := preparationContext(job)
+				defer stop()
+				if _, ok := ctx.Deadline(); !ok {
+					t.Fatal("preparation must be bounded")
+				}
+				endJob(tt.cause)
+				if tt.stops {
+					select {
+					case <-ctx.Done():
+						if !errors.Is(context.Cause(ctx), tt.cause) {
+							t.Fatal(context.Cause(ctx))
+						}
+					case <-time.After(time.Second):
+						t.Fatal("job termination did not stop preparation")
+					}
+				} else if ctx.Err() != nil {
+					t.Fatal(ctx.Err())
+				}
+				stop()
+				if ctx.Err() == nil {
+					t.Fatal("cleanup did not cancel preparation")
+				}
+			})
+		}
 	}
 }
