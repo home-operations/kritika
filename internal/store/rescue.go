@@ -105,8 +105,10 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 	if tag.RowsAffected() == 0 {
 		return false, nil
 	}
-	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now()
-		WHERE river_job_id = $1 AND finished_at IS NULL`, job.ID, reason); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now(),
+		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
+		WHERE river_job_id = $1 AND finished_at IS NULL
+		AND NOT ($3 AND publication IS NOT NULL)`, job.ID, reason, job.RescueState() == rivertype.JobStateRetryable); err != nil {
 		return false, fmt.Errorf("store: end the reviews of job %d: %w", job.ID, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -206,7 +208,8 @@ func (s *Store) EndOrphanedRun(ctx context.Context, run OrphanedRun, reason stri
 	}
 	switch {
 	case run.ReviewID != "":
-		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now()
+		if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now(),
+		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
 			WHERE id = $1 AND finished_at IS NULL`, run.ReviewID, reason); err != nil {
 			return fmt.Errorf("store: end the review of run %s: %w", run.ID, err)
 		}

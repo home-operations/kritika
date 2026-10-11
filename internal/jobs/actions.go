@@ -151,9 +151,10 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 		return ErrNotCancelable
 	}
 	var jobID int64
+	var prepared bool
 	err := tx.QueryRow(ctx, `UPDATE reviews SET cancel_requested_at = now()
 		WHERE id = $1 AND status IN ('running', 'prepared') AND river_job_id IS NOT NULL
-		RETURNING river_job_id`, reviewID).Scan(&jobID)
+		RETURNING river_job_id, status = 'prepared'`, reviewID).Scan(&jobID, &prepared)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotCancelable
 	}
@@ -163,7 +164,7 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 	// A job that already ended can no longer end its review: JobCancelTx
 	// would return it unchanged, and nothing would ever act on the request.
 	var state string
-	err = tx.QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1`, jobID).Scan(&state)
+	err = tx.QueryRow(ctx, `SELECT state FROM river_job WHERE id = $1 FOR UPDATE`, jobID).Scan(&state)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotCancelable
 	}
@@ -173,6 +174,17 @@ func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], revi
 	switch rivertype.JobState(state) {
 	case rivertype.JobStateCancelled, rivertype.JobStateCompleted, rivertype.JobStateDiscarded:
 		return ErrNotCancelable
+	}
+	// Prepared reviews finish cancellation in the worker. Marking their River
+	// job canceled could discard a delivery error before that worker sees it.
+	if prepared {
+		if rivertype.JobState(state) == rivertype.JobStateRunning {
+			return nil
+		}
+		if _, err := c.JobRetryTx(ctx, tx, jobID); err != nil {
+			return fmt.Errorf("jobs: wake publication cancellation: %w", err)
+		}
+		return nil
 	}
 	if _, err := c.JobCancelTx(ctx, tx, jobID); err != nil {
 		if errors.Is(err, river.ErrNotFound) {

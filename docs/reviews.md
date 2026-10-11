@@ -36,6 +36,17 @@ review used; with none, nothing is left to review, and kritika says so.
 | Reactions         | 👀 on the pull request while a review runs, then 👍 once one is posted or 😕 when it failed, until `@<bot> review` or a re-run posts one; a mention kritika answers gets the same, and an `@<bot> review` comment the same for the review it asked for ([permissions](setup.md#register-the-github-app)) |
 | An approval       | with `review.approve` on ([approvals](confidence.md#approvals))                                                                                                      |
 
+Once the findings, summary and confidence score are finalized, kritika saves
+what it needs to publish them. If delivery fails or the worker restarts,
+the job resumes publication from that checkpoint without running the agent
+or scoring the review again. It finds comments already posted before
+creating more, and records the findings and automatic-review count together.
+A retry for an older head, or one overtaken by a newer completed review,
+is superseded. Canceling a publication waiting for retry clears its pending
+commit status without publishing the saved answer. A checkpoint that cannot
+be saved fails that review; it does not trigger another model run. Terminal
+reviews retain only a small completion marker in place of the checkpoint.
+
 ### Findings
 
 A review comments on every line a maintainer could act on: bugs and risks,

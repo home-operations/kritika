@@ -58,6 +58,7 @@ type publishPhase struct {
 	// statusReported is set once incomplete has written the head's commit
 	// status with its reason, which the job's ending then leaves alone.
 	statusReported bool
+	checkpointed   bool
 	// confidence is the score judge got, nil when the repository asks for
 	// none or, with unscored set, when the scorer did not answer.
 	confidence *review.Confidence
@@ -76,16 +77,32 @@ type publishPhase struct {
 }
 
 // run publishes what the runner's agent submitted; the run's usage is
-// already recorded. An agent that stopped without submitting fails the
-// review, and the sticky comment says this head was not fully reviewed so
-// an earlier verdict does not stand in for it.
+// already recorded.
 func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
+	answer, err := p.prepare(job)
+	if err != nil {
+		return store.ReviewFailed, err
+	}
+	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
+		return store.ReviewSuperseded, cause
+	}
+	ctx, cancel := detach(job)
+	defer cancel()
+	if err := p.checkpoint(ctx, answer); err != nil {
+		return store.ReviewFailed, err
+	}
+	p.checkpointed = true
+	return p.deliver(job, answer)
+}
+
+// prepare settles the findings, summary and confidence before delivery.
+func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) {
 	// The agent has already answered, so publishing runs to the end even if
 	// the job's ctx ends meanwhile.
 	ctx, cancel := detach(job)
 	defer cancel()
 	if p.agent == nil {
-		return store.ReviewFailed, errors.New("worker: the runner wrote no agent run")
+		return nil, errors.New("worker: the runner wrote no agent run")
 	}
 	run := *p.agent
 	var diff, delta string
@@ -98,16 +115,16 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		return tx.QueryRow(ctx, `SELECT delta_paths FROM context_packs WHERE runner_run_id = $1`, p.runID).Scan(&deltaPaths)
 	})
 	if err != nil {
-		return store.ReviewFailed, fmt.Errorf("worker: read context pack: %w", err)
+		return nil, fmt.Errorf("worker: read context pack: %w", err)
 	}
 	p.logger.Info("agent answered", "stop", run.StopReason, "steps", run.Steps, "model", run.Model, "input_tokens", run.Usage.Prompt(),
 		"cached_tokens", run.Usage.CacheRead, "output_tokens", run.Usage.Output, "cost_usd", run.CostUSD)
 	if stopErr := stopError(run); stopErr != nil {
-		return store.ReviewFailed, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
+		return nil, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
 	}
 	res, dropped, err := review.Parse(string(run.Result), review.Anchors(diff), p.parse)
 	if err != nil {
-		return store.ReviewFailed, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.Model))
+		return nil, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.Model))
 	}
 	for _, d := range dropped {
 		p.logger.Debug("finding dropped", "reason", d.Reason, "path", d.Finding.Path, "line", d.Finding.Line, "title", d.Finding.Title)
@@ -161,42 +178,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
 		notes = append(notes, note)
 	}
-	// A fenced job may be another replica's by now, its review on the way:
-	// the detached write-back must not post beside that one.
-	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
-		return store.ReviewSuperseded, cause
-	}
-	// Scoring had its own time; the write-back gets a whole bound after it.
-	ctx, cancel = detach(job)
-	defer cancel()
-	pauseNote, err := p.autoReviewPauses(ctx)
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	if pauseNote != "" {
-		notes = append(notes, pauseNote)
-	}
-	commentID, inline, err := p.writeBack(ctx, res, unanchored, run.Model, append(notes, p.repoNotes...))
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	// Counted once posted: a review that failed to post is retried, and
-	// a pause it would have announced must not happen unannounced. The
-	// count gets a bound of its own, since the write-back's best-effort
-	// calls may have spent the last.
-	cctx, ccancel := detach(job)
-	defer ccancel()
-	if err := p.countAutoReview(cctx, pauseNote != ""); err != nil {
-		return store.ReviewFailed, err
-	}
-	p.countFindings(res)
-	if c := p.confidence; c != nil {
-		p.w.Metrics.ConfidenceScored(p.account.Key(), c.Score, string(c.Risk))
-	}
-	if err := p.persist(ctx, res, unanchored, inline, run.Model, commentID); err != nil {
-		return store.ReviewFailed, err
-	}
-	return store.ReviewCompleted, nil
+	return &publicationAnswer{Result: res, Unanchored: unanchored, Notes: notes, Model: run.Model}, nil
 }
 
 // autoReviewPauses returns the note the summary states when this review
@@ -220,25 +202,6 @@ func (p *publishPhase) autoReviewPauses(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return review.AutoPausedNote(strings.TrimSuffix(login, "[bot]"), p.settings.MaxAutoReviews), nil
-}
-
-// countAutoReview counts this review towards the pull request's automatic
-// reviews, unless a human asked for it, pausing them when its summary
-// announced the pause.
-func (p *publishPhase) countAutoReview(ctx context.Context, pause bool) error {
-	if p.trigger == jobs.TriggerManual {
-		return nil
-	}
-	var pausedNow bool
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		var err error
-		pausedNow, err = store.CountAutoReview(ctx, tx, p.pr.id, pause)
-		return err
-	})
-	if pausedNow {
-		p.logger.Info("automatic reviews paused", "after", p.settings.MaxAutoReviews)
-	}
-	return err
 }
 
 // unfinishedParts is what the summary states for each part of a split
@@ -394,8 +357,8 @@ func (p *publishPhase) writeBack(
 	// same: it is neither resolved nor listed so, and keeps its thread.
 	reported := slices.Concat(res.Findings, unanchored)
 	onForge := alreadyInline(reported, p.prior.findings)
-	if p.settings.Review.InlineComments && len(reported) > 0 {
-		p.markOnForge(ctx, reported, onForge)
+	if err := p.markOnForge(ctx, reported, onForge); err != nil {
+		return 0, nil, err
 	}
 	for i := range res.Findings {
 		f := &res.Findings[i]
@@ -508,18 +471,19 @@ func (p *publishPhase) writeBack(
 // posted on the pull request, by the FindingMarker each carries, which the
 // database may not know: an attempt that posted and then died before
 // recording them, or a review whose record failed to write. A forge that
-// cannot be read leaves the database's answer to stand.
-func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Finding, onForge []store.InlinePosted) {
+// cannot be read leaves delivery pending rather than risking duplicates.
+func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Finding, onForge []store.InlinePosted) error {
+	if !p.settings.Review.InlineComments || len(findings) == 0 {
+		return nil
+	}
 	owner, repo := p.pr.ownerRepo()
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
-		p.logger.Warn("inline comments on the forge not checked", "error", err)
-		return
+		return fmt.Errorf("worker: reconcile inline comments: %w", err)
 	}
 	comments, err := p.client.ListInline(ctx, owner, repo, p.pr.number)
 	if err != nil {
-		p.logger.Warn("inline comments on the forge not checked", "error", err)
-		return
+		return fmt.Errorf("worker: reconcile inline comments: %w", err)
 	}
 	posted := markedInline(comments, login)
 	for i, f := range findings {
@@ -527,6 +491,7 @@ func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Findin
 			onForge[i] = store.InlinePosted{Posted: true, ID: id}
 		}
 	}
+	return nil
 }
 
 // markedInline maps the fingerprint each of the bot's root inline comments

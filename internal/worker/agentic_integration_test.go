@@ -439,8 +439,9 @@ func (h *agenticHarness) waitReview(t *testing.T, headSHA string) (id, status, e
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(h.ctx, `SELECT id, status, error FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL
-				ORDER BY created_at DESC LIMIT 1`, headSHA).Scan(&id, &status, &errText)
+			return tx.QueryRow(h.ctx, `SELECT r.id, r.status, r.error FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+                WHERE r.head_sha = $1 AND p.number = $2 AND r.finished_at IS NOT NULL
+                ORDER BY r.created_at DESC LIMIT 1`, headSHA, h.number).Scan(&id, &status, &errText)
 		})
 		if err == nil {
 			return id, status, errText

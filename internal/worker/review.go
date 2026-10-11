@@ -69,12 +69,12 @@ func (pr *pullRequest) dedupesBotPatch(trigger string) bool {
 	return pr.authorIsBot && trigger != jobs.TriggerManual
 }
 
-// lastPatchID is the patch id of the pull request's newest prepared or
+// lastPatchID is the patch id of the pull request's newest
 // completed review other than reviewID, "" when it has none.
 func lastPatchID(ctx context.Context, tx pgx.Tx, prID, reviewID string) (string, error) {
 	var patch string
 	err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-		AND status IN ('prepared', 'completed') AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
+		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", fmt.Errorf("worker: read last review: %w", err)
 	}
@@ -91,12 +91,18 @@ func (pr *pullRequest) ownerRepo() (owner, repo string) {
 func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err error) {
 	args := job.Args
 	file := w.Current.Get()
+	logger := w.Logger.With("account", args.AccountID, "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
+	started := time.Now()
+	if job.Attempt > 1 {
+		if resumed, err := w.resumePublication(ctx, job, file, logger); resumed {
+			return err
+		}
+	}
 	account, err := w.account(file, args.AccountID)
 	if err != nil {
 		return err
 	}
-	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
-	started := time.Now()
+	logger = w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	clearSlotWait(ctx, logger, job)
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
@@ -122,10 +128,11 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, forge.StatusPending, "kritika: review running"); err != nil {
 		logger.Warn("commit status not set", "error", err)
 	}
+	publicationHandled := false
 	// An error on the last attempt has River discard the job, so nothing
 	// would replace the pending status.
 	defer func() {
-		if err == nil || job.Attempt < job.MaxAttempts {
+		if err == nil || publicationHandled || job.Attempt < job.MaxAttempts {
 			return
 		}
 		sctx, cancel := detach(ctx)
@@ -228,6 +235,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		agent: agentOutcome,
 	}
 	status, perr := phase.run(ctx)
+	if phase.checkpointed {
+		publicationHandled = true
+		return w.publicationEnded(ctx, job, phase, status, perr, started)
+	}
 	// Publishing finishes on a detached ctx, so a clean result stands even
 	// if ctx ended meanwhile: the comment and the commit status already say
 	// so. Only a publish that failed while ctx ended ends as canceled or
@@ -608,7 +619,7 @@ func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs
 }
 
 // botPatch is the patch id of a bot pull request's diff as its forge
-// reports it, and whether the pull request's last prepared or completed
+// reports it, and whether the pull request's last completed
 // review had the same one. A diff the forge will not give, or a review
 // before it without one, tells nothing: the pull request is then reviewed
 // as usual.
@@ -624,7 +635,7 @@ func (w *Review) botPatch(
 	var last string
 	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_patch_id FROM reviews WHERE pull_request_id = $1
-			AND status IN ('prepared', 'completed') AND NOT partial ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
+			AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		logger.Warn("last forge patch id not read; the runner checks the patch", "error", err)
