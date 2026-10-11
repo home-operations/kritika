@@ -194,13 +194,3 @@ func NothingToReviewBody(headSHA, baseRef string) string {
 	return fmt.Sprintf("Nothing to review: `%s` is already in `%s`, and no earlier review recorded where it branched off.\n",
 		ShortSHA(headSHA), baseRef)
 }
-
-// ReviewQueuedBody is the reply to a request for a review of headSHA where
-// the forge refuses the reactions it is otherwise answered with: queued, or
-// already queued or running.
-func ReviewQueuedBody(headSHA string, already bool) string {
-	if already {
-		return fmt.Sprintf("A review of `%s` is already queued or running.\n", ShortSHA(headSHA))
-	}
-	return fmt.Sprintf("Reviewing `%s`; the summary lands on this pull request when it is done.\n", ShortSHA(headSHA))
-}
