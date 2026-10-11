@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.0.61](https://github.com/home-operations/kritika/compare/0.0.60...0.0.61) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** make agent-file context explicit ([#878](https://github.com/home-operations/kritika/issues/878))
+
+### Features
+
+* **go:** update module github.com/anthropics/anthropic-sdk-go (v1.79.1 → v1.80.0) ([#882](https://github.com/home-operations/kritika/issues/882)) ([2715019](https://github.com/home-operations/kritika/commit/2715019505cb97025e490d174dce11df66233ce7))
+* **go:** update module github.com/openai/openai-go/v3 (v3.74.0 → v3.76.0) ([#883](https://github.com/home-operations/kritika/issues/883)) ([db1920c](https://github.com/home-operations/kritika/commit/db1920cd4b10cc2813907116e770a82a7180389b))
+* **npm:** update dependency simple-icons (16.34.0 → 16.35.0) ([#884](https://github.com/home-operations/kritika/issues/884)) ([e0cdf5d](https://github.com/home-operations/kritika/commit/e0cdf5de143cd7927560d91332496c10b508c7db))
+* **review:** make agent-file context explicit ([#878](https://github.com/home-operations/kritika/issues/878)) ([a38d498](https://github.com/home-operations/kritika/commit/a38d4988bef63396ee16e2d6cf76b6da005e75c6))
+* **review:** report evidence-backed merge impact ([#885](https://github.com/home-operations/kritika/issues/885)) ([ee95eba](https://github.com/home-operations/kritika/commit/ee95eba4c037f2ef897491e15a90fcb0bc0ed593))
+
+
+### Bug Fixes
+
+* **go:** update module github.com/bmatcuk/doublestar/v4 (v4.10.2 → v4.10.3) ([#877](https://github.com/home-operations/kritika/issues/877)) ([cc1c256](https://github.com/home-operations/kritika/commit/cc1c256887ec3b49cbfd83255f1becd8aaf60889))
+* **npm:** update dependency vite (8.3.3 → 8.3.4) ([#879](https://github.com/home-operations/kritika/issues/879)) ([3051e15](https://github.com/home-operations/kritika/commit/3051e156dd6fe6cdb0f8cee1aa2118d8b432afeb))
+* **review:** retain earlier findings across full re-reviews ([#873](https://github.com/home-operations/kritika/issues/873)) ([921bcc4](https://github.com/home-operations/kritika/commit/921bcc4eba1687ad09cac79ca27cd16a33793edc))
+
+
+### Tests
+
+* **review:** cover full-review finding retention ([#874](https://github.com/home-operations/kritika/issues/874)) ([9e74b7d](https://github.com/home-operations/kritika/commit/9e74b7d6699654d111adafffb0840dbae5b58e83))
+
+
+### Miscellaneous Chores
+
+* **mise:** update mise tools ([#880](https://github.com/home-operations/kritika/issues/880)) ([16419c3](https://github.com/home-operations/kritika/commit/16419c34361b153dd286facdafdb23fdb494dfe5))
+* **mise:** update tool aqua:astral-sh/uv (0.12.23 → 0.13.0) ([#881](https://github.com/home-operations/kritika/issues/881)) ([56d60bf](https://github.com/home-operations/kritika/commit/56d60bfe1b7a5f3295ad3218f02ba11e168ae5ae))
+
 ## [0.0.60](https://github.com/home-operations/kritika/compare/0.0.59...0.0.60) (2026-10-11)
 
 
