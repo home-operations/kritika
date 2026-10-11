@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.0.59](https://github.com/home-operations/kritika/compare/0.0.58...0.0.59) (2026-10-11)
+
+
+### Features
+
+* **followup:** answer a review request with reactions instead of a reply ([#859](https://github.com/home-operations/kritika/issues/859)) ([5273179](https://github.com/home-operations/kritika/commit/527317908321573425bf94068c0fdd71d5181eeb))
+* **npm:** update dependency @playwright/test (1.63.0 → 1.64.0) ([#861](https://github.com/home-operations/kritika/issues/861)) ([8c2bf24](https://github.com/home-operations/kritika/commit/8c2bf24ef07cb665cba195f3bccbfaef59f9f743))
+
+
+### Bug Fixes
+
+* **review:** ask a re-review to report again every earlier finding that still holds, whatever its severity ([#864](https://github.com/home-operations/kritika/issues/864)) ([68b02a7](https://github.com/home-operations/kritika/commit/68b02a7aa363d43b72ec07c9973f80b6e586ccf2))
+* **review:** keep room in a re-review's prompt for the last review's findings when the diff fills it ([#867](https://github.com/home-operations/kritika/issues/867)) ([6bb95ef](https://github.com/home-operations/kritika/commit/6bb95ef49bec2e90a49e392875b04af42ec81d13))
+* **review:** resolve an earlier finding only when a re-review says it no longer holds ([#865](https://github.com/home-operations/kritika/issues/865)) ([b14596a](https://github.com/home-operations/kritika/commit/b14596a08487a44daca8942a2c4f75c13e743d62))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool lefthook (2.1.17 → 2.2.0) ([#858](https://github.com/home-operations/kritika/issues/858)) ([056ab9c](https://github.com/home-operations/kritika/commit/056ab9c8432600648298f29fefb4a42a83ff7b65))
+
 ## [0.0.58](https://github.com/home-operations/kritika/compare/0.0.57...0.0.58) (2026-10-11)
 
 
