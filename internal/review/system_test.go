@@ -51,7 +51,7 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatalf("a prompt without a diagram asks for one:\n%s", bare)
 	}
 	withDiagram := SystemPrompt(nil, nil, nil, false, false, true)
-	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryDiagram + agenticTools + reviewTools; withDiagram != want {
+	if want := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryImpact + summaryDiagram + agenticTools + reviewTools; withDiagram != want {
 		t.Fatalf("system prompt with a diagram:\n%s", withDiagram)
 	}
 }
@@ -190,8 +190,11 @@ func TestSystemRules(t *testing.T) {
 		for _, want := range []string{
 			"you do not recognise is not a finding",
 			"A finding you would have to hedge (may, could, appears to)",
-			"what is worth stating is worth a finding",
-			"It does not say what the diff cannot show",
+			"Defects it mentions\nmust also be findings",
+			"Omit generic caveats",
+			"An ordinary bump or documentation change",
+			"never claim it passed",
+			"Each note names the repository file or symbol",
 			"replacement when\nit changes the lines the finding points at", "as the schema defines them",
 			"Comment on every line of the diff where a maintainer could act", "a test the new behaviour lacks",
 			"one that cannot fail or\nasserts nothing about the behaviour it is named for",

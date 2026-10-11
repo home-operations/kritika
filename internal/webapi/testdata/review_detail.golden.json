@@ -42,6 +42,9 @@
   "summary": {
     "take": "Looks fine.",
     "praise": ["tests"],
+    "impact": [
+      "`migrations/002.sql` drops the legacy column on startup; reverting the binary does not restore its data."
+    ],
     "diagram": "flowchart TD\n  A --> B"
   },
   "findings": [

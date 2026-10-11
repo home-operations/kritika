@@ -820,6 +820,38 @@ test('pull detail leads with its latest review, then the history and follow-ups 
 });
 
 test.describe('review', () => {
+  test('merge impact shows evidence separately from findings', async ({ page }) => {
+    await page.goto(`/${T}/reviews/rev-1`);
+    const impact = page.getByRole('region', { name: 'Merge impact' });
+    await expect(impact).toBeVisible();
+    await expect(impact).toContainText('migrations/002.sql');
+    await expect(impact).toContainText('reverting the binary does not restore its data');
+    await expect(page.locator('.finding')).toHaveCount(g.reviewDetail.findings.length);
+  });
+
+  test('merge impact preserves fenced commands', async ({ page }) => {
+    await g.mockApi(page, [
+      [/\/reviews\/rev-1$/, { ...g.reviewDetail, summary: { ...g.reviewDetail.summary!, impact: ['Verify startup:\n\n```sh\nkubectl get pods\n```\nExpect all pods ready.'] } }],
+      ...g.defaultApi(),
+    ]);
+    await page.goto(`/${T}/reviews/rev-1`);
+    const impact = page.getByRole('region', { name: 'Merge impact' });
+    await expect(impact.locator('pre')).toHaveText('kubectl get pods');
+    await expect(impact.locator('li')).toHaveCount(1);
+  });
+
+  for (const [name, impact] of [['old summary', undefined], ['empty impact', []]] as const) {
+    test(`merge impact is absent for ${name}`, async ({ page }) => {
+      await g.mockApi(page, [
+        [/\/reviews\/rev-1$/, { ...g.reviewDetail, summary: { ...g.reviewDetail.summary!, impact } }],
+        ...g.defaultApi(),
+      ]);
+      await page.goto(`/${T}/reviews/rev-1`);
+      await expect(page.locator('#sum-take')).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Merge impact' })).toHaveCount(0);
+    });
+  }
+
   test('summary groups findings; tabs switch', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1`);
     await expect(page.locator('#sum-take').locator('../..')).toContainText(g.reviewDetail.summary!.take);

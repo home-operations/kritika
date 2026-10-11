@@ -371,7 +371,13 @@ marked as not rechecked. A finding reported again keeps the inline thread
 its first report opened, however it is worded now. Each review
 also leaves notes, which no comment shows, on what it checked beyond the
 diff and found sound, and the next re-review is shown them beside the
-findings.
+findings. Prior merge-impact notes are also offered for reassessment,
+within the remaining prompt budget after the diff and earlier findings;
+any omitted notes are marked. They are not copied forward automatically.
+A continued conversation receives the latest review's impact explicitly,
+so older submissions do not define the current list. Split reviewers
+establish impact from their own assigned changes instead of inheriting
+whole-review notes.
 
 An incremental re-review carries on the last review's conversation
 instead when it can, so the model keeps what it read and the provider

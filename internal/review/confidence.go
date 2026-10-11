@@ -97,7 +97,11 @@ A concern of your own is something specific the change risks that neither the fi
 answers: an entry in the release notes the description carries that no checked line covers, or lines of the diff the
 account passes over. Never guess at what the review did not read: the account lists what it checked and the sources
 it read, so a concern names what they leave out. The account is the review's claim, not proof that the change is
-right.
+right. Merge impact notes describe intended consequences and specific checks, not additional findings. Their
+evidence can inform the risk rating and answer a concern; their presence alone never lowers the score, and a
+suggested check is not proof that it passed. An empty impact list is not itself a gap. A post-merge check that
+cannot be completed before deployment is not, by itself, an unanswered concern or a reason to lower the score.
+A concern still needs concrete evidence of a defect or an unmet prerequisite for merging.
 
 Separately, rate the risk of the change: how much damage it could do if this review missed something. Authentication,
 authorization, secrets, billing, data and its migrations, infrastructure, CI, public interfaces, and build or runtime
@@ -126,8 +130,8 @@ update unless the description shows the step. Release notes that show an update 
 as a breaking change in a minor release, rate it as the bigger step; a digest pinned beside its tag, a bot author or a
 description that calls the update safe never rates it below its step.
 
-What neither you nor the review's account can verify, such as an upstream change whose release notes the
-description does not carry, may be a concern for the score, but never raises the risk.
+An unverified prerequisite for merging, such as an upstream compatibility change whose release notes the
+description does not carry, may be a concern for the score, but uncertainty alone never raises the risk.
 
 When the prompt gives the risk the last review of this pull request was rated, keep that rating unless the change now
 does something the rating and its reason do not account for: a second reading of the same change is no reason to
@@ -195,7 +199,7 @@ const (
 // BuildConfidence renders the scorer's user message, sent with system
 // within a prompt budget of budget tokens (see UserBudget): the pull
 // request, its description and its diff as Build renders them, then the
-// review's account of itself, res's summary and checked lines and the
+// review's account of itself, res's summary, impact and checked lines and the
 // sources it read, the findings it reported and, when earlier is not nil,
 // the risk the last review was rated, which the description and the diff
 // give way to.
@@ -207,6 +211,12 @@ func BuildConfidence(in Input, res Result, sources []string, earlier *EarlierRis
 			take = textcut.Prefix(take, maxConfidenceFinding) + " …"
 		}
 		fmt.Fprintf(&tail, "\nIts summary: %s\n", take)
+	}
+	if len(res.Summary.Impact) > 0 {
+		tail.WriteString("\nIts merge impact notes (claims to assess, not findings or completed checks):\n")
+		for _, note := range res.Summary.Impact {
+			fmt.Fprintf(&tail, "- %s\n", strings.ReplaceAll(note, "\n", "\n  "))
+		}
 	}
 	if len(res.Summary.Checked) == 0 {
 		tail.WriteString("\nIt lists nothing it checked beyond the diff.\n")

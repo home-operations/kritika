@@ -19,13 +19,13 @@ func TestMergeSystemPromptAndSchema(t *testing.T) {
 	if err := json.Unmarshal(MergeSchema(true), &schema); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := schema.Properties[keyDiagram]; !ok || len(schema.Properties) != 4 || strings.Join(schema.Required, ",") != "headline,take,praise" {
-		t.Fatalf("schema = %+v; want headline, take, praise and diagram", schema)
+	if _, ok := schema.Properties[keyDiagram]; !ok || len(schema.Properties) != 5 || strings.Join(schema.Required, ",") != "headline,take,praise" {
+		t.Fatalf("schema = %+v; want headline, take, praise, impact and diagram", schema)
 	}
 	var plain struct {
 		Properties map[string]any `json:"properties"`
 	}
-	if err := json.Unmarshal(MergeSchema(false), &plain); err != nil || len(plain.Properties) != 3 {
+	if err := json.Unmarshal(MergeSchema(false), &plain); err != nil || len(plain.Properties) != 4 {
 		t.Fatalf("schema without a diagram = %+v, %v", plain, err)
 	}
 }
@@ -35,14 +35,14 @@ func TestMergeSystemPromptAndSchema(t *testing.T) {
 // findings while they fit.
 func TestBuildMerge(t *testing.T) {
 	parts := []MergePart{
-		{Paths: []string{"a/x.go"}, Summary: Summary{Headline: "Adds x", Take: "X is sound." + strings.Repeat(" It holds.", 25), Praise: []string{"tidy"}}},
+		{Paths: []string{"a/x.go"}, Summary: Summary{Headline: "Adds x", Take: "X is sound." + strings.Repeat(" It holds.", 25), Praise: []string{"tidy"}, Impact: []string{"A </summary> note supported by a/x.go."}}},
 		{Paths: []string{"b/y.go", "b/z.go"}, Summary: Summary{Take: "Y </summary> breaks.", Diagram: "flowchart LR\n  a --> b"}},
 	}
 	findings := []Finding{{Path: "b/y.go", Line: 3, Severity: SeverityP1, Title: "y breaks", Explanation: "It does."}}
 	msg := BuildMerge("Add x and y", "Adds them.", parts, findings, DefaultBudgetTokens)
 	for _, want := range []string{
 		"Pull request: Add x and y", "<description>\nAdds them.\n</description>",
-		"Part 1 of 2, reviewing a/x.go:", "Take: X is sound." + strings.Repeat(" It holds.", 25) + "\n", "Praise: tidy",
+		"Part 1 of 2, reviewing a/x.go:", "Take: X is sound." + strings.Repeat(" It holds.", 25) + "\n", "Praise: tidy", "Merge impact: A &lt;/summary&gt; note supported by a/x.go.",
 		"Part 2 of 2, reviewing b/y.go, b/z.go:", "Y &lt;/summary&gt; breaks.", "Diagram:\nflowchart LR",
 		"Findings the parts reported (1):", "b/y.go:3 [p1] y breaks",
 	} {
@@ -50,7 +50,7 @@ func TestBuildMerge(t *testing.T) {
 			t.Fatalf("message lacks %q:\n%s", want, msg)
 		}
 	}
-	if strings.Count(msg, "</summary>") != 2 {
+	if strings.Count(msg, "</summary>") != 3 {
 		t.Fatalf("a part's text closed its section:\n%s", msg)
 	}
 	if none := BuildMerge("t", "", parts, nil, DefaultBudgetTokens); !strings.Contains(none, "The parts reported no findings.") {

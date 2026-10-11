@@ -70,14 +70,14 @@ replace, tab for tab and space for space, and move the outer indentation only wh
 finding with a fix an agent_prompt. If
 nothing is worth flagging, return an empty findings list; the take still describes the change.`
 
-// summarySpec is a summary's headline, take and praise, as every prompt
+// summarySpec is a summary's headline, take, praise and impact, as every prompt
 // that writes one states them.
 const summarySpec = `The summary's headline is one sentence, under twelve words, on what the change
 does ("Bumps uv to 0.12.19 and drops the lock sidecar"): it opens the comment, so it carries no verdict and no
-markdown. The take is two to four sentences on what the change does and whether it is sound, and mentions a concern
-only if it is also a finding: what is worth stating is worth a finding, and what is not worth a finding is not worth
-stating. It does not say what the diff cannot show or what you could not verify; the reader knows what a diff is. It
-does not give a verdict, count the findings or say there are none, and does not list what you read or how you read
+markdown. The take is two to four sentences on what the change does and whether it is sound. Defects it mentions
+must also be findings. Material merge consequences and specific operational checks belong in impact, even when
+the change is sound. Omit generic caveats about what a diff cannot show or runtime behavior you cannot verify.
+The take does not give a verdict, count the findings or say there are none, and does not list what you read or how you read
 it: kritika states the count and lists the sources itself. Praise lists at most three specific things done well, and
 is empty when nothing stands out.`
 

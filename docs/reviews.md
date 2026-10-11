@@ -80,14 +80,16 @@ From the top, each part shown only when it has something to say:
    ([incremental reviews](configuration.md#incremental-reviews)); and
    **Earlier findings**, the last review's findings since resolved or
    dismissed, wherever they were reported.
-5. **Summary**, the review's take, with the change's flow as a Mermaid
-   diagram when `review.diagram` is on.
+5. **Summary**, the review's take, followed by the change's flow as a
+   Mermaid diagram when `review.diagram` is on.
 6. **What's good**, left out on a bot's pull request.
-7. **Sources consulted**, links to what the review's commands fetched: a
+7. **Merge impact**, specific, evidence-backed consequences or operational
+   checks, omitted when there are none.
+8. **Sources consulted**, links to what the review's commands fetched: a
    command's when it succeeded, and a `fetch_repo` that found files or a
    diff, not a tag listing. Then notes, such as files left out of the
    prompt or a `.kritika.yaml` value that was dropped.
-8. The footer: `Reviews (3) · Last reviewed commit: "subject" · <model>`,
+9. The footer: `Reviews (3) · Last reviewed commit: "subject" · <model>`,
    the model as `<model>/<effort>` when a [`review.effort`](models.md#effort)
    is set, ending with the pull request's cost when the admin turns
    `review.cost` on.
@@ -95,6 +97,21 @@ From the top, each part shown only when it has something to say:
 The re-run badge at the top opens the pull request's page on the
 dashboard. A repository can replace the comment with its own template
 ([`comments.summary`](repository-config.md#comment-templates)).
+
+Merge impact needs no configuration. It appears only when the review
+establishes something material: when a change takes effect, what it
+reaches or interrupts, what a revert cannot undo, or a concrete check and
+its expected result. Each note names supporting repository evidence or
+an upstream source the reviewer read. Skills can guide which evidence
+matters for the repository. Routine changes with nothing specific to
+report have no section, and a suggested check does not claim it passed.
+
+Impact notes are separate from findings and checked lines. They are shown
+to the confidence scorer as claims to assess, and can inform its risk
+rating; their presence alone does not lower the score. Re-reviews
+reassess earlier notes against the current head, while manual re-runs
+look afresh. The dashboard and API expose the same notes as
+`summary.impact`, an optional list of at most five short paragraphs.
 
 ### The commit status
 

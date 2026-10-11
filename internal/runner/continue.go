@@ -100,7 +100,7 @@ func carryOn(
 	})
 	user, omitted, referencesOmitted := review.BuildContinuation(review.ContinueInput{
 		PriorHeadSHA: p.PriorHead, HeadSHA: p.Head, DeltaDiff: delta, Prior: p.Prompt.Prior, Dismissed: p.Prompt.Dismissed,
-		Diagram: p.Prompt.Diagram, Fetched: fetched, BudgetTokens: budget, References: prompt.references,
+		Diagram: p.Prompt.Diagram, Fetched: fetched, BudgetTokens: budget, References: prompt.references, Impact: p.Prompt.PriorImpact,
 	})
 	logger.Info("carrying on the last review's conversation", "run", review.ShortSHA(p.Prompt.Continue.RunID), "tokens", c.Tokens,
 		"messages", len(c.Messages))

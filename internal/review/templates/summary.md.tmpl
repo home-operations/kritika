@@ -81,6 +81,13 @@
 - {{ . }}
 {{ end -}}
 {{ end -}}
+{{ if .Result.Summary.Impact }}
+### Merge impact
+
+{{ range .Result.Summary.Impact -}}
+- {{ . | indent 2 | trim }}
+{{ end -}}
+{{ end -}}
 {{ end -}}
 {{ if .Sources }}
 <details>

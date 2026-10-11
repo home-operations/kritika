@@ -86,23 +86,6 @@ func Categories() []Category { return slices.Clone(categories) }
 // Valid reports whether c is one of the categories.
 func (c Category) Valid() bool { return slices.Contains(categories, c) }
 
-// Summary is the review's overall judgement for the sticky comment.
-type Summary struct {
-	// Headline is one sentence on what the change does, the summary
-	// comment's first line; "" from a review made before it was asked for.
-	Headline string   `json:"headline,omitempty"`
-	Take     string   `json:"take"`
-	Praise   []string `json:"praise"`
-	// Diagram is Mermaid source for the flow the change adds or alters,
-	// without fences; "" when the change has no flow worth drawing or the
-	// model's diagram was not one Parse keeps.
-	Diagram string `json:"diagram,omitempty"`
-	// Checked are the review's notes for the next review of the pull
-	// request on what it checked and found sound, one line each; no
-	// comment shows them.
-	Checked []string `json:"checked,omitempty"`
-}
-
 // maxPraise bounds Summary.Praise; the schema says so and Parse enforces it.
 const maxPraise = 3
 
@@ -284,6 +267,7 @@ const (
 	keyHeadline     = "headline"
 	keyTake         = "take"
 	keyPraise       = "praise"
+	keyImpact       = "impact"
 	keyDiagram      = "diagram"
 	keyChecked      = "checked"
 	keyFindings     = "findings"
@@ -425,7 +409,7 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 	}
 }
 
-// summaryProperties are a summary's headline, take and praise, and its
+// summaryProperties are a summary's headline, take, praise and impact, and its
 // diagram when diagram is set, as a schema states them.
 func summaryProperties(diagram bool) map[string]*jsonSchema {
 	summary := map[string]*jsonSchema{
@@ -436,6 +420,9 @@ func summaryProperties(diagram bool) map[string]*jsonSchema {
 		keyTake: {
 			Type:        schemaString,
 			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
+		},
+		keyImpact: {
+			Type: schemaArray, Description: describeImpact, Items: &jsonSchema{Type: schemaString}, MaxItems: maxImpact,
 		},
 		keyPraise: {
 			Type:        schemaArray,
@@ -501,6 +488,14 @@ func Check(raw json.RawMessage) error {
 	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
 		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
 			maxDiagramBytes, strings.Join(diagramKinds, ", "))
+	}
+	if len(res.Summary.Impact) > maxImpact {
+		return fmt.Errorf("review: summary.impact takes at most %d notes", maxImpact)
+	}
+	for _, note := range res.Summary.Impact {
+		if len(strings.TrimSpace(note)) > maxImpactItemBytes {
+			return fmt.Errorf("review: each summary.impact note must be at most %d bytes", maxImpactItemBytes)
+		}
 	}
 	return nil
 }
@@ -687,6 +682,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 func normalizeSummary(s Summary, opts ParseOptions) Summary {
 	s.Headline = oneLine(prose(s.Headline, opts.Repository))
 	s.Take = prose(s.Take, opts.Repository)
+	s.Impact = normalizeImpact(s.Impact, opts.Repository)
 	praise := make([]string, 0, maxPraise)
 	for _, p := range s.Praise {
 		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {
