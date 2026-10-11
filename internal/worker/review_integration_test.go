@@ -521,6 +521,8 @@ type fakeCompleter struct {
 	// JSON fields a review that reports it again, in other words or
 	// elsewhere, writes instead.
 	again string
+	// resolved, when set, are the ids a review lists as resolved.
+	resolved []string
 	// scoreFails is how many confidence calls still fail with a 503 before
 	// one is answered; a failed call is not recorded as made.
 	scoreFails int
@@ -558,6 +560,14 @@ func (f *fakeCompleter) reword(again string) {
 	f.again = again
 }
 
+// resolve sets the ids of the last review's findings the reviews that
+// follow list as resolved, none for none.
+func (f *fakeCompleter) resolve(ids ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolved = ids
+}
+
 func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 	// An agent is offered its read-only tools too; it submits at once.
 	tool := req.Tools[0].Name
@@ -588,6 +598,14 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	if f.again != "" {
 		first = f.again
 	}
+	var resolved string
+	if len(f.resolved) > 0 {
+		quoted := make([]string, len(f.resolved))
+		for i, id := range f.resolved {
+			quoted[i] = strconv.Quote(id)
+		}
+		resolved = `,"resolved":[` + strings.Join(quoted, ",") + `]`
+	}
 	f.mu.Unlock()
 	answer := func(raw string, usage model.Usage, upstream string, cost float64) model.StepResponse {
 		return model.StepResponse{
@@ -604,7 +622,8 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
 		  {"path":"main.go",`+first+`,"severity":"p1","category":"correctness","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
-		  {"path":"main.go","line":500,"severity":"p0","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]}`,
+		  {"path":"main.go","line":500,"severity":"p0","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]`+
+		resolved+`}`,
 		model.Usage{Input: 10, Output: 5}, "test", 0.001), nil
 }
 
@@ -2251,7 +2270,8 @@ func checkIncremental(
 	for _, want := range []string{
 		"Changed since the last review (" + first[:7], "+func f2() {}",
 		"The bar is not for the last review's findings: report again each that still holds, whatever its severity",
-		"Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is)",
+		"Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is, " +
+			"and list in resolved the id of each that no longer holds)",
 		"main.go:1 [p1] first line: look here",
 		"What the last review checked at " + first[:7] + " and found sound", "\n- main.go: package clause read\n",
 		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
@@ -2289,17 +2309,18 @@ func checkIncremental(
 	checkEarlierPrompt(t, prompt, second)
 	wantDiagram(thirdRow.id, "")
 	checkReworded(ctx, t, appStore, lf, accountID, thirdRow.id, thread, original)
-	checkBackOnDiff(ctx, t, appStore, accountID, thirdRow, thread, commit, reviewHead)
+	fourthRow := checkBackOnDiff(ctx, t, appStore, accountID, thirdRow, thread, commit, reviewHead)
+	checkSettled(ctx, t, appStore, lf, fc, accountID, fourthRow, commit, reviewHead)
 }
 
 // checkBackOnDiff pushes once more and asserts the review that builds on
 // third, which reports the finding third recorded off the diff on the diff
 // again under its first title, keeps the thread that record carried and
-// posts nothing twice.
+// posts nothing twice. It returns that review.
 func checkBackOnDiff(
 	ctx context.Context, t *testing.T, appStore *store.Store, accountID string, third reviewScopeRow, thread int64,
 	commit func(string) string, reviewHead func(string) (reviewScopeRow, string, int),
-) {
+) reviewScopeRow {
 	t.Helper()
 	ageConversation(ctx, t, third.id)
 	fourth := commit("package main\n\nfunc f3() {}\n\nfunc f4() {}\n")
@@ -2309,6 +2330,122 @@ func checkBackOnDiff(
 	}
 	if p := postedInline(ctx, t, appStore, accountID, fourthRow.id); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
 		t.Fatalf("a finding back on the diff keeps the thread %d its report off the diff carried, got %+v", thread, p)
+	}
+	return fourthRow
+}
+
+// checkSettled pushes three more times after last and asserts what becomes
+// of the last review's findings a re-review does not report again: one it
+// lists as resolved is listed so and its thread resolved; one it passes
+// over stays open, carried on unchecked from the head it was last reported
+// at, counted, on its thread and never posted again, and the next
+// re-review is shown it with that head and may resolve it.
+func checkSettled(
+	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID string,
+	last reviewScopeRow, commit func(string) string, reviewHead func(string) (reviewScopeRow, string, int),
+) {
+	t.Helper()
+	sticky := func() (body string, resolved []int64) {
+		lf.mu.Lock()
+		defer lf.mu.Unlock()
+		for _, b := range lf.comments {
+			if strings.HasPrefix(b, "<!-- kritika:pr-5 -->\n") {
+				body = b
+			}
+		}
+		return body, slices.Clone(lf.resolved)
+	}
+	const fifthMain = "package main\n\nfunc f3() {}\n\nfunc f4() {}\n\nfunc f5() {}\n"
+	ageConversation(ctx, t, last.id)
+	fifth := commit(fifthMain)
+	fc.find(`{"path":"main.go","line":7,"severity":"p1","category":"correctness","title":"f5 is fixed later","explanation":"e"},` +
+		`{"path":"main.go","line":7,"severity":"p2","category":"maintainability","title":"f5 is left alone","explanation":"e"}`)
+	fifthRow, _, inline := reviewHead(fifth)
+	fc.find("")
+	if fifthRow.scope != "incremental" || fifthRow.prior != last.id || inline != 2 {
+		t.Fatalf("fifth review = %+v, %d inline comment(s); want incremental with both new findings posted", fifthRow, inline)
+	}
+	threads := map[string]int64{}
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT title, forge_comment_id FROM findings WHERE review_id = $1 AND title LIKE 'f5 %'`, fifthRow.id)
+		if err != nil {
+			return err
+		}
+		var title string
+		var id int64
+		_, err = pgx.ForEachRow(rows, []any{&title, &id}, func() error {
+			threads[title] = id
+			return nil
+		})
+		return err
+	}); err != nil || len(threads) != 2 || threads["f5 is fixed later"] == 0 || threads["f5 is left alone"] == 0 {
+		t.Fatalf("the fifth review's threads = %v, %v", threads, err)
+	}
+	fixed, left := review.Finding{Path: "main.go", Title: "f5 is fixed later"}, review.Finding{Path: "main.go", Title: "f5 is left alone"}
+	fixedLink := fmt.Sprintf("[`main.go:7`](local://onedr0p/home-ops/%s/main.go#L7) [f5 is fixed later](local://onedr0p/home-ops/pull/5#r%d)",
+		fifth, threads[fixed.Title])
+	leftLink := fmt.Sprintf("[`main.go:7`](local://onedr0p/home-ops/%s/main.go#L7) [f5 is left alone](local://onedr0p/home-ops/pull/5#r%d)",
+		fifth, threads[left.Title])
+
+	// The sixth review reports neither: it lists the first as resolved
+	// and passes over the second.
+	ageConversation(ctx, t, fifthRow.id)
+	_, before := sticky()
+	sixth := commit(fifthMain + "\nfunc f6() {}\n")
+	fc.resolve(review.PriorID(fixed))
+	sixthRow, _, inline := reviewHead(sixth)
+	fc.resolve()
+	if sixthRow.scope != "incremental" || sixthRow.prior != fifthRow.id || inline != 0 {
+		t.Fatalf("sixth review = %+v, %d inline comment(s); want incremental with nothing posted", sixthRow, inline)
+	}
+	body, resolved := sticky()
+	for _, want := range []string{
+		"**3 findings** · 1 P0 · 1 P1 · 1 P2\n",
+		"- **[P2]** " + leftLink + " · maintainability · not rechecked since `" + fifth[:7] + "`\n",
+		"<summary>Earlier findings (1 resolved)</summary>\n\n- **[P1]** " + fixedLink + " · correctness · resolved\n\n</details>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the sixth review's summary lacks %q:\n%s", want, body)
+		}
+	}
+	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[fixed.Title]}) {
+		t.Fatalf("the sixth review resolved threads %v, want the fixed finding's alone", got)
+	}
+	var carried []string
+	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT format('%s from %s on %s', title, carried_from, forge_comment_id) FROM findings
+			WHERE review_id = $1 AND (title LIKE 'f5 %' OR carried_from IS NOT NULL)`, sixthRow.id)
+		if err != nil {
+			return err
+		}
+		carried, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	}); err != nil || !slices.Equal(carried, []string{fmt.Sprintf("f5 is left alone from %s on %d", fifth, threads[left.Title])}) {
+		t.Fatalf("the sixth review's earlier findings = %q, %v; want the one left alone alone, carried on its thread", carried, err)
+	}
+
+	// The seventh review is shown the carried finding with the head its
+	// lines are from, and resolves it.
+	ageConversation(ctx, t, sixthRow.id)
+	_, before = sticky()
+	seventh := commit(fifthMain + "\nfunc f6() {}\n\nfunc f7() {}\n")
+	fc.resolve(review.PriorID(left))
+	seventhRow, prompt, inline := reviewHead(seventh)
+	fc.resolve()
+	if seventhRow.scope != "incremental" || seventhRow.prior != sixthRow.id || inline != 0 {
+		t.Fatalf("seventh review = %+v, %d inline comment(s); want incremental with nothing posted", seventhRow, inline)
+	}
+	if want := fmt.Sprintf("- %s main.go:7 [p2] f5 is left alone: e (last checked at %s, whose line numbers it uses)\n",
+		review.PriorID(left), fifth[:7]); !strings.Contains(prompt, want) {
+		t.Fatalf("the seventh review's prompt lacks %q:\n%s", want, prompt)
+	}
+	body, resolved = sticky()
+	if want := "<summary>Earlier findings (1 resolved)</summary>\n\n- **[P2]** " + leftLink + " · maintainability · resolved\n"; !strings.Contains(body, want) ||
+		strings.Contains(body, "not rechecked") || !strings.Contains(body, "**2 findings** · 1 P0 · 1 P1\n") {
+		t.Fatalf("the seventh review's summary lacks %q, or still carries a finding:\n%s", want, body)
+	}
+	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[left.Title]}) {
+		t.Fatalf("the seventh review resolved threads %v, want the carried finding's alone", got)
 	}
 }
 

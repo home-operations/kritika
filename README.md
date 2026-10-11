@@ -39,7 +39,7 @@ its own Kubernetes Job pod that holds no provider key or App key.
 - **Fixes you can apply.** A finding offers its fix as a one-click suggestion,
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since
-  the last review, an earlier finding it no longer finds has its thread
+  the last review, an earlier finding it finds gone has its thread
   resolved, `trigger.settle` folds a burst of force-pushes into one, and
   `trigger.limit` pauses a long-lived pull request's automatic reviews,
   as `@<bot> pause` does on request.

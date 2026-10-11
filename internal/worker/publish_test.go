@@ -162,31 +162,66 @@ func TestCommandsNote(t *testing.T) {
 	}
 }
 
-func TestResolvedThreads(t *testing.T) {
+// TestSettlePrior: an earlier finding not reported again is resolved only
+// when the review lists its id; any other stays open, carried on from the
+// head it was last reported at.
+func TestSettlePrior(t *testing.T) {
 	prior := []priorFinding{
 		{Path: "a.go", Title: "Unchecked error", commentID: 11},
 		{Path: "b.go", Title: "Stale comment", commentID: 12},
 		{Path: "c.go", Title: "Never posted inline"},
+		{Path: "d.go", Title: "Carried before", CarriedFrom: "h0", commentID: 14},
 	}
+	id := func(i int) string { return review.PriorID(prior[i].Finding) }
 	tests := []struct {
 		name     string
 		reported []review.Finding
-		want     []int64
+		ids      []string
+		// resolved and carried are the titles of each, carried with the
+		// head it is carried from.
+		resolved []string
+		carried  []string
+		threads  []int64
 	}{
-		{name: "every finding gone resolves every posted thread", want: []int64{11, 12}},
-		{name: "a finding reported again keeps its thread", reported: []review.Finding{{Path: "a.go", Title: "unchecked  ERROR"}}, want: []int64{12}},
-		{name: "a different finding on the same path resolves nothing of it", reported: []review.Finding{{Path: "a.go", Title: "Other"}, {Path: "b.go", Title: "Stale comment"}}, want: []int64{11}},
 		{
-			name:     "a finding reported again in other words, carrying the prior's fingerprint, keeps its thread",
-			reported: []review.Finding{{Path: "a.go", Title: "Error is dropped", Fingerprint: review.Fingerprint(review.Finding{Path: "a.go", Title: "Unchecked error"})}},
-			want:     []int64{12},
+			name:    "a finding neither reported again nor listed stays open",
+			carried: []string{"Unchecked error@h1", "Stale comment@h1", "Never posted inline@h1", "Carried before@h0"},
+		},
+		{
+			name: "a finding listed as resolved is resolved, with its thread", ids: []string{" " + id(1) + " ", id(2), id(3)},
+			resolved: []string{"Stale comment", "Never posted inline", "Carried before"}, carried: []string{"Unchecked error@h1"},
+			threads: []int64{12, 14},
+		},
+		{
+			name: "a finding reported again is neither, though also listed", reported: []review.Finding{{Path: "a.go", Title: "unchecked  ERROR"}},
+			ids: []string{id(0)}, carried: []string{"Stale comment@h1", "Never posted inline@h1", "Carried before@h0"},
+		},
+		{
+			name:     "a finding reported again in other words, carrying the prior's fingerprint, is neither",
+			reported: []review.Finding{{Path: "a.go", Title: "Error is dropped", Fingerprint: review.Fingerprint(prior[0].Finding)}},
+			ids:      []string{id(1), id(2), id(3)}, resolved: []string{"Stale comment", "Never posted inline", "Carried before"},
+			threads: []int64{12, 14},
+		},
+		{
+			name: "an id that names no earlier finding resolves nothing", ids: []string{"deadbeef", ""},
+			carried: []string{"Unchecked error@h1", "Stale comment@h1", "Never posted inline@h1", "Carried before@h0"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolvedThreads(tt.reported, prior)
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("resolvedThreads() = %v, want %v", got, tt.want)
+			resolved, carried := settlePrior(prior, "h1", tt.reported, tt.ids)
+			var gotResolved, gotCarried []string
+			for _, pf := range resolved {
+				gotResolved = append(gotResolved, pf.Title)
+			}
+			for _, f := range carried {
+				gotCarried = append(gotCarried, f.Title+"@"+f.CarriedFrom)
+			}
+			if !slices.Equal(gotResolved, tt.resolved) || !slices.Equal(gotCarried, tt.carried) {
+				t.Fatalf("settlePrior() resolved %q and carried %q, want %q and %q", gotResolved, gotCarried, tt.resolved, tt.carried)
+			}
+			if got := resolvedThreads(resolved); !slices.Equal(got, tt.threads) {
+				t.Errorf("resolvedThreads() = %v, want %v", got, tt.threads)
 			}
 		})
 	}
@@ -205,32 +240,25 @@ func (linkForge) ThreadURL(_, _ string, _ int, id int64) string {
 }
 
 // TestPriorFindings: the summary's earlier findings are the last review's
-// this one did not report again, on the diff or off it, linked to their
-// threads, then the dismissed ones.
+// this one listed as resolved, linked at the head their line numbers are
+// from and to their threads, then the dismissed ones.
 func TestPriorFindings(t *testing.T) {
 	p := &publishPhase{
 		client: linkForge{}, pr: &pullRequest{repository: "o/r", number: 1},
 		prior: priorReview{
-			headSHA: "h1",
-			findings: []priorFinding{
-				{Path: "a.go", Line: 11, Severity: review.SeverityP1, Title: "Nil map write", commentID: 42},
-				{Path: "b.go", Line: 3, Severity: review.SeverityP2, Title: "Typo", commentID: 43},
-				{Path: "c.go", Line: 5, Severity: review.SeverityP2, Title: "Never posted"},
-			},
+			headSHA:   "h1",
 			dismissed: []store.Dismissal{{Finding: review.Finding{Path: "d.go", Line: 8, Title: "Dismissed"}, Reason: "intended", CommentID: 44}},
 		},
+		resolved: []priorFinding{
+			{Path: "b.go", Line: 3, Severity: review.SeverityP2, Title: "Typo", commentID: 43},
+			{Path: "c.go", Line: 5, Severity: review.SeverityP2, Title: "Never posted", CarriedFrom: "h0"},
+		},
 	}
-	// Nil map write is reported again outside the diff, under the prior
-	// finding's fingerprint; Typo is not reported again.
-	reported := []review.Finding{{Path: "a.go", Line: 40, Severity: review.SeverityP1, Title: "Assignment panics",
-		Fingerprint: review.Fingerprint(review.Finding{Path: "a.go", Title: "Nil map write"})}}
-	got := p.priorFindings(reported)
+	got := p.priorFindings()
 	if len(got) != 3 || got[0].Title != "Typo" || !got[0].Resolved || got[0].ThreadURL != "https://f/t/43" || got[0].URL != "https://f/h1/b.go#L3" ||
-		got[1].Title != "Never posted" || got[1].ThreadURL != "" || !got[2].Dismissed || got[2].DismissReason != "intended" || got[2].ThreadURL != "https://f/t/44" {
+		got[1].Title != "Never posted" || got[1].ThreadURL != "" || got[1].URL != "https://f/h0/c.go#L5" ||
+		!got[2].Dismissed || got[2].DismissReason != "intended" || got[2].ThreadURL != "https://f/t/44" {
 		t.Fatalf("priorFindings() = %+v", got)
-	}
-	if ids := resolvedThreads(reported, p.prior.findings); !slices.Equal(ids, []int64{43}) {
-		t.Fatalf("resolvedThreads() = %v, want Typo's thread alone", ids)
 	}
 }
 
@@ -342,28 +370,5 @@ func TestUnfinishedParts(t *testing.T) {
 	}
 	if got := unfinishedParts(nil); got != nil {
 		t.Fatalf("a review not split = %q, want no note", got)
-	}
-}
-
-// TestRecheckedBy: a split review checks the last review's findings on a
-// path again when the part that had them submitted, the first part having
-// those on files no part reviews; a review not split checks them all.
-func TestRecheckedBy(t *testing.T) {
-	parts := []store.AgentPart{
-		{Paths: []string{"a/x.go"}, Stop: "submitted"},
-		{Paths: []string{"b/y.go"}, Stop: "no_submit"},
-	}
-	checked := recheckedBy(parts)
-	for path, want := range map[string]bool{"a/x.go": true, "b/y.go": false, "docs/unchanged.md": true} {
-		if got := checked(path); got != want {
-			t.Fatalf("rechecked(%q) = %v, want %v", path, got, want)
-		}
-	}
-	parts[0].Stop = "canceled"
-	if recheckedBy(parts)("docs/unchanged.md") {
-		t.Fatal("a file no part reviews counts as checked though the first part never submitted")
-	}
-	if !recheckedBy(nil)("b/y.go") {
-		t.Fatal("a review not split checks every finding again")
 	}
 }

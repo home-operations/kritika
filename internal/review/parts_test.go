@@ -160,12 +160,13 @@ func TestCheckPart(t *testing.T) {
 func TestMergeParts(t *testing.T) {
 	got := MergeParts([]Result{
 		{Summary: Summary{Headline: "First", Take: "One.", Praise: []string{"a", "b"}, Checked: []string{"c1"}},
-			Findings: []Finding{{Path: "a/x.go", Title: "x"}}},
+			Findings: []Finding{{Path: "a/x.go", Title: "x"}}, Resolved: []string{"0a1b2c3d"}},
 		{Summary: Summary{Headline: "Second", Take: "Two.", Praise: []string{"c", "d"}, Checked: []string{"c2"}},
-			Findings: []Finding{{Path: "b/y.go", Title: "y"}}},
+			Findings: []Finding{{Path: "b/y.go", Title: "y"}}, Resolved: []string{"4e5f6a7b"}},
 	})
 	if got.Summary.Headline != "First" || got.Summary.Take != "One.\n\nTwo." || !slices.Equal(got.Summary.Praise, []string{"a", "b", "c"}) ||
-		!slices.Equal(got.Summary.Checked, []string{"c1", "c2"}) || len(got.Findings) != 2 || got.Findings[1].Path != "b/y.go" {
+		!slices.Equal(got.Summary.Checked, []string{"c1", "c2"}) || len(got.Findings) != 2 || got.Findings[1].Path != "b/y.go" ||
+		!slices.Equal(got.Resolved, []string{"0a1b2c3d", "4e5f6a7b"}) {
 		t.Fatalf("merged = %+v", got)
 	}
 	if empty := MergeParts(nil); empty.Summary.Praise == nil || empty.Findings == nil {

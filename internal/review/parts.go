@@ -139,9 +139,9 @@ func CheckPart(own, others []string) func(json.RawMessage) error {
 }
 
 // MergeParts joins what the parts of a split review submitted into one
-// review: every part's findings, and a summary of the first headline, the
-// takes in part order, praise up to its cap and every checked note, which
-// Parse caps.
+// review: every part's findings and resolved ids, and a summary of the
+// first headline, the takes in part order, praise up to its cap and every
+// checked note, which Parse caps.
 func MergeParts(parts []Result) Result {
 	out := Result{Summary: Summary{Praise: []string{}}, Findings: []Finding{}}
 	var takes []string
@@ -157,6 +157,7 @@ func MergeParts(parts []Result) Result {
 		}
 		out.Summary.Checked = append(out.Summary.Checked, p.Summary.Checked...)
 		out.Findings = append(out.Findings, p.Findings...)
+		out.Resolved = append(out.Resolved, p.Resolved...)
 	}
 	out.Summary.Take = strings.Join(takes, "\n\n")
 	return out
