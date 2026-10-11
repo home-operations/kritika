@@ -345,6 +345,7 @@ func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
 		{name: "incremental", prior: one},
 		{name: "full", full: true, prior: one},
 		{name: "more than a quarter", prior: many, cut: true},
+		{name: "full with more than a quarter", full: true, prior: many, cut: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := incrementalInput()

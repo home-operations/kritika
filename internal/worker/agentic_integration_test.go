@@ -299,11 +299,12 @@ type agentRunRow struct {
 	cost                         float64
 }
 
-// agenticHarness drives agentic reviews of acme/widgets#1 through River,
+// agenticHarness drives agentic reviews of acme/widgets through River,
 // the local executor and the real runner.
 type agenticHarness struct {
-	ctx context.Context
-	st  *store.Store
+	number int
+	ctx    context.Context
+	st     *store.Store
 	// runner is the store as a runner's role opens it.
 	runner *store.Store
 	svc    *ingest.Service
@@ -328,7 +329,7 @@ type agenticHarness struct {
 	head   string
 }
 
-func newAgenticHarness(t *testing.T) *agenticHarness {
+func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	t.Helper()
 	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
@@ -339,7 +340,7 @@ func newAgenticHarness(t *testing.T) *agenticHarness {
 	}
 	t.Cleanup(runnerStore.Close)
 
-	h := &agenticHarness{ctx: ctx, st: appStore, runner: runnerStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
+	h := &agenticHarness{number: number, ctx: ctx, st: appStore, runner: runnerStore, sm: &scriptedModel{}, fe: &fakeEmbedder{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", h.sm.serveCatalog)
 	mux.Handle("/", h.sm)
@@ -425,7 +426,7 @@ func (h *agenticHarness) dispatchAs(t *testing.T, headSHA, body string, bot bool
 	out, err := h.svc.Dispatch(h.ctx, ingest.Request{File: h.file, Account: h.account, Event: webhook.Event{
 		Kind: webhook.KindPullRequest, Action: "synchronize", Account: "acme",
 		Repository: &webhook.Repository{FullName: "acme/widgets", DefaultBranch: "main"},
-		PullRequest: &webhook.PullRequest{Number: 1, Title: "Add b", Body: body, Author: "octocat", AuthorIsBot: bot, State: "open",
+		PullRequest: &webhook.PullRequest{Number: h.number, Title: "Add b", Body: body, Author: "octocat", AuthorIsBot: bot, State: "open",
 			HeadRef: "f", HeadSHA: headSHA, BaseRef: "main"},
 	}})
 	if err != nil || out.Status != ingest.Enqueued {
@@ -492,7 +493,7 @@ func (h *agenticHarness) conversation(t *testing.T, reviewID string) (c agent.Co
 }
 
 func TestAgenticReviewEndToEnd(t *testing.T) {
-	h := newAgenticHarness(t)
+	h := newAgenticHarness(t, 1)
 	t.Run("the agent greps, reads and submits a finding", func(t *testing.T) { checkAgentSubmits(t, h) })
 	t.Run("a push carries on the last review's conversation", func(t *testing.T) { checkAgentCarriesOn(t, h) })
 	t.Run("the gateway serves a run the conversation its token names", func(t *testing.T) { checkGatewayConversation(t, h) })
@@ -2239,7 +2240,7 @@ func (h *agenticHarness) rerun(t *testing.T, head string) string {
 		if err := tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews WHERE head_sha = $1 AND finished_at IS NOT NULL`, head).Scan(&finishedBefore); err != nil {
 			return err
 		}
-		_, err := jobs.EnqueueRerun(h.ctx, tx, h.insertOnly, h.account.ID(), configfile.RepositoryID(h.account.ID(), "acme/widgets"), 1)
+		_, err := jobs.EnqueueRerun(h.ctx, tx, h.insertOnly, h.account.ID(), configfile.RepositoryID(h.account.ID(), "acme/widgets"), h.number)
 		return err
 	})
 	if err != nil {

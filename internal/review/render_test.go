@@ -288,6 +288,10 @@ func TestRenderSummaryLinks(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, body)
 		}
 	}
+	d.Incremental = false
+	if full, notes := RenderSummary(t.Context(), Templates{}, d); full != body || len(notes) != 0 {
+		t.Fatalf("a full review renders the same earlier findings and links: notes %v\n%s", notes, full)
+	}
 	if strings.Contains(body, "What's good") || strings.Contains(body, "Clear tests") || strings.Contains(body, "\n\n\n") {
 		t.Fatalf("a bot's pull request is praised, or blank lines doubled:\n%s", body)
 	}
