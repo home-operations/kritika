@@ -231,16 +231,19 @@ const awaitInterval = 15 * time.Second
 // awaitingReview reports whether the comment is a review request answered
 // with the bot's eyes, whose job waits for the review to end them.
 func (f *followUp) awaitingReview(ctx context.Context) (bool, error) {
-	var awaiting bool
+	var state store.FollowupState
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM followups WHERE pull_request_id = $1 AND comment_id = $2
-			AND status = $3 AND reason = $4 AND reply_comment_id IS NULL)`,
-			f.pr.id, f.comment.ID, store.FollowupAnswered, reviewRequested).Scan(&awaiting)
+		var err error
+		state, err = store.FindFollowup(ctx, tx, f.pr.id, f.comment.ID)
+		return err
 	})
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("worker: read follow-up: %w", err)
 	}
-	return awaiting, nil
+	return state.Status == store.FollowupAnswered && state.Reason == reviewRequested && state.ReplyCommentID == nil, nil
 }
 
 // awaitReview ends the marks on an answered review request once no review
@@ -256,14 +259,7 @@ func (f *followUp) awaitReview(ctx context.Context) error {
 		if queued, err = jobs.PullQueued(ctx, tx, f.account.ID(), f.pr.repositoryID, f.pr.number); err != nil || queued {
 			return err
 		}
-		// A review of the head the pull request is at speaks for it, even
-		// when one of a head it moved past ended later.
-		err = tx.QueryRow(ctx, `SELECT r.status FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
-			WHERE r.pull_request_id = $1 AND r.finished_at >= $2
-			ORDER BY r.head_sha = p.head_sha DESC, r.finished_at DESC LIMIT 1`, f.pr.id, f.requested).Scan(&status)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
+		status, err = store.ReviewStatusSince(ctx, tx, f.pr.id, f.requested)
 		return err
 	})
 	if err != nil {

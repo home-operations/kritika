@@ -3,7 +3,6 @@ package worker
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -103,7 +102,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 		var judged repoconfig.PullRequest
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 			var err error
-			judged, err = loadFilterPR(ctx, tx, e.pr.id)
+			judged, err = store.ReadFilterPullRequest(ctx, tx, e.pr.id)
 			return err
 		}); err != nil {
 			return true, err
@@ -130,14 +129,14 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 		}
 		moved := false
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-			var labels json.RawMessage
-			if err := tx.QueryRow(ctx, `SELECT labels FROM pull_requests WHERE id = $1 FOR UPDATE`, e.pr.id).Scan(&labels); err != nil {
+			labels, err := store.LockPullRequestLabels(ctx, tx, e.pr.id)
+			if err != nil {
 				return fmt.Errorf("worker: read the pull request's labels: %w", err)
 			}
 			if moved = !bytes.Equal(labels, judged.Labels); moved {
 				return nil
 			}
-			_, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+			_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 			return err
 		}); err != nil {
 			return true, err
@@ -184,29 +183,10 @@ func (w *Review) recordSkip(ctx context.Context, e earlyEnd, reason string) erro
 // trigger from the stored pull request row, the same keys
 // webhook.PullRequest.FilterVars gives ingest.
 func filterVars(ctx context.Context, tx pgx.Tx, prID, trigger string) (map[string]any, error) {
-	pr, err := loadFilterPR(ctx, tx, prID)
+	pr, err := store.ReadFilterPullRequest(ctx, tx, prID)
 	if err != nil {
 		return nil, err
 	}
 	pr.Event = trigger
 	return pr.Vars()
-}
-
-// loadFilterPR reads what the repository filter sees of a pull request.
-func loadFilterPR(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {
-	var (
-		pr       repoconfig.PullRequest
-		openedAt *time.Time
-	)
-	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
-		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
-		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.HeadRef, &pr.HeadSHA, &pr.BaseRef,
-			&pr.URL, &pr.Body, &openedAt, &pr.Labels)
-	if err != nil {
-		return repoconfig.PullRequest{}, fmt.Errorf("worker: read pull request for the filter: %w", err)
-	}
-	if openedAt != nil {
-		pr.CreatedAt = *openedAt
-	}
-	return pr, nil
 }

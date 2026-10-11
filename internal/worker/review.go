@@ -69,18 +69,6 @@ func (pr *pullRequest) dedupesBotPatch(trigger string) bool {
 	return pr.authorIsBot && trigger != jobs.TriggerManual
 }
 
-// lastPatchID is the patch id of the pull request's newest
-// completed review other than reviewID, "" when it has none.
-func lastPatchID(ctx context.Context, tx pgx.Tx, prID, reviewID string) (string, error) {
-	var patch string
-	err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("worker: read last review: %w", err)
-	}
-	return patch, nil
-}
-
 // ownerRepo splits the repository's full name as the forge client takes it.
 func (pr *pullRequest) ownerRepo() (owner, repo string) {
 	owner, repo, _ = strings.Cut(pr.repository, "/")
@@ -255,24 +243,28 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 // loadPullRequest reads a job's pull request. One the store does not know
 // cancels the job: it will not appear by retrying.
 func loadPullRequest(ctx context.Context, st *store.Store, accountID, repositoryID string, number int) (*pullRequest, error) {
-	var pr pullRequest
+	var row store.ReviewPullRequest
 	err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot,
-				CASE WHEN p.merged THEN 'the pull request was merged' WHEN p.state <> 'open' THEN 'the pull request is closed'
-					ELSE '' END
-			FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
-			WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
-			Scan(&pr.id, &pr.repositoryID, &pr.repository, &pr.number,
-				&pr.headSHA, &pr.baseRef, &pr.title, &pr.author, &pr.authorIsBot, &pr.closed)
+		var err error
+		row, err = store.FindReviewPullRequest(ctx, tx, repositoryID, number)
+		return err
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, store.ErrNotFound) {
 		return nil, river.JobCancel(fmt.Errorf("worker: pull request %d of %s is unknown", number, repositoryID))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("worker: load pull request: %w", err)
 	}
-	return &pr, nil
+	var closed string
+	switch {
+	case row.Merged:
+		closed = "the pull request was merged"
+	case row.State != "open":
+		closed = "the pull request is closed"
+	}
+	return &pullRequest{id: row.ID, repositoryID: row.RepositoryID, repository: row.Repository, number: row.Number,
+		headSHA: row.HeadSHA, baseRef: row.BaseRef, title: row.Title, author: row.Author,
+		authorIsBot: row.AuthorIsBot, closed: closed}, nil
 }
 
 // reviewBase is the commit a review of pr diffs its head against: the
@@ -287,12 +279,8 @@ func reviewBase(ctx context.Context, st *store.Store, client forge.Client, accou
 		return base, err
 	}
 	err = st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `SELECT merge_base_sha FROM reviews WHERE pull_request_id = $1 AND status = 'completed'
-			AND merge_base_sha NOT IN ('', $2) ORDER BY created_at DESC LIMIT 1`, pr.id, pr.headSHA).Scan(&base)
-		if errors.Is(err, pgx.ErrNoRows) {
-			base = ""
-			return nil
-		}
+		var err error
+		base, err = store.LastReviewMergeBase(ctx, tx, pr.id, pr.headSHA)
 		return err
 	})
 	if err != nil {
@@ -627,10 +615,11 @@ func (w *Review) botPatch(
 	patch = gitfetch.PatchID(diff)
 	var last string
 	err = w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT forge_patch_id FROM reviews WHERE pull_request_id = $1
-			AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, pr.id).Scan(&last)
+		var err error
+		last, err = store.LastForgePatchID(ctx, tx, pr.id)
+		return err
 	})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil {
 		logger.Warn("last forge patch id not read; the runner checks the patch", "error", err)
 	}
 	return patch, last != "" && last == patch

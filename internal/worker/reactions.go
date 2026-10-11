@@ -99,8 +99,9 @@ func (m marks) remove(ctx context.Context, content string) {
 func (b *Base) otherReviewRunning(ctx context.Context, logger *slog.Logger, accountID, prID, reviewID string) bool {
 	var running bool
 	err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews WHERE pull_request_id = $1 AND id::text <> $2 AND status = 'running')`,
-			prID, reviewID).Scan(&running)
+		var err error
+		running, err = store.OtherReviewRunning(ctx, tx, prID, reviewID)
+		return err
 	})
 	if err != nil {
 		logger.Warn("running reviews not read", "error", err)
@@ -121,20 +122,21 @@ func (b *Base) reviewOutcome(ctx context.Context, logger *slog.Logger, accountID
 	if jobErr != nil && !lastAttempt {
 		return unanswered
 	}
-	var status string
+	var status store.ReviewStatus
 	var current bool
 	err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT r.status, r.head_sha = p.head_sha FROM reviews r
-			JOIN pull_requests p ON p.id = r.pull_request_id WHERE r.id = $1`, reviewID).Scan(&status, &current)
+		var err error
+		status, current, err = store.ReviewHeadStatus(ctx, tx, reviewID)
+		return err
 	})
 	if err != nil {
 		logger.Warn("review status not read", "error", err)
 		return unanswered
 	}
 	switch {
-	case jobErr == nil && store.ReviewStatus(status) == store.ReviewCompleted:
+	case jobErr == nil && status == store.ReviewCompleted:
 		return answered
-	case current && (jobErr != nil || store.ReviewStatus(status) == store.ReviewFailed):
+	case current && (jobErr != nil || status == store.ReviewFailed):
 		return failed
 	}
 	return unanswered

@@ -265,17 +265,17 @@ func TestSweepDiffs(t *testing.T) {
 		t.Fatalf("second sweep swept %d, %v; want a swept pack passed over", n, err)
 	}
 	err = s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
-		diff, delta, swept, err := ContextPackDiffs(ctx, tx, old)
-		if err != nil || diff != "" || delta != "" || !swept {
-			return fmt.Errorf("old pack = %q, %q, swept %v, %v; want emptied and marked", diff, delta, swept, err)
+		changes, err := ContextPackDiffs(ctx, tx, old)
+		if err != nil || changes.Diff != "" || changes.Delta != "" || !changes.Swept {
+			return fmt.Errorf("old pack = %q, %q, swept %v, %v; want emptied and marked", changes.Diff, changes.Delta, changes.Swept, err)
 		}
 		m, err := FindContextPackMeta(ctx, tx, old)
 		if err != nil || len(m.Stages) != 1 || m.Stages[0].Path != "a.go" || m.StageBytes[0] != 0 || len(m.RepoFiles) != 0 {
 			return fmt.Errorf("old pack meta = %+v, %v; want its stage kept without text and no files", m, err)
 		}
-		diff, delta, swept, err = ContextPackDiffs(ctx, tx, fresh)
-		if err != nil || diff != "diff --git" || delta != "delta" || swept {
-			return fmt.Errorf("fresh pack = %q, %q, swept %v, %v; want untouched", diff, delta, swept, err)
+		changes, err = ContextPackDiffs(ctx, tx, fresh)
+		if err != nil || changes.Diff != "diff --git" || changes.Delta != "delta" || changes.Swept {
+			return fmt.Errorf("fresh pack = %q, %q, swept %v, %v; want untouched", changes.Diff, changes.Delta, changes.Swept, err)
 		}
 		return nil
 	})

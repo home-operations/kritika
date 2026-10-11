@@ -165,7 +165,7 @@ func (w *Review) agentPrompt(
 	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
+		if p.PullRequest, err = store.ReadFilterPullRequest(ctx, tx, pr.id); err != nil {
 			return err
 		}
 		// The rules' when conditions are judged here, before the runner cuts the
@@ -195,11 +195,12 @@ func (w *Review) agentPrompt(
 		}
 		// A patch whose last review left no score to carry is reviewed
 		// again where a score is asked for.
-		if _, skippable, err := carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence); err != nil || !skippable {
+		baseline, err := store.LastReviewBaseline(ctx, tx, pr.id, reviewID)
+		if err != nil || (eff.Confidence.Model != "" && baseline.Confidence == nil) {
 			return err
 		}
-		p.UnchangedPatchID, err = lastPatchID(ctx, tx, pr.id, reviewID)
-		return err
+		p.UnchangedPatchID = baseline.PatchID
+		return nil
 	})
 	if err != nil {
 		return nil, nil, err
@@ -447,7 +448,9 @@ func (b *Base) awaitAgentRun(ctx context.Context, accountID, runID string, wait 
 	for {
 		var phase string
 		err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
+			var err error
+			phase, err = store.RunnerPhase(ctx, tx, runID)
+			return err
 		})
 		if err != nil {
 			return store.AgentRunRow{}, false, fmt.Errorf("worker: read run phase: %w", err)

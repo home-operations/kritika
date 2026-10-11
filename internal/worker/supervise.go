@@ -98,17 +98,14 @@ func runSupervision(st *store.Store, accountID, runID, prID, head string, every 
 	s := supervision{
 		every: cmp.Or(every, superviseInterval), stale: heartbeatStale, logger: logger,
 		heartbeat: func(ctx context.Context) (time.Duration, bool, error) {
-			var seconds *float64
+			var age time.Duration
+			var seen bool
 			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-				return tx.QueryRow(ctx, `SELECT extract(epoch FROM now() - heartbeat_at)::float8 FROM runner_runs WHERE id = $1`, runID).Scan(&seconds)
+				var err error
+				age, seen, err = store.RunnerHeartbeatAge(ctx, tx, runID)
+				return err
 			})
-			if err != nil {
-				return 0, false, fmt.Errorf("worker: read heartbeat: %w", err)
-			}
-			if seconds == nil {
-				return 0, false, nil
-			}
-			return time.Duration(*seconds * float64(time.Second)), true, nil
+			return age, seen, err
 		},
 	}
 	if prID != "" {
@@ -116,7 +113,9 @@ func runSupervision(st *store.Store, accountID, runID, prID, head string, every 
 		s.head = func(ctx context.Context) (string, error) {
 			var current string
 			err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-				return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, prID).Scan(&current)
+				var err error
+				current, err = store.PullRequestHead(ctx, tx, prID)
+				return err
 			})
 			if err != nil {
 				return "", fmt.Errorf("worker: read head: %w", err)

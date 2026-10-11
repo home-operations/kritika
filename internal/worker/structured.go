@@ -86,7 +86,9 @@ func (p *publishPhase) structured(
 func (p *publishPhase) pullBody(ctx context.Context) (string, error) {
 	var body string
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&body)
+		var err error
+		body, err = store.PullRequestBody(ctx, tx, p.pr.id)
+		return err
 	})
 	if err != nil {
 		return "", fmt.Errorf("worker: read pull request description: %w", err)
