@@ -3,9 +3,11 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -174,5 +176,54 @@ func TestPublicationTerminalPayload(t *testing.T) {
 				return err
 			}))
 		})
+	}
+}
+
+func TestPublicationLock(t *testing.T) {
+	s := openStore(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	callbackErr := errors.New("delivery failed")
+	err := s.WithPublicationLock(ctx, "lock-test", func(context.Context) error {
+		if err := s.WithPublicationLock(ctx, "lock-test", func(context.Context) error { t.Fatal("overlapping delivery acquired the lock"); return nil }); !errors.Is(err, ErrPublicationBusy) {
+			t.Fatalf("contending lock = %v", err)
+		}
+		if err := s.WithPublicationLock(ctx, "other-pull", func(context.Context) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		var idle bool
+		if err := s.App().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+   WHERE application_name = 'kritika-publication' AND state = 'idle' AND xact_start IS NULL)`).Scan(&idle); err != nil {
+			t.Fatal(err)
+		}
+		if !idle {
+			t.Fatal("publication holds a transaction or a pooled connection")
+		}
+		return callbackErr
+	})
+	if !errors.Is(err, callbackErr) {
+		t.Fatal(err)
+	}
+	if err := s.WithPublicationLock(ctx, "lock-test", func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("lock was not released: %v", err)
+	}
+}
+
+func TestPublicationLockLossCancelsDelivery(t *testing.T) {
+	s := openStore(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	err := s.WithPublicationLock(ctx, "lost-lock-test", func(ctx context.Context) error {
+		if _, err := s.App().Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'kritika-publication'`); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return context.Cause(ctx)
+	})
+	if err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("lock loss = %v, want immediate delivery cancellation", err)
+	}
+	if err := s.WithPublicationLock(ctx, "lost-lock-test", func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
 	}
 }

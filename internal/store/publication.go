@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -14,6 +15,9 @@ import (
 type Publication struct {
 	CancelRequested                  bool
 	ReviewID, PullRequestID, HeadSHA string
+	RepositoryID, Repository, Closed string
+	Number                           int
+	AuthorIsBot                      bool
 	Payload                          json.RawMessage
 	Status                           ReviewStatus
 }
@@ -31,13 +35,18 @@ func SavePublication(ctx context.Context, tx pgx.Tx, reviewID string, payload js
 	return nil
 }
 
-// ReadPublication returns the checkpoint of jobID, or ErrNotFound before
-// the job has finalized its answer.
+// ReadPublication returns the checkpoint or prepared cancellation of jobID,
+// or ErrNotFound before either is recorded.
 func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, error) {
 	var p Publication
-	err := tx.QueryRow(ctx, `SELECT id, pull_request_id, head_sha, publication, status, cancel_requested_at IS NOT NULL FROM reviews
-		WHERE river_job_id = $1 AND publication IS NOT NULL ORDER BY created_at DESC LIMIT 1`, jobID).
-		Scan(&p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status, &p.CancelRequested)
+	err := tx.QueryRow(ctx, `SELECT r.id, r.pull_request_id, r.head_sha, r.publication, r.status,
+		r.cancel_requested_at IS NOT NULL, p.repository_id, repo.name, p.number, p.author_is_bot,
+		CASE WHEN p.merged THEN 'the pull request was merged' WHEN p.state <> 'open' THEN 'the pull request is closed' ELSE '' END
+		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
+		WHERE r.river_job_id = $1 AND (r.publication IS NOT NULL OR (r.status = 'prepared' AND r.cancel_requested_at IS NOT NULL))
+		ORDER BY r.created_at DESC LIMIT 1`, jobID).
+		Scan(&p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status, &p.CancelRequested,
+			&p.RepositoryID, &p.Repository, &p.Number, &p.AuthorIsBot, &p.Closed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -47,14 +56,70 @@ func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, 
 	return p, nil
 }
 
-// LockPublication serializes write-back for a pull request. It does not
-// lock its row, so ingest and cancellation remain able to update it.
-func LockPublication(ctx context.Context, tx pgx.Tx, pullRequestID string) error {
-	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "kritika:publish:"+pullRequestID)
+// ErrPublicationBusy means another publisher owns this pull request.
+var ErrPublicationBusy = errors.New("store: publication is busy")
+
+// WithPublicationLock holds a session lock on a dedicated connection. Forge
+// calls must not hold an application-pool connection or an open transaction:
+// heartbeats and cancellation need that pool while delivery is in progress.
+func (s *Store) WithPublicationLock(ctx context.Context, pullRequestID string, fn func(context.Context) error) (err error) {
+	attemptCtx, cancelAttempt := context.WithTimeout(ctx, lockTimeout)
+	defer cancelAttempt()
+	cfg := s.app.Config().ConnConfig
+	cfg.RuntimeParams["application_name"] = "kritika-publication"
+	conn, err := pgx.ConnectConfig(attemptCtx, cfg)
+	if err != nil {
+		return fmt.Errorf("store: publication connection: %w", err)
+	}
+	defer func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := conn.Close(cctx); err != nil {
+			s.logger.Warn("publication connection not closed cleanly", "error", err)
+		}
+	}()
+	var locked bool
+	err = conn.QueryRow(attemptCtx, `SELECT pg_try_advisory_lock(hashtextextended($1, 0))`, "kritika:publish:"+pullRequestID).Scan(&locked)
 	if err != nil {
 		return fmt.Errorf("store: lock publication: %w", err)
 	}
-	return nil
+	if !locked {
+		return ErrPublicationBusy
+	}
+	cancelAttempt()
+	lockCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	done := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(lockTimeout)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-lockCtx.Done():
+				done <- nil
+				return
+			case <-ticker.C:
+				pingCtx, cancelPing := context.WithTimeout(lockCtx, lockTimeout)
+				err := conn.Ping(pingCtx)
+				cancelPing()
+				if err != nil {
+					if lockCtx.Err() != nil {
+						done <- nil
+						return
+					}
+					err = fmt.Errorf("store: publication lock connection lost: %w", err)
+					cancel(err)
+					done <- err
+					return
+				}
+			}
+		}
+	}()
+	defer func() {
+		cancel(nil)
+		err = errors.Join(err, <-done)
+	}()
+	return fn(lockCtx)
 }
 
 // PublicationCurrent refuses an old head or an answer overtaken by a newer

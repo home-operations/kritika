@@ -26,7 +26,6 @@ import (
 // database. It returns the final review status and, for a failure the
 // caller should surface, the error.
 type publishPhase struct {
-	tx       pgx.Tx
 	w        *Review
 	file     *configfile.File
 	account  *configfile.Account
@@ -89,10 +88,10 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	}
 	ctx, cancel := detach(job)
 	defer cancel()
-	p.checkpointed = true
 	if err := p.checkpoint(ctx, answer); err != nil {
-		return store.ReviewPrepared, err
+		return store.ReviewFailed, err
 	}
+	p.checkpointed = true
 	return p.deliver(job, answer)
 }
 
@@ -108,7 +107,7 @@ func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) 
 	run := *p.agent
 	var diff, delta string
 	var deltaPaths []string
-	err := p.withAccount(ctx, func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
 		if diff, delta, _, err = store.ContextPackDiffs(ctx, tx, p.runID); err != nil || p.scope != review.ScopeIncremental {
 			return err
@@ -190,7 +189,7 @@ func (p *publishPhase) autoReviewPauses(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	var pauses bool
-	err := p.withAccount(ctx, func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
 		pauses, err = store.AutoReviewPauses(ctx, tx, p.pr.id, p.settings.MaxAutoReviews)
 		return err
@@ -612,7 +611,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 	var stored int64
 	// The row is a shortcut: no row, or a read that failed, leaves the
 	// comment to be found on the forge by its marker.
-	_ = p.withAccount(ctx, func(tx pgx.Tx) error {
+	_ = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&stored)
 	})
 	return p.writeSticky(ctx, stored, body)
@@ -662,7 +661,7 @@ func (p *publishPhase) persist(
 	ctx context.Context, res review.Result, unanchored []review.Finding, inline []store.InlinePosted, modelName string, commentID int64,
 ) error {
 	recorded := review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}
-	return p.withAccount(ctx, func(tx pgx.Tx) error {
+	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return store.RecordReviewResult(ctx, tx, store.ReviewResult{
 			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: recorded, Inline: inline, Model: modelName,
 			CommentID: commentID, Confidence: p.confidence, Partial: p.unfinished > 0,
@@ -686,7 +685,7 @@ func (p *publishPhase) headSubject(ctx context.Context, owner, repo string) stri
 // completed in between.
 func (p *publishPhase) reviews(ctx context.Context) int {
 	var completed int
-	err := p.withAccount(ctx, func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE pull_request_id = $1 AND status = 'completed'`, p.pr.id).Scan(&completed)
 	})
 	if err != nil {
@@ -704,7 +703,7 @@ func (p *publishPhase) cost(ctx context.Context) string {
 	}
 	var cost float64
 	var unpriced int64
-	err := p.withAccount(ctx, func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
 		cost, unpriced, err = store.PullCost(ctx, tx, p.pr.id)
 		return err

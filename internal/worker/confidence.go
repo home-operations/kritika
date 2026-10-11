@@ -192,7 +192,7 @@ func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 }
 
 // carriedConfidence is the confidence a patch unchanged since its last
-// review keeps: the one the pull request's newest prepared or completed
+// review keeps: the one the pull request's newest completed
 // review other than reviewID got, held to the threshold want sets now.
 // skippable says the patch may be skipped as unchanged: always for a
 // repository that asks for no score, and otherwise only when that review
@@ -206,7 +206,7 @@ func carriedConfidence(
 	}
 	var raw []byte
 	err = tx.QueryRow(ctx, `SELECT confidence FROM reviews WHERE pull_request_id = $1 AND id::text <> $2
-		AND status IN ('prepared', 'completed') AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&raw)
+		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && raw == nil) {
 		return nil, false, nil
 	}

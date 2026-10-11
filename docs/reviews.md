@@ -43,7 +43,9 @@ or scoring the review again. It finds comments already posted before
 creating more, and records the findings and automatic-review count together.
 A retry for an older head, or one overtaken by a newer completed review,
 is superseded. Canceling a publication waiting for retry clears its pending
-commit status without publishing the saved answer.
+commit status without publishing the saved answer. A checkpoint that cannot
+be saved fails that review; it does not trigger another model run. Terminal
+reviews retain only a small completion marker in place of the checkpoint.
 
 ### Findings
 

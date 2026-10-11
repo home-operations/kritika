@@ -19,7 +19,7 @@ import (
 )
 
 // TestCarriedConfidence: an unchanged patch keeps the score its last
-// prepared or completed review got, judged by the threshold asked for now,
+// completed review got, judged by the threshold asked for now,
 // and may be skipped only where there is a score to keep or none is asked
 // for.
 func TestCarriedConfidence(t *testing.T) {
@@ -62,6 +62,9 @@ func TestCarriedConfidence(t *testing.T) {
 		wantSkippable bool
 	}{
 		{name: "no score asked for", rows: []row{{"completed", ""}}, wantScore: -1, wantSkippable: true},
+		{name: "a prepared score cannot be carried", want: scored, wantScore: -1, rows: []row{{"prepared", `{"score":5}`}}},
+		{name: "a prepared review cannot hide the last completed score", want: scored, wantScore: 4, wantSkippable: true,
+			rows: []row{{"completed", `{"score":4}`}, {"prepared", `{"score":5}`}}},
 		{name: "no review yet", want: scored, wantScore: -1},
 		{name: "the last review's score, by the threshold asked for now", want: scored, wantScore: 3, wantSkippable: true,
 			rows: []row{{"completed", `{"score":5,"threshold":5}`}, {"completed", `{"score":3,"threshold":5}`}}},

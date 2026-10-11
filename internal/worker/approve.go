@@ -91,7 +91,7 @@ func approvable(counts review.Counts, want configfile.Confidence, c *review.Conf
 // request's; a head that could not be read is taken as moved.
 func (p *publishPhase) headCurrent(ctx context.Context) bool {
 	var head string
-	err := p.withAccount(ctx, func(tx pgx.Tx) error {
+	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&head)
 	})
 	if err != nil {

@@ -91,7 +91,8 @@ type ReviewEnd struct {
 func EndReview(ctx context.Context, tx pgx.Tx, reviewID string, end ReviewEnd) (bool, error) {
 	tag, err := tx.Exec(ctx, `UPDATE reviews SET status = $2, patch_id = CASE WHEN $3 = '' THEN patch_id ELSE $3 END,
 		skip_reason = CASE WHEN $4 = '' THEN skip_reason ELSE $4 END, error = left($5, 2000), finished_at = now(),
-		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
+		publication = CASE WHEN publication IS NOT NULL OR (status = 'prepared' AND cancel_requested_at IS NOT NULL)
+			THEN '{}'::jsonb END
 		WHERE id = $1 AND (NOT $6 OR finished_at IS NULL)`,
 		reviewID, end.Status, end.PatchID, end.SkipReason, end.Error, end.OnlyUnfinished)
 	if err != nil {

@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -23,12 +24,19 @@ import (
 // response. Subsequent delivery must discover that comment by its marker.
 type lostPublicationResponse struct {
 	*localForge
-	once sync.Once
+	once     sync.Once
+	snapshot func()
+	payload  json.RawMessage
 }
 
 func (f *lostPublicationResponse) CreateComment(ctx context.Context, owner, repo string, number int, body string) (int64, error) {
 	id, err := f.localForge.CreateComment(ctx, owner, repo, number, body)
-	f.once.Do(func() { err = errors.New("forge: response lost after creating comment") })
+	f.once.Do(func() {
+		if f.snapshot != nil {
+			f.snapshot()
+		}
+		err = errors.New("forge: response lost after creating comment")
+	})
 	return id, err
 }
 
@@ -45,6 +53,13 @@ func (f *lostPublicationResponse) ListInline(context.Context, string, string, in
 func TestPublicationResumesWithoutModelWork(t *testing.T) {
 	h := newAgenticHarness(t, 970)
 	f := &lostPublicationResponse{localForge: h.lf}
+	f.snapshot = func() {
+		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(h.ctx, `SELECT publication FROM reviews WHERE head_sha = $1 AND status = 'prepared'`, h.head).Scan(&f.payload)
+		}); err != nil {
+			t.Error(err)
+		}
+	}
 	h.review.Forges = &forges{f: f}
 	h.sm.reset(scriptSubmit)
 	h.dispatch(t, h.head)
@@ -85,7 +100,8 @@ func TestPublicationResumesWithoutModelWork(t *testing.T) {
 				return err
 			}
 		}
-		return nil
+		_, err := tx.Exec(h.ctx, `UPDATE reviews SET publication = $2 WHERE id = $1`, id, f.payload)
+		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +157,7 @@ func TestPublicationRetryDoesNotOverwriteNewHead(t *testing.T) {
 			JOIN pull_requests p ON p.id = r.pull_request_id WHERE r.id = $1`, id).Scan(&jobID, &repoID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(h.ctx, `UPDATE reviews SET status = 'prepared', finished_at = NULL WHERE id = $1`, id); err != nil {
+		if _, err := tx.Exec(h.ctx, `UPDATE reviews SET status = 'prepared', finished_at = NULL, publication = '{"Version":1}' WHERE id = $1`, id); err != nil {
 			return err
 		}
 		_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = 'new-head' WHERE repository_id = $1 AND number = $2`, repoID, h.number)
