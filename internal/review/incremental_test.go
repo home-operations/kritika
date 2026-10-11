@@ -82,9 +82,8 @@ func TestBuildEarlierFindings(t *testing.T) {
 	in.Earlier = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: in.Incremental.Prior, Checked: []string{"util.go: u is pure"}}
 	in.Incremental = nil
 	msg, _, _ := Build(in)
-	if !strings.Contains(msg, priorHeading+"). They are claims an earlier automated review made about 0123456") ||
-		!strings.Contains(msg, "names it in prior, so it keeps its thread; one you leave out is taken as gone.") ||
-		strings.Contains(msg, "resolved") ||
+	if !strings.Contains(msg, priorHeading+", and list in resolved the id of each that no longer holds). They are claims an earlier automated review made about 0123456") ||
+		!strings.Contains(msg, "names it in prior, so it keeps its thread; one you neither report again nor list in resolved stays open.") ||
 		!strings.Contains(msg, priorPrefix("main.go", "y changed")+"main.go:11 [p1] y changed: why it matters") ||
 		!strings.Contains(msg, checkedHeading+" 0123456 and found sound, in its own notes.") || !strings.Contains(msg, "\n- util.go: u is pure\n") ||
 		strings.Contains(msg, deltaHeading) || strings.Contains(msg, "This is a re-review") {

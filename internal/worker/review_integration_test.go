@@ -2324,7 +2324,8 @@ func checkIncremental(
 	wantDiagram(thirdRow.id, "")
 	checkReworded(ctx, t, appStore, lf, accountID, thirdRow.id, thread, original)
 	fourthRow := checkBackOnDiff(ctx, t, appStore, accountID, thirdRow, thread, commit, reviewHead)
-	checkSettled(ctx, t, appStore, lf, fc, accountID, fourthRow, commit, reviewHead)
+	last := checkSettled(ctx, t, appStore, lf, fc, accountID, fourthRow, commit, reviewHead)
+	checkFullSettled(ctx, t, appStore, lf, fc, accountID, last, r, reset, commit, reviewHead)
 }
 
 // checkBackOnDiff pushes once more and asserts the review that builds on
@@ -2357,7 +2358,7 @@ func checkBackOnDiff(
 func checkSettled(
 	ctx context.Context, t *testing.T, appStore *store.Store, lf *localForge, fc *fakeCompleter, accountID string,
 	last reviewScopeRow, commit func(string) string, reviewHead func(string) (reviewScopeRow, string, int),
-) {
+) reviewScopeRow {
 	t.Helper()
 	sticky := func() (body string, resolved []int64) {
 		lf.mu.Lock()
@@ -2461,6 +2462,7 @@ func checkSettled(
 	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[left.Title]}) {
 		t.Fatalf("the seventh review resolved threads %v, want the carried finding's alone", got)
 	}
+	return seventhRow
 }
 
 // ageConversation makes the conversation reviewID's run kept an hour old,
@@ -2516,7 +2518,7 @@ func checkEarlierPrompt(t *testing.T, prompt, prior string) {
 	t.Helper()
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
 		!strings.Contains(prompt, "Findings from the last review (verify each; report again every one still present, whatever "+
-			"its severity and wherever it is). "+
+			"its severity and wherever it is, and list in resolved the id of each that no longer holds). "+
 			"They are claims an earlier automated review made about "+prior[:7]) ||
 		!strings.Contains(prompt, "main.go:1 [p1] first line: look here") ||
 		!strings.Contains(prompt, "What the last review checked at "+prior[:7]+" and found sound") {
