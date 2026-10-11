@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.58](https://github.com/home-operations/kritika/compare/0.0.57...0.0.58) (2026-10-11)
+
+
+### Bug Fixes
+
+* **chatgpt:** replay Responses output between review steps ([#855](https://github.com/home-operations/kritika/issues/855)) ([36617ae](https://github.com/home-operations/kritika/commit/36617ae849548aafc97a6941c97fead0b24b8b98))
+* **pricing:** expose unpriced model calls ([#857](https://github.com/home-operations/kritika/issues/857)) ([1a0394c](https://github.com/home-operations/kritika/commit/1a0394c2824dc6eabc54bda1013270c710524921))
+
 ## [0.0.57](https://github.com/home-operations/kritika/compare/0.0.56...0.0.57) (2026-10-10)
 
 
