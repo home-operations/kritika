@@ -275,7 +275,7 @@ func (f *followUp) awaitReview(ctx context.Context) error {
 	}
 	f.logger.Info("requested review ended", "status", status)
 	f.marks().start(ctx)(requestOutcome(status), false)
-	return nil
+	return f.record(ctx, store.FollowupAnswered, "review request settled: "+string(cmp.Or(status, store.ReviewFailed)), 0, "")
 }
 
 // requestOutcome is what the marks on a review request say of status, that

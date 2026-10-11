@@ -1322,7 +1322,7 @@ func checkReviewRequest(
 		t.Fatalf("outsider's review request: status = %s (%s)", status, reason)
 	}
 	id = mention("onedr0p", "Can you take another look? @kritika review")
-	if status, reason := waitFollowUp(id); status != "answered" || reason != "review requested" {
+	if status, reason := waitFollowUp(id); status != "answered" || (reason != reviewRequested && reason != "review request settled: completed") {
 		t.Fatalf("review request: status = %s (%s)", status, reason)
 	}
 	if after, _ := manual(); after != before+1 {

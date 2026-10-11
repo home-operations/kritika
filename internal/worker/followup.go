@@ -107,9 +107,12 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	}
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
-		// The failure itself is what goes back to River; a record of it that
-		// could not be written is lost with it, and the retry records anew.
-		_ = f.record(ctx, store.FollowupFailed, err.Error(), 0, "")
+		// An answered review request keeps its durable marker so a retry
+		// resumes polling. Other failures are recorded best effort, since
+		// River retries even if the record cannot be written.
+		if outcome != store.FollowupAnswered {
+			_ = f.record(ctx, store.FollowupFailed, err.Error(), 0, "")
+		}
 		if _, final := errors.AsType[finalError](err); final {
 			return river.JobCancel(err)
 		}
@@ -160,7 +163,9 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	}
 	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
-		f.unmark(ctx)
+		if replyID != nil {
+			f.unmark(ctx)
+		}
 		return true, nil
 	}
 	if f.attempt <= 1 {
