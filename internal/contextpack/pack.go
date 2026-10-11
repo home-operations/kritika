@@ -150,8 +150,8 @@ type builder struct {
 	identifiers    []string
 	changedSymbols []string
 	// hits are candidate chunks per word, in scan order.
-	definitions map[string][]Chunk
-	callers     map[string][]Chunk
+	definitions map[string]*candidates
+	callers     map[string]*candidates
 }
 
 func (b *builder) ignored(path string) bool { return chunk.Matches(b.in.Ignore, path) }
@@ -225,10 +225,10 @@ func (b *builder) overlay(ctx context.Context) error {
 			if decl := f.Enclosing([]int{run[0], run[1]}, b.opts.MaxDeclLines); decl != nil {
 				c = Chunk{
 					Stage: StageOverlay, Path: path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-					StartLine: decl.StartLine, EndLine: decl.EndLine, Text: chunk.Text(src, decl.StartLine, decl.EndLine),
+					StartLine: decl.StartLine, EndLine: decl.EndLine, Text: f.Text(decl.StartLine, decl.EndLine),
 				}
 			} else {
-				s, e, text := chunk.Window(src, run[0], run[1], b.opts.WindowRadius)
+				s, e, text := f.Window(run[0], run[1], b.opts.WindowRadius)
 				if text == "" {
 					continue
 				}
@@ -248,6 +248,7 @@ func (b *builder) overlay(ctx context.Context) error {
 			if subset(c.StartLine, c.EndLine, d.shown[path]) {
 				continue
 			}
+			c.Text = b.cutText(c.Text)
 			b.overlayChunks = append(b.overlayChunks, c)
 		}
 	}
@@ -287,7 +288,7 @@ func (b *builder) scan(ctx context.Context) error {
 	for _, s := range b.changedSymbols {
 		wanted[s] = true
 	}
-	b.definitions, b.callers = map[string][]Chunk{}, map[string][]Chunk{}
+	b.definitions, b.callers = map[string]*candidates{}, map[string]*candidates{}
 	if len(wanted) == 0 || b.in.Head == nil {
 		return nil
 	}
@@ -360,31 +361,98 @@ func (b *builder) scan(ctx context.Context) error {
 				continue
 			}
 			seenDecl[key] = true
-			c := Chunk{
-				Path: f.Name, Language: pf.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
-				StartLine: decl.StartLine, EndLine: decl.EndLine, Ref: h.word,
-			}
-			switch {
-			case decl.Symbol == h.word && !changedSet[h.word]:
-				c.Stage, c.Text = StageDefinition, chunk.Text(src, decl.StartLine, decl.EndLine)
-				b.definitions[h.word] = append(b.definitions[h.word], c)
-			case changedSet[h.word] && decl.Symbol != h.word:
-				c.Stage, c.Text = StageCaller, chunk.Text(src, decl.StartLine, decl.EndLine)
-				b.callers[h.word] = append(b.callers[h.word], c)
-			}
+			b.addCandidate(pf, decl, h.word, changedSet[h.word])
 		}
 		return nil
 	})
 }
 
-// assemble orders and caps the stages and truncates chunks to size.
+func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, changed bool) {
+	var stage string
+	var target map[string]*candidates
+	var limit int
+	switch {
+	case decl.Symbol == word && !changed:
+		stage, target, limit = StageDefinition, b.definitions, b.opts.DefinitionsPerIdentifier
+	case changed && decl.Symbol != word:
+		stage, target, limit = StageCaller, b.callers, b.opts.CallersPerSymbol
+	default:
+		return
+	}
+	c := Chunk{
+		Stage: stage, Path: f.Path, Language: f.Language, Symbol: decl.Symbol, Kind: decl.Kind, Scope: decl.Scope,
+		StartLine: decl.StartLine, EndLine: decl.EndLine, Ref: word,
+	}
+	set := target[word]
+	if set == nil {
+		set = &candidates{}
+		target[word] = set
+	}
+	set.count++
+	if !keepCandidate(set.chunks, c, limit) {
+		return
+	}
+	c.Text = b.cutText(f.Text(decl.StartLine, decl.EndLine))
+	set.chunks = append(set.chunks, c)
+}
+
+func (b *builder) cutText(text string) string {
+	if len(text) > b.opts.MaxChunkBytes {
+		return textcut.Prefix(text, b.opts.MaxChunkBytes) + "\n… (truncated)"
+	}
+	return text
+}
+
+type candidates struct {
+	chunks []Chunk
+	count  int
+}
+
+func (c *candidates) pick(n int) []Chunk {
+	if c == nil || n <= 0 {
+		return nil
+	}
+	if c.count > n && len(c.chunks) <= n {
+		return pickDiverse(c.chunks, n)
+	}
+	return pick(c.chunks, n)
+}
+
+// keepCandidate keeps the first n matches, the first n files, and at most
+// n-1 distinct extra ranges. The initial matches preserve encounter order
+// when under the cap, even for declarations sharing a line.
+func keepCandidate(cs []Chunk, c Chunk, n int) bool {
+	if n <= 0 {
+		return false
+	}
+	if len(cs) < n {
+		return true
+	}
+	distinct, same := 0, false
+	extras := 0
+	for i, x := range cs {
+		same = same || x.Path == c.Path
+		first := !slices.ContainsFunc(cs[:i], func(y Chunk) bool { return y.Path == x.Path })
+		if first {
+			distinct++
+		} else if !slices.ContainsFunc(cs[:i], func(y Chunk) bool { return y.Path == x.Path && y.StartLine == x.StartLine }) {
+			extras++
+		}
+	}
+	if !same {
+		return distinct < n
+	}
+	if slices.ContainsFunc(cs, func(x Chunk) bool { return x.Path == c.Path && x.StartLine == c.StartLine }) {
+		return false
+	}
+	return extras < n-1
+}
+
+// assemble orders and caps the stages.
 func (b *builder) assemble() []Chunk {
 	var out []Chunk
 	total := 0
 	add := func(c Chunk) bool {
-		if len(c.Text) > b.opts.MaxChunkBytes {
-			c.Text = textcut.Prefix(c.Text, b.opts.MaxChunkBytes) + "\n… (truncated)"
-		}
 		if total+len(c.Text) > b.opts.MaxPackBytes {
 			return false
 		}
@@ -399,7 +467,7 @@ func (b *builder) assemble() []Chunk {
 	}
 	n := 0
 	for _, id := range b.identifiers {
-		for _, c := range pick(b.definitions[id], b.opts.DefinitionsPerIdentifier) {
+		for _, c := range b.definitions[id].pick(b.opts.DefinitionsPerIdentifier) {
 			if n >= b.opts.MaxDefinitions {
 				break
 			}
@@ -412,7 +480,7 @@ func (b *builder) assemble() []Chunk {
 	b.stats.Definitions = n
 	n = 0
 	for _, s := range b.changedSymbols {
-		for _, c := range pick(b.callers[s], b.opts.CallersPerSymbol) {
+		for _, c := range b.callers[s].pick(b.opts.CallersPerSymbol) {
 			if n >= b.opts.MaxCallers {
 				break
 			}
@@ -429,9 +497,16 @@ func (b *builder) assemble() []Chunk {
 // pick keeps up to n chunks, preferring one per file before a second from
 // the same file.
 func pick(cs []Chunk, n int) []Chunk {
+	if n <= 0 {
+		return nil
+	}
 	if len(cs) <= n {
 		return cs
 	}
+	return pickDiverse(cs, n)
+}
+
+func pickDiverse(cs []Chunk, n int) []Chunk {
 	var out []Chunk
 	seen := map[string]bool{}
 	for _, c := range cs {

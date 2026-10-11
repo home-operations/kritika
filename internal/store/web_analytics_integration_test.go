@@ -78,25 +78,15 @@ func TestReadAnalytics(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	var totals, before AnalyticsTotals
-	var series []AnalyticsPoint
-	var repos []RepoActivity
+	var data Analytics
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		var err error
-		if totals, err = ReadAnalyticsTotals(ctx, tx, from, to); err != nil {
-			return err
-		}
-		if before, err = ReadAnalyticsTotals(ctx, tx, from.AddDate(0, 0, -3), from); err != nil {
-			return err
-		}
-		if series, err = ReadAnalyticsSeries(ctx, tx, AnalyticsByDay, from, to); err != nil {
-			return err
-		}
-		repos, err = ReadRepoActivity(ctx, tx, from, to, 5)
+		data, err = ReadAnalytics(ctx, tx, AnalyticsByDay, from, to, 5)
 		return err
 	}); err != nil {
 		t.Fatalf("read: %v", err)
 	}
+	totals, before, series, repos := data.Current, data.Previous, data.Series, data.Repositories
 
 	// naming was dropped by the review at h2, and typo by the one after the
 	// window; race is still open. old counts before the window.
@@ -130,6 +120,19 @@ func TestReadAnalytics(t *testing.T) {
 	if !reflect.DeepEqual(repos, wantRepos) {
 		t.Errorf("repos = %+v, want %+v", repos, wantRepos)
 	}
+
+	checkAnalyticsGroups(t, s, account, from, to, data)
+	checkAnalyticsCategories(t, s, account, from, to)
+	checkAnalyticsIsolation(t, s, from, to)
+
+}
+
+func categoryZeros() map[review.Category]int {
+	out := map[review.Category]int{}
+	for _, c := range review.Categories() {
+		out[c] = 0
+	}
+	return out
 }
 
 func deref(p *int64) any {
@@ -137,4 +140,87 @@ func deref(p *int64) any {
 		return nil
 	}
 	return *p
+}
+
+func checkAnalyticsGroups(t *testing.T, s *Store, account string, from, to time.Time, data Analytics) {
+	t.Helper()
+	ctx := t.Context()
+	totals, before, wantRepos := data.Current, data.Previous, data.Repositories
+
+	for _, tc := range []struct {
+		group AnalyticsGroup
+		key   string
+	}{
+		{AnalyticsByWeek, "2026-08-31"}, {AnalyticsByMonth, "2026-09-01"},
+	} {
+		t.Run(string(tc.group), func(t *testing.T) {
+			var got Analytics
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				var err error
+				got, err = ReadAnalytics(ctx, tx, tc.group, from, to, 1)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			wantPoint := []AnalyticsPoint{{Key: tc.key, Reviews: 3, Findings: totals.Findings, CostUSD: 2}}
+			if !reflect.DeepEqual(got.Series, wantPoint) || !reflect.DeepEqual(got.Current, totals) || !reflect.DeepEqual(got.Previous, before) || !reflect.DeepEqual(got.Repositories, wantRepos) {
+				t.Fatalf("grouped analytics = %+v", got)
+			}
+		})
+	}
+}
+func checkAnalyticsCategories(t *testing.T, s *Store, account string, from, to time.Time) {
+	t.Helper()
+	ctx := t.Context()
+
+	t.Run("latest categories and dismissals", func(t *testing.T) {
+		var got Analytics
+		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `UPDATE findings SET category = 'security', reactions_down = 2 WHERE fingerprint = 'old'`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `UPDATE findings SET category = 'correctness' WHERE fingerprint = 'naming'`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO dismissals (account_id, pull_request_id, fingerprint, comment_id)
+    SELECT $1, v.pull_request_id, f.fingerprint, 1 FROM findings f JOIN reviews v ON v.id = f.review_id WHERE f.fingerprint = 'naming'`, account); err != nil {
+				return err
+			}
+			var err error
+			got, err = ReadAnalytics(ctx, tx, AnalyticsByDay, from, to, 5)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if got.Current.Addressed != 1 || got.Current.Categories[review.CategoryCorrectness] != 1 || got.Previous.Categories[review.CategorySecurity] != 1 || got.Previous.ReactionsDown != 2 || got.Repositories[0].Addressed != 1 {
+			t.Fatalf("categorized and dismissed = %+v", got)
+		}
+	})
+}
+func checkAnalyticsIsolation(t *testing.T, s *Store, from, to time.Time) {
+	t.Helper()
+	ctx := t.Context()
+
+	t.Run("empty account is isolated", func(t *testing.T) {
+		if err := s.ApplyConfig(ctx, parse(t, soloAccount("analytics-empty"))); err != nil {
+			t.Fatal(err)
+		}
+		var got Analytics
+		if err := s.WithAccount(ctx, accountID(t, s, "analytics-empty"), func(tx pgx.Tx) error {
+			var err error
+			got, err = ReadAnalytics(ctx, tx, AnalyticsByDay, from, to, 5)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		empty := AnalyticsTotals{Categories: categoryZeros()}
+		if !reflect.DeepEqual(got.Current, empty) || !reflect.DeepEqual(got.Previous, empty) || len(got.Repositories) != 0 || len(got.Series) != 3 {
+			t.Fatalf("empty account = %+v", got)
+		}
+		for i, point := range got.Series {
+			if point != (AnalyticsPoint{Key: from.AddDate(0, 0, i).Format("2006-01-02")}) {
+				t.Fatalf("empty series bucket = %+v", point)
+			}
+		}
+	})
 }

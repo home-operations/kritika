@@ -1521,6 +1521,11 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkIndexEmbedFailure(ctx, t, appStore, insertOnly, fe, account.ID(), repoID)
 	})
 
+	t.Run("an index with a stale base snoozes and rebuilds", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "new index tip", "package main\n\nfunc newer() {}\n")
+		checkStaleIndex(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, head, newer)
+	})
+
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})

@@ -1,6 +1,9 @@
 package contextpack
 
 import (
+	"fmt"
+	"math/rand/v2"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -11,8 +14,105 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 
+	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/gittest"
 )
+
+func TestBoundedCandidatesPreserveSelection(t *testing.T) {
+	random := rand.New(rand.NewPCG(1, 2))
+	for _, n := range []int{0, 1, 2, 5} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			for range 100 {
+				all := make([]Chunk, 0, 100)
+				set := &candidates{}
+				for i := range 100 {
+					c := Chunk{Path: fmt.Sprint(random.IntN(8)), StartLine: random.IntN(15), Text: fmt.Sprint(i)}
+					all = append(all, c)
+					set.count++
+					if keepCandidate(set.chunks, c, n) {
+						set.chunks = append(set.chunks, c)
+					}
+					if got, want := set.pick(n), pick(all, n); !reflect.DeepEqual(got, want) {
+						t.Fatalf("selection at %d: %+v, want %+v", i, got, want)
+					}
+					if len(set.chunks) > max(0, 3*n-2) {
+						t.Fatalf("retained %d candidates for limit %d", len(set.chunks), n)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestScanBoundsCandidatesAndText(t *testing.T) {
+	fs := memfs.New()
+	r, err := git.Init(memory.NewStorage(), git.WithWorkTree(fs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gittest.Unsigned(t, r)
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 20 {
+		var src strings.Builder
+		src.WriteString("package demo\n")
+		for j := range 50 {
+			fmt.Fprintf(&src, "func Call%d() {\nTarget()\n%s}\n", j, strings.Repeat("// padding 世界 padding padding padding\n", 30))
+		}
+		name := fmt.Sprintf("f%03d.go", i)
+		f, err := fs.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte(src.String())); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wt.Add(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h, err := wt.Commit("head", &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := r.CommitObject(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := c.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := DefaultOptions
+	opts.MaxChunkBytes = 80
+	b := &builder{in: Input{Head: head}, opts: opts, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
+	if err := b.scan(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	retained := b.callers["Target"].chunks
+	if len(retained) > 2*opts.CallersPerSymbol-1 {
+		t.Fatalf("retained %d chunks from 1000 matches", len(retained))
+	}
+	for _, c := range retained {
+		if len(c.Text) > opts.MaxChunkBytes+len("\n… (truncated)") || !strings.HasSuffix(c.Text, "\n… (truncated)") {
+			t.Fatalf("candidate text = %q", c.Text)
+		}
+	}
+	out := b.assemble()
+	if len(out) != opts.CallersPerSymbol {
+		t.Fatalf("emitted %d callers", len(out))
+	}
+	for i, c := range out {
+		if c.Path != fmt.Sprintf("f%03d.go", i) || c.Symbol != "Call0" || strings.Count(c.Text, "… (truncated)") != 1 {
+			t.Fatalf("caller %d = %+v", i, c)
+		}
+	}
+}
 
 const widgetBase = `package demo
 

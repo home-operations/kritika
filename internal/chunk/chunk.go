@@ -83,10 +83,11 @@ func Language(path string) (name string, declarations bool) {
 
 // File is a parsed file.
 type File struct {
-	Path     string
-	Language string
-	Source   []byte
-	Decls    []Decl
+	Path        string
+	Language    string
+	Source      []byte
+	Decls       []Decl
+	lineOffsets []int
 
 	lang *gotreesitter.Language
 	tree *gotreesitter.Tree
@@ -391,6 +392,36 @@ func lineCount(src []byte) int {
 // Text returns the source of a line range, 1-based and inclusive.
 func Text(src []byte, startLine, endLine int) string {
 	_, _, text := Window(src, startLine, endLine, 0)
+	return text
+}
+
+// Window returns a line range with radius lines of surrounding source.
+// Repeated calls reuse the file's line offsets, including after Close.
+func (f *File) Window(first, last, radius int) (startLine, endLine int, text string) {
+	if f.lineOffsets == nil && len(f.Source) > 0 {
+		f.lineOffsets = make([]int, 1, lineCount(f.Source))
+		for i, c := range f.Source {
+			if c == '\n' && i+1 < len(f.Source) {
+				f.lineOffsets = append(f.lineOffsets, i+1)
+			}
+		}
+	}
+	startLine, endLine = max(first-radius, 1), min(last+radius, len(f.lineOffsets))
+	if startLine > endLine {
+		return 0, 0, ""
+	}
+	start, end := f.lineOffsets[startLine-1], len(f.Source)
+	if endLine < len(f.lineOffsets) {
+		end = f.lineOffsets[endLine] - 1
+	} else if end > 0 && f.Source[end-1] == '\n' {
+		end--
+	}
+	return startLine, endLine, string(f.Source[start:end])
+}
+
+// Text returns the source of a line range, 1-based and inclusive.
+func (f *File) Text(startLine, endLine int) string {
+	_, _, text := f.Window(startLine, endLine, 0)
 	return text
 }
 

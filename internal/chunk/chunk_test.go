@@ -1,10 +1,61 @@
 package chunk
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestFileWindow(t *testing.T) {
+	tests := []struct {
+		name, src           string
+		first, last, radius int
+		start, end          int
+		text                string
+	}{
+		{name: "empty"},
+		{name: "unterminated", src: "one\ntwo", first: 2, last: 2, start: 2, end: 2, text: "two"},
+		{name: "trailing newline", src: "one\ntwo\n", first: 2, last: 2, start: 2, end: 2, text: "two"},
+		{name: "blank final line", src: "one\n\n", first: 1, last: 2, start: 1, end: 2, text: "one\n"},
+		{name: "clamped", src: "one\ntwo\nthree\n", first: 2, last: 2, radius: 9, start: 1, end: 3, text: "one\ntwo\nthree"},
+		{name: "past end", src: "one\n", first: 2, last: 3},
+		{name: "reversed", src: "one\ntwo\n", first: 2, last: 1},
+		{name: "UTF8 and CRLF", src: "é\r\n世界\r\n", first: 2, last: 2, start: 2, end: 2, text: "世界\r"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := (&Parser{}).Parse("file.yaml", []byte(tt.src))
+			f.Close()
+			for range 2 {
+				s, e, text := f.Window(tt.first, tt.last, tt.radius)
+				if s != tt.start || e != tt.end || text != tt.text {
+					t.Fatalf("Window = %d %d %q, want %d %d %q", s, e, text, tt.start, tt.end, tt.text)
+				}
+			}
+			if tt.radius == 0 && f.Text(tt.first, tt.last) != tt.text {
+				t.Fatal("Text differs from Window")
+			}
+		})
+	}
+}
+
+func BenchmarkFileWindows(b *testing.B) {
+	for _, lines := range []int{1000, 10000, 50000} {
+		b.Run(fmt.Sprint(lines), func(b *testing.B) {
+			src := []byte(strings.Repeat("value: abcdefghijklmnopqrstuvwxyz\n", lines))
+			windows := Windows(src, 60, 10)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				f := &File{Source: src}
+				for _, w := range windows {
+					_ = f.Text(w.StartLine, w.EndLine)
+				}
+			}
+		})
+	}
+}
 
 const goSource = `package demo
 

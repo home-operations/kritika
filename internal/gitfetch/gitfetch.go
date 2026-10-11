@@ -95,6 +95,16 @@ func (r *Result) Close() error { return errors.Join(r.repo.Close(), os.RemoveAll
 // Run fetches head and base at depth one and diffs them. The temp dir is
 // removed on error; on success the caller owns it through Result.Close.
 func Run(ctx context.Context, f Fetch) (*Result, error) {
+	return fetch(ctx, f, false)
+}
+
+// Trees fetches head and base without rendering patches or detecting renames.
+// The caller owns the fetched repository through Result.Close.
+func Trees(ctx context.Context, f Fetch) (*Result, error) {
+	return fetch(ctx, f, true)
+}
+
+func fetch(ctx context.Context, f Fetch, treesOnly bool) (*Result, error) {
 	if !IsSHA(f.Head) || (f.Base != "" && !IsSHA(f.Base)) || (f.Prior != "" && !IsSHA(f.Prior)) || (f.PriorBase != "" && !IsSHA(f.PriorBase)) {
 		return nil, fmt.Errorf("gitfetch: head %q, base %q, prior %q and prior base %q must be full commit SHAs",
 			f.Head, f.Base, f.Prior, f.PriorBase)
@@ -103,7 +113,7 @@ func Run(ctx context.Context, f Fetch) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: temp dir: %w", err)
 	}
-	res, err := run(ctx, f, dir)
+	res, err := run(ctx, f, dir, treesOnly)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, err
@@ -111,7 +121,7 @@ func Run(ctx context.Context, f Fetch) (*Result, error) {
 	return res, nil
 }
 
-func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
+func run(ctx context.Context, f Fetch, dir string, treesOnly bool) (_ *Result, err error) {
 	repo, err := git.PlainInit(dir, true)
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: init: %w", err)
@@ -152,6 +162,9 @@ func run(ctx context.Context, f Fetch, dir string) (_ *Result, err error) {
 	base, err := repo.CommitObject(plumbing.NewHash(f.Base))
 	if err != nil {
 		return nil, fmt.Errorf("gitfetch: base %s: %w", f.Base, err)
+	}
+	if treesOnly {
+		return &Result{Head: head, Base: base, Dir: dir, repo: repo}, nil
 	}
 	changes, err := treeChanges(ctx, base, head)
 	if err != nil {
