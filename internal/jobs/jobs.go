@@ -181,7 +181,9 @@ func (IndexArgs) Kind() string { return "index" }
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
 // repository while queued or running (River requires running in the set):
 // a push while the repository's job is running is absorbed by it, and the
-// worker indexes the tip again when it finds the branch moved.
+// worker indexes the tip again when it finds the branch moved. Full and
+// CatchUp key a forced rebuild and a rebuild's catch-up apart, so either
+// can run beside an update.
 func (a IndexArgs) InsertOpts() river.InsertOpts {
 	priority := indexPriorityUpdate
 	switch a.Trigger {

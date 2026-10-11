@@ -190,7 +190,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return river.JobSnooze(0)
 	}
 	if err != nil {
-		logger.Error("index embedding failed", "error", err)
+		logger.Error("index embedding or publication failed", "error", err)
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
 		fctx, fcancel := detach(ctx)
 		defer fcancel()
@@ -198,6 +198,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
+	// A forced rebuild leaves the tip to the catch-up it queued as it published.
 	if args.Full {
 		return nil
 	}
