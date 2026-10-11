@@ -8,6 +8,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // approve approves the head when the review's verdict allows it (see
@@ -92,7 +93,9 @@ func approvable(counts review.Counts, want configfile.Confidence, c *review.Conf
 func (p *publishPhase) headCurrent(ctx context.Context) bool {
 	var head string
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, p.pr.id).Scan(&head)
+		var err error
+		head, err = store.PullRequestHead(ctx, tx, p.pr.id)
+		return err
 	})
 	if err != nil {
 		p.logger.Warn("head not re-read before approving", "error", err)

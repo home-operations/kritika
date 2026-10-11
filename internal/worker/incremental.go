@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -48,45 +46,14 @@ type priorFinding struct {
 // lastCompleted loads the pull request's last completed review and its
 // findings.
 func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, error) {
-	var p priorReview
-	var confidence []byte
-	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, merge_base_sha, coalesce(summary->>'diagram', ''),
-		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')),
-		ARRAY(SELECT jsonb_array_elements_text(summary->'impact')), confidence FROM reviews
-		WHERE pull_request_id = $1 AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID).
-		Scan(&p.id, &p.headSHA, &p.trigger, &p.mergeBase, &p.diagram, &p.checked, &p.impact, &confidence)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return priorReview{}, nil
-	}
+	row, err := store.LastCompletedReview(ctx, tx, prID)
 	if err != nil {
-		return priorReview{}, fmt.Errorf("worker: load last completed review: %w", err)
+		return priorReview{}, err
 	}
-	if confidence != nil {
-		if err := json.Unmarshal(confidence, &p.confidence); err != nil {
-			return priorReview{}, fmt.Errorf("worker: decode last completed review's confidence: %w", err)
-		}
-	}
-	err = tx.QueryRow(ctx, `SELECT c.changed_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
-		WHERE rr.review_id = $1 ORDER BY c.created_at DESC LIMIT 1`, p.id).Scan(&p.changed)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return priorReview{}, fmt.Errorf("worker: load last completed review's paths: %w", err)
-	}
-	rows, err := tx.Query(ctx, `SELECT path, line, severity, category, title, explanation, suggested_fix, posted_inline,
-		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules, fingerprint, coalesce(carried_from, '')
-		FROM findings WHERE review_id = $1 ORDER BY path, line`, p.id)
-	if err != nil {
-		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
-	}
-	p.findings, err = pgx.AppendRows(p.findings, rows, func(row pgx.CollectableRow) (priorFinding, error) {
-		var f priorFinding
-		var sev, cat string
-		err := row.Scan(&f.Path, &f.Line, &sev, &cat, &f.Title, &f.Explanation, &f.SuggestedFix, &f.postedInline,
-			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.commentID, &f.Rules, &f.Fingerprint, &f.CarriedFrom)
-		f.Severity, f.Category = review.Severity(sev), review.Category(cat)
-		return f, err
-	})
-	if err != nil {
-		return priorReview{}, fmt.Errorf("worker: load findings: %w", err)
+	p := priorReview{id: row.ID, headSHA: row.HeadSHA, trigger: row.Trigger, mergeBase: row.MergeBase,
+		changed: row.Changed, diagram: row.Diagram, checked: row.Checked, impact: row.Impact, confidence: row.Confidence}
+	for _, f := range row.Findings {
+		p.findings = append(p.findings, priorFinding{Finding: f.Finding, postedInline: f.PostedInline, commentID: f.CommentID})
 	}
 	return p, nil
 }

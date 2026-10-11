@@ -152,15 +152,16 @@ type followUp struct {
 // reply carries, since an attempt killed between posting and recording
 // left none.
 func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
-	var status store.FollowupStatus
-	var replyID *int64
+	var state store.FollowupState
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT status, reply_comment_id FROM followups WHERE pull_request_id = $1 AND comment_id = $2`,
-			f.pr.id, f.comment.ID).Scan(&status, &replyID)
+		var err error
+		state, err = store.FindFollowup(ctx, tx, f.pr.id, f.comment.ID)
+		return err
 	})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return false, fmt.Errorf("worker: read follow-up: %w", err)
 	}
+	status, replyID := state.Status, state.ReplyCommentID
 	if status == store.FollowupAnswered || status == store.FollowupLimited || replyID != nil {
 		f.logger.Info("follow-up already handled", "status", status)
 		if replyID != nil {
@@ -338,7 +339,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		var runID string
 		err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 			var err error
-			if prompt.PullRequest, err = loadFilterPR(ctx, tx, f.pr.id); err != nil {
+			if prompt.PullRequest, err = store.ReadFilterPullRequest(ctx, tx, f.pr.id); err != nil {
 				return err
 			}
 			runID, err = store.InsertRunnerRun(ctx, tx, f.account.ID(), store.RunnerKindFollowUp, "", f.jobID)
@@ -447,8 +448,9 @@ func (f *followUp) disqualified(ctx context.Context) string {
 func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	var answered, notices int
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status = 'answered'), count(*) FILTER (WHERE status = 'limited')
-			FROM followups WHERE pull_request_id = $1 AND created_at > now() - interval '1 hour'`, f.pr.id).Scan(&answered, &notices)
+		var err error
+		answered, notices, err = store.RecentFollowupCounts(ctx, tx, f.pr.id)
+		return err
 	})
 	if err != nil {
 		return false, fmt.Errorf("worker: count follow-ups: %w", err)
@@ -530,10 +532,7 @@ func (f *followUp) reviewRecord(ctx context.Context) (reviewRecord, error) {
 		if rec.vars, err = filterVars(ctx, tx, f.pr.id, last.trigger); err != nil || last.id == "" {
 			return err
 		}
-		rec.id, rec.findings = last.id, reviewFindings(last.findings)
-		if err := tx.QueryRow(ctx, `SELECT merge_base_sha FROM reviews WHERE id = $1`, last.id).Scan(&rec.mergeBase); err != nil {
-			return fmt.Errorf("worker: load last completed review's merge base: %w", err)
-		}
+		rec.id, rec.findings, rec.mergeBase = last.id, reviewFindings(last.findings), last.mergeBase
 		return nil
 	})
 	return rec, err
@@ -583,16 +582,10 @@ func (f *followUp) reply(ctx context.Context, body string) (int64, error) {
 
 func (f *followUp) record(ctx context.Context, status store.FollowupStatus, reason string, replyID int64, modelName string) error {
 	return f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `INSERT INTO followups
-			(account_id, pull_request_id, comment_id, author, inline, path, line, status, reason, reply_comment_id, model)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), nullif($10::bigint, 0), $11)
-			ON CONFLICT (pull_request_id, comment_id) DO UPDATE SET status = excluded.status, reason = excluded.reason,
-				reply_comment_id = coalesce(excluded.reply_comment_id, followups.reply_comment_id), model = excluded.model`,
-			f.account.ID(), f.pr.id, f.comment.ID, f.comment.Author, f.comment.Inline, f.comment.Path, f.comment.Line,
-			status, reason, replyID, modelName)
-		if err != nil {
-			return fmt.Errorf("worker: record follow-up: %w", err)
-		}
-		return nil
+		return store.RecordFollowup(ctx, tx, store.FollowupResult{
+			AccountID: f.account.ID(), PullRequestID: f.pr.id, CommentID: f.comment.ID, Author: f.comment.Author,
+			Inline: f.comment.Inline, Path: f.comment.Path, Line: f.comment.Line,
+			Status: status, Reason: reason, ReplyCommentID: replyID, Model: modelName,
+		})
 	})
 }

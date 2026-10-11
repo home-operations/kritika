@@ -49,15 +49,14 @@ func (w *Review) afterRun(
 	var pack store.ContextPackRecord
 	var superseded bool
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		var currentHead string
-		if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, pr.id).Scan(&currentHead); err != nil {
+		currentHead, err := store.PullRequestHead(ctx, tx, pr.id)
+		if err != nil {
 			return fmt.Errorf("worker: re-read head: %w", err)
 		}
 		if currentHead != args.HeadSHA {
 			superseded = true
 			return nil
 		}
-		var err error
 		pack, err = store.ReadContextPack(ctx, tx, runID)
 		return err
 	})
@@ -132,8 +131,8 @@ func (w *Review) endFiltered(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], prID, reviewID string, end store.ReviewEnd, judged json.RawMessage,
 ) (moved bool, err error) {
 	err = w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
-		var labels json.RawMessage
-		if err := tx.QueryRow(ctx, `SELECT labels FROM pull_requests WHERE id = $1 FOR UPDATE`, prID).Scan(&labels); err != nil {
+		labels, err := store.LockPullRequestLabels(ctx, tx, prID)
+		if err != nil {
 			return fmt.Errorf("worker: read the pull request's labels: %w", err)
 		}
 		if _, err := store.EndReview(ctx, tx, reviewID, end); err != nil {
@@ -142,7 +141,7 @@ func (w *Review) endFiltered(
 		if moved = !bytes.Equal(labels, judged); moved {
 			return nil
 		}
-		_, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+		_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
 		return err
 	})
 	return moved, err

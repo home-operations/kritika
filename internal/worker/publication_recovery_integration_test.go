@@ -291,7 +291,7 @@ func TestPublicationOnlyCompletedPatchesAreReusable(t *testing.T) {
 		t.Fatal("unpublished bot patch was treated as already reviewed")
 	}
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		patch, err := lastPatchID(h.ctx, tx, pr.id, "00000000-0000-0000-0000-000000000000")
+		patch, err := store.LastReviewPatchID(h.ctx, tx, pr.id, "00000000-0000-0000-0000-000000000000")
 		if patch != "" {
 			t.Fatalf("unpublished patch reused: %s", patch)
 		}

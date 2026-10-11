@@ -2,8 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -204,18 +202,9 @@ func carriedConfidence(
 	if want.Model == "" {
 		return nil, true, nil
 	}
-	var raw []byte
-	err = tx.QueryRow(ctx, `SELECT confidence FROM reviews WHERE pull_request_id = $1 AND id::text <> $2
-		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && raw == nil) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("worker: read last review's confidence: %w", err)
-	}
-	c = &review.Confidence{}
-	if err := json.Unmarshal(raw, c); err != nil {
-		return nil, false, fmt.Errorf("worker: decode last review's confidence: %w", err)
+	c, err = store.LastReviewConfidence(ctx, tx, prID, reviewID)
+	if err != nil || c == nil {
+		return nil, false, err
 	}
 	c.Threshold = want.Threshold
 	return c, true, nil

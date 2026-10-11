@@ -165,7 +165,7 @@ func (w *Review) agentPrompt(
 	}
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		if p.PullRequest, err = loadFilterPR(ctx, tx, pr.id); err != nil {
+		if p.PullRequest, err = store.ReadFilterPullRequest(ctx, tx, pr.id); err != nil {
 			return err
 		}
 		// The rules' when conditions are judged here, before the runner cuts the
@@ -198,7 +198,7 @@ func (w *Review) agentPrompt(
 		if _, skippable, err := carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence); err != nil || !skippable {
 			return err
 		}
-		p.UnchangedPatchID, err = lastPatchID(ctx, tx, pr.id, reviewID)
+		p.UnchangedPatchID, err = store.LastReviewPatchID(ctx, tx, pr.id, reviewID)
 		return err
 	})
 	if err != nil {
@@ -447,7 +447,9 @@ func (b *Base) awaitAgentRun(ctx context.Context, accountID, runID string, wait 
 	for {
 		var phase string
 		err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase)
+			var err error
+			phase, err = store.RunnerPhase(ctx, tx, runID)
+			return err
 		})
 		if err != nil {
 			return store.AgentRunRow{}, false, fmt.Errorf("worker: read run phase: %w", err)
