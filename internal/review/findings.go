@@ -489,6 +489,14 @@ func Check(raw json.RawMessage) error {
 		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
 			maxDiagramBytes, strings.Join(diagramKinds, ", "))
 	}
+	if len(res.Summary.Impact) > maxImpact {
+		return fmt.Errorf("review: summary.impact takes at most %d notes", maxImpact)
+	}
+	for _, note := range res.Summary.Impact {
+		if len(strings.TrimSpace(note)) > maxImpactItemBytes {
+			return fmt.Errorf("review: each summary.impact note must be at most %d bytes", maxImpactItemBytes)
+		}
+	}
 	return nil
 }
 

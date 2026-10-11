@@ -42,7 +42,7 @@
   <section class="panel" aria-labelledby="sum-impact">
     <header class="panel-head"><h2 id="sum-impact">Merge impact</h2></header>
     <div class="panel-body">
-      <Markdown text={d.summary.impact.map((note) => `- ${note}`).join('\n')} />
+      <Markdown text={d.summary.impact.map((note) => `- ${note.replaceAll('\n', '\n  ')}`).join('\n')} />
     </div>
   </section>
 {/if}

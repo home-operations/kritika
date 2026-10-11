@@ -80,11 +80,11 @@ From the top, each part shown only when it has something to say:
    ([incremental reviews](configuration.md#incremental-reviews)); and
    **Earlier findings**, the last review's findings since resolved or
    dismissed, wherever they were reported.
-5. **Summary**, the review's take.
-6. **Merge impact**, specific, evidence-backed consequences or operational
-   checks, followed by the change's flow as a Mermaid diagram when
-   `review.diagram` is on. The diagram can appear without impact notes.
-7. **What's good**, left out on a bot's pull request.
+5. **Summary**, the review's take, followed by the change's flow as a
+   Mermaid diagram when `review.diagram` is on.
+6. **What's good**, left out on a bot's pull request.
+7. **Merge impact**, specific, evidence-backed consequences or operational
+   checks, omitted when there are none.
 8. **Sources consulted**, links to what the review's commands fetched: a
    command's when it succeeded, and a `fetch_repo` that found files or a
    diff, not a tag listing. Then notes, such as files left out of the

@@ -63,13 +63,6 @@
 ### Summary
 
 {{ .Result.Summary.Take }}
-{{ if .Result.Summary.Impact }}
-### Merge impact
-
-{{ range .Result.Summary.Impact -}}
-- {{ . }}
-{{ end -}}
-{{ end -}}
 {{ if .Result.Summary.Diagram }}
 <details open>
 <summary>Flow</summary>
@@ -86,6 +79,13 @@
 
 {{ range .Result.Summary.Praise -}}
 - {{ . }}
+{{ end -}}
+{{ end -}}
+{{ if .Result.Summary.Impact }}
+### Merge impact
+
+{{ range .Result.Summary.Impact -}}
+- {{ . | indent 2 | trim }}
 {{ end -}}
 {{ end -}}
 {{ end -}}

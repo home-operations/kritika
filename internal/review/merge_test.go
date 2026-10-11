@@ -50,7 +50,7 @@ func TestBuildMerge(t *testing.T) {
 			t.Fatalf("message lacks %q:\n%s", want, msg)
 		}
 	}
-	if strings.Count(msg, "</summary>") != 2 {
+	if strings.Count(msg, "</summary>") != 3 {
 		t.Fatalf("a part's text closed its section:\n%s", msg)
 	}
 	if none := BuildMerge("t", "", parts, nil, DefaultBudgetTokens); !strings.Contains(none, "The parts reported no findings.") {

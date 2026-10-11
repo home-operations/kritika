@@ -116,7 +116,7 @@ type Rule struct {
 // fetch_repo is offered, search says search_code is offered, and diagram
 // asks for a diagram in the summary.
 func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram bool) string {
-	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules
+	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryImpact
 	if diagram {
 		system += summaryDiagram
 	}
@@ -242,6 +242,12 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 	references, referencesOmitted := referenceSection(in.References, min(budget/bodyShare, budget-b.Len()))
 	budget -= len(references)
 
+	impactHead, impact := priorImpact(in)
+	impactRoom := 0
+	if len(impact) > 0 {
+		impactRoom = len(impactOmitted)
+	}
+	budget -= impactRoom
 	room := budget - b.Len()
 	if in.Incremental != nil {
 		// The delta's omission note keeps its room, so the model always
@@ -262,6 +268,8 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 		b.WriteString(earlier)
 	}
 	writeDismissed(&b, in.Dismissed, budget)
+	budget += impactRoom
+	b.WriteString(priorImpactSection(impactHead, impact, budget-b.Len()))
 	b.WriteString(references)
 	budget += len(references)
 	contextOmitted = writeContext(&b, in.Context, budget)
@@ -373,12 +381,10 @@ func earlierSections(in Input, room int) string {
 		inc := in.Incremental
 		s = priorSection(inc.PriorHeadSHA, inc.Prior, room)
 		s += checkedSection(inc.PriorHeadSHA, inc.Checked, room-len(s))
-		s += priorImpactSection(inc.PriorHeadSHA, inc.Impact, room-len(s))
 	case in.Earlier != nil:
 		e := in.Earlier
 		s = priorSection(e.HeadSHA, e.Findings, room)
 		s += checkedSection(e.HeadSHA, e.Checked, room-len(s))
-		s += priorImpactSection(e.HeadSHA, e.Impact, room-len(s))
 	}
 	return s
 }
@@ -435,6 +441,8 @@ type ContinueInput struct {
 	Dismissed []DismissedFinding
 	// References are the applicable reference files at the current head.
 	References []Reference
+	// Impact is the latest review's merge impact, excluding older submissions.
+	Impact []string
 	// Diagram says the summary carries a diagram.
 	Diagram bool
 	// Fetched says the last review called fetch_repo, whose files this
@@ -448,7 +456,7 @@ type ContinueInput struct {
 // %s is the head; the diagram's sentence follows when there is one.
 const continueClosing = "\n\nThen call submit_review again with the whole review of the pull request at %s: report again each " +
 	"of the last review's findings that still holds, naming its id in prior, list in resolved the ids of those that no " +
-	"longer hold, and add the new ones. The summary describes the whole change at %[1]s. " + reassessImpact
+	"longer hold, and add the new ones. The summary describes the whole change at %[1]s."
 
 const continueDiagram = " " + keepDiagram
 
@@ -474,7 +482,11 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	references, referencesOmitted := referenceSection(in.References, min(budget/bodyShare, budget-b.Len()-len(closing)))
-	budget -= len(references)
+	impactRoom := len(noPriorImpact)
+	if len(in.Impact) > 0 {
+		impactRoom = len(impactOmitted)
+	}
+	budget -= len(references) + impactRoom
 	earlier := priorSection(in.PriorHeadSHA, in.Prior, budget-b.Len()-len(closing)-omissionRoom)
 	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(earlier)-len(closing)-omissionRoom)
 	b.WriteString(delta)
@@ -482,6 +494,12 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 		"read them with your tools]\n", omitted))
 	b.WriteString(earlier)
 	writeDismissed(&b, in.Dismissed, budget-len(closing))
+	budget += impactRoom
+	if len(in.Impact) == 0 {
+		b.WriteString(noPriorImpact)
+	} else {
+		b.WriteString(priorImpactSection(in.PriorHeadSHA, in.Impact, budget-b.Len()-len(closing)))
+	}
 	b.WriteString(references)
 	b.WriteString(closing)
 	return b.String(), omitted, referencesOmitted

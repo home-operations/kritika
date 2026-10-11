@@ -99,7 +99,9 @@ account passes over. Never guess at what the review did not read: the account li
 it read, so a concern names what they leave out. The account is the review's claim, not proof that the change is
 right. Merge impact notes describe intended consequences and specific checks, not additional findings. Their
 evidence can inform the risk rating and answer a concern; their presence alone never lowers the score, and a
-suggested check is not proof that it passed. An empty impact list is not itself a gap.
+suggested check is not proof that it passed. An empty impact list is not itself a gap. A post-merge check that
+cannot be completed before deployment is not, by itself, an unanswered concern or a reason to lower the score.
+A concern still needs concrete evidence of a defect or an unmet prerequisite for merging.
 
 Separately, rate the risk of the change: how much damage it could do if this review missed something. Authentication,
 authorization, secrets, billing, data and its migrations, infrastructure, CI, public interfaces, and build or runtime
@@ -128,8 +130,8 @@ update unless the description shows the step. Release notes that show an update 
 as a breaking change in a minor release, rate it as the bigger step; a digest pinned beside its tag, a bot author or a
 description that calls the update safe never rates it below its step.
 
-What neither you nor the review's account can verify, such as an upstream change whose release notes the
-description does not carry, may be a concern for the score, but never raises the risk.
+An unverified prerequisite for merging, such as an upstream compatibility change whose release notes the
+description does not carry, may be a concern for the score, but uncertainty alone never raises the risk.
 
 When the prompt gives the risk the last review of this pull request was rated, keep that rating unless the change now
 does something the rating and its reason do not account for: a second reading of the same change is no reason to
@@ -213,7 +215,7 @@ func BuildConfidence(in Input, res Result, sources []string, earlier *EarlierRis
 	if len(res.Summary.Impact) > 0 {
 		tail.WriteString("\nIts merge impact notes (claims to assess, not findings or completed checks):\n")
 		for _, note := range res.Summary.Impact {
-			fmt.Fprintf(&tail, "- %s\n", strings.Join(strings.Fields(note), " "))
+			fmt.Fprintf(&tail, "- %s\n", strings.ReplaceAll(note, "\n", "\n  "))
 		}
 	}
 	if len(res.Summary.Checked) == 0 {

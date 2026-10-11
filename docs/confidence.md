@@ -20,9 +20,12 @@ confidence:
 With a `confidence.model`, a second model scores every reviewed pull
 request from 0 to 5: how ready it is to merge, from the pull request's
 description and diff, the findings the review reported, and the review's
-account of itself: its summary, what it checked beyond the diff and the
-sources it read. A concern of the scorer's own names what that account
-leaves out, such as a release note no check covers, rather than guessing
+account of itself: its summary, merge impact, what it checked beyond the
+diff and the sources it read. Impact notes are claims to assess, not
+findings or completed checks. A post-merge check that cannot be completed
+before deployment does not lower the score by itself; a concern needs
+concrete evidence of a defect or an unmet prerequisite for merging.
+A concern of the scorer's own names what that account leaves out, such as a release note no check covers, rather than guessing
 at what the review read. A different vendor's model than the review's
 makes it a second opinion.
 

@@ -79,7 +79,7 @@ must also be findings. Material merge consequences and specific operational chec
 the change is sound. Omit generic caveats about what a diff cannot show or runtime behavior you cannot verify.
 The take does not give a verdict, count the findings or say there are none, and does not list what you read or how you read
 it: kritika states the count and lists the sources itself. Praise lists at most three specific things done well, and
-is empty when nothing stands out.` + summaryImpact
+is empty when nothing stands out.`
 
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries

@@ -59,12 +59,13 @@ func TestPartSpec(t *testing.T) {
 	s.Prompt.Prior = []review.Finding{{Path: "a/x.go", Title: "mine"}, {Path: "b/y.go", Title: "theirs"}}
 	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "b/y.go"}, {Path: "a/x.go"}}
 	s.Prompt.PriorDiagram = "flowchart LR\n  a --> b"
+	s.Prompt.PriorImpact = []string{"b/y.go changes startup."}
 	got := partSpec(s, []string{"a/x.go"})
 	if len(got.Prompt.Prior) != 1 || got.Prompt.Prior[0].Title != "mine" || len(got.Prompt.Dismissed) != 1 ||
-		got.Prompt.Dismissed[0].Path != "a/x.go" || got.Prompt.PriorDiagram != "" {
+		got.Prompt.Dismissed[0].Path != "a/x.go" || got.Prompt.PriorDiagram != "" || len(got.Prompt.PriorImpact) != 0 {
 		t.Fatalf("part spec prompt = %+v", got.Prompt)
 	}
-	if len(s.Prompt.Prior) != 2 || len(s.Prompt.Dismissed) != 2 || s.Prompt.PriorDiagram == "" {
+	if len(s.Prompt.Prior) != 2 || len(s.Prompt.Dismissed) != 2 || s.Prompt.PriorDiagram == "" || len(s.Prompt.PriorImpact) != 1 {
 		t.Fatalf("partSpec changed the review's own spec: %+v", s.Prompt)
 	}
 }
