@@ -366,8 +366,9 @@ was, always covers the whole pull request. A re-review that covers the
 whole pull request is still shown the last review's findings, on the diff
 or off it, to report again those that still hold, except
 a re-run at the head the last review saw, or one someone asked for, which
-look afresh. A finding reported again keeps the inline thread its first
-report opened, however it is worded now. Each review
+look afresh. Findings those fresh reviews omit stay open and counted,
+marked as not rechecked. A finding reported again keeps the inline thread
+its first report opened, however it is worded now. Each review
 also leaves notes, which no comment shows, on what it checked beyond the
 diff and found sound, and the next re-review is shown them beside the
 findings.
@@ -396,7 +397,8 @@ left off, linking to it.
 
 An incremental re-review raises as new only what the new commits brought,
 at P0 or P1, and reports again each of the last review's findings that
-still holds, whatever its severity. It names the ones that no longer hold,
+still holds, whatever its severity. Every review shown earlier findings,
+including a full re-review, names the ones that no longer hold,
 which the summary lists as resolved and whose threads it resolves. One it
 neither reports again nor names stays open: the summary lists it among the
 findings as not rechecked since the head a review last reported it at, it

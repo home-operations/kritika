@@ -49,7 +49,7 @@ type publishPhase struct {
 	// configuration files.
 	repoNotes []string
 	// prior is the last completed review, whose inline comments are not
-	// posted again; scope says whether this review builds on it.
+	// posted again; scope says how much of the change this review covers.
 	prior priorReview
 	scope review.Scope
 	// agent is the review's agent run, whose usage the gateway recorded
@@ -69,7 +69,7 @@ type publishPhase struct {
 	// they submitted, whose files went unreviewed: the review is then
 	// incomplete for the commit status and approves nothing.
 	unfinished int
-	// resolved are the last review's findings an incremental re-review
+	// resolved are the last review's findings this review
 	// listed as no longer holding, which the summary lists and whose
 	// threads it resolves.
 	resolved []priorFinding
@@ -142,7 +142,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		res.Summary.Diagram = carriedDiagram(answer, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
 	}
 	// Carried findings follow the review's own, which it vouches for.
-	if p.scope == review.ScopeIncremental {
+	if len(p.prior.findings) > 0 {
 		var carried []review.Finding
 		p.resolved, carried = settlePrior(p.prior.findings, p.prior.headSHA, slices.Concat(res.Findings, unanchored), res.Resolved)
 		if len(carried) > 0 {
@@ -450,7 +450,7 @@ func (p *publishPhase) writeBack(
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}
-	if data.Incremental {
+	if p.prior.id != "" {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
 		data.Prior = p.priorFindings()
 		p.resolveThreads(ctx, resolvedThreads(p.resolved))
@@ -549,7 +549,7 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 }
 
 // settlePrior sorts the last review's findings, made at head, that this
-// incremental re-review did not report again, reported being its findings
+// review did not report again, reported being its findings
 // on and off the diff: those whose ids it listed as resolved, and the rest,
 // which stay open, carried on unchecked from the head they were last
 // reported at. A finding is gone only when a review says so, so one the
