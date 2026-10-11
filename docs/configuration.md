@@ -437,7 +437,9 @@ a new title.
   submit, up to twice in a row; a third in a row is taken as an answer in
   prose.
 - **The prompt** holds the system prompt, the pull request, as much of the
-  diff as fits, whole files only, and then the context. A file left out is
+  diff as fits, whole files only, and then the context. A re-review's
+  earlier findings and notes take what the diff leaves, and the diff gives
+  way to them up to a quarter of the prompt. A file left out is
   named in the review's notes, and a review's or a follow-up's agent reads
   its part of the diff with `read_diff`, which numbers each line as the
   head has it; the scorer, which has no tools, never sees it. The list of

@@ -221,10 +221,13 @@ func UserBudget(system string, budget int) int {
 // left out, so the model never sees a truncated hunk as if it were whole.
 // Context chunks follow in stage order until the budget is spent; the
 // number left out is returned with the omitted diff files. A re-review's
-// sections, the diff since the last review and that review's findings and
-// diagram, or a full re-review's earlier findings, come between the diff
-// and the context and take their room first: the context gives way to
-// them, and they are cut only when they alone exceed what the diff left.
+// sections, the last review's findings and notes and, for an incremental
+// one, the diff since and the diagram, come between the diff and the
+// context and take their room first: the context gives way to them. The
+// findings and notes take what the diff leaves, and the diff gives way to
+// them up to a quarter of the budget, as much as the description may
+// have: checking them is what a re-review is for, and a file the diff
+// leaves out is listed for read_diff.
 func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	var b strings.Builder
 	// The title is the forge's, on one line as the header reads it.
@@ -242,13 +245,24 @@ func Build(in Input) (msg string, omitted []string, contextOmitted int) {
 	writeIssues(&b, in.Issues, budget/bodyShare)
 	b.WriteString(diffLead)
 
-	diff, omitted := FitDiff(in.Diff, budget-b.Len()-omissionRoom)
+	room := budget - b.Len()
+	if in.Incremental != nil {
+		// The delta's omission note keeps its room, so the model always
+		// learns the delta existed.
+		room -= len(deltaOmitted)
+	}
+	diff, omitted := FitDiff(in.Diff, room-omissionRoom)
+	earlier := earlierSections(in, room-len(diff)-len(omissionNote(diffOmitted, omitted)))
+	if kept := earlierSections(in, min(budget/bodyShare, room-omissionRoom)); len(kept) > len(earlier) {
+		earlier = kept
+		diff, omitted = FitDiff(in.Diff, room-omissionRoom-len(earlier))
+	}
 	b.WriteString(diff)
-	b.WriteString(omissionNote("\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n", omitted))
-	b.WriteString(incrementalSections(in.Incremental, budget-b.Len()))
-	if e := in.Earlier; e != nil {
-		b.WriteString(priorSection(e.HeadSHA, e.Findings, false, budget-b.Len()))
-		b.WriteString(checkedSection(e.HeadSHA, e.Checked, budget-b.Len()))
+	b.WriteString(omissionNote(diffOmitted, omitted))
+	if in.Incremental != nil {
+		b.WriteString(incrementalSections(in.Incremental, earlier, budget-b.Len()))
+	} else {
+		b.WriteString(earlier)
 	}
 	writeDismissed(&b, in.Dismissed, budget)
 	writeReferences(&b, in.References, budget)
@@ -293,6 +307,10 @@ func SameBrief(opening string, in Input) bool {
 }
 
 const deltaOmitted = "\n\n[The diff since the last review was omitted to fit the prompt budget.]\n"
+
+// diffOmitted is omissionNote's format for the note on the files the
+// diff left out.
+const diffOmitted = "\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n"
 
 // reReviewLead raises the bar for a re-review's new findings: the first
 // review set it, and this one is for defects the new commits introduced or
@@ -347,23 +365,33 @@ func omissionNote(format string, omitted []string) string {
 	return fmt.Sprintf(format, len(omitted), list.String())
 }
 
-// incrementalSections renders a re-review's delta, prior findings, the
-// last review's notes and its diagram in at most room characters. The
-// prior findings and the notes are fitted first: they are small, and
-// verifying the findings is what a re-review is for, while the delta
-// repeats what the full diff already shows. The diagram is fitted last,
-// into what the delta leaves: a re-review not shown it loses nothing the
-// delta would have told it.
-func incrementalSections(inc *IncrementalInput, room int) string {
-	if inc == nil {
-		return ""
+// earlierSections are the last review's findings and notes as a re-review
+// is shown them, in at most room characters, the notes in what the
+// findings leave; "" for a review that builds on none.
+func earlierSections(in Input, room int) string {
+	var s string
+	switch {
+	case in.Incremental != nil:
+		inc := in.Incremental
+		s = priorSection(inc.PriorHeadSHA, inc.Prior, true, room)
+		s += checkedSection(inc.PriorHeadSHA, inc.Checked, room-len(s))
+	case in.Earlier != nil:
+		e := in.Earlier
+		s = priorSection(e.HeadSHA, e.Findings, false, room)
+		s += checkedSection(e.HeadSHA, e.Checked, room-len(s))
 	}
-	// The delta's omission note keeps its room, so the model always learns
-	// the delta existed.
-	prior := priorSection(inc.PriorHeadSHA, inc.Prior, true, room-len(deltaOmitted))
-	prior += checkedSection(inc.PriorHeadSHA, inc.Checked, room-len(deltaOmitted)-len(prior))
-	room -= len(prior)
+	return s
+}
 
+// incrementalSections renders a re-review's delta, earlier, the last
+// review's findings and notes as Build fitted them, and its diagram in at
+// most room characters. The delta takes what earlier leaves: verifying
+// the findings is what a re-review is for, while the delta repeats what
+// the full diff already shows. The diagram is fitted last, into what the
+// delta leaves: a re-review not shown it loses nothing the delta would
+// have told it.
+func incrementalSections(inc *IncrementalInput, earlier string, room int) string {
+	room -= len(earlier)
 	var b strings.Builder
 	header := fmt.Sprintf(reReviewLead+"Changed since the last review (%s to head, unified; "+anchorsAbove+"):\n\n",
 		ShortSHA(inc.PriorHeadSHA))
@@ -385,7 +413,7 @@ func incrementalSections(inc *IncrementalInput, room int) string {
 		b.WriteString(deltaOmitted)
 	}
 	diagram := priorDiagramSection(inc, room-b.Len())
-	b.WriteString(prior)
+	b.WriteString(earlier)
 	b.WriteString(diagram)
 	return b.String()
 }

@@ -311,13 +311,62 @@ func TestBuildIncrementalSurvivesManyOmittedFiles(t *testing.T) {
 	if len(note) > omissionRoom || !strings.Contains(note, " and ") || !strings.Contains(note, " more; read them with read_diff]") {
 		t.Fatalf("note of %d bytes: %q", len(note), note)
 	}
-	// The diff took the room the sections would have had, so the model
-	// is told the delta existed rather than nothing at all.
-	if !strings.Contains(msg, deltaOmitted) {
-		t.Fatalf("missing the delta's omission note after %d omitted files:\n%s", len(omitted), msg[len(msg)-1500:])
+	// The diff took the room the delta would have had, so the model is
+	// told the delta existed rather than nothing at all; the earlier
+	// findings kept theirs.
+	if !strings.Contains(msg, deltaOmitted) || !strings.Contains(msg, priorPrefix("main.go", "y changed")) {
+		t.Fatalf("missing the delta's omission note or the earlier finding after %d omitted files:\n%s", len(omitted), msg[len(msg)-1500:])
 	}
 	if len(msg) > in.BudgetTokens*charsPerToken {
 		t.Fatalf("message of %d chars exceeds the budget of %d", len(msg), in.BudgetTokens*charsPerToken)
+	}
+}
+
+// TestBuildEarlierFindingsKeepTheirRoom: a re-review whose diff overruns
+// the budget is still shown the last review's findings, the diff giving
+// way to them up to a quarter of the budget.
+func TestBuildEarlierFindingsKeepTheirRoom(t *testing.T) {
+	var diff strings.Builder
+	for i := range 200 {
+		fmt.Fprintf(&diff, "diff --git a/f%03d.go b/f%03d.go\n--- a/f%03d.go\n+++ b/f%03d.go\n@@ -1 +1,2 @@\n x\n+%s\n",
+			i, i, i, i, strings.Repeat("y", 200))
+	}
+	one := incrementalInput().Incremental.Prior
+	many := make([]Finding, 200)
+	for i := range many {
+		many[i] = Finding{Path: "main.go", Line: 20 + i, Severity: SeverityP2, Title: fmt.Sprintf("finding %d", i),
+			Explanation: strings.Repeat("why ", 20)}
+	}
+	for _, tc := range []struct {
+		name  string
+		full  bool
+		prior []Finding
+		cut   bool
+	}{
+		{name: "incremental", prior: one},
+		{name: "full", full: true, prior: one},
+		{name: "more than a quarter", prior: many, cut: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := incrementalInput()
+			in.Diff, in.Context, in.BudgetTokens = diff.String(), nil, 6_000
+			in.Incremental.Prior = tc.prior
+			if tc.full {
+				in.Earlier, in.Incremental = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: tc.prior}, nil
+			}
+			msg, omitted, _ := Build(in)
+			budget := in.BudgetTokens * charsPerToken
+			start := strings.Index(msg, "\n\n"+priorHeading)
+			if len(omitted) == 0 || start < 0 || !strings.Contains(msg, priorPrefix("main.go", tc.prior[0].Title)) || len(msg) > budget {
+				t.Fatalf("omitted %d diff files, earlier findings at %d, %d characters of %d:\n%s", len(omitted), start, len(msg), budget, msg)
+			}
+			const more = " more finding(s) from the last review omitted to fit the prompt budget]\n"
+			end := strings.Index(msg, more)
+			if (end >= 0) != tc.cut || (tc.cut && end+len(more)-start > budget/bodyShare) {
+				t.Fatalf("the earlier findings take %d characters, cut %v; want them cut %v within %d", end+len(more)-start, end >= 0, tc.cut,
+					budget/bodyShare)
+			}
+		})
 	}
 }
 
