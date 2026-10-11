@@ -168,7 +168,7 @@ type Finding struct {
 type PriorFinding struct {
 	Finding
 	// Resolved is whether this review, asked to report the finding again
-	// only if still present, did not.
+	// if still present, did not.
 	Resolved bool
 	// Dismissed is whether a maintainer dismissed the finding, with
 	// DismissReason the reason they gave, "" for none.

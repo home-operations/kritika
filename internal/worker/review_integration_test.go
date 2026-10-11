@@ -2250,7 +2250,9 @@ func checkIncremental(
 	}
 	for _, want := range []string{
 		"Changed since the last review (" + first[:7], "+func f2() {}",
-		"Findings from the last review (verify each; report again only if still present)", "main.go:1 [p1] first line: look here",
+		"The bar is not for the last review's findings: report again each that still holds, whatever its severity",
+		"Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is)",
+		"main.go:1 [p1] first line: look here",
 		"What the last review checked at " + first[:7] + " and found sound", "\n- main.go: package clause read\n",
 		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
 	} {
@@ -2362,7 +2364,8 @@ func checkReworded(
 func checkEarlierPrompt(t *testing.T, prompt, prior string) {
 	t.Helper()
 	if strings.Contains(prompt, "Changed since the last review") || strings.Contains(prompt, "The last review's summary diagram") ||
-		!strings.Contains(prompt, "Findings from the last review (verify each; report again only if still present). "+
+		!strings.Contains(prompt, "Findings from the last review (verify each; report again every one still present, whatever "+
+			"its severity and wherever it is). "+
 			"They are claims an earlier automated review made about "+prior[:7]) ||
 		!strings.Contains(prompt, "main.go:1 [p1] first line: look here") ||
 		!strings.Contains(prompt, "What the last review checked at "+prior[:7]+" and found sound") {
