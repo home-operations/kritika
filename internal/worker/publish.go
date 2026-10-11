@@ -26,6 +26,7 @@ import (
 // database. It returns the final review status and, for a failure the
 // caller should surface, the error.
 type publishPhase struct {
+	tx       pgx.Tx
 	w        *Review
 	file     *configfile.File
 	account  *configfile.Account
@@ -58,6 +59,7 @@ type publishPhase struct {
 	// statusReported is set once incomplete has written the head's commit
 	// status with its reason, which the job's ending then leaves alone.
 	statusReported bool
+	checkpointed   bool
 	// confidence is the score judge got, nil when the repository asks for
 	// none or, with unscored set, when the scorer did not answer.
 	confidence *review.Confidence
@@ -75,21 +77,21 @@ type publishPhase struct {
 	resolved []priorFinding
 }
 
-// publicationAnswer is the finalized model output passed to delivery. Delivery
-// can use it without another merge or confidence call.
-type publicationAnswer struct {
-	result     review.Result
-	unanchored []review.Finding
-	notes      []string
-	model      string
-}
-
 // run publishes what the runner's agent submitted; the run's usage is
 // already recorded.
 func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	answer, err := p.prepare(job)
 	if err != nil {
 		return store.ReviewFailed, err
+	}
+	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
+		return store.ReviewSuperseded, cause
+	}
+	ctx, cancel := detach(job)
+	defer cancel()
+	p.checkpointed = true
+	if err := p.checkpoint(ctx, answer); err != nil {
+		return store.ReviewPrepared, err
 	}
 	return p.deliver(job, answer)
 }
@@ -106,7 +108,7 @@ func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) 
 	run := *p.agent
 	var diff, delta string
 	var deltaPaths []string
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	err := p.withAccount(ctx, func(tx pgx.Tx) error {
 		var err error
 		if diff, delta, _, err = store.ContextPackDiffs(ctx, tx, p.runID); err != nil || p.scope != review.ScopeIncremental {
 			return err
@@ -177,47 +179,7 @@ func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) 
 	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
 		notes = append(notes, note)
 	}
-	return &publicationAnswer{result: res, unanchored: unanchored, notes: notes, model: run.Model}, nil
-}
-
-func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (store.ReviewStatus, error) {
-	// A fenced job may be another replica's by now, its review on the way:
-	// the detached write-back must not post beside that one.
-	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
-		return store.ReviewSuperseded, cause
-	}
-	// Scoring had its own time; the write-back gets a whole bound after it.
-	ctx, cancel := detach(job)
-	defer cancel()
-	res, unanchored, notes := answer.result, answer.unanchored, answer.notes
-	pauseNote, err := p.autoReviewPauses(ctx)
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	if pauseNote != "" {
-		notes = append(notes, pauseNote)
-	}
-	commentID, inline, err := p.writeBack(ctx, res, unanchored, answer.model, append(notes, p.repoNotes...))
-	if err != nil {
-		return store.ReviewFailed, err
-	}
-	// Counted once posted: a review that failed to post is retried, and
-	// a pause it would have announced must not happen unannounced. The
-	// count gets a bound of its own, since the write-back's best-effort
-	// calls may have spent the last.
-	cctx, ccancel := detach(job)
-	defer ccancel()
-	if err := p.countAutoReview(cctx, pauseNote != ""); err != nil {
-		return store.ReviewFailed, err
-	}
-	p.countFindings(res)
-	if c := p.confidence; c != nil {
-		p.w.Metrics.ConfidenceScored(p.account.Key(), c.Score, string(c.Risk))
-	}
-	if err := p.persist(ctx, res, unanchored, inline, answer.model, commentID); err != nil {
-		return store.ReviewFailed, err
-	}
-	return store.ReviewCompleted, nil
+	return &publicationAnswer{Result: res, Unanchored: unanchored, Notes: notes, Model: run.Model}, nil
 }
 
 // autoReviewPauses returns the note the summary states when this review
@@ -228,7 +190,7 @@ func (p *publishPhase) autoReviewPauses(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	var pauses bool
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	err := p.withAccount(ctx, func(tx pgx.Tx) error {
 		var err error
 		pauses, err = store.AutoReviewPauses(ctx, tx, p.pr.id, p.settings.MaxAutoReviews)
 		return err
@@ -241,25 +203,6 @@ func (p *publishPhase) autoReviewPauses(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return review.AutoPausedNote(strings.TrimSuffix(login, "[bot]"), p.settings.MaxAutoReviews), nil
-}
-
-// countAutoReview counts this review towards the pull request's automatic
-// reviews, unless a human asked for it, pausing them when its summary
-// announced the pause.
-func (p *publishPhase) countAutoReview(ctx context.Context, pause bool) error {
-	if p.trigger == jobs.TriggerManual {
-		return nil
-	}
-	var pausedNow bool
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		var err error
-		pausedNow, err = store.CountAutoReview(ctx, tx, p.pr.id, pause)
-		return err
-	})
-	if pausedNow {
-		p.logger.Info("automatic reviews paused", "after", p.settings.MaxAutoReviews)
-	}
-	return err
 }
 
 // unfinishedParts is what the summary states for each part of a split
@@ -415,8 +358,8 @@ func (p *publishPhase) writeBack(
 	// same: it is neither resolved nor listed so, and keeps its thread.
 	reported := slices.Concat(res.Findings, unanchored)
 	onForge := alreadyInline(reported, p.prior.findings)
-	if p.settings.Review.InlineComments && len(reported) > 0 {
-		p.markOnForge(ctx, reported, onForge)
+	if err := p.markOnForge(ctx, reported, onForge); err != nil {
+		return 0, nil, err
 	}
 	for i := range res.Findings {
 		f := &res.Findings[i]
@@ -529,18 +472,19 @@ func (p *publishPhase) writeBack(
 // posted on the pull request, by the FindingMarker each carries, which the
 // database may not know: an attempt that posted and then died before
 // recording them, or a review whose record failed to write. A forge that
-// cannot be read leaves the database's answer to stand.
-func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Finding, onForge []store.InlinePosted) {
+// cannot be read leaves delivery pending rather than risking duplicates.
+func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Finding, onForge []store.InlinePosted) error {
+	if !p.settings.Review.InlineComments || len(findings) == 0 {
+		return nil
+	}
 	owner, repo := p.pr.ownerRepo()
 	login, err := p.client.BotLogin(ctx)
 	if err != nil {
-		p.logger.Warn("inline comments on the forge not checked", "error", err)
-		return
+		return fmt.Errorf("worker: reconcile inline comments: %w", err)
 	}
 	comments, err := p.client.ListInline(ctx, owner, repo, p.pr.number)
 	if err != nil {
-		p.logger.Warn("inline comments on the forge not checked", "error", err)
-		return
+		return fmt.Errorf("worker: reconcile inline comments: %w", err)
 	}
 	posted := markedInline(comments, login)
 	for i, f := range findings {
@@ -548,6 +492,7 @@ func (p *publishPhase) markOnForge(ctx context.Context, findings []review.Findin
 			onForge[i] = store.InlinePosted{Posted: true, ID: id}
 		}
 	}
+	return nil
 }
 
 // markedInline maps the fingerprint each of the bot's root inline comments
@@ -667,7 +612,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 	var stored int64
 	// The row is a shortcut: no row, or a read that failed, leaves the
 	// comment to be found on the forge by its marker.
-	_ = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	_ = p.withAccount(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT forge_comment_id FROM sticky_comments WHERE pull_request_id = $1`, p.pr.id).Scan(&stored)
 	})
 	return p.writeSticky(ctx, stored, body)
@@ -717,7 +662,7 @@ func (p *publishPhase) persist(
 	ctx context.Context, res review.Result, unanchored []review.Finding, inline []store.InlinePosted, modelName string, commentID int64,
 ) error {
 	recorded := review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}
-	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	return p.withAccount(ctx, func(tx pgx.Tx) error {
 		return store.RecordReviewResult(ctx, tx, store.ReviewResult{
 			AccountID: p.account.ID(), ReviewID: p.reviewID, PullRequestID: p.pr.id, Result: recorded, Inline: inline, Model: modelName,
 			CommentID: commentID, Confidence: p.confidence, Partial: p.unfinished > 0,
@@ -741,7 +686,7 @@ func (p *publishPhase) headSubject(ctx context.Context, owner, repo string) stri
 // completed in between.
 func (p *publishPhase) reviews(ctx context.Context) int {
 	var completed int
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	err := p.withAccount(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE pull_request_id = $1 AND status = 'completed'`, p.pr.id).Scan(&completed)
 	})
 	if err != nil {
@@ -759,7 +704,7 @@ func (p *publishPhase) cost(ctx context.Context) string {
 	}
 	var cost float64
 	var unpriced int64
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	err := p.withAccount(ctx, func(tx pgx.Tx) error {
 		var err error
 		cost, unpriced, err = store.PullCost(ctx, tx, p.pr.id)
 		return err

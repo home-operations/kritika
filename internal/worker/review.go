@@ -97,6 +97,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	logger := w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
+	if resumed, err := w.resumePublication(ctx, job, file, account, logger); resumed {
+		return err
+	}
 	clearSlotWait(ctx, logger, job)
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
@@ -228,6 +231,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		agent: agentOutcome,
 	}
 	status, perr := phase.run(ctx)
+	if phase.checkpointed {
+		return w.publicationEnded(ctx, job, phase, status, perr, started)
+	}
 	// Publishing finishes on a detached ctx, so a clean result stands even
 	// if ctx ended meanwhile: the comment and the commit status already say
 	// so. Only a publish that failed while ctx ended ends as canceled or

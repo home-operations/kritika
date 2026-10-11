@@ -357,3 +357,50 @@ func TestRecordRunnerRunLeavesUnknownTimesNull(t *testing.T) {
 		t.Fatalf("scheduled_at = %v, started_at = %v, phase = %s; want both NULL and the run failed", scheduled, started, phase)
 	}
 }
+
+func TestRescuePublication(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "alpha")
+	for _, tt := range []struct {
+		name                 string
+		attempt, maxAttempts int
+		cancel               bool
+		want                 ReviewStatus
+	}{
+		{name: "retry keeps its checkpoint prepared", attempt: 1, maxAttempts: 8, want: ReviewPrepared},
+		{name: "last attempt ends the review", attempt: 8, maxAttempts: 8, want: ReviewFailed},
+		{name: "cancel ends the review", attempt: 1, maxAttempts: 8, cancel: true, want: ReviewFailed},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			id := insertReview(t, ctx, s, account)
+			metadata := `{}`
+			if tt.cancel {
+				metadata = `{"cancel_attempted_at":"2026-01-01T00:00:00Z"}`
+			}
+			jobID := insertRiverJob(t, ctx, s, "review", "running", tt.attempt, tt.maxAttempts, 10*time.Minute, metadata)
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `UPDATE reviews SET status = 'prepared', publication = '{"Version":1}', river_job_id = $2 WHERE id = $1`, id, jobID)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			ok, err := s.RescueJob(ctx, AbandonedJob{ID: jobID, Kind: "review", Attempt: tt.attempt, MaxAttempts: tt.maxAttempts, CancelRequested: tt.cancel}, rescueStale, "lost heartbeat")
+			if err != nil || !ok {
+				t.Fatalf("rescue = %v, %v", ok, err)
+			}
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				p, err := ReadPublication(ctx, tx, jobID)
+				if err == nil && p.Status != tt.want {
+					t.Fatalf("status = %s, want %s", p.Status, tt.want)
+				}
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

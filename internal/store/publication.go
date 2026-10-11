@@ -12,6 +12,7 @@ import (
 // Publication is the checkpoint a review job resumes without model work.
 // Terminal checkpoints remain readable so a retry after completion is a no-op.
 type Publication struct {
+	CancelRequested                  bool
 	ReviewID, PullRequestID, HeadSHA string
 	Payload                          json.RawMessage
 	Status                           ReviewStatus
@@ -34,9 +35,9 @@ func SavePublication(ctx context.Context, tx pgx.Tx, reviewID string, payload js
 // the job has finalized its answer.
 func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, error) {
 	var p Publication
-	err := tx.QueryRow(ctx, `SELECT id, pull_request_id, head_sha, publication, status FROM reviews
+	err := tx.QueryRow(ctx, `SELECT id, pull_request_id, head_sha, publication, status, cancel_requested_at IS NOT NULL FROM reviews
 		WHERE river_job_id = $1 AND publication IS NOT NULL ORDER BY created_at DESC LIMIT 1`, jobID).
-		Scan(&p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status)
+		Scan(&p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status, &p.CancelRequested)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}

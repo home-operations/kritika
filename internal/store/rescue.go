@@ -106,7 +106,8 @@ func (s *Store) RescueJob(ctx context.Context, job AbandonedJob, stale time.Dura
 		return false, nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = left($2, 2000), finished_at = now()
-		WHERE river_job_id = $1 AND finished_at IS NULL`, job.ID, reason); err != nil {
+		WHERE river_job_id = $1 AND finished_at IS NULL
+		AND NOT ($3 AND publication IS NOT NULL)`, job.ID, reason, job.RescueState() == rivertype.JobStateRetryable); err != nil {
 		return false, fmt.Errorf("store: end the reviews of job %d: %w", job.ID, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
