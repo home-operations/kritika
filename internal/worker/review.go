@@ -132,12 +132,12 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	// An error on the last attempt has River discard the job, so nothing
 	// would replace the pending status.
 	defer func() {
-		if err == nil || publicationHandled || job.Attempt < job.MaxAttempts {
+		if publicationHandled || !reviewAttemptFailed(context.Cause(ctx), err, job.Attempt >= job.MaxAttempts) {
 			return
 		}
 		sctx, cancel := detach(ctx)
 		defer cancel()
-		if serr := client.SetStatus(sctx, owner, repo, args.HeadSHA, forge.StatusError, "kritika: review failed"); serr != nil {
+		if serr := client.SetStatus(sctx, owner, repo, args.HeadSHA, forge.StatusError, reviewFailedDescription); serr != nil {
 			logger.Warn("commit status not set", "error", serr)
 		}
 	}()
@@ -149,7 +149,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	defer func() {
 		mctx, cancel := detach(ctx)
 		defer cancel()
-		end(w.reviewOutcome(mctx, logger, args.AccountID, reviewID, err, job.Attempt >= job.MaxAttempts),
+		end(w.reviewOutcome(mctx, logger, args.AccountID, reviewID, err,
+			reviewAttemptFailed(context.Cause(ctx), err, job.Attempt >= job.MaxAttempts)),
 			w.otherReviewRunning(mctx, logger, args.AccountID, pr.id, reviewID))
 	}()
 	deadline, resources := file.RunnerFor()
@@ -196,19 +197,14 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	// still takes effect there. cctx is a detached copy for the terminal
 	// writes up to afterRun, which must still land once ctx itself has
 	// ended.
-	canceled := errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely)
 	cctx, cancel := detach(ctx)
 	defer cancel()
 	ended.jobName = res.JobName
 	if err := recordRun(cctx, w.Store, w.Metrics, account.Key(), args.AccountID, runID, jobs.QueueReview, res); err != nil {
-		if !canceled {
-			return err
-		}
-		// River will not retry a canceled job, so the review ends here
-		// whether or not its run's record could be written.
 		logger.Error("runner run not recorded", "error", err)
+		return w.finishEnded(ctx, ended, err)
 	}
-	if judged, err := w.judgeRun(ctx, cctx, job, ended, canceled, res, cause, agentErr); judged {
+	if judged, err := w.judgeRun(ctx, cctx, job, ended, res, cause, agentErr); judged {
 		return err
 	}
 	prep, status, err := w.afterRun(ctx, job, account, pr, eff, b.notes, client, reviewID, runID, prior,
@@ -239,24 +235,21 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		publicationHandled = true
 		return w.publicationEnded(ctx, job, phase, status, perr, started)
 	}
-	// Publishing finishes on a detached ctx, so a clean result stands even
-	// if ctx ended meanwhile: the comment and the commit status already say
-	// so. Only a publish that failed while ctx ended ends as canceled or
-	// timed out.
-	if perr != nil && ctx.Err() != nil {
-		return w.finishEnded(ctx, ended, perr)
+	decision := decidePublication(context.Cause(ctx), status, perr, false, job.Attempt >= job.MaxAttempts)
+	if decision.disposition == reviewInterrupted {
+		return w.finishInterrupted(ctx, ended, decision)
 	}
-	if perr != nil && status == store.ReviewFailed {
+	if perr != nil && decision.end.Status == store.ReviewFailed {
 		logger.Error("review failed", "error", perr)
 	}
-	logger.Info("review " + string(status))
-	w.Metrics.Review(account.Key(), string(status), time.Since(started))
+	logger.Info("review " + string(decision.end.Status))
+	w.Metrics.Review(account.Key(), string(decision.end.Status), time.Since(started))
 	fctx, fcancel := detach(ctx)
 	defer fcancel()
-	if status == store.ReviewFailed && !phase.statusReported {
-		return w.failReview(fctx, ended, patchID, errText(perr))
+	if decision.end.Status == store.ReviewFailed && !phase.statusReported {
+		return w.failReview(fctx, ended, patchID, decision.end.Error)
 	}
-	return w.finishReview(fctx, args.AccountID, reviewID, status, patchID, errText(perr))
+	return w.finishReview(fctx, args.AccountID, reviewID, decision.end.Status, patchID, decision.end.Error)
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know
@@ -683,8 +676,7 @@ func (w *Review) endReview(ctx context.Context, accountID, reviewID string, end 
 // client is stopping: River otherwise ends a job's ctx only when an admin
 // cancels the job or its timeout passes.
 func workerStopping(ctx context.Context) bool {
-	cause := context.Cause(ctx)
-	return ctx.Err() != nil && !errors.Is(cause, river.ErrJobCancelledRemotely) && !errors.Is(cause, context.DeadlineExceeded)
+	return stoppingCause(context.Cause(ctx))
 }
 
 // failRun ends a runner run that never got a Job.

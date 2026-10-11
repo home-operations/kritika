@@ -310,6 +310,7 @@ type agenticHarness struct {
 	svc    *ingest.Service
 	// insertOnly enqueues jobs without working them, as the web API does.
 	insertOnly *river.Client[pgx.Tx]
+	queue      *river.Client[pgx.Tx]
 	file       *configfile.File
 	account    *configfile.Account
 	other      *configfile.Account
@@ -406,6 +407,7 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	if err := client.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
+	h.queue = client
 	t.Cleanup(func() { _ = client.Stop(context.Background()) })
 	return h
 }
