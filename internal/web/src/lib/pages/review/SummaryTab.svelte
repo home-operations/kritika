@@ -38,6 +38,15 @@
   <p class="state-msg">No summary{d.review.status === 'running' || d.review.status === 'prepared' ? ' yet' : ''}.</p>
 {/if}
 
+{#if d.summary?.impact?.length}
+  <section class="panel" aria-labelledby="sum-impact">
+    <header class="panel-head"><h2 id="sum-impact">Merge impact</h2></header>
+    <div class="panel-body">
+      <Markdown text={d.summary.impact.map((note) => `- ${note}`).join('\n')} />
+    </div>
+  </section>
+{/if}
+
 {#if groups.length === 0}
   <p class="state-msg">No findings.</p>
 {/if}

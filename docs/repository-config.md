@@ -320,6 +320,7 @@ The summary template's dot is the review:
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                    |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
 | `.Result.Summary.Diagram`                                                    | Mermaid source for the flow the change adds or alters, "" unless `review.diagram` is on and the change has one           |
+| `.Result.Summary.Impact`                                                     | optional list of evidence-backed merge consequences and specific operational checks; empty when none are established       |
 | `.Result.Findings`                                                           | the findings, each as the inline template sees one; an earlier one an incremental re-review carried on unchecked has `.CarriedFrom`, the head it was last reported at, whose lines its `.URL` links |
 | `.Counts.P0`, `.Counts.P1`, `.Counts.P2`, `.Counts.Total`                   | the findings by severity and all of them, those outside the diff and those carried on unchecked included                 |
 | `.Unanchored`                                                                | the findings on lines the diff does not show                                                                             |

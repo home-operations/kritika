@@ -148,7 +148,7 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 	s.prID = e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha, labels)
 		VALUES ($1, $2, 7, $3, 'ada', 'head7', '[{"name":"bug","color":"f00"}]') RETURNING id::text`, s.accountID, s.repoID, "PR of "+slug)
 	s.reviewID = e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, model, finished_at, summary)
-		VALUES ($1, $2, 'head7', 'completed', 'push', 'acme/large', now(), '{"take":"ok","praise":["tests"]}')
+		VALUES ($1, $2, 'head7', 'completed', 'push', 'acme/large', now(), '{"take":"ok","praise":["tests"],"impact":["startup.go rebuilds the index on restart."]}')
 		RETURNING id::text`, s.accountID, s.prID)
 	e.exec(`INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation)
 		VALUES ($1, $2, 'a.go', 3, 'p0', 'nil deref', 'x'), ($1, $2, 'b.go', 9, 'p2', 'naming', 'y')`, s.accountID, s.reviewID)
@@ -303,6 +303,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/pulls?repo=wa/one", `"reviewCount":1,"costUsd":0.5`},
 		{a + "/reviews/" + e.a.reviewID, `"logTail":"tail of webapi-a"`},
 		{a + "/reviews/" + e.a.reviewID, `"ruleIds":["wrap-errors"]`},
+		{a + "/reviews/" + e.a.reviewID, `"impact":["startup.go rebuilds the index on restart."]`},
 		{a + "/reviews/" + e.a.reviewID, `"timeline":[{"index":0,"part":1,`},
 		{a + "/reviews/" + e.a.reviewID, `"parts":[{"paths":["a.go"],"stop":"submitted","error":"","steps":2}]`},
 		{a + "/reviews/" + e.a.reviewID + "/diff", `"diff":"diff of webapi-a"`},

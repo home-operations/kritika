@@ -67,6 +67,8 @@ type IncrementalInput struct {
 	// Checked are the last review's notes on what it checked and found
 	// sound.
 	Checked []string
+	// Impact is the last review's merge impact, to reassess at the current head.
+	Impact []string
 }
 
 // EarlierInput is what a full re-review is told of the last review.
@@ -77,6 +79,8 @@ type EarlierInput struct {
 	Findings []Finding
 	// Checked are its notes on what it checked and found sound.
 	Checked []string
+	// Impact is the last review's merge impact, to reassess at the current head.
+	Impact []string
 }
 
 // Reference is a repository file named as explaining the code, with what
@@ -369,10 +373,12 @@ func earlierSections(in Input, room int) string {
 		inc := in.Incremental
 		s = priorSection(inc.PriorHeadSHA, inc.Prior, room)
 		s += checkedSection(inc.PriorHeadSHA, inc.Checked, room-len(s))
+		s += priorImpactSection(inc.PriorHeadSHA, inc.Impact, room-len(s))
 	case in.Earlier != nil:
 		e := in.Earlier
 		s = priorSection(e.HeadSHA, e.Findings, room)
 		s += checkedSection(e.HeadSHA, e.Checked, room-len(s))
+		s += priorImpactSection(e.HeadSHA, e.Impact, room-len(s))
 	}
 	return s
 }
@@ -442,7 +448,7 @@ type ContinueInput struct {
 // %s is the head; the diagram's sentence follows when there is one.
 const continueClosing = "\n\nThen call submit_review again with the whole review of the pull request at %s: report again each " +
 	"of the last review's findings that still holds, naming its id in prior, list in resolved the ids of those that no " +
-	"longer hold, and add the new ones. The summary describes the whole change at %[1]s."
+	"longer hold, and add the new ones. The summary describes the whole change at %[1]s. " + reassessImpact
 
 const continueDiagram = " " + keepDiagram
 

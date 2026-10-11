@@ -156,6 +156,11 @@ func MergeParts(parts []Result) Result {
 			}
 		}
 		out.Summary.Checked = append(out.Summary.Checked, p.Summary.Checked...)
+		for _, note := range p.Summary.Impact {
+			if len(out.Summary.Impact) < maxImpact && !slices.Contains(out.Summary.Impact, note) {
+				out.Summary.Impact = append(out.Summary.Impact, note)
+			}
+		}
 		out.Findings = append(out.Findings, p.Findings...)
 		out.Resolved = append(out.Resolved, p.Resolved...)
 	}
