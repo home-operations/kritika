@@ -375,3 +375,16 @@ func TestVarsMatchFilterVars(t *testing.T) {
 		t.Fatalf("Vars = %v\nFilterVars = %v", got, want)
 	}
 }
+
+func TestMergeContextCollision(t *testing.T) {
+	admin := adminSettings()
+	admin.Review.Context = []configfile.ContextFile{{Path: "AGENTS.md", Description: "admin conventions"}}
+	got, err := Merge([]byte("context:\n  - {path: AGENTS.md, description: repository conventions, paths: ['svc/**']}\n"), admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Review.Context, admin.Review.Context) || !slices.Equal(got.Dropped,
+		[]string{".kritika.yaml: context AGENTS.md was dropped: an admin context entry has that path"}) {
+		t.Fatalf("context = %+v, dropped = %v", got.Review.Context, got.Dropped)
+	}
+}

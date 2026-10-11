@@ -35,9 +35,6 @@ root and no capabilities, as a service account with no permissions.
 - A repository's [`.kritika.yaml`](repository-config.md), its rule files
   and its skills are read from the merge base, never the pull request's
   own tree, so a pull request cannot rewrite them to steer its own review.
-- Context files, including explicitly listed `AGENTS.md` or `CLAUDE.md`,
-  are read from the pull request's head as reference material, not review
-  instructions.
 - `.kritika.yaml` can narrow the admin's settings and add rules, but
   [some keys](configuration.md#what-only-the-admin-sets) are the admin's
   alone: the agent's bounds and commands, `confidence.instructions`, so a
@@ -45,6 +42,12 @@ root and no capabilities, as a service account with no permissions.
 - A trigger condition in `.kritika.yaml` under a name the admin's lists
   use, or a rule under an admin's rule id, is dropped.
 - A skill grants no tool or command, whatever its frontmatter says.
+
+Context files, including explicitly listed `AGENTS.md` or `CLAUDE.md`,
+are read from the pull request's head. A pull request can change or delete
+them and thereby change the background material its reviewer reads. They
+are optional references, not trusted review instructions. Put requirements
+that a pull request must not rewrite in merge-base [rules](repository-config.md#rules).
 
 ## The egress gateway
 

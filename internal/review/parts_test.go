@@ -113,7 +113,7 @@ func TestBuildPart(t *testing.T) {
 	diff := sizedDiff(t, "a/x.go", 200, "b/y.go", 200)
 	in := Input{Repository: "a/b", Number: 1, Changed: []string{"a/x.go", "b/y.go"}, Diff: PartDiff(diff, []string{"b/y.go"}),
 		Part: &PartInput{Index: 2, Count: 2, Paths: []string{"b/y.go"}}}
-	msg, _, _ := Build(in)
+	msg, _, _, _ := Build(in)
 	for _, want := range []string{"- a/x.go\n- b/y.go (this part)\n", "reviewed in 2 parts", "this is part 2", "diff --git a/b/y.go"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("message lacks %q:\n%s", want, msg)
@@ -122,7 +122,7 @@ func TestBuildPart(t *testing.T) {
 	if strings.Contains(msg, "diff --git a/a/x.go") {
 		t.Fatalf("part 2's message shows part 1's diff:\n%s", msg)
 	}
-	if whole, _, _ := Build(Input{Repository: "a/b", Number: 1, Changed: in.Changed, Diff: diff}); strings.Contains(whole, "this part") {
+	if whole, _, _, _ := Build(Input{Repository: "a/b", Number: 1, Changed: in.Changed, Diff: diff}); strings.Contains(whole, "this part") {
 		t.Fatalf("a review that is not split names a part:\n%s", whole)
 	}
 }

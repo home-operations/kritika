@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
@@ -22,10 +23,12 @@ func TestCarryOn(t *testing.T) {
 	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "dismissed one"}}
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	tools := offeredTools(s, head, nil, nil)
-	fresh := loopPrompt(s, false)
+	s.Prompt.Context = []configfile.ContextFile{{Path: "web/AGENTS.md", Description: "frontend conventions", Paths: []string{"web/**"}}}
+	pack := packView{Diff: agentDiff, Changed: []string{"main.go", "web/app.ts"}, Scope: review.ScopeIncremental}
+	fresh := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
 	pr := s.Prompt.PullRequest
 	opening := func(body string) string {
-		msg, _, _ := review.Build(review.Input{Repository: s.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author,
+		msg, _, _, _ := review.Build(review.Input{Repository: s.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author,
 			Body: body, BaseRef: pr.BaseRef, Changed: []string{"main.go"}, Diff: agentDiff, BudgetTokens: review.UserBudget(fresh.system, 0)})
 		return msg
 	}
@@ -86,7 +89,7 @@ func TestCarryOn(t *testing.T) {
 			if got.carried == nil || got.carried.Tokens != 900 || got.system != fresh.system || got.submit.Name != fresh.submit.Name {
 				t.Fatalf("prompt = %+v", got)
 			}
-			for _, want := range []string{"moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
+			for _, want := range []string{"### web/AGENTS.md: frontend conventions", "moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
 				if !strings.Contains(got.user, want) {
 					t.Fatalf("missing %q in the next turn:\n%s", want, got.user)
 				}

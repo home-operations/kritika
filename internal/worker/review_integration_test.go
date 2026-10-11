@@ -1170,7 +1170,7 @@ func checkFollowUps(
 	if strings.Contains(system, "Repository instructions") || strings.Contains(system, "Keep functions small.") {
 		t.Fatalf("follow-up system prompt carries AGENTS.md:\n%s", system)
 	}
-	for _, want := range []string{"Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [p1] first line: look here", "<description>\nAdds b.\n</description>"} {
+	for _, want := range []string{"### AGENTS.md: Follow-up conventions", "Thread, oldest first", "<!-- kritika:pr-1 -->", "--- onedr0p", "[answer this]", "diff --git a/main.go", "Findings kritika posted", "main.go:1 [p1] first line: look here", "<description>\nAdds b.\n</description>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("follow-up prompt missing %q:\n%s", want, prompt)
 		}
@@ -1543,6 +1543,17 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("follow-up answers a qualifying mention and rate-limits the thread", func(t *testing.T) {
+		followConfig := configfiletest.Load(t, configYAML+"\ncontext:\n  - { path: AGENTS.md, description: Follow-up conventions }\n")
+		if err := appStore.ApplyConfig(ctx, followConfig); err != nil {
+			t.Fatal(err)
+		}
+		current.Set(followConfig)
+		t.Cleanup(func() {
+			current.Set(file)
+			if err := appStore.ApplyConfig(ctx, file); err != nil {
+				t.Fatal(err)
+			}
+		})
 		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account}, account.ID())
 	})
 

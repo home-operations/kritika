@@ -8,16 +8,15 @@ import (
 
 func TestSystemPrompt(t *testing.T) {
 	bare := SystemPrompt(nil, nil, nil, false, false, false)
-	got := bare
 	for _, want := range []string{"read_file", "grep", "list_files", "read_description", "verify", "anchor only to lines of the pull request's diff",
 		"A file the prompt leaves out is as\nmuch a part of that diff", "read_diff numbers each line as a finding anchors to it",
 		"marks new is an added line", systemReport + systemRules} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("missing %q in:\n%s", want, got)
+		if !strings.Contains(bare, want) {
+			t.Fatalf("missing %q in:\n%s", want, bare)
 		}
 	}
-	if strings.Contains(got, "run tool") {
-		t.Fatalf("a prompt without commands mentions the run tool:\n%s", got)
+	if strings.Contains(bare, "run tool") {
+		t.Fatalf("a prompt without commands mentions the run tool:\n%s", bare)
 	}
 
 	withCommands := SystemPrompt(nil, nil, []string{"curl", "rg"}, false, false, false)
@@ -117,7 +116,7 @@ func TestUserBudget(t *testing.T) {
 		if got != minUserBudget {
 			t.Fatalf("UserBudget = %d, want the floor of %d", got, minUserBudget)
 		}
-		msg, omitted, _ := Build(Input{Repository: "a/b", Number: 1, Changed: []string{"main.go"}, Diff: sampleDiff, BudgetTokens: got})
+		msg, omitted, _, _ := Build(Input{Repository: "a/b", Number: 1, Changed: []string{"main.go"}, Diff: sampleDiff, BudgetTokens: got})
 		if len(omitted) != 0 || !strings.Contains(msg, "+	z := 4") {
 			t.Fatalf("a small diff must fit the floor: omitted %v\n%s", omitted, msg)
 		}

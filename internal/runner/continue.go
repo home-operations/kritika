@@ -98,14 +98,14 @@ func carryOn(
 	fetched := slices.ContainsFunc(c.Messages, func(m model.Message) bool {
 		return slices.ContainsFunc(m.ToolCalls, func(tc model.ToolCall) bool { return tc.Name == "fetch_repo" })
 	})
-	user, omitted := review.BuildContinuation(review.ContinueInput{
+	user, omitted, referencesOmitted := review.BuildContinuation(review.ContinueInput{
 		PriorHeadSHA: p.PriorHead, HeadSHA: p.Head, DeltaDiff: delta, Prior: p.Prompt.Prior, Dismissed: p.Prompt.Dismissed,
-		Diagram: p.Prompt.Diagram, Fetched: fetched, BudgetTokens: budget,
+		Diagram: p.Prompt.Diagram, Fetched: fetched, BudgetTokens: budget, References: prompt.references,
 	})
 	logger.Info("carrying on the last review's conversation", "run", review.ShortSHA(p.Prompt.Continue.RunID), "tokens", c.Tokens,
 		"messages", len(c.Messages))
 	return agentPrompt{
 		system: prompt.system, user: user, submit: prompt.submit, validate: prompt.validate, fallback: prompt.fallback,
-		omitted: omitted, carried: c,
+		omitted: omitted, carried: c, references: prompt.references, referencesOmitted: referencesOmitted,
 	}
 }

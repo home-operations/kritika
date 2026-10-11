@@ -132,7 +132,7 @@ func BuildFollowUp(in Input, findings []Finding, thread []Message) string {
 
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens)
 	in.BudgetTokens = max(budget-tail.Len()/charsPerToken, minUserBudget)
-	msg, _, _ := Build(in)
+	msg, _, _, _ := Build(in)
 	return msg + tail.String()
 }
 

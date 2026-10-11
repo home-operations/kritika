@@ -577,7 +577,7 @@ var DefaultAgent = AgentSettings{
 const DefaultParts = 8
 
 // MinPromptTokens is the least agent.prompt takes: the system prompt, with
-// its repository instructions, and the pull request's description are paid
+// its rules and skills, and the pull request's description are paid
 // for out of the same budget, and below it little of the diff would fit.
 const MinPromptTokens = 8_000
 

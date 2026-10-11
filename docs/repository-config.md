@@ -181,8 +181,19 @@ generated and minified code, source maps and logs), is skipped.
 
 `context` lists files that explain the code, each a `path` with a
 `description` and optional `paths` globs, added after the admin's. The
-review is pointed at each file to read it with its own tools. A file with
-`paths` applies only when a changed path matches one of them.
+review or follow-up is pointed at each file to read it with its own tools,
+from the **pull request's head**. A pull request can change or delete that
+content. These are optional references, not instructions; requirements
+that must survive changes in the pull request belong in [rules](#rules).
+A file with `paths` applies only when a changed path matches one of them.
+If the admin already lists the same path, the admin's description and
+scope win, and the repository's entry is dropped with a summary note.
+Paths are not checked for existence when offered; a missing file produces
+a tool error if the reviewer tries to read it.
+
+Reference pointers reserve up to a quarter of the user prompt budget.
+An oversized list is shortened with a summary note; the prompt also says
+when pointers were omitted, including in follow-ups.
 
 ### Skills
 
@@ -257,23 +268,25 @@ in `.kritika.yaml`:
 context:
   - path: AGENTS.md
     description: Repository architecture and coding conventions
-  - path: web/CLAUDE.md
+  - path: web/AGENTS.md
     description: Frontend architecture and conventions
     paths: ["web/**"]
 ```
 
-Each entry is a pointer the reviewer can choose to read, not text inserted
-into its instructions. The file is read from the pull request's head,
-like any other reference, and its contents do not override review rules
-or skills. Directory-specific files must be listed explicitly; `paths`
-limits when each reference is offered.
+These follow the [context semantics](#context), including reading from the
+pull request's head. Directory-specific files must be listed explicitly;
+`paths` limits when each reference is offered. Name the file containing the
+actual text: `@AGENTS.md` imports and symlinks are not automatically
+followed, and tool paths are relative to the repository root.
 
 If your repository relied on automatic agent-file loading, add the
 references it needs before upgrading. Move requirements every applicable
 review must enforce into [rules](#rules), and review procedures into
 [skills](#skills). A rule can name a file containing review requirements;
 keep coding-agent workflows such as committing and opening pull requests
-out of that file.
+out of that file. Skills are available to reviews only, not follow-up
+answers; put requirements shared by both in rules. Unlisted agent files
+are not discovered or reported, so there is no per-review migration warning.
 
 ### Comment templates
 
@@ -396,16 +409,22 @@ A named exclusion shows in the skipped review's commit status:
 
 ## Limits
 
-A file that fails to parse is ignored as a whole, and noted rather than
-failing the review. Past any other limit, kritika leaves out, or cuts,
-what does not fit, and notes it in the summary:
+A configuration file that fails to parse is ignored as a whole, and noted
+rather than failing the review. Configuration and prompt limits below
+produce summary notes when content is omitted:
 
-| What                                             | Limit                                     |
-| ------------------------------------------------ | ----------------------------------------- |
-| `.kritika.yaml`, and each file it references     | 256 KiB                                   |
-| all of them together                             | 1 MiB                                     |
-| the rules in the prompt                          | 16 KiB of rule text, 32 KiB of rule files |
-| skills                                           | 50 read                                   |
-| a skill's description                            | 1024 characters                           |
-| the skills' names and descriptions in the prompt | 4 KiB                                     |
-| the skills given whole in the prompt             | 32 KiB; one past it is offered by name    |
+| What                                                 | Limit                                     |
+| ---------------------------------------------------- | ----------------------------------------- |
+| `.kritika.yaml`, each rule file and comment template | 256 KiB                                   |
+| those configuration files together                   | 1 MiB                                     |
+| the rules in the prompt                              | 16 KiB of rule text, 32 KiB of rule files |
+| skills                                               | 50 read                                   |
+| a skill's description                                | 1024 characters                           |
+| the skills' names and descriptions in the prompt     | 4 KiB                                     |
+| the skills given whole in the prompt                 | 32 KiB; one past it is offered by name    |
+
+Context file contents are read on demand by `read_file`, outside the
+configuration-file limits above. Each read is capped at `agent.output`
+(32 KiB by default), and blobs over 1 MiB are refused. A cut or refusal
+is reported in the tool response, not as a summary note; line ranges let
+the reviewer read more of a file within the blob limit.

@@ -60,12 +60,13 @@ const SkipUnchangedPatch = "unchanged_patch"
 // Notes the runner adds to the pack about the repository's files, which
 // the review's summary states.
 const (
-	noteRulesLeft      = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
-	noteDiffOmitted    = "%d diff file(s) left out of the prompt to fit its budget: %s"
-	noteContextOmitted = "%d context chunk(s) left out of the prompt to fit its budget"
-	noteDiffNotKept    = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
-	noteSplit          = "Reviewed in %d parts, each by an agent of its own"
-	noteSkillsUnloaded = "%d skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"
+	noteRulesLeft         = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
+	noteDiffOmitted       = "%d diff file(s) left out of the prompt to fit its budget: %s"
+	noteReferencesOmitted = "%d reference file(s) left out of the prompt to fit its budget"
+	noteContextOmitted    = "%d context chunk(s) left out of the prompt to fit its budget"
+	noteDiffNotKept       = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
+	noteSplit             = "Reviewed in %d parts, each by an agent of its own"
+	noteSkillsUnloaded    = "%d skill(s) offered by name rather than loaded, past the 32 KiB loaded skills are given"
 )
 
 // promptInputs is what the repository's files and the settings give the
@@ -120,13 +121,15 @@ func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, c
 // budget left out of the message. carried, when set, is the conversation
 // the agent carries on, and user then its next turn.
 type agentPrompt struct {
-	system, user   string
-	submit         model.ToolDef
-	validate       func(json.RawMessage) error
-	fallback       func(json.RawMessage) bool
-	omitted        []string
-	contextOmitted int
-	carried        *agent.Conversation
+	system, user      string
+	submit            model.ToolDef
+	validate          func(json.RawMessage) error
+	fallback          func(json.RawMessage) bool
+	omitted           []string
+	contextOmitted    int
+	referencesOmitted int
+	references        []review.Reference
+	carried           *agent.Conversation
 }
 
 // noteOmittedPaths is how many omitted paths a note names.
@@ -148,6 +151,9 @@ func (a agentPrompt) notes() []string {
 	}
 	if a.contextOmitted > 0 {
 		notes = append(notes, fmt.Sprintf(noteContextOmitted, a.contextOmitted))
+	}
+	if a.referencesOmitted > 0 {
+		notes = append(notes, fmt.Sprintf(noteReferencesOmitted, a.referencesOmitted))
 	}
 	return notes
 }
@@ -172,7 +178,7 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 		earlier = &review.EarlierInput{HeadSHA: p.PriorHead, Findings: p.Prompt.Prior, Checked: p.Prompt.PriorChecked}
 	}
 	pr := p.Prompt.PullRequest
-	user, omitted, contextOmitted := review.Build(review.Input{
+	user, omitted, contextOmitted, referencesOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
 		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
 		Incremental: incremental, Earlier: earlier, Dismissed: p.Prompt.Dismissed, References: in.references, Part: pack.Part,
@@ -181,6 +187,7 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 	return agentPrompt{
 		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,
 		fallback: review.Lenient(review.Check), omitted: omitted, contextOmitted: contextOmitted,
+		references: in.references, referencesOmitted: referencesOmitted,
 	}
 }
 
