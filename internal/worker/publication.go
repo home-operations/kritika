@@ -142,8 +142,9 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 		pr: &pullRequest{id: saved.PullRequestID, repositoryID: saved.RepositoryID, repository: saved.Repository,
 			number: saved.Number, headSHA: saved.HeadSHA, authorIsBot: saved.AuthorIsBot, closed: saved.Closed}}
 	defer func() {
-		if err != nil && publicationTerminal(job, err) {
-			err = w.failPublication(ctx, job.Args.AccountID, p, err, started)
+		decision := decidePublication(nil, "", err, true, job.Attempt >= job.MaxAttempts)
+		if decision.end.Status == store.ReviewFailed {
+			err = w.failPublication(ctx, job.Args.AccountID, p, decision, started)
 		}
 		if p.client != nil {
 			w.settlePublication(ctx, job.Args.AccountID, p)
@@ -175,11 +176,6 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	return true, w.publicationEnded(ctx, job, p, status, deliveryErr, started)
 }
 
-func publicationTerminal(job *river.Job[jobs.ReviewArgs], err error) bool {
-	_, canceled := errors.AsType[*river.JobCancelError](err)
-	return canceled || job.Attempt >= job.MaxAttempts
-}
-
 func (w *Review) settlePublication(ctx context.Context, accountID string, p *publishPhase) {
 	mctx, cancel := detach(ctx)
 	defer cancel()
@@ -191,31 +187,29 @@ func (w *Review) settlePublication(ctx context.Context, accountID string, p *pub
 	marks.settle(mctx, w.reviewOutcome(mctx, p.logger, accountID, p.reviewID, nil, false))
 }
 
-func (w *Review) failPublication(ctx context.Context, accountID string, p *publishPhase, cause error, started time.Time) error {
+func (w *Review) failPublication(ctx context.Context, accountID string, p *publishPhase, decision reviewDecision, started time.Time) error {
 	fctx, cancel := detach(ctx)
 	defer cancel()
-	ended, err := w.endReview(fctx, accountID, p.reviewID, store.ReviewEnd{
-		Status: store.ReviewFailed, Error: cause.Error(), OnlyUnfinished: true,
-	})
+	ended, err := w.endReview(fctx, accountID, p.reviewID, decision.end)
 	if err != nil {
 		return err
 	}
 	if !ended {
-		return cause
+		return decision.jobError()
 	}
-	p.logger.Error("publication failed", "review", p.reviewID, "error", cause)
+	p.logger.Error("publication failed", "review", p.reviewID, "error", decision.err)
 	if p.client != nil {
 		owner, repo := p.pr.ownerRepo()
-		if err := p.client.SetStatus(fctx, owner, repo, p.pr.headSHA, forge.StatusError, "kritika: publication failed"); err != nil {
+		if err := p.client.SetStatus(fctx, owner, repo, p.pr.headSHA, forge.StatusError, decision.description); err != nil {
 			p.logger.Warn("commit status not set", "error", err)
 		}
 	} else {
 		p.logger.Warn("publication status and reactions not set: forge client unavailable")
 	}
 	if p.account != nil {
-		w.Metrics.Review(p.account.Key(), string(store.ReviewFailed), time.Since(started))
+		w.Metrics.Review(p.account.Key(), string(decision.end.Status), time.Since(started))
 	}
-	return cause
+	return decision.jobError()
 }
 
 func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase, started time.Time) error {
@@ -229,6 +223,7 @@ func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.Revi
 func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase,
 	status store.ReviewStatus, err error, started time.Time,
 ) error {
+	decision := decidePublication(context.Cause(ctx), status, err, true, job.Attempt >= job.MaxAttempts)
 	if err == nil {
 		if status != "" {
 			w.Metrics.Review(p.account.Key(), string(status), time.Since(started))
@@ -239,8 +234,8 @@ func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.Revie
 	owner, repo := p.pr.ownerRepo()
 	e := endedReview{accountID: p.account.ID(), accountKey: p.account.Key(), reviewID: p.reviewID,
 		headSHA: p.pr.headSHA, owner: owner, repo: repo, client: p.client, started: started, logger: p.logger}
-	if ctx.Err() != nil && !workerStopping(ctx) {
-		return w.finishEnded(ctx, e, err)
+	if decision.disposition == reviewFinish {
+		return w.finishInterrupted(ctx, e, decision)
 	}
 	// Cancellation is durable before its notification can arrive. Prepared jobs
 	// remain retryable so a request racing this read is handled on their retry.
@@ -255,11 +250,11 @@ func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.Revie
 	if readErr == nil && saved.CancelRequested {
 		return w.cancelPublication(ctx, job, p, started)
 	}
-	if publicationTerminal(job, err) {
-		return w.failPublication(ctx, p.account.ID(), p, err, started)
+	if decision.end.Status == store.ReviewFailed {
+		return w.failPublication(ctx, p.account.ID(), p, decision, started)
 	}
 	p.logger.Warn("publication will be retried", "review", p.reviewID, "error", err)
-	return errors.Join(err, readErr)
+	return errors.Join(decision.jobError(), readErr)
 }
 
 func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (store.ReviewStatus, error) {
@@ -298,11 +293,11 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 		return store.ReviewCanceled, river.ErrJobCancelledRemotely
 	}
 	if !current {
-		ended, err := p.w.endReview(ctx, p.account.ID(), p.reviewID, store.ReviewEnd{
-			Status: store.ReviewSuperseded, OnlyUnfinished: true,
-		})
+		decision := decidePreparedReview(true, "", false)
+		decision.end.OnlyUnfinished = true
+		ended, err := p.w.endReview(ctx, p.account.ID(), p.reviewID, decision.end)
 		if ended {
-			return store.ReviewSuperseded, err
+			return decision.end.Status, err
 		}
 		return "", err
 	}

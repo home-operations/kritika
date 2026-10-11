@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -65,16 +64,18 @@ func (w *Review) afterRun(
 	if err != nil {
 		return prepared{}, "", err
 	}
-	if superseded {
+	decision := decidePreparedReview(superseded, pack.SkipReason, false)
+	if decision.end.Status == store.ReviewSuperseded {
 		logger.Info("review superseded", "patch_id", review.ShortSHA(pack.PatchID))
-		return prepared{}, store.ReviewSuperseded, w.finishReview(ctx, args.AccountID, reviewID, store.ReviewSuperseded, pack.PatchID, "")
+		return prepared{}, decision.end.Status, w.finishReview(ctx, args.AccountID, reviewID, decision.end.Status, pack.PatchID, "")
 	}
 	for stage, n := range pack.StageCounts {
 		w.Metrics.ContextChunks(account.Key(), stage, n)
 	}
-	if pack.SkipReason != "" {
+	if decision.end.Status == store.ReviewSkipped {
 		logger.Info("review skipped", "reason", pack.SkipReason, "patch_id", review.ShortSHA(pack.PatchID))
-		end := store.ReviewEnd{Status: store.ReviewSkipped, PatchID: pack.PatchID, SkipReason: pack.SkipReason}
+		end := decision.end
+		end.PatchID = pack.PatchID
 		moved := false
 		if pack.SkipReason == string(repoconfig.SkipFiltered) {
 			moved, err = w.endFiltered(ctx, job, pr.id, reviewID, end, judged)
@@ -103,9 +104,9 @@ func (w *Review) afterRun(
 		carryApproval(ctx, logger, client, pr, eff.Settings, carried)
 		if moved {
 			logger.Info("labels moved while the runner judged the filter; the review is judged again")
-			return prepared{}, store.ReviewSkipped, river.JobSnooze(time.Second)
 		}
-		return prepared{}, store.ReviewSkipped, nil
+		decision = decidePreparedReview(false, pack.SkipReason, moved)
+		return prepared{}, decision.end.Status, decision.jobError()
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, prior.id)
@@ -117,7 +118,7 @@ func (w *Review) afterRun(
 	return prepared{
 		patchID: pack.PatchID, eff: eff, templates: eff.templates(pack.Files), notes: append(slices.Clone(notes), pack.Notes...),
 		scope: pack.Scope, ruleIDs: pack.RuleIDs,
-	}, store.ReviewPrepared, nil
+	}, decision.end.Status, nil
 }
 
 // endFiltered ends a review the runner skipped as filtered, and reports
