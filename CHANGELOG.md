@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.60](https://github.com/home-operations/kritika/compare/0.0.59...0.0.60) (2026-10-11)
+
+
+### Bug Fixes
+
+* **followup:** answer a review request with reactions alone, without the reply fallback ([#870](https://github.com/home-operations/kritika/issues/870)) ([392f666](https://github.com/home-operations/kritika/commit/392f6668ecb59aea4c140c905960fb734040b09d))
+* harden index updates and bound review workloads ([#869](https://github.com/home-operations/kritika/issues/869)) ([3f2d0e5](https://github.com/home-operations/kritika/commit/3f2d0e5dc74e1a75a70734d538603dd591d81b29))
+
 ## [0.0.59](https://github.com/home-operations/kritika/compare/0.0.58...0.0.59) (2026-10-11)
 
 
