@@ -65,7 +65,7 @@ func analyticsTotals(t store.AnalyticsTotals) AnalyticsTotals {
 	return AnalyticsTotals{
 		PullRequests: t.PullRequests, Reviews: t.Reviews, Failed: t.Failed, Findings: severityCounts(t.Findings),
 		Categories: categoryCounts(t.Categories), Addressed: t.Addressed, ReactionsUp: t.ReactionsUp, ReactionsDown: t.ReactionsDown,
-		CostUSD:        t.CostUSD,
+		CostUSD: t.CostUSD, UnpricedCalls: t.UnpricedCalls,
 		MedianReviewMs: t.MedianReviewMs, MedianMergeMs: t.MedianMergeMs,
 	}
 }

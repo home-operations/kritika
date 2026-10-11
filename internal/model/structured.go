@@ -46,7 +46,7 @@ func (s Structured) Complete(ctx context.Context, req CompletionRequest) (Comple
 			return CompletionResponse{
 				Raw: strings.TrimSpace(string(c.Input)), Model: resp.Model, Upstream: resp.Upstream,
 				InputTokens: resp.Usage.Prompt(), CachedTokens: resp.Usage.CacheRead, OutputTokens: resp.Usage.Output,
-				CostUSD: resp.CostUSD,
+				CostUSD: resp.CostUSD, Unpriced: resp.Unpriced,
 			}, nil
 		}
 	}

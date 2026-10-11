@@ -22,6 +22,54 @@ func (f *File) Provider(t *Account, name string) (Provider, bool) {
 	return p, ok
 }
 
+// UnpricedModel is a configured model whose calls will be unpriced.
+type UnpricedModel struct {
+	// Setting names where the file sets it, as its errors would.
+	Setting string
+	Ref     ModelRef
+}
+
+// UnpricedModels lists the review, fallback and confidence models of the
+// file's own settings and of every account's entries whose provider's API
+// reports no cost, as anthropic's and openai's do not, and whose pricing
+// has no price under the model as written: its id, or the floating alias
+// that prices whatever model it selects. A repository's .kritika.yaml is
+// read only when it is reviewed, so its models are not listed.
+func (f *File) UnpricedModels() []UnpricedModel {
+	var out []UnpricedModel
+	check := func(where string, t *Account, r *Overrides) {
+		for _, m := range []struct {
+			key string
+			ref *ModelRef
+		}{
+			{keyModel, r.Review.Model}, {keyFallback, r.Review.Fallback},
+			{keyScorer, r.Confidence.Model}, {keyScorerFallback, r.Confidence.Fallback},
+		} {
+			if m.ref == nil || *m.ref == "" {
+				continue
+			}
+			p, ok := f.Provider(t, m.ref.Provider())
+			if !ok || (p.Type != ProviderAnthropic && p.Type != ProviderOpenAI) {
+				continue
+			}
+			if _, priced := p.Pricing[m.ref.Model()]; !priced {
+				out = append(out, UnpricedModel{Setting: where + m.key, Ref: *m.ref})
+			}
+		}
+	}
+	check("", nil, &f.Defaults.Overrides)
+	for i := range f.Accounts {
+		a := &f.Accounts[i]
+		if a.pattern != "" {
+			check(a.pattern+".", a, &a.Overrides)
+		}
+		for j := range a.Repositories {
+			check(a.Repositories[j].where+".", a, &a.Repositories[j].Overrides)
+		}
+	}
+	return out
+}
+
 // ChatGPTProviders returns the chatgpt providers account t can use, the
 // instance's and its own, by name. t may be nil.
 func (f *File) ChatGPTProviders(t *Account) map[string]Provider {

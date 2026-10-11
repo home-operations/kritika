@@ -227,6 +227,9 @@ type StepResponse struct {
 	// CostUSD is the provider's reported cost, else the cost Pricing gives,
 	// else zero.
 	CostUSD float64
+	// Unpriced means neither an upstream cost nor a configured price was
+	// available. CostUSD is then zero, but the call was not known to be free.
+	Unpriced bool
 	// ChatGPTPlan identifies calls covered by a plan, whose per-call cost is zero.
 	ChatGPTPlan bool
 	// Model is the model that answered: the one OpenRouter reports after
@@ -284,6 +287,8 @@ type CompletionResponse struct {
 	OutputTokens int64
 	// CostUSD is the reported or computed cost, zero when neither is known.
 	CostUSD float64
+	// Unpriced is StepResponse.Unpriced.
+	Unpriced bool
 }
 
 // Embedder turns texts into vectors and reports the tokens it spent.

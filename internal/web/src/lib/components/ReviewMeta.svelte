@@ -24,7 +24,7 @@
   <div>
     <dt>API spend</dt>
     <dd>
-      {callCost(r.costUsd, !!r.planCalls && r.planCalls === r.calls)}
+      {callCost(r.costUsd, !!r.planCalls && r.planCalls === r.calls, !!r.unpricedCalls)}
       {#if r.planCalls}<span class="badge">ChatGPT plan</span>{/if}
     </dd>
   </div>

@@ -19,6 +19,7 @@ type Steppers struct {
 
 	mu       sync.Mutex
 	steppers map[string]model.Stepper
+	unpriced map[[3]string]bool
 }
 
 // Stepper returns the adapter for the named provider of account t in f: the

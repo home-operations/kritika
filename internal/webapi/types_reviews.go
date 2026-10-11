@@ -115,6 +115,7 @@ type AgentRun struct {
 	CommandsRun     []string        `json:"commandsRun"`
 	Usage           Usage           `json:"usage"`
 	CostUSD         float64         `json:"costUsd"`
+	UnpricedSteps   int64           `json:"unpricedSteps,omitzero"`
 	Model           string          `json:"model"`
 	Error           string          `json:"error"`
 	CreatedAt       time.Time       `json:"createdAt"`
@@ -146,6 +147,7 @@ type UsageRow struct {
 	OutputTokens int64     `json:"outputTokens"`
 	CostUSD      float64   `json:"costUsd"`
 	ChatGPTPlan  bool      `json:"chatgptPlan,omitzero"`
+	Unpriced     bool      `json:"unpriced,omitzero"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 

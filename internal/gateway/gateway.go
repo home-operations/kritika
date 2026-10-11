@@ -246,7 +246,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := configfile.ModelRef(c.grant.Model)
-	route, err := g.Steppers.Route(c.file, c.account, ref)
+	route, err := g.Steppers.Route(c.file, c.account, ref, c.logger)
 	if err != nil {
 		c.logger.Error("gateway: no model adapter", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
@@ -280,7 +280,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// The review model's attempts spent, a fallback on another
 		// provider gets the same step, unless the configuration no longer
 		// has it, which the step then does without.
-		if fallback, err := g.Steppers.Route(c.file, c.account, fb); err != nil {
+		if fallback, err := g.Steppers.Route(c.file, c.account, fb, c.logger); err != nil {
 			c.logger.Error("gateway: no adapter for the fallback", "fallback", fb, "error", err)
 		} else {
 			call.Fallback = &fallback
@@ -306,7 +306,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	resp, attempts, served, err := call.Do(sctx, req)
 	took := time.Since(start)
 	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(served.Ref, resp.Model), c.role(), adapter.Outcome(err), resp.Usage.Prompt(),
-		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD)
+		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD, resp.Unpriced)
 	if cerr := g.charge(ctx, c, reserved, resp, err == nil); cerr != nil {
 		// A step that was answered is paid for either way; the run still
 		// gets the answer.
@@ -415,7 +415,7 @@ func (g *Server) charge(ctx context.Context, c runCall, reserved int64, resp mod
 		return store.InsertUsage(ctx, tx, store.Usage{
 			AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, ReviewID: c.usageReview(), Role: c.role(), Model: resp.Model,
 			Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
-			ChatGPTPlan: resp.ChatGPTPlan, RunnerRunID: grant.RunID,
+			ChatGPTPlan: resp.ChatGPTPlan, Unpriced: resp.Unpriced, RunnerRunID: grant.RunID,
 		})
 	})
 	return errors.Join(budgetErr, usageErr)

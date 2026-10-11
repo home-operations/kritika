@@ -43,6 +43,25 @@ embedding:
 Provider credentials never enter a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](security.md#the-model-endpoint)).
 
+### Cost accounting
+
+Review, follow-up and confidence calls use the provider's reported cost
+when present, otherwise the model's configured `pricing`. Without either,
+kritika warns on the first unpriced call for each account, provider and
+selected model in each process, naming the requested model reference and
+selected ID. This also covers fallbacks, repository overrides and new IDs
+selected by floating aliases. At startup it also warns for each model the
+configuration file sets on an `anthropic` or `openai` provider, whose APIs
+report no cost, when `pricing` has no price under the model as written.
+
+The dashboard labels these calls **Unpriced** and marks totals containing
+them as incomplete, as does the summary footer with `review.cost`, and
+`kritika_model_unpriced_calls_total` counts them
+([metrics](metrics.md)). Per-review averages are of the reviews whose cost
+is known. An explicit zero price or an upstream-reported zero remains $0;
+ChatGPT calls remain included in the plan. Existing history is not
+reclassified. Tokens count against an account's `limits` either way.
+
 ### An account's own keys
 
 An account's entry under [`accounts`](configuration.md#accounts) can
@@ -487,7 +506,7 @@ embedding:
   through their gateway. With the chart's `networkPolicy.enabled`,
   add the server's port to `networkPolicy.egressPorts`, which allows only
   443 unless set.
-- A server that reports no cost makes every call cost nothing unless
+- A server that reports no cost leaves calls unpriced unless
   `pricing` gives the model's prices, in dollars per million tokens of
   `input`, `output`, `cacheRead` and `cacheWrite`, keyed by the model's
   id on the server. Tokens count against an account's `limits` either
@@ -520,5 +539,5 @@ review: { model: opencode/glm-5.3, fallback: zen/qwen3.8-max }
 - Only the models the gateway serves on `/v1/chat/completions` can be
   used; its endpoint tables say which. Models it serves on
   `/v1/responses` or `/v1/messages` cannot.
-- A response that reports no cost makes the call cost nothing unless
+- A response that reports no cost leaves the call unpriced unless
   `pricing` gives the model's prices, as for a local model.

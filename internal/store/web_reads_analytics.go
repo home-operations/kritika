@@ -42,6 +42,7 @@ type AnalyticsTotals struct {
 	ReactionsUp   int
 	ReactionsDown int
 	CostUSD       float64
+	UnpricedCalls int64
 	// MedianReviewMs is nil when no review completed, and MedianMergeMs,
 	// from opened to merged, when no pull request kritika knows merged.
 	MedianReviewMs *int64
@@ -91,8 +92,8 @@ func ReadAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time) (An
 	}); err != nil {
 		return t, fmt.Errorf("store: analytics categories: %w", err)
 	}
-	err = tx.QueryRow(ctx, `SELECT coalesce(sum(cost_usd), 0)::float8 FROM usage WHERE created_at >= $1 AND created_at < $2`, from, to).
-		Scan(&t.CostUSD)
+	err = tx.QueryRow(ctx, `SELECT coalesce(sum(cost_usd), 0)::float8, count(*) FILTER (WHERE unpriced)
+		FROM usage WHERE created_at >= $1 AND created_at < $2`, from, to).Scan(&t.CostUSD, &t.UnpricedCalls)
 	if err != nil {
 		return t, fmt.Errorf("store: analytics spend: %w", err)
 	}

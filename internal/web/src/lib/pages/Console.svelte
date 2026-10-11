@@ -6,7 +6,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
-  import { tokens, usd, wholeNumber } from '../format';
+  import { tokens, costTotal, wholeNumber } from '../format';
   import type { InstanceSetting, AdminAccount } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
@@ -70,7 +70,7 @@
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>
                     <td class="num">{tokens(t.usage.tokens)}</td>
-                    <td class="num">{usd(t.usage.costUsd)}</td>
+                    <td class="num">{costTotal(t.usage.costUsd, t.usage.unpricedCalls)}</td>
                   </tr>
                 {/each}
               </tbody>

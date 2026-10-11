@@ -281,10 +281,10 @@ func (w *Index) embed(
 			}
 			vectors, used, err := embedder.Embed(ctx, texts)
 			if err != nil {
-				w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "error", 0, 0, 0, 0)
+				w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "error", 0, 0, 0, 0, false)
 				return err
 			}
-			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "ok", used, 0, 0, 0)
+			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "ok", used, 0, 0, 0, false)
 			tokens += used
 			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 				return store.InsertIndexChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)

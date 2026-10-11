@@ -69,6 +69,7 @@ type Turn struct {
 	Usage        Usage      `json:"usage"`
 	CostUSD      float64    `json:"costUsd"`
 	ChatGPTPlan  bool       `json:"chatgptPlan,omitzero"`
+	Unpriced     bool       `json:"unpriced,omitzero"`
 	DurationMs   int64      `json:"durationMs"`
 	Error        string     `json:"error"`
 	Truncated    bool       `json:"truncated"`

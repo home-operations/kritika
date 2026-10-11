@@ -43,8 +43,9 @@ type Pull struct {
 	LastReview *ReviewBrief `json:"lastReview"`
 	// ReviewCount is how many of its reviews completed; CostUSD is what
 	// all of them spent, the ones that did not complete included.
-	ReviewCount int     `json:"reviewCount"`
-	CostUSD     float64 `json:"costUsd"`
+	ReviewCount   int     `json:"reviewCount"`
+	CostUSD       float64 `json:"costUsd"`
+	UnpricedCalls int64   `json:"unpricedCalls,omitzero"`
 }
 
 // Attention counts the account's open pull requests that want a look, by

@@ -24,8 +24,19 @@ export function usd(n: number): string {
   return `$${cents.format(n)}`;
 }
 
-export function callCost(n: number, chatgptPlan = false): string {
-  return chatgptPlan ? 'Included in plan' : usd(n);
+export function costTotal(n: number, unpricedCalls = 0): string {
+  if (!unpricedCalls) return usd(n);
+  return n === 0 ? 'Unpriced' : `${usd(n)} + unpriced`;
+}
+
+// reviewsLeftOut says how many reviews a per-review figure leaves out for
+// their unpriced calls, whose cost is not known; empty for none.
+export function reviewsLeftOut(unpricedReviews = 0): string {
+  return unpricedReviews ? ` · ${wholeNumber(unpricedReviews)} with unpriced calls left out` : '';
+}
+
+export function callCost(n: number, chatgptPlan = false, unpriced = false): string {
+  return chatgptPlan ? 'Included in plan' : costTotal(n, Number(unpriced));
 }
 
 export function duration(ms: number | null | undefined): string {

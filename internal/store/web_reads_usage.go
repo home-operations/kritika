@@ -64,6 +64,7 @@ type UsageSeriesRow struct {
 	CostUSD          float64
 	Calls            int64
 	PlanCalls        int64
+	UnpricedCalls    int64
 }
 
 // UsageSeries sums the account's usage in [from, to) by group, ordered by
@@ -75,7 +76,8 @@ func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time
 	}
 	rows, err := tx.Query(ctx, `WITH billed AS (
 			SELECT `+keys[0]+` AS key, sum(u.input_tokens) AS input, sum(u.output_tokens) AS output,
-				sum(u.cost_usd)::float8 AS cost, count(*) AS calls, count(*) FILTER (WHERE u.chatgpt_plan) AS plan_calls
+				sum(u.cost_usd)::float8 AS cost, count(*) AS calls, count(*) FILTER (WHERE u.chatgpt_plan) AS plan_calls,
+				count(*) FILTER (WHERE u.unpriced) AS unpriced_calls
 			FROM usage u LEFT JOIN repositories ur ON ur.id = u.repository_id
 			WHERE u.created_at >= $1 AND u.created_at < $2 AND (NOT $3::boolean OR u.chatgpt_plan) GROUP BY 1),
 		cached AS (
@@ -84,14 +86,15 @@ func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time
 				LEFT JOIN pull_requests mp ON mp.id = mv.pull_request_id LEFT JOIN repositories mr ON mr.id = mp.repository_id
 			WHERE m.created_at >= $1 AND m.created_at < $2 AND (NOT $3::boolean OR m.chatgpt_plan) GROUP BY 1)
 		SELECT coalesce(b.key, c.key), coalesce(b.input, 0), coalesce(c.cache_read, 0), coalesce(c.cache_write, 0),
-			coalesce(b.output, 0), coalesce(b.cost, 0), coalesce(b.calls, 0), coalesce(b.plan_calls, 0)
+			coalesce(b.output, 0), coalesce(b.cost, 0), coalesce(b.calls, 0), coalesce(b.plan_calls, 0), coalesce(b.unpriced_calls, 0)
 		FROM billed b FULL JOIN cached c ON c.key = b.key ORDER BY 1`, from, to, chatgptOnly)
 	if err != nil {
 		return nil, fmt.Errorf("store: usage series: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (UsageSeriesRow, error) {
 		var u UsageSeriesRow
-		err := row.Scan(&u.Key, &u.InputTokens, &u.CacheReadTokens, &u.CacheWriteTokens, &u.OutputTokens, &u.CostUSD, &u.Calls, &u.PlanCalls)
+		err := row.Scan(&u.Key, &u.InputTokens, &u.CacheReadTokens, &u.CacheWriteTokens, &u.OutputTokens, &u.CostUSD,
+			&u.Calls, &u.PlanCalls, &u.UnpricedCalls)
 		return u, err
 	})
 	if err != nil {

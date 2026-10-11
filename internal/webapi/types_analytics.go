@@ -33,6 +33,7 @@ type AnalyticsTotals struct {
 	ReactionsUp    int                     `json:"reactionsUp"`
 	ReactionsDown  int                     `json:"reactionsDown"`
 	CostUSD        float64                 `json:"costUsd"`
+	UnpricedCalls  int64                   `json:"unpricedCalls,omitzero"`
 	MedianReviewMs *int64                  `json:"medianReviewMs"`
 	MedianMergeMs  *int64                  `json:"medianMergeMs"`
 }

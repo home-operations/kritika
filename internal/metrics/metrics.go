@@ -34,6 +34,7 @@ type Metrics struct {
 	modelCalls     *prometheus.CounterVec
 	modelTokens    *prometheus.CounterVec
 	modelCost      *prometheus.CounterVec
+	modelUnpriced  *prometheus.CounterVec
 	egress         *prometheus.CounterVec
 	forgeLimits    *prometheus.CounterVec
 	transcripts    *prometheus.CounterVec
@@ -136,10 +137,15 @@ func New(reg prometheus.Registerer) *Metrics {
 		modelCost: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
 		}, []string{lblAccount, lblModel, lblRole}),
+		modelUnpriced: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_model_unpriced_calls_total",
+			Help: "Model calls with no reported cost and no configured price, by role; kritika_model_cost_usd_total leaves them out.",
+		}, []string{lblAccount, lblModel, lblRole}),
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.threads, m.findings, m.confidence,
 		m.indexRuns, m.indexChunks, m.contextChunks,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.egress,
+		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.modelUnpriced,
+		m.egress,
 		m.forgeLimits, m.transcripts,
 		m.leader)
 	return m
@@ -250,8 +256,11 @@ func (m *Metrics) JobRescued(kind, state string) {
 
 // ModelCall records one call: outcome is ok or error; tokens and cost are
 // added only for ok. cachedTokens is the part of inputTokens the provider
-// served from its prompt cache.
-func (m *Metrics) ModelCall(account, model, role, outcome string, inputTokens, cachedTokens, outputTokens int64, costUSD float64) {
+// served from its prompt cache; unpriced says nothing gave the call a
+// cost, so costUSD is no measure of it.
+func (m *Metrics) ModelCall(
+	account, model, role, outcome string, inputTokens, cachedTokens, outputTokens int64, costUSD float64, unpriced bool,
+) {
 	if m == nil {
 		return
 	}
@@ -270,6 +279,9 @@ func (m *Metrics) ModelCall(account, model, role, outcome string, inputTokens, c
 	}
 	if costUSD > 0 {
 		m.modelCost.WithLabelValues(account, model, role).Add(costUSD)
+	}
+	if unpriced {
+		m.modelUnpriced.WithLabelValues(account, model, role).Inc()
 	}
 }
 

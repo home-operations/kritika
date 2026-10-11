@@ -187,6 +187,10 @@ func serve(
 	m := metrics.New(reg)
 	reg.MustRegister(metrics.NewPoolCollector(st.PoolStats()))
 	logConfig(logger, file, "configuration loaded")
+	for _, u := range file.UnpricedModels() {
+		logger.Warn("model is unpriced: its provider reports no cost and pricing has no price for it; configure provider pricing",
+			"setting", u.Setting, "model_ref", u.Ref)
+	}
 	// Once read, a secret's variable is dropped, so no later lookup or
 	// child process sees it.
 	for _, name := range file.SecretEnv() {

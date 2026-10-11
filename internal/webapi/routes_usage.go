@@ -64,7 +64,7 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScop
 	for i, u := range rows {
 		out.Rows[i] = UsagePoint{
 			Key: u.Key, InputTokens: u.InputTokens, CacheReadTokens: u.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens,
-			OutputTokens: u.OutputTokens, CostUSD: u.CostUSD, Calls: u.Calls, PlanCalls: u.PlanCalls,
+			OutputTokens: u.OutputTokens, CostUSD: u.CostUSD, Calls: u.Calls, PlanCalls: u.PlanCalls, UnpricedCalls: u.UnpricedCalls,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

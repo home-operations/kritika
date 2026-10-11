@@ -19,11 +19,11 @@ func (p Price) Cost(u Usage) float64 {
 type Pricing map[string]Price
 
 // cost is what u costs on modelID, priced under alias, the floating alias
-// that selected it, when it has no price of its own; zero without either.
-func (p Pricing) cost(modelID, alias string, u Usage) float64 {
+// that selected it, when it has no price of its own; unpriced without either.
+func (p Pricing) cost(modelID, alias string, u Usage) (cost float64, unpriced bool) {
 	price, ok := p[modelID]
 	if !ok {
-		price = p[alias]
+		price, ok = p[alias]
 	}
-	return price.Cost(u)
+	return price.Cost(u), !ok
 }

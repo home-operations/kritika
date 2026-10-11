@@ -32,6 +32,7 @@ type StoredRow struct {
 	Usage             model.Usage
 	CostUSD           float64
 	ChatGPTPlan       bool
+	Unpriced          bool
 	Duration          time.Duration
 	Error             string
 	Truncated         bool
@@ -74,6 +75,7 @@ type Turn struct {
 	Usage             model.Usage
 	CostUSD           float64
 	ChatGPTPlan       bool
+	Unpriced          bool
 	Duration          time.Duration
 	Error             string
 	Truncated         bool
@@ -121,7 +123,7 @@ func Rebuild(rows []StoredRow) Conversation {
 			ID: r.ID, Kind: r.Kind, Step: r.Step, Part: r.Part, RunnerRunID: r.RunnerRunID, FollowupCommentID: r.FollowupCommentID,
 			Model: r.Model, Upstream: r.Upstream, MessagesFrom: r.MessagesFrom, Messages: r.Messages, Response: r.Response,
 			Usage: r.Usage, CostUSD: r.CostUSD, Duration: r.Duration, Error: r.Error, Truncated: r.Truncated, CreatedAt: r.CreatedAt,
-			CarriedReviewID: r.CarriedReviewID, ChatGPTPlan: r.ChatGPTPlan,
+			CarriedReviewID: r.CarriedReviewID, ChatGPTPlan: r.ChatGPTPlan, Unpriced: r.Unpriced,
 		}
 		if effect.system != nil {
 			switch {

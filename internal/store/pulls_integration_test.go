@@ -241,7 +241,7 @@ func TestAccountStatsCountCompletedReviews(t *testing.T) {
 // TestMonthUsageCostsTheCompletedReviews checks that the month's review
 // costs are of the reviews that completed, each costing its own usage rows
 // whatever their role, with a follow-up's and a failed review's spend in
-// the month's total only.
+// the month's total only, and a review with an unpriced call counted apart.
 func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -249,17 +249,21 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
 	account := accountID(t, s, "costed")
-	charge := func(reviewID, role string, cost float64) {
+	insert := func(u Usage) {
 		t.Helper()
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			var repoID string
-			if err := tx.QueryRow(ctx, `SELECT id FROM repositories LIMIT 1`).Scan(&repoID); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT id FROM repositories LIMIT 1`).Scan(&u.RepositoryID); err != nil {
 				return err
 			}
-			return InsertUsage(ctx, tx, Usage{AccountID: account, RepositoryID: repoID, ReviewID: reviewID, Role: role, Model: "m", Input: 1, CostUSD: cost})
+			u.AccountID, u.Model, u.Input = account, "m", 1
+			return InsertUsage(ctx, tx, u)
 		}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	charge := func(reviewID, role string, cost float64) {
+		t.Helper()
+		insert(Usage{ReviewID: reviewID, Role: role, CostUSD: cost})
 	}
 	end := func(reviewID string, status ReviewStatus) {
 		t.Helper()
@@ -284,6 +288,10 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	charge(failed, RoleReview, 100)
 	end(failed, ReviewFailed)
 	charge("", RoleFollowUp, 50)
+	incomplete := insertReview(t, ctx, s, account)
+	charge(incomplete, RoleReview, 5)
+	insert(Usage{ReviewID: incomplete, Role: RoleConfidence, Unpriced: true})
+	end(incomplete, ReviewCompleted)
 	var m MonthUsage
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		var err error
@@ -292,31 +300,40 @@ func TestMonthUsageCostsTheCompletedReviews(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ReadMonthUsage: %v", err)
 	}
-	if m.Reviews != 5 || m.ReviewCostUSD != 17 {
-		t.Errorf("Reviews, ReviewCostUSD = %d, %v, want the 5 completed costing 17", m.Reviews, m.ReviewCostUSD)
+	if m.Reviews != 6 || m.UnpricedReviews != 1 || m.ReviewCostUSD != 17 {
+		t.Errorf("Reviews, UnpricedReviews, ReviewCostUSD = %d, %d, %v, want 6 completed, the unpriced one apart and the other 5 costing 17",
+			m.Reviews, m.UnpricedReviews, m.ReviewCostUSD)
+	}
+	if m.UnpricedCalls != 1 {
+		t.Errorf("UnpricedCalls = %d, want 1", m.UnpricedCalls)
 	}
 	if m.MedianReviewCostUSD == nil || *m.MedianReviewCostUSD != 2 {
 		t.Errorf("MedianReviewCostUSD = %v, want 2 (of 0, 1, 2, 4, 10)", m.MedianReviewCostUSD)
 	}
-	if m.CostUSD != 167 {
-		t.Errorf("CostUSD = %v, want 167 with the failed review and the follow-up", m.CostUSD)
+	if m.CostUSD != 172 {
+		t.Errorf("CostUSD = %v, want 172 with the failed review, the follow-up and the unpriced review's priced call", m.CostUSD)
 	}
-	// A pull request's cost is every review's, however it ended.
-	for reviewID, want := range map[string]float64{confident: 4, failed: 100} {
+	// A pull request's cost is every review's, however it ended, and says
+	// how many of its calls were unpriced.
+	for reviewID, want := range map[string]struct {
+		cost     float64
+		unpriced int64
+	}{confident: {4, 0}, failed: {100, 0}, incomplete: {5, 1}} {
 		var cost float64
+		var unpriced int64
 		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			var prID string
 			if err := tx.QueryRow(ctx, `SELECT pull_request_id FROM reviews WHERE id = $1`, reviewID).Scan(&prID); err != nil {
 				return err
 			}
 			var err error
-			cost, err = PullCost(ctx, tx, prID)
+			cost, unpriced, err = PullCost(ctx, tx, prID)
 			return err
 		}); err != nil {
 			t.Fatalf("PullCost: %v", err)
 		}
-		if cost != want {
-			t.Errorf("PullCost = %v, want %v", cost, want)
+		if cost != want.cost || unpriced != want.unpriced {
+			t.Errorf("PullCost = %v, %d unpriced; want %v, %d", cost, unpriced, want.cost, want.unpriced)
 		}
 	}
 }

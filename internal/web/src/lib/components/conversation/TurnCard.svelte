@@ -26,7 +26,7 @@
     <span class="small muted turn-usage" title="input / cache read / cache write / output tokens">
       {tokens(u.input)} in · {tokens(u.cacheRead)} cache read · {tokens(u.cacheWrite)} cache write · {tokens(u.output)} out
     </span>
-    <span class="small" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{callCost(turn.costUsd, turn.chatgptPlan)}</span>
+    <span class="small" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{callCost(turn.costUsd, turn.chatgptPlan, turn.unpriced)}</span>
     <span class="small muted">{duration(turn.durationMs)}</span>
     <button class="btn btn-small" aria-pressed={raw} onclick={() => (raw = !raw)}>raw JSON</button>
   </header>

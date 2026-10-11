@@ -158,7 +158,7 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 			// nearest level each model in the list takes.
 			opts = append(opts, option.WithJSONSet("reasoning", map[string]any{"effort": string(req.Effort)}))
 		}
-		resp, err := o.step(ctx, params, req.Model, "", opts...)
+		resp, err := o.step(ctx, params, req.Model, "", req.Fallbacks, opts...)
 		if err != nil {
 			return StepResponse{}, fmt.Errorf("model: %s: %w", req.Model, err)
 		}
@@ -172,14 +172,15 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 				return StepResponse{}, err
 			}
 		}
-		return o.step(ctx, params, id, alias, opts...)
+		return o.step(ctx, params, id, alias, nil, opts...)
 	})
 }
 
-// step sends modelID, priced under alias, the floating alias that
-// selected it, when it has no price of its own.
+// step sends modelID, with the fallbacks OpenRouter may answer with
+// instead, priced under alias, the floating alias that selected it, when
+// it has no price of its own.
 func (o *OpenAI) step(
-	ctx context.Context, params openai.ChatCompletionNewParams, modelID, alias string, opts ...option.RequestOption,
+	ctx context.Context, params openai.ChatCompletionNewParams, modelID, alias string, fallbacks []string, opts ...option.RequestOption,
 ) (StepResponse, error) {
 	params.Model = modelID
 	cc, err := o.client.Chat.Completions.New(ctx, params, opts...)
@@ -235,9 +236,28 @@ func (o *OpenAI) step(
 	if extra.Usage.Cost != nil {
 		out.CostUSD = *extra.Usage.Cost
 	} else {
-		out.CostUSD = o.pricing.cost(modelID, alias, out.Usage)
+		out.CostUSD, out.Unpriced = o.price(out.Model, modelID, alias, fallbacks, out.Usage)
 	}
 	return out, nil
+}
+
+// price is what a call the provider reported no cost for cost: the price
+// of the model that answered, else that of the model asked for or its
+// alias. Those apply only where the model that answered can be no other
+// than the one asked for, under the id an alias selected or another name
+// for it, which a request listing fallbacks cannot tell apart from one of
+// them answering.
+func (o *OpenAI) price(served, asked, alias string, fallbacks []string, u Usage) (float64, bool) {
+	keys := []string{served}
+	if served == asked || len(fallbacks) == 0 {
+		keys = append(keys, asked, alias)
+	}
+	for _, key := range keys {
+		if price, ok := o.pricing[key]; ok && key != "" {
+			return price.Cost(u), false
+		}
+	}
+	return 0, true
 }
 
 // openAIError adds the body a server refused a request with to the SDK's

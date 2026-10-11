@@ -463,6 +463,7 @@ type agentRecord struct {
 	toolCalls, timeline, sources []byte
 	usage                        model.Usage
 	costUSD                      float64
+	unpricedSteps                int
 	// skillsOffered are the skills the agent could load, and skillsOpened
 	// the ones it did; commandsOffered and commandsRun the same for the
 	// run tool's commands.
@@ -516,7 +517,10 @@ func keptConversation(c *agent.Conversation, secrets Secrets, logger *slog.Logge
 // masked: an error may carry a token, a steered model may write one into
 // its review, and the worker shows all three.
 func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
-	rec := agentRecord{stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, model: res.Model, err: secrets.Mask(res.Err)}
+	rec := agentRecord{
+		stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, unpricedSteps: res.UnpricedSteps, model: res.Model,
+		err: secrets.Mask(res.Err),
+	}
 	masked := make([]string, len(sources))
 	for i, s := range sources {
 		masked[i] = secrets.Mask(s)
@@ -543,13 +547,14 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts)
+				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts, unpriced_steps)
 			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
-				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb)
+				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21
 			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
-			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued, rec.parts)
+			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued, rec.parts,
+			rec.unpricedSteps)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

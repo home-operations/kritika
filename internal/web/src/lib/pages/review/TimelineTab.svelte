@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ReviewDetail, RunnerRun } from '../../types';
   import { href } from '../../router.svelte';
-  import { between, duration, tokens, usd, wholeNumber, bytes } from '../../format';
+  import { between, duration, tokens, costTotal, wholeNumber, bytes } from '../../format';
   import { clock } from '../../time.svelte';
   import Time from '../../components/Time.svelte';
   import ColumnChart from '../../components/ColumnChart.svelte';
@@ -96,7 +96,7 @@
   <section class="panel" aria-labelledby="tl-agent">
     <header class="panel-head">
       <h2 id="tl-agent">Agent steps</h2>
-      <span class="small muted">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {usd(a.costUsd)} API spend</span>
+      <span class="small muted">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {costTotal(a.costUsd, a.unpricedSteps)} API spend</span>
     </header>
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />

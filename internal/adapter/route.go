@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -17,14 +18,44 @@ type Route struct {
 }
 
 // Route resolves ref, a model of a provider of account t in f, to its
-// adapter and provider.
-func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfile.ModelRef) (Route, error) {
+// adapter and provider. logger, the caller's, says when a call is unpriced.
+func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfile.ModelRef, logger *slog.Logger) (Route, error) {
 	stepper, err := c.Stepper(f, t, ref.Provider())
 	if err != nil {
 		return Route{}, err
 	}
 	provider, _ := f.Provider(t, ref.Provider())
-	return Route{Ref: ref, Stepper: stepper, Provider: provider}, nil
+	account := ""
+	if t != nil {
+		account = t.Key()
+	}
+	observed := model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
+		resp, err := stepper.Step(ctx, req)
+		if resp.Unpriced {
+			c.warnUnpriced(ctx, logger, account, ref, resp.Model)
+		}
+		return resp, err
+	})
+	return Route{Ref: ref, Stepper: observed, Provider: provider}, nil
+}
+
+// warnUnpriced reports each serving model once per account and provider
+// in this process, including new models a floating alias selects.
+func (c *Steppers) warnUnpriced(ctx context.Context, logger *slog.Logger, account string, ref configfile.ModelRef, served string) {
+	key := [3]string{account, ref.Provider(), served}
+	c.mu.Lock()
+	seen := c.unpriced[key]
+	if !seen {
+		if c.unpriced == nil {
+			c.unpriced = make(map[[3]string]bool)
+		}
+		c.unpriced[key] = true
+	}
+	c.mu.Unlock()
+	if !seen {
+		logger.WarnContext(ctx, "model call is unpriced: provider reported no cost and no pricing matched; configure provider pricing",
+			"account", account, "provider", ref.Provider(), "model_ref", ref, "model", served)
+	}
 }
 
 // Pin pins ref, when it is a floating alias kritika resolves, to the model

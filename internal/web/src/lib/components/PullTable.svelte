@@ -8,7 +8,7 @@
   import { href, navigate } from '../router.svelte';
   import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
-  import { noMoreReviews, usd, wholeNumber } from '../format';
+  import { noMoreReviews, costTotal, wholeNumber } from '../format';
   import Icon from '../Icon.svelte';
   import { mdiLockOutline } from '../icons';
   import { lifecycle } from '../lifecycle';
@@ -101,7 +101,7 @@
             {/if}
           </td>
           <td class="num">{wholeNumber(p.reviewCount)}</td>
-          <td class="num">{usd(p.costUsd)}</td>
+          <td class="num">{costTotal(p.costUsd, p.unpricedCalls)}</td>
           <td class="num"><Time iso={p.updatedAt} /></td>
         </tr>
       {/each}

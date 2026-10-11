@@ -118,7 +118,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		var err error
 		resp, err = call.completer.Complete(ctx, req)
 		p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(call.served.Ref, resp.Model), store.RoleConfidence, adapter.Outcome(err),
-			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
+			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD, resp.Unpriced)
 		return err
 	}
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
@@ -157,7 +157,7 @@ func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse, role
 		return store.InsertUsage(ctx, tx, store.Usage{
 			AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID, Role: role,
 			Model: resp.Model, Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
-			ChatGPTPlan: resp.ChatGPTPlan, RunnerRunID: p.runID,
+			ChatGPTPlan: resp.ChatGPTPlan, Unpriced: resp.Unpriced, RunnerRunID: p.runID,
 		})
 	})
 	if err != nil {

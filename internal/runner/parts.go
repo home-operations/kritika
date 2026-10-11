@@ -308,6 +308,7 @@ func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (ag
 		merged.Steps += r.Steps
 		merged.Usage = merged.Usage.Add(r.Usage)
 		merged.CostUSD += r.CostUSD
+		merged.UnpricedSteps += r.UnpricedSteps
 		merged.Model = cmp.Or(r.Model, merged.Model)
 		for name, n := range r.ToolCalls {
 			merged.ToolCalls[name] += n
