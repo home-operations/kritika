@@ -31,6 +31,43 @@ type repo struct {
 	long, prior, touched, merged, moved string
 }
 
+func TestTrees(t *testing.T) {
+	r := build(t)
+	for _, base := range []string{"", r.base} {
+		t.Run(cmp.Or(base, "head only"), func(t *testing.T) {
+			res, err := Trees(t.Context(), Fetch{CloneURL: r.dir, Head: r.head, Base: base})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = res.Close() })
+			if res.Head.Hash.String() != r.head || (base != "" && (res.Base == nil || res.Base.Hash.String() != base)) {
+				t.Fatalf("unexpected commits: %+v", res)
+			}
+			if res.Diff != "" || res.PatchID != "" || res.Changed != nil {
+				t.Fatalf("patch was rendered: %+v", res)
+			}
+			tree, err := res.Head.Tree()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := tree.File("main.go")
+			if err != nil {
+				t.Fatal(err)
+			}
+			content, err := f.Contents()
+			if err != nil || !strings.Contains(content, "func b()") {
+				t.Fatalf("head content = %q, %v", content, err)
+			}
+			if err := res.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(res.Dir); !os.IsNotExist(err) {
+				t.Fatalf("repository left behind: %v", err)
+			}
+		})
+	}
+}
+
 func build(t *testing.T) repo {
 	t.Helper()
 	dir := t.TempDir()

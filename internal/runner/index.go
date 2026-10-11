@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -46,7 +47,7 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 			return fmt.Errorf("runner: base tree: %w", err)
 		}
 	}
-	chunks, changed, stats, err := indexer.Build(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions)
+	chunks, changed, stats, mode, err := buildIndex(ctx, headTree, baseTree, p.Ignore, indexer.DefaultOptions, logger)
 	if err != nil {
 		return err
 	}
@@ -80,9 +81,25 @@ func runIndex(ctx context.Context, st *store.Store, p Spec, secrets Secrets, log
 	return nil
 }
 
+func buildIndex(
+	ctx context.Context, head, base *object.Tree, ignore []string, opts indexer.Options, logger *slog.Logger,
+) ([]indexer.Chunk, []string, indexer.Stats, string, error) {
+	mode := store.IndexModeFull
+	if base != nil {
+		mode = store.IndexModeIncremental
+	}
+	chunks, changed, stats, err := indexer.Build(ctx, head, base, ignore, opts)
+	if errors.Is(err, indexer.ErrBudgetReached) {
+		logger.Warn("incremental build over budget, building the index in full", "files", stats.Files, "bytes", stats.Bytes)
+		mode = store.IndexModeFull
+		chunks, changed, stats, err = indexer.Build(ctx, head, nil, ignore, opts)
+	}
+	return chunks, changed, stats, mode, err
+}
+
 func fetchForIndex(ctx context.Context, p Spec, token string, logger *slog.Logger) (*gitfetch.Result, string, error) {
 	if p.Base != "" {
-		res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head, Base: p.Base})
+		res, err := gitfetch.Trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head, Base: p.Base})
 		if err == nil {
 			return res, "incremental", nil
 		}
@@ -91,7 +108,7 @@ func fetchForIndex(ctx context.Context, p Spec, token string, logger *slog.Logge
 		}
 		logger.Warn("incremental fetch failed, building the index in full", "base", p.Base[:7], "error", err)
 	}
-	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head})
+	res, err := gitfetch.Trees(ctx, gitfetch.Fetch{CloneURL: p.CloneURL, Token: token, Head: p.Head})
 	if err != nil {
 		return nil, "", err
 	}

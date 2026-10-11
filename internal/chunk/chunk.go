@@ -83,10 +83,11 @@ func Language(path string) (name string, declarations bool) {
 
 // File is a parsed file.
 type File struct {
-	Path     string
-	Language string
-	Source   []byte
-	Decls    []Decl
+	Path        string
+	Language    string
+	Source      []byte
+	Decls       []Decl
+	lineOffsets []int
 
 	lang *gotreesitter.Language
 	tree *gotreesitter.Tree
@@ -354,30 +355,6 @@ func (f *File) Identifiers(lines []int) []string {
 	return out
 }
 
-// Window returns the fixed-size fallback: the lines from first-radius to
-// last+radius, clamped to the file. Lines are 1-based, inclusive.
-func Window(src []byte, first, last, radius int) (startLine, endLine int, text string) {
-	startLine = max(first-radius, 1)
-	endLine = min(last+radius, lineCount(src))
-	if startLine > endLine {
-		return 0, 0, ""
-	}
-	start := 0
-	for range startLine - 1 {
-		start += bytes.IndexByte(src[start:], '\n') + 1
-	}
-	end := start
-	for range endLine - startLine {
-		end += bytes.IndexByte(src[end:], '\n') + 1
-	}
-	if i := bytes.IndexByte(src[end:], '\n'); i >= 0 {
-		end += i
-	} else {
-		end = len(src)
-	}
-	return startLine, endLine, string(src[start:end])
-}
-
 // lineCount is the number of lines in src, a final newline ending the last
 // line rather than starting an empty one.
 func lineCount(src []byte) int {
@@ -388,9 +365,34 @@ func lineCount(src []byte) int {
 	return n
 }
 
+// Window returns the fixed-size fallback: the lines from first-radius to
+// last+radius, clamped to the file. Lines are 1-based, inclusive. Repeated
+// calls reuse the file's line offsets, including after Close.
+func (f *File) Window(first, last, radius int) (startLine, endLine int, text string) {
+	if f.lineOffsets == nil && len(f.Source) > 0 {
+		f.lineOffsets = make([]int, 1, lineCount(f.Source))
+		for i, c := range f.Source {
+			if c == '\n' && i+1 < len(f.Source) {
+				f.lineOffsets = append(f.lineOffsets, i+1)
+			}
+		}
+	}
+	startLine, endLine = max(first-radius, 1), min(last+radius, len(f.lineOffsets))
+	if startLine > endLine {
+		return 0, 0, ""
+	}
+	start, end := f.lineOffsets[startLine-1], len(f.Source)
+	if endLine < len(f.lineOffsets) {
+		end = f.lineOffsets[endLine] - 1
+	} else if end > 0 && f.Source[end-1] == '\n' {
+		end--
+	}
+	return startLine, endLine, string(f.Source[start:end])
+}
+
 // Text returns the source of a line range, 1-based and inclusive.
-func Text(src []byte, startLine, endLine int) string {
-	_, _, text := Window(src, startLine, endLine, 0)
+func (f *File) Text(startLine, endLine int) string {
+	_, _, text := f.Window(startLine, endLine, 0)
 	return text
 }
 

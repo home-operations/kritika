@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,32 @@ import (
 
 	"github.com/home-operations/kritika/internal/gittest"
 )
+
+func TestBuildIncrementalRejectsTruncation(t *testing.T) {
+	head, base := trees(t)
+	tests := []struct {
+		name                 string
+		files, bytes, chunks int
+	}{
+		{name: "file limit", files: 0, bytes: DefaultOptions.MaxBytes, chunks: DefaultOptions.MaxChunks},
+		{name: "byte limit", files: DefaultOptions.MaxFiles, bytes: 1, chunks: DefaultOptions.MaxChunks},
+		{name: "chunk limit inside a file", files: DefaultOptions.MaxFiles, bytes: DefaultOptions.MaxBytes, chunks: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := DefaultOptions
+			opts.MaxFiles, opts.MaxBytes, opts.MaxChunks = tt.files, tt.bytes, tt.chunks
+			chunks, changed, stats, err := Build(t.Context(), head, base, nil, opts)
+			if !errors.Is(err, ErrBudgetReached) || !stats.Truncated || chunks != nil || changed != nil {
+				t.Fatalf("Build = %v, %v, %+v, %v", chunks, changed, stats, err)
+			}
+			chunks, _, stats, err = Build(t.Context(), head, nil, nil, opts)
+			if err != nil || !stats.Truncated || len(chunks) > opts.MaxChunks || stats.Bytes > opts.MaxBytes {
+				t.Fatalf("full Build = %d, %+v, %v", len(chunks), stats, err)
+			}
+		})
+	}
+}
 
 const goFile = `package demo
 

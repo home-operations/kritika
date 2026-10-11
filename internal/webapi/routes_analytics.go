@@ -26,23 +26,12 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 	ctx := r.Context()
 	out := Analytics{Group: group, From: from, To: to}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		cur, err := store.ReadAnalyticsTotals(ctx, tx, from, to)
+		data, err := store.ReadAnalytics(ctx, tx, group, from, to, analyticsRepos)
 		if err != nil {
 			return err
 		}
-		prev, err := store.ReadAnalyticsTotals(ctx, tx, from.Add(-to.Sub(from)), from)
-		if err != nil {
-			return err
-		}
-		series, err := store.ReadAnalyticsSeries(ctx, tx, group, from, to)
-		if err != nil {
-			return err
-		}
-		repos, err := store.ReadRepoActivity(ctx, tx, from, to, analyticsRepos)
-		if err != nil {
-			return err
-		}
-		out.Current, out.Previous = analyticsTotals(cur), analyticsTotals(prev)
+		out.Current, out.Previous = analyticsTotals(data.Current), analyticsTotals(data.Previous)
+		series, repos := data.Series, data.Repositories
 		out.Series = make([]AnalyticsPoint, len(series))
 		for i, p := range series {
 			out.Series[i] = AnalyticsPoint{Key: p.Key, Reviews: p.Reviews, Findings: severityCounts(p.Findings), CostUSD: p.CostUSD}

@@ -76,13 +76,16 @@ func Build(
 		changed, err = b.walkChanged(ctx, head, base)
 	}
 	b.stats.Elapsed = time.Since(start)
-	if err != nil && !errors.Is(err, errStop) {
+	if err != nil && (!errors.Is(err, ErrBudgetReached) || base != nil) {
 		return nil, nil, b.stats, err
 	}
 	return b.chunks, changed, b.stats, nil
 }
 
-var errStop = errors.New("indexer: budget reached")
+// ErrBudgetReached rejects an incomplete incremental build, whose changed
+// paths cannot safely replace a generation. A full build keeps its bounded
+// output and reports truncation through Stats.
+var ErrBudgetReached = errors.New("indexer: budget reached")
 
 type builder struct {
 	opts   Options
@@ -141,7 +144,7 @@ func (b *builder) walkChanged(ctx context.Context, head, base *object.Tree) ([]s
 func (b *builder) file(f *object.File) error {
 	if b.stats.Files >= b.opts.MaxFiles || b.stats.Bytes >= b.opts.MaxBytes || len(b.chunks) >= b.opts.MaxChunks {
 		b.stats.Truncated = true
-		return errStop
+		return ErrBudgetReached
 	}
 	if f.Size > int64(b.opts.MaxFileBytes) || b.ignored(f.Name) {
 		b.stats.Skipped++
@@ -160,6 +163,10 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Skipped++
 		return nil
 	}
+	if b.stats.Bytes+len(src) > b.opts.MaxBytes {
+		b.stats.Truncated = true
+		return ErrBudgetReached
+	}
 	b.stats.Files++
 	b.stats.Bytes += len(src)
 	pf := b.parser.Parse(f.Name, src)
@@ -168,7 +175,11 @@ func (b *builder) file(f *object.File) error {
 		b.stats.Parsed++
 	}
 	for _, d := range pieces(pf, b.opts) {
-		text := textcut.Prefix(chunk.Text(src, d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
+		if len(b.chunks) >= b.opts.MaxChunks {
+			b.stats.Truncated = true
+			return ErrBudgetReached
+		}
+		text := textcut.Prefix(pf.Text(d.StartLine, d.EndLine), b.opts.MaxChunkBytes)
 		if text == "" {
 			continue
 		}
@@ -219,7 +230,7 @@ func pieces(f *chunk.File, opts Options) []chunk.Decl {
 			}
 		}
 		if !nested {
-			for _, w := range chunk.Windows([]byte(chunk.Text(f.Source, d.StartLine, d.EndLine)), opts.WindowLines, opts.WindowOverlap) {
+			for _, w := range chunk.Windows([]byte(f.Text(d.StartLine, d.EndLine)), opts.WindowLines, opts.WindowOverlap) {
 				out = append(out, chunk.Decl{
 					Symbol: d.Symbol, Kind: d.Kind, Scope: d.Scope,
 					StartLine: d.StartLine + w.StartLine - 1, EndLine: d.StartLine + w.EndLine - 1,

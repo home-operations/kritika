@@ -179,8 +179,18 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			w.finish(dctx, args.AccountID, runID, store.IndexFailed, 0, reason))
 	}
 	n, mode, err := w.embed(ctx, args, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings, job.ID)
+	if errors.Is(err, store.ErrGenerationChanged) {
+		logger.Info("index again: another run published while it ran")
+		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexSuperseded), n)
+		fctx, fcancel := detach(ctx)
+		defer fcancel()
+		if err := w.finish(fctx, args.AccountID, runID, store.IndexSuperseded, n, ""); err != nil {
+			return err
+		}
+		return river.JobSnooze(0)
+	}
 	if err != nil {
-		logger.Error("index embedding failed", "error", err)
+		logger.Error("index embedding or publication failed", "error", err)
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
 		fctx, fcancel := detach(ctx)
 		defer fcancel()
@@ -188,14 +198,15 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
+	// A forced rebuild leaves the tip to the catch-up it queued as it published.
+	if args.Full {
+		return nil
+	}
 	// A push while this ran was absorbed into this job: if the branch has
-	// moved, index again at once, as a snooze that is not an attempt. A
-	// forced rebuild leaves the new tip to the update job the push queued.
-	if !args.Full {
-		if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
-			logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
-			return river.JobSnooze(0)
-		}
+	// moved, index again at once, as a snooze that is not an attempt.
+	if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
+		logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
+		return river.JobSnooze(0)
 	}
 	return nil
 }
@@ -300,16 +311,20 @@ func (w *Index) embed(
 		return total, pack.Mode, err
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		return store.InsertUsage(ctx, tx, store.Usage{
+			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Role: store.RoleEmbedding, Model: embedModel, Input: tokens,
+		})
+	})
+	if err != nil {
+		return total, pack.Mode, err
+	}
+	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		if pack.Mode == store.IndexModeIncremental && active != nil {
-			if err := store.AdvanceGeneration(ctx, tx, active.ID, runID, commit, pack.ChangedPaths); err != nil {
+			if err := store.AdvanceGeneration(ctx, tx, args.RepositoryID, *active, runID, commit, pack.ChangedPaths); err != nil {
 				return err
 			}
 		} else {
-			previous := ""
-			if active != nil {
-				previous = active.ID
-			}
-			if err := store.ActivateGeneration(ctx, tx, args.RepositoryID, runID, previous); err != nil {
+			if err := store.ActivateGeneration(ctx, tx, args.RepositoryID, runID); err != nil {
 				return err
 			}
 		}
@@ -319,9 +334,17 @@ func (w *Index) embed(
 		if err := store.FinishIndexRun(ctx, tx, runID, store.IndexCompleted, total, ""); err != nil {
 			return err
 		}
-		return store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Role: store.RoleEmbedding, Model: embedModel, Input: tokens,
-		})
+		if args.Full {
+			// Check the tip after publication even if a push already published
+			// and is still running. The catch-up and generation commit together.
+			_, err := river.ClientFromContext[pgx.Tx](ctx).InsertTx(ctx, tx, jobs.IndexArgs{
+				AccountID: args.AccountID, RepositoryID: args.RepositoryID, Trigger: jobs.TriggerPush, CatchUp: runID,
+			}, nil)
+			if err != nil {
+				return fmt.Errorf("worker: queue index catch-up: %w", err)
+			}
+		}
+		return nil
 	})
 	return total, pack.Mode, err
 }

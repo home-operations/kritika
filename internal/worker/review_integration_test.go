@@ -1521,6 +1521,20 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkIndexEmbedFailure(ctx, t, appStore, insertOnly, fe, account.ID(), repoID)
 	})
 
+	t.Run("a forced rebuild replaces a generation an update advanced, then catches up", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "new index tip", "package main\n\nfunc newer() {}\n")
+		checkRebuildOverUpdate(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, head, newer)
+	})
+
+	t.Run("a forced rebuild rolls back when catch-up cannot be queued", func(t *testing.T) {
+		newer := commitOnBase(t, dir, base, "tip during queue failure", "package main\n\nfunc newest() {}\n")
+		checkRebuildQueueFailure(ctx, t, appStore, insertOnly, lf, exec, account.ID(), repoID, head, newer)
+	})
+
+	t.Run("an update over a replaced generation snoozes and builds again", func(t *testing.T) {
+		checkUpdateOverRebuild(ctx, t, appStore, insertOnly, exec, account.ID(), repoID, head)
+	})
+
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})

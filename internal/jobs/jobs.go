@@ -170,6 +170,9 @@ type IndexArgs struct {
 	// queued beside an update rather than folded into it, and dedupes only
 	// onto another forced rebuild.
 	Full bool `json:"full,omitempty" river:"unique"`
+	// CatchUp identifies the rebuild whose publication needs a tip check.
+	// Its update must not dedupe onto a push that published before the rebuild.
+	CatchUp string `json:"catch_up,omitempty" river:"unique"`
 }
 
 // Kind implements river.JobArgs.
@@ -178,7 +181,9 @@ func (IndexArgs) Kind() string { return "index" }
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
 // repository while queued or running (River requires running in the set):
 // a push while the repository's job is running is absorbed by it, and the
-// worker indexes the tip again when it finds the branch moved.
+// worker indexes the tip again when it finds the branch moved. Full and
+// CatchUp key a forced rebuild and a rebuild's catch-up apart, so either
+// can run beside an update.
 func (a IndexArgs) InsertOpts() river.InsertOpts {
 	priority := indexPriorityUpdate
 	switch a.Trigger {
