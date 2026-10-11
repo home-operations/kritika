@@ -25,7 +25,7 @@ func (w *Review) judgeRun(
 	if decision.disposition == reviewContinue {
 		return false, nil
 	}
-	if decision.end.OnlyUnfinished {
+	if decision.disposition == reviewInterrupted {
 		return true, w.finishInterrupted(ctx, e, decision)
 	}
 	level := slog.LevelInfo
@@ -36,12 +36,10 @@ func (w *Review) judgeRun(
 		level = slog.LevelError
 	}
 	e.logger.Log(cctx, level, "review "+string(decision.end.Status), "error", decision.end.Error, "job", res.JobName,
-		"reason", res.TerminationReason)
+		"reason", res.TerminationReason, "runner_error", res.Err, "attempt", job.Attempt)
 	w.Metrics.Review(e.accountKey, string(decision.end.Status), time.Since(e.started))
 	if decision.description != "" {
-		if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, decision.description); err != nil {
-			e.logger.Warn("commit status not set", "error", err)
-		}
+		return true, w.failReview(cctx, e, "", decision.end.Error)
 	}
 	if err := w.finishReview(cctx, e.accountID, e.reviewID, decision.end.Status, "", decision.end.Error); err != nil {
 		return true, err
@@ -60,7 +58,7 @@ func (w *Review) finishReview(ctx context.Context, accountID, reviewID string, s
 // a head whose review broke must not read as one still waiting for it.
 // The description stays generic since the error can name internal hosts.
 func (w *Review) failReview(ctx context.Context, e endedReview, patchID, errText string) error {
-	if err := e.client.SetStatus(ctx, e.owner, e.repo, e.headSHA, forge.StatusError, "kritika: review failed"); err != nil {
+	if err := e.client.SetStatus(ctx, e.owner, e.repo, e.headSHA, forge.StatusError, reviewFailedDescription); err != nil {
 		e.logger.Warn("commit status not set", "error", err)
 	}
 	return w.finishReview(ctx, e.accountID, e.reviewID, store.ReviewFailed, patchID, errText)
@@ -85,7 +83,7 @@ type endedReview struct {
 // live it returns err as is.
 func (w *Review) finishEnded(ctx context.Context, e endedReview, err error) error {
 	decision := decideInterruptedReview(context.Cause(ctx), err)
-	if decision.end.Status == "" {
+	if decision.disposition != reviewInterrupted {
 		return decision.jobError()
 	}
 	return w.finishInterrupted(ctx, e, decision)
@@ -98,13 +96,13 @@ func (w *Review) finishInterrupted(ctx context.Context, e endedReview, decision 
 	if err != nil {
 		return err
 	}
-	if decision.disposition == reviewRetry {
+	if decision.err != nil {
 		e.logger.Info("review "+decision.end.Error, "job", e.jobName)
 		w.Metrics.Review(e.accountKey, string(decision.end.Status), time.Since(e.started))
 		return decision.jobError()
 	}
 	if !finished {
-		return nil
+		return decision.jobError()
 	}
 	e.logger.Info("review "+string(decision.end.Status)+" as its job ended", "cause", context.Cause(ctx), "job", e.jobName)
 	if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, decision.description); err != nil {

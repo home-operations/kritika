@@ -158,7 +158,7 @@ func (r *Rescuer) reportEnded(ctx context.Context, job store.AbandonedJob) error
 	if err != nil {
 		return err
 	}
-	desc := "kritika: review failed"
+	desc := reviewFailedDescription
 	if job.CancelRequested {
 		desc = "kritika: review canceled"
 	}

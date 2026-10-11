@@ -17,11 +17,11 @@ type reviewDisposition uint8
 const reviewFailedDescription = "kritika: review failed"
 
 const (
-	reviewContinue reviewDisposition = iota
+	reviewContinue reviewDisposition = iota + 1
 	reviewFinish
 	reviewRetry
-	reviewDiscard
-	reviewCancel
+	reviewInterrupted
+	reviewPublicationFailed
 	reviewSnooze
 )
 
@@ -36,17 +36,27 @@ type reviewDecision struct {
 
 func (d reviewDecision) jobError() error {
 	switch d.disposition {
-	case reviewRetry, reviewDiscard, reviewCancel:
+	case reviewRetry, reviewInterrupted, reviewPublicationFailed:
 		return d.err
 	case reviewSnooze:
 		return river.JobSnooze(time.Second)
-	default:
+	case reviewContinue, reviewFinish:
 		return nil
+	default:
+		panic("worker: invalid review disposition")
 	}
 }
 
 func stoppingCause(cause error) bool {
 	return cause != nil && !errors.Is(cause, river.ErrJobCancelledRemotely) && !errors.Is(cause, context.DeadlineExceeded)
+}
+
+func reviewAttemptFailed(cause, err error, finalAttempt bool) bool {
+	// River refunds a shutdown attempt only when the returned error carries
+	// the stop cause or context.Canceled. Fencing is our own cancellation.
+	refunded := stoppingCause(cause) && !errors.Is(cause, errJobFenced) &&
+		(errors.Is(err, cause) || errors.Is(err, context.Canceled))
+	return err != nil && finalAttempt && !refunded
 }
 
 func decideInterruptedReview(cause, err error) reviewDecision {
@@ -62,18 +72,19 @@ func decideInterruptedReview(cause, err error) reviewDecision {
 		if errors.Is(cause, errJobFenced) {
 			end.Error = "cut as its heartbeat stopped landing; its job was handed back"
 		}
-		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: review %s: %w", end.Error, cause)}
+		return reviewDecision{end: end, disposition: reviewInterrupted, err: fmt.Errorf("worker: review %s: %w", end.Error, cause)}
 	}
 	end.Status = store.ReviewCanceled
 	desc := "kritika: review canceled"
 	if !errors.Is(cause, river.ErrJobCancelledRemotely) {
 		end.Status, end.Error, desc = store.ReviewFailed, "review timed out: "+cause.Error(), "kritika: review timed out"
 	}
-	return reviewDecision{end: end, disposition: reviewFinish, description: desc}
+	return reviewDecision{end: end, disposition: reviewInterrupted, description: desc}
 }
 
 func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr error, finalAttempt bool) reviewDecision {
-	// A remote cancel wins even when the runner answered or its result is lost.
+	// River will not retry a remotely canceled job, so its review must end
+	// canceled even when the runner answered or its result is lost.
 	if errors.Is(jobCause, river.ErrJobCancelledRemotely) || (res.Err != nil && stoppingCause(jobCause)) {
 		return decideInterruptedReview(jobCause, res.Err)
 	}
@@ -83,6 +94,7 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 			disposition: reviewRetry, err: fmt.Errorf("worker: runner did not start: %w", res.Err)}
 	}
 	if agentErr != nil {
+		// Retrying a missing result would pay for the agent again.
 		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: agentErr.Error()},
 			disposition: reviewFinish, description: reviewFailedDescription}
 	}
@@ -124,16 +136,12 @@ func decidePublication(jobCause error, status store.ReviewStatus, err error, che
 		return decideInterruptedReview(jobCause, err)
 	}
 	if !checkpointed {
-		return reviewDecision{end: store.ReviewEnd{Status: status, Error: err.Error()}, disposition: reviewFinish,
-			description: reviewFailedDescription}
+		return reviewDecision{end: store.ReviewEnd{Status: status, Error: err.Error()}, disposition: reviewFinish}
 	}
-	if _, permanent := errors.AsType[*river.JobCancelError](err); permanent {
+	_, permanent := errors.AsType[*river.JobCancelError](err)
+	if permanent || reviewAttemptFailed(jobCause, err, finalAttempt) {
 		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: err.Error(), OnlyUnfinished: true},
-			disposition: reviewCancel, err: err, description: "kritika: publication failed"}
-	}
-	if finalAttempt {
-		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: err.Error(), OnlyUnfinished: true},
-			disposition: reviewDiscard, err: err, description: "kritika: publication failed"}
+			disposition: reviewPublicationFailed, err: err, description: "kritika: publication failed"}
 	}
 	return reviewDecision{end: store.ReviewEnd{Status: store.ReviewPrepared}, disposition: reviewRetry, err: err}
 }

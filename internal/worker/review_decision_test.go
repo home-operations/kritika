@@ -24,15 +24,15 @@ func TestDecideInterruptedReview(t *testing.T) {
 		{name: "live context with no error continues", want: reviewDecision{disposition: reviewContinue}},
 		{name: "live context preserves a retryable error", err: failure, want: reviewDecision{disposition: reviewRetry, err: failure}},
 		{name: "remote cancellation wins over a write error", cause: fmt.Errorf("wrapped: %w", river.ErrJobCancelledRemotely), err: failure,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewFinish, description: "kritika: review canceled"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review canceled"}},
 		{name: "timeout ends without repeating model work", cause: context.DeadlineExceeded, err: failure,
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "review timed out: context deadline exceeded", OnlyUnfinished: true},
-				disposition: reviewFinish, description: "kritika: review timed out"}},
+				disposition: reviewInterrupted, description: "kritika: review timed out"}},
 		{name: "restart supersedes the attempt and retries", cause: stopped, err: failure,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true}, disposition: reviewRetry, err: stopped}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true}, disposition: reviewInterrupted, err: stopped}},
 		{name: "fencing hands the job back", cause: errJobFenced,
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut as its heartbeat stopped landing; its job was handed back", OnlyUnfinished: true},
-				disposition: reviewRetry, err: errJobFenced}},
+				disposition: reviewInterrupted, err: errJobFenced}},
 	} {
 		t.Run(tt.name, func(t *testing.T) { checkReviewDecision(t, decideInterruptedReview(tt.cause, tt.err), tt.want) })
 	}
@@ -48,13 +48,13 @@ func TestDecideRunnerReview(t *testing.T) {
 		want                         reviewDecision
 	}{
 		{name: "successful runner continues", want: reviewDecision{disposition: reviewContinue}},
-		{name: "successful runner can survive a restart", jobCause: stopped, want: reviewDecision{disposition: reviewContinue}},
+		{name: "successful runner defers interruption handling to afterRun", jobCause: stopped, want: reviewDecision{disposition: reviewContinue}},
 		{name: "cancel beats a successful runner", jobCause: river.ErrJobCancelledRemotely,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewFinish, description: "kritika: review canceled"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review canceled"}},
 		{name: "cancel beats missing agent and superseded runner", jobCause: river.ErrJobCancelledRemotely, runCause: errSuperseded, agentErr: agentErr, result: executor.Result{Err: runErr},
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewFinish, description: "kritika: review canceled"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review canceled"}},
 		{name: "restart beats missing agent", jobCause: stopped, agentErr: agentErr, result: executor.Result{Err: runErr},
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true}, disposition: reviewRetry, err: stopped}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true}, disposition: reviewInterrupted, err: stopped}},
 		{name: "unstarted runner retries before inspecting missing agent", agentErr: agentErr, result: executor.Result{Err: runErr, NeverStarted: true},
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner did not start; retried"}, disposition: reviewRetry, err: runErr}},
 		{name: "unstarted runner cannot retry on final attempt", final: true, result: executor.Result{Err: runErr, NeverStarted: true},
@@ -123,9 +123,9 @@ func TestDecidePublication(t *testing.T) {
 		{name: "superseded delivery stays superseded", status: store.ReviewSuperseded, checkpointed: true,
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded}, disposition: reviewFinish}},
 		{name: "failure before checkpoint must not repeat model work", err: failure, status: store.ReviewFailed,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "forge unavailable"}, disposition: reviewFinish, description: "kritika: review failed"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "forge unavailable"}, disposition: reviewFinish}},
 		{name: "restart before checkpoint hands back the job", err: failure, jobCause: stopped,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true}, disposition: reviewRetry, err: stopped}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "cut by a restart and retried", OnlyUnfinished: true}, disposition: reviewInterrupted, err: stopped}},
 		{name: "saved answer retries delivery only", err: failure, checkpointed: true,
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewPrepared}, disposition: reviewRetry, err: failure}},
 		{name: "restart retains saved answer", jobCause: stopped, err: failure, checkpointed: true,
@@ -133,20 +133,58 @@ func TestDecidePublication(t *testing.T) {
 		{name: "fencing retains saved answer", jobCause: errJobFenced, err: errJobFenced, checkpointed: true,
 			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewPrepared}, disposition: reviewRetry, err: errJobFenced}},
 		{name: "timeout ends saved publication", jobCause: context.DeadlineExceeded, err: failure, checkpointed: true,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "review timed out: context deadline exceeded", OnlyUnfinished: true}, disposition: reviewFinish, description: "kritika: review timed out"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "review timed out: context deadline exceeded", OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review timed out"}},
 		{name: "cancel wins over permanent failure on last attempt", jobCause: river.ErrJobCancelledRemotely, err: permanent, checkpointed: true, final: true,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewFinish, description: "kritika: review canceled"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewInterrupted, description: "kritika: review canceled"}},
 		{name: "permanent error cancels before attempts exhausted", err: permanent, checkpointed: true,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: permanent.Error(), OnlyUnfinished: true}, disposition: reviewCancel, err: permanent, description: "kritika: publication failed"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: permanent.Error(), OnlyUnfinished: true}, disposition: reviewPublicationFailed, err: permanent, description: "kritika: publication failed"}},
 		{name: "exhausted delivery attempts fail review", err: failure, checkpointed: true, final: true,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "forge unavailable", OnlyUnfinished: true}, disposition: reviewDiscard, err: failure, description: "kritika: publication failed"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "forge unavailable", OnlyUnfinished: true}, disposition: reviewPublicationFailed, err: failure, description: "kritika: publication failed"}},
 		{name: "restart cannot extend the attempt limit", jobCause: stopped, err: failure, checkpointed: true, final: true,
-			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "forge unavailable", OnlyUnfinished: true}, disposition: reviewDiscard, err: failure, description: "kritika: publication failed"}},
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewFailed, Error: "forge unavailable", OnlyUnfinished: true}, disposition: reviewPublicationFailed, err: failure, description: "kritika: publication failed"}},
+		{name: "shutdown during setup refunds the final attempt", jobCause: stopped, err: context.Canceled, checkpointed: true, final: true,
+			want: reviewDecision{end: store.ReviewEnd{Status: store.ReviewPrepared}, disposition: reviewRetry, err: context.Canceled}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			checkReviewDecision(t, decidePublication(tt.jobCause, tt.status, tt.err, tt.checkpointed, tt.final), tt.want)
 		})
 	}
+}
+
+func TestReviewAttemptFailed(t *testing.T) {
+	stopped := errors.New("stop initiated")
+	for _, tt := range []struct {
+		name       string
+		cause, err error
+		final      bool
+		want       bool
+	}{
+		{name: "successful last attempt", final: true},
+		{name: "retryable failure", err: errors.New("database unavailable")},
+		{name: "exhausted attempts", err: errors.New("database unavailable"), final: true, want: true},
+		{name: "wrapped shutdown is refunded", cause: stopped, err: fmt.Errorf("review: %w", stopped), final: true},
+		{name: "canceled IO during shutdown is refunded", cause: stopped, err: fmt.Errorf("query: %w", context.Canceled), final: true},
+		{name: "independent failure during shutdown consumes attempt", cause: stopped, err: errors.New("forge unavailable"), final: true, want: true},
+		{name: "fencing is not shutdown", cause: errJobFenced, err: errJobFenced, final: true, want: true},
+		{name: "deadline is not shutdown", cause: context.DeadlineExceeded, err: context.Canceled, final: true, want: true},
+		{name: "remote cancel is not shutdown", cause: river.ErrJobCancelledRemotely, err: context.Canceled, final: true, want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reviewAttemptFailed(tt.cause, tt.err, tt.final); got != tt.want {
+				t.Fatalf("reviewAttemptFailed = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnsetReviewDispositionPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("unset disposition silently continued")
+		}
+	}()
+	var decision reviewDecision
+	_ = decision.jobError()
 }
 
 func checkReviewDecision(t *testing.T, got, want reviewDecision) {
