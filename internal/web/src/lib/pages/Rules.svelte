@@ -76,9 +76,8 @@
         What reviews check: rules written in the configuration, as text or a file, and context files that explain the code.
         Rules are written, and files named, under <span class="mono">rules</span> and
         <span class="mono">context</span> in the configuration file or a repository's own
-        <span class="mono">.kritika.yaml</span>. Every review also reads the repository's
-        <span class="mono">AGENTS.md</span>, or <span class="mono">CLAUDE.md</span> where there is none, at the root and
-        above each changed path.
+        <span class="mono">.kritika.yaml</span>. To offer <span class="mono">AGENTS.md</span> or
+        <span class="mono">CLAUDE.md</span> as reference material, list it under <span class="mono">context</span>.
       </p>
     </header>
     <div class="toolbar" role="search">

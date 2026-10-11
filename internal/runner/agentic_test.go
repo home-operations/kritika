@@ -110,7 +110,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false, false)
 			system, user := prompt.system, prompt.user
-			if want := review.SystemPrompt(tt.active, nil, []string{"Agent notes."}, nil, false, false, tt.diagram); system != want {
+			if want := review.SystemPrompt(tt.active, nil, nil, false, false, tt.diagram); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput
@@ -157,6 +157,53 @@ func TestAgentPromptPointsAtContext(t *testing.T) {
 	}
 }
 
+func TestAgentFilesAsContext(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		context []configfile.ContextFile
+		want    string
+	}{
+		{name: "not offered by default"},
+		{
+			name:    "explicit root reference",
+			context: []configfile.ContextFile{{Path: "AGENTS.md", Description: "coding conventions"}},
+			want:    "### AGENTS.md: coding conventions\n",
+		},
+		{
+			name:    "explicit directory reference",
+			context: []configfile.ContextFile{{Path: "svc/CLAUDE.md", Description: "service conventions", Paths: []string{"svc/**"}}},
+			want:    "### svc/CLAUDE.md: service conventions\n",
+		},
+		{
+			name:    "unmatched reference",
+			context: []configfile.ContextFile{{Path: "web/AGENTS.md", Description: "web conventions", Paths: []string{"web/**"}}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := agentPromptSpec()
+			s.Prompt.Context = tt.context
+			files := repoconfig.Files{"AGENTS.md": "Root workflow.", "svc/CLAUDE.md": "Service workflow."}
+			pack := packView{Changed: []string{"svc/main.go"}}
+			in := newPromptInputs(s, files, nil, pack.Changed)
+			prompt := newAgentPrompt(s, in, pack, nil, false, false)
+			followUp := review.BuildFollowUp(review.Input{References: in.references}, nil, nil)
+			for kind, user := range map[string]string{"review": prompt.user, "follow-up": followUp} {
+				for _, unwanted := range []string{"Repository instructions", "Root workflow.", "Service workflow."} {
+					if strings.Contains(prompt.system+user, unwanted) {
+						t.Fatalf("agent file injected into %s prompt: %q", kind, unwanted)
+					}
+				}
+				if tt.want != "" && !strings.Contains(user, tt.want) {
+					t.Fatalf("context reference missing from %s:\n%s", kind, user)
+				}
+			}
+			if tt.want == "" && len(in.references) != 0 {
+				t.Fatalf("unexpected references: %v", in.references)
+			}
+		})
+	}
+}
+
 // ruleIDs is the ids of rules, for comparing with a prompt's inputs.
 func ruleIDs(rules []review.Rule) []string {
 	ids := make([]string, 0, len(rules))
@@ -170,9 +217,9 @@ func ruleIDs(rules []review.Rule) []string {
 func TestPromptInputsNotes(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Rules = []configfile.Rule{{ID: "big", Rule: strings.Repeat("x", repoconfig.MaxRulesBytes)}, {ID: "left", Rule: "Wrap errors."}}
-	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxInstructionBytes+1)}
+	files := repoconfig.Files{"AGENTS.md": strings.Repeat("y", repoconfig.MaxFileBytes+1)}
 	in := newPromptInputs(s, files, nil, []string{"main.go"})
-	if want := []string{noteInstructionsTruncated, "1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
+	if want := []string{"1 review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"}; !slices.Equal(in.notes, want) {
 		t.Fatalf("notes = %q, want %q", in.notes, want)
 	}
 	const lines = 60_000

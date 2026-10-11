@@ -43,7 +43,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		return fmt.Errorf("runner: base tree: %w", err)
 	}
 	// A follow-up has no summary to state what could not be kept in.
-	files, _, err := repoFiles(baseTree, p.RepoFiles, res.Changed)
+	files, _, err := repoFiles(baseTree, p.RepoFiles)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
 
-	system := review.FollowUpSystemPrompt(in.rules, in.instructions, tools.commands(), tools.fetch != nil, tools.search != nil)
+	system := review.FollowUpSystemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil)
 	pr := p.Prompt.PullRequest
 	user := review.BuildFollowUp(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body, BaseRef: pr.BaseRef,

@@ -32,10 +32,12 @@ root and no capabilities, as a service account with no permissions.
 
 ## What a pull request cannot change
 
-- A repository's [`.kritika.yaml`](repository-config.md), its rule files,
-  its skills and its agent files are read from the merge base, never the
-  pull request's own tree, so a pull request cannot rewrite them to steer
-  its own review.
+- A repository's [`.kritika.yaml`](repository-config.md), its rule files
+  and its skills are read from the merge base, never the pull request's
+  own tree, so a pull request cannot rewrite them to steer its own review.
+- Context files, including explicitly listed `AGENTS.md` or `CLAUDE.md`,
+  are read from the pull request's head as reference material, not review
+  instructions.
 - `.kritika.yaml` can narrow the admin's settings and add rules, but
   [some keys](configuration.md#what-only-the-admin-sets) are the admin's
   alone: the agent's bounds and commands, `confidence.instructions`, so a

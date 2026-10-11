@@ -249,10 +249,31 @@ Rules, context and skills compared:
 
 ### Agent files
 
-A review also adds to its instructions the repository's agent files: the
-`AGENTS.md` of the root and of each directory above a changed path, or a
-directory's `CLAUDE.md` where it has no `AGENTS.md`, read from the merge
-base, within the [limits](#limits). They follow the rules in the prompt.
+Reviews and follow-up answers do not automatically load `AGENTS.md` or
+`CLAUDE.md`. To offer one as reference material, list it under `context`
+in `.kritika.yaml`:
+
+```yaml
+context:
+  - path: AGENTS.md
+    description: Repository architecture and coding conventions
+  - path: web/CLAUDE.md
+    description: Frontend architecture and conventions
+    paths: ["web/**"]
+```
+
+Each entry is a pointer the reviewer can choose to read, not text inserted
+into its instructions. The file is read from the pull request's head,
+like any other reference, and its contents do not override review rules
+or skills. Directory-specific files must be listed explicitly; `paths`
+limits when each reference is offered.
+
+If your repository relied on automatic agent-file loading, add the
+references it needs before upgrading. Move requirements every applicable
+review must enforce into [rules](#rules), and review procedures into
+[skills](#skills). A rule can name a file containing review requirements;
+keep coding-agent workflows such as committing and opening pull requests
+out of that file.
 
 ### Comment templates
 
@@ -388,4 +409,3 @@ what does not fit, and notes it in the summary:
 | a skill's description                            | 1024 characters                           |
 | the skills' names and descriptions in the prompt | 4 KiB                                     |
 | the skills given whole in the prompt             | 32 KiB; one past it is offered by name    |
-| agent files                                      | 32 KiB                                    |

@@ -46,9 +46,9 @@ type reviewPart struct {
 }
 
 // partPrompts writes each part's prompt: its own files' diff, the context
-// built from that diff, the rules, skills and agent files of its paths, and
-// the last review's and the dismissed findings on its files, the first part
-// also those on files no part reviews, with a submit check that refuses a
+// built from that diff, the rules, skills and context references of its
+// paths, and the last review's and the dismissed findings on its files.
+// The first part also gets those on files no part reviews, with a submit check that refuses a
 // finding on another part's file. tools gets search_code when the
 // repository has an index, and load_skill offers every part's skills. It
 // returns the parts, and the context and the rules they were given

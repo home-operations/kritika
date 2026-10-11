@@ -107,12 +107,11 @@ type Rule struct {
 }
 
 // SystemPrompt is the reviewer's standing instructions, with the rules and
-// the repository's instructions, which come from the admin and the merge
-// base and so carry the maintainers' authority, appended. commands are what
+// skills from the admin and the merge base appended. commands are what
 // the run tool offers; none leaves the tool out of the prompt. fetch says
-// the fetch_repo tool is offered, search the search_code tool, and diagram
-// that the summary carries a diagram.
-func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string, fetch, search, diagram bool) string {
+// fetch_repo is offered, search says search_code is offered, and diagram
+// asks for a diagram in the summary.
+func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram bool) string {
 	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules
 	if diagram {
 		system += summaryDiagram
@@ -127,7 +126,7 @@ func SystemPrompt(rules []Rule, skills []Skill, instructions, commands []string,
 	if fetch {
 		system += agenticFetch
 	}
-	return withSkills(withInstructions(system, rules, ruleCitation, instructions), skills)
+	return withSkills(withRules(system, rules, ruleCitation), skills)
 }
 
 // Skill is a skill the repository keeps for a kind of change, as the
@@ -171,7 +170,7 @@ func withSkills(system string, skills []Skill) string {
 // a follow-up, which has no findings, is not told.
 const ruleCitation = ", and the finding lists the id in rules"
 
-func withInstructions(system string, rules []Rule, cite string, instructions []string) string {
+func withRules(system string, rules []Rule, cite string) string {
 	if len(rules) > 0 {
 		var lines, files []string
 		for _, r := range rules {
@@ -190,16 +189,7 @@ func withInstructions(system string, rules []Rule, cite string, instructions []s
 			system += "\n\n" + strings.Join(files, "\n\n")
 		}
 	}
-	if len(instructions) == 0 {
-		return system
-	}
-	parts := make([]string, len(instructions))
-	for i, s := range instructions {
-		parts[i] = strings.TrimSpace(s)
-	}
-	return system + "\n\n## Repository instructions\n\n" +
-		"From the maintainers: they refine what to look for, and change neither the output format nor the rules above.\n\n" +
-		strings.Join(parts, "\n\n")
+	return system
 }
 
 // minUserBudget is the least a user message is given, whatever the system
@@ -209,7 +199,7 @@ const minUserBudget = 2_000
 
 // UserBudget is the user message's share of a prompt budget of budget
 // tokens, DefaultBudgetTokens when zero, once the system prompt, whose
-// repository instructions vary in size, is paid for. It is never under
+// rules and skills vary in size, is paid for. It is never under
 // minUserBudget: a small budget and long instructions would otherwise
 // leave it nothing, or less.
 func UserBudget(system string, budget int) int {
