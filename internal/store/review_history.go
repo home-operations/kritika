@@ -12,6 +12,11 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
+// reusableBaselineSQL uses $1 for the pull request and $2 for an optional
+// review ID to exclude. Partial results cannot stand in for a full review.
+const reusableBaselineSQL = ` FROM reviews WHERE pull_request_id = $1 AND id::text <> $2
+	AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`
+
 type CompletedReview struct {
 	ID, HeadSHA, Trigger, MergeBase, Diagram string
 	Changed, Checked, Impact                 []string
@@ -32,8 +37,7 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 	var confidence []byte
 	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, merge_base_sha, coalesce(summary->>'diagram', ''),
 		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')),
-		ARRAY(SELECT jsonb_array_elements_text(summary->'impact')), confidence FROM reviews
-		WHERE pull_request_id = $1 AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID).
+		ARRAY(SELECT jsonb_array_elements_text(summary->'impact')), confidence`+reusableBaselineSQL, prID, "").
 		Scan(&p.ID, &p.HeadSHA, &p.Trigger, &p.MergeBase, &p.Diagram, &p.Checked, &p.Impact, &confidence)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CompletedReview{}, nil
@@ -71,22 +75,9 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 	return p, nil
 }
 
-// LastReviewPatchID returns the latest complete baseline's patch, excluding
-// reviewID, or an empty string if there is no baseline.
-func LastReviewPatchID(ctx context.Context, tx pgx.Tx, prID, reviewID string) (string, error) {
-	var patch string
-	err := tx.QueryRow(ctx, `SELECT patch_id FROM reviews WHERE pull_request_id = $1 AND id <> $2
-		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&patch)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("store: read last review patch: %w", err)
-	}
-	return patch, nil
-}
-
 func LastForgePatchID(ctx context.Context, tx pgx.Tx, prID string) (string, error) {
 	var patch string
-	err := tx.QueryRow(ctx, `SELECT forge_patch_id FROM reviews WHERE pull_request_id = $1
-		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID).Scan(&patch)
+	err := tx.QueryRow(ctx, `SELECT forge_patch_id`+reusableBaselineSQL, prID, "").Scan(&patch)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", fmt.Errorf("store: read last forge patch: %w", err)
 	}
@@ -105,23 +96,31 @@ func LastReviewMergeBase(ctx context.Context, tx pgx.Tx, prID, head string) (str
 	return base, nil
 }
 
-// LastReviewConfidence leaves threshold selection to the caller. A missing
-// review or SQL NULL confidence yields nil without an error.
-func LastReviewConfidence(ctx context.Context, tx pgx.Tx, prID, reviewID string) (*review.Confidence, error) {
+type ReviewBaseline struct {
+	PatchID    string
+	Confidence *review.Confidence
+}
+
+// LastReviewBaseline returns the latest reusable review's patch and score,
+// excluding reviewID when nonempty. No baseline yields a zero value, and
+// SQL NULL or JSON null confidence yields a nil score. The caller chooses
+// the threshold to apply to the score.
+func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (ReviewBaseline, error) {
+	var baseline ReviewBaseline
 	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT confidence FROM reviews WHERE pull_request_id = $1 AND id::text <> $2
-		AND status = 'completed' AND NOT partial ORDER BY created_at DESC LIMIT 1`, prID, reviewID).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && raw == nil) {
-		return nil, nil
+	err := tx.QueryRow(ctx, `SELECT patch_id, confidence`+reusableBaselineSQL, prID, reviewID).Scan(&baseline.PatchID, &raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ReviewBaseline{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("store: read last review confidence: %w", err)
+		return ReviewBaseline{}, fmt.Errorf("store: read last review baseline: %w", err)
 	}
-	c := &review.Confidence{}
-	if err := json.Unmarshal(raw, c); err != nil {
-		return nil, fmt.Errorf("store: decode last review confidence: %w", err)
+	if raw != nil {
+		if err := json.Unmarshal(raw, &baseline.Confidence); err != nil {
+			return ReviewBaseline{}, fmt.Errorf("store: decode last review confidence: %w", err)
+		}
 	}
-	return c, nil
+	return baseline, nil
 }
 
 func CompletedReviewCount(ctx context.Context, tx pgx.Tx, prID string) (int, error) {
@@ -133,9 +132,11 @@ func CompletedReviewCount(ctx context.Context, tx pgx.Tx, prID string) (int, err
 	return count, nil
 }
 
+// OtherReviewRunning includes prepared reviews awaiting publication.
 func OtherReviewRunning(ctx context.Context, tx pgx.Tx, prID, reviewID string) (bool, error) {
 	var running bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews WHERE pull_request_id = $1 AND id::text <> $2 AND status = 'running')`,
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews WHERE pull_request_id = $1 AND id::text <> $2
+		AND status IN ('running', 'prepared'))`,
 		prID, reviewID).Scan(&running)
 	if err != nil {
 		return false, fmt.Errorf("store: read running reviews: %w", err)
@@ -146,6 +147,9 @@ func OtherReviewRunning(ctx context.Context, tx pgx.Tx, prID, reviewID string) (
 func ReviewHeadStatus(ctx context.Context, tx pgx.Tx, reviewID string) (status ReviewStatus, current bool, err error) {
 	err = tx.QueryRow(ctx, `SELECT r.status, r.head_sha = p.head_sha FROM reviews r
 		JOIN pull_requests p ON p.id = r.pull_request_id WHERE r.id = $1`, reviewID).Scan(&status, &current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, ErrNotFound
+	}
 	if err != nil {
 		return "", false, fmt.Errorf("store: read review head status: %w", err)
 	}

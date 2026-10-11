@@ -255,9 +255,16 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 	if err != nil {
 		return nil, fmt.Errorf("worker: load pull request: %w", err)
 	}
+	var closed string
+	switch {
+	case row.Merged:
+		closed = "the pull request was merged"
+	case row.State != "open":
+		closed = "the pull request is closed"
+	}
 	return &pullRequest{id: row.ID, repositoryID: row.RepositoryID, repository: row.Repository, number: row.Number,
 		headSHA: row.HeadSHA, baseRef: row.BaseRef, title: row.Title, author: row.Author,
-		authorIsBot: row.AuthorIsBot, closed: row.Closed}, nil
+		authorIsBot: row.AuthorIsBot, closed: closed}, nil
 }
 
 // reviewBase is the commit a review of pr diffs its head against: the

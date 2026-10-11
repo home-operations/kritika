@@ -202,7 +202,8 @@ func carriedConfidence(
 	if want.Model == "" {
 		return nil, true, nil
 	}
-	c, err = store.LastReviewConfidence(ctx, tx, prID, reviewID)
+	baseline, err := store.LastReviewBaseline(ctx, tx, prID, reviewID)
+	c = baseline.Confidence
 	if err != nil || c == nil {
 		return nil, false, err
 	}

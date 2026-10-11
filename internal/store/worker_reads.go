@@ -17,16 +17,18 @@ type ReviewPullRequest struct {
 	Number                          int
 	HeadSHA, BaseRef, Title, Author string
 	AuthorIsBot                     bool
-	Closed                          string
+	State                           string
+	Merged                          bool
 }
 
 func FindReviewPullRequest(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (ReviewPullRequest, error) {
 	var pr ReviewPullRequest
-	err := tx.QueryRow(ctx, `SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot,
-		CASE WHEN p.merged THEN 'the pull request was merged' WHEN p.state <> 'open' THEN 'the pull request is closed' ELSE '' END
+	err := tx.QueryRow(ctx, `SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author,
+		p.author_is_bot, p.state, p.merged
 		FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 		WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
-		Scan(&pr.ID, &pr.RepositoryID, &pr.Repository, &pr.Number, &pr.HeadSHA, &pr.BaseRef, &pr.Title, &pr.Author, &pr.AuthorIsBot, &pr.Closed)
+		Scan(&pr.ID, &pr.RepositoryID, &pr.Repository, &pr.Number, &pr.HeadSHA, &pr.BaseRef, &pr.Title, &pr.Author,
+			&pr.AuthorIsBot, &pr.State, &pr.Merged)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pr, ErrNotFound
 	}
@@ -39,6 +41,9 @@ func FindReviewPullRequest(ctx context.Context, tx pgx.Tx, repositoryID string, 
 func PullRequestHead(ctx context.Context, tx pgx.Tx, prID string) (string, error) {
 	var head string
 	if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1`, prID).Scan(&head); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
 		return "", fmt.Errorf("store: read pull request head: %w", err)
 	}
 	return head, nil
@@ -47,6 +52,9 @@ func PullRequestHead(ctx context.Context, tx pgx.Tx, prID string) (string, error
 func PullRequestBody(ctx context.Context, tx pgx.Tx, prID string) (string, error) {
 	var body string
 	if err := tx.QueryRow(ctx, `SELECT body FROM pull_requests WHERE id = $1`, prID).Scan(&body); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
 		return "", fmt.Errorf("store: read pull request body: %w", err)
 	}
 	return body, nil
@@ -57,6 +65,9 @@ func PullRequestBody(ctx context.Context, tx pgx.Tx, prID string) (string, error
 func LockPullRequestLabels(ctx context.Context, tx pgx.Tx, prID string) (json.RawMessage, error) {
 	var labels json.RawMessage
 	if err := tx.QueryRow(ctx, `SELECT labels FROM pull_requests WHERE id = $1 FOR UPDATE`, prID).Scan(&labels); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("store: lock pull request labels: %w", err)
 	}
 	return labels, nil
@@ -69,6 +80,9 @@ func ReadFilterPullRequest(ctx context.Context, tx pgx.Tx, prID string) (repocon
 		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
 		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.HeadRef, &pr.HeadSHA, &pr.BaseRef,
 			&pr.URL, &pr.Body, &openedAt, &pr.Labels)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repoconfig.PullRequest{}, ErrNotFound
+	}
 	if err != nil {
 		return repoconfig.PullRequest{}, fmt.Errorf("store: read pull request for the filter: %w", err)
 	}
@@ -84,6 +98,9 @@ func RunnerHeartbeatAge(ctx context.Context, tx pgx.Tx, runID string) (time.Dura
 	var seconds *float64
 	if err := tx.QueryRow(ctx, `SELECT extract(epoch FROM now() - heartbeat_at)::float8 FROM runner_runs WHERE id = $1`, runID).
 		Scan(&seconds); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, ErrNotFound
+		}
 		return 0, false, fmt.Errorf("store: read runner heartbeat: %w", err)
 	}
 	if seconds == nil {
@@ -95,17 +112,12 @@ func RunnerHeartbeatAge(ctx context.Context, tx pgx.Tx, runID string) (time.Dura
 func RunnerPhase(ctx context.Context, tx pgx.Tx, runID string) (string, error) {
 	var phase string
 	if err := tx.QueryRow(ctx, `SELECT phase FROM runner_runs WHERE id = $1`, runID).Scan(&phase); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
 		return "", fmt.Errorf("store: read runner phase: %w", err)
 	}
 	return phase, nil
-}
-
-func ContextPackDeltaPaths(ctx context.Context, tx pgx.Tx, runID string) ([]string, error) {
-	var paths []string
-	if err := tx.QueryRow(ctx, `SELECT delta_paths FROM context_packs WHERE runner_run_id = $1`, runID).Scan(&paths); err != nil {
-		return nil, fmt.Errorf("store: read context pack delta paths: %w", err)
-	}
-	return paths, nil
 }
 
 // StickyCommentID returns zero when no sticky comment has been recorded.

@@ -105,18 +105,19 @@ func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) 
 		return nil, errors.New("worker: the runner wrote no agent run")
 	}
 	run := *p.agent
-	var diff, delta string
-	var deltaPaths []string
+	var changes store.ContextPackChanges
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		if diff, delta, _, err = store.ContextPackDiffs(ctx, tx, p.runID); err != nil || p.scope != review.ScopeIncremental {
-			return err
-		}
-		deltaPaths, err = store.ContextPackDeltaPaths(ctx, tx, p.runID)
+		changes, err = store.ContextPackDiffs(ctx, tx, p.runID)
 		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("worker: read context pack: %w", err)
+	}
+	diff, delta := changes.Diff, changes.Delta
+	var deltaPaths []string
+	if p.scope == review.ScopeIncremental {
+		deltaPaths = changes.DeltaPaths
 	}
 	p.logger.Info("agent answered", "stop", run.StopReason, "steps", run.Steps, "model", run.Model, "input_tokens", run.Usage.Prompt(),
 		"cached_tokens", run.Usage.CacheRead, "output_tokens", run.Usage.Output, "cost_usd", run.CostUSD)

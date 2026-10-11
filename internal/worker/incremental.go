@@ -52,6 +52,7 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 	}
 	p := priorReview{id: row.ID, headSHA: row.HeadSHA, trigger: row.Trigger, mergeBase: row.MergeBase,
 		changed: row.Changed, diagram: row.Diagram, checked: row.Checked, impact: row.Impact, confidence: row.Confidence}
+	p.findings = slices.Grow(p.findings, len(row.Findings))
 	for _, f := range row.Findings {
 		p.findings = append(p.findings, priorFinding{Finding: f.Finding, postedInline: f.PostedInline, commentID: f.CommentID})
 	}

@@ -292,19 +292,26 @@ func FindContextPackMeta(ctx context.Context, tx pgx.Tx, runnerRunID string) (Co
 	return m, nil
 }
 
-// ContextPackDiffs returns the diff and delta diff of the context pack a
-// runner run wrote, and whether the retention sweep has emptied them, or
-// ErrNotFound.
-func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (diff, delta string, swept bool, err error) {
-	err = tx.QueryRow(ctx, `SELECT diff, delta_diff, swept_at IS NOT NULL FROM context_packs WHERE runner_run_id = $1`, runnerRunID).
-		Scan(&diff, &delta, &swept)
+type ContextPackChanges struct {
+	Diff, Delta string
+	DeltaPaths  []string
+	Swept       bool
+}
+
+// ContextPackDiffs returns the diffs and delta paths of the context pack a
+// runner run wrote, and whether the retention sweep has emptied the diffs,
+// or ErrNotFound.
+func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackChanges, error) {
+	var changes ContextPackChanges
+	err := tx.QueryRow(ctx, `SELECT diff, delta_diff, delta_paths, swept_at IS NOT NULL FROM context_packs WHERE runner_run_id = $1`,
+		runnerRunID).Scan(&changes.Diff, &changes.Delta, &changes.DeltaPaths, &changes.Swept)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", false, ErrNotFound
+		return ContextPackChanges{}, ErrNotFound
 	}
 	if err != nil {
-		return "", "", false, fmt.Errorf("store: context pack diffs: %w", err)
+		return ContextPackChanges{}, fmt.Errorf("store: context pack diffs: %w", err)
 	}
-	return diff, delta, swept, nil
+	return changes, nil
 }
 
 // ContextPackInputs returns the context chunks and repository files of the

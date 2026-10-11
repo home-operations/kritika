@@ -195,11 +195,12 @@ func (w *Review) agentPrompt(
 		}
 		// A patch whose last review left no score to carry is reviewed
 		// again where a score is asked for.
-		if _, skippable, err := carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence); err != nil || !skippable {
+		baseline, err := store.LastReviewBaseline(ctx, tx, pr.id, reviewID)
+		if err != nil || (eff.Confidence.Model != "" && baseline.Confidence == nil) {
 			return err
 		}
-		p.UnchangedPatchID, err = store.LastReviewPatchID(ctx, tx, pr.id, reviewID)
-		return err
+		p.UnchangedPatchID = baseline.PatchID
+		return nil
 	})
 	if err != nil {
 		return nil, nil, err

@@ -65,6 +65,7 @@ func TestCarriedConfidence(t *testing.T) {
 		{name: "a prepared score cannot be carried", want: scored, wantScore: -1, rows: []row{{"prepared", `{"score":5}`}}},
 		{name: "a prepared review cannot hide the last completed score", want: scored, wantScore: 4, wantSkippable: true,
 			rows: []row{{"completed", `{"score":4}`}, {"prepared", `{"score":5}`}}},
+		{name: "JSON null is unscored", want: scored, wantScore: -1, rows: []row{{"completed", "null"}}},
 		{name: "no review yet", want: scored, wantScore: -1},
 		{name: "the last review's score, by the threshold asked for now", want: scored, wantScore: 3, wantSkippable: true,
 			rows: []row{{"completed", `{"score":5,"threshold":5}`}, {"completed", `{"score":3,"threshold":5}`}}},
