@@ -85,6 +85,9 @@ type Result struct {
 	ToolCalls    map[string]int
 	Usage        model.Usage
 	CostUSD      float64
+	// UnpricedSteps counts the steps nothing gave a cost, which CostUSD
+	// leaves out.
+	UnpricedSteps int
 	// Model is the model that answered the last step, empty before one
 	// has.
 	Model string
@@ -95,6 +98,17 @@ type Result struct {
 	// Refused is Validate's refusal of Submitted when the Run took it as
 	// its Fallback, empty when Submitted was accepted.
 	Refused string
+}
+
+// add counts resp, the answer to one of the Run's steps.
+func (r *Result) add(resp model.StepResponse) {
+	r.Steps++
+	r.Usage = r.Usage.Add(resp.Usage)
+	r.Model = resp.Model
+	r.CostUSD += resp.CostUSD
+	if resp.Unpriced {
+		r.UnpricedSteps++
+	}
 }
 
 // Run is a bounded, read-only tool loop over a git commit's tree: on each
@@ -364,10 +378,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 			result.Err = err.Error()
 			return result
 		}
-		result.Steps++
-		result.Usage = result.Usage.Add(resp.Usage)
-		result.Model = resp.Model
-		result.CostUSD += resp.CostUSD
+		result.add(resp)
 
 		event := StepEvent{Index: step, Usage: resp.Usage}
 		cutOffs = cutOffStreak(cutOffs, resp)

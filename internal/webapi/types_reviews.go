@@ -115,7 +115,7 @@ type AgentRun struct {
 	CommandsRun     []string        `json:"commandsRun"`
 	Usage           Usage           `json:"usage"`
 	CostUSD         float64         `json:"costUsd"`
-	UnpricedCalls   int64           `json:"unpricedCalls,omitzero"`
+	UnpricedSteps   int64           `json:"unpricedSteps,omitzero"`
 	Model           string          `json:"model"`
 	Error           string          `json:"error"`
 	CreatedAt       time.Time       `json:"createdAt"`

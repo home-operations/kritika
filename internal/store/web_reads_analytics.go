@@ -113,11 +113,10 @@ func ReadAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time) (An
 // AnalyticsPoint is one bucket of an analytics series, keyed by the date
 // it starts on.
 type AnalyticsPoint struct {
-	Key           string
-	Reviews       int
-	Findings      SeverityCounts
-	CostUSD       float64
-	UnpricedCalls int64
+	Key      string
+	Reviews  int
+	Findings SeverityCounts
+	CostUSD  float64
 }
 
 // ReadAnalyticsSeries buckets the account's completed reviews, findings (by
@@ -139,11 +138,10 @@ func ReadAnalyticsSeries(ctx context.Context, tx pgx.Tx, group AnalyticsGroup, f
 				count(*) FILTER (WHERE severity = 'p1') AS p1, count(*) FILTER (WHERE severity = 'p2') AS p2
 			FROM latest WHERE first_at >= $1 AND first_at < $2 GROUP BY 1),
 		spend AS (
-			SELECT date_trunc($3, created_at) AS b, sum(cost_usd)::float8 AS cost,
-				count(*) FILTER (WHERE unpriced) AS unpriced_calls FROM usage
+			SELECT date_trunc($3, created_at) AS b, sum(cost_usd)::float8 AS cost FROM usage
 			WHERE created_at >= $1 AND created_at < $2 GROUP BY 1)
 		SELECT to_char(k.b, 'YYYY-MM-DD'), coalesce(rev.n, 0), coalesce(fnd.p0, 0), coalesce(fnd.p1, 0),
-			coalesce(fnd.p2, 0), coalesce(spend.cost, 0), coalesce(spend.unpriced_calls, 0)
+			coalesce(fnd.p2, 0), coalesce(spend.cost, 0)
 		FROM buckets k LEFT JOIN rev ON rev.b = k.b LEFT JOIN fnd ON fnd.b = k.b LEFT JOIN spend ON spend.b = k.b
 		ORDER BY k.b`, from, to, string(group))
 	if err != nil {
@@ -151,7 +149,7 @@ func ReadAnalyticsSeries(ctx context.Context, tx pgx.Tx, group AnalyticsGroup, f
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AnalyticsPoint, error) {
 		var p AnalyticsPoint
-		err := row.Scan(&p.Key, &p.Reviews, &p.Findings.P0, &p.Findings.P1, &p.Findings.P2, &p.CostUSD, &p.UnpricedCalls)
+		err := row.Scan(&p.Key, &p.Reviews, &p.Findings.P0, &p.Findings.P1, &p.Findings.P2, &p.CostUSD)
 		return p, err
 	})
 	if err != nil {

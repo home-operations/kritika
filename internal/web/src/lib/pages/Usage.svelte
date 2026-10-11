@@ -4,8 +4,8 @@
   import { getJSON } from '../api.svelte';
   import { Resource, live } from '../resource.svelte';
   import { stamp } from '../time.svelte';
-  import { callCost, costTotal, daysAgo, tokens, usd, wholeNumber } from '../format';
-  import type { AccountSummary, UsageGroup, UsagePoint, UsageSeries } from '../types';
+  import { callCost, costTotal, daysAgo, reviewsLeftOut, tokens, usd, wholeNumber } from '../format';
+  import type { AccountSummary, MonthUsage, UsageGroup, UsagePoint, UsageSeries } from '../types';
   import StateView from '../components/StateView.svelte';
   import ColumnChart from '../components/ColumnChart.svelte';
   import Segmented from '../components/Segmented.svelte';
@@ -56,6 +56,14 @@
   const summary = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
   const account = $derived(summary.data?.find((t) => t.slug === slug));
   const month = $derived(account?.usage);
+
+  // The median and the mean are of the reviews whose cost is known.
+  function reviewSpend(m: MonthUsage): string {
+    const priced = m.reviews - (m.unpricedReviews ?? 0);
+    if (!m.reviews) return 'no review completed this month';
+    if (!priced || m.medianReviewCostUsd === null) return `${wholeNumber(m.reviews)} reviews this month, all with unpriced calls`;
+    return `${usd(m.medianReviewCostUsd)} per review (median) · ${usd(m.reviewCostUsd / priced)} mean of ${wholeNumber(priced)}${reviewsLeftOut(m.unpricedReviews)}`;
+  }
   const chatgptEnabled = $derived(account?.chatgptEnabled ?? false);
   $effect(() => {
     void res.load();
@@ -108,9 +116,7 @@
         <StatTile
           label="API spend this month"
           value={costTotal(month.costUsd, month.unpricedCalls)}
-          sub={month.medianReviewCostUsd === null
-            ? 'no review completed this month'
-            : `${costTotal(month.medianReviewCostUsd, month.reviewUnpricedCalls)} per review (median) · ${costTotal(month.reviewCostUsd / month.reviews, month.reviewUnpricedCalls)} mean of ${wholeNumber(month.reviews)}`}
+          sub={reviewSpend(month)}
         />
         <div class="stat">
           <span class="stat-label">Tokens this month</span>

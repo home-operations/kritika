@@ -144,7 +144,7 @@ type AgentRunRow struct {
 	CommandsOffered, CommandsRun []string
 	Usage                        model.Usage
 	CostUSD                      float64
-	UnpricedCalls                int64
+	UnpricedSteps                int64
 	Model                        string
 	Error                        string
 	CreatedAt                    time.Time
@@ -173,12 +173,11 @@ func FindAgentRun(ctx context.Context, tx pgx.Tx, runnerRunID string) (AgentRunR
 	var result, calls, timeline, sources, parts []byte
 	err := tx.QueryRow(ctx, `SELECT a.stop_reason, a.result, a.steps, a.tool_calls, a.timeline, a.sources, a.input_tokens,
 		a.cache_read_tokens, a.cache_write_tokens, a.output_tokens, a.cost_usd::float8, a.model, a.error, a.created_at,
-		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text, a.parts,
-		(SELECT count(*) FROM usage WHERE runner_run_id = a.runner_run_id AND role = 'review' AND unpriced)
+		a.skills_offered, a.skills_opened, a.commands_offered, a.commands_run, c.review_id::text, a.parts, a.unpriced_steps
 		FROM agent_runs a LEFT JOIN runner_runs c ON c.id = a.continued_from WHERE a.runner_run_id = $1`, runnerRunID).
 		Scan(&a.StopReason, &result, &a.Steps, &calls, &timeline, &sources, &a.Usage.Input, &a.Usage.CacheRead,
 			&a.Usage.CacheWrite, &a.Usage.Output, &a.CostUSD, &a.Model, &a.Error, &a.CreatedAt, &a.SkillsOffered, &a.SkillsOpened,
-			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID, &parts, &a.UnpricedCalls)
+			&a.CommandsOffered, &a.CommandsRun, &a.CarriedReviewID, &parts, &a.UnpricedSteps)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}

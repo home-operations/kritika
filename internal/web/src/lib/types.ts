@@ -89,7 +89,7 @@ export type MessageRole = 'user' | 'assistant';
 
 // reviews are the ones that completed this month, reviewCostUsd what they
 // cost together, medianReviewCostUsd the median cost of one, null when none
-// completed.
+// completed; both leave out the unpricedReviews, whose cost is not known.
 export interface MonthUsage {
   tokens: number;
   costUsd: number;
@@ -98,8 +98,8 @@ export interface MonthUsage {
   reviewsToday: number;
   reviewsPerDay: number;
   reviews: number;
+  unpricedReviews?: number;
   reviewCostUsd: number;
-  reviewUnpricedCalls?: number;
   medianReviewCostUsd: number | null;
 }
 
@@ -515,7 +515,6 @@ export interface AnalyticsPoint {
   reviews: number;
   findings: SeverityCounts;
   costUsd: number;
-  unpricedCalls?: number;
 }
 
 export interface RepoActivity {
@@ -627,7 +626,7 @@ export interface AgentRun {
   commandsRun: string[];
   usage: Usage;
   costUsd: number;
-  unpricedCalls?: number;
+  unpricedSteps?: number;
   model: string;
   error: string;
   createdAt: string;

@@ -40,11 +40,10 @@ type AnalyticsTotals struct {
 
 // AnalyticsPoint is one bucket of the series, keyed by its first date.
 type AnalyticsPoint struct {
-	Key           string         `json:"key"`
-	Reviews       int            `json:"reviews"`
-	Findings      SeverityCounts `json:"findings"`
-	CostUSD       float64        `json:"costUsd"`
-	UnpricedCalls int64          `json:"unpricedCalls,omitzero"`
+	Key      string         `json:"key"`
+	Reviews  int            `json:"reviews"`
+	Findings SeverityCounts `json:"findings"`
+	CostUSD  float64        `json:"costUsd"`
 }
 
 // RepoActivity is what one repository's reviews came to over the window.

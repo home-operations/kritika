@@ -365,6 +365,35 @@ confidence: { model: or/%[2]s, fallback: or/%[1]s }
 	}
 }
 
+// TestUnpricedModels: the models set for providers whose API reports no
+// cost are listed where pricing has no price under them as written, at
+// every scope; providers that report a cost are not.
+func TestUnpricedModels(t *testing.T) {
+	t.Setenv("TEST_PRIVATE_KEY", "tok")
+	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	doc := aliasProviders + `  priced:
+    type: anthropic
+    apiKey: { env: TEST_WEBHOOK_SECRET }
+    pricing: { ~sonnet-latest: { input: 2 }, claude-x: { input: 3 } }
+review: { model: a/~opus-latest, fallback: or/~acme/large-latest }
+confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
+` + acme(`  acme/*: { confidence: { model: priced/claude-y } }
+  acme/x: { review: { model: priced/claude-x, fallback: oc/glm } }
+`)
+	f, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []UnpricedModel{
+		{Setting: "review.model", Ref: "a/~opus-latest"},
+		{Setting: "confidence.fallback", Ref: "o/gpt-x"},
+		{Setting: "repositories.acme/*.confidence.model", Ref: "priced/claude-y"},
+	}
+	if got := f.UnpricedModels(); !slices.Equal(got, want) {
+		t.Fatalf("UnpricedModels = %+v, want %+v", got, want)
+	}
+}
+
 // githubMinimal is the smallest configuration: one app serving acme;
 // clientFields is spliced into the app's entry.
 func githubMinimal(clientFields string) string {

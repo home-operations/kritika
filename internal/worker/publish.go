@@ -725,16 +725,17 @@ func (p *publishPhase) cost(ctx context.Context) string {
 		return ""
 	}
 	var cost float64
+	var unpriced int64
 	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		cost, err = store.PullCost(ctx, tx, p.pr.id)
+		cost, unpriced, err = store.PullCost(ctx, tx, p.pr.id)
 		return err
 	})
 	if err != nil {
 		p.logger.Warn("pull request cost not read", "error", err)
 		return ""
 	}
-	return review.FormatUSD(cost)
+	return review.FormatCost(cost, unpriced)
 }
 
 // dashboard is the dashboard's origin and the pull request's page on it,

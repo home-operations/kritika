@@ -194,6 +194,30 @@ func TestRenderSummaryCost(t *testing.T) {
 			t.Errorf("FormatUSD(%v) = %q, want %q", amount, got, want)
 		}
 	}
+	// A total missing unpriced calls says so rather than reading as all of
+	// the spend.
+	d.Cost = FormatCost(0.25, 1)
+	if body, _ := RenderSummary(t.Context(), Templates{}, d); !strings.Contains(body, " · vendor/model-x/high · $0.25 + unpriced</sub>") {
+		t.Fatalf("footer without the unpriced mark:\n%s", body)
+	}
+}
+
+func TestFormatCost(t *testing.T) {
+	for _, tt := range []struct {
+		amount   float64
+		unpriced int64
+		want     string
+	}{
+		{0, 0, "$0"},
+		{0.25, 0, "$0.25"},
+		{0, 2, "Unpriced"},
+		{0.25, 1, "$0.25 + unpriced"},
+		{0.0042, 1, "$0.0042 + unpriced"},
+	} {
+		if got := FormatCost(tt.amount, tt.unpriced); got != tt.want {
+			t.Errorf("FormatCost(%v, %d) = %q, want %q", tt.amount, tt.unpriced, got, tt.want)
+		}
+	}
 }
 
 // TestRenderSummaryApproval: a review that may approve says whether it

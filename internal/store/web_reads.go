@@ -158,15 +158,17 @@ type AccountStats struct {
 // month and completed reviews today; and what the month's spend bought:
 // the reviews that completed, what they cost together (a review's cost is
 // its own usage rows, which follow-ups and indexing have none of) and the
-// median cost of one, nil when none completed.
+// median cost of one, nil when none completed. A review with an unpriced
+// call has no known cost, so ReviewCostUSD and MedianReviewCostUSD leave
+// out the UnpricedReviews.
 type MonthUsage struct {
 	Tokens              int64
 	CostUSD             float64
 	UnpricedCalls       int64
 	ReviewsToday        int64
 	Reviews             int64
+	UnpricedReviews     int64
 	ReviewCostUSD       float64
-	ReviewUnpricedCalls int64
 	MedianReviewCostUSD *float64
 }
 
@@ -201,6 +203,29 @@ func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName stri
 
 // ReadMonthUsage reads the account's month-to-date usage.
 func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
+	m, err := readCapUsage(ctx, tx)
+	if err != nil {
+		return m, err
+	}
+	var median *float64
+	err = tx.QueryRow(ctx, `WITH costs AS (
+			SELECT u.cost, u.unpriced_calls FROM reviews v
+			CROSS JOIN LATERAL (SELECT coalesce(sum(cost_usd), 0) AS cost, count(*) FILTER (WHERE unpriced) AS unpriced_calls
+				FROM usage WHERE review_id = v.id) u
+			WHERE v.status = 'completed' AND v.created_at >= date_trunc('month', now()))
+		SELECT count(*), count(*) FILTER (WHERE unpriced_calls > 0), coalesce(sum(cost) FILTER (WHERE unpriced_calls = 0), 0)::float8,
+			(percentile_cont(0.5) WITHIN GROUP (ORDER BY cost) FILTER (WHERE unpriced_calls = 0))::float8 FROM costs`).
+		Scan(&m.Reviews, &m.UnpricedReviews, &m.ReviewCostUSD, &median)
+	if err != nil {
+		return m, fmt.Errorf("store: month review costs: %w", err)
+	}
+	m.MedianReviewCostUSD = median
+	return m, nil
+}
+
+// readCapUsage reads the account's tokens and spend this month and its
+// completed reviews today, MonthUsage less what the reviews cost.
+func readCapUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	var m MonthUsage
 	err := tx.QueryRow(ctx, `SELECT coalesce(sum(input_tokens + output_tokens), 0), coalesce(sum(cost_usd), 0)::float8,
 		(SELECT count(*) FROM reviews WHERE status = 'completed' AND created_at >= date_trunc('day', now())),
@@ -210,18 +235,6 @@ func ReadMonthUsage(ctx context.Context, tx pgx.Tx) (MonthUsage, error) {
 	if err != nil {
 		return m, fmt.Errorf("store: month usage: %w", err)
 	}
-	var median *float64
-	err = tx.QueryRow(ctx, `WITH costs AS (
-			SELECT (SELECT coalesce(sum(cost_usd), 0) FROM usage WHERE review_id = v.id) AS cost,
-				(SELECT count(*) FROM usage WHERE review_id = v.id AND unpriced) AS unpriced_calls
-			FROM reviews v WHERE v.status = 'completed' AND v.created_at >= date_trunc('month', now()))
-		SELECT count(*), coalesce(sum(cost), 0)::float8, percentile_cont(0.5) WITHIN GROUP (ORDER BY cost)::float8,
-			coalesce(sum(unpriced_calls), 0)::bigint FROM costs`).
-		Scan(&m.Reviews, &m.ReviewCostUSD, &median, &m.ReviewUnpricedCalls)
-	if err != nil {
-		return m, fmt.Errorf("store: month review costs: %w", err)
-	}
-	m.MedianReviewCostUSD = median
 	return m, nil
 }
 

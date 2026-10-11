@@ -5,7 +5,7 @@
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live, pollJobs } from '../resource.svelte';
-  import { tokens, costTotal, wholeNumber } from '../format';
+  import { tokens, costTotal, reviewsLeftOut, usd, wholeNumber } from '../format';
   import type { AccountSummary, InstanceQueue, JobState } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
@@ -49,8 +49,9 @@
       tokens: sum((t) => t.usage.tokens),
       costUsd: sum((t) => t.usage.costUsd),
       unpricedCalls: sum((t) => t.usage.unpricedCalls ?? 0),
-      reviewUnpricedCalls: sum((t) => t.usage.reviewUnpricedCalls ?? 0),
+      unpricedReviews: sum((t) => t.usage.unpricedReviews ?? 0),
       reviews: sum((t) => t.usage.reviews),
+      pricedReviews: sum((t) => t.usage.reviews - (t.usage.unpricedReviews ?? 0)),
       reviewCostUsd: sum((t) => t.usage.reviewCostUsd),
       wants: WANTS.map((w) => ({ label: w.label, n: sum((t) => t.attention[w.key]) })).filter((w) => w.n > 0),
     };
@@ -93,7 +94,13 @@
             <span class="tile-label">API spend this month</span>
             <span class="tile-value">{costTotal(all.costUsd, all.unpricedCalls)}</span>
             <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
-            <span class="small muted">{all.reviews ? `${costTotal(all.reviewCostUsd / all.reviews, all.reviewUnpricedCalls)} per review, mean of ${wholeNumber(all.reviews)}` : 'no review completed this month'}</span>
+            <span class="small muted"
+              >{!all.reviews
+                ? 'no review completed this month'
+                : !all.pricedReviews
+                  ? `${wholeNumber(all.reviews)} reviews this month, all with unpriced calls`
+                  : `${usd(all.reviewCostUsd / all.pricedReviews)} per review, mean of ${wholeNumber(all.pricedReviews)}${reviewsLeftOut(all.unpricedReviews)}`}</span
+            >
           </div>
           <div class="tile">
             <span class="tile-label">Tokens this month</span>

@@ -287,6 +287,8 @@ type CompletionResponse struct {
 	OutputTokens int64
 	// CostUSD is the reported or computed cost, zero when neither is known.
 	CostUSD float64
+	// Unpriced is StepResponse.Unpriced.
+	Unpriced bool
 }
 
 // Embedder turns texts into vectors and reports the tokens it spent.

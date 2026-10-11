@@ -235,7 +235,7 @@ func (s *Store) AccountUsage(ctx context.Context, accountID string) (MonthUsage,
 	var m MonthUsage
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		m, err = ReadMonthUsage(ctx, tx)
+		m, err = readCapUsage(ctx, tx)
 		return err
 	})
 	return m, err

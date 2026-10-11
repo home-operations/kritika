@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"testing"
@@ -40,11 +41,11 @@ apps:
 		built++
 		return &stepperFunc{}, nil
 	}}
-	r, err := c.Route(f, &f.Accounts[0], "q/small")
+	r, err := c.Route(f, &f.Accounts[0], "q/small", slog.New(slog.DiscardHandler))
 	if err != nil || r.Ref != "q/small" || r.Stepper == nil || r.Provider.Type != configfile.ProviderAnthropic || r.Provider.Retries != 2 || built != 1 {
 		t.Fatalf("Route = %+v, %v after %d builds; want q's adapter and provider", r, err, built)
 	}
-	if _, err := c.Route(f, &f.Accounts[0], "nowhere/small"); err == nil {
+	if _, err := c.Route(f, &f.Accounts[0], "nowhere/small", slog.New(slog.DiscardHandler)); err == nil {
 		t.Fatal("Route resolved a provider the configuration lacks")
 	}
 }

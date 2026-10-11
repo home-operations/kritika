@@ -87,9 +87,10 @@ const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.scope, lr.created_at, lr.p0, lr.p1, lr.p2,
 	(SELECT count(*) FROM reviews WHERE pull_request_id = p.id AND status = 'completed'),
-	(SELECT coalesce(sum(u.cost_usd), 0)::float8 FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id),
-	(SELECT count(*) FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id AND u.unpriced)
+	pc.cost, pc.unpriced_calls
 	FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
+	CROSS JOIN LATERAL (SELECT coalesce(sum(u.cost_usd), 0)::float8 AS cost, count(*) FILTER (WHERE u.unpriced) AS unpriced_calls
+		FROM usage u JOIN reviews v ON v.id = u.review_id WHERE v.pull_request_id = p.id) pc
 	LEFT JOIN LATERAL (SELECT v.id, v.status, v.scope, v.created_at,
 		count(f.id) FILTER (WHERE f.severity = 'p0') AS p0,
 		count(f.id) FILTER (WHERE f.severity = 'p1') AS p1,

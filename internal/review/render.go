@@ -49,7 +49,7 @@ type RenderData struct {
 	// Effort is how hard the model reasoned, "" for the provider's default.
 	Effort string
 	// Cost is what the pull request's reviews have cost together, as
-	// FormatUSD writes it, "" where the repository does not show it.
+	// FormatCost writes it, "" where the repository does not show it.
 	Cost string
 	// AuthorIsBot is whether a bot opened the pull request; the default
 	// template then leaves out the praise, which a mechanical change
@@ -111,6 +111,19 @@ func FormatUSD(amount float64) string {
 		return fmt.Sprintf("$%.4f", amount)
 	}
 	return fmt.Sprintf("$%.2f", amount)
+}
+
+// FormatCost writes amount as FormatUSD does, marked as incomplete when
+// unpricedCalls of the calls it sums had no cost reported or configured,
+// so a total missing their spend does not read as all of it.
+func FormatCost(amount float64, unpricedCalls int64) string {
+	switch {
+	case unpricedCalls == 0:
+		return FormatUSD(amount)
+	case amount == 0:
+		return "Unpriced"
+	}
+	return FormatUSD(amount) + " + unpriced"
 }
 
 // footerSubjectRunes is how much of a commit subject the footer shows.

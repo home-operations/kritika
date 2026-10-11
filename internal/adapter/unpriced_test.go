@@ -16,9 +16,8 @@ import (
 
 func TestUnpricedWarnings(t *testing.T) {
 	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
+	// The caller's logger, scoped to its run, is the one that warns.
+	logger := slog.New(slog.NewJSONHandler(&logs, nil)).With("run", "run-1")
 	c := &Steppers{Build: func(configfile.Provider) (model.Stepper, error) {
 		return model.StepperFunc(func(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 			if req.Model == "failed" {
@@ -51,13 +50,13 @@ func TestUnpricedWarnings(t *testing.T) {
 		{"account scope", beta, "p/new-model", "", 4},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			route, err := c.Route(f, tt.account, tt.ref)
+			route, err := c.Route(f, tt.account, tt.ref, logger)
 			if err != nil {
 				t.Fatal(err)
 			}
 			call := Call{Route: route}
 			if tt.fallback != "" {
-				fallback, err := c.Route(f, tt.account, tt.fallback)
+				fallback, err := c.Route(f, tt.account, tt.fallback, logger)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -75,6 +74,7 @@ func TestUnpricedWarnings(t *testing.T) {
 	}
 	var first struct {
 		Level    string `json:"level"`
+		Run      string `json:"run"`
 		Account  string `json:"account"`
 		Provider string `json:"provider"`
 		Ref      string `json:"model_ref"`
@@ -83,7 +83,7 @@ func TestUnpricedWarnings(t *testing.T) {
 	if err := json.NewDecoder(&logs).Decode(&first); err != nil {
 		t.Fatal(err)
 	}
-	if first.Level != "WARN" || first.Account != alpha.Key() || first.Provider != "p" ||
+	if first.Level != "WARN" || first.Run != "run-1" || first.Account != alpha.Key() || first.Provider != "p" ||
 		first.Ref != "p/~family-latest@new-model" || first.Model != "new-model" {
 		t.Fatalf("warning = %+v", first)
 	}

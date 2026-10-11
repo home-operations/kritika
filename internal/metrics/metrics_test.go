@@ -13,7 +13,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	var none *Metrics
 	none.Webhook("a", "b")
 	none.Review("t", "completed", time.Second)
-	none.ModelCall("t", "m", "review", "ok", 1, 0, 1, 0.1)
+	none.ModelCall("t", "m", "review", "ok", 1, 0, 1, 0.1, false)
 	none.TranscriptWrite("review", "ok")
 	none.ConfidenceScored("t", 5, "low")
 	none.Leading(true)
@@ -26,8 +26,8 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	m.IndexRun("onedr0p", "full", "completed", 565)
 	m.RunnerRun("onedr0p", "index", "success", 4*time.Second)
 	m.LeaseWait("onedr0p", "openai/gpt-6-sol", 5*time.Millisecond)
-	m.ModelCall("onedr0p", "openai/gpt-6-sol", "review", "ok", 1706, 1574, 83, 0.005029)
-	m.ModelCall("onedr0p", "openai/gpt-6-sol", "review", "error", 0, 0, 0, 0)
+	m.ModelCall("onedr0p", "openai/gpt-6-sol", "review", "ok", 1706, 1574, 83, 0.005029, false)
+	m.ModelCall("onedr0p", "openai/gpt-6-sol", "review", "error", 0, 0, 0, 0, false)
 
 	want := `# HELP kritika_model_tokens_total Tokens spent, by role and direction (input, cached, output); cached is the part of input the provider served from its prompt cache.
 # TYPE kritika_model_tokens_total counter
@@ -38,7 +38,15 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_model_tokens_total"); err != nil {
 		t.Fatal(err)
 	}
-	if n := testutil.CollectAndCount(m.modelCalls); n != 2 {
+	m.ModelCall("onedr0p", "claude-sonnet-5-5", "confidence", "ok", 6000, 0, 200, 0, true)
+	m.ModelCall("onedr0p", "claude-sonnet-5-5", "confidence", "error", 0, 0, 0, 0, true)
+	if v := testutil.ToFloat64(m.modelUnpriced.WithLabelValues("onedr0p", "claude-sonnet-5-5", "confidence")); v != 1 {
+		t.Fatalf("unpriced calls = %v, want only the one that answered", v)
+	}
+	if n := testutil.CollectAndCount(m.modelUnpriced); n != 1 {
+		t.Fatalf("unpriced call series = %d", n)
+	}
+	if n := testutil.CollectAndCount(m.modelCalls); n != 4 {
 		t.Fatalf("model call series = %d", n)
 	}
 	if v := testutil.ToFloat64(m.indexChunks.WithLabelValues("onedr0p")); v != 565 {

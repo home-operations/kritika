@@ -18,8 +18,8 @@ type Route struct {
 }
 
 // Route resolves ref, a model of a provider of account t in f, to its
-// adapter and provider.
-func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfile.ModelRef) (Route, error) {
+// adapter and provider. logger, the caller's, says when a call is unpriced.
+func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfile.ModelRef, logger *slog.Logger) (Route, error) {
 	stepper, err := c.Stepper(f, t, ref.Provider())
 	if err != nil {
 		return Route{}, err
@@ -32,7 +32,7 @@ func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfi
 	observed := model.StepperFunc(func(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
 		resp, err := stepper.Step(ctx, req)
 		if resp.Unpriced {
-			c.warnUnpriced(ctx, account, ref, resp.Model)
+			c.warnUnpriced(ctx, logger, account, ref, resp.Model)
 		}
 		return resp, err
 	})
@@ -41,7 +41,7 @@ func (c *Steppers) Route(f *configfile.File, t *configfile.Account, ref configfi
 
 // warnUnpriced reports each serving model once per account and provider
 // in this process, including new models a floating alias selects.
-func (c *Steppers) warnUnpriced(ctx context.Context, account string, ref configfile.ModelRef, served string) {
+func (c *Steppers) warnUnpriced(ctx context.Context, logger *slog.Logger, account string, ref configfile.ModelRef, served string) {
 	key := [3]string{account, ref.Provider(), served}
 	c.mu.Lock()
 	seen := c.unpriced[key]
@@ -53,7 +53,7 @@ func (c *Steppers) warnUnpriced(ctx context.Context, account string, ref configf
 	}
 	c.mu.Unlock()
 	if !seen {
-		slog.WarnContext(ctx, "model call is unpriced: provider reported no cost and no pricing matched; configure provider pricing",
+		logger.WarnContext(ctx, "model call is unpriced: provider reported no cost and no pricing matched; configure provider pricing",
 			"account", account, "provider", ref.Provider(), "model_ref", ref, "model", served)
 	}
 }

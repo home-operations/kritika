@@ -90,6 +90,6 @@ func (p *publishPhase) merge(ctx context.Context, parts []review.MergePart, find
 		Schema: review.MergeSchema(p.parse.Diagram), SchemaName: "summary", MaxTokens: mergeMaxOutputTokens,
 	})
 	p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(call.served.Ref, resp.Model), store.RoleReview, adapter.Outcome(err),
-		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD)
+		resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD, resp.Unpriced)
 	return resp.Raw, err
 }

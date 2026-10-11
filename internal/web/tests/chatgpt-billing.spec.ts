@@ -121,16 +121,19 @@ test("usage groups distinguish plan, mixed, free API and unpriced calls while to
 });
 
 test("spend summaries mark incomplete totals and avoid comparing incomplete periods", async ({ page }) => {
-  const usage = { ...g.accountSummary.usage, unpricedCalls: 1, reviewUnpricedCalls: 1 };
+  const usage = { ...g.accountSummary.usage, unpricedCalls: 1, unpricedReviews: 1 };
   await g.mockApi(page, [
     [/\/api\/v1\/accounts$/, [{ ...g.accountSummary, usage }]],
     [/\/admin\/accounts$/, [{ ...g.adminAccount, usage }]],
     [/\/analytics$/, { ...g.analytics, current: { ...g.analytics.current, unpricedCalls: 1 } }],
-    [/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun: { ...g.reviewDetail.agentRun!, unpricedCalls: 1 } }],
+    [/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun: { ...g.reviewDetail.agentRun!, unpricedSteps: 1 } }],
     ...g.defaultApi(),
   ]);
   await page.goto('/');
-  await expect(page.locator('.tile').filter({ hasText: 'API spend this month' })).toContainText('$1.50 + unpriced');
+  const tile = page.locator('.tile').filter({ hasText: 'API spend this month' });
+  await expect(tile).toContainText('$1.50 + unpriced');
+  // The mean is of the reviews whose cost is known.
+  await expect(tile).toContainText('$0.11 per review, mean of 11 · 1 with unpriced calls left out');
   await page.goto(`/${account}`);
   const spend = page.locator('.stat').filter({ has: page.getByText('API spend', { exact: true }) });
   await expect(spend).toContainText('$1.25 + unpriced');
@@ -139,9 +142,18 @@ test("spend summaries mark incomplete totals and avoid comparing incomplete peri
   await page.goto(`/${account}/usage`);
   const month = page.locator('.stat').filter({ hasText: 'API spend this month' });
   await expect(month).toContainText('$1.50 + unpriced');
-  await expect(month).toContainText('$0.08 + unpriced per review (median)');
+  await expect(month).toContainText('$0.08 per review (median) · $0.11 mean of 11 · 1 with unpriced calls left out');
   await page.goto('/#/admin');
   await expect(page.locator('tbody tr').filter({ hasText: g.adminAccount.slug }).first()).toContainText('$1.50 + unpriced');
   await page.goto(`/${account}/reviews/rev-1/timeline`);
   await expect(page.locator('.panel-head').filter({ hasText: 'Agent steps' })).toContainText('$0.10 + unpriced');
+});
+
+test("per-review spend says so when no review's cost is known", async ({ page }) => {
+  const usage = { ...g.accountSummary.usage, unpricedCalls: 12, unpricedReviews: 12, reviewCostUsd: 0, medianReviewCostUsd: null };
+  await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, usage }]], ...g.defaultApi()]);
+  await page.goto('/');
+  await expect(page.locator('.tile').filter({ hasText: 'API spend this month' })).toContainText('12 reviews this month, all with unpriced calls');
+  await page.goto(`/${account}/usage`);
+  await expect(page.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('12 reviews this month, all with unpriced calls');
 });

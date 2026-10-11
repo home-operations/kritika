@@ -148,7 +148,7 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 		StopReason: a.StopReason, Steps: a.Steps, ToolCalls: a.ToolCalls, Timeline: make([]TimelineStep, len(a.Timeline)),
 		Sources: a.Sources, SkillsOffered: a.SkillsOffered, SkillsOpened: a.SkillsOpened,
 		CommandsOffered: a.CommandsOffered, CommandsRun: a.CommandsRun, Usage: usageOf(a.Usage),
-		CostUSD: a.CostUSD, UnpricedCalls: a.UnpricedCalls, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt,
+		CostUSD: a.CostUSD, UnpricedSteps: a.UnpricedSteps, Model: a.Model, Error: a.Error, CreatedAt: a.CreatedAt,
 		Result: a.Result, CarriedReviewID: a.CarriedReviewID,
 		Parts: make([]AgentPart, len(a.Parts)),
 	}

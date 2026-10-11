@@ -34,7 +34,7 @@ type structuredCall struct {
 func (p *publishPhase) structured(
 	ctx context.Context, ref, fallback configfile.ModelRef, kind store.ModelCallKind, role, what, modelName string, halve bool,
 ) (structuredCall, error) {
-	route, err := p.w.Steppers.Route(p.file, p.account, ref)
+	route, err := p.w.Steppers.Route(p.file, p.account, ref, p.logger)
 	if err != nil {
 		return structuredCall{}, err
 	}
@@ -57,7 +57,7 @@ func (p *publishPhase) structured(
 	case fallback.Provider() == ref.Provider():
 		fallbacks = []string{fallback.Model()}
 	default:
-		if fb, err := p.w.Steppers.Route(p.file, p.account, fallback); err != nil {
+		if fb, err := p.w.Steppers.Route(p.file, p.account, fallback, p.logger); err != nil {
 			p.logger.Error("no adapter for the "+modelName+" fallback", "fallback", fallback, "error", err)
 		} else {
 			routed.Fallback = &fb

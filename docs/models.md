@@ -50,12 +50,17 @@ when present, otherwise the model's configured `pricing`. Without either,
 kritika warns on the first unpriced call for each account, provider and
 selected model in each process, naming the requested model reference and
 selected ID. This also covers fallbacks, repository overrides and new IDs
-selected by floating aliases.
+selected by floating aliases. At startup it also warns for each model the
+configuration file sets on an `anthropic` or `openai` provider, whose APIs
+report no cost, when `pricing` has no price under the model as written.
 
 The dashboard labels these calls **Unpriced** and marks totals containing
-them as incomplete. An explicit zero price or an upstream-reported zero
-remains $0; ChatGPT calls remain included in the plan. Existing history is
-not reclassified. Tokens count against an account's `limits` either way.
+them as incomplete, as does the summary footer with `review.cost`, and
+`kritika_model_unpriced_calls_total` counts them
+([metrics](metrics.md)). Per-review averages are of the reviews whose cost
+is known. An explicit zero price or an upstream-reported zero remains $0;
+ChatGPT calls remain included in the plan. Existing history is not
+reclassified. Tokens count against an account's `limits` either way.
 
 ### An account's own keys
 

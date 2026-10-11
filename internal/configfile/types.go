@@ -112,9 +112,10 @@ type Provider struct {
 	// BaseURL overrides the type's default endpoint.
 	BaseURL string    `yaml:"baseUrl,omitempty"`
 	APIKey  SecretRef `yaml:"apiKey"`
-	// Pricing, keyed by model id, computes the cost of calls the provider
-	// does not report a cost for; without it such calls cost zero while
-	// their tokens still count against limits.
+	// Pricing, keyed by model id or floating alias, computes the cost of
+	// calls the provider does not report a cost for; without a price such
+	// calls are recorded as unpriced, at no cost, while their tokens still
+	// count against limits.
 	Pricing model.Pricing `yaml:"pricing,omitempty"`
 	// Retries is how many more times a review's or a follow-up's step, the
 	// scorer's call or a split review's summary call on one of the

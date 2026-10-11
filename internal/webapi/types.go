@@ -47,7 +47,8 @@ type UserSettings struct {
 
 // MonthUsage is an account's usage against its caps (a zero cap is unset),
 // and the reviews that completed this month: their cost together, and the
-// median cost of one, null when none completed.
+// median cost of one, null when none completed, both leaving out the
+// unpriced reviews, whose cost is not known.
 type MonthUsage struct {
 	Tokens              int64    `json:"tokens"`
 	CostUSD             float64  `json:"costUsd"`
@@ -56,8 +57,8 @@ type MonthUsage struct {
 	ReviewsToday        int64    `json:"reviewsToday"`
 	ReviewsPerDay       int      `json:"reviewsPerDay"`
 	Reviews             int64    `json:"reviews"`
+	UnpricedReviews     int64    `json:"unpricedReviews,omitzero"`
 	ReviewCostUSD       float64  `json:"reviewCostUsd"`
-	ReviewUnpricedCalls int64    `json:"reviewUnpricedCalls,omitzero"`
 	MedianReviewCostUSD *float64 `json:"medianReviewCostUsd"`
 }
 
