@@ -19,7 +19,7 @@ index 222..555 100644
 
 const (
 	deltaHeading   = "Changed since the last review"
-	priorHeading   = "Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is)"
+	priorHeading   = "Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is"
 	checkedHeading = "What the last review checked at"
 )
 
@@ -53,10 +53,10 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 		t.Fatalf("omitted %v, context omitted %d", omitted, contextOmitted)
 	}
 	for _, want := range []string{
-		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading,
-		"names it in prior, so it keeps its thread; one you leave out is taken as gone.",
+		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading + ", and list in resolved the id of each that no longer holds). ",
+		"names it in prior, so it keeps its thread; one you neither report again nor list in resolved stays open.",
 		"raise as new only P0 or P1", "The bar is not for the last review's findings: report again each that still holds",
-		priorPrefix("main.go", "y changed") + "main.go:11 [p1] y changed: why it matters",
+		priorPrefix("main.go", "y changed") + "main.go:11 [p1] y changed: why it matters\n",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
@@ -82,7 +82,9 @@ func TestBuildEarlierFindings(t *testing.T) {
 	in.Earlier = &EarlierInput{HeadSHA: in.Incremental.PriorHeadSHA, Findings: in.Incremental.Prior, Checked: []string{"util.go: u is pure"}}
 	in.Incremental = nil
 	msg, _, _ := Build(in)
-	if !strings.Contains(msg, priorHeading+". They are claims an earlier automated review made about 0123456") ||
+	if !strings.Contains(msg, priorHeading+"). They are claims an earlier automated review made about 0123456") ||
+		!strings.Contains(msg, "names it in prior, so it keeps its thread; one you leave out is taken as gone.") ||
+		strings.Contains(msg, "resolved") ||
 		!strings.Contains(msg, priorPrefix("main.go", "y changed")+"main.go:11 [p1] y changed: why it matters") ||
 		!strings.Contains(msg, checkedHeading+" 0123456 and found sound, in its own notes.") || !strings.Contains(msg, "\n- util.go: u is pure\n") ||
 		strings.Contains(msg, deltaHeading) || strings.Contains(msg, "This is a re-review") {
@@ -96,13 +98,19 @@ func TestBuildEarlierFindings(t *testing.T) {
 }
 
 // TestBuildContinuation: a carried-on conversation's next turn says the
-// head moved, gives the diff since under the re-review's bar, repeats the
-// dismissals and asks for the whole review again, its diagram only when
-// the summary draws one.
+// head moved, gives the diff since under the re-review's bar, lists the
+// last review's findings by id, the ones it carried on unchecked included,
+// repeats the dismissals and asks for the whole review again, its diagram
+// only when the summary draws one.
 func TestBuildContinuation(t *testing.T) {
 	in := ContinueInput{
 		PriorHeadSHA: "0123456789abcdef0123456789abcdef01234567", HeadSHA: "fedcba9876543210fedcba9876543210fedcba98",
-		DeltaDiff: deltaDiff, Dismissed: []DismissedFinding{{Path: "main.go", Line: 3, Severity: SeverityP2, Title: "x", Reason: "intended"}},
+		DeltaDiff: deltaDiff,
+		Prior: []Finding{
+			{Path: "main.go", Line: 11, Severity: SeverityP1, Title: "y changed", Explanation: "why"},
+			{Path: "README.md", Line: 2, Severity: SeverityP2, Title: "typo", Explanation: "still", CarriedFrom: "abcdef0123456789"},
+		},
+		Dismissed: []DismissedFinding{{Path: "main.go", Line: 3, Severity: SeverityP2, Title: "x", Reason: "intended"}},
 	}
 	msg, omitted := BuildContinuation(in)
 	for _, want := range []string{
@@ -110,12 +118,20 @@ func TestBuildContinuation(t *testing.T) {
 		"This is a re-review: the last review set the bar",
 		"The bar is not for the last review's findings: report again each that still holds, whatever its severity",
 		"Changed since your last review (0123456 to fedcba9, unified;", "-\ty := 3\n+\ty := 5",
+		priorHeading + ", and list in resolved the id of each that no longer holds). ",
+		priorPrefix("main.go", "y changed") + "main.go:11 [p1] y changed: why\n",
+		priorPrefix("README.md", "typo") + "README.md:2 [p2] typo: still (last checked at abcdef0, whose line numbers it uses)\n",
 		"Findings a maintainer dismissed on this pull request.", "- main.go:3 [p2] x:  (dismissed: intended)",
-		"call submit_review again with the whole review of the pull request at fedcba9", "with its title unchanged",
+		"call submit_review again with the whole review of the pull request at fedcba9: report again each of the last review's " +
+			"findings that still holds, naming its id in prior, list in resolved the ids of those that no longer hold",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("missing %q in:\n%s", want, msg)
 		}
+	}
+	if deltaAt, priorAt, dismissedAt := strings.Index(msg, "Changed since your last review"), strings.Index(msg, priorHeading),
+		strings.Index(msg, "Findings a maintainer dismissed"); deltaAt >= priorAt || priorAt >= dismissedAt {
+		t.Fatalf("want the delta, the last review's findings, the dismissals in that order:\n%s", msg)
 	}
 	if len(omitted) != 0 || strings.Contains(msg, "diagram") || strings.Contains(msg, "fetch_repo") {
 		t.Fatalf("omitted %v, or a diagram or fetches asked about of a review without them:\n%s", omitted, msg)
@@ -129,10 +145,12 @@ func TestBuildContinuation(t *testing.T) {
 	if msg, _ := BuildContinuation(in); !strings.HasSuffix(msg, " "+keepDiagram) {
 		t.Fatalf("no diagram asked for:\n%s", msg)
 	}
-	in.DeltaDiff, in.BudgetTokens = deltaDiff+strings.Replace(deltaDiff, "main.go", "big.go", 4)+strings.Repeat("+x\n", 4000), 600
+	// The findings take their room before the delta, which is cut to what
+	// they leave.
+	in.DeltaDiff, in.BudgetTokens = deltaDiff+strings.Replace(deltaDiff, "main.go", "big.go", 4)+strings.Repeat("+x\n", 4000), 800
 	msg, omitted = BuildContinuation(in)
 	if len(omitted) != 1 || omitted[0] != "big.go" || !strings.Contains(msg, "[1 file(s) of the diff since your last review were omitted") ||
-		!strings.Contains(msg, "+\ty := 5") {
+		!strings.Contains(msg, "+\ty := 5") || !strings.Contains(msg, "README.md:2 [p2] typo: still") {
 		t.Fatalf("omitted %v:\n%s", omitted, msg)
 	}
 }

@@ -70,7 +70,9 @@ From the top, each part shown only when it has something to say:
    review was scored.
 3. **Approved**, or **Not approved** with the reason, when
    `review.approve` is on.
-4. **Findings**, each linking to its lines and its inline thread; **Outside
+4. **Findings**, each linking to its lines and its inline thread, an
+   earlier one a re-review neither reported again nor found resolved
+   marked not rechecked since the head it was last reported at; **Outside
    the diff**, findings on lines the diff does not show, which get no
    inline comment but are recorded like the others and linked to the
    thread an earlier report opened, if any; **Held back**, a re-review's

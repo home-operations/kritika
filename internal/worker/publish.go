@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -68,10 +69,10 @@ type publishPhase struct {
 	// they submitted, whose files went unreviewed: the review is then
 	// incomplete for the commit status and approves nothing.
 	unfinished int
-	// rechecked reports whether the last review's findings on a path were
-	// checked again, as they always are unless a split review's part that
-	// had them ended before it submitted.
-	rechecked func(path string) bool
+	// resolved are the last review's findings an incremental re-review
+	// listed as no longer holding, which the summary lists and whose
+	// threads it resolves.
+	resolved []priorFinding
 }
 
 // run publishes what the runner's agent submitted; the run's usage is
@@ -113,7 +114,7 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	}
 	unanchored, notes := splitDropped(dropped)
 	partNotes := unfinishedParts(run.Parts)
-	p.unfinished, p.rechecked = len(partNotes), recheckedBy(run.Parts)
+	p.unfinished = len(partNotes)
 	notes = append(notes, partNotes...)
 	var dismissed, dismissedOff int
 	res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed)
@@ -139,6 +140,15 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	}
 	if p.parse.Diagram {
 		res.Summary.Diagram = carriedDiagram(answer, res.Summary.Diagram, p.prior.diagram, p.scope == review.ScopeIncremental)
+	}
+	// Carried findings follow the review's own, which it vouches for.
+	if p.scope == review.ScopeIncremental {
+		var carried []review.Finding
+		p.resolved, carried = settlePrior(p.prior.findings, p.prior.headSHA, slices.Concat(res.Findings, unanchored), res.Resolved)
+		if len(carried) > 0 {
+			p.logger.Info("earlier findings carried on unchecked", "count", len(carried))
+			res.Findings = append(res.Findings, carried...)
+		}
 	}
 	// A finding on a line the diff does not show has no inline comment, but
 	// weighs on the score, the counts and the approval all the same.
@@ -317,6 +327,9 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 func (p *publishPhase) countFindings(res review.Result) {
 	byKind := map[[2]string]int{}
 	for _, f := range res.Findings {
+		if f.CarriedFrom != "" {
+			continue
+		}
 		byKind[[2]string{string(f.Severity), string(f.Category)}]++
 	}
 	for kind, n := range byKind {
@@ -386,7 +399,7 @@ func (p *publishPhase) writeBack(
 	}
 	for i := range res.Findings {
 		f := &res.Findings[i]
-		f.URL = p.client.FileURL(owner, repo, p.pr.headSHA, f.Path, f.Line, f.EndLine)
+		f.URL = p.client.FileURL(owner, repo, cmp.Or(f.CarriedFrom, p.pr.headSHA), f.Path, f.Line, f.EndLine)
 		if onForge[i].ID != 0 {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, onForge[i].ID)
 		}
@@ -408,7 +421,9 @@ func (p *publishPhase) writeBack(
 	inline := make([]forge.InlineComment, 0, len(res.Findings))
 	var posted []int
 	for i, f := range res.Findings {
-		if onForge[i].Posted || !p.settings.Review.InlineComments {
+		// A carried finding's line numbers are an earlier head's, which
+		// the diff may no longer show.
+		if onForge[i].Posted || f.CarriedFrom != "" || !p.settings.Review.InlineComments {
 			continue
 		}
 		body, inlineNotes := review.RenderInline(ctx, templates, review.InlineData{Finding: f, WebURL: web})
@@ -437,8 +452,8 @@ func (p *publishPhase) writeBack(
 	}
 	if data.Incremental {
 		data.PriorHeadURL = p.client.CommitURL(owner, repo, p.prior.headSHA)
-		data.Prior = p.priorFindings(reported)
-		p.resolveThreads(ctx, resolvedThreads(reported, p.recheckedPrior()))
+		data.Prior = p.priorFindings()
+		p.resolveThreads(ctx, resolvedThreads(p.resolved))
 	}
 	body, renderNotes := review.RenderSummary(ctx, p.templates, data)
 	for _, n := range renderNotes {
@@ -533,22 +548,45 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 	return posted
 }
 
-// priorFindings is the last review's findings as this review's summary
-// lists them: those the model, asked to report again each one still
-// present, did not, linked to their threads where they have one, then the
-// findings maintainers dismissed, each linked to the comment that
-// dismissed it. A finding among reported, this review's findings on and
-// off the diff, is left out, as the summary already lists it among them.
-func (p *publishPhase) priorFindings(reported []review.Finding) []review.PriorFinding {
+// settlePrior sorts the last review's findings, made at head, that this
+// incremental re-review did not report again, reported being its findings
+// on and off the diff: those whose ids it listed as resolved, and the rest,
+// which stay open, carried on unchecked from the head they were last
+// reported at. A finding is gone only when a review says so, so one the
+// model passed over, one a split review's unfinished part had, or one the
+// prompt had no room for is never taken as fixed.
+func settlePrior(prior []priorFinding, head string, reported []review.Finding, resolvedIDs []string) (
+	resolved []priorFinding, carried []review.Finding,
+) {
 	again := reportedSet(reported)
-	owner, repo := p.pr.ownerRepo()
-	out := make([]review.PriorFinding, 0, len(p.prior.findings))
-	for _, pf := range p.recheckedPrior() {
-		f := pf.Finding
-		if again[review.Fingerprint(f)] {
-			continue
+	gone := make(map[string]bool, len(resolvedIDs))
+	for _, id := range resolvedIDs {
+		gone[strings.TrimSpace(id)] = true
+	}
+	for _, pf := range prior {
+		switch {
+		case again[review.Fingerprint(pf.Finding)]:
+		case gone[review.PriorID(pf.Finding)]:
+			resolved = append(resolved, pf)
+		default:
+			f := pf.Finding
+			f.CarriedFrom = cmp.Or(f.CarriedFrom, head)
+			carried = append(carried, f)
 		}
-		f.URL = p.client.FileURL(owner, repo, p.prior.headSHA, f.Path, f.Line, f.EndLine)
+	}
+	return resolved, carried
+}
+
+// priorFindings is the last review's findings as this review's summary
+// lists them: those it listed as resolved, linked to their threads where
+// they have one, then the findings maintainers dismissed, each linked to
+// the comment that dismissed it.
+func (p *publishPhase) priorFindings() []review.PriorFinding {
+	owner, repo := p.pr.ownerRepo()
+	out := make([]review.PriorFinding, 0, len(p.resolved)+len(p.prior.dismissed))
+	for _, pf := range p.resolved {
+		f := pf.Finding
+		f.URL = p.client.FileURL(owner, repo, cmp.Or(f.CarriedFrom, p.prior.headSHA), f.Path, f.Line, f.EndLine)
 		if pf.commentID != 0 {
 			f.ThreadURL = p.client.ThreadURL(owner, repo, p.pr.number, pf.commentID)
 		}
@@ -563,39 +601,13 @@ func (p *publishPhase) priorFindings(reported []review.Finding) []review.PriorFi
 	return out
 }
 
-// recheckedPrior is the last review's findings this review checked again:
-// a finding a split review's unfinished part had is neither still present
-// nor resolved.
-func (p *publishPhase) recheckedPrior() []priorFinding {
-	if p.rechecked == nil {
-		return p.prior.findings
-	}
-	return slices.DeleteFunc(slices.Clone(p.prior.findings), func(pf priorFinding) bool { return !p.rechecked(pf.Path) })
-}
-
-// recheckedBy reports, for the parts of a split review, whether the last
-// review's findings on a path were checked again by a part that submitted:
-// the part that reviews the path, or the first part, which checks those on
-// files no part reviews. Every path is when the review was not split.
-func recheckedBy(parts []store.AgentPart) func(path string) bool {
-	if len(parts) == 0 {
-		return func(string) bool { return true }
-	}
-	return func(path string) bool {
-		i := max(slices.IndexFunc(parts, func(part store.AgentPart) bool { return slices.Contains(part.Paths, path) }), 0)
-		return parts[i].Stop == string(agent.StopSubmitted)
-	}
-}
-
-// resolvedThreads is the inline comment id of each of the last review's
-// findings this review, asked to report again each one still present, did
-// not report, on or off the diff: the threads the summary lists as
-// resolved.
-func resolvedThreads(reported []review.Finding, prior []priorFinding) []int64 {
-	again := reportedSet(reported)
+// resolvedThreads is the inline comment id of each of resolved, the last
+// review's findings this review listed as no longer holding: the threads
+// the summary lists as resolved.
+func resolvedThreads(resolved []priorFinding) []int64 {
 	var ids []int64
-	for _, pf := range prior {
-		if pf.commentID != 0 && !again[review.Fingerprint(pf.Finding)] {
+	for _, pf := range resolved {
+		if pf.commentID != 0 {
 			ids = append(ids, pf.commentID)
 		}
 	}

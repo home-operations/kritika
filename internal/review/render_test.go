@@ -318,6 +318,22 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryCarried: an earlier finding a re-review carried on
+// unchecked is listed among the findings, linked at the head it was last
+// reported at, and says since when it was not checked again.
+func TestRenderSummaryCarried(t *testing.T) {
+	d := sampleData()
+	d.Result.Findings = append(d.Result.Findings, Finding{Path: "old.go", Line: 3, Severity: SeverityP1, Category: CategoryReliability,
+		Title: "unbounded retry", URL: "https://forge.example/o/r/blob/fedcba9876543210/old.go#L3",
+		ThreadURL: "https://forge.example/o/r/pull/42#r5", CarriedFrom: "fedcba9876543210"})
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	want := "- **[P1]** [`old.go:3`](https://forge.example/o/r/blob/fedcba9876543210/old.go#L3) " +
+		"[unbounded retry](https://forge.example/o/r/pull/42#r5) · reliability · not rechecked since `fedcba9`\n"
+	if !strings.Contains(body, want) || strings.Count(body, "not rechecked") != 1 {
+		t.Fatalf("missing %q, or another finding tagged, in:\n%s", want, body)
+	}
+}
+
 // TestRenderSummaryHeldBack: findings a re-review held back are listed
 // folded away, and count nowhere.
 func TestRenderSummaryHeldBack(t *testing.T) {

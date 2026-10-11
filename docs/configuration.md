@@ -396,8 +396,12 @@ left off, linking to it.
 
 An incremental re-review raises as new only what the new commits brought,
 at P0 or P1, and reports again each of the last review's findings that
-still holds, whatever its severity; one it does not report again is
-listed as resolved, and its thread resolved. A finding
+still holds, whatever its severity. It names the ones that no longer hold,
+which the summary lists as resolved and whose threads it resolves. One it
+neither reports again nor names stays open: the summary lists it among the
+findings as not rechecked since the head a review last reported it at, it
+counts toward the score, the status and the approval, and the next
+re-review is asked about it again. A finding
 in the diff that the last review did not make, more than 3 lines from
 every line changed since, is held back: the summary lists it folded away,
 with no inline comment, and it counts toward nothing, the score, the

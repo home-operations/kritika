@@ -155,6 +155,10 @@ type Finding struct {
 	// prefers it, so a finding reported again in other words keeps the
 	// thread its first wording opened.
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// CarriedFrom is the head a review last reported the finding at, whose
+	// line numbers it uses, on one a re-review carried on unchecked; ""
+	// otherwise. kritika sets it; Parse clears any the model sent.
+	CarriedFrom string `json:"carried_from,omitempty"`
 	// URL links the finding's lines at the head commit. kritika sets it
 	// when rendering; the model never does.
 	URL string `json:"-"`
@@ -163,12 +167,12 @@ type Finding struct {
 	ThreadURL string `json:"-"`
 }
 
-// PriorFinding is a finding the last review made and this one did not
-// report again, as the summary of a review that builds on it lists them.
+// PriorFinding is one of the last review's findings that this review listed
+// as resolved or a maintainer dismissed, as the summary lists them.
 type PriorFinding struct {
 	Finding
-	// Resolved is whether this review, asked to report the finding again
-	// if still present, did not.
+	// Resolved is whether this review listed the finding among those that
+	// no longer hold.
 	Resolved bool
 	// Dismissed is whether a maintainer dismissed the finding, with
 	// DismissReason the reason they gave, "" for none.
@@ -202,6 +206,9 @@ func (f Finding) AgentPromptFence() string {
 type Result struct {
 	Summary  Summary   `json:"summary"`
 	Findings []Finding `json:"findings"`
+	// Resolved are the ids, as the prompt listed them, of the last
+	// review's findings this review found no longer hold.
+	Resolved []string `json:"resolved,omitempty"`
 }
 
 // Counts is the number of findings at each severity.
@@ -293,6 +300,7 @@ const (
 	keyAgentPrompt  = "agent_prompt"
 	keyRules        = "rules"
 	keyPrior        = "prior"
+	keyResolved     = "resolved"
 )
 
 // JSON Schema types the answer shapes use more than once.
@@ -338,6 +346,8 @@ const (
 		"omit when it enforces none."
 	describePrior = "Id of the last review's finding this one reports again, as its listing opens each line with, " +
 		"whatever the wording now; the finding then keeps that one's thread. Omit it for a new finding."
+	describeResolved = "Ids of the last review's findings, as their listing opens each line with, that no longer hold: " +
+		"fixed since, or not a problem after all. Omit it when none are listed or every one still holds."
 	describeDiagram = "Mermaid source, raw with no fences, opening with flowchart or sequenceDiagram, of the flow the " +
 		"change adds or alters as the head commit has it, drawn as the instructions say. Omit it when the change has no " +
 		"such flow."
@@ -406,6 +416,9 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 					AdditionalProperties: new(false),
 				},
 			},
+			// A first review is offered resolved too: a re-review carries on
+			// a conversation only with the very tools it was offered.
+			keyResolved: {Type: schemaArray, Description: describeResolved, Items: &jsonSchema{Type: schemaString}},
 		},
 		Required:             []string{keySummary, keyFindings},
 		AdditionalProperties: new(false),
@@ -601,6 +614,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 	var dropped []Dropped
 	prior := indexPrior(opts.Prior)
 	for _, f := range res.Findings {
+		f.CarriedFrom = ""
 		f.Path = strings.TrimSpace(f.Path)
 		f.Title = severityPrefix.ReplaceAllString(prose(f.Title, opts.Repository), "")
 		f.Explanation = prose(f.Explanation, opts.Repository)
