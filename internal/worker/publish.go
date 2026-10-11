@@ -534,7 +534,7 @@ func markedInline(comments []forge.Comment, login string) map[string]int64 {
 }
 
 // priorFindings is the last review's findings as this review's summary
-// lists them: those the model, asked to report each again only if still
+// lists them: those the model, asked to report again each one still
 // present, did not, linked to their threads where they have one, then the
 // findings maintainers dismissed, each linked to the comment that
 // dismissed it. A finding among reported, this review's findings on and
@@ -588,8 +588,8 @@ func recheckedBy(parts []store.AgentPart) func(path string) bool {
 }
 
 // resolvedThreads is the inline comment id of each of the last review's
-// findings this review, asked to report each again only if still present,
-// did not report, on or off the diff: the threads the summary lists as
+// findings this review, asked to report again each one still present, did
+// not report, on or off the diff: the threads the summary lists as
 // resolved.
 func resolvedThreads(reported []review.Finding, prior []priorFinding) []int64 {
 	again := reportedSet(reported)

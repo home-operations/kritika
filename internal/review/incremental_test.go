@@ -19,7 +19,7 @@ index 222..555 100644
 
 const (
 	deltaHeading   = "Changed since the last review"
-	priorHeading   = "Findings from the last review (verify each; report again only if still present)"
+	priorHeading   = "Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is)"
 	checkedHeading = "What the last review checked at"
 )
 
@@ -53,7 +53,9 @@ func TestBuildIncrementalRendersBothSections(t *testing.T) {
 		t.Fatalf("omitted %v, context omitted %d", omitted, contextOmitted)
 	}
 	for _, want := range []string{
-		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading, "names it in prior, so it keeps its thread.",
+		deltaHeading + " (0123456", "-\ty := 3\n+\ty := 5", priorHeading,
+		"names it in prior, so it keeps its thread; one you leave out is taken as gone.",
+		"raise as new only P0 or P1", "The bar is not for the last review's findings: report again each that still holds",
 		priorPrefix("main.go", "y changed") + "main.go:11 [p1] y changed: why it matters",
 	} {
 		if !strings.Contains(msg, want) {
@@ -106,6 +108,7 @@ func TestBuildContinuation(t *testing.T) {
 	for _, want := range []string{
 		"The pull request's head moved from 0123456 to fedcba9 since your last review, on the same merge base. Your tools now read fedcba9;",
 		"This is a re-review: the last review set the bar",
+		"The bar is not for the last review's findings: report again each that still holds, whatever its severity",
 		"Changed since your last review (0123456 to fedcba9, unified;", "-\ty := 3\n+\ty := 5",
 		"Findings a maintainer dismissed on this pull request.", "- main.go:3 [p2] x:  (dismissed: intended)",
 		"call submit_review again with the whole review of the pull request at fedcba9", "with its title unchanged",
