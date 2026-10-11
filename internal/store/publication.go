@@ -10,7 +10,7 @@ import (
 )
 
 // Publication is the checkpoint a review job resumes without model work.
-// Terminal checkpoints remain readable so a retry after completion is a no-op.
+// Terminal checkpoints keep an empty marker so a retry after completion is a no-op.
 type Publication struct {
 	ReviewID, PullRequestID, HeadSHA string
 	Payload                          json.RawMessage
