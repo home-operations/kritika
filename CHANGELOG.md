@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.0.62](https://github.com/home-operations/kritika/compare/0.0.61...0.0.62) (2026-10-12)
+
+
+### Features
+
+* **review:** make publication durable and resumable ([#889](https://github.com/home-operations/kritika/issues/889)) ([3ec7ba6](https://github.com/home-operations/kritika/commit/3ec7ba6221d6b1a0d0f06058124ea2540e58a62e))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.7 → 2026.10.8) ([#897](https://github.com/home-operations/kritika/issues/897)) ([60a0d0b](https://github.com/home-operations/kritika/commit/60a0d0b45a00aa2512c75631fefa1dec2f2958d5))
+* **worker:** preserve completed answers during shutdown ([#896](https://github.com/home-operations/kritika/issues/896)) ([dd3e0f7](https://github.com/home-operations/kritika/commit/dd3e0f75fd2a8ba23cbe47c3e698a3765e36480b))
+
+
+### Code Refactoring
+
+* **review:** centralize review outcome decisions ([#892](https://github.com/home-operations/kritika/issues/892)) ([d212763](https://github.com/home-operations/kritika/commit/d212763292cf2f98b290804bf7cad37d58ab125c))
+* **worker:** move database operations into store ([#895](https://github.com/home-operations/kritika/issues/895)) ([294761c](https://github.com/home-operations/kritika/commit/294761c0805195df534eef7bdf58f80bdd9c44e9))
+
 ## [0.0.61](https://github.com/home-operations/kritika/compare/0.0.60...0.0.61) (2026-10-11)
 
 
