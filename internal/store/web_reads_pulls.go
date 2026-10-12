@@ -83,6 +83,7 @@ type PullFilter struct {
 
 // The last review, lr, is the newest that was not skipped: a skipped one
 // said nothing, so what the one before it found still stands.
+// Shared by named and positional queries, so this fragment must stay parameter-free.
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged, p.paused,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.scope, lr.created_at, lr.p0, lr.p1, lr.p2,

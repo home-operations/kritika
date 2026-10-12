@@ -87,7 +87,8 @@ var findingIssues = findingIssuesOf("")
 
 // findingIssuesOf is findingIssues over the completed reviews scope keeps:
 // a predicate on v, the review, led by AND, or "" for every one. It is the
-// one definition of what became of a finding, whoever asks.
+// one definition of what became of a finding, whoever asks. The base fragment
+// must stay parameter-free; scope must use the enclosing query's binding style.
 func findingIssuesOf(scope string) string {
 	return `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.category, f.title, f.explanation, f.suggested_fix, f.replacement,

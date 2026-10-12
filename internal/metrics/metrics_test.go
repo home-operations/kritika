@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -25,6 +26,16 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
 	m.Webhook("onedr0p-github", "enqueued")
+	m.Poll("onedr0p-github", "ok", 1)
+	m.ForgeRateLimited("onedr0p-github", "waited")
+	m.Egress("http", "allowed")
+	m.FollowUp("onedr0p", "answered")
+	m.Thread("onedr0p", "addressed")
+	m.ContextChunks("onedr0p", "similar", 1)
+	m.QueueWait("review", time.Second)
+	m.VectorSearch("onedr0p", "ok", time.Second)
+	m.ReviewSnoozed("onedr0p", "openai/gpt-6-sol")
+	m.JobRescued("review", "running")
 	m.Review("onedr0p", "completed", 12*time.Second)
 	m.Findings("onedr0p", "p1", "correctness", 2)
 	m.IndexRun("onedr0p", "full", "completed", 565)
@@ -79,7 +90,14 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader after stepping down = %v", v)
 	}
-	if problems, err := testutil.GatherAndLint(reg); err != nil || len(problems) != 0 {
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(families) != 27 {
+		t.Fatalf("metric families = %d, want all 27", len(families))
+	}
+	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)
 	}
 }
@@ -90,8 +108,8 @@ func TestInitVectorSearch(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
 	m.InitVectorSearch("account")
-	if n := testutil.CollectAndCount(m.vectorSearch); n != 3 {
-		t.Fatalf("outcome series = %d, want 3", n)
+	if n, err := testutil.GatherAndCount(reg, "kritika_vector_search_seconds"); err != nil || n != 3 {
+		t.Fatalf("outcome series = %d, %v; want 3", n, err)
 	}
 	for _, outcome := range []string{"ok", "error", "canceled"} {
 		t.Run(outcome, func(t *testing.T) {

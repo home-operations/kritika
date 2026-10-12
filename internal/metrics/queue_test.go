@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 )
 
 func TestQueueCollector(t *testing.T) {
@@ -37,7 +37,7 @@ func TestQueueCollector(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if problems, err := testutil.GatherAndLint(reg); err != nil || len(problems) != 0 {
+			if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 				t.Fatalf("metric lint = %v, %v", problems, err)
 			}
 			want := map[string]float64{"kritika_queue_stats_up": 0}
