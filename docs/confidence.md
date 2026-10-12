@@ -23,11 +23,15 @@ description and diff, the findings the review reported, and the review's
 account of itself: its summary, merge impact, what it checked beyond the
 diff and the sources it read. Impact notes are claims to assess, not
 findings or completed checks. A post-merge check that cannot be completed
-before deployment does not lower the score by itself; a concern needs
-concrete evidence of a defect or an unmet prerequisite for merging.
-A concern of the scorer's own names what that account leaves out, such as a release note no check covers, rather than guessing
-at what the review read. A different vendor's model than the review's
-makes it a second opinion.
+before deployment does not lower the score by itself, and neither does a
+step the description sets for a release after the merge. A concern of the
+scorer's own is one no reported finding raises, at any severity, and needs
+concrete evidence: a defect, a prerequisite for merging that is unmet or
+unverified, a release note no check covers, or changed lines that depend
+on an upstream interface or version step that no check or source covers.
+The review lists only a selection of what it checked, so a changed line
+the list leaves out is no sign the review skipped it. A different vendor's
+model than the review's makes it a second opinion.
 
 | Key                       | Default                 | What                                                                                       | From a `.kritika.yaml`                     |
 | ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
@@ -43,7 +47,8 @@ How the score is reached and used:
 
 - **Findings cap it:** the findings set the most a pull request can score,
   however the scorer reads them: 2 with a P0 finding, 3 with a
-  P1; P2s take nothing off.
+  P1; P2s take nothing off, even one the scorer would rate higher: it
+  says so in its reason instead.
 - **Dismissals:** a dismissed finding stops counting at the next review,
   which a push or `@<app slug> review` starts.
 - **Unchanged rebases:** a bot's rebase that leaves its patch unchanged is
@@ -114,10 +119,10 @@ says, such as a breaking change in a minor release, rate it as the bigger
 step; a digest pinned beside its tag, a bot author or a description that
 calls the update safe never rates it below its step.
 
-What the scorer cannot verify, such as an upstream change whose release
-notes the description does not carry, may take the score down as a
-concern of its own, but never raises the risk: risk is what the change can
-do, however much of it could be checked.
+An unverified prerequisite for merging, such as an upstream change whose
+release notes the description does not carry, may take the score down as
+a concern of the scorer's own, but never raises the risk: risk is what the
+change can do, however much of it could be checked.
 
 A review of a new head is shown the risk the last review was rated, with
 its reason, and keeps that rating unless the change now does something

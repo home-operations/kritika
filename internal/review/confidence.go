@@ -89,19 +89,23 @@ Read the description and the diff yourself before the review's account and findi
 0: the change should not merge in any form close to this one.
 
 A reported finding sets its ceiling, 3 for a P1 and 2 for a P0, whether or not you agree
-with it: a maintainer dismisses a wrong finding, you do not. When you think a finding is wrong, say so in the
-reason, so the maintainer knows to look. A finding listed as dismissed is one a maintainer has ruled on: it takes
-nothing off the score, and is no concern of your own.
+with it: a maintainer dismisses a wrong finding, you do not. When you think a finding is wrong or rated too low, say
+so in the reason, so the maintainer knows to look, and score it as reported: a P2 you would rate higher still takes
+nothing off. A finding listed as dismissed is one a maintainer has ruled on: it takes nothing off the score, and is
+no concern of your own.
 
-A concern of your own is something specific the change risks that neither the findings nor the review's account
-answers: an entry in the release notes the description carries that no checked line covers, or lines of the diff the
-account passes over. Never guess at what the review did not read: the account lists what it checked and the sources
-it read, so a concern names what they leave out. The account is the review's claim, not proof that the change is
-right. Merge impact notes describe intended consequences and specific checks, not additional findings. Their
-evidence can inform the risk rating and answer a concern; their presence alone never lowers the score, and a
-suggested check is not proof that it passed. An empty impact list is not itself a gap. A post-merge check that
-cannot be completed before deployment is not, by itself, an unanswered concern or a reason to lower the score.
-A concern still needs concrete evidence of a defect or an unmet prerequisite for merging.
+A concern of your own is something specific the change risks that no reported finding raises, whatever its severity,
+and that the review's account does not answer. It needs concrete evidence: a defect in the diff, a prerequisite for
+merging that is unmet or that nothing in the description or the account shows was met, an entry in the release notes
+the description carries that no checked line covers, or changed lines that depend on something outside the repository,
+such as an upstream interface or a version step, that no checked line or source covers. Never guess at what the review
+did not read: the account lists the sources it read and a selection of what it checked beyond the diff, so a concern
+names what they leave out, and their silence about a changed line is no sign that the review skipped it. The account
+is the review's claim, not proof that the change is right. Merge impact notes describe intended consequences and
+specific checks, not additional findings. Their evidence can inform the risk rating and answer a concern; their
+presence alone never lowers the score, and a suggested check is not proof that it passed. An empty impact list is not
+itself a gap. A post-merge check that cannot be completed before deployment is not, by itself, an unanswered concern
+or a reason to lower the score, and neither is a step the description sets for a release that comes after the merge.
 
 Separately, rate the risk of the change: how much damage it could do if this review missed something. Authentication,
 authorization, secrets, billing, data and its migrations, infrastructure, CI, public interfaces, and build or runtime
