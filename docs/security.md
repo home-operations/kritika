@@ -24,7 +24,13 @@ run, and hands it a Secret of its own:
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | a GitHub token minted for the run | read the repository under review and public repositories; the git fetch and `gh` use it                                      |
 | a gateway token                   | reach the run's model through the gateway, until `config.gatewayTokenTtl` past the Job's deadline; revoked when the run ends |
-| the runner role's database URI    | write its own run, and nothing else                                                                                          |
+| the runner role's database URI    | connect as the restricted runner role                                                                                          |
+
+Each run also receives a separate random database token. Row-level security
+requires that token as well as the run ID for reads and writes. Only its
+SHA-256 hash is stored; IDs published in database notifications grant no
+access. The runner checks its configured database role and run credential
+before fetching repository content.
 
 It never holds a provider key, the App's private key, or a credential
 `egress.credentials` lets the gateway add. The pod runs with a read-only

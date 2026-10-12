@@ -373,6 +373,10 @@ func (f *followUp) runAgent(
 		defer cancel()
 		return nil, errors.Join(err, failRun(dctx, f.w.Store, f.account.ID(), runID, err.Error()))
 	}
+	databaseToken, err := f.w.Store.MintRunnerToken(ctx, f.account.ID(), runID)
+	if err != nil {
+		return nil, err
+	}
 	sup := runSupervision(f.w.Store, f.account.ID(), runID, "", "", f.w.superviseEvery, f.logger)
 	out := f.w.runRunner(ctx, f.w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(f.account.Key(), f.pr.repository, jobs.QueueFollowUp, f.pr.number),
@@ -388,7 +392,7 @@ func (f *followUp) runAgent(
 				Commands: limits.Commands, CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second),
 			},
 		},
-		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token},
+		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
 		Deadline:  deadline,
 		Resources: resources,
 		Tools:     f.file.ToolsFor(limits.Commands),

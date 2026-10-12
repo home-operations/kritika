@@ -422,6 +422,12 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 		t.Fatalf("Open runner: %v", err)
 	}
 	t.Cleanup(runner.Close)
+	token, err := s.MintRunnerToken(ctx, alpha, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner = runner.ForRunner(token)
+
 	tests := []struct {
 		name    string
 		stmt    string
@@ -434,6 +440,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 		{name: "log tail", stmt: `UPDATE runner_runs SET log_tail = 'forged' WHERE id = $1`},
 		{name: "exit code", stmt: `UPDATE runner_runs SET exit_code = 0 WHERE id = $1`},
 		{name: "secret swept", stmt: `UPDATE runner_runs SET secret_swept_at = now() WHERE id = $1`},
+		{name: "database credential", stmt: `UPDATE runner_runs SET access_token_hash = NULL WHERE id = $1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

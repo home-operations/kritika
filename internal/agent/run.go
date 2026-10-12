@@ -348,21 +348,18 @@ func refusedArgs(command string, args []string) string {
 			}
 		}
 	case "rg":
+		// A standalone "--" may be a flag's value (for example, -e --),
+		// so it cannot safely end this scan without parsing every flag.
 		for _, a := range args {
 			name, _, _ := strings.Cut(a, "=")
-			switch {
-			case a == "--":
-				return ""
-			case name == "--pre" || name == "--hostname-bin":
-				return name + " is not offered: it runs another program"
+			if name == "--pre" || name == "--hostname-bin" {
+				return name + " is an execution option and is not offered; use --regexp=" + name + " for a pattern or ./" + name + " for a path"
 			}
 		}
 	case "fd":
 		for _, a := range args {
 			name, _, _ := strings.Cut(a, "=")
 			switch {
-			case a == "--":
-				return ""
 			case name == "--exec" || name == "--exec-batch":
 				return name + " is not offered: it runs another program"
 			case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):

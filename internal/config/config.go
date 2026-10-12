@@ -191,6 +191,8 @@ type Config struct {
 	// review.
 	GitToken     string `env:"KRITIKA_GIT_TOKEN,unset"`
 	GatewayToken string `env:"KRITIKA_GATEWAY_TOKEN,unset"`
+	// DatabaseToken authenticates this run to its database rows; it has no default.
+	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
 
 	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
 	LogLevel string `env:"KRITIKA_LOG_LEVEL" envDefault:"info"`

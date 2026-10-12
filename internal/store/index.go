@@ -99,7 +99,7 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 		`CREATE INDEX IF NOT EXISTS index_chunks_embedding_idx ON index_chunks USING vchordrq (embedding halfvec_cosine_ops)`,
 		`ALTER TABLE index_chunks ENABLE ROW LEVEL SECURITY`,
 		`DROP POLICY IF EXISTS account_isolation ON index_chunks`,
-		`CREATE POLICY account_isolation ON index_chunks
+		`CREATE POLICY account_isolation ON index_chunks TO ` + app + `
 			USING      (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)
 			WITH CHECK (account_id = NULLIF(current_setting('app.account_id', true), '')::uuid)`,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_chunks TO ` + app,

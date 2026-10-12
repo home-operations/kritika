@@ -480,7 +480,7 @@ func (h *agenticHarness) conversation(t *testing.T, reviewID string) (c agent.Co
 		t.Fatal(err)
 	}
 	var raw string
-	err := h.runner.WithRunnerJob(h.ctx, runID, func(tx pgx.Tx) error {
+	err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(h.ctx, `SELECT session, conversation FROM agent_conversations WHERE runner_run_id = $1`, runID).Scan(&session, &raw)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -571,7 +571,7 @@ func checkAgentAliasPinned(t *testing.T, h *agenticHarness) {
 		}
 		_, _, runID, found := h.conversation(t, reviewID)
 		var kept string
-		if err := h.runner.WithRunnerJob(h.ctx, runID, func(tx pgx.Tx) error {
+		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 			return tx.QueryRow(h.ctx, `SELECT model FROM agent_conversations WHERE runner_run_id = $1`, runID).Scan(&kept)
 		}); err != nil || !found || kept != "gateway/~agent-latest@agent-1.1" {
 			t.Fatalf("conversation kept %v under %q, err %v", found, kept, err)
@@ -774,7 +774,11 @@ func checkGatewayConversation(t *testing.T, h *agenticHarness) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.runner.WithRunnerJob(h.ctx, leaked, func(tx pgx.Tx) error {
+	databaseToken, err := h.st.MintRunnerToken(h.ctx, h.account.ID(), leaked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.runner.ForRunner(databaseToken).WithRunnerJob(h.ctx, leaked, func(tx pgx.Tx) error {
 		_, err := tx.Exec(h.ctx, `INSERT INTO agent_conversations (runner_run_id, account_id, session, conversation, tokens, model)
 			SELECT id, account_id, $2, '{"system":"the key is model-key"}', 10, 'gateway/agent-model' FROM runner_runs WHERE id = $1`, leaked, leaked)
 		return err

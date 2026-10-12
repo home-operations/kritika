@@ -46,6 +46,8 @@ type Kube struct {
 	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
 	// runner role's DSN, injected as KRITIKA_DATABASE_URL.
 	DatabaseSecret, DatabaseSecretKey string
+	// DatabaseRole is the database role the runner login must inherit.
+	DatabaseRole string
 	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
 	// and HTTP_PROXY: with the runner network policy allowing nothing else,
 	// every byte the runner sends out passes the gateway's host allowlist.
@@ -353,9 +355,10 @@ func logTail(log string, hitCeiling bool, secrets runner.Secrets) string {
 
 // Secret keys of a run's job-scoped Secret.
 const (
-	secretKeyGitToken     = "git-token"
-	secretKeyGatewayToken = "gateway-token"
-	secretKeyRunSpec      = "run-spec.json"
+	secretKeyGitToken      = "git-token"
+	secretKeyGatewayToken  = "gateway-token"
+	secretKeyDatabaseToken = "database-token"
+	secretKeyRunSpec       = "run-spec.json"
 )
 
 // The run's job document is mounted read-only from its Secret at
@@ -401,7 +404,8 @@ func runnerLabels(spec Spec) map[string]string {
 // encoded job document. The gateway token is left out when the run has
 // none; the pod reads it as an optional key.
 func (k *Kube) secret(spec Spec, runSpec []byte) *corev1.Secret {
-	data := map[string][]byte{secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyRunSpec: runSpec}
+	data := map[string][]byte{secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyRunSpec: runSpec,
+		secretKeyDatabaseToken: []byte(spec.Secrets.DatabaseToken)}
 	if spec.Secrets.GatewayToken != "" {
 		data[secretKeyGatewayToken] = []byte(spec.Secrets.GatewayToken)
 	}
@@ -437,6 +441,8 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
 		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
 		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken, true)},
+		{Name: "KRITIKA_DATABASE_TOKEN", ValueFrom: secretRef(secretKeyDatabaseToken, false)},
+		{Name: "KRITIKA_DATABASE_RUNNER_ROLE", Value: cmp.Or(k.DatabaseRole, "kritika_runner")},
 		{Name: "KRITIKA_LOG_FORMAT", Value: "json"},
 		{Name: "KRITIKA_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},

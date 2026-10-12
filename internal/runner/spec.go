@@ -22,7 +22,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 25
+const SpecVersion = 26
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -340,18 +340,19 @@ func DecodeSpec(data []byte) (Spec, error) {
 	return s, nil
 }
 
-// Secrets are a run's credentials, delivered apart from the spec: the git
-// token it fetches with and, for a review or a follow-up, its token for
-// the model gateway.
+// Secrets are a run's credentials, delivered apart from the spec: its
+// git token, database capability and, for a review or follow-up, model
+// gateway token.
 type Secrets struct {
-	GitToken     string
-	GatewayToken string
+	GitToken      string
+	GatewayToken  string
+	DatabaseToken string
 }
 
 // Mask replaces every occurrence of each non-empty secret in text with
 // "***". Longer secrets go first so one containing another is masked whole.
 func (s Secrets) Mask(text string) string {
-	values := []string{s.GitToken, s.GatewayToken}
+	values := []string{s.GitToken, s.GatewayToken, s.DatabaseToken}
 	slices.SortFunc(values, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
 	for _, v := range values {
 		if v != "" {

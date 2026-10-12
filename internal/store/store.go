@@ -22,9 +22,10 @@ import (
 // leader-eligible roles, the owner pool that runs migrations and the
 // configuration sync.
 type Store struct {
-	app    *pgxpool.Pool
-	owner  *pgxpool.Pool
-	logger *slog.Logger
+	app         *pgxpool.Pool
+	owner       *pgxpool.Pool
+	logger      *slog.Logger
+	runnerToken string
 }
 
 // Pool ceilings when the URI sets no pool_max_conns. pgx's own default is
@@ -103,7 +104,9 @@ type Options struct {
 	// OwnerURL is the owner role's DSN. Optional; without it the process can
 	// never become leader.
 	OwnerURL string
-	Logger   *slog.Logger
+	// ExpectedRole requires the login to inherit this role; empty skips the check.
+	ExpectedRole string
+	Logger       *slog.Logger
 }
 
 // Open connects both pools and runs the startup assertions. It fails, rather
@@ -119,6 +122,18 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err := s.assertApplicationRole(ctx); err != nil {
 		app.Close()
 		return nil, err
+	}
+	if opts.ExpectedRole != "" {
+		var allowed bool
+		if err := app.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles
+			WHERE rolname = $1 AND pg_has_role(current_user, oid, 'USAGE'))`, opts.ExpectedRole).Scan(&allowed); err != nil {
+			app.Close()
+			return nil, fmt.Errorf("store: inspect configured database role: %w", err)
+		}
+		if !allowed {
+			app.Close()
+			return nil, fmt.Errorf("%w: expected membership in %q", ErrDatabaseRole, opts.ExpectedRole)
+		}
 	}
 	if err := s.assertExtension(ctx); err != nil {
 		app.Close()
@@ -178,8 +193,10 @@ func (s *Store) PoolStats() map[string]func() *pgxpool.Stat {
 	return stats
 }
 
-// ErrIsolationOff is returned when the application DSN's role could bypass
-// row-level security.
+// ErrDatabaseRole is a login that does not inherit the configured role.
+var ErrDatabaseRole = errors.New("store: database login does not have the configured role")
+
+// ErrIsolationOff is a database role that could bypass row-level security.
 var ErrIsolationOff = errors.New("store: application role would bypass row-level security")
 
 // assertApplicationRole refuses a DSN whose role is a superuser, has
@@ -226,7 +243,8 @@ func assertOwnerRole(ctx context.Context, owner *pgxpool.Pool) error {
 // which no amount of retrying will fix, as opposed to a database that is
 // not reachable yet.
 func IsConfigurationError(err error) bool {
-	return errors.Is(err, ErrIsolationOff) || errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser)
+	return errors.Is(err, ErrDatabaseRole) || errors.Is(err, ErrIsolationOff) ||
+		errors.Is(err, ErrNoVectorExtension) || errors.Is(err, ErrOwnerSuperuser)
 }
 
 // ErrNoVectorExtension is returned when VectorChord (vchord) or pgvector
@@ -247,11 +265,16 @@ func (s *Store) assertExtension(ctx context.Context) error {
 	return nil
 }
 
-// WithRunnerJob runs fn in a transaction with the runner job set
-// transaction-locally, so the runner_job policies open exactly that run's
-// rows. Used by the runner role, whose DSN is the runner role's.
+// WithRunnerJob sets the run ID and the credential supplied by ForRunner
+// transaction-locally. The runner policies require both before opening
+// that run's rows.
 func (s *Store) WithRunnerJob(ctx context.Context, runID string, fn func(pgx.Tx) error) error {
-	return s.withSetting(ctx, "app.runner_job_id", runID, "store: set runner job", fn)
+	return s.withSetting(ctx, "app.runner_job_id", runID, "store: set runner job", func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT set_config('app.runner_token', $1, true)`, s.runnerToken); err != nil {
+			return fmt.Errorf("store: set runner credential: %w", err)
+		}
+		return fn(tx)
+	})
 }
 
 // WithAccount runs fn in a transaction on the application pool with the

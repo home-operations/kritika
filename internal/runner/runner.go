@@ -37,6 +37,13 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	if err := spec.Validate(); err != nil {
 		return err
 	}
+	st = st.ForRunner(secrets.DatabaseToken)
+	if err := st.WithRunnerJob(ctx, spec.RunID, func(tx pgx.Tx) error {
+		var id string
+		return tx.QueryRow(ctx, `SELECT id FROM runner_runs WHERE id = $1`, spec.RunID).Scan(&id)
+	}); err != nil {
+		return fmt.Errorf("runner: database credential does not authorize this run: %w", err)
+	}
 	hctx, stop := context.WithCancel(ctx)
 	beating := make(chan struct{})
 	go func() {

@@ -150,6 +150,10 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	// would leave them behind for good, and the chunks embedded under the
 	// run with them: a retry stages and embeds its own under a new run.
 	defer w.clearStaging(ctx, logger, args.AccountID, runID, runnerRunID)
+	databaseToken, err := w.Store.MintRunnerToken(ctx, args.AccountID, runnerRunID)
+	if err != nil {
+		return err
+	}
 	deadline, resources := file.RunnerFor()
 	sup := runSupervision(w.Store, args.AccountID, runnerRunID, "", "", w.superviseEvery, logger)
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
@@ -159,7 +163,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
 			Head: commit, Base: base, Ignore: eff.Ignore,
 		},
-		Secrets:  runner.Secrets{GitToken: token},
+		Secrets:  runner.Secrets{GitToken: token, DatabaseToken: databaseToken},
 		Deadline: deadline, Resources: resources,
 	})
 	// The run's record and a failed run's end must land even once River's

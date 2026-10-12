@@ -159,7 +159,9 @@ func run() (err error) {
 
 	if command == config.CommandRun {
 		// A runner does one thing and exits; it never becomes ready.
-		return runner.Run(ctx, st, runSpec, runner.Secrets{GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken}, logger)
+		return runner.Run(ctx, st, runSpec, runner.Secrets{
+			GitToken: cfg.GitToken, GatewayToken: cfg.GatewayToken, DatabaseToken: cfg.DatabaseToken,
+		}, logger)
 	}
 	if err := serve(ctx, g, st, cfg, file, public, mgmt.Registry(), logger); err != nil {
 		return err
@@ -394,6 +396,8 @@ func storeOptions(command config.Command, cfg *config.Config, logger *slog.Logge
 	}
 	if command == config.CommandServe {
 		opts.OwnerURL = cfg.DatabaseOwnerURL
+	} else {
+		opts.ExpectedRole = cfg.DatabaseRunnerRole
 	}
 	return opts
 }
@@ -462,7 +466,7 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 		return nil, fmt.Errorf("KRITIKA_RUNNER_RESOURCES: %w", err)
 	}
 	if cfg.Executor == config.ExecutorLocal {
-		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, Logger: logger})
+		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
 		if err != nil {
 			return nil, err
 		}
@@ -474,6 +478,7 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 	}
 	return &executor.Kube{
 		Client: client, Namespace: ns, Image: cfg.RunnerImage, ImagePullPolicy: cfg.RunnerImagePullPolicy,
+		DatabaseRole:   cfg.DatabaseRunnerRole,
 		ServiceAccount: cfg.RunnerServiceAccount, DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
 		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL, Logger: logger,
 	}, nil
