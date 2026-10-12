@@ -837,7 +837,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs and database pools, from the metrics the ServiceMonitor scrapes.",
+              "description": "Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs, database pools, queue delays and vector searches, from the metrics the ServiceMonitor scrapes.",
               "title": "enabled",
               "type": "boolean"
             },
@@ -953,7 +953,7 @@
             },
             "queueAgeSeconds": {
               "default": 600,
-              "description": "Oldest runnable job age in seconds that triggers KritikaQueueDelayed; tune for normal onboarding and review traffic.",
+              "description": "Oldest runnable review/followup job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.",
               "title": "queueAgeSeconds",
               "type": "integer"
             },
@@ -965,13 +965,13 @@
             },
             "queueStatsUnavailableFor": {
               "default": "5m",
-              "description": "How long every scraped replica may fail to read queue metrics before warning.",
+              "description": "How long every scraped replica may succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning.",
               "title": "queueStatsUnavailableFor",
               "type": "string"
             },
             "vectorSearchErrorsFor": {
               "default": "10m",
-              "description": "How long the vector-search error ratio must exceed 10% (at least 10 requests in 15 minutes) before warning.",
+              "description": "How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning.",
               "title": "vectorSearchErrorsFor",
               "type": "string"
             }

@@ -6,21 +6,26 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/home-operations/kritika/internal/store"
 )
+
+// QueueStats is a queue snapshot supplied by the application's storage layer.
+type QueueStats struct {
+	Queue         string
+	Runnable      int64
+	OldestSeconds float64
+}
 
 // QueueCollector reads the shared queue on each scrape. Across replicas,
 // aggregate its gauges with max, never sum. Failed reads omit queue values
 // and export stats_up=0 instead of reporting an empty or stale queue.
 type QueueCollector struct {
 	ctx   context.Context
-	stats func(context.Context) ([]store.QueueStats, error)
+	stats func(context.Context) ([]QueueStats, error)
 	log   *slog.Logger
 }
 
 // NewQueueCollector bounds each database read independently of the scrape.
-func NewQueueCollector(ctx context.Context, stats func(context.Context) ([]store.QueueStats, error), logger *slog.Logger) *QueueCollector {
+func NewQueueCollector(ctx context.Context, stats func(context.Context) ([]QueueStats, error), logger *slog.Logger) *QueueCollector {
 	return &QueueCollector{ctx: ctx, stats: stats, log: logger}
 }
 

@@ -8,22 +8,20 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestQueueCollector(t *testing.T) {
 	var fail bool
 	var count int64 = 3
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(NewQueueCollector(t.Context(), func(ctx context.Context) ([]store.QueueStats, error) {
+	reg.MustRegister(NewQueueCollector(t.Context(), func(ctx context.Context) ([]QueueStats, error) {
 		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 2*time.Second {
 			t.Error("queue snapshot must have a bounded deadline")
 		}
 		if fail {
 			return nil, errors.New("database unavailable")
 		}
-		return []store.QueueStats{{Queue: "review", Runnable: count, OldestSeconds: float64(count) * 10}}, nil
+		return []QueueStats{{Queue: "review", Runnable: count, OldestSeconds: float64(count) * 10}}, nil
 	}, slog.New(slog.DiscardHandler)))
 	for _, tt := range []struct {
 		name  string

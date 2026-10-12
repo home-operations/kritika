@@ -191,7 +191,11 @@ func (g *Server) similar(
 		hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, similarPerQuery)
 		return err
 	})
-	g.Metrics.VectorSearch(r.account.Key(), adapter.Outcome(err), time.Since(started))
+	outcome := adapter.Outcome(err)
+	if err != nil && ctx.Err() != nil {
+		outcome = "canceled"
+	}
+	g.Metrics.VectorSearch(r.account.Key(), outcome, time.Since(started))
 	if err != nil {
 		return nil, tokens, true, err
 	}

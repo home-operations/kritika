@@ -47,7 +47,7 @@ Beyond the Go runtime and process collectors, every series is prefixed
 | `kritika_queue_oldest_runnable_seconds` | queue | Time since the oldest runnable job's `scheduled_at`; zero when empty |
 | `kritika_queue_stats_up` | | Whether this replica read the queue snapshot successfully |
 | `kritika_queue_wait_seconds` | queue | Histogram from `scheduled_at` to worker start, recorded for every pickup |
-| `kritika_vector_search_seconds` | account, outcome | Histogram of database search transaction time, outcome `ok` or `error` |
+| `kritika_vector_search_seconds` | account, outcome | Histogram of database search transaction time, outcome `ok`, `error` or `canceled` |
 
 Each replica reads the same queue state on scrape with a two-second timeout.
 Use `max by (namespace, job, queue)` for backlog and oldest age, never a sum
@@ -59,9 +59,9 @@ Known queues emit zero when empty. Queue labels are limited to `review`,
 
 Runnable work includes overdue retries and scheduled jobs waiting for River's
 scheduler to promote them. Future work, pending jobs, running jobs and terminal
-jobs are excluded. Paused queues still have overdue work and can alert. Oldest
-age measures time since eligibility, not time since creation. Queue wait also
-excludes intentional retry backoff, scheduling and snooze delays, and records
+jobs are excluded. Paused review/followup queues still have overdue work and can
+alert. Oldest age measures time since eligibility, not time since creation. Queue
+wait also excludes intentional retry backoff, scheduling and snooze delays, and records
 another sample on each pickup. Negative waits from clock skew are clamped to
 zero. Recording at worker entry makes delays visible before long jobs finish.
 
@@ -83,6 +83,19 @@ with an embedding failure produce no vector-search sample. The histogram's
 model-call counters for embedding failures. No repository, query text, job ID
 or generation becomes a metric label.
 
+Client cancellations and expired request contexts during the database phase use
+`outcome="canceled"`, excluded from both the error-ratio numerator and denominator.
+All outcome series are initialized at zero for configured accounts before workers
+start. Prometheus can then count a first error after a zero sample has been scraped;
+events before the first scrape still cannot be reconstructed by `increase()`.
+
+The delay alert uses the latest successful snapshot within five minutes to bridge
+short read failures, while a fresh empty snapshot clears it. Repeated failures are
+also detected by the snapshot-success ratio. Queue snapshots use the application
+pool and its least-privilege role; acquisition time counts against the two-second
+budget. Pool saturation is a legitimate snapshot failure. Inspect the existing
+pool-wait metrics alongside queue health when diagnosing it.
+
 ## Alerts
 
 The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
@@ -97,9 +110,9 @@ label to every rule, and `additionalRuleAnnotations` an annotation.
 | `KritikaMultipleLeaders` | `sum(kritika_leader) > 1`: more than one replica reports holding it   | critical | 2m   |
 | `KritikaConfigError`     | `kritika_config_error == 1`: the leader could not apply the file      | warning  | 5m   |
 | `KritikaConfigDrift`     | `kritika_config_drift == 1`: a replica's file differs from the applied one | warning | 15m |
-| `KritikaQueueDelayed` | Oldest runnable job exceeds 600 seconds, using max across replicas | warning | 15m |
-| `KritikaQueueStatsUnavailable` | Every scraped replica reports queue snapshot failure | warning | 5m |
-| `KritikaVectorSearchErrors` | More than 10% database search errors, with at least 10 requests in 15m | warning | 10m |
+| `KritikaQueueDelayed` | Oldest runnable review/followup job exceeds 600 seconds, using the last successful sample within 5m and max across replicas | warning | 15m |
+| `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m | warning | 5m |
+| `KritikaVectorSearchErrors` | More than 10% database search errors, with at least 10 non-canceled requests in 15m | warning | 10m |
 
 Without a leader nothing migrates, applies configuration, polls or rescues
 the jobs a dead replica left; a standby takes the lock within one leader
@@ -113,8 +126,10 @@ file.
 
 Queue age and alert waits are configurable under `monitoring.prometheusRule`.
 The defaults are starting thresholds, not measured production SLOs; tune queue
-age for normal review and onboarding traffic. Vector latency is graphed without
-an alert threshold until a representative production baseline is available.
+age for normal review traffic. Index work remains visible on the dashboard but
+is excluded from the delay alert because onboarding deliberately waits behind
+higher-priority updates. Vector latency is graphed without an alert threshold
+until a representative production baseline is available.
 
 ## Grafana dashboard
 
@@ -142,7 +157,7 @@ removes a disposable database. No provider credentials or model calls are needed
 mise run test-integration -- -run '^$' -bench BenchmarkSimilarChunks -benchtime=20x -v
 ```
 
-`BenchmarkSimilarChunks` exercises the unchanged `SimilarChunks` SQL with
+`BenchmarkSimilarChunks` exercises the `SimilarChunks` SQL with
 `vchordrq.prefilter = on`, 1,024 and 1,536 dimensions, and 1,000 or 10,000 chunks
 in the target generation. A second repository in the same account and a second
 account each contribute the same number of vectors: 3,000 or 30,000 total rows.
@@ -155,9 +170,9 @@ lookup must return no results. Recall@4 compares the application's results with
 an exact table scan for 20 deterministic queries. The harness disables index
 and bitmap scans only for that reference, verifies its sequential-scan plan,
 and restores them before further application queries. It compares chunk paths
-directly because fixture paths are unique within a generation; this also keeps
-the ground truth on the same full-result SQL as the application rather than a
-separate row-identifier query. VectorChord's
+directly because fixture paths have a distinct prefix for each generation; this
+also keeps the ground truth on the same full-result SQL as the application rather
+than a separate row-identifier query. VectorChord's
 [recall evaluator](https://docs.vectorchord.ai/vectorchord/usage/measure-recall.html)
 is another option for production query samples.
 
@@ -177,14 +192,14 @@ individual diagnostic queries, not averages or percentiles.
 
 | Dimensions | Target chunks | Excluded paths | Mean request (ms) | Recall@4 | VectorChord EXPLAIN (ms) | Exact EXPLAIN (ms) |
 | ---------- | ------------- | -------------- | ----------------- | -------- | ----------------------- | ------------------ |
-| 1,024 | 1,000 | 0 | 2.36 | 1.00 | 0.42 | 9.50 |
-| 1,024 | 1,000 | 100 | 2.54 | 1.00 | 0.43 | 8.83 |
-| 1,024 | 10,000 | 0 | 6.49 | 1.00 | 3.94 | 101.19 |
-| 1,024 | 10,000 | 1,000 | 18.57 | 1.00 | 4.82 | 93.77 |
-| 1,536 | 1,000 | 0 | 2.86 | 1.00 | 0.51 | 10.91 |
-| 1,536 | 1,000 | 100 | 2.98 | 1.00 | 0.52 | 9.38 |
-| 1,536 | 10,000 | 0 | 8.10 | 1.00 | 5.96 | 109.11 |
-| 1,536 | 10,000 | 1,000 | 19.78 | 1.00 | 6.40 | 100.54 |
+| 1,024 | 1,000 | 0 | 2.27 | 1.00 | 0.44 | 8.83 |
+| 1,024 | 1,000 | 100 | 2.48 | 1.00 | 0.41 | 8.71 |
+| 1,024 | 10,000 | 0 | 6.75 | 1.00 | 5.05 | 98.42 |
+| 1,024 | 10,000 | 1,000 | 17.72 | 1.00 | 4.82 | 92.23 |
+| 1,536 | 1,000 | 0 | 2.88 | 1.00 | 0.52 | 10.43 |
+| 1,536 | 1,000 | 100 | 3.03 | 1.00 | 0.54 | 9.40 |
+| 1,536 | 10,000 | 0 | 9.43 | 1.00 | 6.13 | 144.10 |
+| 1,536 | 10,000 | 1,000 | 19.30 | 1.00 | 5.89 | 97.31 |
 
 Every application plan chose `index_chunks_embedding_idx`; every exact plan
 used a sequential scan and top-N sort. The filters included both the generation
@@ -195,6 +210,6 @@ The current index performed well on this fixture. The longer requests with
 large exclusion lists include their client-side encoding and transfer, so do not
 attribute all of that difference to the index. These small, synthetic samples
 are not evidence of production recall or an SLO, and do not justify changing
-partitioning, search parameters, prewarming or worker concurrency. Use the new
+partitioning, search parameters, prewarming or worker concurrency. Use the
 runtime histograms and repeat with representative embeddings and traffic before
 tuning those settings. No production database was measured for this baseline.

@@ -341,7 +341,17 @@ func (m *Metrics) QueueWait(queue string, took time.Duration) {
 	}
 }
 
-// VectorSearch records the database phase of a search; outcome is ok or error.
+// InitVectorSearch exposes zero counters before requests arrive so a first
+// error following a scrape is visible to rate/increase.
+func (m *Metrics) InitVectorSearch(account string) {
+	if m != nil {
+		for _, outcome := range []string{"ok", "error", "canceled"} {
+			m.vectorSearch.WithLabelValues(account, outcome)
+		}
+	}
+}
+
+// VectorSearch records the database phase; outcome is ok, error or canceled.
 func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
 	if m != nil {
 		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())

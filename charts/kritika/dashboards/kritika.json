@@ -1,7 +1,7 @@
 {
   "uid": "kritika-overview",
   "title": "kritika",
-  "description": "kritika's health, intake, reviews, model spend, runner Jobs and database pools, from the metrics the chart's ServiceMonitor scrapes.",
+  "description": "kritika's health, intake, reviews, model spend, runner Jobs, database pools, queue delays and vector searches, from the metrics the chart's ServiceMonitor scrapes.",
   "tags": ["kritika"],
   "editable": false,
   "graphTooltip": 1,
@@ -2356,7 +2356,7 @@
           "refId": "A"
         }
       ],
-      "description": "Database search transaction per request, including pool acquisition and all query vectors. Excludes embedding, model-slot waits and usage recording."
+      "description": "Database search transaction per request, including pool acquisition and all query vectors. Canceled requests are separate from errors. Excludes embedding, model-slot waits and usage recording."
     },
     {
       "id": 40,

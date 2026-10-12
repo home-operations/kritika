@@ -128,13 +128,13 @@ tests:
     asserts:
       - equal:
           path: spec.groups[2].rules[0].expr
-          value: max by (namespace, job, queue) (kritika_queue_oldest_runnable_seconds) > 900
+          value: max by (namespace, job, queue) (last_over_time(kritika_queue_oldest_runnable_seconds{queue!="index"}[5m])) > 900
       - equal:
           path: spec.groups[2].rules[0].for
           value: 20m
       - equal:
           path: spec.groups[2].rules[1].expr
-          value: max by (namespace, job) (kritika_queue_stats_up) == 0
+          value: max by (namespace, job) (avg_over_time(kritika_queue_stats_up[5m])) < 0.75
       - equal:
           path: spec.groups[2].rules[1].for
           value: 3m

@@ -50,7 +50,7 @@ func BenchmarkSimilarChunks(b *testing.B) {
 					b.Run(fmt.Sprintf("exclude=%d", excluded), func(b *testing.B) {
 						exclude := make([]string, excluded)
 						for i := range exclude {
-							exclude[i] = fmt.Sprintf("chunk-%d.go", i)
+							exclude[i] = fmt.Sprintf("group-0/chunk-%d.go", i)
 						}
 						queries := make([][]float32, 20)
 						rng := rand.New(rand.NewPCG(911, 1))
@@ -58,16 +58,16 @@ func BenchmarkSimilarChunks(b *testing.B) {
 							queries[i] = benchmarkVector(rng, dims, i%16)
 						}
 						recall := checkSimilarRecall(b, s, account.ID(), run, foreign, queries, exclude)
-						b.ResetTimer()
-						for i := 0; i < b.N; i++ {
+						i := 0
+						for b.Loop() {
 							if err := s.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 								_, err := SimilarChunks(ctx, tx, run, [][]float32{queries[i%len(queries)]}, exclude, 4)
 								return err
 							}); err != nil {
 								b.Fatal(err)
 							}
+							i++
 						}
-						b.StopTimer()
 						b.ReportMetric(recall, "recall@4")
 					})
 				}
@@ -130,7 +130,7 @@ func seedSimilarBenchmark(b *testing.B, s *Store, account, other string, dims, s
 			chunks := make([]StagedChunk, n)
 			vectors := make([][]float32, n)
 			for i := range n {
-				chunks[i] = StagedChunk{Path: fmt.Sprintf("chunk-%d.go", start+i), StartLine: 1, EndLine: 20, Language: "go", Text: strings.Repeat("func example() {}\n", 20)}
+				chunks[i] = StagedChunk{Path: fmt.Sprintf("group-%d/chunk-%d.go", group, start+i), StartLine: 1, EndLine: 20, Language: "go", Text: strings.Repeat("func example() {}\n", 20)}
 				vectors[i] = benchmarkVector(rng, dims, (start+i)%16)
 			}
 			if err := s.WithAccount(ctx, who, func(tx pgx.Tx) error {
@@ -206,6 +206,11 @@ func checkSimilarRecall(b *testing.B, s *Store, account, run, foreign string, qu
 				return fmt.Errorf("exact search returned %d hits, want 4", len(exact))
 			}
 			total += len(exact)
+			for _, h := range append(slices.Clone(approx), exact...) {
+				if !strings.HasPrefix(h.Chunk.Path, "group-0/") {
+					return fmt.Errorf("search leaked another generation: %s", h.Chunk.Path)
+				}
+			}
 			for _, h := range approx {
 				if slices.Contains(exclude, h.Chunk.Path) {
 					return fmt.Errorf("search returned excluded path %s", h.Chunk.Path)

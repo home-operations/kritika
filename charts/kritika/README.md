@@ -266,7 +266,7 @@ Kubernetes: `>=1.25.0-0`
 | ingress.tls | list | `[]` | Ingress TLS configuration. |
 | livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"metrics"},"periodSeconds":20}` | Liveness probe, on the metrics port. |
 | monitoring.dashboards.annotations | object | `{}` | Annotations added to the dashboard ConfigMap (templated). |
-| monitoring.dashboards.enabled | bool | `false` | Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs and database pools, from the metrics the ServiceMonitor scrapes. |
+| monitoring.dashboards.enabled | bool | `false` | Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs, database pools, queue delays and vector searches, from the metrics the ServiceMonitor scrapes. |
 | monitoring.dashboards.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Allow a Grafana in any namespace to import this GrafanaDashboard. |
 | monitoring.dashboards.grafanaOperator.enabled | bool | `false` | Render a GrafanaDashboard CR (grafana-operator) referencing the ConfigMap, instead of relying on the sidecar label. |
 | monitoring.dashboards.grafanaOperator.folder | string | `""` | Folder to create the dashboard in (templated); empty uses the Grafana default. |
@@ -283,10 +283,10 @@ Kubernetes: `>=1.25.0-0`
 | monitoring.prometheusRule.labels | object | `{}` | PrometheusRule labels. |
 | monitoring.prometheusRule.multipleLeadersFor | string | `"2m"` | How long more than one replica may report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval. |
 | monitoring.prometheusRule.noLeaderFor | string | `"5m"` | How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute. |
-| monitoring.prometheusRule.queueAgeSeconds | int | `600` | Oldest runnable job age in seconds that triggers KritikaQueueDelayed; tune for normal onboarding and review traffic. |
+| monitoring.prometheusRule.queueAgeSeconds | int | `600` | Oldest runnable review/followup job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard. |
 | monitoring.prometheusRule.queueDelayFor | string | `"15m"` | How long runnable work must exceed queueAgeSeconds before warning. |
-| monitoring.prometheusRule.queueStatsUnavailableFor | string | `"5m"` | How long every scraped replica may fail to read queue metrics before warning. |
-| monitoring.prometheusRule.vectorSearchErrorsFor | string | `"10m"` | How long the vector-search error ratio must exceed 10% (at least 10 requests in 15 minutes) before warning. |
+| monitoring.prometheusRule.queueStatsUnavailableFor | string | `"5m"` | How long every scraped replica may succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning. |
+| monitoring.prometheusRule.vectorSearchErrorsFor | string | `"10m"` | How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning. |
 | monitoring.serviceMonitor.annotations | object | `{}` | ServiceMonitor annotations. |
 | monitoring.serviceMonitor.enabled | bool | `false` | Create a Prometheus Operator ServiceMonitor for the metrics Service (requires its CRDs). |
 | monitoring.serviceMonitor.interval | string | `"30s"` | Scrape interval. |

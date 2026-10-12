@@ -82,13 +82,16 @@ repositories:
 		name         string
 		tokens       int64
 		status, rows int
+		searches     uint64
+		outcome      string
 	}{
-		{"success", 7, http.StatusOK, 1},
-		{"partial failure", 7, http.StatusBadGateway, 1},
-		{"search failure", 7, http.StatusBadGateway, 1},
-		{"cancellation", 7, http.StatusBadGateway, 1},
-		{"unreported usage", 0, http.StatusOK, 1},
-		{"unpaid failure", 0, http.StatusBadGateway, 0},
+		{"success", 7, http.StatusOK, 1, 1, "ok"},
+		{"partial failure", 7, http.StatusBadGateway, 1, 0, ""},
+		{"search failure", 7, http.StatusBadGateway, 1, 1, "error"},
+		{"cancellation", 7, http.StatusBadGateway, 1, 0, ""},
+		{"search cancellation", 7, http.StatusBadGateway, 1, 1, "canceled"},
+		{"unreported usage", 0, http.StatusOK, 1, 1, "ok"},
+		{"unpaid failure", 0, http.StatusBadGateway, 0, 0, ""},
 	}
 	var wantTokens int64
 	var wantRows int
@@ -113,6 +116,8 @@ repositories:
 					return nil, tt.tokens, errors.New("embedding failed")
 				case "search failure":
 					return [][]float32{{1, 0}}, tt.tokens, nil
+				case "search cancellation":
+					cancel()
 				case "cancellation":
 					cancel()
 					return nil, tt.tokens, context.Canceled
@@ -130,15 +135,7 @@ repositories:
 			if out.Code != tt.status {
 				t.Fatalf("status=%d, want %d: %s", out.Code, tt.status, out.Body.String())
 			}
-			var wantSearches uint64
-			if tt.status == http.StatusOK || tt.name == "search failure" {
-				wantSearches = 1
-			}
-			outcome := "ok"
-			if tt.name == "search failure" {
-				outcome = "error"
-			}
-			checkVectorSearchMetric(t, reg, wantSearches, outcome)
+			checkVectorSearchMetric(t, reg, tt.searches, tt.outcome)
 			grant, err := st.LookupGatewayToken(ctx, token)
 			if err != nil || grant.Spent != tt.tokens {
 				t.Fatalf("spent=%d, want %d: %v", grant.Spent, tt.tokens, err)
@@ -177,9 +174,8 @@ func checkVectorSearchMetric(t *testing.T, reg *prometheus.Registry, wantSearche
 			searches += metric.GetHistogram().GetSampleCount()
 			for _, label := range metric.Label {
 				if label.GetName() == "outcome" {
-					want := wantOutcome
-					if label.GetValue() != want {
-						t.Errorf("search outcome = %q, want %q", label.GetValue(), want)
+					if label.GetValue() != wantOutcome {
+						t.Errorf("search outcome = %q, want %q", label.GetValue(), wantOutcome)
 					}
 				}
 			}

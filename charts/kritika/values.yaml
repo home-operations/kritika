@@ -572,16 +572,16 @@ monitoring:
     configErrorFor: 5m
     # -- How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.
     configDriftFor: 15m
-    # -- Oldest runnable job age in seconds that triggers KritikaQueueDelayed; tune for normal onboarding and review traffic.
+    # -- Oldest runnable review/followup job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.
     queueAgeSeconds: 600
     # -- How long runnable work must exceed queueAgeSeconds before warning.
     queueDelayFor: 15m
-    # -- How long every scraped replica may fail to read queue metrics before warning.
+    # -- How long every scraped replica may succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning.
     queueStatsUnavailableFor: 5m
-    # -- How long the vector-search error ratio must exceed 10% (at least 10 requests in 15 minutes) before warning.
+    # -- How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning.
     vectorSearchErrorsFor: 10m
   dashboards:
-    # -- Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs and database pools, from the metrics the ServiceMonitor scrapes.
+    # -- Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs, database pools, queue delays and vector searches, from the metrics the ServiceMonitor scrapes.
     enabled: false
     # -- Namespace for the dashboard objects; defaults to the release namespace.
     namespace: ""

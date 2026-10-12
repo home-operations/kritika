@@ -187,7 +187,18 @@ func serve(
 	drift := server.NewConfigDriftGauge(reg)
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
-	reg.MustRegister(metrics.NewPoolCollector(st.PoolStats()), metrics.NewQueueCollector(ctx, st.QueueStats, logger))
+	for _, account := range file.Accounts {
+		m.InitVectorSearch(account.Key())
+	}
+	queueCollector := metrics.NewQueueCollector(ctx, func(ctx context.Context) ([]metrics.QueueStats, error) {
+		stats, err := st.QueueStats(ctx)
+		out := make([]metrics.QueueStats, len(stats))
+		for i, s := range stats {
+			out[i] = metrics.QueueStats(s)
+		}
+		return out, err
+	}, logger)
+	reg.MustRegister(metrics.NewPoolCollector(st.PoolStats()), queueCollector)
 	logConfig(logger, file, "configuration loaded")
 	for _, u := range file.UnpricedModels() {
 		logger.Warn("model is unpriced: its provider reports no cost and pricing has no price for it; configure provider pricing",
