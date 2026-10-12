@@ -14,7 +14,7 @@
   import type { AccountFinding, Page, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
   import LoadMore from '../components/LoadMore.svelte';
-  import SectionTabs from '../components/SectionTabs.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
   import Segmented from '../components/Segmented.svelte';
   import Reactions from '../components/Reactions.svelte';
@@ -123,7 +123,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="analytics" {slug} current="findings" />
+    <PageHeader title="Findings" {slug} />
     <div class="toolbar" role="search">
       <TokenSearch
         id="finding-search"

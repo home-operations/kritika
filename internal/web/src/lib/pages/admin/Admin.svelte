@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from '../../components/PageHeader.svelte';
   import { accountApi } from '../../links';
   import { isAdmin, session } from '../../session.svelte';
   import AuditTable from '../../components/AuditTable.svelte';
@@ -15,9 +16,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <h1>{title}</h1>
-    </header>
+    <PageHeader {title} {slug} />
     {#if !session.me}
       <p class="state-msg" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {:else if !isAdmin()}

@@ -243,15 +243,16 @@ test('the spend page says what a review costs this month, median and mean, or th
   const a = g.accountSummary;
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/usage`);
-  const tile = page.locator('.stat').filter({ hasText: 'API spend this month' });
-  await expect(tile.locator('.stat-value')).toHaveText('$1.50');
-  await expect(tile.locator('.stat-sub')).toHaveText('$0.08 per review (median) · $0.10 mean of 12');
+  await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
+  await page.getByRole('button', { name: 'About usage' }).click();
+  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('$0.08 per review (median) · $0.10 mean of 12');
 
   const idle = { ...a, usage: { ...a.usage, reviews: 0, reviewCostUsd: 0, medianReviewCostUsd: null } };
   await g.mockApi(page, [[/\/api\/v1\/accounts$/, [idle]], ...g.defaultApi()]);
   await page.goto('about:blank');
   await page.goto(`/${T}/usage`);
-  await expect(tile.locator('.stat-sub')).toHaveText('no review completed this month');
+  await page.getByRole('button', { name: 'About usage' }).click();
+  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('no review completed this month');
 });
 
 test("a chart's axis has room for its longest label", async ({ page }) => {
@@ -621,7 +622,7 @@ test.describe('findings', () => {
     await expect(row.getByTitle('Reactions to its comment on GitHub')).toHaveText(`${f.reactionsUp} ${f.reactionsDown}`);
     await expect(row.getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${f.pull.url}#discussion_r${f.forgeCommentId}`);
     await expect(row.locator('.finding-rules').getByRole('link')).toHaveText(f.rules);
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Analytics');
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Findings');
     await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Findings', exact: true })).toHaveAttribute('aria-current', 'page');
 
     await row.locator('.finding-sub').first().click();
@@ -795,7 +796,7 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
   const p = g.pullDetail.pull;
-  await expect(page.locator('.page-head .meta-line')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
+  await expect(page.locator('.page-inner > .meta-line')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
   const latest = page.getByRole('region', { name: 'Latest review' });
   await expect(latest).toContainText(g.reviewDetail.summary!.take);
   const c = golden.confidence!;
@@ -806,8 +807,8 @@ test('pull detail leads with its latest review, then the history and follow-ups 
   await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line} Thread`]);
   await expect(latest.getByRole('link', { name: 'Thread' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
   await expect(latest.getByRole('link', { name: 'Open the review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/rev-1`);
-  await expect(page.locator('.page-head .meta-line')).toContainText('last synchronized');
-  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: excluded by a trigger condition');
+  await expect(page.locator('.page-inner > .meta-line')).toContainText('last synchronized');
+  await expect(page.locator('.page-inner > .meta-line')).toContainText('not reviewed: excluded by a trigger condition');
   await expect(page.locator('.timeline-item')).toHaveCount(1);
   await expect(page.locator('.timeline-item')).toContainText('$0.42');
   await expect(page.locator('.followup')).toContainText(g.followup.author);
@@ -1099,7 +1100,7 @@ test('a skipped review says why, on its own page and on the pull request', async
     ...g.defaultApi(),
   ]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
-  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: more changed lines than the repository allows');
+  await expect(page.locator('.page-inner > .meta-line')).toContainText('not reviewed: more changed lines than the repository allows');
   await expect(page.getByText('Not reviewed yet.')).toBeVisible();
   await page.goto(`/${T}/reviews/rev-1`);
   await expect(page.locator('.page-head .meta-line')).toContainText('skipped: patch unchanged since the last review');
@@ -1109,7 +1110,7 @@ test('a skipped review with no reason of its own says what it recorded on the pu
   const skipped = { ...g.pullDetail.reviews[0]!, status: 'skipped' as const, skipReason: '' as const, error: 'the pull request is closed' };
   await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [skipped] }], ...g.defaultApi()]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
-  await expect(page.locator('.page-head .meta-line')).toContainText('not reviewed: the pull request is closed');
+  await expect(page.locator('.page-inner > .meta-line')).toContainText('not reviewed: the pull request is closed');
 });
 
 test('no tab strip scrolls vertically', async ({ page }) => {
@@ -1149,7 +1150,7 @@ test('a time still to come says how far off it is', async ({ page }) => {
   const waiting = { ...g.job, scheduledAt: due };
   await g.mockApi(page, [[/\/queue$/, [waiting]], [/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, job: waiting }], ...g.defaultApi()]);
   await page.goto(`/${T}/queue`);
-  await expect(page.locator(`tbody time[datetime="${due}"]`)).toHaveText('in 10m');
+  await expect(page.locator(`tbody td[data-label="Activity"] time[datetime="${due}"]`)).toHaveText('in 10m');
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('.job-notice')).toContainText('failed, the next is due in 10m.');
 });
@@ -1170,12 +1171,12 @@ test('names are set in mono, and words and numbers in the text face', async ({ p
   const cells = page.locator('tbody tr').first().locator('td');
   await expect(cells.nth(0)).toContainText(`#${g.job.id} · review`);
   await expect(cells.nth(0)).not.toHaveClass(mono);
-  await expect(cells.nth(2).getByRole('link')).toHaveClass(mono);
+  await expect(cells.nth(0).getByRole('link')).toHaveClass(mono);
   const role = { ...g.usageSeries, group: 'role', rows: [{ ...g.usageSeries.rows[0]!, key: 'review' }] };
   await g.mockApi(page, [[/\/usage$/, (u: URL) => (u.searchParams.get('group') === 'role' ? role : { ...role, group: 'model', rows: [{ ...role.rows[0]!, key: 'acme/large' }] })], ...g.defaultApi()]);
   await page.goto(`/${T}/usage`);
   await expect(page.locator('tbody td').first()).toHaveClass(mono);
-  await page.getByRole('radio', { name: 'Role' }).click();
+  await page.getByRole('combobox', { name: 'Group by' }).selectOption('role');
   await expect(page.locator('tbody td').first()).toHaveText('review');
   await expect(page.locator('tbody td').first()).not.toHaveClass(mono);
 });
@@ -1209,7 +1210,8 @@ test("a job's error keeps a readable width however wide the columns beside it, a
 
   await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [fine] }], ...g.defaultApi()]);
   await page.reload();
-  await expect(cell(44).locator('details')).toHaveCount(0);
+  await expect(cell(44).locator('.error-text')).toHaveCount(0);
+  await expect(cell(44).locator('details')).not.toHaveAttribute('open', '');
 });
 
 test("the palette finds every account's recent pull requests, the current account's first, and the instance's queue", async ({ page }) => {
@@ -1236,7 +1238,7 @@ test("the palette finds every account's recent pull requests, the current accoun
 
 test.describe('your settings', () => {
   const updated = g.pullDetail.pull.updatedAt;
-  const hover = (page: import('@playwright/test').Page) => page.locator(`.page-head time[datetime="${updated}"]`);
+  const hover = (page: import('@playwright/test').Page) => page.locator(`.meta-line time[datetime="${updated}"]`);
 
   test('a time zone and a clock are saved as chosen, and every time follows them', async ({ page }) => {
     const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
@@ -1320,13 +1322,13 @@ test('the top bar fits a phone: the logo keeps its size and the user menu stays 
 test("this month's tiles fill their grid at every width, with no cell left empty", async ({ page }) => {
   for (const [width, columns] of [
     [1280, 3],
-    [600, 3],
+    [600, 1],
     [390, 1],
   ] as const) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(`/${T}/usage`);
     const tiles = page.getByRole('region', { name: 'This month' });
-    await expect(tiles.locator('.stat')).toHaveCount(3);
+    await expect(tiles.locator(':scope > div')).toHaveCount(3);
     expect(await tiles.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
   }
 });
@@ -1344,7 +1346,7 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
   await page.locator('.queue-error summary').click();
-  await expect(page.locator('.queue-error')).toContainText('GitHub did not answer.');
+  await expect(page.locator('.queue-table')).toContainText('GitHub did not answer.');
   await expect(page.locator('.queue-error .error-text')).toBeVisible();
   await expect(page.locator('.queue-error')).toContainText(g.job.lastError);
   await expect(page.locator('tbody tr')).toContainText(`${g.job.attempt}/${g.job.maxAttempts}`);
@@ -1355,7 +1357,7 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
   await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
   await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
   await page.getByRole('radio', { name: '7 days' }).click();
-  await page.getByRole('radio', { name: 'Model' }).click();
+  await page.getByRole('combobox', { name: 'Group by' }).selectOption('model');
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/usage') && u.searchParams.get('group') === 'model')).toBe(true);
 
   await page.goto(`/${T}/followups`);
@@ -1459,7 +1461,7 @@ test('each page names itself in the browser tab', async ({ page }) => {
     [`${T}/pulls/alpha/one/7`, `${g.pullDetail.pull.title} · alpha/one#7 · kritika`],
     [`${T}/reviews/rev-1/diff`, `${r.status} · ${r.pull.repository}#${r.pull.number} review · kritika`],
     [`${T}/queue`, `Queue · ${g.SLUG} · kritika`],
-    ['#/admin', 'Configuration · kritika'],
+    ['#/admin', 'Instance settings · kritika'],
   ]) {
     await page.goto(`/${h}`);
     await expect(page).toHaveTitle(title);

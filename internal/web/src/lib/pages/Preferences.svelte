@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
   // The viewer's own settings: how the dashboard writes times for them, and
   // its theme.
   // Each is saved as it is chosen, and kept with the user, so it holds in
@@ -33,10 +34,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <h1>Your settings</h1>
-      <p class="muted small">How the dashboard looks to you. They are kept with your user, so they hold in any browser you sign in from.</p>
-    </header>
+    <PageHeader title="Your settings" description="Display preferences, saved to your account across browsers." />
     {#if settings}
       <section class="panel" aria-labelledby="pref-time">
         <header class="panel-head">

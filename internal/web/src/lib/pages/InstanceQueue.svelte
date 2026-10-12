@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { queueFilter, type QueueFilter } from '../routes';
+  import { replace } from '../router.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
   // The queue of every account the viewer can read, and the model slots
   // each account's running reviews hold, which is why a job of it waits.
   import { getJSON } from '../api.svelte';
@@ -8,6 +11,8 @@
   import StateView from '../components/StateView.svelte';
   import JobTable from '../components/JobTable.svelte';
   import Meter from '../components/Meter.svelte';
+
+  let { filter }: { filter?: QueueFilter } = $props();
 
   const res = new Resource(() => getJSON<InstanceQueue>('/api/v1/queue'));
 
@@ -22,10 +27,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <h1>Queue</h1>
-      <p class="muted small">The review, follow-up and index jobs of every account you can read.</p>
-    </header>
+    <PageHeader title="Queue" description="Jobs across all your accounts." />
     <StateView {res} retry={() => res.load()}>
       {#snippet children(q)}
         {#if q.slots.length}
@@ -55,7 +57,7 @@
             </div>
           </section>
         {/if}
-        <JobTable ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
+        <JobTable {filter} onfilter={(f) => replace({ name: 'instanceQueue', filter: queueFilter({ ...f }) })} ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
       {/snippet}
     </StateView>
   </div>

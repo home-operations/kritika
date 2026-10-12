@@ -2,8 +2,8 @@
   // The account's home: what its reviews came to over a window, against the
   // window before, and what needs attention now.
   import { getJSON } from '../api.svelte';
-  import { usageFilter } from '../routes';
-  import { href } from '../router.svelte';
+  import { usageFilter, analyticsFilter, type AnalyticsFilter } from '../routes';
+  import { href, navigate } from '../router.svelte';
   import { hookURL } from '../session.svelte';
   import { unsignedWebhooks } from '../setup';
   import { Resource, live } from '../resource.svelte';
@@ -13,7 +13,8 @@
   import type { AccountDetail, Analytics, AnalyticsPoint, Attention } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
-  import SectionTabs from '../components/SectionTabs.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
+  import HelpPopover from '../components/HelpPopover.svelte';
   import Segmented from '../components/Segmented.svelte';
   import StatTile from '../components/StatTile.svelte';
   import ColumnChart from '../components/ColumnChart.svelte';
@@ -21,15 +22,16 @@
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
 
-  let { slug }: { slug: string } = $props();
+  let { slug, filter }: { slug: string; filter?: AnalyticsFilter } = $props();
   const base = $derived(accountApi(slug));
 
   const PERIODS = [
+    { value: '1', label: '24 hours' },
     { value: '7', label: '7 days' },
     { value: '30', label: '30 days' },
     { value: '90', label: '90 days' },
   ] as const;
-  let days = $state<'7' | '30' | '90'>('30');
+  const days = $derived(filter?.days ?? '30');
   let trend = $state<'failed' | 'duration' | 'tokens' | 'cost'>('failed');
   let operationsView = $state<'chart' | 'table'>('chart');
   const TRENDS = [{ value: 'failed', label: 'Failure rate' }, { value: 'duration', label: 'Duration' }, { value: 'tokens', label: 'Tokens' }, { value: 'cost', label: 'API spend' }] as const;
@@ -37,7 +39,9 @@
   const group = $derived(days === '90' ? 'week' : 'day');
 
   const res = new Resource(() => {
-    const p = new URLSearchParams({ from: daysAgo(Number(days), Date.now()), group });
+    const now = Date.now();
+    const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
+    const p = new URLSearchParams({ from, group });
     return getJSON<Analytics>(`${base}/analytics?${p}`);
   });
   const detail = new Resource(() => getJSON<AccountDetail>(base));
@@ -92,7 +96,12 @@
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="analytics" {slug} current="account" />
+    <PageHeader title="Analytics" {slug}>
+      {#snippet actions()}<HelpPopover label="About these metrics"><p>Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p><p>Failure rate is failed / (completed + failed). Duration is the median of completed reviews. API spend includes priced calls and excludes subscription fees.</p></HelpPopover>{/snippet}
+    </PageHeader>
+    <div class="toolbar">
+      <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => navigate({ name: 'account', slug, filter: analyticsFilter({ days }) })} />
+    </div>
     {#if detail.data && (unsignedWebhooks(detail.data.connection) || !detail.data.connection.lastWebhookAt)}
       {@const inst = detail.data.connection}
       <section class="panel" aria-labelledby="an-connection">
@@ -119,7 +128,7 @@
       {@const near = nearCaps(detail.data.usage)}
       {#if wants.length || near.length}
         <section class="panel" aria-labelledby="an-attention">
-          <header class="panel-head"><h2 id="an-attention">Needs attention</h2></header>
+          <header class="panel-head"><h2 id="an-attention">Needs attention</h2><span class="small muted">Right now</span></header>
           <ul class="rows">
             {#each wants as w (w.key)}
               <li class="row">
@@ -142,11 +151,6 @@
       {/if}
     {/if}
 
-    <!-- The period scopes everything below it; what needs attention is now. -->
-    <div class="toolbar">
-      <Segmented label="Period" options={PERIODS} value={days} onchange={(d) => (days = d)} />
-    </div>
-    <p class="small muted">Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p>
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const c = d.current}

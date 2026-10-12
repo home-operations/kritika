@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
   // The instance's landing page: totals across every account the viewer can
   // see, then one row per account with its numbers and its health, each
   // cell that names something wrong leading to where the account shows it.
@@ -80,7 +81,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><p class="crumbs">All accounts</p><h1>Operations overview</h1><p class="muted">Service health, running work and usage across your accounts. Review pull requests in GitHub.</p></header>
+    <PageHeader title="Operations overview" description="Service health, running work and usage across your accounts." />
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}

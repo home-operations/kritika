@@ -4,6 +4,7 @@
 // a fresher one.
 import { ApiError, getJSON } from './api.svelte';
 import { subscribe } from './events.svelte';
+import { loadedSize, rememberSize } from './viewstate';
 import type { EventKind, LiveEvent, Page } from './types';
 
 export class Resource<T> {
@@ -145,7 +146,10 @@ export class Paged<T> {
         items.push(...page.items);
       }
       const unique = this.#unique(items);
-      if (gen === this.#gen && revision === this.#revision) this.#loaded = unique.length;
+      if (gen === this.#gen && revision === this.#revision) {
+        this.#loaded = unique.length;
+        if (this.#base) rememberSize(this.#base, unique.length);
+      }
       return { items: unique, nextCursor: page.nextCursor };
     });
   }
@@ -195,7 +199,7 @@ export class Paged<T> {
       this.#gen++;
       this.#revision++;
       this.first.invalidate();
-      this.#loaded = 0;
+      this.#loaded = loadedSize(base);
       this.#more = undefined;
       this.#afterMore = undefined;
       this.#refresh = undefined;
@@ -254,6 +258,7 @@ export class Paged<T> {
       if (gen !== this.#gen) return;
       this.first.data = { items: this.#unique([...this.items, ...p.items]), nextCursor: p.nextCursor };
       this.#loaded = this.items.length;
+      if (this.#base) rememberSize(this.#base, this.#loaded);
     } catch (err) {
       if (gen === this.#gen) this.moreError = err instanceof Error ? err : new Error(String(err));
     } finally {

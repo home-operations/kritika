@@ -4,31 +4,53 @@
 // account at once. No tab chooses an account: one is entered by the scope
 // switcher or a link that names it. Rune-free, like routes.ts, so tests can
 // import it.
-import type { Route } from './routes';
+import { analyticsFilter, usageFilter, type Route } from './routes';
 
-export type Section = 'analytics' | 'pulls' | 'rules' | 'settings';
-
-type Name = Route['name'];
+export type Section = 'analytics' | 'usage' | 'pulls' | 'findings' | 'queue' | 'followups' | 'repos' | 'rules' | 'settings';
 
 interface SectionDef {
   label: string;
-  // names are the routes the section's tab is current on.
-  names: readonly Name[];
-  // home is where the section's tab goes.
+  names: readonly Route['name'][];
   home: (slug: string) => Route;
+  admin?: boolean;
 }
 
 export const SECTIONS: Record<Section, SectionDef> = {
-  analytics: { label: 'Analytics', names: ['account', 'findings', 'usage'], home: (slug) => ({ name: 'account', slug }) },
-  pulls: { label: 'Pull requests', names: ['pulls', 'pull', 'review', 'queue', 'followups'], home: (slug) => ({ name: 'pulls', slug }) },
+  analytics: { label: 'Analytics', names: ['account'], home: (slug) => ({ name: 'account', slug }) },
+  usage: { label: 'Usage & costs', names: ['usage'], home: (slug) => ({ name: 'usage', slug }) },
+  pulls: { label: 'Pull requests', names: ['pulls', 'pull', 'review'], home: (slug) => ({ name: 'pulls', slug }) },
+  findings: { label: 'Findings', names: ['findings'], home: (slug) => ({ name: 'findings', slug }) },
+  queue: { label: 'Queue', names: ['queue'], home: (slug) => ({ name: 'queue', slug }) },
+  followups: { label: 'Follow-ups', names: ['followups'], home: (slug) => ({ name: 'followups', slug }) },
+  repos: { label: 'Repositories', names: ['repos', 'repo'], home: (slug) => ({ name: 'repos', slug }) },
   rules: { label: 'Rules', names: ['rules'], home: (slug) => ({ name: 'rules', slug }) },
-  settings: { label: 'Settings', names: ['repos', 'repo', 'admin'], home: (slug) => ({ name: 'repos', slug }) },
+  settings: { label: 'Audit log', names: ['admin'], home: (slug) => ({ name: 'admin', slug, section: 'audit' }), admin: true },
 };
 
-export const SECTION_ORDER: readonly Section[] = ['analytics', 'pulls', 'rules', 'settings'];
+export const NAV_GROUPS: readonly { label: string; sections: readonly Section[] }[] = [
+  { label: 'Operations', sections: ['queue', 'repos'] },
+  { label: 'Insights', sections: ['analytics', 'usage'] },
+  { label: 'Activity', sections: ['pulls', 'followups', 'findings'] },
+  { label: 'Configuration', sections: ['rules', 'settings'] },
+];
 
 export function sectionOf(r: Route): Section | undefined {
-  return SECTION_ORDER.find((s) => SECTIONS[s].names.includes(r.name));
+  return NAV_GROUPS.flatMap((g) => g.sections).find((s) => SECTIONS[s].names.includes(r.name));
+}
+
+// Reporting dates travel between analytics and usage; repository and model
+// selections stay on their own page and account.
+export function reportingRoute(to: Route, from: Route): Route {
+  if (from.name !== 'account' && from.name !== 'usage') return to;
+  if (to.name === 'account') {
+    const filter = analyticsFilter({ days: from.filter?.days });
+    return { ...to, ...(filter ? { filter } : {}) };
+  }
+  if (to.name === 'usage') {
+    const filter = usageFilter({ days: from.filter?.days });
+    return { ...to, ...(filter ? { filter } : {}) };
+  }
+  return to;
 }
 
 // One of the instance's tabs; admin is one only an admin has, and several
@@ -43,7 +65,7 @@ export interface InstanceTab {
 export const INSTANCE_TABS: readonly InstanceTab[] = [
   { label: 'Overview', route: { name: 'overview' } },
   { label: 'Queue', route: { name: 'instanceQueue' }, several: true },
-  { label: 'Configuration', route: { name: 'console' }, admin: true },
+  { label: 'Instance settings', route: { name: 'console' }, admin: true },
 ];
 
 // scopeOf is the account a route is in the scope of, undefined for one in
@@ -52,34 +74,19 @@ export function scopeOf(r: Route): string | undefined {
   return 'slug' in r ? r.slug : undefined;
 }
 
-// A section's list destinations appear beneath its main navigation link.
-export interface SubTab {
-  label: string;
-  name: Name;
-  route: (slug: string) => Route;
-}
-
-export const SUB_TABS: Partial<Record<Section, readonly SubTab[]>> = {
-  analytics: [
-    { label: 'Analytics', name: 'account', route: (slug) => ({ name: 'account', slug }) },
-    { label: 'Findings', name: 'findings', route: (slug) => ({ name: 'findings', slug }) },
-    { label: 'Spend', name: 'usage', route: (slug) => ({ name: 'usage', slug }) },
-  ],
-  pulls: [
-    { label: 'Pull requests', name: 'pulls', route: (slug) => ({ name: 'pulls', slug }) },
-    { label: 'Queue', name: 'queue', route: (slug) => ({ name: 'queue', slug }) },
-    { label: 'Follow-ups', name: 'followups', route: (slug) => ({ name: 'followups', slug }) },
-  ],
-};
-
 // pageIn is the page r shows, in the account slug: the same list or
 // settings page, and for a record, which the other account does not have,
-// the list it belongs to. A filter stays behind, since it may name what
-// only r's account has. From the instance's queue it is the account's.
+// the list it belongs to. Account-specific filters stay behind; reporting
+// dates, metrics and grouping carry across. The instance queue becomes the account's.
 export function pageIn(r: Route, slug: string): Route {
   switch (r.name) {
+    case 'account':
+      return reportingRoute({ name: 'account', slug }, r);
+    case 'usage': {
+      const filter = usageFilter({ days: r.filter?.days, metric: r.filter?.metric, group: r.filter?.group });
+      return { name: 'usage', slug, ...(filter ? { filter } : {}) };
+    }
     case 'findings':
-    case 'usage':
     case 'pulls':
     case 'queue':
     case 'followups':

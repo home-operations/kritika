@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live, pollJobs } from '../resource.svelte';
@@ -73,29 +74,9 @@
         {@const forgeUrl = safeHref(p.url)}
         {@const life = lifecycle(p)}
         {@const newest = d.reviews[0]}
-        <header class="page-head">
-          <p class="crumbs">
-            <a href={href({ name: 'pulls', slug })}>Pull requests</a> /
-            <a class="mono" href={href(repoRoute(slug, fullName))}>{fullName}</a>
-          </p>
-          <h1>{p.title} <span class="muted">#{p.number}</span></h1>
-          <p class="meta-line">
-            <span class="lifecycle-badge tone-{life.tone}"><Icon path={life.icon} size={13} /> {life.label}</span>
-            <span><strong>{p.author}</strong> wants to merge <span class="mono">{p.headRef}</span> into <span class="mono">{p.baseRef}</span></span>
-            <span>at <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, last synchronized <Time iso={p.updatedAt} /></span>
-            {#if newest?.status === 'skipped'}
-              <span>not reviewed{#if newest.skipReason}: {skipText[newest.skipReason]}{:else if newest.error}: {newest.error}{/if}</span>
-            {/if}
-            {#each p.labels as l (l.name)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
-            {#if forgeUrl}
-              <a class="btn btn-primary external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
-            {/if}
-          </p>
-          {#if p.state !== 'open'}
-            <NoMoreReviews merged={p.merged} />
-          {/if}
-          {#if isAdmin()}
-            <div class="page-actions">
+        <PageHeader title={`${p.title} #${p.number}`} {slug} parents={[{ label: 'Pull requests', route: { name: 'pulls', slug } }, { label: fullName, route: repoRoute(slug, fullName) }]}>
+          {#snippet actions()}
+            {#if isAdmin()}
               <ActionButton
                 label="Re-run"
                 title="Re-run the review?"
@@ -104,9 +85,22 @@
                 done="Re-run queued"
                 ondone={() => res.load()}
               />
-            </div>
+            {/if}
+            {#if forgeUrl}<a class="btn btn-primary external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>{/if}
+          {/snippet}
+        </PageHeader>
+        <p class="meta-line">
+          <span class="lifecycle-badge tone-{life.tone}"><Icon path={life.icon} size={13} /> {life.label}</span>
+          <span><strong>{p.author}</strong> wants to merge <span class="mono">{p.headRef}</span> into <span class="mono">{p.baseRef}</span></span>
+          <span>at <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, last synchronized <Time iso={p.updatedAt} /></span>
+          {#if newest?.status === 'skipped'}
+            <span>not reviewed{#if newest.skipReason}: {skipText[newest.skipReason]}{:else if newest.error}: {newest.error}{/if}</span>
           {/if}
-        </header>
+          {#each p.labels as l (l.name)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
+        </p>
+        {#if p.state !== 'open'}
+          <NoMoreReviews merged={p.merged} />
+        {/if}
 
         {#if p.paused && p.state === 'open'}
           <p class="notice paused-notice" role="note">

@@ -1,13 +1,15 @@
 <script lang="ts">
+  import { queueFilter, type QueueFilter } from '../routes';
+  import { replace } from '../router.svelte';
   import { getJSON } from '../api.svelte';
   import { Resource, live, pollJobs } from '../resource.svelte';
   import { accountApi } from '../links';
   import type { Job } from '../types';
   import StateView from '../components/StateView.svelte';
   import JobTable from '../components/JobTable.svelte';
-  import SectionTabs from '../components/SectionTabs.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
 
-  let { slug }: { slug: string } = $props();
+  let { slug, filter }: { slug: string; filter?: QueueFilter } = $props();
   const res = new Resource(() => getJSON<Job[]>(`${accountApi(slug)}/queue`));
 
   $effect(() => {
@@ -21,10 +23,10 @@
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="pulls" {slug} current="queue" />
+    <PageHeader title="Queue" {slug} />
     <StateView {res} retry={() => res.load()}>
       {#snippet children(jobs)}
-        <JobTable ondone={() => void res.load()} {jobs} account={() => slug} />
+        <JobTable {filter} onfilter={(f) => replace({ name: 'queue', slug, filter: queueFilter({ ...f }) })} ondone={() => void res.load()} {jobs} account={() => slug} />
       {/snippet}
     </StateView>
   </div>
