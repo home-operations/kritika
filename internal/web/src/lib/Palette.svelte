@@ -164,11 +164,11 @@
       <Command.Root class="palette-command" shouldFilter={false} loop label="Go to">
         <div class="palette-input">
           <Icon path={mdiMagnify} size={16} />
-          <Command.Input bind:value={q} placeholder="Go to…" aria-label="Go to" />
+          <Command.Input bind:value={q} placeholder="Go to…" aria-label="Go to" aria-controls="palette-results" />
           <span class="palette-esc"><kbd>Esc</kbd></span>
         </div>
 
-        <Command.List class="palette-body">
+        <Command.List id="palette-results" class="palette-body" tabindex={0}>
           {#each rows as row (`${row.label}\u0000${href(row.route)}`)}
             <Command.Item class="palette-row" value={`${row.label}\u0000${href(row.route)}`} onSelect={() => commit(row)}>
               <Icon path={row.icon} size={14} />

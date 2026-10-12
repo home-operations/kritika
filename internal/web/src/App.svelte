@@ -201,8 +201,8 @@
   <SignIn />
 {:else}
   <div class="app">
-    <a class="skip-link" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
     <header class="topbar">
+      <a class="skip-link" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
       <div class="topbar-row">
         <a class="brand" href="#/">
           <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
@@ -314,7 +314,7 @@
       {/if}
     </header>
 
-    <div class="main-col">
+    <div class="main-col" id="main-content" tabindex="-1">
       {#if me?.admin}<SetupBanner />{/if}
       <Page route={router.route} />
     </div>

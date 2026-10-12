@@ -457,7 +457,7 @@ test.describe('pulls list', () => {
     await search.pressSequentially('fai');
     await expect(options).toHaveText(['status:failed']);
     await page.keyboard.press('ArrowDown');
-    await expect(search).toHaveAttribute('aria-activedescendant', 'pull-search-suggest-0');
+    await expect(search).toHaveAttribute('aria-activedescendant', (await options.first().getAttribute('id'))!);
     await page.keyboard.press('Enter');
     await expect(search).toHaveValue('status:failed ');
     await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('outcome') === 'failed')).toBe(true);
@@ -469,6 +469,31 @@ test.describe('pulls list', () => {
 
     await page.keyboard.press('Escape');
     await expect(search).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('token suggestions dismiss without changing the filter and reopen on focus', async ({ page }) => {
+    await page.goto(`/${T}/pulls`);
+    const search = page.getByRole('combobox', { name: 'Search pull requests' });
+    await search.fill('status:');
+    await search.press('Tab');
+    await expect(search).not.toBeFocused();
+    await expect(search).toHaveValue('status:');
+    await search.focus();
+    await search.press('ArrowDown');
+    await search.press('Escape');
+    await expect(search).toHaveAttribute('aria-expanded', 'false');
+    await expect(search).toHaveValue('status:');
+    await expect(search).toBeFocused();
+    await search.press('Tab');
+    await expect(search).not.toBeFocused();
+    await search.focus();
+    await expect(page.getByRole('listbox', { name: 'Suggestions' })).toBeVisible();
+    await search.fill('no matching token');
+    await expect(search).toHaveAttribute('aria-expanded', 'false');
+    await expect(search).not.toHaveAttribute('aria-activedescendant', /.+/);
+    await search.press('Tab');
+    await expect(search).toHaveValue('no matching token');
+    await expect(search).not.toBeFocused();
   });
 
   test('an unknown status is not applied, but a repository outside the suggestions is', async ({ page }) => {

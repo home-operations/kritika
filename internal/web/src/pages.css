@@ -748,18 +748,18 @@ table.data th.wrap {
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 12%, transparent);
 }
-.suggest li {
+.suggest [role="option"] {
   display: flex;
   align-items: baseline;
   gap: 10px;
   padding: 6px 12px;
   cursor: pointer;
 }
-.suggest li:hover,
-.suggest li.active {
+.suggest [role="option"]:hover,
+.suggest [data-highlighted] {
   background: var(--mark-wash);
 }
-.suggest li.active {
+.suggest [data-highlighted] {
   box-shadow: inset 3px 0 0 var(--edge);
 }
 .token-note {
