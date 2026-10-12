@@ -43,7 +43,7 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.refresh()));
 
   function visible(): Repository[] {
     const needle = filter.trim().toLowerCase();
@@ -163,7 +163,7 @@
     {:else if kind === 'archived'}
       <p class="small muted">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
     {/if}
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} {empty}>
+    <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {#snippet children()}
         {@const rows = visible()}
         {#if rows.length === 0}

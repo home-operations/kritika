@@ -450,6 +450,7 @@ test.describe('pulls list', () => {
 
     await search.pressSequentially('st');
     await expect(options).toHaveText([/^status:/]);
+    await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Tab');
     await expect(search).toHaveValue('status:');
     await search.pressSequentially('fai');
@@ -469,14 +470,15 @@ test.describe('pulls list', () => {
     await expect(search).toHaveAttribute('aria-expanded', 'false');
   });
 
-  test('a token that names no repository or status is not applied, and says so', async ({ page }) => {
+  test('an unknown status is not applied, but a repository outside the suggestions is', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/pulls`);
     await page.getByRole('combobox', { name: 'Search pull requests' }).fill('repo:nope/nope status:great');
-    await expect(page.getByRole('note')).toHaveText('Not filtering by repo:nope/nope, status:great: nothing by that name.');
+    await expect(page.getByRole('note')).toHaveText('Not filtering by status:great: nothing by that name.');
     await page.waitForTimeout(400);
-    expect(seen.some((u) => u.searchParams.has('repo') || u.searchParams.has('outcome'))).toBe(false);
-    await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
+    expect(seen.some((u) => u.searchParams.get('repo') === 'nope/nope')).toBe(true);
+    expect(seen.some((u) => u.searchParams.has('outcome'))).toBe(false);
+    await expect(page).toHaveURL(/repo=nope%2Fnope$/);
   });
 
   test('a click anywhere on a row opens its pull request', async ({ page }) => {

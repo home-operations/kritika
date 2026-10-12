@@ -57,12 +57,12 @@
   $effect(() => {
     void repos.load();
   });
-  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.refresh()));
 
   // The box's tokens: status: is the last review's outcome.
   const authors = $derived([...new Set(paged.items.map((p) => p.author))].sort());
   const specs = $derived<TokenSpec[]>([
-    { key: 'repo', hint: 'a repository', values: repoNames },
+    { key: 'repo', hint: 'a repository', values: repoNames, open: true },
     { key: 'author', hint: "an author's login", values: authors, open: true },
     { key: 'status', hint: "the last review's status", values: PULL_OUTCOMES },
     { key: 'is', hint: 'paused, or p0', values: PULL_IS },
@@ -164,7 +164,6 @@
         {specs}
         bind:text
         bind:input={searchEl}
-        ready={!!repos.data}
         {onapply}
       />
       <Segmented label="State" options={STATES} value={prState} onchange={(state) => setFilter({ ...filter, state })} />
@@ -176,7 +175,7 @@
         </div>
       {/if}
     </div>
-    <StateView {res} retry={() => res.load()}>
+    <StateView {res} retry={() => paged.load()}>
       {#snippet children()}
         {#if items.length === 0 && filter}
           <div class="state-msg">

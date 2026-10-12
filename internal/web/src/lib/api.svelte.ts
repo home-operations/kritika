@@ -78,9 +78,10 @@ export async function getJSON<T>(path: string): Promise<T> {
 
 export type WriteMethod = 'POST' | 'PUT' | 'DELETE';
 
-export async function sendJSON<T>(method: WriteMethod, path: string, body?: unknown): Promise<T> {
+export async function sendJSON<T>(method: WriteMethod, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${basePath}${path}`, {
     method,
+    signal,
     headers: { ...commonHeaders, 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: body === undefined ? undefined : JSON.stringify(body),

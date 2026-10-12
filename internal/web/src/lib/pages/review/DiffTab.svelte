@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { getJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { parseDiff } from '../../diff';
@@ -12,13 +13,15 @@
   const FILE_LINES = 500;
   const TOTAL_LINES = 5000;
 
-  // The diff is fixed once a review starts, so unlike the other tabs it is
-  // not refetched on live updates.
-  let { base, d }: { base: string; d: ReviewDetail } = $props();
+  // An empty response during preparation is not the final, immutable diff.
+  let { base, d, version }: { base: string; d: ReviewDetail; version: number } = $props();
   const res = new Resource(() => getJSON<ReviewDiff>(`${base}/diff`));
   let delta = $state(false);
   $effect(() => {
-    void res.load();
+    void version;
+    untrack(() => {
+      if (!res.data || res.data.pending) void res.load();
+    });
   });
 
   const files = $derived(res.data ? parseDiff(delta && res.data.deltaDiff ? res.data.deltaDiff : res.data.diff) : []);
@@ -33,7 +36,7 @@
   {res}
   retry={() => res.load()}
   isEmpty={(x) => !x.diff && !x.deltaDiff}
-  empty={res.data?.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}
+  empty={res.data?.pending ? 'Preparing the diff…' : res.data?.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}
 >
   {#snippet children(x)}
     <div class="toolbar">

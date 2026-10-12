@@ -17,6 +17,10 @@ export class Resource<T> {
     this.#fetcher = fetcher;
   }
 
+  invalidate(): void {
+    this.#seq++;
+  }
+
   async load(): Promise<void> {
     const seq = ++this.#seq;
     this.loading = true;
@@ -100,69 +104,155 @@ export function live(
   };
 }
 
-// Paged is a keyset-paginated list: the first page is a Resource (so
-// StateView renders it), and "Load more" appends further pages. Reloading
-// the same query (a live refetch) refreshes the first page but keeps the
-// pages already loaded; changing the query (url() returns a different base)
-// drops them, and a Load more still in flight for the old query is
-// discarded when it lands.
+// Paged refreshes the loaded row count from fresh cursors and publishes
+// the results together. Larger requests reduce work for deep lists.
 export class Paged<T> {
   readonly first: Resource<Page<T>>;
-  extra = $state<T[]>([]);
   loadingMore = $state(false);
   moreError = $state<Error | undefined>(undefined);
-  // The cursor after the last extra page; undefined until one is loaded.
-  #after = $state<string | null | undefined>(undefined);
+  #loaded = 0;
   #gen = 0;
+  #revision = 0;
   #base: string | undefined;
+  #more: Promise<void> | undefined;
+  #afterMore: Promise<void> | undefined;
+  #refresh: Promise<void> | undefined;
+  #refreshAgain = false;
   readonly #url: (cursor?: string) => string;
   readonly #key: (t: T) => string;
 
   constructor(url: (cursor?: string) => string, key: (t: T) => string) {
     this.#url = url;
     this.#key = key;
-    this.first = new Resource(() => getJSON<Page<T>>(url()));
+    this.first = new Resource(async () => {
+      const gen = this.#gen;
+      const revision = this.#revision;
+      const target = this.#loaded;
+      let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined));
+      const items = [...page.items];
+      while (items.length < target && page.nextCursor) {
+        if (gen !== this.#gen || revision !== this.#revision) return page;
+        page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length));
+        items.push(...page.items);
+      }
+      const unique = this.#unique(items);
+      if (gen === this.#gen && revision === this.#revision) this.#loaded = unique.length;
+      return { items: unique, nextCursor: page.nextCursor };
+    });
+  }
+
+  #pageURL(cursor?: string, limit?: number): string {
+    const url = this.#url(cursor);
+    if (limit === undefined) return url;
+    const [path, query] = url.split('?');
+    const params = new URLSearchParams(query);
+    // The list endpoints cap each response at 200 rows.
+    params.set('limit', String(Math.min(limit, 200)));
+    return path + '?' + params;
+  }
+
+  #unique(items: T[]): T[] {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const key = this.#key(item);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   get cursor(): string | null {
-    return this.#after !== undefined ? this.#after : (this.first.data?.nextCursor ?? null);
+    return this.first.data?.nextCursor ?? null;
   }
 
   get items(): T[] {
-    const head = this.first.data?.items ?? [];
-    const seen = new Set(head.map(this.#key));
-    return [...head, ...this.extra.filter((t) => !seen.has(this.#key(t)))];
+    return this.first.data?.items ?? [];
   }
 
+  // Explicit loads discard a snapshot started before a user action.
   load(): Promise<void> {
+    return this.#load(false);
+  }
+
+  // Live refreshes coalesce without starving a slow snapshot.
+  refresh(): Promise<void> {
+    return this.#load(true);
+  }
+
+  #load(background: boolean): Promise<void> {
     const base = this.#url();
     if (base !== this.#base) {
       this.#base = base;
       this.#gen++;
-      this.extra = [];
-      this.#after = undefined;
+      this.#revision++;
+      this.first.invalidate();
+      this.#loaded = 0;
+      this.#more = undefined;
+      this.#afterMore = undefined;
+      this.#refresh = undefined;
+      this.#refreshAgain = false;
+      this.first.data = undefined;
+      this.first.error = undefined;
       this.moreError = undefined;
       this.loadingMore = false;
+    } else if (!background && this.#refresh) {
+      this.#revision++;
+      this.first.invalidate();
     }
-    return this.first.load();
+    if (this.#more) {
+      if (!this.#afterMore) {
+        const gen = this.#gen;
+        this.#afterMore = this.#more.then(() => {
+          if (gen !== this.#gen) return;
+          this.#afterMore = undefined;
+          return this.refresh();
+        });
+      }
+      return this.#afterMore;
+    }
+    if (this.#refresh) {
+      this.#refreshAgain = true;
+      return this.#refresh;
+    }
+    this.#refresh = this.#refreshPages(this.#gen);
+    return this.#refresh;
   }
 
-  async more(): Promise<void> {
-    const cursor = this.cursor;
-    if (!cursor) return;
-    const gen = this.#gen;
+  async #refreshPages(gen: number): Promise<void> {
+    let revision: number;
+    do {
+      revision = this.#revision;
+      this.#refreshAgain = false;
+      await this.first.load();
+      // A queued append takes the next turn, even during a steady stream.
+    } while (gen === this.#gen && (revision !== this.#revision || (this.#refreshAgain && !this.#more)));
+    if (gen === this.#gen) this.#refresh = undefined;
+  }
+
+  more(): Promise<void> {
+    if (!this.cursor || this.#more) return this.#more ?? Promise.resolve();
     this.loadingMore = true;
     this.moreError = undefined;
+    this.#more = this.#loadMore(this.#gen);
+    return this.#more;
+  }
+
+  async #loadMore(gen: number): Promise<void> {
     try {
-      const p = await getJSON<Page<T>>(this.#url(cursor));
+      if (this.#refresh) await this.#refresh;
+      if (gen !== this.#gen || !this.cursor) return;
+      const p = await getJSON<Page<T>>(this.#url(this.cursor));
       if (gen !== this.#gen) return;
-      const have = new Set(this.extra.map(this.#key));
-      this.extra = [...this.extra, ...p.items.filter((t) => !have.has(this.#key(t)))];
-      this.#after = p.nextCursor;
+      this.first.data = { items: this.#unique([...this.items, ...p.items]), nextCursor: p.nextCursor };
+      this.#loaded = this.items.length;
     } catch (err) {
       if (gen === this.#gen) this.moreError = err instanceof Error ? err : new Error(String(err));
     } finally {
-      if (gen === this.#gen) this.loadingMore = false;
+      if (gen === this.#gen) {
+        this.loadingMore = false;
+        this.#more = undefined;
+        if (this.#refreshAgain && !this.#afterMore) void this.refresh();
+      }
     }
   }
 }

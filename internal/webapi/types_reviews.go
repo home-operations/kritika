@@ -203,8 +203,9 @@ type ReviewDetail struct {
 
 // ReviewDiff is a review's diff and, for an incremental one, the diff
 // since the prior review's head. Swept says the retention sweep has
-// emptied both.
+// emptied both. Pending means an active review has not written its pack yet.
 type ReviewDiff struct {
+	Pending   bool   `json:"pending,omitzero"`
 	Diff      string `json:"diff"`
 	DeltaDiff string `json:"deltaDiff"`
 	Swept     bool   `json:"swept"`

@@ -18,7 +18,7 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.refresh()));
 </script>
 
 <svelte:head><title>Follow-ups · {slug} · kritika</title></svelte:head>
@@ -26,7 +26,7 @@
 <main class="page">
   <div class="page-inner">
     <SectionTabs section="pulls" {slug} current="followups" />
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No follow-up questions yet.">
+    <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} empty="No follow-up questions yet.">
       {#snippet children()}
         <ul class="followups">
           {#each paged.items as f (f.id)}<FollowupItem {slug} {f} showPull />{/each}

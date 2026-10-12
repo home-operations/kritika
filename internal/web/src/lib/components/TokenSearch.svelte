@@ -21,8 +21,7 @@
     specs: readonly TokenSpec[];
     text?: string;
     input?: HTMLInputElement;
-    // ready is whether the specs' values have loaded, so a token they don't
-    // list yet is not reported as unknown.
+    // Closed token values may depend on data that has not loaded yet.
     ready?: boolean;
     onapply: (p: Parsed) => void;
   } = $props();
@@ -38,13 +37,14 @@
 
   let focused = $state(false);
   let dismissed = $state(false);
-  let active = $state(-1);
+  let selected = $state('');
   const suggestions = $derived(suggest(text, specs));
+  const active = $derived(suggestions.findIndex((s) => s.text === selected));
   const listOpen = $derived(focused && !dismissed && suggestions.length > 0);
 
   function accept(s: Suggestion): void {
     text = complete(text, s);
-    active = -1;
+    selected = '';
     apply();
     input?.focus();
   }
@@ -53,13 +53,13 @@
     if (!listOpen) return;
     const n = suggestions.length;
     if (e.key === 'ArrowDown') {
-      active = (active + 1) % n;
+      selected = suggestions[(active + 1) % n]!.text;
     } else if (e.key === 'ArrowUp') {
-      active = active <= 0 ? n - 1 : active - 1;
+      selected = suggestions[active <= 0 ? n - 1 : active - 1]!.text;
     } else if (e.key === 'Enter' && active >= 0) {
       accept(suggestions[active]!);
-    } else if (e.key === 'Tab' && !e.shiftKey) {
-      accept(suggestions[Math.max(active, 0)]!);
+    } else if (e.key === 'Tab' && !e.shiftKey && active >= 0) {
+      accept(suggestions[active]!);
     } else if (e.key === 'Escape') {
       dismissed = true;
       e.stopPropagation();
@@ -86,7 +86,7 @@
     bind:this={input}
     oninput={() => {
       dismissed = false;
-      active = -1;
+      selected = '';
       apply();
     }}
     onfocus={() => (focused = true)}

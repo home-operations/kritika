@@ -5,7 +5,7 @@
   import { Resource, live } from '../resource.svelte';
   import { stamp } from '../time.svelte';
   import { callCost, costTotal, daysAgo, reviewsLeftOut, tokens, usd, wholeNumber } from '../format';
-  import type { AccountSummary, MonthUsage, UsageGroup, UsagePoint, UsageSeries } from '../types';
+  import type { AccountDetail, AccountSummary, MonthUsage, UsageGroup, UsagePoint, UsageSeries } from '../types';
   import StateView from '../components/StateView.svelte';
   import ColumnChart from '../components/ColumnChart.svelte';
   import Segmented from '../components/Segmented.svelte';
@@ -55,7 +55,8 @@
   // The month so far against the account's caps.
   const summary = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
   const account = $derived(summary.data?.find((t) => t.slug === slug));
-  const month = $derived(account?.usage);
+  const detail = new Resource(() => getJSON<AccountDetail>(accountApi(slug)));
+  const month = $derived(detail.data?.usage ?? account?.usage);
 
   // The median and the mean are of the reviews whose cost is known.
   function reviewSpend(m: MonthUsage): string {
@@ -71,7 +72,16 @@
   $effect(() => {
     void summary.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'model_call', () => void res.load(), 2000));
+  $effect(() =>
+    live(
+      (e) => e.account === slug && (e.kind === 'model_call' || e.kind === 'review'),
+      (dirty) => {
+        if (dirty.has('model_call') || dirty.has('resync')) void res.load();
+        void detail.load();
+      },
+      2000,
+    ),
+  );
 
   function sum(rows: UsagePoint[]): UsagePoint {
     const z: UsagePoint = { key: 'Total', inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 };

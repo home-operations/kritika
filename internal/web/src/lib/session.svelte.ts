@@ -39,22 +39,45 @@ export function applySettings(s: UserSettings): void {
   if (s.theme) setTheme(s.theme);
 }
 
-// saveSettings applies a change to the viewer's settings at once and keeps
-// it with their user; one the server refuses is taken back. A theme handed
-// back to the browser has this one follow its system again.
-export async function saveSettings(change: Partial<UserSettings>): Promise<void> {
+// A full settings replacement must commit before the next one starts.
+// Keep the last acknowledged state for rollback if several writes fail.
+let settingsWriter: {
+  me: Me;
+  saved: UserSettings;
+  theme: typeof theme.pref;
+  tail: Promise<void>;
+} | undefined;
+
+export function saveSettings(change: Partial<UserSettings>): Promise<void> {
   const me = session.me;
-  if (!me) return;
-  const before = { settings: me.settings, theme: theme.pref };
+  if (!me) return Promise.resolve();
+  const writer = settingsWriter?.me === me ? settingsWriter : (settingsWriter = {
+    me, saved: me.settings, theme: theme.pref, tail: Promise.resolve(),
+  });
   me.settings = { ...me.settings, ...change };
-  applySettings(me.settings);
+  const settings = me.settings;
+  applySettings(settings);
   if (change.theme === '') setTheme('auto');
-  try {
-    await sendJSON('PUT', '/api/v1/me/settings', me.settings);
-  } catch (err) {
-    me.settings = before.settings;
-    applySettings(before.settings);
-    setTheme(before.theme);
-    toast(`Not saved: ${describe(err)}`, 'danger');
-  }
+  const chosenTheme = theme.pref;
+  writer.tail = writer.tail.then(async () => {
+    if (session.me !== me) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error('Settings request timed out; try again.')), 15_000);
+    try {
+      await sendJSON('PUT', '/api/v1/me/settings', settings, controller.signal);
+      writer.saved = settings;
+      writer.theme = chosenTheme;
+    } catch (err) {
+      if (session.me !== me) return;
+      if (me.settings === settings) {
+        me.settings = writer.saved;
+        applySettings(writer.saved);
+        setTheme(writer.theme);
+        toast(`Not saved: ${describe(err)}`, 'danger');
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+  return writer.tail;
 }

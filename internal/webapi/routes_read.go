@@ -382,6 +382,20 @@ func repoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, error)
 	return row.ID, err
 }
 
+// searchRepoFilter distinguishes an unknown search term from an unfiltered
+// list, while keeping missing repository detail routes as 404s.
+func searchRepoFilter(ctx context.Context, tx pgx.Tx, r *http.Request) (string, bool, error) {
+	name := r.URL.Query().Get("repo")
+	if name == "" {
+		return "", true, nil
+	}
+	row, err := store.FindRepo(ctx, tx, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", false, nil
+	}
+	return row.ID, err == nil, err
+}
+
 func (s *Server) listIndexRuns(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	page, err := parsePage(r)
 	if err != nil {

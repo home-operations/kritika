@@ -36,6 +36,8 @@
   import Page from './lib/pages/Page.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import SetupBanner from './lib/pages/admin/SetupBanner.svelte';
+  import { describe } from './lib/manage';
+  import { toast } from './lib/toast.svelte';
   import { session, loadMeta, applySettings, saveSettings } from './lib/session.svelte';
   import type { Me } from './lib/types';
 
@@ -76,7 +78,8 @@
     try {
       await sendJSON('POST', '/auth/logout');
     } catch (err) {
-      console.error('sign out:', err);
+      toast(`Sign out failed: ${describe(err)}`, 'danger');
+      return;
     }
     closeEvents();
     session.me = undefined;

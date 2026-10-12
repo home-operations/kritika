@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getJSON } from '../../api.svelte';
+  import { revealInNav } from '../../focus';
   import { href } from '../../router.svelte';
   import { REVIEW_TABS, type ReviewTab } from '../../routes';
   import { Resource, live } from '../../resource.svelte';
@@ -120,7 +121,7 @@
         <nav class="tabs" aria-label="Review sections">
           {#each REVIEW_TABS as t (t)}
             {#if t === RUN_TABS[0]}<span class="tabs-group-label">Run</span>{/if}
-            <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t })}>
+            <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t })} {@attach t === tab && revealInNav}>
               <span class="tab-label" data-label={labels[t]}>{labels[t]}</span>{#if t === 'summary' && d.findings.length}<span class="tab-count">{d.findings.length}</span>{/if}
             </a>
           {/each}
@@ -130,7 +131,7 @@
           {#if tab === 'summary'}
             <SummaryTab {slug} {d} {finding} />
           {:else if tab === 'diff'}
-            <DiffTab {base} {d} />
+            <DiffTab {base} {d} {version} />
           {:else if tab === 'conversation'}
             <ConversationTab {base} {version} {slug} />
           {:else if tab === 'timeline'}
