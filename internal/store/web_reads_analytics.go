@@ -43,6 +43,7 @@ type AnalyticsTotals struct {
 	ReactionsDown int
 	CostUSD       float64
 	UnpricedCalls int64
+	Tokens        int64
 	// MedianReviewMs is nil when no review completed, and MedianMergeMs,
 	// from opened to merged, when no pull request kritika knows merged.
 	MedianReviewMs *int64
@@ -141,8 +142,9 @@ func readAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time, t *
 		ms := int64(*median)
 		t.MedianReviewMs = &ms
 	}
-	err = tx.QueryRow(ctx, `SELECT coalesce(sum(cost_usd), 0)::float8, count(*) FILTER (WHERE unpriced)
-		FROM usage WHERE created_at >= $1 AND created_at < $2`, from, to).Scan(&t.CostUSD, &t.UnpricedCalls)
+	err = tx.QueryRow(ctx, `SELECT coalesce(sum(cost_usd), 0)::float8, count(*) FILTER (WHERE unpriced),
+			coalesce(sum(input_tokens + output_tokens), 0)
+		FROM usage WHERE created_at >= $1 AND created_at < $2`, from, to).Scan(&t.CostUSD, &t.UnpricedCalls, &t.Tokens)
 	if err != nil {
 		return fmt.Errorf("store: analytics spend: %w", err)
 	}
@@ -162,10 +164,13 @@ func readAnalyticsTotals(ctx context.Context, tx pgx.Tx, from, to time.Time, t *
 // AnalyticsPoint is one bucket of an analytics series, keyed by the date
 // it starts on.
 type AnalyticsPoint struct {
-	Key      string
-	Reviews  int
-	Findings SeverityCounts
-	CostUSD  float64
+	Key            string
+	Reviews        int
+	Failed         int
+	Tokens         int64
+	MedianReviewMs *int64
+	Findings       SeverityCounts
+	CostUSD        float64
 }
 
 func readAnalyticsSeries(
@@ -176,12 +181,16 @@ func readAnalyticsSeries(
 			SELECT b FROM generate_series(date_trunc($3, $1::timestamptz), $2::timestamptz - interval '1 microsecond',
 				('1 ' || $3)::interval) AS b),
 		rev AS (
-			SELECT date_trunc($3, created_at) AS b, count(*) AS n FROM reviews
-			WHERE status = 'completed' AND created_at >= $1 AND created_at < $2 GROUP BY 1),
+			SELECT date_trunc($3, created_at) AS b, count(*) FILTER (WHERE status = 'completed') AS n,
+				count(*) FILTER (WHERE status = 'failed') AS failed,
+				trunc(percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - created_at) * 1000)
+					FILTER (WHERE status = 'completed' AND finished_at IS NOT NULL))::bigint AS duration FROM reviews
+			WHERE created_at >= $1 AND created_at < $2 GROUP BY 1),
 		spend AS (
-			SELECT date_trunc($3, created_at) AS b, sum(cost_usd)::float8 AS cost FROM usage
+			SELECT date_trunc($3, created_at) AS b, sum(cost_usd)::float8 AS cost, sum(input_tokens + output_tokens) AS tokens FROM usage
 			WHERE created_at >= $1 AND created_at < $2 GROUP BY 1)
-		SELECT to_char(k.b, 'YYYY-MM-DD'), coalesce(rev.n, 0), coalesce(spend.cost, 0)
+		SELECT to_char(k.b, 'YYYY-MM-DD'), coalesce(rev.n, 0), coalesce(spend.cost, 0), coalesce(rev.failed, 0),
+			coalesce(spend.tokens, 0), rev.duration
 		FROM buckets k LEFT JOIN rev ON rev.b = k.b LEFT JOIN spend ON spend.b = k.b
 		ORDER BY k.b`, from, to, string(group))
 	if err != nil {
@@ -189,7 +198,7 @@ func readAnalyticsSeries(
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AnalyticsPoint, error) {
 		var p AnalyticsPoint
-		err := row.Scan(&p.Key, &p.Reviews, &p.CostUSD)
+		err := row.Scan(&p.Key, &p.Reviews, &p.CostUSD, &p.Failed, &p.Tokens, &p.MedianReviewMs)
 		p.Findings = findings[p.Key]
 		return p, err
 	})

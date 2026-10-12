@@ -144,8 +144,8 @@ test.describe('signed-in shell', () => {
     await page.locator('.account-button').click();
     await scopes.getByRole('link', { name: 'github/acme' }).click();
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).locator('.section-tab');
-    await expect(tabs).toHaveText(['Pull requests', 'Analytics', 'Rules', 'Settings']);
-    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme/pulls');
+    await expect(tabs).toHaveText(['Analytics', 'Pull requests', 'Rules', 'Settings']);
+    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Instance' })).toHaveCount(0);
     await page.goto('/');
     await expect(page.locator('.account-button')).toHaveText('All accounts');

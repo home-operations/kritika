@@ -32,6 +32,7 @@ type AnalyticsTotals struct {
 	Addressed      int                     `json:"addressed"`
 	ReactionsUp    int                     `json:"reactionsUp"`
 	ReactionsDown  int                     `json:"reactionsDown"`
+	Tokens         int64                   `json:"tokens"`
 	CostUSD        float64                 `json:"costUsd"`
 	UnpricedCalls  int64                   `json:"unpricedCalls,omitzero"`
 	MedianReviewMs *int64                  `json:"medianReviewMs"`
@@ -40,10 +41,13 @@ type AnalyticsTotals struct {
 
 // AnalyticsPoint is one bucket of the series, keyed by its first date.
 type AnalyticsPoint struct {
-	Key      string         `json:"key"`
-	Reviews  int            `json:"reviews"`
-	Findings SeverityCounts `json:"findings"`
-	CostUSD  float64        `json:"costUsd"`
+	Key            string         `json:"key"`
+	Reviews        int            `json:"reviews"`
+	Failed         int            `json:"failed"`
+	Tokens         int64          `json:"tokens"`
+	MedianReviewMs *int64         `json:"medianReviewMs"`
+	Findings       SeverityCounts `json:"findings"`
+	CostUSD        float64        `json:"costUsd"`
 }
 
 // RepoActivity is what one repository's reviews came to over the window.

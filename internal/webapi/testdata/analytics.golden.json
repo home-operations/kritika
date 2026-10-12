@@ -22,6 +22,7 @@
     "addressed": 2,
     "reactionsUp": 4,
     "reactionsDown": 1,
+    "tokens": 1200,
     "costUsd": 1.25,
     "medianReviewMs": 90000,
     "medianMergeMs": 129600000
@@ -46,6 +47,7 @@
     "addressed": 0,
     "reactionsUp": 0,
     "reactionsDown": 0,
+    "tokens": 0,
     "costUsd": 0,
     "medianReviewMs": null,
     "medianMergeMs": null
@@ -54,6 +56,9 @@
     {
       "key": "2026-09-01",
       "reviews": 5,
+      "failed": 1,
+      "tokens": 1200,
+      "medianReviewMs": 90000,
       "findings": {
         "p0": 1,
         "p1": 2,

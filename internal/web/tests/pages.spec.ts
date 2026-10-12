@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 test.describe('overview', () => {
   test('a single-account member stays on the breakdown instead of leaving for the account', async ({ page }) => {
     await page.goto('/#/');
-    await expect(page.locator('.page-head h1')).toHaveText('Your review workspace');
+    await expect(page.locator('.page-head h1')).toHaveText('Operations overview');
     await expect(page).toHaveURL(/#\/$/);
     const rows = page.locator('table.account-breakdown tbody tr');
     await expect(rows).toHaveCount(1);
@@ -47,9 +47,9 @@ test.describe('overview', () => {
     await expect(spend.locator('.tile-value')).toHaveText('$3.00');
     // The per-review figure is a mean over both accounts' reviews, not a sum of their medians.
     await expect(spend).toContainText('$0.10 per review, mean of 24');
-    const wants = tiles.locator('.tile').filter({ hasText: 'Needs attention' });
-    await expect(wants.locator('.tile-value')).toHaveText('6');
-    await expect(wants).toContainText('2 failed · 4 P0');
+    const wants = tiles.locator('.tile').filter({ hasText: 'Review alerts' });
+    await expect(wants.locator('.tile-value')).toHaveText('2');
+    await expect(wants).toContainText('2 failed');
   });
 
   test('a tile says what runs and waits now and how busy the model slots are, and opens the queue', async ({ page }) => {
@@ -92,9 +92,9 @@ test.describe('overview', () => {
   test('the attention tile says so when nothing wants a look', async ({ page }) => {
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, p0: 0, paused: 0 } }]], ...g.defaultApi()]);
     await page.goto('/#/');
-    const wants = page.getByRole('region', { name: 'Across all accounts' }).locator('.tile').filter({ hasText: 'Needs attention' });
+    const wants = page.getByRole('region', { name: 'Across all accounts' }).locator('.tile').filter({ hasText: 'Review alerts' });
     await expect(wants.locator('.tile-value')).toHaveText('0');
-    await expect(wants).toContainText('no open pull request wants a look');
+    await expect(wants).toContainText('no review failures, caps or pauses');
   });
 });
 
@@ -143,7 +143,7 @@ test('a long account or App name is cut short, whole in its title, before a tabl
 test('analytics shows the totals against the window before, the charts and the repositories', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}`);
-  const stats = page.getByRole('region', { name: 'Totals' });
+  const stats = page.locator('.analytics');
   const stat = (label: string) => stats.locator('.stat').filter({ has: page.getByText(label, { exact: true }) });
   const c = g.analytics.current;
   await expect(stat('Reviews').locator('.stat-value')).toHaveText(String(c.reviews));
@@ -204,7 +204,7 @@ test('the spend table names its group, and usage with none', async ({ page }) =>
   await g.mockApi(page, [[/\/usage$/, { ...g.usageSeries, group: 'repo', rows: [{ ...day, key: '' }] }], ...g.defaultApi()]);
   await page.goto(`/${T}/usage`);
   await expect(page.locator('thead th').first()).toHaveText('Repository');
-  await expect(page.locator('tbody tr td:first-child')).toHaveText(['(none)']);
+  await expect(page.locator('tbody tr td:first-child')).toHaveText(['(none) →']);
 });
 
 test('a chart reads one column at a time, by pointer or by keyboard', async ({ page }) => {
@@ -1168,9 +1168,9 @@ test('names are set in mono, and words and numbers in the text face', async ({ p
   await expect(page.getByRole('link', { name: `${f.pull.repository}#${f.pull.number}` })).toHaveClass(mono);
   await page.goto(`/${T}/queue`);
   const cells = page.locator('tbody tr').first().locator('td');
-  await expect(cells.nth(0)).toHaveText(String(g.job.id));
+  await expect(cells.nth(0)).toContainText(`#${g.job.id} · review`);
   await expect(cells.nth(0)).not.toHaveClass(mono);
-  await expect(cells.nth(4)).toHaveClass(mono);
+  await expect(cells.nth(2).getByRole('link')).toHaveClass(mono);
   const role = { ...g.usageSeries, group: 'role', rows: [{ ...g.usageSeries.rows[0]!, key: 'review' }] };
   await g.mockApi(page, [[/\/usage$/, (u: URL) => (u.searchParams.get('group') === 'role' ? role : { ...role, group: 'model', rows: [{ ...role.rows[0]!, key: 'acme/large' }] })], ...g.defaultApi()]);
   await page.goto(`/${T}/usage`);
@@ -1202,13 +1202,14 @@ test("a job's error keeps a readable width however wide the columns beside it, a
   await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [long, fine] }], ...g.defaultApi()]);
   await page.setViewportSize({ width: 900, height: 800 });
   await page.goto('/#/queue');
-  const cell = (id: number) => page.getByRole('row').filter({ has: page.getByRole('cell', { name: String(id), exact: true }) }).locator('.error-cell');
+  const cell = (id: number) => page.getByRole('row').filter({ has: page.getByRole('cell', { name: new RegExp(`^#${id} ·`) }) }).locator('.queue-error');
+  await cell(43).locator('summary').click();
   expect((await cell(43).boundingBox())!.width).toBeGreaterThanOrEqual(260);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
 
   await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [fine] }], ...g.defaultApi()]);
   await page.reload();
-  expect((await cell(44).boundingBox())!.width).toBeLessThan(260);
+  await expect(cell(44).locator('details')).toHaveCount(0);
 });
 
 test("the palette finds every account's recent pull requests, the current account's first, and the instance's queue", async ({ page }) => {
@@ -1342,7 +1343,10 @@ test('your settings fit a phone: no control runs past the screen', async ({ page
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
-  await expect(page.locator('tbody tr')).toContainText(`GitHub did not answer. ${g.job.lastError}`);
+  await page.locator('.queue-error summary').click();
+  await expect(page.locator('.queue-error')).toContainText('GitHub did not answer.');
+  await expect(page.locator('.queue-error .error-text')).toBeVisible();
+  await expect(page.locator('.queue-error')).toContainText(g.job.lastError);
   await expect(page.locator('tbody tr')).toContainText(`${g.job.attempt}/${g.job.maxAttempts}`);
 
   await page.goto(`/${T}/usage`);
@@ -1479,7 +1483,7 @@ test('a signed-in user navigating to sign-in is sent back', async ({ page, mockP
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.evaluate(() => (location.hash = '#/signin'));
   await expect(page).toHaveURL(/#\/$/);
-  await expect(page.locator('.page-head h1')).toHaveText('Your review workspace');
+  await expect(page.locator('.page-head h1')).toHaveText('Operations overview');
   await expect(page.locator('.signin-card')).toHaveCount(0);
 });
 

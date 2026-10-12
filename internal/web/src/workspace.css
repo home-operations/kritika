@@ -117,13 +117,11 @@
   gap: 28px;
 }
 .attention-list,
-.running-list,
-.recent-pulls {
+.running-list {
   min-width: 0;
 }
 .attention-list > .panel-head,
-.running-list > .panel-head,
-.recent-pulls > .panel-head {
+.running-list > .panel-head {
   padding: 12px 0 18px;
   background: none;
 }
@@ -531,7 +529,8 @@ table.account-breakdown th {
   padding: 8px 12px 12px;
   font-size: var(--type-sm);
 }
-.file-filters input[type="search"] {
+.file-filters input[type="search"],
+.queue-search input {
   min-width: 0;
   width: 100%;
   padding: 8px 10px;
@@ -631,3 +630,46 @@ table.account-breakdown th {
   gap: 8px;
   font-size: var(--type-sm);
 }
+
+.usage-drilldown, .github-handoff, .queue-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.usage-drilldown, .github-handoff { margin: 16px 0; }
+.drill-link {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+}
+.drill-link:hover { text-decoration: underline; }
+.queue-detail { display: block; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.queue-error { max-width: 360px; overflow-wrap: anywhere; }
+.queue-actions:empty { display: none; }
+.queue-actions { margin-top: 10px; }
+.queue-search { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.queue-table td { vertical-align: top; }
+.queue-table strong { white-space: nowrap; }
+.overview-totals { margin-top: 0; }
+@media (max-width: 800px) {
+  .queue-table thead { display: none; }
+  .queue-table, .queue-table tbody, .queue-table tr, .queue-table td { display: block; width: 100%; }
+  .queue-table tr { padding: 12px; border-bottom: 1px solid var(--border); }
+  .queue-table td { padding: 7px 0; border: 0; max-width: none; }
+  .queue-table td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .queue-search, .queue-search input { width: 100%; }
+  .queue-search { flex-wrap: wrap; }
+}
+
+@media (min-width: 801px) {
+  .queue-error:has(details[open]) { min-width: 260px; }
+}
+
+.stats-related { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.panel:has(#an-operations) > .toolbar { padding: 0 16px; }

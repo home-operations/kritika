@@ -27,4 +27,8 @@ type UsageSeries struct {
 	From  time.Time        `json:"from"`
 	To    time.Time        `json:"to"`
 	Rows  []UsagePoint     `json:"rows"`
+	// Previous uses the same filters over the preceding window of equal length.
+	// Time and review groups return one total; named groups return per-key
+	// comparisons. Cache detail is omitted.
+	Previous []UsagePoint `json:"previous"`
 }

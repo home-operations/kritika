@@ -10,6 +10,8 @@ import (
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+
+	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
 // A replica's liveness on the River jobs it works: a beat every
@@ -22,8 +24,8 @@ import (
 // off from the database alone, its runner pod still working, never has
 // its job worked twice either.
 const (
-	jobHeartbeatInterval = 30 * time.Second
-	jobAbandonedAfter    = 6 * jobHeartbeatInterval
+	jobHeartbeatInterval = jobtimeout.HeartbeatInterval
+	jobAbandonedAfter    = jobtimeout.HeartbeatAbandonedAfter
 	jobFenceAfter        = jobAbandonedAfter - jobHeartbeatInterval
 )
 

@@ -42,7 +42,7 @@ func TestReadAnalytics(t *testing.T) {
 		review := func(pr, head, status string, at time.Time, took time.Duration, findings ...[2]string) {
 			var id string
 			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at, finished_at)
-				VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, account, pr, head, status, at, at.Add(took)).Scan(&id); err != nil {
+				VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, account, pr, head, status, at, at.Add(took+900*time.Microsecond)).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 			for _, f := range findings {
@@ -52,8 +52,8 @@ func TestReadAnalytics(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO usage (account_id, repository_id, review_id, role, model, cost_usd, created_at)
-				VALUES ($1, $2, $3, 'review', 'acme/large', 0.5, $4)`, account, repoID, id, at); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO usage (account_id, repository_id, review_id, role, model, cost_usd, input_tokens, output_tokens, created_at)
+				VALUES ($1, $2, $3, 'review', 'acme/large', 0.5, 100, 20, $4)`, account, repoID, id, at); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -93,7 +93,7 @@ func TestReadAnalytics(t *testing.T) {
 	median := int64(3 * time.Minute / time.Millisecond)
 	// The seeded findings predate categories, so every category counts zero.
 	want := AnalyticsTotals{
-		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{P1: 1, P2: 2}, Addressed: 2, ReactionsUp: 3, CostUSD: 2,
+		PullRequests: 2, Reviews: 3, Failed: 1, Findings: SeverityCounts{P1: 1, P2: 2}, Addressed: 2, ReactionsUp: 3, CostUSD: 2, Tokens: 480,
 		MedianReviewMs: &median, Categories: map[review.Category]int{},
 	}
 	for _, c := range review.Categories() {
@@ -104,14 +104,14 @@ func TestReadAnalytics(t *testing.T) {
 			deref(totals.MedianMergeMs), want, median)
 	}
 	merge := int64(36 * time.Hour / time.Millisecond)
-	if before.Reviews != 1 || before.Findings.P0 != 1 || before.Addressed != 1 || before.MedianMergeMs == nil || *before.MedianMergeMs != merge {
+	if before.Tokens != 120 || before.Reviews != 1 || before.Findings.P0 != 1 || before.Addressed != 1 || before.MedianMergeMs == nil || *before.MedianMergeMs != merge {
 		t.Errorf("before = %+v (merge %v), want the one review and its blocking finding, addressed, and a merged in 36h",
 			before, deref(before.MedianMergeMs))
 	}
 	wantSeries := []AnalyticsPoint{
-		{Key: "2026-09-01", Reviews: 1, Findings: SeverityCounts{P2: 1}, CostUSD: 0.5},
-		{Key: "2026-09-02", Reviews: 1, Findings: SeverityCounts{P2: 1}, CostUSD: 1},
-		{Key: "2026-09-03", Reviews: 1, Findings: SeverityCounts{P1: 1}, CostUSD: 0.5},
+		{Key: "2026-09-01", Reviews: 1, Tokens: 120, MedianReviewMs: new(int64(120000)), Findings: SeverityCounts{P2: 1}, CostUSD: 0.5},
+		{Key: "2026-09-02", Reviews: 1, Failed: 1, Tokens: 240, MedianReviewMs: new(int64(180000)), Findings: SeverityCounts{P2: 1}, CostUSD: 1},
+		{Key: "2026-09-03", Reviews: 1, Tokens: 120, MedianReviewMs: new(int64(240000)), Findings: SeverityCounts{P1: 1}, CostUSD: 0.5},
 	}
 	if !reflect.DeepEqual(series, wantSeries) {
 		t.Errorf("series = %+v, want %+v", series, wantSeries)
@@ -162,7 +162,7 @@ func checkAnalyticsGroups(t *testing.T, s *Store, account string, from, to time.
 			}); err != nil {
 				t.Fatal(err)
 			}
-			wantPoint := []AnalyticsPoint{{Key: tc.key, Reviews: 3, Findings: totals.Findings, CostUSD: 2}}
+			wantPoint := []AnalyticsPoint{{Key: tc.key, Reviews: 3, Failed: 1, Tokens: 480, MedianReviewMs: new(int64(180000)), Findings: totals.Findings, CostUSD: 2}}
 			if !reflect.DeepEqual(got.Series, wantPoint) || !reflect.DeepEqual(got.Current, totals) || !reflect.DeepEqual(got.Previous, before) || !reflect.DeepEqual(got.Repositories, wantRepos) {
 				t.Fatalf("grouped analytics = %+v", got)
 			}

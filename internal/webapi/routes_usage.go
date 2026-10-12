@@ -37,7 +37,7 @@ func parseTime(s string) (time.Time, bool) {
 func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.Time, error) {
 	group := cmp.Or(store.UsageGroup(r.URL.Query().Get("group")), store.UsageByDay)
 	if !group.Valid() {
-		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be hour, day, week, model, repo or role")
+		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be hour, day, week, model, repo, role or review")
 	}
 	from, to, err := s.window(r)
 	return group, from, to, err
@@ -53,22 +53,46 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScop
 		return err
 	}
 	ctx := r.Context()
-	var rows []store.UsageSeriesRow
+	chatgptOnly := billing == "chatgpt"
+
+	filter := store.UsageFilter{
+		Repository: queryString(r, "repo"), Model: queryString(r, "model"), OrderByTokens: r.URL.Query().Get("metric") == "tokens",
+	}
+	out := UsageSeries{Group: group, From: from, To: to}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		rows, err = store.UsageSeries(ctx, tx, group, from, to, billing == "chatgpt")
-		return err
+		rows, err := store.UsageSeries(ctx, tx, group, from, to, chatgptOnly, filter)
+		if err != nil {
+			return err
+		}
+		previous, err := store.UsageComparison(ctx, tx, group, from.Add(-to.Sub(from)), from, chatgptOnly, filter)
+		if err != nil {
+			return err
+		}
+		out.Rows, out.Previous = usagePoints(rows), usagePoints(previous)
+		return nil
 	}); err != nil {
 		return err
 	}
-	out := UsageSeries{Group: group, From: from, To: to, Rows: make([]UsagePoint, len(rows))}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func usagePoints(rows []store.UsageSeriesRow) []UsagePoint {
+	out := make([]UsagePoint, len(rows))
 	for i, u := range rows {
-		out.Rows[i] = UsagePoint{
+		out[i] = UsagePoint{
 			Key: u.Key, InputTokens: u.InputTokens, CacheReadTokens: u.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens,
 			OutputTokens: u.OutputTokens, CostUSD: u.CostUSD, Calls: u.Calls, PlanCalls: u.PlanCalls, UnpricedCalls: u.UnpricedCalls,
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
-	return nil
+	return out
+}
+
+func queryString(r *http.Request, key string) *string {
+	if !r.URL.Query().Has(key) {
+		return nil
+	}
+	return new(r.URL.Query().Get(key))
 }
 
 func (s *Server) listQueue(w http.ResponseWriter, r *http.Request, t *accountScope) error {
@@ -145,6 +169,8 @@ func jobItem(j store.JobRow) Job {
 	return Job{
 		ID: j.ID, Kind: j.Kind, State: j.State, Attempt: j.Attempt, MaxAttempts: j.MaxAttempts, CreatedAt: j.CreatedAt,
 		ScheduledAt: j.ScheduledAt, AttemptedAt: j.AttemptedAt, FinalizedAt: j.FinalizedAt, LastError: j.LastError, Cause: jobCause(j.LastError),
+		CancelableReviewID: j.CancelableReviewID, HeartbeatAt: j.HeartbeatAt,
+		HeartbeatOverdue: j.HeartbeatOverdue, RecentFailure: j.RecentFailure,
 		Args: JobArgs{Repository: j.Repository, Number: j.Number, Head: j.Head, Trigger: j.Trigger, CommentID: j.CommentID},
 	}
 }

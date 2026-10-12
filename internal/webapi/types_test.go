@@ -228,7 +228,7 @@ var goldens = map[string]any{
 		}},
 	},
 	"usage_series": UsageSeries{
-		Group: store.UsageByDay, From: t0, To: t1,
+		Group: store.UsageByDay, From: t0, To: t1, Previous: []UsagePoint{},
 		Rows: []UsagePoint{{Key: "2026-09-01", InputTokens: 100, CacheReadTokens: 50, CacheWriteTokens: 5, OutputTokens: 20, CostUSD: 0.1, Calls: 2}},
 	},
 	"attention": Attention{Failed: 2, Capped: 1, P0: 3, Paused: 1},
@@ -237,10 +237,10 @@ var goldens = map[string]any{
 		Current: AnalyticsTotals{
 			PullRequests: 3, Reviews: 5, Failed: 1, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, Addressed: 2,
 			Categories:  map[review.Category]int{review.CategoryCorrectness: 2, review.CategorySecurity: 1, review.CategoryPerformance: 0, review.CategoryReliability: 1, review.CategoryMaintainability: 2, review.CategoryTests: 0},
-			ReactionsUp: 4, ReactionsDown: 1, CostUSD: 1.25, MedianReviewMs: new(int64(90000)), MedianMergeMs: new(int64(129600000)),
+			ReactionsUp: 4, ReactionsDown: 1, CostUSD: 1.25, Tokens: 1200, MedianReviewMs: new(int64(90000)), MedianMergeMs: new(int64(129600000)),
 		},
 		Previous: AnalyticsTotals{Findings: SeverityCounts{}, Categories: categoryCounts(nil)},
-		Series:   []AnalyticsPoint{{Key: "2026-09-01", Reviews: 5, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, CostUSD: 1.25}},
+		Series:   []AnalyticsPoint{{Key: "2026-09-01", Reviews: 5, Failed: 1, Tokens: 1200, MedianReviewMs: new(int64(90000)), Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, CostUSD: 1.25}},
 		Repositories: []RepoActivity{
 			{Repository: "alpha/one", Reviews: 5, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, Addressed: 2},
 		},

@@ -18,7 +18,7 @@
 //   #/a/<slug>/findings[?<filter>]            account's findings; filter is a FindingFilter
 //   #/a/<slug>/rules                          the files reviews read
 //   #/a/<slug>/queue                          run queue
-//   #/a/<slug>/usage                          usage/cost dashboard
+//   #/a/<slug>/usage[?<filter>]                          usage/cost dashboard
 //   #/a/<slug>/followups                      follow-up tracker
 //   #/a/<slug>/admin[/<section>]              an account's settings: its configuration or audit log
 //
@@ -34,7 +34,7 @@
 // otherwise, including when the malformation is what prevents the slug
 // itself from being parsed (e.g. "#/a//acme").
 
-import type { FindingStatus, ReviewStatus, Severity, Category } from './types';
+import type { FindingStatus, ReviewStatus, Severity, Category, UsageGroup } from './types';
 import { SEVERITIES, CATEGORIES } from './format';
 
 export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
@@ -114,6 +114,28 @@ export function findingFilter(f: {
   return Object.keys(out).length ? out : undefined;
 }
 
+export interface UsageFilter {
+  days?: '1' | '7' | '30' | '90';
+  group?: UsageGroup;
+  metric?: 'cost' | 'tokens';
+  billing?: 'all' | 'chatgpt';
+  repo?: string;
+  model?: string;
+}
+
+export function usageFilter(f: Record<string, string | undefined>): UsageFilter | undefined {
+  const out: UsageFilter = {};
+  if (f.days === '1' || f.days === '7' || f.days === '90') out.days = f.days;
+  const groups: UsageGroup[] = ['hour', 'week', 'model', 'repo', 'role', 'review'];
+  const group = groups.find((g) => g === f.group);
+  if (group) out.group = group;
+  if (f.metric === 'tokens') out.metric = f.metric;
+  if (f.billing === 'chatgpt') out.billing = f.billing;
+  if (f.repo !== undefined) out.repo = f.repo;
+  if (f.model !== undefined) out.model = f.model;
+  return Object.keys(out).length ? out : undefined;
+}
+
 export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
@@ -130,7 +152,7 @@ export type Route =
   | { name: 'findings'; slug: string; filter?: FindingFilter }
   | { name: 'rules'; slug: string }
   | { name: 'queue'; slug: string }
-  | { name: 'usage'; slug: string }
+  | { name: 'usage'; slug: string; filter?: UsageFilter }
   | { name: 'followups'; slug: string }
   | { name: 'admin'; slug: string; section?: string };
 
@@ -207,7 +229,10 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
       if (tail.length === 0) return { name: 'queue', slug };
       break;
     case 'usage':
-      if (tail.length === 0) return { name: 'usage', slug };
+      if (tail.length === 0) {
+        const filter = usageFilter(Object.fromEntries(query));
+        return filter ? { name: 'usage', slug, filter } : { name: 'usage', slug };
+      }
       break;
     case 'followups':
       if (tail.length === 0) return { name: 'followups', slug };
@@ -283,8 +308,10 @@ export function href(r: Route): string {
       return `#/a/${slugPath(r.slug)}/rules`;
     case 'queue':
       return `#/a/${slugPath(r.slug)}/queue`;
-    case 'usage':
-      return `#/a/${slugPath(r.slug)}/usage`;
+    case 'usage': {
+      const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
+      return `#/a/${slugPath(r.slug)}/usage${query ? `?${query}` : ''}`;
+    }
     case 'followups':
       return `#/a/${slugPath(r.slug)}/followups`;
     case 'admin':

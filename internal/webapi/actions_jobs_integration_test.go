@@ -318,8 +318,40 @@ func testCancelRunning(t *testing.T, e *actionsEnv) {
 	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status, river_job_id)
 		VALUES ($1, $2, 'headA', 'running', $3) RETURNING id::text`, e.accountID, e.prID, res.Job.ID)
 
+	if err := e.st.HeartbeatJob(ctx, res.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	checkQueue := func(cancelable bool) {
+		t.Helper()
+		if err := e.st.WithAccount(ctx, e.accountID, func(tx pgx.Tx) error {
+			rows, err := store.ListQueue(ctx, tx)
+			if err != nil {
+				return err
+			}
+			for _, j := range rows {
+				if j.ID == res.Job.ID {
+					want := ""
+					if cancelable {
+						want = review
+					}
+					if j.CancelableReviewID != want || j.HeartbeatAt == nil {
+						t.Fatalf("queue metadata = %+v", j)
+					}
+					return nil
+				}
+			}
+			t.Fatal("job missing from queue")
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkQueue(true)
+
 	status, body := e.do("/api/v1/accounts/github/aj/reviews/" + review + "/cancel")
 	e.expect(status, body, http.StatusAccepted, "")
+
+	checkQueue(false)
 
 	if j := e.job(res.Job.ID); j.state != "cancelled" {
 		t.Errorf("job state = %q, want cancelled", j.state)

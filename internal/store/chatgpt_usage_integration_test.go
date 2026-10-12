@@ -72,7 +72,7 @@ func TestChatGPTUsagePeriods(t *testing.T) {
 					if _, err := tx.Exec(ctx, `SET LOCAL TIME ZONE 'Pacific/Kiritimati'`); err != nil {
 						return err
 					}
-					rows, err := UsageSeries(ctx, tx, group, from, to, planOnly)
+					rows, err := UsageSeries(ctx, tx, group, from, to, planOnly, UsageFilter{})
 					if err != nil {
 						return err
 					}
@@ -91,6 +91,8 @@ func TestChatGPTUsagePeriods(t *testing.T) {
 			})
 		}
 	}
+	checkUsageFilters(t, s, account, review, from, to)
+
 	deleteModelCalls(t, s, `review_id = $1`, review)
 	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		rows, err := ListReviewUsage(ctx, tx, review)
@@ -123,4 +125,41 @@ func checkPlanPeriods(t *testing.T, rows []UsageSeriesRow, keys []string, planOn
 			t.Errorf("row %d = %+v", i, row)
 		}
 	}
+}
+
+func checkUsageFilters(t *testing.T, s *Store, account, review string, from, to time.Time) {
+	t.Helper()
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name   string
+		filter UsageFilter
+		plan   bool
+		calls  int64
+	}{
+		{"repository and model", UsageFilter{Repository: new("alpha/one"), Model: &review}, false, 3},
+		{"plan within model", UsageFilter{Model: &review}, true, 2},
+		{"unknown repository", UsageFilter{Repository: new("beta/one")}, false, 0},
+		{"unknown model", UsageFilter{Model: new("missing")}, false, 0},
+		{"unattributed repository", UsageFilter{Repository: new("")}, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				rows, err := UsageSeries(ctx, tx, UsageByReview, from, to, tc.plan, tc.filter)
+				if err != nil {
+					return err
+				}
+				if tc.calls == 0 {
+					if len(rows) != 0 {
+						t.Fatalf("unexpected usage: %+v", rows)
+					}
+				} else if len(rows) != 1 || rows[0].Key != review || rows[0].Calls != tc.calls || rows[0].InputTokens != tc.calls*100 || rows[0].CacheReadTokens != tc.calls*80 {
+					t.Fatalf("filtered review usage: %+v", rows)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+
 }

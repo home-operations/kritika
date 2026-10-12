@@ -7,6 +7,7 @@
   import { Resource, live } from '../../resource.svelte';
   import { isActive, rerunBody, skipText } from '../../format';
   import { pullRoute, rerunPath, cancelPath, accountApi } from '../../links';
+  import { safeHref } from '../../markdown';
   import { isAdmin } from '../../session.svelte';
   import ActionButton from '../../components/ActionButton.svelte';
   import type { ReviewDetail } from '../../types';
@@ -97,6 +98,7 @@
             <a class="mono" href={href(pullRoute(slug, r.pull))}>{r.pull.repository}#{r.pull.number}</a>
           </p>
           <h1>{r.pull.title}</h1>
+          {#if safeHref(r.pull.url)}<div class="github-handoff"><a class="btn btn-primary" href={safeHref(r.pull.url)} target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a><span class="small muted">Discuss findings and approve the pull request in GitHub.</span></div>{/if}
           <p class="meta-line">
             <ReviewStatusTile status={r.status} />
             <span>started <Time iso={r.createdAt} /></span>

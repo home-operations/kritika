@@ -97,10 +97,10 @@ test("overview attention links retain account scope and expose near limits", asy
   const seen = await mockWorkspace(page);
   await page.goto("/");
   const attention = page.getByRole("region", { name: "Needs attention", exact: true });
-  await expect(attention.getByRole("link")).toHaveCount(7);
+  await expect(attention.getByRole("link")).toHaveCount(5);
   await expect(attention.getByRole("link", { name: /Handle worker cancellation/ })).toHaveAttribute("href", `#/a/${g.SLUG}/reviews/${g.pull.lastReview!.id}`);
   await expect(attention.getByRole("link", { name: /Refresh controller dependencies/ })).toHaveAttribute("href", href({ name: "pull", slug: g.SLUG, owner: g.pull.repository.split("/")[0]!, repo: g.pull.repository.split("/")[1]!, number: 9 }));
-  for (const filter of ["outcome=failed", "is=p0", "is=paused"]) {
+  for (const filter of ["outcome=failed", "is=paused"]) {
     expect(seen.some((url) => url.search.includes(filter) && url.searchParams.get("limit") === "3" && url.searchParams.get("state") === "open")).toBe(true);
   }
   await expect(attention.getByRole("link").first()).toHaveAttribute(
@@ -212,7 +212,7 @@ for (const theme of ["light", "dark"] as const) {
     await mockWorkspace(page);
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Needs attention", exact: true })).toBeVisible();
-    await expect(page.locator(".recent-pulls tbody tr")).toHaveCount(3);
+    await expect(page.locator(".attention-pull")).toHaveCount(2);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`overview-${theme}.png`) });
     await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
@@ -322,7 +322,7 @@ test("attention previews recover independently and keep the filtered list availa
   const attention = page.getByRole("region", { name: "Needs attention", exact: true });
   await expect(attention.getByRole("alert")).toBeVisible();
   await expect(attention.getByRole("link", { name: /View all 1 failed/ })).toHaveAttribute("href", `#/a/${g.SLUG}/pulls?outcome=failed`);
-  await expect(attention.getByRole("link", { name: /Add readiness checks/ })).toBeVisible();
+  await expect(attention.getByRole("link", { name: /Refresh controller dependencies/ })).toBeVisible();
   await page.unroute("**/pulls?**outcome=failed");
   await attention.getByRole("button", { name: "Retry" }).click();
   await expect(attention.getByRole("alert")).toHaveCount(0);
@@ -351,7 +351,7 @@ for (const theme of ["light", "dark"] as const) {
     for (const route of ["/", `/#/a/${g.SLUG}/reviews/rev-1/diff`]) {
       await page.goto(route);
       await expect(page.locator(".page-head h1")).toBeVisible();
-      if (route === "/") await expect(page.locator(".attention-pull")).toHaveCount(3);
+      if (route === "/") await expect(page.locator(".attention-pull")).toHaveCount(2);
       else await expect(page.locator("table.diff")).toHaveCount(2);
       const failures = await page.locator(".page-head h1, .attention-group .pill, .attention-pull strong, .attention-pull .muted, .finding-jump strong, .finding-jump .muted, .finding-jump .sev, .finding-controls .btn, .file-filters label, .section-tab.active").evaluateAll((elements) => {
         const canvas = document.createElement("canvas");
@@ -488,7 +488,7 @@ test("sidebar tab order and current-page markers match visible navigation", asyn
   await expect(nav.getByRole("link", { name: "Reviews", exact: true })).toHaveCount(0);
   await page.locator(".account-button").focus();
   await page.keyboard.press("Tab");
-  await expect(nav.getByRole("link", { name: "Pull requests", exact: true })).toBeFocused();
+  await expect(nav.getByRole("link", { name: "Analytics", exact: true })).toBeFocused();
   await nav.getByRole("link", { name: "Findings", exact: true }).click();
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   await expect(nav.locator('[aria-current="page"]')).toHaveText("Findings");

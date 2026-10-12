@@ -282,6 +282,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("plan billing reaches the dashboard", func(t *testing.T) { testChatGPTBilling(t, e) })
 	t.Run("plan allowances respect provider and account scope", func(t *testing.T) { testChatGPTAllowances(t, e) })
 	t.Run("unpriced billing reaches the dashboard", func(t *testing.T) { testUnpricedDashboard(t, e) })
+	t.Run("usage compares filtered adjacent windows", func(t *testing.T) { testUsageComparison(t, e) })
 	t.Run("unknown repository searches are empty", func(t *testing.T) { testUnknownRepositorySearch(t, e) })
 	t.Run("diff preparation is explicit", func(t *testing.T) { testDiffPreparation(t, e) })
 }
@@ -317,6 +318,9 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/followups?repo=wa/one", fmt.Sprintf(`"commentId":%d`, followupComment)},
 		{a + fmt.Sprintf("/followups/%d/transcript", followupComment), `"system":"follow of webapi-a"`},
 		{a + "/usage?group=repo", `"key":"wa/one"`},
+		{a + "/usage?group=review&repo=wa/one", `"key":"` + e.a.reviewID + `"`},
+		{a + "/usage?group=model&repo=wb/one", `"rows":[]`},
+		{a + "/usage?group=review&model=missing", `"rows":[]`},
 		{a + "/analytics?group=week", `"repository":"wa/one"`},
 		{a + "/attention", `"p0":1,"paused":0`},
 		{a + "/pulls?is=p0", `"title":"PR of webapi-a"`},
@@ -730,5 +734,34 @@ func testUserSettings(t *testing.T, e *apiEnv) {
 	}
 	if _, body := e.getBody("member-a", "/api/v1/me"); !bytes.Contains(body, []byte(`"settings":{"timeZone":"","clock":"","theme":""}`)) {
 		t.Fatalf("member-a after clearing: %s", body)
+	}
+}
+
+func testUsageComparison(t *testing.T, e *apiEnv) {
+	for _, at := range []string{"2050-01-01T12:00:00Z", "2050-01-02T12:00:00Z"} {
+		for _, seeded := range []struct {
+			account, repo, review string
+			cost                  float64
+		}{
+			{e.a.accountID, e.a.repoID, e.a.reviewID, 2},
+			{e.b.accountID, e.b.repoID, e.b.reviewID, 99},
+		} {
+			e.exec(`INSERT INTO usage (account_id, repository_id, review_id, role, model, input_tokens, cost_usd, created_at)
+    VALUES ($1, $2, $3, 'review', 'comparison-model', 100, $4, $5::timestamptz)`,
+				seeded.account, seeded.repo, seeded.review, seeded.cost, at)
+		}
+	}
+	status, body := e.getBody("member-a", "/api/v1/accounts/github/wa/usage?from=2050-01-02&to=2050-01-03&group=review&repo=wa/one&model=comparison-model")
+	var got UsageSeries
+	if status != http.StatusOK {
+		t.Fatalf("status = %d: %s", status, body)
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	for key, rows := range map[string][]UsagePoint{e.a.reviewID: got.Rows, "Total": got.Previous} {
+		if len(rows) != 1 || rows[0].Key != key || rows[0].CostUSD != 2 || rows[0].InputTokens != 100 {
+			t.Fatalf("usage = %+v", got)
+		}
 	}
 }

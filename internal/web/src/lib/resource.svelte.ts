@@ -12,9 +12,12 @@ export class Resource<T> {
   loading = $state(false);
   #seq = 0;
   readonly #fetcher: () => Promise<T>;
+  readonly #key?: () => string;
+  #loadedKey?: string;
 
-  constructor(fetcher: () => Promise<T>) {
+  constructor(fetcher: () => Promise<T>, key?: () => string) {
     this.#fetcher = fetcher;
+    this.#key = key;
   }
 
   invalidate(): void {
@@ -23,6 +26,12 @@ export class Resource<T> {
 
   async load(): Promise<void> {
     const seq = ++this.#seq;
+    const key = this.#key?.();
+    if (key !== this.#loadedKey) {
+      this.data = undefined;
+      this.error = undefined;
+      this.#loadedKey = key;
+    }
     this.loading = true;
     try {
       const data = await this.#fetcher();

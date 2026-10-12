@@ -149,7 +149,7 @@
   {:else if me && currentSlug}
     <nav class="sections" aria-label="Sections">
       {#each SECTION_ORDER as s (s)}
-        {#if s === 'pulls' || s === 'analytics' || s === 'rules'}<p class="workspace-heading">{s === 'pulls' ? 'Workspace' : s === 'analytics' ? 'Insights' : 'Configuration'}</p>{/if}
+        {#if s === 'pulls' || s === 'analytics' || s === 'rules'}<p class="workspace-heading">{s === 'pulls' ? 'Operations' : s === 'analytics' ? 'Insights' : 'Configuration'}</p>{/if}
         <a
           class="section-tab"
           class:active={currentSection === s}
