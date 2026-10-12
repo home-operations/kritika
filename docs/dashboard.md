@@ -18,7 +18,7 @@ the pull request's page here.
 
 ## Navigation
 
-The top bar switches between two scopes, each with its own tabs: the
+The scope switcher chooses between two scopes, each with its own navigation: the
 instance, and one of the accounts you can read. No tab chooses an account
 for you: you enter one from the switcher or a link that names it. The
 switcher keeps the page: from one account's queue it opens another's, or
@@ -54,7 +54,14 @@ span before, by day or week:
 - the median review time, and the median time from opening to merging;
 - the 👍 and 👎 on kritika's inline comments, which the poller reads for a
   week after a pull request's latest review, so they need polling on;
-- spend, and the most reviewed repositories.
+- tokens, API spend, and the most reviewed repositories;
+- failure rate, calculated as failed / (completed + failed), excluding
+  canceled, capped, skipped and in-progress reviews.
+
+Operational metrics lead the page, with chart and table views for failure
+rate, median duration, tokens and API spend. Buckets without completed
+reviews have no median; buckets without completed or failed reviews have
+no failure rate. Both are omitted from their respective charts.
 
 Its **Findings** list has each finding once per pull request, however many
 reviews repeated it: addressed once a later review of the pull request, at
@@ -65,9 +72,37 @@ review, and one that enforces a written rule names it. The tab also counts
 findings by category.
 
 Its **Spend** has the month so far against the account's caps, and usage
-by day, model, repository or role.
+by hour, day, week, model, repository, role or review. Select a repository
+row to see its models, then a model to see its reviews and open the usage
+of an individual review. Selection totals compare with the preceding
+period of equal length; named groups also show each row's spend change,
+including groups with no usage in the current period. Comparisons are
+withheld when either period contains unpriced calls. Filters stay in the
+URL for reloads, sharing and browser Back. API spend excludes subscription
+fees; cache detail is limited by transcript retention.
+
+### Queue
+
+Filter loaded jobs by running, waiting, finished or needs attention, and
+search by repository, account or job number. Needs attention includes
+retryable and discarded jobs and running jobs with no worker heartbeat
+for over three minutes. An overdue heartbeat is a warning to investigate;
+the worker may recover or the leader may rescue it. The view shows the
+last heartbeat, attempt or completion time and refreshes every 15 seconds.
+Each account supplies up to 500 active and 50 finished jobs.
+
+Admins can cancel an active review, re-run a discarded or canceled review
+at the pull request's current head, or reindex after a failed index job.
+These use the same confirmed, audited actions as the record pages.
+Retryable jobs resume automatically; follow-up jobs remain inspectable
+without a manual replay control.
 
 ### Pull requests
+
+GitHub remains the place to discuss findings and approve pull requests.
+Pull and review pages have prominent GitHub links, and posted findings
+link directly to their threads. The internal code view and run details
+remain available for investigation.
 
 Each row counts the reviews that completed and what every review of it
 cost. An admin can pick open pull requests, by checkbox or with Space on

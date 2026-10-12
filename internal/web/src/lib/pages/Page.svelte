@@ -24,7 +24,7 @@
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
-    if (r.name === 'pulls' || r.name === 'findings') return JSON.stringify({ n: r.name, s: r.slug });
+    if (r.name === 'pulls' || r.name === 'findings' || r.name === 'usage') return JSON.stringify({ n: r.name, s: r.slug });
     return JSON.stringify(r);
   }
   const key = $derived(keyOf(route));
@@ -60,7 +60,7 @@
   {:else if route.name === 'queue'}
     <Queue slug={route.slug} />
   {:else if route.name === 'usage'}
-    <Usage slug={route.slug} />
+    <Usage slug={route.slug} filter={route.filter} />
   {:else if route.name === 'followups'}
     <Followups slug={route.slug} />
   {:else if route.name === 'admin'}

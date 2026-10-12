@@ -98,7 +98,7 @@ func TestChatGPTBilling(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-				rows, err := UsageSeries(ctx, tx, UsageByModel, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), false)
+				rows, err := UsageSeries(ctx, tx, UsageByModel, time.Now().Add(-time.Minute), time.Now().Add(time.Minute), false, UsageFilter{})
 				if err != nil {
 					return err
 				}

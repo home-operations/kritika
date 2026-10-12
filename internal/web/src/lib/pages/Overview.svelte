@@ -13,7 +13,9 @@
   import Pill from '../components/Pill.svelte';
   import { pullRoute } from '../links';
   import Time from '../components/Time.svelte';
-  import RecentPulls from '../components/RecentPulls.svelte';
+  import { unsignedWebhooks } from '../setup';
+  import { overdue } from '../queue';
+  import { clock } from '../time.svelte';
   import AttentionPulls from '../components/AttentionPulls.svelte';
   import WebhookState from '../components/WebhookState.svelte';
 
@@ -45,6 +47,8 @@
   $effect(() => live((e) => e.kind !== 'model_call', () => void queue.load()));
   $effect(() => pollJobs(() => void queue.load()));
 
+  const operationalWants = WANTS.filter((w) => w.key !== 'p0');
+  const connectionIssue = (a: AccountSummary) => unsignedWebhooks(a) || !a.lastWebhookAt;
   const WAITING: readonly JobState[] = ['available', 'scheduled', 'retryable', 'pending'];
   function work(q: InstanceQueue) {
     const capped = q.slots.filter((s) => s.slots > 0);
@@ -69,7 +73,7 @@
       reviews: sum((t) => t.usage.reviews),
       pricedReviews: sum((t) => t.usage.reviews - (t.usage.unpricedReviews ?? 0)),
       reviewCostUsd: sum((t) => t.usage.reviewCostUsd),
-      wants: WANTS.map((w) => ({ label: w.label, n: sum((t) => t.attention[w.key]) })).filter((w) => w.n > 0),
+      wants: operationalWants.map((w) => ({ label: w.label, n: sum((t) => t.attention[w.key]) })).filter((w) => w.n > 0),
     };
   }
 </script>
@@ -78,54 +82,15 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><p class="crumbs">All accounts</p><h1>Your review workspace</h1><p class="muted">What needs your attention across your accounts.</p></header>
+    <header class="page-head"><p class="crumbs">All accounts</p><h1>Operations overview</h1><p class="muted">Service health, running work and usage across your accounts. Review pull requests in GitHub.</p></header>
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}
-        <div class="overview-work">
-          <section class="attention-list" aria-labelledby="overview-attention">
-            <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
-            {#each list as account (account.slug)}
-              {#each WANTS.filter((w) => account.attention[w.key] > 0) as w (w.key)}
-                <AttentionPulls version={attentionVersions[account.slug] ?? 0} slug={account.slug} want={w} count={account.attention[w.key]} />
-              {/each}
-              {#each nearCaps(account.usage) as cap (cap)}
-                <a class="attention-item" href={href({ name: 'usage', slug: account.slug })}>
-                  <Pill tone="warn" label="Near limit" />
-                  <span><strong>{cap}</strong><span class="mono small muted">{account.slug}</span></span>
-                  <span class="attention-action">View usage →</span>
-                </a>
-              {/each}
-            {/each}
-            {#if !all.wants.length && !list.some((a) => nearCaps(a.usage).length)}
-              <p class="state-msg">All clear. No open pull request needs attention and no usage limit is close.</p>
-            {/if}
-          </section>
-          <section class="running-list" aria-labelledby="overview-running">
-            <header class="panel-head"><h2 id="overview-running">Running work</h2></header>
-            <StateView res={queue} retry={() => queue.load()}>
-              {#snippet children(q)}
-                {#each q.jobs.filter((j) => j.state === 'running') as job (job.id)}
-                  <div class="running-item">
-                    <Pill tone="accent" label={job.kind} />
-                    {#if job.args.repository && job.args.number}
-                      <a class="mono" href={href(pullRoute(job.account, job.args))}>{job.args.repository}#{job.args.number}</a>
-                    {:else}<a href={href({ name: 'queue', slug: job.account })}>{job.kind} job {job.id}</a>{/if}
-                    <span class="small muted">{job.account} · started <Time iso={job.attemptedAt} /></span>
-                  </div>
-                {:else}<p class="state-msg">Nothing running right now.</p>{/each}
-                <a class="running-queue" href={href(list.length === 1 ? { name: 'queue', slug: list[0]!.slug } : { name: 'instanceQueue' })}>Open queue →</a>
-              {/snippet}
-            </StateView>
-          </section>
-        </div>
-        {#if list.length === 1}<RecentPulls slug={list[0]!.slug} />{/if}
-
         <section class="tiles overview-totals" aria-label="Across all accounts">
           <div class="tile">
-            <span class="tile-label">Needs attention</span>
+            <span class="tile-label">Review alerts</span>
             <span class="tile-value">{wholeNumber(all.wants.reduce((n, w) => n + w.n, 0))}</span>
-            <span class="small muted">{all.wants.map((w) => `${wholeNumber(w.n)} ${w.label}`).join(' · ') || 'no open pull request wants a look'}</span>
+            <span class="small muted">{all.wants.map((w) => `${wholeNumber(w.n)} ${w.label}`).join(' · ') || 'no review failures, caps or pauses'}</span>
           </div>
           {#if queue.data}
             {@const w = work(queue.data)}
@@ -162,6 +127,61 @@
             <span class="tile-value" title={wholeNumber(all.tokens)}>{tokens(all.tokens)}</span>
           </div>
         </section>
+
+        <div class="overview-work">
+          <section class="attention-list" aria-labelledby="overview-attention">
+            <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
+            {#each list as account (account.slug)}
+              {#each operationalWants.filter((w) => account.attention[w.key] > 0) as w (w.key)}
+                <AttentionPulls version={attentionVersions[account.slug] ?? 0} slug={account.slug} want={w} count={account.attention[w.key]} />
+              {/each}
+              {#if connectionIssue(account)}
+                <a class="attention-item" href={href({ name: 'account', slug: account.slug })}>
+                  <Pill tone="warn" label="Connection" />
+                  <span><strong>{unsignedWebhooks(account) ? 'Unsigned webhooks refused' : 'No webhooks received'}</strong><span class="mono small muted">{account.slug}</span></span>
+                  <span class="attention-action">Check connection →</span>
+                </a>
+              {/if}
+              {#each nearCaps(account.usage) as cap (cap)}
+                <a class="attention-item" href={href({ name: 'usage', slug: account.slug })}>
+                  <Pill tone="warn" label="Near limit" />
+                  <span><strong>{cap}</strong><span class="mono small muted">{account.slug}</span></span>
+                  <span class="attention-action">View usage →</span>
+                </a>
+              {/each}
+            {/each}
+            {#if !all.wants.length && !list.some((a) => nearCaps(a.usage).length || connectionIssue(a))}
+              <p class="state-msg">All clear. No failed or capped reviews, paused pull requests, connection issues or approaching usage limits.</p>
+            {/if}
+          </section>
+          <section class="running-list" aria-labelledby="overview-running">
+            <header class="panel-head"><h2 id="overview-running">Running work</h2></header>
+            <StateView res={queue} retry={() => queue.load()}>
+              {#snippet children(q)}
+                {@const pressure = work(q)}
+                <p class="panel-body small">{pressure.running} running · {pressure.waiting} waiting{pressure.slots ? ` · ${pressure.held} of ${pressure.slots} model slots busy` : ''}</p>
+                {#each q.slots.filter((s) => s.slots > 0 && s.held >= s.slots) as slot (`${slot.account}/${slot.model}`)}
+                  <a class="attention-item" href={href({ name: 'queue', slug: slot.account })}><Pill tone="warn" label="At capacity" /><span>{slot.account}<span class="queue-detail">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span></a>
+                {/each}
+                {#each q.jobs.filter((j) => j.state === 'discarded').slice(0, 5) as job (job.id)}
+                  <a class="attention-item" href={href({ name: 'queue', slug: job.account })}><Pill tone="danger" label="Failed job" /><span>{job.args.repository || job.account}<span class="queue-detail">{job.kind} #{job.id} · inspect error and recovery options</span></span></a>
+                {/each}
+                {#each q.jobs.filter((j) => j.state === 'running').slice(0, 5) as job (job.id)}
+                  <div class="running-item">
+                    <Pill tone={overdue(job, clock.now) ? 'warn' : 'accent'} label={overdue(job, clock.now) ? 'Heartbeat overdue' : job.kind} />
+                    {#if job.args.repository && job.args.number}
+                      <a class="mono" href={href(pullRoute(job.account, job.args))}>{job.args.repository}#{job.args.number}</a>
+                    {:else}<a href={href({ name: 'queue', slug: job.account })}>{job.kind} job {job.id}</a>{/if}
+                    <span class="small muted">{job.account} · started <Time iso={job.attemptedAt} /></span>
+                  </div>
+                {:else}<p class="state-msg">Nothing running right now.</p>{/each}
+                <a class="running-queue" href={href(list.length === 1 ? { name: 'queue', slug: list[0]!.slug } : { name: 'instanceQueue' })}>Open queue →</a>
+              {/snippet}
+            </StateView>
+          </section>
+        </div>
+
+
 
         <section class="panel" aria-labelledby="account-breakdown">
           <header class="panel-head"><h2 id="account-breakdown">By account</h2></header>
@@ -211,7 +231,7 @@
                     <td>
                       <WebhookState of={t} polled={{ at: t.lastPolledAt }} />
                     </td>
-                    <td class="num">{costTotal(t.usage.costUsd, t.usage.unpricedCalls)}</td>
+                    <td class="num"><a href={href({ name: 'usage', slug: t.slug })}>{costTotal(t.usage.costUsd, t.usage.unpricedCalls)}</a></td>
                     <td>
                       <span class="small">
                         {tokens(t.usage.tokens)}{t.usage.tokensPerMonth ? ` of ${tokens(t.usage.tokensPerMonth)}` : ''}

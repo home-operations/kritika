@@ -88,7 +88,7 @@
             {/if}
             {#each p.labels as l (l.name)}<span class="label-chip" style:--label={labelColor(l.color)}>{l.name}</span>{/each}
             {#if forgeUrl}
-              <a class="external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
+              <a class="btn btn-primary external" href={forgeUrl} target="_blank" rel="noopener noreferrer">View on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
             {/if}
           </p>
           {#if p.state !== 'open'}

@@ -58,7 +58,7 @@
         {#if q.jobs.length === 0}
           <p class="state-msg">The queue is empty.</p>
         {:else}
-          <JobTable jobs={q.jobs} account={(j) => j.account} several />
+          <JobTable ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
         {/if}
       {/snippet}
     </StateView>

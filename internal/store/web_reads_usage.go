@@ -17,12 +17,13 @@ type UsageGroup string
 
 // Usage series groupings.
 const (
-	UsageByHour  UsageGroup = "hour"
-	UsageByDay   UsageGroup = "day"
-	UsageByWeek  UsageGroup = "week"
-	UsageByModel UsageGroup = "model"
-	UsageByRepo  UsageGroup = "repo"
-	UsageByRole  UsageGroup = "role"
+	UsageByHour   UsageGroup = "hour"
+	UsageByDay    UsageGroup = "day"
+	UsageByWeek   UsageGroup = "week"
+	UsageByModel  UsageGroup = "model"
+	UsageByRepo   UsageGroup = "repo"
+	UsageByRole   UsageGroup = "role"
+	UsageByReview UsageGroup = "review"
 )
 
 // Valid reports whether g is a usage grouping.
@@ -45,8 +46,9 @@ var usageKeys = map[UsageGroup][2]string{
 		`to_char(date_trunc('week', u.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
 		`to_char(date_trunc('week', m.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
 	},
-	UsageByModel: {`u.model`, `m.model`},
-	UsageByRepo:  {`coalesce(ur.name, '')`, `coalesce(mr.name, '')`},
+	UsageByReview: {`coalesce(u.review_id::text, '')`, `coalesce(m.review_id::text, '')`},
+	UsageByModel:  {`u.model`, `m.model`},
+	UsageByRepo:   {`coalesce(ur.name, '')`, `coalesce(mr.name, '')`},
 	UsageByRole: {`u.role`, `CASE WHEN m.followup_comment_id IS NOT NULL THEN 'followup' WHEN m.kind = 'agent_step' THEN 'review'
 		ELSE m.kind END`},
 }
@@ -67,9 +69,19 @@ type UsageSeriesRow struct {
 	UnpricedCalls    int64
 }
 
+// UsageFilter narrows both durable accounting and retained cache detail.
+// A nil field leaves the dimension unfiltered; an empty value selects
+// accounting rows with no attribution for that dimension.
+type UsageFilter struct {
+	Repository *string
+	Model      *string
+}
+
 // UsageSeries sums the account's usage in [from, to) by group, ordered by
 // key.
-func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time.Time, chatgptOnly bool) ([]UsageSeriesRow, error) {
+func UsageSeries(
+	ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time.Time, chatgptOnly bool, filter UsageFilter,
+) ([]UsageSeriesRow, error) {
 	keys, ok := usageKeys[group]
 	if !ok {
 		return nil, ErrFilter
@@ -79,15 +91,17 @@ func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time
 				sum(u.cost_usd)::float8 AS cost, count(*) AS calls, count(*) FILTER (WHERE u.chatgpt_plan) AS plan_calls,
 				count(*) FILTER (WHERE u.unpriced) AS unpriced_calls
 			FROM usage u LEFT JOIN repositories ur ON ur.id = u.repository_id
-			WHERE u.created_at >= $1 AND u.created_at < $2 AND (NOT $3::boolean OR u.chatgpt_plan) GROUP BY 1),
+			WHERE u.created_at >= $1 AND u.created_at < $2 AND (NOT $3::boolean OR u.chatgpt_plan)
+				AND ($4::text IS NULL OR coalesce(ur.name, '') = $4) AND ($5::text IS NULL OR u.model = $5) GROUP BY 1),
 		cached AS (
 			SELECT `+keys[1]+` AS key, sum(m.cache_read_tokens) AS cache_read, sum(m.cache_write_tokens) AS cache_write
 			FROM model_calls m LEFT JOIN reviews mv ON mv.id = m.review_id
 				LEFT JOIN pull_requests mp ON mp.id = mv.pull_request_id LEFT JOIN repositories mr ON mr.id = mp.repository_id
-			WHERE m.created_at >= $1 AND m.created_at < $2 AND (NOT $3::boolean OR m.chatgpt_plan) GROUP BY 1)
+			WHERE m.created_at >= $1 AND m.created_at < $2 AND (NOT $3::boolean OR m.chatgpt_plan)
+				AND ($4::text IS NULL OR coalesce(mr.name, '') = $4) AND ($5::text IS NULL OR m.model = $5) GROUP BY 1)
 		SELECT coalesce(b.key, c.key), coalesce(b.input, 0), coalesce(c.cache_read, 0), coalesce(c.cache_write, 0),
 			coalesce(b.output, 0), coalesce(b.cost, 0), coalesce(b.calls, 0), coalesce(b.plan_calls, 0), coalesce(b.unpriced_calls, 0)
-		FROM billed b FULL JOIN cached c ON c.key = b.key ORDER BY 1`, from, to, chatgptOnly)
+		FROM billed b FULL JOIN cached c ON c.key = b.key ORDER BY 1`, from, to, chatgptOnly, filter.Repository, filter.Model)
 	if err != nil {
 		return nil, fmt.Errorf("store: usage series: %w", err)
 	}
@@ -106,22 +120,24 @@ func UsageSeries(ctx context.Context, tx pgx.Tx, group UsageGroup, from, to time
 // JobRow is one River job of the account, with the parts of its arguments
 // the queue view shows.
 type JobRow struct {
-	ID           int64
-	Kind         string
-	State        rivertype.JobState
-	Attempt      int
-	MaxAttempts  int
-	CreatedAt    time.Time
-	ScheduledAt  time.Time
-	AttemptedAt  *time.Time
-	FinalizedAt  *time.Time
-	RepositoryID string
-	Repository   string
-	Number       int
-	Head         string
-	Trigger      string
-	CommentID    int64
-	LastError    string
+	ID                 int64
+	Kind               string
+	State              rivertype.JobState
+	Attempt            int
+	MaxAttempts        int
+	CreatedAt          time.Time
+	ScheduledAt        time.Time
+	AttemptedAt        *time.Time
+	FinalizedAt        *time.Time
+	RepositoryID       string
+	Repository         string
+	Number             int
+	Head               string
+	Trigger            string
+	CommentID          int64
+	LastError          string
+	HeartbeatAt        *time.Time
+	CancelableReviewID string
 }
 
 // queueFinished bounds how many finished jobs the queue view lists;
@@ -139,7 +155,12 @@ const (
 const jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.created_at, j.scheduled_at, j.attempted_at, j.finalized_at,
 	coalesce(j.args->>'repository_id', ''), coalesce(r.name, ''), coalesce((j.args->>'number')::int, 0),
 	coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
-	coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', '')
+	coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', ''),
+	coalesce((SELECT v.id::text FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id
+		WHERE p.repository_id = r.id AND p.number = (j.args->>'number')::int AND v.river_job_id = j.id
+		AND j.state IN ('available', 'scheduled', 'retryable', 'pending', 'running')
+		AND v.status IN ('running', 'prepared') AND v.cancel_requested_at IS NULL ORDER BY v.created_at DESC LIMIT 1), ''),
+	(SELECT h.heartbeat_at FROM job_heartbeats h WHERE h.job_id = j.id)
 	FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
 	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
 
@@ -147,7 +168,7 @@ func scanJob(row pgx.CollectableRow) (JobRow, error) {
 	var j JobRow
 	var state string
 	err := row.Scan(&j.ID, &j.Kind, &state, &j.Attempt, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt, &j.AttemptedAt, &j.FinalizedAt,
-		&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.LastError)
+		&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.LastError, &j.CancelableReviewID, &j.HeartbeatAt)
 	j.State = rivertype.JobState(state)
 	return j, err
 }

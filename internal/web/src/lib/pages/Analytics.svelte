@@ -8,7 +8,7 @@
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { day } from '../dates';
-  import { daysAgo, duration, costTotal, wholeNumber, CATEGORIES } from '../format';
+  import { daysAgo, duration, costTotal, wholeNumber, tokens, usd, CATEGORIES } from '../format';
   import type { AccountDetail, Analytics, AnalyticsPoint, Attention } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
@@ -29,6 +29,9 @@
     { value: '90', label: '90 days' },
   ] as const;
   let days = $state<'7' | '30' | '90'>('30');
+  let trend = $state<'failed' | 'duration' | 'tokens' | 'cost'>('failed');
+  let operationsView = $state<'chart' | 'table'>('chart');
+  const TRENDS = [{ value: 'failed', label: 'Failure rate' }, { value: 'duration', label: 'Duration' }, { value: 'tokens', label: 'Tokens' }, { value: 'cost', label: 'API spend' }] as const;
   // A quarter reads better by week than as ninety thin columns.
   const group = $derived(days === '90' ? 'week' : 'day');
 
@@ -142,19 +145,13 @@
     <div class="toolbar">
       <Segmented label="Period" options={PERIODS} value={days} onchange={(d) => (days = d)} />
     </div>
+    <p class="small muted">Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p>
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const c = d.current}
         {@const p = d.previous}
         <div class="analytics" class:stale={res.loading}>
-          <section class="stats stats-4" aria-label="Totals">
-            <StatTile
-              label="Pull requests reviewed"
-              value={wholeNumber(c.pullRequests)}
-              now={c.pullRequests}
-              before={p.pullRequests}
-              define="Pull requests with a completed review in the period"
-            />
+          <section class="stats stats-3" aria-label="Operational metrics">
             <StatTile
               label="Reviews"
               value={wholeNumber(c.reviews)}
@@ -162,6 +159,48 @@
               now={c.reviews}
               before={p.reviews}
               define="Completed reviews in the period"
+            />
+            <StatTile
+              label="Median review"
+              value={c.medianReviewMs === null ? '—' : duration(c.medianReviewMs)}
+              now={c.medianReviewMs}
+              before={p.medianReviewMs}
+              good="down"
+              define="How long a completed review took, from start to finish"
+            />
+            <StatTile
+              label="API spend"
+              value={costTotal(c.costUsd, c.unpricedCalls)}
+              now={c.costUsd}
+              before={c.unpricedCalls || p.unpricedCalls ? undefined : p.costUsd}
+              good="down"
+              define="API spend in the period; subscription fees excluded"
+              sub={c.unpricedCalls ? `${wholeNumber(c.unpricedCalls)} unpriced calls; spend is incomplete` : undefined}
+            />
+            <StatTile label="Failure rate" value={rate(c.failed, c.reviews + c.failed) === null ? '—' : `${rate(c.failed, c.reviews + c.failed)!.toFixed(1)}%`}
+              now={rate(c.failed, c.reviews + c.failed)} before={rate(p.failed, p.reviews + p.failed)} points good="down"
+              sub={`${c.failed} failed of ${c.reviews + c.failed} completed or failed reviews`} />
+            <StatTile label="Tokens" value={tokens(c.tokens)} now={c.tokens} before={p.tokens} define="Input (including cached input) plus output tokens" />
+            <a class="stat" href={href({ name: 'usage', slug })}><span class="stat-label">Investigate spending</span><span class="stat-value">{costTotal(c.costUsd, c.unpricedCalls)}</span><span class="stat-sub">Repository → model → review run</span></a>
+          </section>
+          <section class="panel" aria-labelledby="an-operations">
+            <header class="panel-head"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>
+            <div class="toolbar"><Segmented label="Operational metric" options={TRENDS} value={trend} onchange={(v) => (trend = v)} /></div>
+            <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${group}`}
+              series={[{ label: TRENDS.find((t) => t.value === trend)!.label, color: 'var(--chart-ink)' }]}
+              rows={rows(d.series.filter((x) => trend === 'duration' ? x.medianReviewMs !== null : trend === 'failed' ? x.reviews + x.failed > 0 : true),
+                (x) => [trend === 'failed' ? rate(x.failed, x.reviews + x.failed)! : trend === 'duration' ? x.medianReviewMs! : trend === 'tokens' ? x.tokens : x.costUsd])}
+              format={trend === 'failed' ? (n) => `${n.toFixed(1)}%` : trend === 'duration' ? duration : trend === 'tokens' ? tokens : usd}
+              whole={trend === 'tokens'} view={operationsView} />
+            <p class="panel-foot small muted">{trend === 'failed' ? 'Failed / (completed + failed). Periods with no outcomes are omitted.' : trend === 'duration' ? 'Median duration of completed reviews. Periods with no completed reviews are omitted.' : trend === 'cost' ? 'Priced API spend only; subscription fees excluded.' : 'Input (including cached input) plus output tokens.'}</p>
+          </section>
+          <section class="stats stats-related" aria-label="Totals">
+            <StatTile
+              label="Pull requests reviewed"
+              value={wholeNumber(c.pullRequests)}
+              now={c.pullRequests}
+              before={p.pullRequests}
+              define="Pull requests with a completed review in the period"
             />
             <StatTile
               label="Findings"
@@ -182,14 +221,6 @@
               define="Of those findings, the share a later review of the pull request, at a newer head, no longer reported"
             />
             <StatTile
-              label="Median review"
-              value={c.medianReviewMs === null ? '—' : duration(c.medianReviewMs)}
-              now={c.medianReviewMs}
-              before={p.medianReviewMs}
-              good="down"
-              define="How long a completed review took, from start to finish"
-            />
-            <StatTile
               label="Time to merge"
               value={c.medianMergeMs === null ? '—' : duration(c.medianMergeMs)}
               now={c.medianMergeMs}
@@ -205,15 +236,6 @@
               before={p.reactionsUp - p.reactionsDown}
               good="up"
               define="The thumbs up and down on the inline comments of the findings reported in the period"
-            />
-            <StatTile
-              label="API spend"
-              value={costTotal(c.costUsd, c.unpricedCalls)}
-              now={c.costUsd}
-              before={c.unpricedCalls || p.unpricedCalls ? undefined : p.costUsd}
-              good="down"
-              define="API spend in the period; subscription fees excluded"
-              sub={c.unpricedCalls ? `${wholeNumber(c.unpricedCalls)} unpriced calls; spend is incomplete` : undefined}
             />
           </section>
 

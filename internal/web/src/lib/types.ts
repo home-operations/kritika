@@ -71,7 +71,7 @@ export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
 export type Forge = 'github';
-export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role';
+export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role' | 'review';
 export type JobState =
   | 'available'
   | 'scheduled'
@@ -497,6 +497,7 @@ export interface Finding {
 export type AnalyticsGroup = 'day' | 'week' | 'month';
 
 export interface AnalyticsTotals {
+  tokens: number;
   pullRequests: number;
   reviews: number;
   failed: number;
@@ -512,6 +513,9 @@ export interface AnalyticsTotals {
 }
 
 export interface AnalyticsPoint {
+  failed: number;
+  tokens: number;
+  medianReviewMs: number | null;
   key: string;
   reviews: number;
   findings: SeverityCounts;
@@ -812,6 +816,7 @@ export interface UsagePoint {
 }
 
 export interface UsageSeries {
+  previous: UsagePoint[];
   group: UsageGroup;
   from: string;
   to: string;
@@ -846,6 +851,8 @@ export interface JobArgs {
 }
 
 export interface Job {
+  cancelableReviewId?: string;
+  heartbeatAt?: string;
   id: number;
   kind: 'review' | 'followup' | 'index';
   state: JobState;

@@ -25,7 +25,7 @@ export const SECTIONS: Record<Section, SectionDef> = {
   settings: { label: 'Settings', names: ['repos', 'repo', 'admin'], home: (slug) => ({ name: 'repos', slug }) },
 };
 
-export const SECTION_ORDER: readonly Section[] = ['pulls', 'analytics', 'rules', 'settings'];
+export const SECTION_ORDER: readonly Section[] = ['analytics', 'pulls', 'rules', 'settings'];
 
 export function sectionOf(r: Route): Section | undefined {
   return SECTION_ORDER.find((s) => SECTIONS[s].names.includes(r.name));
@@ -61,7 +61,7 @@ export interface SubTab {
 
 export const SUB_TABS: Partial<Record<Section, readonly SubTab[]>> = {
   analytics: [
-    { label: 'Reviews', name: 'account', route: (slug) => ({ name: 'account', slug }) },
+    { label: 'Analytics', name: 'account', route: (slug) => ({ name: 'account', slug }) },
     { label: 'Findings', name: 'findings', route: (slug) => ({ name: 'findings', slug }) },
     { label: 'Spend', name: 'usage', route: (slug) => ({ name: 'usage', slug }) },
   ],

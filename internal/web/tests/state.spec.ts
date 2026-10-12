@@ -530,7 +530,7 @@ test('attention previews defer offscreen accounts and refresh them when shown', 
   await page.route('**/api/v1/accounts', (route) => json(route, accounts));
   await page.route('**/pulls?*', (route) => { calls.push(route.request().url()); return json(route, g.pageOf([g.pull])); });
   await page.goto('/');
-  await expect(page.locator('.attention-group')).toHaveCount(100);
+  await expect(page.locator('.attention-group')).toHaveCount(75);
   await expect(page.locator('.attention-pull').first()).toBeVisible();
   expect(calls.length).toBeLessThan(12);
   const last = page.locator('.attention-group').last();
