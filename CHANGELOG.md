@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.0.64](https://github.com/home-operations/kritika/compare/0.0.63...0.0.64) (2026-10-12)
+
+
+### Features
+
+* **go:** update module github.com/openai/openai-go/v3 (v3.76.0 → v3.77.0) ([#903](https://github.com/home-operations/kritika/issues/903)) ([623fe24](https://github.com/home-operations/kritika/commit/623fe2422fbe2fd4590caa0b3a9f243207c271bf))
+* **web:** add a focused review workspace ([#902](https://github.com/home-operations/kritika/issues/902)) ([56bd83a](https://github.com/home-operations/kritika/commit/56bd83a0737bdbd896ca35067992b864aa1d29f6))
+* **web:** focus dashboard on operations and spending ([#905](https://github.com/home-operations/kritika/issues/905)) ([8b6cf56](https://github.com/home-operations/kritika/commit/8b6cf56a6ef1b1a81464129b330b0be9deb5ad33))
+* **web:** simplify navigation and dashboard layouts ([#906](https://github.com/home-operations/kritika/issues/906)) ([459c17a](https://github.com/home-operations/kritika/commit/459c17a77bff7554207165f65ad189de1c5b7978))
+
+
+### Bug Fixes
+
+* **security:** enforce runner command and database role boundaries ([#907](https://github.com/home-operations/kritika/issues/907)) ([245c850](https://github.com/home-operations/kritika/commit/245c850884af3f3cba7db9b5f4f1b09bee043b78))
+
 ## [0.0.63](https://github.com/home-operations/kritika/compare/0.0.62...0.0.63) (2026-10-12)
 
 
