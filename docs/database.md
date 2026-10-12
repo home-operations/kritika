@@ -310,3 +310,52 @@ Secret in `bootstrap.recovery`, with `database: kritika` and `owner: kritika`,
 and CNPG sets the owner's password from it once recovery completes; the
 `DatabaseRole`s apply their own Secrets' passwords the same way. kritika's
 `uri` keys then match, whether the Secrets were kept or generated anew.
+
+## Queue upgrades and rollbacks
+
+The `thread` queue separates finding resolution/restoration from model
+follow-ups. Releases supporting it consume thread jobs on both `thread` and
+`followup`; queued jobs on `followup` still wait for a follow-up worker.
+Uniqueness spans both queues. Workers check GitHub's current resolved state
+and ignore superseded events, keeping the original event's sender permission
+and outdated-line checks.
+
+Older binaries apply the event state without that check. To avoid stale writes
+from those workers during the transition, stop all older replicas before
+starting the new release. This requires a service interruption; arrange webhook
+redelivery for deliveries that fail during it. A rolling upgrade retains jobs,
+but cannot guarantee thread-state ordering while old workers are still running.
+
+A rollback to a release without the `thread` consumer leaves its queued jobs in
+Postgres, unprocessed and absent from that release's queue UI and metrics. To
+recover them without relying on those views:
+
+1. Stop **all** replicas of the newer release, including webhook producers,
+   and wait for their workers to exit. Do not run the update below while any
+   worker could still complete a job.
+2. Using the database owner connection, move unfinished thread jobs back to
+   `followup`. The following transaction also makes interrupted running jobs
+   available again; retry schedules, arguments and uniqueness keys are retained.
+
+   ```sql
+   BEGIN;
+   UPDATE river_job
+   SET queue = 'followup',
+       state = CASE WHEN state = 'running' THEN 'available'::river_job_state ELSE state END
+   WHERE kind = 'thread' AND queue = 'thread'
+     AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled');
+   SELECT state, count(*) FROM river_job
+   WHERE kind = 'thread' AND queue = 'thread'
+     AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
+   GROUP BY state;
+   COMMIT;
+   ```
+
+3. Verify the query returned no unfinished `thread` rows, then start the older
+   release. Redeliver webhooks that failed during the interruption. Its
+   follow-up workers can execute the unchanged thread-job arguments.
+
+The transaction can be repeated after the replicas are stopped. Completed,
+cancelled and discarded history stays on its original queue. Rolling back also
+restores the older worker's ordering limitations; review affected finding
+states if thread changes overlapped the interruption.

@@ -30,7 +30,7 @@ const threadsQuery = `query($owner: String!, $repo: String!, $number: Int!, $aft
 
 const resolveThreadMutation = `mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }`
 
-// reviewThread is what ResolveThread needs of one thread.
+// reviewThread holds the state and authors of a review thread.
 type reviewThread struct {
 	ID         string `json:"id"`
 	IsResolved bool   `json:"isResolved"`
@@ -42,6 +42,18 @@ type reviewThread struct {
 			} `json:"author"`
 		} `json:"nodes"`
 	} `json:"comments"`
+}
+
+// ThreadResolved implements forge.Client.
+func (c *Client) ThreadResolved(ctx context.Context, owner, repo string, number int, id int64) (bool, bool, error) {
+	thread, err := c.findThread(ctx, owner, repo, number, id)
+	if err != nil {
+		return false, false, fmt.Errorf("github: read the thread of comment %d: %w", id, err)
+	}
+	if thread == nil {
+		return false, false, nil
+	}
+	return thread.IsResolved, true, nil
 }
 
 // ResolveThread implements forge.Client. GitHub lets an App resolve a

@@ -225,6 +225,7 @@ Kubernetes: `>=1.25.0-0`
 | config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. |
 | config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
 | config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
+| config.threadWorkers | string | `""` | Finding resolution/restoration jobs one replica runs at once, independently of model follow-ups and without runner pods; 1 unless set. |
 | config.transcriptRetention | string | `""` | How long a review's full model transcript is kept, at least 24h; 720h unless set. |
 | config.triggerLimit | string | `""` | How many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. |
 | config.triggerSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
@@ -283,7 +284,7 @@ Kubernetes: `>=1.25.0-0`
 | monitoring.prometheusRule.labels | object | `{}` | PrometheusRule labels. |
 | monitoring.prometheusRule.multipleLeadersFor | string | `"2m"` | How long more than one replica may report the lock before KritikaMultipleLeaders fires. A database failover can show two for one leader retry interval. |
 | monitoring.prometheusRule.noLeaderFor | string | `"5m"` | How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute. |
-| monitoring.prometheusRule.queueAgeSeconds | int | `600` | Oldest runnable review/followup job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard. |
+| monitoring.prometheusRule.queueAgeSeconds | int | `600` | Oldest runnable review/followup/thread job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard. |
 | monitoring.prometheusRule.queueDelayFor | string | `"15m"` | How long runnable work must exceed queueAgeSeconds before warning. |
 | monitoring.prometheusRule.queueStatsUnavailableFor | string | `"5m"` | How long every scraped replica may succeed on fewer than 75% of queue snapshot reads over 5 minutes before warning. |
 | monitoring.prometheusRule.vectorSearchErrorsFor | string | `"10m"` | How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning. |

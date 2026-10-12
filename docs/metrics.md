@@ -55,11 +55,12 @@ across replicas. Keep the deployment's cluster label as well when querying
 multiple clusters. A failed read emits `kritika_queue_stats_up = 0` and omits
 the queue gauges; it does not report an empty queue or retain stale values.
 Known queues emit zero when empty. Queue labels are limited to `review`,
-`followup` and `index`; thread changes currently share `followup`.
+`followup`, `thread` and `index`. Thread jobs already queued on `followup`
+remain attributed to that queue until they finish.
 
 Runnable work includes overdue retries and scheduled jobs waiting for River's
 scheduler to promote them. Future work, pending jobs, running jobs and terminal
-jobs are excluded. Paused review/followup queues still have overdue work and can
+jobs are excluded. Paused review/followup/thread queues still have overdue work and can
 alert. Oldest age measures time since eligibility, not time since creation. Queue
 wait also excludes intentional retry backoff, scheduling and snooze delays, and records
 another sample on each pickup. Negative waits from clock skew are clamped to
@@ -110,7 +111,7 @@ label to every rule, and `additionalRuleAnnotations` an annotation.
 | `KritikaMultipleLeaders` | `sum(kritika_leader) > 1`: more than one replica reports holding it   | critical | 2m   |
 | `KritikaConfigError`     | `kritika_config_error == 1`: the leader could not apply the file      | warning  | 5m   |
 | `KritikaConfigDrift`     | `kritika_config_drift == 1`: a replica's file differs from the applied one | warning | 15m |
-| `KritikaQueueDelayed` | Oldest runnable review/followup job exceeds 600 seconds, using the last successful sample within 5m and max across replicas | warning | 15m |
+| `KritikaQueueDelayed` | Oldest runnable review/followup/thread job exceeds 600 seconds, using the last successful sample within 5m and max across replicas | warning | 15m |
 | `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m | warning | 5m |
 | `KritikaVectorSearchErrors` | More than 10% database search errors, with at least 10 non-canceled requests in 15m | warning | 10m |
 

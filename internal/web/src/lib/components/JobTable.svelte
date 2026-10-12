@@ -42,7 +42,7 @@
   <Segmented label="Queue state" options={filters} value={queueState} onchange={(v) => onfilter({ ...filter, state: v === 'all' ? undefined : v })} />
   <label class="queue-search">Search jobs <input type="search" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Repository, account or job" /></label>
 </div>
-<div class="table-caption"><span class="small muted">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
+<div class="table-caption"><span class="small muted">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
 <div class="table-wrap table-card">
   <table class="data queue-table">
     <thead>
@@ -56,6 +56,7 @@
         <tr>
           {#if several}<td data-label="Account" class="mono small"><a href={href({ name: 'queue', slug: account(j) })}>{account(j)}</a></td>{/if}
           <td data-label="Job / target"><strong>#{j.id} · {j.kind}</strong>
+            {#if j.kind === 'thread' && j.args.resolved !== undefined}<span class="queue-detail">{j.args.resolved ? 'Resolve thread' : 'Restore thread'}</span>{/if}
             <span class="queue-detail">{#if j.args.repository && j.args.number}<a class="mono" href={href(pullRoute(account(j), j.args))}>{j.args.repository}#{j.args.number}</a>
             {:else}{j.args.repository || 'Unattributed job'}{/if}</span>
           </td>

@@ -63,7 +63,7 @@ func TestJobArgs(t *testing.T) {
 		{name: "follow-up", args: FollowUpArgs{AccountID: "t", RepositoryID: "r", Number: 1, CommentID: 7},
 			wantKind: "followup", wantQueue: QueueFollowUp},
 		{name: "thread", args: ThreadArgs{AccountID: "t", RepositoryID: "r", Number: 1, CommentID: 7, Resolved: true, Sender: "devin"},
-			wantKind: "thread", wantQueue: QueueFollowUp},
+			wantKind: "thread", wantQueue: QueueThread},
 		{name: "index", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush},
 			wantKind: "index", wantQueue: QueueIndex},
 		{name: "index catch-up", args: IndexArgs{AccountID: "t", RepositoryID: "r", Trigger: TriggerPush, CatchUp: "run"},

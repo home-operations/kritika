@@ -22,6 +22,9 @@ func TestLoad(t *testing.T) {
 				if c.LogFormat != "json" {
 					t.Fatalf("log format default = %q", c.LogFormat)
 				}
+				if c.ThreadWorkers != 1 {
+					t.Fatalf("thread worker default = %d, want 1", c.ThreadWorkers)
+				}
 				if c.ConfigFile != "" {
 					t.Fatalf("config file default = %q", c.ConfigFile)
 				}
@@ -38,8 +41,11 @@ func TestLoad(t *testing.T) {
 		},
 		{
 			name: "explicit values",
-			env:  map[string]string{"KRITIKA_ADDR": ":9090", "KRITIKA_LOG_LEVEL": "debug", "KRITIKA_LOG_FORMAT": "text"},
+			env:  map[string]string{"KRITIKA_ADDR": ":9090", "KRITIKA_LOG_LEVEL": "debug", "KRITIKA_LOG_FORMAT": "text", "KRITIKA_THREAD_WORKERS": "3"},
 			check: func(t *testing.T, c *Config) {
+				if c.ThreadWorkers != 3 {
+					t.Fatalf("thread workers = %d, want 3", c.ThreadWorkers)
+				}
 				if c.Addr != ":9090" {
 					t.Fatalf("addr = %q", c.Addr)
 				}
@@ -54,6 +60,8 @@ func TestLoad(t *testing.T) {
 		{name: "same role for app and runner", env: map[string]string{"KRITIKA_DATABASE_RUNNER_ROLE": "kritika_app"}, wantErr: true},
 		{name: "zero leader retry", env: map[string]string{"KRITIKA_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIKA_EXECUTOR": "docker"}, wantErr: true},
+		{name: "zero thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "0"}, wantErr: true},
+		{name: "negative thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "-1"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIKA_REVIEW_WORKERS": "0"}, wantErr: true},
 	}
 	for _, tt := range tests {

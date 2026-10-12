@@ -73,6 +73,11 @@ config:
   # @schema
   # -- Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set.
   indexWorkers: ""
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- Finding resolution/restoration jobs one replica runs at once, independently of model follow-ups and without runner pods; 1 unless set.
+  threadWorkers: ""
   # -- How long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies before revoking it; 1h unless set.
   gatewayTokenTtl: ""
   # -- How often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set.
@@ -572,7 +577,7 @@ monitoring:
     configErrorFor: 5m
     # -- How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file.
     configDriftFor: 15m
-    # -- Oldest runnable review/followup job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.
+    # -- Oldest runnable review/followup/thread job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.
     queueAgeSeconds: 600
     # -- How long runnable work must exceed queueAgeSeconds before warning.
     queueDelayFor: 15m

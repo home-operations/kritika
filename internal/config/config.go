@@ -148,6 +148,11 @@ type Config struct {
 	// runs at most ReviewWorkers + IndexWorkers runner pods.
 	IndexWorkers int `env:"KRITIKA_INDEX_WORKERS" envDefault:"1"`
 
+	// ThreadWorkers reserves capacity for finding resolution/restoration updates.
+	// One per replica keeps these short forge/database jobs independent of model
+	// follow-ups without adding runner pods.
+	ThreadWorkers int `env:"KRITIKA_THREAD_WORKERS" envDefault:"1"`
+
 	// Executor selects how runners run; see the Executor type.
 	Executor Executor `env:"KRITIKA_EXECUTOR" envDefault:"kubernetes"`
 
@@ -322,8 +327,8 @@ func (c *Config) validate() error {
 
 // validateWork checks the settings that size the queues and the runners.
 func (c *Config) validateWork() error {
-	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 {
-		return errors.New("config: KRITIKA_REVIEW_WORKERS and KRITIKA_INDEX_WORKERS must be positive")
+	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.ThreadWorkers <= 0 {
+		return errors.New("config: KRITIKA_REVIEW_WORKERS, KRITIKA_INDEX_WORKERS and KRITIKA_THREAD_WORKERS must be positive")
 	}
 	if c.RunnerTTL <= 0 {
 		return errors.New("config: KRITIKA_RUNNER_TTL must be positive")

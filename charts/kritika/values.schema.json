@@ -412,6 +412,16 @@
           "title": "runnerRuntimeClass",
           "type": "string"
         },
+        "threadWorkers": {
+          "default": "",
+          "description": "Finding resolution/restoration jobs one replica runs at once, independently of model follow-ups and without runner pods; 1 unless set.",
+          "required": [],
+          "title": "threadWorkers",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
         "transcriptRetention": {
           "default": "",
           "description": "How long a review's full model transcript is kept, at least 24h; 720h unless set.",
@@ -953,7 +963,7 @@
             },
             "queueAgeSeconds": {
               "default": 600,
-              "description": "Oldest runnable review/followup job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.",
+              "description": "Oldest runnable review/followup/thread job age in seconds that triggers KritikaQueueDelayed. Index onboarding is excluded; its age remains on the dashboard.",
               "title": "queueAgeSeconds",
               "type": "integer"
             },

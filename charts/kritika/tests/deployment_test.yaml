@@ -106,6 +106,7 @@ tests:
       config:
         pollInterval: "{{ .Release.Name }}-0s"
         reviewWorkers: 4
+        threadWorkers: 2
         runnerRuntimeClass: gvisor
         confidenceThreshold: 0
         confidenceGate: false
@@ -156,6 +157,9 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_REVIEW_WORKERS, value: "4" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_THREAD_WORKERS, value: "2" }
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }

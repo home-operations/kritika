@@ -171,6 +171,6 @@ func jobItem(j store.JobRow) Job {
 		ScheduledAt: j.ScheduledAt, AttemptedAt: j.AttemptedAt, FinalizedAt: j.FinalizedAt, LastError: j.LastError, Cause: jobCause(j.LastError),
 		CancelableReviewID: j.CancelableReviewID, HeartbeatAt: j.HeartbeatAt,
 		HeartbeatOverdue: j.HeartbeatOverdue, RecentFailure: j.RecentFailure,
-		Args: JobArgs{Repository: j.Repository, Number: j.Number, Head: j.Head, Trigger: j.Trigger, CommentID: j.CommentID},
+		Args: JobArgs{Repository: j.Repository, Number: j.Number, Head: j.Head, Trigger: j.Trigger, CommentID: j.CommentID, Resolved: j.Resolved},
 	}
 }

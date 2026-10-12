@@ -848,6 +848,7 @@ export interface JobArgs {
   head: string;
   trigger: string;
   commentId: number;
+  resolved?: boolean;
 }
 
 export interface Job {
@@ -856,7 +857,7 @@ export interface Job {
   cancelableReviewId?: string;
   heartbeatAt?: string;
   id: number;
-  kind: 'review' | 'followup' | 'index';
+  kind: 'review' | 'followup' | 'thread' | 'index';
   state: JobState;
   attempt: number;
   maxAttempts: number;

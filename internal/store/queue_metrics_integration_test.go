@@ -41,7 +41,7 @@ func TestQueueStats(t *testing.T) {
 	} {
 		var id int64
 		if err := s.app.QueryRow(ctx, `INSERT INTO river_job(kind, args, queue, state, scheduled_at, finalized_at)
-			VALUES('queue-metrics', '{}', 'followup', $1::text::river_job_state, now() + make_interval(secs => $2),
+			VALUES('queue-metrics', '{}', 'thread', $1::text::river_job_state, now() + make_interval(secs => $2),
 			CASE WHEN $1::text IN ('completed', 'cancelled', 'discarded') THEN now() ELSE NULL END) RETURNING id`,
 			tt.state, tt.delay.Seconds()).Scan(&id); err != nil {
 			t.Fatal(err)
@@ -56,12 +56,12 @@ func TestQueueStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stats) != 3 {
-		t.Fatalf("queues = %d, want 3", len(stats))
+	if len(stats) != 4 {
+		t.Fatalf("queues = %d, want 4", len(stats))
 	}
 	for _, q := range stats {
 		wantCount, wantAge := baseline[q.Queue].Runnable, baseline[q.Queue].OldestSeconds
-		if q.Queue == jobs.QueueFollowUp {
+		if q.Queue == jobs.QueueThread {
 			wantCount += 3
 			wantAge = max(wantAge, 300)
 		}

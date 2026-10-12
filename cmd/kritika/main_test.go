@@ -15,6 +15,7 @@ import (
 	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/server"
 )
 
@@ -124,5 +125,17 @@ func TestStoreOptionsOwnerDSN(t *testing.T) {
 				t.Errorf("owner = %q, app = %q; want owner %q", opts.OwnerURL, opts.AppURL, tt.owner)
 			}
 		})
+	}
+}
+
+func TestWorkerQueuesAreMonitored(t *testing.T) {
+	queues := workerQueues(&config.Config{ReviewWorkers: 2, ThreadWorkers: 1, IndexWorkers: 3})
+	if len(queues) != len(jobs.Queues()) {
+		t.Fatalf("worker queues = %v, monitored queues = %v", queues, jobs.Queues())
+	}
+	for _, name := range jobs.Queues() {
+		if queue, ok := queues[name]; !ok || queue.MaxWorkers <= 0 {
+			t.Errorf("queue %q has no worker capacity", name)
+		}
 	}
 }

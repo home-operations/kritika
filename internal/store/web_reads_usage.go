@@ -193,6 +193,7 @@ type JobRow struct {
 	Head               string
 	Trigger            string
 	CommentID          int64
+	Resolved           *bool
 	LastError          string
 	HeartbeatAt        *time.Time
 	HeartbeatOverdue   bool
@@ -208,14 +209,15 @@ const (
 	queueActive   = 500
 )
 
-// jobColumns selects a JobRow from the account's review, follow-up and
+// jobColumns selects a JobRow from the account's review, follow-up, thread and
 // index jobs. River's tables carry no row-level security, so the account
 // comes from the transaction's own setting rather than a parameter a caller
 // could get wrong.
 var jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.created_at, j.scheduled_at, j.attempted_at, j.finalized_at,
 	coalesce(j.args->>'repository_id', ''), coalesce(r.name, ''), coalesce((j.args->>'number')::int, 0),
 	coalesce(j.args->>'head_sha', j.args->>'commit_sha', ''), coalesce(j.args->>'trigger', ''),
-	coalesce((j.args->>'comment_id')::bigint, 0), coalesce(j.errors[array_length(j.errors, 1)]->>'error', ''),
+	coalesce((j.args->>'comment_id')::bigint, 0), CASE WHEN j.kind = 'thread' THEN (j.args->>'resolved')::boolean END,
+	coalesce(j.errors[array_length(j.errors, 1)]->>'error', ''),
 	coalesce((SELECT v.id::text FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id
 		WHERE p.repository_id = r.id AND p.number = (j.args->>'number')::int AND v.river_job_id = j.id
 		AND j.state IN (` + jobs.LiveStatesSQL() + `)
@@ -230,29 +232,38 @@ var jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.crea
 			AND newer.args->>'repository_id' = j.args->>'repository_id'
 			AND coalesce(newer.args->>'number', '') = coalesce(j.args->>'number', '')
 			AND coalesce(newer.args->>'comment_id', '') = coalesce(j.args->>'comment_id', '')
-			AND newer.state IN (` + jobs.LiveStatesSQL() + `, 'completed')), false)
+			AND newer.state IN (` + jobs.LiveStatesSQL() + `, 'completed')), false) AS recent_failure
 	FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
 	LEFT JOIN job_heartbeats h ON h.job_id = j.id
-	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
+	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'thread', 'index')`
 
 func scanJob(row pgx.CollectableRow) (JobRow, error) {
 	var j JobRow
 	var state string
 	err := row.Scan(&j.ID, &j.Kind, &state, &j.Attempt, &j.MaxAttempts, &j.CreatedAt, &j.ScheduledAt, &j.AttemptedAt, &j.FinalizedAt,
-		&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.LastError,
+		&j.RepositoryID, &j.Repository, &j.Number, &j.Head, &j.Trigger, &j.CommentID, &j.Resolved, &j.LastError,
 		&j.CancelableReviewID, &j.HeartbeatAt, &j.HeartbeatOverdue, &j.RecentFailure)
 	j.State = rivertype.JobState(state)
 	return j, err
 }
 
-// ListQueue returns the account's review, follow-up and index jobs that
-// have not finished, oldest first, then the most recently finished ones.
+// ListQueue returns the account's review, follow-up, thread and index jobs that
+// have not finished, oldest first, then finished ones with recent failures
+// taking priority over the remaining history.
 func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
+	// Rank bounded history and failure candidates together so prioritizing
+	// attention does not sort the account's entire completed-job history.
 	rows, err := tx.Query(ctx, `(SELECT `+jobColumns+` AND j.state IN (`+jobs.LiveStatesSQL()+`)
 			ORDER BY j.scheduled_at, j.id LIMIT $1)
 		UNION ALL
-		(SELECT `+jobColumns+` AND j.state IN ('completed', 'cancelled', 'discarded')
-			ORDER BY j.finalized_at DESC NULLS LAST, j.id DESC LIMIT $2)`, queueActive, queueFinished)
+		(SELECT * FROM (
+			(SELECT * FROM (SELECT `+jobColumns+` AND j.state = 'discarded'
+				AND j.finalized_at >= now() - interval '24 hours') failures
+				WHERE recent_failure ORDER BY finalized_at DESC, id DESC LIMIT $2)
+			UNION
+			(SELECT `+jobColumns+` AND j.state IN ('completed', 'cancelled', 'discarded')
+				ORDER BY j.finalized_at DESC NULLS LAST, j.id DESC LIMIT $2)
+		) finished ORDER BY recent_failure DESC, finalized_at DESC NULLS LAST, id DESC LIMIT $2)`, queueActive, queueFinished)
 	if err != nil {
 		return nil, fmt.Errorf("store: list queue: %w", err)
 	}

@@ -594,7 +594,7 @@ egress:
 
 ## How kritika runs
 
-These come from the environment rather than the file, each a camelCased
+The process settings below come from the environment rather than the file, each a camelCased
 key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
 except where noted; a restart changes them. The chart sets the rest of
 the process's variables, its addresses, database URLs and roles and the
@@ -609,6 +609,7 @@ runner image, from its other values.
 | `KRITIKA_TRANSCRIPT_RETENTION`     | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                                                                                                                 |
 | `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set                                                                                          |
 | `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                                                                                                               |
+| `KRITIKA_THREAD_WORKERS` | finding resolution/restoration jobs one replica runs at once, independently of model follow-ups; 1 unless set |
 | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
 | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
 | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |
@@ -624,3 +625,16 @@ A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps
 its findings, summary and what it read by name and size; the dashboard's
 diff and raw views say the bodies were not kept.
+
+### Thread workers
+
+Finding resolution/restoration jobs use a dedicated `thread` queue, with one
+worker per replica by default. They call the forge and update the database;
+they do not launch runner pods or acquire model slots. The default reserves
+capacity during model follow-ups, but permits less parallelism than two idle
+follow-up workers. Increase `KRITIKA_THREAD_WORKERS` if queue-delay metrics show
+it is needed. Database connections and forge API limits remain shared with
+reviews, so raising worker counts does not guarantee higher throughput.
+
+See [queue upgrades and rollbacks](database.md#queue-upgrades-and-rollbacks)
+before switching between releases that use different queue names.

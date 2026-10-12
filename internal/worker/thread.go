@@ -90,6 +90,14 @@ func (w *Thread) apply(
 		return threadIgnored, nil
 	}
 	logger = logger.With("fingerprint", fingerprint)
+	resolved, exists, err := client.ThreadResolved(ctx, owner, repo, pr.number, args.CommentID)
+	if err != nil {
+		return "", fmt.Errorf("worker: read thread state: %w", err)
+	}
+	if !exists || resolved != args.Resolved {
+		logger.Info("thread change ignored", "reason", "thread absent or state superseded")
+		return threadIgnored, nil
+	}
 	if args.Resolved && args.Outdated {
 		logger.Info("finding addressed", "reason", "the thread's lines changed since the finding was posted")
 		return threadAddressed, nil
