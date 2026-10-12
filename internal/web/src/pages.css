@@ -1010,14 +1010,6 @@ table.data th.wrap {
   border-bottom-color: var(--accent);
   font-weight: 600;
 }
-.tabs-group-label {
-  margin-left: auto;
-  padding: 7px 6px 7px 16px;
-  align-self: center;
-  color: var(--muted);
-  font-size: var(--type-xs);
-  white-space: nowrap;
-}
 .tab-count {
   font-size: var(--type-xs);
   background: var(--panel);

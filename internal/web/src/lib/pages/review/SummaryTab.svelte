@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ReviewDetail, Severity } from '../../types';
-  import { SEVERITIES } from '../../format';
+  import { SEVERITIES, isActive } from '../../format';
   import Markdown from '../../components/Markdown.svelte';
   import ReviewImpact from './ReviewImpact.svelte';
   import Confidence from '../../components/Confidence.svelte';
@@ -37,7 +37,7 @@
     {/if}
   </section>
 {:else}
-  <p class="state-msg">No summary{d.review.status === 'running' || d.review.status === 'prepared' ? ' yet' : ''}.</p>
+  <p class="state-msg">No summary{isActive(d.review.status) ? ' yet' : ''}.</p>
 {/if}
 
 {#if d.summary?.impact?.length}
@@ -50,7 +50,7 @@
 {/if}
 
 {#if groups.length === 0}
-  <p class="state-msg">{d.review.status === 'completed' ? 'No findings.' : d.review.status === 'running' || d.review.status === 'prepared' ? 'Findings will appear as the review progresses.' : 'No findings recorded. The review did not complete.'}</p>
+  <p class="state-msg">{d.review.status === 'completed' ? 'No findings.' : isActive(d.review.status) ? 'Findings will appear as the review progresses.' : d.review.status === 'skipped' ? 'No findings recorded. This review was skipped.' : 'No findings recorded. The review did not complete.'}</p>
 {/if}
 {#each groups as g (g.s)}
   <section class="finding-group" aria-labelledby="sev-{g.s}">

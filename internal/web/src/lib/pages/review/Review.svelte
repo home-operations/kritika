@@ -1,15 +1,16 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { getJSON } from '../../api.svelte';
   import { href, navigate } from '../../router.svelte';
   import type { ReviewTab, Route } from '../../routes';
   import { Resource, errorMessage, live, pollJobs } from '../../resource.svelte';
   import { isActive, jobCauseText, rerunBody, shortSha, skipText } from '../../format';
-  import { pullRoute, rerunPath, cancelPath, accountApi } from '../../links';
+  import { pullRoute, repoRoute, rerunPath, cancelPath, accountApi } from '../../links';
   import { safeHref } from '../../markdown';
   import { isAdmin } from '../../session.svelte';
   import { clock, stamp } from '../../time.svelte';
   import { lifecycle } from '../../lifecycle';
-  import type { PullDetail, ReviewDetail } from '../../types';
+  import type { PullDetail, Review, ReviewDetail } from '../../types';
   import ActionButton from '../../components/ActionButton.svelte';
   import PageHeader from '../../components/PageHeader.svelte';
   import StateView from '../../components/StateView.svelte';
@@ -28,7 +29,7 @@
   const account = $derived(accountApi(slug));
   const res: Resource<ReviewDetail> = new Resource(async () => {
     const detail = await getJSON<ReviewDetail>(base);
-    if (!id && (detail.review.pull.repository !== `${owner}/${repo}` || detail.review.pull.number !== number)) {
+    if (!id && (detail.review.pull.repository.toLowerCase() !== `${owner}/${repo}`.toLowerCase() || detail.review.pull.number !== number)) {
       throw new Error('This review belongs to a different pull request. Select another run.');
     }
     return detail;
@@ -38,16 +39,33 @@
     ? `${account}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`
     : res.data ? `${account}/pulls/${res.data.review.pull.repository.split('/').map(encodeURIComponent).join('/')}/${res.data.review.pull.number}` : undefined);
   const latest = $derived(pull.data?.reviews.find((r) => r.status !== 'skipped'));
-  const selectedId = $derived(id ?? run ?? latest?.id);
+  // Live history updates must not discard the reader's current diff and filters.
+  let initialRun = $state<string>();
+  const selectedId = $derived(id ?? run ?? initialRun);
+  $effect(() => {
+    if (!id && !run && latest) untrack(() => { initialRun ??= latest.id; });
+  });
   const base = $derived(`${account}/reviews/${encodeURIComponent(selectedId ?? '')}`);
   let version = $state(0);
+  let activityDirty = $state(false);
 
   $effect(() => { if (pullPath) void pull.load(); });
   $effect(() => { if (selectedId) void res.load(); });
-  $effect(() => live((e) => e.account === slug && e.kind !== 'index_run' && e.kind !== 'model_call', () => {
-    if (pullPath) void pull.load();
+  // Events lack a PR identifier; review lifecycle changes can introduce a new run.
+  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), (dirty) => {
+    if (dirty.has('followup')) activityDirty = true;
+    if (dirty.has('review') || dirty.has('resync')) {
+      activityDirty = false;
+      if (pullPath) void pull.load();
+    }
   }));
-  $effect(() => live((e) => e.account === slug && e.reviewId === selectedId && !!res.data && isActive(res.data.review.status), () => {
+  $effect(() => {
+    if (tab === 'activity' && activityDirty && pullPath) {
+      activityDirty = false;
+      void pull.load();
+    }
+  });
+  $effect(() => live((e) => e.account === slug && (e.kind === 'review' ? e.id : e.reviewId) === selectedId && !!res.data && isActive(res.data.review.status), () => {
     void res.load();
     version++;
   }));
@@ -61,17 +79,29 @@
   const merged = $derived(p?.merged ?? r?.pullMerged ?? false);
   const job = $derived(pull.data?.job);
   const forgeUrl = $derived(safeHref(ref?.url ?? ''));
+  const latestAttempt = $derived(pull.data?.reviews[0]);
   const openFindings = $derived(res.data?.findings.filter((f) => f.status === 'open').length ?? 0);
   const title = $derived(id && r ? `${r.status} · ${r.pull.repository}#${r.pull.number} review` : ref ? `${ref.title} · ${ref.repository}#${ref.number}` : 'Pull request');
 
   function to(nextTab: ReviewTab, nextFinding?: string): Route {
     if (id) return { name: 'review', slug, id, tab: nextTab, finding: nextFinding };
-    return { name: 'pull', slug, owner: owner!, repo: repo!, number: number!, run, tab: nextTab, finding: nextFinding };
+    return { name: 'pull', slug, owner: owner!, repo: repo!, number: number!, run: nextFinding ? selectedId : run, tab: nextTab, finding: nextFinding };
   }
 
   function selectRun(value: string): void {
     if (!ref) return;
+    if (!value) initialRun = latest?.id;
     navigate({ ...pullRoute(slug, ref), run: value || undefined, tab });
+  }
+
+  function skippedReason(review: Review): string {
+    return review.skipReason ? skipText[review.skipReason] : review.error || 'No review was produced.';
+  }
+
+  function openLatest(e: MouseEvent): void {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    selectRun('');
   }
 
   function labelColor(color: string): string | undefined {
@@ -89,8 +119,8 @@
 <main class="page review-page" bind:this={page}>
   <div class="page-inner">
     <div class="page-head pr-workspace-head">
-      <PageHeader title={ref?.title ?? (owner && repo ? `${owner}/${repo}#${number}` : 'Pull request')} {slug} parents={[{ label: 'Pull requests', route: { name: 'pulls', slug } }]} />
-      {#if ref}<p class="mono small muted">{ref.repository}#{ref.number}</p>{/if}
+      <PageHeader title={ref?.title ?? (owner && repo ? `${owner}/${repo}#${number}` : 'Pull request')} {slug} parents={[{ label: 'Pull requests', route: { name: 'pulls', slug } }, ...(ref ? [{ label: ref.repository, route: repoRoute(slug, ref.repository) }] : [])]} />
+      {#if ref}<p class="mono small muted"><a href={href(pullRoute(slug, ref))} onclick={openLatest}>{ref.repository}#{ref.number}</a></p>{/if}
       {#if p}
         {@const life = lifecycle(p)}
         <p class="meta-line">
@@ -126,25 +156,25 @@
           <p class="meta-line" aria-label="Review outcome"><strong>Findings</strong>
             {#if r.status === 'completed'}<span>{openFindings} open · {res.data!.findings.length} reported</span>
             {:else if isActive(r.status)}<span>Review in progress. Findings are not final.</span>
-            {:else}<span>Review incomplete. {openFindings} open findings recorded; this is not a clean review.</span>{/if}
+            {:else if r.status === 'skipped'}<span>No review performed. {skippedReason(r)}</span>
+            {:else}<span>Review incomplete. {openFindings} open {openFindings === 1 ? 'finding' : 'findings'} recorded; this is not a clean review.</span>{/if}
           </p>
         </div>
         {#if historical && ref}
-          <p class="notice newer-notice" role="note">Historical review. The pull request has been reviewed again since. <a href={href(pullRoute(slug, ref))}>Open its latest review</a></p>
+          <p class="notice newer-notice" role="note">Historical review. A newer review is available. <a href={href(pullRoute(slug, ref))} onclick={openLatest}>Open its latest review</a></p>
         {:else if p && r.headSha !== p.headSha}
           <p class="notice" role="note">The current head has not been reviewed by this run.</p>
         {/if}
-        {#if r.status === 'skipped'}<p class="notice">Review skipped{r.skipReason ? `: ${skipText[r.skipReason]}` : ''}.</p>{/if}
-        {#if r.error}<p class="notice error-text" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
+        {#if r.priorReviewId}<p class="small muted">Continues <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a>.</p>{/if}
+        {#if r.error && r.status !== 'skipped'}<p class="notice error-text" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
         {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
       {/if}
       {#if pullState === 'closed'}<NoMoreReviews {merged} />{/if}
       {#if p?.paused && p.state === 'open'}
         <p class="notice paused-notice" role="note">Automatic reviews of this pull request are paused: a push is recorded, not reviewed. A comment asking the bot to <span class="mono">review</span> still reviews it, and one asking it to <span class="mono">resume</span> turns them back on.</p>
       {/if}
-      {#if !historical && pull.data?.reviews[0]?.status === 'skipped' && latest}
-        {@const skipped = pull.data.reviews[0]}
-        <p class="notice" role="note">Latest attempt skipped: {skipped.skipReason ? skipText[skipped.skipReason] : skipped.error || 'No review was produced.'} Showing the last review.</p>
+      {#if r && latest && latestAttempt?.status === 'skipped' && r.id === latest.id && r.id !== latestAttempt.id}
+        <p class="notice" role="note">Latest attempt skipped: {skippedReason(latestAttempt)} Showing the last review.</p>
       {/if}
       {#if job && (job.state !== 'running' || job.lastError || historical)}
         <p class="notice job-notice" role="note">
@@ -168,7 +198,7 @@
       </StateView>
     {:else if pull.data}
       <p class="state-msg">Not reviewed yet.</p>
-      {#if pull.data.reviews[0]?.status === 'skipped'}<p class="notice">Latest attempt skipped: {pull.data.reviews[0].skipReason ? skipText[pull.data.reviews[0].skipReason] : pull.data.reviews[0].error || 'No review was produced.'}</p>{/if}
+      {#if latestAttempt?.status === 'skipped'}<p class="notice">Latest attempt skipped: {skippedReason(latestAttempt)}</p>{/if}
       {#if pull.data.followups.length}<section class="panel" aria-label="Follow-ups"><header class="panel-head"><h2>Follow-ups</h2></header><ul class="followups">{#each pull.data.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul></section>{/if}
     {:else if !pull.error}<p class="state-msg" role="status">Loading pull request…</p>{/if}
   </div>

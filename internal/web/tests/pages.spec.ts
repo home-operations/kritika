@@ -818,7 +818,7 @@ test('pull workspace leads with the latest review and keeps skipped attempts in 
   await page.getByRole('button', { name: 'Transcript' }).click();
   await expect(page.locator('.followup .turn')).toHaveCount(g.transcript.turns.length);
   await page.locator('.timeline-link').last().click();
-  await expect(page).toHaveURL(new RegExp(`${T}/reviews/rev-1$`));
+  await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7\\?run=rev-1$`));
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Review history' })).toBeVisible();
 });
@@ -1106,7 +1106,7 @@ test('a skipped review says why, on its own page and on the pull request', async
   await expect(page.locator('.page-inner > .notice')).toContainText('Latest attempt skipped: more changed lines than the repository allows');
   await expect(page.getByText('Not reviewed yet.')).toBeVisible();
   await page.goto(`/${T}/reviews/rev-1`);
-  await expect(page.locator('.page-head .notice').filter({ hasText: 'Review skipped:' })).toContainText('Review skipped: patch unchanged since the last review');
+  await expect(page.getByLabel('Review outcome')).toContainText('No review performed. patch unchanged since the last review');
 });
 
 test('a skipped review with no reason of its own says what it recorded on the pull request', async ({ page }) => {

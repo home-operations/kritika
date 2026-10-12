@@ -6,7 +6,7 @@
   import { getJSON } from '../api.svelte';
   import { href, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
-  import { Paged, Resource, live } from '../resource.svelte';
+  import { Paged, Resource, errorMessage, live } from '../resource.svelte';
   import { accountApi, pullRoute, threadUrl } from '../links';
   import { CATEGORIES, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
@@ -127,11 +127,16 @@
   }
 
   async function step(offset: number): Promise<void> {
+    if (paged.loadingMore) return;
+    const from = inspectedId;
+    const focused = document.activeElement;
+    if (offset > 0 && inspectedIndex === paged.items.length - 1 && paged.cursor) await paged.more();
+    if (!inspectedId || inspectedId !== from) return;
     const f = paged.items[inspectedIndex + offset];
-    if (!f) return;
-    inspect(f);
+    if (f) inspect(f);
     await tick();
-    inspector?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+    if (focused instanceof HTMLElement && focused.isConnected && !(focused instanceof HTMLButtonElement && focused.disabled)) focused.focus({ preventScroll: true });
+    else inspector?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
   }
 
   function panelKey(e: KeyboardEvent): void {
@@ -142,6 +147,12 @@
     else return;
     e.preventDefault();
     e.stopPropagation();
+  }
+
+  function onTitleClick(e: MouseEvent, f: AccountFinding): void {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    inspect(f);
   }
 
   function onRowClick(e: MouseEvent, f: AccountFinding): void {
@@ -200,7 +211,7 @@
                   <!-- The title opens the inspector; the row is a larger pointer target. -->
                   <tr class="finding-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
                     <td class="finding-main">
-                      <button class="finding-link" aria-haspopup="dialog" onclick={() => inspect(f)}>{f.title}</button>
+                      <a class="finding-link" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
                       <span class="finding-sub">{f.explanation}</span>
                       {#if f.rules.length}
                         <span class="finding-rules">
@@ -248,15 +259,16 @@
 </main>
 
 
-<Dialog open={!!inspected} title="Finding details" side onclose={() => (inspectedId = '')} fallback=".finding-row.selected .finding-link">
+<Dialog open={!!inspected} title="Finding details" side onclose={() => (inspectedId = '')} returnFocus=".finding-row.selected .finding-link">
   {#if inspected}
     <div class="finding-inspector" bind:this={inspector} role="group" aria-label="Finding inspection">
       <div class="finding-controls" role="group" aria-label="Browse findings">
-        <button class="btn" disabled={inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
+        <button class="btn" disabled={paged.loadingMore || inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
         <span class="small muted" aria-live="polite">{inspectedIndex + 1} of {paged.items.length} loaded</span>
-        <button class="btn" disabled={inspectedIndex >= paged.items.length - 1} onclick={() => void step(1)}>Next →</button>
+        <button class="btn" disabled={paged.loadingMore || (inspectedIndex >= paged.items.length - 1 && !paged.cursor)} onclick={() => void step(1)}>Next →</button>
         <button class="btn" onclick={() => (inspectedId = '')}>Close</button>
       </div>
+      {#if paged.moreError}<p class="error-text" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn" onclick={() => void step(1)}>Retry</button></p>{/if}
       <p><a class="mono" href={href(pullRoute(slug, inspected.pull))}>{inspected.pull.repository}#{inspected.pull.number}</a> · {inspected.pull.title}</p>
       {#key inspected.id}<FindingCard f={inspected} pullUrl={inspected.pull.url} />{/key}
       <div class="workspace-actions">

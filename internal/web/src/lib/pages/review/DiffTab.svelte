@@ -83,7 +83,8 @@
     selected = id;
     followed = id;
     followedInspection = inspection;
-    if ((router.route.name === 'review' || router.route.name === 'pull') && router.route.tab === 'diff' && router.route.finding !== id) replace({ ...router.route, finding: id });
+    if (router.route.name === 'pull' && router.route.tab === 'diff' && (router.route.finding !== id || router.route.run !== d.review.id)) replace({ ...router.route, run: d.review.id, finding: id });
+    else if (router.route.name === 'review' && router.route.tab === 'diff' && router.route.finding !== id) replace({ ...router.route, finding: id });
     if (!f.path.toLowerCase().includes(query.trim().toLowerCase())) query = '';
     const i = owners.get(id);
     if (i !== undefined) open[i] = true;
@@ -114,10 +115,16 @@
       if (selected && active) void showFinding(selected);
     });
   });
+  async function focusSearch(): Promise<void> {
+    navigatorShown = true;
+    await tick();
+    search?.focus();
+  }
+
   $effect(() =>
     active ? listKeys({
       count: () => findings.length,
-      focusSearch: () => search?.focus(),
+      focusSearch: () => void focusSearch(),
       get: () => findings.findIndex((f) => f.id === selected),
       set: (i) => { const f = findings[i]; if (f) void showFinding(f.id); },
       open: (i) => { const f = findings[i]; if (f) void showFinding(f.id); },

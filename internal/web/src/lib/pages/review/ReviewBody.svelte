@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
+  import { pullRoute } from '../../links';
   import { href } from '../../router.svelte';
   import type { ReviewTab, Route } from '../../routes';
   import type { PullDetail, ReviewDetail } from '../../types';
@@ -93,7 +94,7 @@
             <ol class="timeline">
               {#each pull.reviews as r (r.id)}
                 <li class="timeline-item">
-                  <a class="timeline-link" href={href({ name: 'review', slug, id: r.id })}>
+                  <a class="timeline-link" href={href({ ...pullRoute(slug, d.review.pull), run: r.id })}>
                     <span class="timeline-top"><ReviewStatusTile status={r.status} /><Time iso={r.createdAt} /></span>
                     <ReviewMeta {r} />
                     {#if r.error}<span class="error-text">{r.error}</span>{/if}

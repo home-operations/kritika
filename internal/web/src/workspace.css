@@ -581,13 +581,13 @@ table.account-breakdown th {
   font-size: var(--type-sm);
 }
 
-.usage-drilldown, .github-handoff, .queue-actions {
+.usage-drilldown, .queue-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
 }
-.usage-drilldown, .github-handoff { margin: 16px 0; }
+.usage-drilldown { margin: 16px 0; }
 .drill-link {
   border: 0;
   background: transparent;
@@ -733,18 +733,6 @@ table.account-breakdown th {
 }
 .finding-nav[hidden] {
   display: none;
-}
-button.finding-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-button.finding-link:hover {
-  text-decoration: underline;
 }
 .modal.dialog-side {
   inset: 0 0 0 auto;
