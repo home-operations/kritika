@@ -40,18 +40,58 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name                   string
-		full, rejectCompletion bool
+		name                      string
+		full, rejectCompletion    bool
+		stateBefore               rivertype.JobState
+		attemptBefore             int
+		wantError                 string
+		wantState                 rivertype.JobState
+		wantCatchUp               int
+		wantPrevious              bool
+		wantStatus                string
+		wantStaged, wantOldChunks int
+		wantRescue                bool
 	}{
-		{"forced publication survives missing acknowledgement", true, false},
-		{"completion failure rolls publication back", true, true},
-		{"ordinary publication leaves job running", false, false},
+		{
+			name: "forced publication survives missing acknowledgement", full: true,
+			stateBefore: rivertype.JobStateRunning, attemptBefore: 1,
+			wantState: rivertype.JobStateCompleted, wantCatchUp: 1, wantStatus: "completed",
+		},
+		{
+			name: "completion failure rolls publication back", full: true, rejectCompletion: true,
+			stateBefore: rivertype.JobStateRunning, attemptBefore: 1, wantError: "test_reject_index_completion",
+			wantState: rivertype.JobStateRunning, wantPrevious: true, wantStatus: "running",
+			wantStaged: 1, wantOldChunks: 1, wantRescue: true,
+		},
+		{
+			name:        "ordinary publication leaves job running",
+			stateBefore: rivertype.JobStateRunning, attemptBefore: 1,
+			wantState: rivertype.JobStateRunning, wantStatus: "completed", wantRescue: true,
+		},
+		{
+			name: "rescued job cannot publish", full: true,
+			stateBefore: rivertype.JobStateRetryable, attemptBefore: 1, wantError: "index job ownership changed",
+			wantState: rivertype.JobStateRetryable, wantPrevious: true, wantStatus: "running",
+			wantStaged: 1, wantOldChunks: 1,
+		},
+		{
+			name: "older attempt cannot complete newer attempt", full: true,
+			stateBefore: rivertype.JobStateRunning, attemptBefore: 2, wantError: "index job ownership changed",
+			wantState: rivertype.JobStateRunning, wantPrevious: true, wantStatus: "running",
+			wantStaged: 1, wantOldChunks: 1,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := rivertest.WorkContext(t.Context(), queue)
 			job, run, runner, previous := prepareIndexPublication(t, st, queue, file, account, tt.full)
 			if tt.rejectCompletion {
 				rejectIndexCompletion(t, job.ID)
+			}
+			// Keep the worker's snapshot at attempt 1 while rescue or a new
+			// claim changes the database row before publication.
+			if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = $2, attempt = $3 WHERE id = $1`,
+				job.ID, tt.stateBefore, tt.attemptBefore); err != nil {
+				t.Fatal(err)
 			}
 			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler)}
 			w := Index{Base: base}
@@ -61,27 +101,26 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 			// No River worker acknowledges this attempt after publication, as
 			// when the process exits before its asynchronous completion lands.
 			_, _, err := w.embed(ctx, job, account, embed, file.Embedding.Model, "new", run, runner, nil, file.Settings(account, ""))
-			if tt.rejectCompletion {
-				if err == nil || !strings.Contains(err.Error(), "test_reject_index_completion") {
-					t.Fatalf("embed = %v, want completion constraint error", err)
+			if tt.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("embed = %v, want error containing %q", err, tt.wantError)
 				}
 			} else if err != nil {
 				t.Fatal(err)
 			}
-			wantActive, wantStatus, wantStaged, wantOldChunks := run, "completed", 0, 0
-			wantState, wantCatchUp := rivertype.JobStateRunning, 0
-			if tt.full && !tt.rejectCompletion {
-				wantState, wantCatchUp = rivertype.JobStateCompleted, 1
-			}
-			if tt.rejectCompletion {
-				wantActive, wantStatus, wantStaged, wantOldChunks = previous, "running", 1, 1
+			wantActive := run
+			if tt.wantPrevious {
+				wantActive = previous
 			}
 			row, err := queue.JobGet(ctx, job.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row.State != wantState {
-				t.Errorf("job = %s, want %s before acknowledgement", row.State, wantState)
+			if row.State != tt.wantState || row.Attempt != tt.attemptBefore {
+				t.Errorf("job = %s/%d, want %s/%d before acknowledgement", row.State, row.Attempt, tt.wantState, tt.attemptBefore)
+			}
+			if (row.FinalizedAt != nil) != (tt.wantState == rivertype.JobStateCompleted) {
+				t.Errorf("job finalized_at = %v, want finalized only on completion", row.FinalizedAt)
 			}
 			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 				var active, status string
@@ -94,19 +133,17 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 					job.Args.RepositoryID, run, runner, previous).Scan(&active, &status, &staged, &oldChunks, &catchUp); err != nil {
 					return err
 				}
-				if active != wantActive || status != wantStatus || staged != wantStaged || oldChunks != wantOldChunks || catchUp != wantCatchUp {
+				if active != wantActive || status != tt.wantStatus || staged != tt.wantStaged || oldChunks != tt.wantOldChunks || catchUp != tt.wantCatchUp {
 					t.Errorf("publication = %s/%s/staged:%d/old:%d/catch-up:%d, want %s/%s/%d/%d/%d",
-						active, status, staged, oldChunks, catchUp, wantActive, wantStatus, wantStaged, wantOldChunks, wantCatchUp)
+						active, status, staged, oldChunks, catchUp, wantActive, tt.wantStatus, tt.wantStaged, tt.wantOldChunks, tt.wantCatchUp)
 				}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if wantState == rivertype.JobStateCompleted {
-				rescued, err := st.RescueJob(ctx, store.AbandonedJob{ID: job.ID, Kind: job.Kind, Attempt: job.Attempt, MaxAttempts: job.MaxAttempts}, time.Minute, "worker died")
-				if err != nil || rescued {
-					t.Fatalf("published rebuild rescued for another attempt: %v, %v", rescued, err)
-				}
+			rescued, err := st.RescueJob(ctx, store.AbandonedJob{ID: job.ID, Kind: job.Kind, Attempt: job.Attempt, MaxAttempts: job.MaxAttempts}, time.Minute, "worker died")
+			if err != nil || rescued != tt.wantRescue {
+				t.Fatalf("rescue = %v, %v, want %v", rescued, err, tt.wantRescue)
 			}
 		})
 	}

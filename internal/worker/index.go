@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -267,6 +268,8 @@ func (w *Index) finish(ctx context.Context, accountID, runID string, status stor
 // active generation still running: a full build makes its run the active
 // generation, and an incremental step moves its chunks into the active
 // generation, in place of the changed paths' chunks.
+// For a forced rebuild, this transaction also completes the River job;
+// that completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
 	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, embedModel string,
 	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings,
@@ -355,8 +358,15 @@ func (w *Index) embed(
 			}
 			// A forced rebuild repeats even at the same commit, so its
 			// completion must survive a crash immediately after publication.
-			if _, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job); err != nil {
+			completed, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+			if err != nil {
 				return fmt.Errorf("worker: complete index job: %w", err)
+			}
+			// River can return an unchanged non-running row or complete a
+			// newer attempt. Neither may commit this attempt's publication.
+			if completed.State != rivertype.JobStateCompleted || completed.Attempt != job.Attempt {
+				return fmt.Errorf("worker: index job ownership changed: state %s, attempt %d (want %d)",
+					completed.State, completed.Attempt, job.Attempt)
 			}
 		}
 		return nil

@@ -116,6 +116,63 @@ func TestGenerationPublication(t *testing.T) {
 	}
 }
 
+func TestFinishIndexRunPreservesTerminalStatus(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("finish-index"))); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "finish-index")
+	for _, tt := range []struct {
+		status     IndexRunStatus
+		wantStatus IndexRunStatus
+		wantChunks int
+		wantError  string
+	}{
+		{IndexRunning, IndexFailed, 0, "commit acknowledgement lost"},
+		{IndexCompleted, IndexCompleted, 7, ""},
+		{IndexSuperseded, IndexSuperseded, 7, ""},
+		{IndexFailed, IndexFailed, 7, ""},
+	} {
+		t.Run(string(tt.status), func(t *testing.T) {
+			repo := configfile.RepositoryID(account, t.Name())
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, `INSERT INTO repositories(id, account_id, name, managed_by) VALUES($1, $2, $3, 'file')`, repo, account, t.Name()); err != nil {
+					return err
+				}
+				var run string
+				if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, chunk_count, finished_at)
+					VALUES($1, $2, 'abc', 'test-embed', 8, 'full', $3, 7, CASE WHEN $3 = 'running' THEN NULL ELSE '2020-01-01'::timestamptz END) RETURNING id`,
+					account, repo, tt.status).Scan(&run); err != nil {
+					return err
+				}
+				// A terminal record may reflect a successful COMMIT whose
+				// acknowledgement never reached the worker doing failure cleanup.
+				if err := FinishIndexRun(ctx, tx, run, IndexFailed, 0, "commit acknowledgement lost"); err != nil {
+					return err
+				}
+				var status IndexRunStatus
+				var chunks int
+				var reason string
+				var finished time.Time
+				if err := tx.QueryRow(ctx, `SELECT status, chunk_count, error, finished_at FROM index_runs WHERE id = $1`, run).
+					Scan(&status, &chunks, &reason, &finished); err != nil {
+					return err
+				}
+				if status != tt.wantStatus || chunks != tt.wantChunks || reason != tt.wantError {
+					t.Errorf("finished run = %s/%d/%q, want %s/%d/%q", status, chunks, reason, tt.wantStatus, tt.wantChunks, tt.wantError)
+				}
+				if tt.status != IndexRunning && !finished.Equal(time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)) {
+					t.Errorf("terminal finished_at changed: %v", finished)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func publishConcurrently(t *testing.T, s *Store, account string, publishFirst, publishSecond func(pgx.Tx) error) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
