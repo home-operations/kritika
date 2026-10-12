@@ -16,6 +16,7 @@ import (
 const (
 	QueueReview   = "review"
 	QueueFollowUp = "followup"
+	QueueThread   = "thread"
 	QueueIndex    = "index"
 )
 
@@ -147,10 +148,11 @@ func (ThreadArgs) Kind() string { return "thread" }
 // InsertOpts implements river.JobArgsWithInsertOpts. A job is unique per
 // thread and state while queued or running: a thread resolved and then
 // unresolved is two jobs, the same change delivered twice is one, and a
-// thread resolved again later is a new job.
+// thread resolved again later is a new job. Queue is excluded from uniqueness
+// so duplicate deliveries are deduplicated across queues during a rollout.
 func (ThreadArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
-		Queue: QueueFollowUp, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
+		Queue: QueueThread, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},
 	}
 }
 

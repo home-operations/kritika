@@ -340,12 +340,8 @@ func startWorker(
 		// leader can hand back the jobs of a replica that dies without
 		// a soft stop long before River's rescuer may.
 		Middleware: []rivertype.Middleware{&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}},
-		Queues: map[string]river.QueueConfig{
-			jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
-			jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
-			jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
-		},
-		Workers: workers,
+		Queues:     workerQueues(cfg),
+		Workers:    workers,
 	})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
@@ -424,6 +420,15 @@ const linger = 5 * time.Second
 // requests finish. Event streams end at once, when the API's Run returns.
 const publicDrain = 10 * time.Second
 
+func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
+	return map[string]river.QueueConfig{
+		jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueueThread:   {MaxWorkers: cfg.ThreadWorkers},
+		jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},
+	}
+}
+
 // workQueues works the job queues until ctx ends, then waits for River's
 // soft stop to let running jobs finish or cut them. The queue's tables come
 // from migrations, which the leader runs; on a fresh database that may be
@@ -436,7 +441,8 @@ func workQueues(ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx
 	if err := startQueue(ctx, queue, logger); err != nil {
 		return err
 	}
-	logger.Info("working the queues", "review_workers", cfg.ReviewWorkers, "index_workers", cfg.IndexWorkers, "executor", cfg.Executor)
+	logger.Info("working the queues", "review_workers", cfg.ReviewWorkers, "index_workers", cfg.IndexWorkers,
+		"thread_workers", cfg.ThreadWorkers, "executor", cfg.Executor)
 	<-ctx.Done()
 	select {
 	case <-queue.Stopped():

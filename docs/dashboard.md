@@ -29,7 +29,7 @@ The instance's tabs are about every account at once:
 | Tab           | What it shows                                                                                                                                                                                                                                           |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Overview      | totals across the accounts you can read, and each account's own with its health: the open pull requests that want a look, a cap that is close, and whether its App's webhooks arrive or kritika only polls it; each links to where the account shows it |
-| Queue         | with more than one account, the review, follow-up and index jobs of all of them, and how many of each account's model slots (`limits.concurrency`) running reviews hold, which is why a review of it waits                                              |
+| Queue         | with more than one account, the review, follow-up, thread and index jobs of all of them, and how many of each account's model slots (`limits.concurrency`) running reviews hold, which is why a review of it waits                                              |
 | Configuration | for an admin, the [Configuration page](#configuration-page)                                                                                                                                                                                             |
 
 An account's tabs are its sections:
@@ -94,7 +94,7 @@ Each account supplies up to 500 active and 50 finished jobs.
 Admins can cancel an active review, re-run a discarded or canceled review
 at the pull request's current head, or reindex after a failed index job.
 These use the same confirmed, audited actions as the record pages.
-Retryable jobs resume automatically; follow-up jobs remain inspectable
+Retryable jobs resume automatically; follow-up and thread jobs remain inspectable
 without a manual replay control.
 
 ### Pull requests

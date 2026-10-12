@@ -21,7 +21,7 @@ type JobMetrics struct {
 // Work implements rivertype.WorkerMiddleware.
 func (m *JobMetrics) Work(ctx context.Context, job *rivertype.JobRow, next func(context.Context) error) error {
 	switch job.Queue {
-	case jobs.QueueReview, jobs.QueueFollowUp, jobs.QueueIndex:
+	case jobs.QueueReview, jobs.QueueFollowUp, jobs.QueueThread, jobs.QueueIndex:
 		m.Metrics.QueueWait(job.Queue, max(0, time.Since(job.ScheduledAt)))
 	}
 	return next(ctx)

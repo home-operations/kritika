@@ -208,7 +208,7 @@ const (
 	queueActive   = 500
 )
 
-// jobColumns selects a JobRow from the account's review, follow-up and
+// jobColumns selects a JobRow from the account's review, follow-up, thread and
 // index jobs. River's tables carry no row-level security, so the account
 // comes from the transaction's own setting rather than a parameter a caller
 // could get wrong.
@@ -233,7 +233,7 @@ var jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.crea
 			AND newer.state IN (` + jobs.LiveStatesSQL() + `, 'completed')), false)
 	FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
 	LEFT JOIN job_heartbeats h ON h.job_id = j.id
-	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'index')`
+	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'thread', 'index')`
 
 func scanJob(row pgx.CollectableRow) (JobRow, error) {
 	var j JobRow
@@ -245,7 +245,7 @@ func scanJob(row pgx.CollectableRow) (JobRow, error) {
 	return j, err
 }
 
-// ListQueue returns the account's review, follow-up and index jobs that
+// ListQueue returns the account's review, follow-up, thread and index jobs that
 // have not finished, oldest first, then the most recently finished ones.
 func ListQueue(ctx context.Context, tx pgx.Tx) ([]JobRow, error) {
 	rows, err := tx.Query(ctx, `(SELECT `+jobColumns+` AND j.state IN (`+jobs.LiveStatesSQL()+`)

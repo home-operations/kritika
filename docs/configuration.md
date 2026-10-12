@@ -594,6 +594,18 @@ egress:
 
 ## How kritika runs
 
+Finding resolution/restoration jobs use a dedicated `thread` queue, with one
+worker per replica by default. These jobs call the forge and update the database;
+they do not launch runner pods or acquire model slots. Database connections and
+forge API limits remain shared.
+
+During a rolling upgrade, new replicas consume both `thread` and `followup`.
+Thread jobs already stored on `followup` continue to drain there, so they may
+still wait behind model follow-ups. Job kind and uniqueness stay the same across
+both queues, preventing duplicate deliveries from creating a second live job.
+If rolling back, drain the `thread` queue first or keep a compatible consumer
+running until it is empty; older replicas do not consume that queue.
+
 These come from the environment rather than the file, each a camelCased
 key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
 except where noted; a restart changes them. The chart sets the rest of
@@ -609,6 +621,7 @@ runner image, from its other values.
 | `KRITIKA_TRANSCRIPT_RETENTION`     | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                                                                                                                 |
 | `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set                                                                                          |
 | `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                                                                                                               |
+| `KRITIKA_THREAD_WORKERS` | finding resolution/restoration jobs one replica runs at once, independently of model follow-ups; 1 unless set |
 | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
 | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
 | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |

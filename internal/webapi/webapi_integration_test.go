@@ -24,6 +24,7 @@ import (
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
@@ -176,6 +177,11 @@ func (e *apiEnv) seedAccount(slug, repo string) seeded {
 		"account_id": s.accountID, "repository_id": s.repoID, "number": 7, "head_sha": "head7", "trigger": "push",
 	})
 	e.exec(`INSERT INTO river_job (kind, args, max_attempts, state) VALUES ('review', $1, 5, 'available')`, args)
+	threadArgs, err := json.Marshal(jobs.ThreadArgs{AccountID: s.accountID, RepositoryID: s.repoID, Number: 7, CommentID: 910, Resolved: true})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.exec(`INSERT INTO river_job (kind, queue, args, max_attempts, state) VALUES ('thread', 'thread', $1, 5, 'available')`, threadArgs)
 	e.seedModelCalls(s, slug)
 	return s
 }
@@ -324,7 +330,7 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/analytics?group=week", `"repository":"wa/one"`},
 		{a + "/attention", `"p0":1,"paused":0`},
 		{a + "/pulls?is=p0", `"title":"PR of webapi-a"`},
-		{a + "/queue", `"repository":"wa/one"`},
+		{a + "/queue", `"kind":"thread"`},
 	}
 	for _, ep := range endpoints {
 		t.Run(ep.path, func(t *testing.T) {
@@ -393,7 +399,7 @@ func testMeAndAccountLists(t *testing.T, e *apiEnv) {
 		{"member-a", "/api/v1/accounts", 200, []string{`"slug":"github/wa"`, `"repositories":2`, `"reviews7d":1`}, []string{"webapi-b"}},
 		{"member-b", "/api/v1/accounts", 200, []string{`"slug":"github/wb"`}, []string{"webapi-a"}},
 		{"member-a", "/api/v1/accounts", 200, []string{`"attention":{"failed":0,"capped":0,"p0":1,"paused":0}`}, nil},
-		{"member-a", "/api/v1/queue", 200, []string{`"account":"github/wa"`, `"repository":"wa/one"`}, []string{"github/wb", "wb/one"}},
+		{"member-a", "/api/v1/queue", 200, []string{`"account":"github/wa"`, `"repository":"wa/one"`, `"kind":"thread"`}, []string{"github/wb", "wb/one"}},
 		{"admin", "/api/v1/queue", 200, []string{`"account":"github/wa"`, `"account":"github/wb"`}, nil},
 		{"nobody", "/api/v1/queue", 401, nil, nil},
 		{"admin", "/api/v1/admin/accounts", 200, []string{`"slug":"github/wa"`, `"slug":"github/wb"`, `"live":true`}, nil},

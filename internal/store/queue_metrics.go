@@ -24,7 +24,7 @@ func (s *Store) QueueStats(ctx context.Context) ([]QueueStats, error) {
 		FROM unnest($1::text[]) AS q(queue)
 		LEFT JOIN river_job j ON j.queue = q.queue
 			AND j.state IN ('available', 'retryable', 'scheduled') AND j.scheduled_at <= now()
-		GROUP BY q.queue ORDER BY q.queue`, []string{jobs.QueueReview, jobs.QueueFollowUp, jobs.QueueIndex})
+		GROUP BY q.queue ORDER BY q.queue`, []string{jobs.QueueReview, jobs.QueueFollowUp, jobs.QueueThread, jobs.QueueIndex})
 	if err != nil {
 		return nil, fmt.Errorf("store: queue stats: %w", err)
 	}

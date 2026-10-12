@@ -856,7 +856,7 @@ export interface Job {
   cancelableReviewId?: string;
   heartbeatAt?: string;
   id: number;
-  kind: 'review' | 'followup' | 'index';
+  kind: 'review' | 'followup' | 'thread' | 'index';
   state: JobState;
   attempt: number;
   maxAttempts: number;
