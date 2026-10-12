@@ -28,7 +28,7 @@ test.beforeEach(async ({ page }) => {
 
 async function emit(page: Page, kind: EventKind | 'resync', reviewId = 'rev-1'): Promise<void> {
   await page.evaluate((detail) => window.dispatchEvent(new CustomEvent('test-live-event', { detail })), {
-    kind, data: { kind, account: g.SLUG, reviewId },
+    kind, data: { kind, account: g.SLUG, id: reviewId, reviewId: kind === 'review' ? null : reviewId },
   });
 }
 
@@ -561,11 +561,12 @@ test('hidden review tabs defer live refetches until they become visible', async 
   await expect(page.locator('.conversation-top')).toBeVisible();
   await page.getByRole('link', { name: 'Raw', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Submitted result' })).toBeVisible();
-  await page.getByRole('link', { name: /^Summary/ }).click();
+  await page.getByRole('navigation', { name: 'Review sections' }).getByRole('link', { name: 'Overview' }).click();
   await emit(page, 'model_call');
   await expect.poll(() => reviewCalls).toBe(2);
   expect(transcriptCalls).toBe(1);
   expect(rawCalls).toBe(1);
+  await page.getByRole('link', { name: 'Run details', exact: true }).click();
   await page.getByRole('link', { name: 'Conversation', exact: true }).click();
   await expect.poll(() => transcriptCalls).toBe(2);
   expect(rawCalls).toBe(1);
@@ -606,4 +607,68 @@ test('the overview summarizes many accounts without fetching individual pull lis
   await refreshed;
   await expect(attention.getByRole('link').first()).toContainText('2 failed');
   expect(calls).toEqual([]);
+});
+
+
+test('the PR workspace offers newer runs without replacing the displayed review', async ({ page }) => {
+  const second = { ...g.reviewDetail.review, id: 'rev-2', headSha: '2222222' };
+  const third = { ...second, id: 'rev-3', headSha: '3333333' };
+  let reviews = [g.reviewDetail.review];
+  await page.route('**/pulls/alpha/one/7', (route) => json(route, { ...g.pullDetail, reviews }));
+  await page.route('**/reviews/rev-2', (route) => json(route, { ...g.reviewDetail, review: second, summary: { ...g.reviewDetail.summary!, take: 'Second review conclusion' } }));
+  await page.goto(`${account}/pulls/alpha/one/7`);
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  reviews = [second, g.reviewDetail.review];
+  await emit(page, 'review', second.id);
+  await expect(page.locator('.newer-notice')).toContainText('newer review is available');
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await page.getByRole('link', { name: 'Open its latest review' }).click();
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText('Second review conclusion');
+  await expect(page.getByLabel('Review run')).toHaveValue('');
+  await page.getByLabel('Review run').selectOption('rev-1');
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  reviews = [third, second, g.reviewDetail.review];
+  await emit(page, 'review', third.id);
+  await expect(page.getByLabel('Review run').locator('option[value="rev-3"]')).toHaveCount(1);
+  await expect(page.getByLabel('Review run')).toHaveValue('rev-1');
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await expect(page.locator('.newer-notice')).toContainText('Historical review');
+});
+
+
+test('new runs preserve an open diff and review pages ignore runner traffic for pull metadata', async ({ page }) => {
+  let pullReads = 0;
+  let reviewReads = 0;
+  let reviews = [g.reviewDetail.review];
+  await page.route('**/pulls/alpha/one/7', (route) => {
+    pullReads++;
+    return json(route, { ...g.pullDetail, reviews, job: null });
+  });
+  await page.route('**/reviews/rev-1', (route) => {
+    reviewReads++;
+    return json(route, { ...g.reviewDetail, review: { ...g.reviewDetail.review, status: 'running' } });
+  });
+  await page.goto(`${account}/pulls/alpha/one/7?tab=diff`);
+  await page.getByRole('searchbox', { name: 'Search files' }).fill('a.go');
+  await page.getByRole('button', { name: 'Hide navigator' }).click();
+  const before = pullReads;
+  await emit(page, 'runner_run', 'another-review');
+  await emit(page, 'followup', 'another-review');
+  await emit(page, 'model_call', 'another-review');
+  await emit(page, 'runner_run');
+  await expect.poll(() => reviewReads).toBe(2);
+  expect(pullReads).toBe(before);
+  await page.getByRole('link', { name: 'Activity', exact: true }).click();
+  await expect.poll(() => pullReads).toBe(before + 1);
+  await page.getByRole('link', { name: 'Findings & code', exact: true }).click();
+  reviews = [{ ...g.reviewDetail.review, id: 'rev-2' }, ...reviews];
+  await emit(page, 'review', 'rev-2');
+  await expect(page.locator('.newer-notice')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Findings and files' })).toBeHidden();
+  await page.getByRole('button', { name: 'Show navigator' }).click();
+  await expect(page.getByRole('searchbox', { name: 'Search files' })).toHaveValue('a.go');
+  await page.getByRole('link', { name: 'Activity', exact: true }).click();
+  const activityReads = pullReads;
+  await emit(page, 'followup', 'another-review');
+  await expect.poll(() => pullReads).toBe(activityReads + 1);
 });

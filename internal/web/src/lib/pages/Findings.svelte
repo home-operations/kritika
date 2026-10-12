@@ -4,12 +4,15 @@
   // or a maintainer dismissed it.
   import { tick, untrack } from 'svelte';
   import { getJSON } from '../api.svelte';
-  import { href, navigate, replace } from '../router.svelte';
+  import { href, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
-  import { Paged, Resource, live } from '../resource.svelte';
+  import { Paged, Resource, errorMessage, live } from '../resource.svelte';
   import { accountApi, pullRoute, threadUrl } from '../links';
   import { CATEGORIES, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
+  import Dialog from '../components/Dialog.svelte';
+  import FindingCard from './review/FindingCard.svelte';
+  import { isTyping } from '../keyboard.svelte';
   import { listKeys } from '../listkeys';
   import type { AccountFinding, Page, Repository } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -92,6 +95,11 @@
   // The cursor follows its finding, as the pull request list's follows its
   // pull request.
   let selectedId = $state('');
+  let inspectedId = $state('');
+  let inspector = $state<HTMLDivElement>();
+  const inspected = $derived(paged.items.find((f) => f.id === inspectedId));
+  const inspectedIndex = $derived(paged.items.findIndex((f) => f.id === inspectedId));
+  $effect(() => { void filter; inspectedId = ''; });
   const selected = $derived(paged.items.findIndex((f) => f.id === selectedId));
   async function select(i: number): Promise<void> {
     const f = paged.items[i];
@@ -107,17 +115,53 @@
       set: (i) => void select(i),
       open: (i) => {
         const f = paged.items[i];
-        if (f) navigate(reviewOf(f));
+        if (f) inspect(f);
       },
       focusSearch: () => searchEl?.focus(),
     }),
   );
 
+  function inspect(f: AccountFinding): void {
+    selectedId = f.id;
+    inspectedId = f.id;
+  }
+
+  async function step(offset: number): Promise<void> {
+    if (paged.loadingMore) return;
+    const from = inspectedId;
+    const focused = document.activeElement;
+    if (offset > 0 && inspectedIndex === paged.items.length - 1 && paged.cursor) await paged.more();
+    if (!inspectedId || inspectedId !== from) return;
+    const f = paged.items[inspectedIndex + offset];
+    if (f) inspect(f);
+    await tick();
+    if (focused instanceof HTMLElement && focused.isConnected && !(focused instanceof HTMLButtonElement && focused.disabled)) focused.focus({ preventScroll: true });
+    else inspector?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+  }
+
+  function panelKey(e: KeyboardEvent): void {
+    if (!inspected || !(e.target instanceof Element) || !e.target.closest('.finding-inspector')) return;
+    if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'j') void step(1);
+    else if (e.key === 'k') void step(-1);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function onTitleClick(e: MouseEvent, f: AccountFinding): void {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    inspect(f);
+  }
+
   function onRowClick(e: MouseEvent, f: AccountFinding): void {
     if ((e.target as Element).closest('a, button') || getSelection()?.toString()) return;
-    navigate(reviewOf(f));
+    inspect(f);
   }
 </script>
+
+<svelte:window onkeydown={panelKey} />
 
 <svelte:head><title>Findings · {slug} · kritika</title></svelte:head>
 
@@ -164,10 +208,10 @@
               </thead>
               <tbody>
                 {#each paged.items as f, i (f.id)}
-                  <!-- The title is the row's link; the click is a larger target for a pointer. -->
+                  <!-- The title opens the inspector; the row is a larger pointer target. -->
                   <tr class="finding-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
                     <td class="finding-main">
-                      <a class="finding-link" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined}>{f.title}</a>
+                      <a class="finding-link" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
                       <span class="finding-sub">{f.explanation}</span>
                       {#if f.rules.length}
                         <span class="finding-rules">
@@ -213,3 +257,26 @@
     <p class="muted small key-hints"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>
 </main>
+
+
+<Dialog open={!!inspected} title="Finding details" side onclose={() => (inspectedId = '')} returnFocus=".finding-row.selected .finding-link">
+  {#if inspected}
+    <div class="finding-inspector" bind:this={inspector} role="group" aria-label="Finding inspection">
+      <div class="finding-controls" role="group" aria-label="Browse findings">
+        <button class="btn" disabled={paged.loadingMore || inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
+        <span class="small muted" aria-live="polite">{inspectedIndex + 1} of {paged.items.length} loaded</span>
+        <button class="btn" disabled={paged.loadingMore || (inspectedIndex >= paged.items.length - 1 && !paged.cursor)} onclick={() => void step(1)}>Next →</button>
+        <button class="btn" onclick={() => (inspectedId = '')}>Close</button>
+      </div>
+      {#if paged.moreError}<p class="error-text" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn" onclick={() => void step(1)}>Retry</button></p>{/if}
+      <p><a class="mono" href={href(pullRoute(slug, inspected.pull))}>{inspected.pull.repository}#{inspected.pull.number}</a> · {inspected.pull.title}</p>
+      {#key inspected.id}<FindingCard f={inspected} pullUrl={inspected.pull.url} />{/key}
+      <div class="workspace-actions">
+        <a class="btn btn-primary" href={href({ ...reviewOf(inspected), tab: 'diff' })}>Inspect in code →</a>
+        <a class="btn" href={href(reviewOf(inspected))}>Open review</a>
+      </div>
+      <p class="small muted">First found <Time iso={inspected.firstSeenAt} /> · Last seen <Time iso={inspected.lastSeenAt} /></p>
+      <p class="small muted"><kbd>j</kbd>/<kbd>k</kbd> browse · <kbd>Esc</kbd> return to findings</p>
+    </div>
+  {/if}
+</Dialog>

@@ -25,6 +25,7 @@
   } = $props();
   const res = new Resource(() => getJSON<ReviewDiff>(`${base}/diff`));
   let delta = $state(false);
+  let navigatorShown = $state(true);
   $effect(() => {
     void version;
     if (!active) return;
@@ -82,7 +83,8 @@
     selected = id;
     followed = id;
     followedInspection = inspection;
-    if (router.route.name === 'review' && router.route.tab === 'diff' && router.route.finding !== id) replace({ ...router.route, finding: id });
+    if (router.route.name === 'pull' && router.route.tab === 'diff' && (router.route.finding !== id || router.route.run !== d.review.id)) replace({ ...router.route, run: d.review.id, finding: id });
+    else if (router.route.name === 'review' && router.route.tab === 'diff' && router.route.finding !== id) replace({ ...router.route, finding: id });
     if (!f.path.toLowerCase().includes(query.trim().toLowerCase())) query = '';
     const i = owners.get(id);
     if (i !== undefined) open[i] = true;
@@ -93,7 +95,7 @@
   async function showFile(i: number): Promise<void> {
     selected = '';
     followed = undefined;
-    if (router.route.name === 'review' && router.route.tab === 'diff' && router.route.finding) replace({ ...router.route, finding: undefined });
+    if ((router.route.name === 'review' || router.route.name === 'pull') && router.route.tab === 'diff' && router.route.finding) replace({ ...router.route, finding: undefined });
     open[i] = true;
     await tick();
     focusWhenShown(`#${fileId(i)}`, true);
@@ -113,10 +115,16 @@
       if (selected && active) void showFinding(selected);
     });
   });
+  async function focusSearch(): Promise<void> {
+    navigatorShown = true;
+    await tick();
+    search?.focus();
+  }
+
   $effect(() =>
     active ? listKeys({
       count: () => findings.length,
-      focusSearch: () => search?.focus(),
+      focusSearch: () => void focusSearch(),
       get: () => findings.findIndex((f) => f.id === selected),
       set: (i) => { const f = findings[i]; if (f) void showFinding(f.id); },
       open: (i) => { const f = findings[i]; if (f) void showFinding(f.id); },
@@ -128,6 +136,7 @@
   {#snippet children(x)}
     {#if !x.diff && !x.deltaDiff}<p class="state-msg">{x.pending ? 'Preparing the diff…' : x.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}</p>{/if}
     <div class="toolbar">
+      <button class="btn" aria-expanded={navigatorShown} aria-controls="review-navigator" onclick={() => (navigatorShown = !navigatorShown)}>{navigatorShown ? 'Hide navigator' : 'Show navigator'}</button>
       {#if files.length}<span class="small muted">{visibleFiles.length} of {files.length} files</span>{/if}
       {#if x.deltaDiff}
         <div class="view-toggle" role="group" aria-label="Diff scope">
@@ -141,8 +150,8 @@
       <span class="small muted" aria-live="polite">{selectedIndex < 0 ? `${findings.length} findings` : `Finding ${selectedIndex + 1} of ${findings.length}`}</span>
       <button class="btn" disabled={!findings.length || selectedIndex === findings.length - 1} onclick={() => step(1)}>Next finding →</button>
     </div>
-    <div class="review-workspace">
-      <nav class="finding-nav" aria-label="Findings and files">
+    <div class="review-workspace" class:code-focused={!navigatorShown}>
+      <nav id="review-navigator" class="finding-nav" aria-label="Findings and files" hidden={!navigatorShown}>
         <h2>Findings <span class="tab-count">{findings.length}</span></h2>
         {#each findings as f (f.id)}
           <button class="finding-jump" class:active={selected === f.id} aria-pressed={selected === f.id} onclick={() => void showFinding(f.id)}>

@@ -39,7 +39,7 @@
 import type { FindingStatus, ReviewStatus, Severity, Category, UsageGroup } from './types';
 import { SEVERITIES, CATEGORIES } from './format';
 
-export const REVIEW_TABS = ['summary', 'diff', 'conversation', 'timeline', 'raw', 'usage'] as const;
+export const REVIEW_TABS = ['summary', 'diff', 'activity', 'conversation', 'timeline', 'raw', 'usage'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 function isReviewTab(v: string | undefined): v is ReviewTab {
@@ -174,7 +174,7 @@ export type Route =
   | { name: 'repos'; slug: string; filter?: RepoFilter }
   | { name: 'repo'; slug: string; owner: string; repo: string }
   | { name: 'pulls'; slug: string; filter?: PullFilter }
-  | { name: 'pull'; slug: string; owner: string; repo: string; number: number }
+  | { name: 'pull'; slug: string; owner: string; repo: string; number: number; run?: string; tab?: ReviewTab; finding?: string }
   // finding is the id of the finding the summary scrolls to.
   | { name: 'review'; slug: string; id: string; tab?: ReviewTab; finding?: string }
   | { name: 'findings'; slug: string; filter?: FindingFilter }
@@ -242,7 +242,11 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
         return filter ? { name: 'pulls', slug, filter } : { name: 'pulls', slug };
       }
       if (tail.length === 3 && PULL_NUMBER.test(tail[2]!)) {
-        return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]) };
+        return { name: 'pull', slug, owner: tail[0]!, repo: tail[1]!, number: Number(tail[2]),
+          ...(query.get('run') ? { run: query.get('run')! } : {}),
+          ...(isReviewTab(query.get('tab') ?? undefined) ? { tab: query.get('tab') as ReviewTab } : {}),
+          ...(query.get('finding') ? { finding: query.get('finding')! } : {}),
+        };
       }
       break;
     case 'reviews':
@@ -352,7 +356,7 @@ export function href(r: Route): string {
     case 'pulls':
       return `#/a/${slugPath(r.slug)}/pulls${querySuffix(r.filter)}`;
     case 'pull':
-      return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
+      return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}${querySuffix({ ...(r.run ? { run: r.run } : {}), ...(r.tab ? { tab: r.tab } : {}), ...(r.finding ? { finding: r.finding } : {}) })}`;
     case 'review':
       if (r.tab) return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
       return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
