@@ -49,6 +49,7 @@ func TestIndexBatchUsage(t *testing.T) {
 		wantError bool
 	}{
 		{"success", 20, 2, false},
+		{"unreported usage", 0, 2, false},
 		{"partial failure", 17, 2, true},
 		{"cancellation", 17, 2, true},
 		{"vector insert failure", 10, 1, true},
@@ -96,6 +97,9 @@ func TestIndexBatchUsage(t *testing.T) {
 			calls := 0
 			embed := indexEmbedFunc(func(context.Context, []string) ([][]float32, int64, error) {
 				calls++
+				if tt.name == "unreported usage" {
+					return [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, 0, nil
+				}
 				if tt.name == "vector insert failure" {
 					return nil, 10, nil
 				}

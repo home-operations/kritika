@@ -294,7 +294,7 @@ func (w *Index) embed(
 			}
 			vectors, used, err := embedder.Embed(ctx, texts)
 			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
-			if used > 0 {
+			if err == nil || used > 0 {
 				// Provider usage survives cancellation and failures to store its vectors.
 				dctx, cancel := detach(ctx)
 				uerr := w.Store.WithAccount(dctx, args.AccountID, func(tx pgx.Tx) error {

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/contextpack"
@@ -15,18 +16,36 @@ func TestKeepSimilar(t *testing.T) {
 	hits := []store.SimilarHit{
 		hit("a.go", 1, 0.65), hit("b.go", 1, 0.91), hit("a.go", 1, 0.65), hit("c.go", 10, 0.70), hit("d.go", 1, 0.49),
 	}
+	best := make([]store.SimilarHit, 0, 3+similarMax)
+	best = append(best, hit("best.go", 1, 0.55), hit("other.go", 1, 0.80), hit("best.go", 1, 0.99))
+	wantBest := make([]string, 0, similarMax)
+	wantBest = append(wantBest, "best.go:1:similarity 0.99", "other.go:1:similarity 0.80")
+	for i := range similarMax {
+		path := fmt.Sprintf("candidate%d.go", i)
+		best = append(best, hit(path, 1, 0.70))
+		if len(wantBest) < similarMax {
+			wantBest = append(wantBest, path+":1:similarity 0.70")
+		}
+	}
 	tests := []struct {
 		name  string
+		hits  []store.SimilarHit
 		floor float64
-		want  []string // "path:line:ref", most similar first
+		want  []string
 	}{
-		{name: "the default floor", floor: 0.5, want: []string{"b.go:1:similarity 0.91", "c.go:10:similarity 0.70", "a.go:1:similarity 0.65"}},
-		{name: "a floor the weak matches miss", floor: 0.7, want: []string{"b.go:1:similarity 0.91", "c.go:10:similarity 0.70"}},
-		{name: "a floor nothing clears", floor: 0.95, want: []string{}},
+		{"default floor", hits, 0.5, []string{"b.go:1:similarity 0.91", "c.go:10:similarity 0.70", "a.go:1:similarity 0.65"}},
+		{"higher floor", hits, 0.7, []string{"b.go:1:similarity 0.91", "c.go:10:similarity 0.70"}},
+		{"nothing clears floor", hits, 0.95, nil},
+		{"best duplicate survives result limit", best, 0.5, wantBest},
+		{"empty", nil, 0.5, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := keepSimilar(hits, tt.floor)
+			original := slices.Clone(tt.hits)
+			got := keepSimilar(tt.hits, tt.floor)
+			if !slices.Equal(original, tt.hits) {
+				t.Error("caller hits were mutated")
+			}
 			if len(got) != len(tt.want) {
 				t.Fatalf("kept %d chunks, want %d: %+v", len(got), len(tt.want), got)
 			}
@@ -36,28 +55,5 @@ func TestKeepSimilar(t *testing.T) {
 				}
 			}
 		})
-	}
-	many := make([]store.SimilarHit, 0, similarMax+5)
-	for i := range similarMax + 5 {
-		many = append(many, hit("m.go", i+1, 0.9))
-	}
-	if got := keepSimilar(many, 0.5); len(got) != similarMax {
-		t.Fatalf("kept %d chunks, want at most %d", len(got), similarMax)
-	}
-}
-
-func TestKeepSimilarBestScore(t *testing.T) {
-	hits := make([]store.SimilarHit, 0, 3+similarMax)
-	hits = append(hits, []store.SimilarHit{
-		{Chunk: contextpack.Chunk{Path: "best.go", StartLine: 1}, Similarity: 0.55},
-		{Chunk: contextpack.Chunk{Path: "other.go", StartLine: 1}, Similarity: 0.80},
-		{Chunk: contextpack.Chunk{Path: "best.go", StartLine: 1}, Similarity: 0.99},
-	}...)
-	for i := range similarMax {
-		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("candidate%d.go", i), StartLine: 1}, Similarity: 0.70})
-	}
-	got := keepSimilar(hits, 0.5)
-	if len(got) != similarMax || got[0].Path != "best.go" || got[0].Ref != "similarity 0.99" {
-		t.Fatalf("best match should rank first at 0.99; got %+v", got)
 	}
 }

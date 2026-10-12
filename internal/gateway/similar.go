@@ -168,17 +168,23 @@ func (g *Server) similar(
 		logger.Warn("lease not released", "key", "embed:"+emb.Model, "error", rerr)
 	}
 	cancel()
+	if err == nil || tokens > 0 {
+		// Provider usage must survive cancellation and failed vector searches.
+		uctx, ucancel := detach(ctx)
+		uerr := g.Store.WithAccount(uctx, r.account.ID(), func(tx pgx.Tx) error {
+			return store.InsertUsage(uctx, tx, store.Usage{
+				AccountID: r.account.ID(), RepositoryID: r.repositoryID, ReviewID: r.reviewID,
+				Role: store.RoleEmbedding, Model: emb.Model, Input: tokens,
+			})
+		})
+		ucancel()
+		err = errors.Join(err, uerr)
+	}
 	if err != nil {
-		return nil, 0, true, err
+		return nil, tokens, true, err
 	}
 	var hits []store.SimilarHit
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
-		if err := store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: r.account.ID(), RepositoryID: r.repositoryID, ReviewID: r.reviewID,
-			Role: store.RoleEmbedding, Model: emb.Model, Input: tokens,
-		}); err != nil {
-			return err
-		}
 		var err error
 		hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, similarPerQuery)
 		return err
@@ -195,21 +201,20 @@ func (g *Server) similar(
 // similar first and at most similarMax of them, each labelled with its
 // similarity.
 func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
+	hits = slices.Clone(hits)
 	slices.SortStableFunc(hits, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
 	seen := map[string]bool{}
-	kept := make([]store.SimilarHit, 0, len(hits))
+	chunks := make([]contextpack.Chunk, 0, min(len(hits), similarMax))
 	for _, h := range hits {
+		if h.Similarity < floor || len(chunks) == similarMax {
+			break
+		}
 		key := fmt.Sprintf("%s:%d", h.Chunk.Path, h.Chunk.StartLine)
-		if h.Similarity < floor || seen[key] {
+		if seen[key] {
 			continue
 		}
 		seen[key] = true
 		h.Chunk.Ref = fmt.Sprintf("similarity %.2f", h.Similarity)
-		kept = append(kept, h)
-	}
-	kept = kept[:min(len(kept), similarMax)]
-	chunks := make([]contextpack.Chunk, 0, len(kept))
-	for _, h := range kept {
 		chunks = append(chunks, h.Chunk)
 	}
 	return chunks

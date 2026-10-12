@@ -26,7 +26,19 @@ func checkIndexIgnoreChanges(
 ) {
 	t.Helper()
 	original := current.Get()
-	t.Cleanup(func() { current.Set(original); lf.setTip(head) })
+	t.Cleanup(func() {
+		current.Set(original)
+		lf.setTip(head)
+		// Cleanup also runs after a subtest aborts; restore the index for later checks.
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		job, err := queue.Insert(cctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		indexJobDone(cctx, t, st, job.Job.ID)
+	})
 	active := activeIndexGeneration(ctx, t, st, account, repository)
 	if err := st.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE index_runs SET ignore_hash='' WHERE id=$1`, active)
@@ -100,12 +112,4 @@ func checkIndexIgnoreChanges(
 			active = next
 		})
 	}
-	// Restore the default branch's original snapshot for the other review checks.
-	lf.setTip(head)
-	current.Set(original)
-	job, err := queue.Insert(ctx, jobs.IndexArgs{AccountID: account, RepositoryID: repository, Trigger: jobs.TriggerPush}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	indexJobDone(ctx, t, st, job.Job.ID)
 }

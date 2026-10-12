@@ -88,9 +88,17 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 			return nil, tokens, fmt.Errorf("model: embed returned %d vectors for %d inputs", len(resp.Data), len(batch))
 		}
 		vectors := make([][]float32, len(batch))
-		for _, d := range resp.Data {
-			if d.Index < 0 || d.Index >= int64(len(batch)) || vectors[d.Index] != nil {
-				return nil, tokens, fmt.Errorf("model: embed returned invalid or duplicate index %d", d.Index)
+		// Positional fallback is unambiguous only when every index is omitted.
+		positional := resp.Data[0].JSON.Index.Raw() == ""
+		for i, d := range resp.Data {
+			index := d.Index
+			if positional && d.JSON.Index.Raw() == "" {
+				index = int64(i)
+			} else if positional || !d.JSON.Index.Valid() {
+				return nil, tokens, fmt.Errorf("model: embed returned mixed or invalid index fields")
+			}
+			if index < 0 || index >= int64(len(batch)) || vectors[index] != nil {
+				return nil, tokens, fmt.Errorf("model: embed returned invalid or duplicate index %d", index)
 			}
 			v := make([]float32, len(d.Embedding))
 			for i, f := range d.Embedding {
@@ -99,7 +107,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 			if e.dims > 0 && int64(len(v)) != e.dims {
 				return nil, tokens, fmt.Errorf("model: %s returned %d dimensions, configured %d", e.model, len(v), e.dims)
 			}
-			vectors[d.Index] = v
+			vectors[index] = v
 		}
 		out = append(out, vectors...)
 		start = end
