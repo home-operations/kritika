@@ -116,9 +116,11 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 }
 
 // FinishIndexRun ends an index run as status, with the chunks it embedded
-// and why it failed.
+// and why it failed. Terminal runs are left unchanged: a lost COMMIT
+// acknowledgement must not let failure cleanup overwrite a published run.
 func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRunStatus, chunks int, errText string) error {
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2, chunk_count = $3, error = left($4, 2000), finished_at = now() WHERE id = $1`,
+	if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2, chunk_count = $3, error = left($4, 2000), finished_at = now()
+		WHERE id = $1 AND status = 'running'`,
 		runID, status, chunks, errText); err != nil {
 		return fmt.Errorf("store: finish index run: %w", err)
 	}

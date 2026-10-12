@@ -13,6 +13,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -185,7 +187,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return errors.Join(fmt.Errorf("worker: index runner failed: %s", reason),
 			w.finish(dctx, args.AccountID, runID, store.IndexFailed, 0, reason))
 	}
-	n, mode, err := w.embed(ctx, args, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings, job.ID)
+	n, mode, err := w.embed(ctx, job, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings)
 	if errors.Is(err, store.ErrGenerationChanged) {
 		logger.Info("index again: another run published while it ran")
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexSuperseded), n)
@@ -266,10 +268,13 @@ func (w *Index) finish(ctx context.Context, accountID, runID string, status stor
 // active generation still running: a full build makes its run the active
 // generation, and an incremental step moves its chunks into the active
 // generation, in place of the changed paths' chunks.
+// For a forced rebuild, this transaction also completes the River job;
+// that completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
-	ctx context.Context, args jobs.IndexArgs, account *configfile.Account, embedder model.Embedder, embedModel string,
-	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings, jobID int64,
+	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, embedModel string,
+	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings,
 ) (int, string, error) {
+	args := job.Args
 	var pack store.IndexPack
 	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 		var err error
@@ -280,7 +285,7 @@ func (w *Index) embed(
 		return 0, pack.Mode, err
 	}
 	var total int
-	err = w.withLease(ctx, account, "embed:"+embedModel, indexSlots(settings.Limits.Concurrency), jobID, func(ctx context.Context) error {
+	err = w.withLease(ctx, account, "embed:"+embedModel, indexSlots(settings.Limits.Concurrency), job.ID, func(ctx context.Context) error {
 		var last int64
 		for {
 			var batch []store.StagedChunk
@@ -350,6 +355,18 @@ func (w *Index) embed(
 			}, nil)
 			if err != nil {
 				return fmt.Errorf("worker: queue index catch-up: %w", err)
+			}
+			// A forced rebuild repeats even at the same commit, so its
+			// completion must survive a crash immediately after publication.
+			completed, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+			if err != nil {
+				return fmt.Errorf("worker: complete index job: %w", err)
+			}
+			// River can return an unchanged non-running row or complete a
+			// newer attempt. Neither may commit this attempt's publication.
+			if completed.State != rivertype.JobStateCompleted || completed.Attempt != job.Attempt {
+				return fmt.Errorf("worker: index job ownership changed: state %s, attempt %d (want %d)",
+					completed.State, completed.Attempt, job.Attempt)
 			}
 		}
 		return nil
