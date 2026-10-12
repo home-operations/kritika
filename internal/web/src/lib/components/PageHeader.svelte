@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { href, type Route } from '../router.svelte';
+  import { reportingRoute } from '../sections';
+  import { router, href, type Route } from '../router.svelte';
 
   let { title, slug, description, parents = [], actions }: {
     title: string;
@@ -13,7 +14,7 @@
 
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb">
-    {#if slug}<a href={href({ name: 'overview' })}>All accounts</a><span aria-hidden="true">/</span><a class="mono" href={href({ name: 'account', slug })}>{slug}</a>
+    {#if slug}<a href={href({ name: 'overview' })}>All accounts</a><span aria-hidden="true">/</span><a class="mono" href={href(reportingRoute({ name: 'account', slug }, router.route))}>{slug}</a>
     {:else}<span>All accounts</span>{/if}
     {#each parents as parent}<span aria-hidden="true">/</span><a href={href(parent.route)}>{parent.label}</a>{/each}
   </nav>

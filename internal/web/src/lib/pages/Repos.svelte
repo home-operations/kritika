@@ -60,6 +60,10 @@
   const manage = $derived(isAdmin());
   // Full names picked for a bulk action.
   let selected = $state<string[]>([]);
+  $effect(() => {
+    kind;
+    selected = [];
+  });
   let busy = $state(false);
   let confirmReindex = $state(false);
 
@@ -121,11 +125,8 @@
     }
   }
 
-  // show switches the list to another kind, dropping a selection made in
-  // the one it leaves.
   function show(k: typeof kind): void {
     setFilter({ type: k || undefined });
-    selected = [];
   }
 
   const empty = $derived(kind === 'forks' ? 'No forks.' : kind === 'archived' ? 'No archived repositories.' : 'No repositories yet.');

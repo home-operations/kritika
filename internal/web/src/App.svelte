@@ -159,8 +159,8 @@
     <nav class="sections" aria-label="Sections">
       {#each NAV_GROUPS as group (group.label)}
         <p class="workspace-heading">{group.label}</p>
-        {#if group.label === 'Operations'}
-          <a class="section-tab" href={href({ name: 'overview' })}><Icon path={mdiViewGridOutline} size={15} /><span class="section-label">Overview</span><span class="nav-scope">All</span></a>
+        {#if group.before && (!group.before.admin || me.admin)}
+          <a class="section-tab" href={href(group.before.route)}><Icon path={mdiViewGridOutline} size={15} /><span class="section-label">{group.before.label}</span><span class="nav-scope">All</span></a>
         {/if}
         {#each group.sections.filter((s) => !SECTIONS[s].admin || me?.admin) as s (s)}
           {@const on = currentSection === s}
@@ -170,8 +170,8 @@
             <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
           </a>
         {/each}
-        {#if group.label === 'Configuration' && me.admin}
-          <a class="section-tab" href={href({ name: 'console' })}><Icon path={mdiCogOutline} size={15} /><span class="section-label">Instance settings</span></a>
+        {#if group.after && (!group.after.admin || me.admin)}
+          <a class="section-tab" href={href(group.after.route)}><Icon path={mdiCogOutline} size={15} /><span class="section-label">{group.after.label}</span></a>
         {/if}
       {/each}
     </nav>

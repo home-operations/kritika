@@ -2,7 +2,7 @@
   // The Cmd/Ctrl+K command palette: jump to any page from anywhere, from a
   // registry of routes (global pages, plus the current account's pages when
   // the active route is inside one). A search also finds the sections of
-  // the admin Configuration page, which the palette focuses once its page
+  // the Instance settings page, which the palette focuses once its page
   // shows them.
   import type { Route } from './router.svelte';
   import { reportingRoute } from './sections';
@@ -52,7 +52,7 @@
     return 'slug' in r ? r.slug : undefined;
   }
 
-  // Gated the same way as the settings navigation: the Configuration page
+  // Gated the same way as the sidebar: Instance settings
   // and each account's audit log are for admins, and "Sign in" only makes
   // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
@@ -61,7 +61,7 @@
       entries.push({ label: 'Queue', hint: 'instance', words: true, route: { name: 'instanceQueue' }, icon: mdiTrayFull, keywords: 'jobs slots all accounts' });
     }
     if (me?.admin) {
-      entries.push({ label: 'Instance settings', hint: 'instance', words: true, route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings' });
+      entries.push({ label: 'Instance settings', hint: 'instance', words: true, route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings configuration' });
       if (searching) {
         for (const { label, target, keywords } of CONSOLE_SECTIONS) {
           entries.push({ label, hint: 'configuration', words: true, route: { name: 'console' }, icon: mdiCogOutline, target, keywords });
@@ -86,7 +86,7 @@
         { label: 'Findings', hint: slug, route: { name: 'findings', slug }, icon: mdiBugOutline, keywords: 'bugs caught addressed' },
         { label: 'Rules', hint: slug, route: { name: 'rules', slug }, icon: mdiScaleBalance, keywords: 'rules context kritika.yaml' },
         { label: 'Queue', hint: slug, route: { name: 'queue', slug }, icon: mdiTrayFull },
-        { label: 'Usage & costs', hint: slug, route: reportingRoute({ name: 'usage', slug }, r), icon: mdiCurrencyUsd, keywords: 'usage cost tokens' },
+        { label: 'Usage & costs', hint: slug, route: reportingRoute({ name: 'usage', slug }, r), icon: mdiCurrencyUsd, keywords: 'usage cost tokens spend' },
         { label: 'Follow-ups', hint: slug, route: { name: 'followups', slug }, icon: mdiClipboardTextClockOutline },
       );
       if (me?.admin) {

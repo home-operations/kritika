@@ -37,6 +37,7 @@
   const TRENDS = [{ value: 'failed', label: 'Failure rate' }, { value: 'duration', label: 'Duration' }, { value: 'tokens', label: 'Tokens' }, { value: 'cost', label: 'API spend' }] as const;
   // A quarter reads better by week than as ninety thin columns.
   const group = $derived(days === '90' ? 'week' : 'day');
+  const bucketLabel = $derived(days === '1' ? 'partial day' : group);
 
   const res = new Resource(() => {
     const now = Date.now();
@@ -74,7 +75,7 @@
     return series.map((p) => ({
       key: p.key,
       label: day(p.key, true),
-      title: group === 'week' ? `Week of ${day(p.key)}` : day(p.key),
+      title: group === 'week' ? `Week of ${day(p.key)}` : `${day(p.key)}${days === '1' ? ' (partial day)' : ''}`,
       values: values(p),
     }));
   }
@@ -151,6 +152,7 @@
       {/if}
     {/if}
 
+    {#if days === '1'}<p class="small muted">Last 24 hours, split by date. Each chart column includes only the part of that day inside the selected period.</p>{/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const c = d.current}
@@ -191,7 +193,7 @@
           <section class="panel" aria-labelledby="an-operations">
             <header class="panel-head"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>
             <div class="toolbar"><Segmented label="Operational metric" options={TRENDS} value={trend} onchange={(v) => (trend = v)} /></div>
-            <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${group}`}
+            <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${bucketLabel}`}
               series={[{ label: TRENDS.find((t) => t.value === trend)!.label, color: 'var(--chart-ink)' }]}
               rows={rows(d.series.filter((x) => trend === 'duration' ? x.medianReviewMs !== null : trend === 'failed' ? x.reviews + x.failed > 0 : true),
                 (x) => [trend === 'failed' ? rate(x.failed, x.reviews + x.failed)! : trend === 'duration' ? x.medianReviewMs! : trend === 'tokens' ? x.tokens : x.costUsd])}
@@ -251,7 +253,7 @@
                 <Segmented label="Reviews view" options={VIEWS} value={reviewsView} onchange={(v) => (reviewsView = v)} />
               </header>
               <ColumnChart
-                label="Completed reviews per {group}"
+                label="Completed reviews per {bucketLabel}"
                 series={[{ label: 'Reviews', color: 'var(--chart-ink)' }]}
                 rows={rows(d.series, (x) => [x.reviews])}
                 format={wholeNumber}
@@ -265,7 +267,7 @@
                 <Segmented label="Findings view" options={VIEWS} value={findingsView} onchange={(v) => (findingsView = v)} />
               </header>
               <ColumnChart
-                label="Findings first reported per {group}, by severity"
+                label="Findings first reported per {bucketLabel}, by severity"
                 series={SEV_SERIES}
                 rows={rows(d.series, (x) => [x.findings.p0, x.findings.p1, x.findings.p2])}
                 format={wholeNumber}

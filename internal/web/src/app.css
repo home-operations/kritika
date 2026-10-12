@@ -426,6 +426,9 @@ kbd {
   visibility: hidden;
   font-weight: 600;
 }
+.section-label::after {
+  font-weight: 650;
+}
 .section-tab.active .section-label {
   color: var(--text);
   font-weight: 650;

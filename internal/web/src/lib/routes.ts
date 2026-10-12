@@ -331,27 +331,21 @@ export function href(r: Route): string {
       return `#/a/${slugPath(r.slug)}/repos${querySuffix(r.filter)}`;
     case 'repo':
       return `#/a/${slugPath(r.slug)}/repos/${s(r.owner)}/${s(r.repo)}`;
-    case 'pulls': {
-      const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
-      return `#/a/${slugPath(r.slug)}/pulls${query ? `?${query}` : ''}`;
-    }
+    case 'pulls':
+      return `#/a/${slugPath(r.slug)}/pulls${querySuffix(r.filter)}`;
     case 'pull':
       return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
     case 'review':
       if (r.tab) return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
       return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
-    case 'findings': {
-      const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
-      return `#/a/${slugPath(r.slug)}/findings${query ? `?${query}` : ''}`;
-    }
+    case 'findings':
+      return `#/a/${slugPath(r.slug)}/findings${querySuffix(r.filter)}`;
     case 'rules':
       return `#/a/${slugPath(r.slug)}/rules`;
     case 'queue':
       return `#/a/${slugPath(r.slug)}/queue${querySuffix(r.filter)}`;
-    case 'usage': {
-      const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();
-      return `#/a/${slugPath(r.slug)}/usage${query ? `?${query}` : ''}`;
-    }
+    case 'usage':
+      return `#/a/${slugPath(r.slug)}/usage${querySuffix(r.filter)}`;
     case 'followups':
       return `#/a/${slugPath(r.slug)}/followups`;
     case 'admin':

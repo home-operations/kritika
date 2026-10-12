@@ -27,11 +27,11 @@ export const SECTIONS: Record<Section, SectionDef> = {
   settings: { label: 'Audit log', names: ['admin'], home: (slug) => ({ name: 'admin', slug, section: 'audit' }), admin: true },
 };
 
-export const NAV_GROUPS: readonly { label: string; sections: readonly Section[] }[] = [
-  { label: 'Operations', sections: ['queue', 'repos'] },
+export const NAV_GROUPS: readonly { label: string; sections: readonly Section[]; before?: InstanceTab; after?: InstanceTab }[] = [
+  { label: 'Operations', sections: ['queue', 'repos'], before: { label: 'Overview', route: { name: 'overview' } } },
   { label: 'Insights', sections: ['analytics', 'usage'] },
   { label: 'Activity', sections: ['pulls', 'followups', 'findings'] },
-  { label: 'Configuration', sections: ['rules', 'settings'] },
+  { label: 'Configuration', sections: ['rules', 'settings'], after: { label: 'Instance settings', route: { name: 'console' }, admin: true } },
 ];
 
 export function sectionOf(r: Route): Section | undefined {

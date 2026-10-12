@@ -17,6 +17,8 @@
   let { res, children, isEmpty, empty = 'Nothing here yet.', retry }: Props = $props();
 </script>
 
+<span hidden data-loading={res.loading || (res.data === undefined && !res.error)}></span>
+
 {#if res.data !== undefined}
   {#if res.error}
     <div class="state-msg state-error" role="alert">

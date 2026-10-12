@@ -475,9 +475,6 @@ table.account-breakdown th {
 .topbar .subnav-group {
   display: none;
 }
-.topbar .subnav-item {
-  padding-left: 24px;
-}
 
 .sev-chip {
   gap: 4px;

@@ -13,22 +13,36 @@ export type { Route, ReviewTab } from './routes';
 
 import { href, parse, type Route } from './routes';
 
-export const router = $state<{ route: Route }>({ route: parse(location.hash) });
+const newEntry = (): string => `${Date.now()}:${Math.random()}`;
+
+function entryID(): string {
+  const saved = history.state?.kritikaEntry;
+  if (typeof saved === 'string') return saved;
+  const id = newEntry();
+  history.replaceState({ ...history.state, kritikaEntry: id }, '');
+  return id;
+}
+
+export const router = $state({ route: parse(location.hash), entry: entryID(), traversal: false });
 
 export function navigate(to: Route): void {
   const next = href(to);
   if (location.hash === next) {
-    router.route = to; // same hash (e.g. re-selecting the current tab) — sync anyway
+    router.route = to;
   } else {
-    location.hash = next; // triggers hashchange → updates router.route
+    history.pushState({ kritikaEntry: newEntry() }, '', next);
+    router.entry = entryID();
+    router.traversal = false;
+    router.route = to;
   }
 }
 
-// replace updates the route without a history entry.
+// replace preserves the history entry while synchronizing in-page filters.
 export function replace(to: Route): void {
+  router.traversal = false;
   router.route = to;
   try {
-    history.replaceState(null, '', href(to));
+    history.replaceState(history.state, '', href(to));
   } catch {
     // Safari rate-limits replaceState (SecurityError past ~100 calls/30s).
     // The in-memory route is already updated; the URL syncs on the next call.
@@ -36,7 +50,14 @@ export function replace(to: Route): void {
 }
 
 export function initRouter(): void {
-  window.addEventListener('hashchange', () => {
+  const changed = () => {
+    const existing = typeof history.state?.kritikaEntry === 'string';
+    const entry = entryID();
+    if (entry === router.entry && href(router.route) === href(parse(location.hash))) return;
+    router.entry = entry;
+    router.traversal = existing;
     router.route = parse(location.hash);
-  });
+  };
+  window.addEventListener('popstate', changed);
+  window.addEventListener('hashchange', changed);
 }

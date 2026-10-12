@@ -60,7 +60,7 @@
             {:else}{j.args.repository || 'Unattributed job'}{/if}</span>
           </td>
           <td data-label="Status"><Pill tone={overdue(j) ? 'warn' : jobTone[j.state]} label={overdue(j) ? 'Heartbeat overdue' : j.state} />
-            {#if j.lastError}<span class="queue-detail job-error-summary">{j.cause ? jobCauseText[j.cause] : j.lastError.split('\n')[0]}</span>{/if}
+            {#if j.lastError && (j.state === 'discarded' || j.state === 'retryable' || overdue(j))}<span class="queue-detail job-error-summary">{j.cause ? jobCauseText[j.cause] : j.lastError.split('\n')[0]}</span>{/if}
             {#if j.state === 'retryable'}<span class="queue-detail">Retries automatically</span>
             {:else if waiting(j) || overdue(j)}<span class="queue-detail">{waitingReason(j)}</span>{/if}
           </td>

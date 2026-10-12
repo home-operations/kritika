@@ -2,7 +2,8 @@
   // Maps the active route to its page. Keyed so switching account or record
   // starts the page fresh, while switching review tabs or list filters
   // keeps the page mounted.
-  import { href, type Route } from '../routes';
+  import type { Route } from '../routes';
+  import { router } from '../router.svelte';
   import { rememberScroll } from '../viewstate';
   import Overview from './Overview.svelte';
   import Console from './Console.svelte';
@@ -23,16 +24,18 @@
 
   let { route }: { route: Route } = $props();
 
+  const LIST_PAGES: readonly Route['name'][] = ['overview', 'account', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage'];
+
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
-    if ('filter' in r || ['pulls', 'findings', 'usage', 'queue', 'instanceQueue', 'repos', 'account'].includes(r.name)) return JSON.stringify({ n: r.name, s: 'slug' in r ? r.slug : undefined });
+    if (LIST_PAGES.includes(r.name)) return JSON.stringify({ n: r.name, s: 'slug' in r ? r.slug : undefined });
     return JSON.stringify(r);
   }
   const key = $derived(keyOf(route));
 </script>
 
 <!-- data-route exposes the parsed route to the router tests. -->
-<div class="route-host" data-route={JSON.stringify(route)} {@attach rememberScroll(['overview', 'account', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage'].includes(route.name) ? href(route) : '')}>
+<div class="route-host" data-route={JSON.stringify(route)} {@attach rememberScroll(LIST_PAGES.includes(route.name) ? key : '', router.entry, router.traversal)}>
 {#key key}
   {#if route.name === 'overview'}
     <Overview />
