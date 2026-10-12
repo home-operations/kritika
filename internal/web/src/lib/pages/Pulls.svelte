@@ -18,7 +18,12 @@
   import TokenSearch from '../components/TokenSearch.svelte';
   import Dialog from '../components/Dialog.svelte';
 
-  let { slug, filter }: { slug: string; filter?: PullFilter } = $props();
+  let { slug, filter }: { slug?: string; filter?: PullFilter } = $props();
+
+  type ScopedPull = Pull & { account?: string };
+  const accountOf = (p: ScopedPull): string => slug ?? p.account!;
+  const keyOf = (p: ScopedPull): string => `${accountOf(p)}:${pullKey(p)}`;
+  const listRoute = (filter?: PullFilter) => slug ? { name: 'pulls' as const, slug, filter } : { name: 'instancePulls' as const, filter };
 
   const prState = $derived(filter?.state ?? 'open');
   let searchEl = $state<HTMLInputElement | undefined>(undefined);
@@ -26,15 +31,15 @@
   // setFilter replaces the history entry, so Back leaves the list instead of
   // stepping through its filters.
   function setFilter(f: Parameters<typeof pullFilter>[0]): void {
-    replace({ name: 'pulls', slug, filter: pullFilter(f) });
+    replace(listRoute(pullFilter(f)));
   }
 
   function clearFilters(): void {
-    replace({ name: 'pulls', slug });
+    replace(listRoute());
     searchEl?.focus();
   }
 
-  const account = $derived(`${accountApi(slug)}`);
+  const account = $derived(slug ? accountApi(slug) : '/api/v1');
 
   function query(after?: string): string {
     const p = new URLSearchParams({ state: prState, limit: '50' });
@@ -46,7 +51,7 @@
     return `${account}/pulls?${p}`;
   }
 
-  const paged = new Paged<Pull>(query, pullKey);
+  const paged = new Paged<ScopedPull>(query, keyOf);
   const res = paged.first;
   const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
   const repoNames = $derived((repos.data?.items ?? []).map((r) => r.fullName));
@@ -55,9 +60,9 @@
     void paged.load();
   });
   $effect(() => {
-    void repos.load();
+    if (slug) void repos.load();
   });
-  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void paged.refresh()));
+  $effect(() => live((e) => (!slug || e.account === slug) && (e.kind === 'review' || e.kind === 'followup'), () => void paged.refresh()));
 
   // The box's tokens: status: is the last review's outcome.
   const authors = $derived([...new Set(paged.items.map((p) => p.author))].sort());
@@ -90,12 +95,12 @@
   // The cursor follows its pull rather than its position, which a live
   // refetch shifts when it adds or reorders rows above it.
   let selectedKey = $state('');
-  const selected = $derived(items.findIndex((p) => pullKey(p) === selectedKey));
+  const selected = $derived(items.findIndex((p) => keyOf(p) === selectedKey));
 
   async function select(i: number): Promise<void> {
     const p = items[i];
     if (!p) return;
-    selectedKey = pullKey(p);
+    selectedKey = keyOf(p);
     await tick();
     document.querySelector(`.pull-rows [data-index="${i}"]`)?.scrollIntoView({ block: 'nearest' });
   }
@@ -107,12 +112,12 @@
       set: (i) => void select(i),
       open: (i) => {
         const p = items[i];
-        if (p) navigate(pullRoute(slug, p));
+        if (p) navigate(pullRoute(accountOf(p), p));
       },
       focusSearch: () => searchEl?.focus(),
       toggle: (i) => {
         const p = items[i];
-        if (p && p.state === 'open' && isAdmin()) pick([pullKey(p)], !picked.includes(pullKey(p)));
+        if (p && p.state === 'open' && slug && isAdmin()) pick([keyOf(p)], !picked.includes(keyOf(p)));
       },
     }),
   );
@@ -135,8 +140,8 @@
   // current head, one request at a time.
   async function rerunPicked(): Promise<void> {
     busy = true;
-    const targets = items.filter((p) => picked.includes(pullKey(p)));
-    const tally = await sendEach(targets, pullKey, (p) => sendJSON('POST', rerunPath(slug, p)));
+    const targets = items.filter((p) => picked.includes(keyOf(p)));
+    const tally = await sendEach(targets, keyOf, (p) => sendJSON('POST', rerunPath(accountOf(p), p)));
     busy = false;
     confirmRerun = false;
     pick(picked, false);
@@ -151,11 +156,11 @@
   ] as const;
 </script>
 
-<svelte:head><title>Pull requests · {slug} · kritika</title></svelte:head>
+<svelte:head><title>Pull requests · {slug ?? 'All accounts'} · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">
-    <PageHeader title="Pull requests" {slug} />
+    <PageHeader title="Pull requests" {slug} description={slug ? undefined : "Review activity across all your accounts. Choose an account to narrow this list."} />
     <div class="toolbar" role="search">
       <TokenSearch
         id="pull-search"
@@ -183,15 +188,15 @@
             <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
           </div>
         {:else if items.length === 0}
-          <p class="state-msg">No open pull requests.</p>
+          <p class="state-msg">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
         {:else}
-          <PullTable {slug} {items} {selected} {picked} onpick={isAdmin() ? pick : undefined} />
+          <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
           <LoadMore {paged} />
         {/if}
       {/snippet}
     </StateView>
     <p class="muted small key-hints">
-      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if isAdmin()}{' '}· <kbd>space</kbd> select{/if}
+      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if slug && isAdmin()}{' '}· <kbd>space</kbd> select{/if}
     </p>
   </div>
 </main>

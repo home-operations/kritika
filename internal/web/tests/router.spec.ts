@@ -11,6 +11,8 @@
 import { test, expect } from './fixtures';
 import type { Route } from '../src/lib/routes';
 
+test.beforeEach(async ({ signIn }) => { await signIn(); });
+
 async function expectRoute(page: import('@playwright/test').Page, hash: string, route: Route): Promise<void> {
   await page.goto(hash ? `/${hash}` : '/');
   await expect(page.locator('.route-host')).toHaveAttribute('data-route', JSON.stringify(route));

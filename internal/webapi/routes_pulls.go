@@ -4,10 +4,12 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/transcript"
 )
@@ -38,20 +40,9 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 	if err != nil {
 		return err
 	}
-	q := r.URL.Query()
-	f := store.PullFilter{
-		State: store.PullState(q.Get("state")), Outcome: store.ReviewStatus(q.Get("outcome")), Author: q.Get("author"), Query: q.Get("q"),
-		Is: store.PullIs(q.Get("is")),
-	}
-	f.State = cmp.Or(f.State, store.PullOpen)
-	if !f.State.Valid() {
-		return errBadRequest(CodeBadRequest, "state must be open, closed or all")
-	}
-	if f.Outcome != "" && !f.Outcome.Valid() {
-		return errBadRequest(CodeBadRequest, "outcome is not a review status")
-	}
-	if f.Is != "" && !f.Is.Valid() {
-		return errBadRequest(CodeBadRequest, "is must be paused or p0")
+	f, err := parsePullFilter(r)
+	if err != nil {
+		return err
 	}
 	ctx := r.Context()
 	var rows []store.PullRow
@@ -70,6 +61,81 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request, t *accountSco
 	items := make([]Pull, len(rows))
 	for i, row := range rows {
 		items[i] = pull(row)
+	}
+	writeJSON(w, http.StatusOK, newPage(items, next))
+	return nil
+}
+
+func parsePullFilter(r *http.Request) (store.PullFilter, error) {
+	q := r.URL.Query()
+	f := store.PullFilter{
+		State: store.PullState(q.Get("state")), Outcome: store.ReviewStatus(q.Get("outcome")), Author: q.Get("author"), Query: q.Get("q"),
+		Is: store.PullIs(q.Get("is")),
+	}
+	f.State = cmp.Or(f.State, store.PullOpen)
+	if !f.State.Valid() {
+		return f, errBadRequest(CodeBadRequest, "state must be open, closed or all")
+	}
+	if f.Outcome != "" && !f.Outcome.Valid() {
+		return f, errBadRequest(CodeBadRequest, "outcome is not a review status")
+	}
+	if f.Is != "" && !f.Is.Valid() {
+		return f, errBadRequest(CodeBadRequest, "is must be paused or p0")
+	}
+	return f, nil
+}
+
+// Each account read retains row-level security. A shared timestamp/UUID
+// cursor gives the merged list the same ordering as each account's list.
+func (s *Server) listInstancePulls(w http.ResponseWriter, r *http.Request) error {
+	page, err := parsePage(r)
+	if err != nil {
+		return err
+	}
+	f, err := parsePullFilter(r)
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
+	type scopedPull struct {
+		row     store.PullRow
+		account string
+	}
+	var rows []scopedPull
+	more := false
+	for _, account := range readable(s.current.Get(), auth.PrincipalFrom(ctx)) {
+		if err := s.store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			id, found, err := searchRepoFilter(ctx, tx, r)
+			if err != nil || !found {
+				return err
+			}
+			f.RepositoryID = id
+			items, next, err := store.ListPulls(ctx, tx, f, page)
+			if err != nil {
+				return err
+			}
+			more = more || next != nil
+			for _, item := range items {
+				rows = append(rows, scopedPull{row: item, account: account.Slug()})
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	slices.SortFunc(rows, func(a, b scopedPull) int {
+		return cmp.Or(b.row.UpdatedAt.Compare(a.row.UpdatedAt), cmp.Compare(b.row.ID, a.row.ID))
+	})
+	more = more || len(rows) > page.Limit
+	rows = rows[:min(len(rows), page.Limit)]
+	items := make([]InstancePull, len(rows))
+	for i, row := range rows {
+		items[i] = InstancePull{Pull: pull(row.row), Account: row.account}
+	}
+	var next *store.Cursor
+	if more && len(rows) > 0 {
+		last := rows[len(rows)-1].row
+		next = &store.Cursor{T: last.UpdatedAt, ID: last.ID}
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))
 	return nil

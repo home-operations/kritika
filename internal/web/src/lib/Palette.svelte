@@ -57,7 +57,8 @@
   // sense when there's no session yet.
   function buildEntries(r: Route, searching: boolean): Entry[] {
     const entries: Entry[] = [{ label: 'Overview', hint: 'instance', words: true, route: { name: 'overview' }, icon: mdiViewGridOutline, keywords: 'all accounts' }];
-    if ((me?.accounts.length ?? 0) > 1) {
+    if (me) {
+      entries.push({ label: 'Pull requests', hint: 'all accounts', words: true, route: { name: 'instancePulls' }, icon: mdiSourcePull });
       entries.push({ label: 'Queue', hint: 'instance', words: true, route: { name: 'instanceQueue' }, icon: mdiTrayFull, keywords: 'jobs slots all accounts' });
     }
     if (me?.admin) {
@@ -80,7 +81,8 @@
     const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts ?? [])])];
     for (const slug of slugs) {
       entries.push(
-        { label: 'Analytics', hint: slug, route: reportingRoute({ name: 'account', slug }, r), icon: mdiChartBoxOutline, keywords: 'overview reviews dashboard' },
+        { label: 'Overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewGridOutline },
+        { label: 'Analytics', hint: slug, route: reportingRoute({ name: 'analytics', slug }, r), icon: mdiChartBoxOutline, keywords: 'overview reviews dashboard' },
         { label: 'Repositories', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
         { label: 'Findings', hint: slug, route: { name: 'findings', slug }, icon: mdiBugOutline, keywords: 'bugs caught addressed' },

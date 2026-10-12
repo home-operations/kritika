@@ -58,6 +58,9 @@ test.describe('signed-out shell', () => {
 });
 
 test.describe('sign-in page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/me', (route) => route.fulfill({ status: 401, json: { code: 'unauthenticated', message: 'Sign in' } }));
+  });
   test('lists providers with a login link carrying the return path', async ({ page, mockProviders }) => {
     await mockProviders();
     await page.goto('/#/signin');
@@ -135,7 +138,7 @@ test.describe('signed-in shell', () => {
 
     // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
-    await expect(instance).toHaveText(['Overview', 'Instance settings']);
+    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Instance settings']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
     for (const href of await instance.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) expect(href).not.toContain('/a/');
@@ -144,8 +147,8 @@ test.describe('signed-in shell', () => {
     await page.locator('.account-button').click();
     await scopes.getByRole('link', { name: 'github/acme' }).click();
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).locator('.section-tab');
-    await expect(tabs).toHaveText(['OverviewAll', 'Queue', 'Repositories', 'Analytics', 'Usage & costs', 'Pull requests', 'Follow-ups', 'Findings', 'Rules', 'Audit log', 'Instance settings']);
-    await expect(tabs.first()).toHaveAttribute('href', '#/');
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue', 'Repositories', 'Analytics', 'Usage & costs', 'Follow-ups', 'Findings', 'Rules', 'Audit log']);
+    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Instance' })).toHaveCount(0);
     await page.goto('/');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
@@ -178,15 +181,15 @@ test.describe('signed-in shell', () => {
     await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Accounts', exact: true })).toBeVisible();
   });
 
-  test('a member has no Configuration tab, and the Queue tab comes with a second account', async ({ page, signIn }) => {
+  test('global pull and queue navigation stays consistent as accounts are added', async ({ page, signIn }) => {
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
     await signIn(DEFAULT_ME);
     await page.goto('/');
-    await expect(tabs).toHaveText(['Overview']);
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue']);
     await signIn({ ...DEFAULT_ME, accounts: ['github/acme', 'github/globex'] });
     await page.reload();
-    await expect(tabs).toHaveText(['Overview', 'Queue']);
-    await expect(tabs.nth(1)).toHaveAttribute('href', '#/queue');
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue']);
+    await expect(tabs.nth(2)).toHaveAttribute('href', '#/queue');
   });
 
   test('switching scope in the menu keeps the page', async ({ page, signIn }) => {
@@ -235,7 +238,9 @@ test.describe('signed-in shell', () => {
 });
 
 test.describe('theme toggle', () => {
-  test('cycles auto -> light -> dark -> auto and persists the choice', async ({ page }) => {
+  test('cycles auto -> light -> dark -> auto and persists the choice', async ({ page, signIn }) => {
+    await signIn();
+    await page.route('**/api/v1/me/settings', (r) => r.fulfill({ status: 204 }));
     await page.goto('/');
     const button = page.locator('.actions button[title^="Theme:"]');
     const currentClass = () => page.evaluate(() => document.documentElement.className);
@@ -272,8 +277,10 @@ test.describe('theme toggle', () => {
 });
 
 test.describe('keyboard shortcuts', () => {
+  test.beforeEach(async ({ signIn }) => { await signIn(); });
   test('"?" opens the help overlay; Escape closes it', async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('.account-button')).toBeVisible();
     await page.keyboard.press('?');
     await expect(page.locator('.help-card h2')).toHaveText('Keyboard shortcuts');
     await expect(page.locator('.help-keys dd')).toContainText(['go to a page', 'toggle this help', 'move down or up a list', 'open the row', 'search the list', 'select a pull request']);
@@ -284,6 +291,7 @@ test.describe('keyboard shortcuts', () => {
   test('Ctrl/Cmd+K opens the command palette; typing filters; Enter navigates', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
+    await expect(page.locator('.account-button')).toBeVisible();
     await page.keyboard.press('ControlOrMeta+k');
     await expect(page.locator('.palette-input input')).toBeFocused();
 
@@ -298,6 +306,7 @@ test.describe('keyboard shortcuts', () => {
 
   test('the palette shows an empty state when nothing matches', async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('.account-button')).toBeVisible();
     await page.keyboard.press('ControlOrMeta+k');
     await page.keyboard.type('xyz-nothing-matches');
     await expect(page.locator('.palette-empty')).toBeVisible();

@@ -531,29 +531,6 @@ table.account-breakdown th {
   align-items: center;
   gap: 8px;
 }
-.attention-group {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--border);
-}
-.attention-group-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.attention-group-head > a {
-  margin-left: auto;
-}
-.attention-pull {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 12px 0 0;
-  overflow-wrap: anywhere;
-}
-.attention-pull strong {
-  color: var(--text);
-}
 .mobile-navigation {
   display: none;
 }
@@ -656,7 +633,6 @@ table.account-breakdown th {
 .panel:has(#an-operations) > .toolbar { padding: 0 16px; }
 
 /* Shared page rhythm and quiet navigation keep status and actions prominent. */
-.nav-scope { margin-left: auto; color: var(--muted); font-size: var(--type-xs); }
 .page-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .page-title-row h1 { flex: 1; min-width: 200px; }
 .page-title-row .page-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
@@ -697,3 +673,28 @@ table.account-breakdown th {
   .page-title-row { align-items: flex-start; }
   .page-title-row h1 { min-width: 150px; }
 }
+
+.session-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.session-screen h1 { font-size: 20px; color: var(--text); }
+.loading-placeholder { width: 100%; }
+.loading-overview { display: grid; gap: 20px; }
+.skeleton-table { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.skeleton-row { display: grid; grid-template-columns: 3fr 1fr 1fr; gap: 24px; padding: 24px 16px; border-bottom: 1px solid var(--border); }
+.skeleton-row:last-child { border-bottom: 0; }
+.skeleton-line, .skeleton-value { display: block; background: var(--border); border-radius: 4px; height: 12px; width: 70%; }
+.skeleton-value { width: 56px; height: 36px; }
+.skeleton-tile { min-height: 128px; gap: 16px; }
+.overview-attention { max-height: 380px; overflow-y: auto; }
+.back-to-list { font-size: 13px; margin-bottom: 4px; }
+
+.overview-totals .tile, .account-activity .tile { min-height: 128px; }

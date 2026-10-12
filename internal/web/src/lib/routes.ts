@@ -6,9 +6,11 @@
 //   #/                                        overview (account picker / landing)
 //   #/signin                                  sign-in page
 //   #/admin                                   admin console (cross-account)
+//   #/pulls[?<filter>]                       pull requests across accounts
 //   #/queue[?<filter>]                       the queue of every account
 //   #/settings                                the viewer's own settings
-//   #/a/<slug>[?days=1|7|90]                 account overview; slug is <forge>/<name>
+//   #/a/<slug>                              account overview; slug is <forge>/<name>
+//   #/a/<slug>/analytics[?days=1|7|90]       account analytics
 //   #/a/<slug>/repos[?<filter>]              account's repo list
 //   #/a/<slug>/repos/<owner>/<repo>           one repo
 //   #/a/<slug>/pulls[?<filter>]               account's pull list; filter is a PullFilter
@@ -164,9 +166,11 @@ export type Route =
   | { name: 'overview' }
   | { name: 'signin' }
   | { name: 'console' }
+  | { name: 'instancePulls'; filter?: PullFilter }
+  | { name: 'analytics'; slug: string; filter?: AnalyticsFilter }
   | { name: 'instanceQueue'; filter?: QueueFilter }
   | { name: 'preferences' }
-  | { name: 'account'; slug: string; filter?: AnalyticsFilter }
+  | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string; filter?: RepoFilter }
   | { name: 'repo'; slug: string; owner: string; repo: string }
   | { name: 'pulls'; slug: string; filter?: PullFilter }
@@ -217,8 +221,14 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
   switch (section) {
     case undefined: {
       const filter = analyticsFilter(Object.fromEntries(query));
-      return { name: 'account', slug, ...(filter ? { filter } : {}) };
+      return filter ? { name: 'analytics', slug, filter } : { name: 'account', slug };
     }
+    case 'analytics':
+      if (tail.length === 0) {
+        const filter = analyticsFilter(Object.fromEntries(query));
+        return { name: 'analytics', slug, ...(filter ? { filter } : {}) };
+      }
+      break;
     case 'repos':
       if (tail.length === 0) {
         const filter = repoFilter(Object.fromEntries(query));
@@ -292,6 +302,10 @@ export function parse(hash: string): Route {
   if (parts.length === 0) return { name: 'overview' };
   if (parts.length === 1 && parts[0] === 'signin') return { name: 'signin' };
   if (parts.length === 1 && parts[0] === 'admin') return { name: 'console' };
+  if (parts.length === 1 && parts[0] === 'pulls') {
+    const filter = pullFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
+    return { name: 'instancePulls', ...(filter ? { filter } : {}) };
+  }
   if (parts.length === 1 && parts[0] === 'queue') {
     const filter = queueFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
     return { name: 'instanceQueue', ...(filter ? { filter } : {}) };
@@ -321,12 +335,16 @@ export function href(r: Route): string {
       return '#/signin';
     case 'console':
       return '#/admin';
+    case 'instancePulls':
+      return `#/pulls${querySuffix(r.filter)}`;
+    case 'analytics':
+      return `#/a/${slugPath(r.slug)}/analytics${querySuffix(r.filter)}`;
     case 'instanceQueue':
       return `#/queue${querySuffix(r.filter)}`;
     case 'preferences':
       return '#/settings';
     case 'account':
-      return `#/a/${slugPath(r.slug)}${querySuffix(r.filter)}`;
+      return `#/a/${slugPath(r.slug)}`;
     case 'repos':
       return `#/a/${slugPath(r.slug)}/repos${querySuffix(r.filter)}`;
     case 'repo':

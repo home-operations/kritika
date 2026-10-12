@@ -16,7 +16,6 @@
   import Time from '../components/Time.svelte';
   import { unsignedWebhooks } from '../setup';
   import { overdue, waiting } from '../queue';
-  import AttentionPulls from '../components/AttentionPulls.svelte';
   import WebhookState from '../components/WebhookState.svelte';
 
   const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
@@ -24,19 +23,7 @@
   $effect(() => {
     void res.load();
   });
-  let attentionVersions = $state<Record<string, number>>({});
-  $effect(() => {
-    const changed = new Set<string>();
-    return live((e) => {
-      if (e.kind === 'review' || e.kind === 'followup') changed.add(e.account);
-      return e.kind !== 'model_call';
-    }, (dirty) => {
-      void res.load();
-      const accounts = dirty.has('resync') ? res.data?.map((a) => a.slug) ?? [] : [...changed];
-      for (const slug of accounts) attentionVersions[slug] = (attentionVersions[slug] ?? 0) + 1;
-      changed.clear();
-    });
-  });
+  $effect(() => live((e) => e.kind !== 'model_call', () => void res.load()));
 
   // The queue is its own fetch: the page stands without it, and only the
   // one tile waits on it.
@@ -81,8 +68,10 @@
 
 <main class="page">
   <div class="page-inner">
-    <PageHeader title="Operations overview" description="Service health, running work and usage across your accounts." />
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
+    <PageHeader title="Operations overview" description="Service health, running work and usage across your accounts.">
+      {#snippet actions()}<a class="btn" href={href({ name: 'instancePulls' })}>View pull requests →</a><a class="btn" href={href({ name: 'instanceQueue' })}>Open queue →</a>{/snippet}
+    </PageHeader>
+    <StateView {res} layout="overview" retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}
         <section class="tiles overview-totals" aria-label="Across all accounts">
@@ -93,12 +82,17 @@
           </div>
           {#if queue.data}
             {@const w = work(queue.data)}
-            <!-- One account has no instance queue tab, so its own queue is the page to open. -->
-            <a class="tile" href={href(list.length === 1 ? { name: 'queue', slug: list[0]!.slug } : { name: 'instanceQueue' })}>
+            <a class="tile" href={href({ name: 'instanceQueue' })}>
               <span class="tile-label">Running now</span>
               <span class="tile-value">{wholeNumber(w.running)}</span>
               <span class="small muted">{wholeNumber(w.waiting)} waiting{w.slots ? ` · ${wholeNumber(w.held)} of ${wholeNumber(w.slots)} model slots busy` : ''}</span>
             </a>
+          {:else}
+            <div class="tile" aria-busy={!queue.error}>
+              <span class="tile-label">Running now</span>
+              {#if queue.error}<span class="small muted">Unavailable</span><button class="btn btn-small" onclick={() => void queue.load()}>Retry queue</button>
+              {:else}<span class="skeleton-value" aria-label="Loading running work"></span><span class="skeleton-line"></span>{/if}
+            </div>
           {/if}
           <div class="tile">
             <span class="tile-label">Repositories</span>
@@ -128,11 +122,11 @@
         </section>
 
         <div class="overview-work">
-          <section class="attention-list" aria-labelledby="overview-attention">
+          <section class="attention-list overview-attention" aria-labelledby="overview-attention">
             <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
             {#each list as account (account.slug)}
               {#each operationalWants.filter((w) => account.attention[w.key] > 0) as w (w.key)}
-                <AttentionPulls version={attentionVersions[account.slug] ?? 0} slug={account.slug} want={w} count={account.attention[w.key]} />
+                <a class="attention-item" href={href({ name: 'pulls', slug: account.slug, filter: w.filter })}><Pill tone={w.tone} label={`${account.attention[w.key]} ${w.label}`} /><span><strong>{account.slug}</strong><span class="small muted">View pull requests →</span></span></a>
               {/each}
               {#if connectionIssue(account)}
                 <a class="attention-item" href={href({ name: 'account', slug: account.slug })}>
@@ -174,7 +168,7 @@
                     <span class="small muted">{job.account} · started <Time iso={job.attemptedAt} /></span>
                   </div>
                 {:else}<p class="state-msg">Nothing running right now.</p>{/each}
-                <a class="running-queue" href={href(list.length === 1 ? { name: 'queue', slug: list[0]!.slug } : { name: 'instanceQueue' })}>Open queue →</a>
+                <a class="running-queue" href={href({ name: 'instanceQueue' })}>Open queue →</a>
               {/snippet}
             </StateView>
           </section>

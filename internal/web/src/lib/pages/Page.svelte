@@ -5,6 +5,7 @@
   import type { Route } from '../routes';
   import { router } from '../router.svelte';
   import { rememberScroll } from '../viewstate';
+  import AccountOverview from './AccountOverview.svelte';
   import Overview from './Overview.svelte';
   import Console from './Console.svelte';
   import Analytics from './Analytics.svelte';
@@ -24,7 +25,7 @@
 
   let { route }: { route: Route } = $props();
 
-  const LIST_PAGES: readonly Route['name'][] = ['overview', 'account', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage'];
+  const LIST_PAGES: readonly Route['name'][] = ['overview', 'account', 'analytics', 'instancePulls', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage'];
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
@@ -45,7 +46,11 @@
     <InstanceQueue filter={route.filter} />
   {:else if route.name === 'preferences'}
     <Preferences />
+  {:else if route.name === 'instancePulls'}
+    <Pulls filter={route.filter} />
   {:else if route.name === 'account'}
+    <AccountOverview slug={route.slug} />
+  {:else if route.name === 'analytics'}
     <Analytics slug={route.slug} filter={route.filter} />
   {:else if route.name === 'repos'}
     <Repos slug={route.slug} filter={route.filter} />

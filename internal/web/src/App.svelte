@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { Dialog, Popover } from 'bits-ui';
   import { basePath } from './lib/base';
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
@@ -57,17 +57,26 @@
     void loadMe();
   });
 
+  let checkingSession = $state(true);
+  let sessionError = $state('');
+
   async function loadMe(): Promise<void> {
+    checkingSession = true;
+    sessionError = '';
     try {
       session.me = await getJSON<Me>('/api/v1/me');
-      applySettings(session.me.settings);
-      initEvents();
     } catch (err) {
-      // A 401 already redirected to #/signin (see api.svelte.ts); anything
-      // else leaves `me` unset and the shell renders signed-out.
-      if (!(err instanceof ApiError && err.status === 401)) console.error('load me:', err);
+      if (!(err instanceof ApiError && err.status === 401)) sessionError = describe(err);
+    } finally {
+      checkingSession = false;
     }
   }
+
+  $effect(() => {
+    if (!me) return;
+    untrack(() => { applySettings(me.settings); initEvents(); });
+    return closeEvents;
+  });
 
   // A signed-in user never sits on the sign-in card, however they got there
   // (page load or in-app navigation): send them where a 401 bounced them
@@ -94,15 +103,17 @@
   // The account the route is in the scope of; none in the instance's.
   const currentSlug = $derived(scopeOf(router.route));
   const currentSection = $derived(sectionOf(router.route));
-  const instanceTabs = $derived(INSTANCE_TABS.filter((t) => (!t.admin || me?.admin) && (!t.several || (me?.accounts.length ?? 0) > 1)));
+  const instanceTabs = $derived(INSTANCE_TABS.filter((t) => (!t.admin || me?.admin)));
 
   const instanceIcon: Partial<Record<Route['name'], string>> = {
     overview: mdiViewGridOutline,
     instanceQueue: mdiTrayFull,
+    instancePulls: mdiSourcePull,
     console: mdiConsoleLine,
   };
 
   const sectionIcon: Record<Section, string> = {
+    overview: mdiViewGridOutline,
     analytics: mdiChartBoxOutline,
     pulls: mdiSourcePull,
     usage: mdiCurrencyUsd,
@@ -159,9 +170,6 @@
     <nav class="sections" aria-label="Sections">
       {#each NAV_GROUPS as group (group.label)}
         <p class="workspace-heading">{group.label}</p>
-        {#if group.before && (!group.before.admin || me.admin)}
-          <a class="section-tab" href={href(group.before.route)}><Icon path={mdiViewGridOutline} size={15} /><span class="section-label">{group.before.label}</span><span class="nav-scope">All</span></a>
-        {/if}
         {#each group.sections.filter((s) => !SECTIONS[s].admin || me?.admin) as s (s)}
           {@const on = currentSection === s}
           <a class="section-tab" class:active={on} aria-current={on ? 'page' : undefined}
@@ -170,16 +178,23 @@
             <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
           </a>
         {/each}
-        {#if group.after && (!group.after.admin || me.admin)}
-          <a class="section-tab" href={href(group.after.route)}><Icon path={mdiCogOutline} size={15} /><span class="section-label">{group.after.label}</span></a>
-        {/if}
       {/each}
     </nav>
   {/if}
   {#if me && router.route.name === 'console'}<SettingsNav />{/if}
 {/snippet}
 
-{#if router.route.name === 'signin'}
+{#if checkingSession || (me && router.route.name === 'signin') || sessionError}
+  <main class="session-screen" aria-busy={checkingSession}>
+    <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
+    <span class="wordmark marked">kritika</span>
+    {#if sessionError}
+      <h1>Unable to load your session</h1>
+      <p role="alert">{sessionError}</p>
+      <button class="btn btn-primary" onclick={() => void loadMe()}>Retry</button>
+    {:else}<p role="status">Loading your workspace…</p>{/if}
+  </main>
+{:else if !me}
   <SignIn />
 {:else}
   <div class="app">
@@ -206,7 +221,7 @@
                 <nav aria-label="Scope">
               <a
                 class="menu-item"
-                href={href(pageOfInstance(router.route, instanceTabs.some((t) => t.route.name === 'instanceQueue')))}
+                href={href(pageOfInstance(router.route))}
                 aria-current={currentSlug ? undefined : 'true'}
               >
                 <span class="menu-check">{#if !currentSlug}<Icon path={mdiCheck} size={14} />{/if}</span>

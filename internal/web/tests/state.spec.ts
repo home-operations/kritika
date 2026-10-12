@@ -524,24 +524,20 @@ test('reconnect status stays inside the mobile header without obscuring content'
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
 });
 
-test('attention previews defer offscreen accounts and refresh them when shown', async ({ page }) => {
+test('the overview summarizes many accounts without fetching individual pull lists', async ({ page }) => {
   const accounts = Array.from({ length: 25 }, (_, i) => ({ ...g.accountSummary, slug: `github/account-${i}`, attention: { failed: 1, capped: 1, p0: 1, paused: 1 } }));
   const calls: string[] = [];
   await page.route('**/api/v1/accounts', (route) => json(route, accounts));
   await page.route('**/pulls?*', (route) => { calls.push(route.request().url()); return json(route, g.pageOf([g.pull])); });
   await page.goto('/');
-  await expect(page.locator('.attention-group')).toHaveCount(75);
-  await expect(page.locator('.attention-pull').first()).toBeVisible();
-  expect(calls.length).toBeLessThan(12);
-  const last = page.locator('.attention-group').last();
-  await last.scrollIntoViewIfNeeded();
-  await expect(last.locator('.attention-pull')).toBeVisible();
-  const firstCount = () => calls.filter((url) => url.includes('/account-0/')).length;
-  const before = firstCount();
+  const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+  await expect(attention.getByRole('link')).toHaveCount(75);
+  await attention.getByRole('link').last().scrollIntoViewIfNeeded();
+  expect(calls).toEqual([]);
+  accounts[0]!.attention.failed = 2;
+  const refreshed = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/accounts');
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('test-live-event', { detail: { kind: 'review', data: { kind: 'review', account: 'github/account-0', reviewId: 'rev-1' } } })));
-  // Wait for the same event's account refresh, without bringing its previews onscreen.
-  await page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/accounts');
-  expect(firstCount()).toBe(before);
-  await page.locator('.attention-group').first().scrollIntoViewIfNeeded();
-  await expect.poll(firstCount).toBeGreaterThan(before);
+  await refreshed;
+  await expect(attention.getByRole('link').first()).toContainText('2 failed');
+  expect(calls).toEqual([]);
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { reportingRoute } from '../sections';
+  import { returnToList } from '../router.svelte';
   import { router, href, type Route } from '../router.svelte';
 
   let { title, slug, description, parents = [], actions }: {
@@ -13,8 +13,11 @@
 </script>
 
 <header class="page-head">
+  {#if router.origin}
+    <a class="back-to-list" href={router.origin.hash} onclick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); returnToList(); } }}>← Back to {router.origin.label}</a>
+  {/if}
   <nav class="crumbs" aria-label="Breadcrumb">
-    {#if slug}<a href={href({ name: 'overview' })}>All accounts</a><span aria-hidden="true">/</span><a class="mono" href={href(reportingRoute({ name: 'account', slug }, router.route))}>{slug}</a>
+    {#if slug}<a class="mono" href={href({ name: 'account', slug })}>{slug}</a>
     {:else}<span>All accounts</span>{/if}
     {#each parents as parent}<span aria-hidden="true">/</span><a href={href(parent.route)}>{parent.label}</a>{/each}
   </nav>

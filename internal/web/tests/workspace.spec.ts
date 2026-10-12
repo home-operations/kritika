@@ -97,12 +97,8 @@ test("overview attention links retain account scope and expose near limits", asy
   const seen = await mockWorkspace(page);
   await page.goto("/");
   const attention = page.getByRole("region", { name: "Needs attention", exact: true });
-  await expect(attention.getByRole("link")).toHaveCount(5);
-  await expect(attention.getByRole("link", { name: /Handle worker cancellation/ })).toHaveAttribute("href", `#/a/${g.SLUG}/reviews/${g.pull.lastReview!.id}`);
-  await expect(attention.getByRole("link", { name: /Refresh controller dependencies/ })).toHaveAttribute("href", href({ name: "pull", slug: g.SLUG, owner: g.pull.repository.split("/")[0]!, repo: g.pull.repository.split("/")[1]!, number: 9 }));
-  for (const filter of ["outcome=failed", "is=paused"]) {
-    expect(seen.some((url) => url.search.includes(filter) && url.searchParams.get("limit") === "3" && url.searchParams.get("state") === "open")).toBe(true);
-  }
+  await expect(attention.getByRole("link")).toHaveCount(3);
+  expect(seen.some((url) => url.pathname.endsWith('/pulls'))).toBe(false);
   await expect(attention.getByRole("link").first()).toHaveAttribute(
     "href",
     `#/a/${g.SLUG}/pulls?outcome=failed`,
@@ -212,7 +208,7 @@ for (const theme of ["light", "dark"] as const) {
     await mockWorkspace(page);
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Needs attention", exact: true })).toBeVisible();
-    await expect(page.locator(".attention-pull")).toHaveCount(2);
+    await expect(page.locator(".overview-attention .attention-item")).toHaveCount(3);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`overview-${theme}.png`) });
     await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
@@ -315,18 +311,18 @@ for (const theme of ["light", "dark"] as const) {
   });
 }
 
-test("attention previews recover independently and keep the filtered list available", async ({ page }) => {
+test("overview alerts remain usable without fetching pull previews", async ({ page }) => {
   await mockWorkspace(page);
-  await page.route("**/pulls?**outcome=failed", (route) => route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } }));
+  await page.route("**/pulls?**outcome=failed", (route) => route.fulfill({ status: 503, json: { message: "Temporarily unavailable" } }));
   await page.goto("/");
   const attention = page.getByRole("region", { name: "Needs attention", exact: true });
-  await expect(attention.getByRole("alert")).toBeVisible();
-  await expect(attention.getByRole("link", { name: /View all 1 failed/ })).toHaveAttribute("href", `#/a/${g.SLUG}/pulls?outcome=failed`);
-  await expect(attention.getByRole("link", { name: /Refresh controller dependencies/ })).toBeVisible();
-  await page.unroute("**/pulls?**outcome=failed");
-  await attention.getByRole("button", { name: "Retry" }).click();
+  await expect(attention.getByRole("link", { name: /1 failed/ })).toHaveAttribute("href", `#/a/${g.SLUG}/pulls?outcome=failed`);
   await expect(attention.getByRole("alert")).toHaveCount(0);
-  await expect(attention.getByRole("link", { name: /Handle worker cancellation/ })).toBeVisible();
+  await attention.getByRole("link", { name: /1 failed/ }).click();
+  await expect(page.getByRole("alert")).toContainText('Temporarily unavailable');
+  await page.unroute("**/pulls?**outcome=failed");
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator('.pull-row')).toHaveCount(3);
 });
 
 test.describe("desktop 200% zoom equivalent reflow", () => {
@@ -351,9 +347,9 @@ for (const theme of ["light", "dark"] as const) {
     for (const route of ["/", `/#/a/${g.SLUG}/reviews/rev-1/diff`]) {
       await page.goto(route);
       await expect(page.locator(".page-head h1")).toBeVisible();
-      if (route === "/") await expect(page.locator(".attention-pull")).toHaveCount(2);
+      if (route === "/") await expect(page.locator(".overview-attention .attention-item")).toHaveCount(3);
       else await expect(page.locator("table.diff")).toHaveCount(2);
-      const failures = await page.locator(".page-head h1, .attention-group .pill, .attention-pull strong, .attention-pull .muted, .finding-jump strong, .finding-jump .muted, .finding-jump .sev, .finding-controls .btn, .file-filters label, .section-tab.active").evaluateAll((elements) => {
+      const failures = await page.locator(".page-head h1, .overview-attention .pill, .overview-attention strong, .overview-attention .muted, .finding-jump strong, .finding-jump .muted, .finding-jump .sev, .finding-controls .btn, .file-filters label, .section-tab.active").evaluateAll((elements) => {
         const canvas = document.createElement("canvas");
         canvas.width = canvas.height = 1;
         const ctx = canvas.getContext("2d", { willReadFrequently: true })!;

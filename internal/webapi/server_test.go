@@ -240,6 +240,11 @@ func TestRequestValidation(t *testing.T) {
 		{"/api/v1/accounts/github/alpha/repos?limit=0", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/repos?cursor=@@", CodeInvalidCursor},
 		{"/api/v1/accounts/github/alpha/repos?type=mirrors", CodeBadRequest},
+		{"/api/v1/pulls?state=merged", CodeBadRequest},
+		{"/api/v1/pulls?outcome=great", CodeBadRequest},
+		{"/api/v1/pulls?is=late", CodeBadRequest},
+		{"/api/v1/pulls?limit=0", CodeBadRequest},
+		{"/api/v1/pulls?cursor=@@", CodeInvalidCursor},
 		{"/api/v1/accounts/github/alpha/pulls?state=merged", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/pulls?outcome=great", CodeBadRequest},
 		{"/api/v1/accounts/github/alpha/pulls?is=late", CodeBadRequest},
@@ -468,5 +473,13 @@ func TestPutSettingsRejectsWhatItCannotStore(t *testing.T) {
 				t.Fatalf("status = %d, want 400: %s", w.Code, w.Body)
 			}
 		})
+	}
+}
+
+func TestInstancePullsWithNoneReadable(t *testing.T) {
+	ts := newTestServer(t, "https://kritika.example")
+	w := ts.as(&auth.Principal{}, httptest.NewRequest("GET", "/api/v1/pulls", nil))
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"items":[],"nextCursor":null}` {
+		t.Fatalf("got %d %q, want an empty page", w.Code, w.Body)
 	}
 }
