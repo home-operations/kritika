@@ -14,6 +14,7 @@ type JobArgs struct {
 	Head       string `json:"head"`
 	Trigger    string `json:"trigger"`
 	CommentID  int64  `json:"commentId"`
+	Resolved   *bool  `json:"resolved,omitzero"`
 }
 
 // Job is one River job of the account.

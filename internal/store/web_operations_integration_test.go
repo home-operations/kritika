@@ -192,3 +192,54 @@ func TestQueueAttention(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestQueueKeepsRecentFailuresThroughThreadBurst(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatal(err)
+	}
+	account := accountID(t, s, "alpha")
+	var repo string
+	if err := s.owner.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 LIMIT 1`, account).Scan(&repo); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"review", "index"} {
+		t.Run(kind, func(t *testing.T) {
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				var failed int64
+				if err := tx.QueryRow(ctx, `INSERT INTO river_job (kind, args, state, finalized_at)
+					VALUES ($1, jsonb_build_object('account_id', $2::text, 'repository_id', $3::text, 'number', 910), 'discarded', now() - interval '1 hour') RETURNING id`, kind, account, repo).Scan(&failed); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO river_job (kind, args, state, finalized_at)
+					SELECT 'thread', jsonb_build_object('account_id', $1::text, 'repository_id', $2::text, 'number', 910, 'comment_id', n, 'resolved', n % 2 = 0), 'completed', now()
+					FROM generate_series(1, $3::int) n`, account, repo, queueFinished); err != nil {
+					return err
+				}
+				rows, err := ListQueue(ctx, tx)
+				if err != nil {
+					return err
+				}
+				found, finished := false, 0
+				for _, row := range rows {
+					if row.FinalizedAt != nil {
+						finished++
+					}
+					if row.ID == failed {
+						found = row.RecentFailure && row.Kind == kind && row.Repository != ""
+					}
+					if row.Kind == "thread" && row.Number == 910 && (row.Resolved == nil || *row.Resolved != (row.CommentID%2 == 0)) {
+						t.Errorf("thread state = %+v", row)
+					}
+				}
+				if !found || finished != queueFinished {
+					t.Errorf("failure retained = %v, finished = %d", found, finished)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

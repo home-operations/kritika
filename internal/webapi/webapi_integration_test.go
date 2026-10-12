@@ -331,6 +331,8 @@ func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {
 		{a + "/attention", `"p0":1,"paused":0`},
 		{a + "/pulls?is=p0", `"title":"PR of webapi-a"`},
 		{a + "/queue", `"kind":"thread"`},
+		{a + "/queue", `"repository":"wa/one"`},
+		{a + "/queue", `"resolved":true`},
 	}
 	for _, ep := range endpoints {
 		t.Run(ep.path, func(t *testing.T) {

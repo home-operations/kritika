@@ -594,19 +594,7 @@ egress:
 
 ## How kritika runs
 
-Finding resolution/restoration jobs use a dedicated `thread` queue, with one
-worker per replica by default. These jobs call the forge and update the database;
-they do not launch runner pods or acquire model slots. Database connections and
-forge API limits remain shared.
-
-During a rolling upgrade, new replicas consume both `thread` and `followup`.
-Thread jobs already stored on `followup` continue to drain there, so they may
-still wait behind model follow-ups. Job kind and uniqueness stay the same across
-both queues, preventing duplicate deliveries from creating a second live job.
-If rolling back, drain the `thread` queue first or keep a compatible consumer
-running until it is empty; older replicas do not consume that queue.
-
-These come from the environment rather than the file, each a camelCased
+The process settings below come from the environment rather than the file, each a camelCased
 key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
 except where noted; a restart changes them. The chart sets the rest of
 the process's variables, its addresses, database URLs and roles and the
@@ -637,3 +625,16 @@ A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps
 its findings, summary and what it read by name and size; the dashboard's
 diff and raw views say the bodies were not kept.
+
+### Thread workers
+
+Finding resolution/restoration jobs use a dedicated `thread` queue, with one
+worker per replica by default. They call the forge and update the database;
+they do not launch runner pods or acquire model slots. The default reserves
+capacity during model follow-ups, but permits less parallelism than two idle
+follow-up workers. Increase `KRITIKA_THREAD_WORKERS` if queue-delay metrics show
+it is needed. Database connections and forge API limits remain shared with
+reviews, so raising worker counts does not guarantee higher throughput.
+
+See [queue upgrades and rollbacks](database.md#queue-upgrades-and-rollbacks)
+before switching between releases that use different queue names.

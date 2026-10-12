@@ -93,9 +93,11 @@ type localForge struct {
 	comments map[int64]string
 	authors  map[int64]string
 	// threads are the inline comments GetComment serves, by id.
-	threads map[int64]forge.Comment
-	inline  []forge.InlineComment
-	status  string
+	threads        map[int64]forge.Comment
+	threadStates   map[int64]bool
+	threadStateErr error
+	inline         []forge.InlineComment
+	status         string
 	// onStatus, when set, runs once as a commit status is set.
 	onStatus func()
 	// approvals are the heads the bot's standing approvals cover, and
@@ -276,6 +278,13 @@ func (l *localForge) addComment(author, body string) int64 {
 	l.comments[id] = body
 	l.authors[id] = author
 	return id
+}
+
+func (l *localForge) ThreadResolved(_ context.Context, _, _ string, _ int, id int64) (bool, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	resolved, found := l.threadStates[id]
+	return resolved, found, l.threadStateErr
 }
 
 func (l *localForge) GetComment(_ context.Context, _, _ string, id int64, inline bool) (forge.Comment, error) {

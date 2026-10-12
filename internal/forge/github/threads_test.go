@@ -219,3 +219,29 @@ func TestGraphqlURL(t *testing.T) {
 		}
 	}
 }
+
+func TestThreadResolved(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		pages                    []string
+		resolved, found, wantErr bool
+	}{
+		{name: "open", pages: []string{"[" + thread("T1", false, "kritika#11") + "]"}, found: true},
+		{name: "resolved on later page", pages: []string{"[]", "[" + thread("T1", true, "kritika#11") + "]"}, found: true, resolved: true},
+		{name: "missing", pages: []string{"[]"}},
+		{name: "query error", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			api := &threadsAPI{pages: tc.pages}
+			api.serve(f)
+			resolved, found, err := c.ThreadResolved(t.Context(), "o", "r", 7, 11)
+			if (err != nil) != tc.wantErr || resolved != tc.resolved || found != tc.found {
+				t.Fatalf("ThreadResolved = %v, %v, %v; want %v, %v, error %v", resolved, found, err, tc.resolved, tc.found, tc.wantErr)
+			}
+			if len(api.resolved) != 0 {
+				t.Fatal("read mutated a thread")
+			}
+		})
+	}
+}

@@ -848,6 +848,7 @@ export interface JobArgs {
   head: string;
   trigger: string;
   commentId: number;
+  resolved?: boolean;
 }
 
 export interface Job {

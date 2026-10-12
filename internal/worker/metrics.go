@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -20,8 +21,7 @@ type JobMetrics struct {
 
 // Work implements rivertype.WorkerMiddleware.
 func (m *JobMetrics) Work(ctx context.Context, job *rivertype.JobRow, next func(context.Context) error) error {
-	switch job.Queue {
-	case jobs.QueueReview, jobs.QueueFollowUp, jobs.QueueThread, jobs.QueueIndex:
+	if slices.Contains(jobs.Queues(), job.Queue) {
 		m.Metrics.QueueWait(job.Queue, max(0, time.Since(job.ScheduledAt)))
 	}
 	return next(ctx)

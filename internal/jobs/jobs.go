@@ -20,6 +20,11 @@ const (
 	QueueIndex    = "index"
 )
 
+// Queues lists the queues whose backlog and pickup delay are monitored.
+func Queues() []string {
+	return []string{QueueReview, QueueFollowUp, QueueThread, QueueIndex}
+}
+
 // TriggerManual is the Trigger a human-requested re-run carries. It is the
 // only trigger the worker lets bypass the bot-author patch-id skip.
 const TriggerManual = "manual"
@@ -133,7 +138,7 @@ type ThreadArgs struct {
 	Number       int    `json:"number"`
 	// CommentID is the inline comment that opened the thread.
 	CommentID int64 `json:"comment_id" river:"unique"`
-	// Resolved is the thread's state now.
+	// Resolved is the thread's state when the event was emitted.
 	Resolved bool `json:"resolved" river:"unique"`
 	// Outdated is whether a push had changed the lines the comment was made
 	// on by the time the thread changed state.
@@ -149,7 +154,7 @@ func (ThreadArgs) Kind() string { return "thread" }
 // thread and state while queued or running: a thread resolved and then
 // unresolved is two jobs, the same change delivered twice is one, and a
 // thread resolved again later is a new job. Queue is excluded from uniqueness
-// so duplicate deliveries are deduplicated across queues during a rollout.
+// so duplicate deliveries are deduplicated across queues.
 func (ThreadArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		Queue: QueueThread, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: LiveStates},

@@ -3,6 +3,7 @@
 package worker
 
 import (
+	"errors"
 	"log/slog"
 	"testing"
 
@@ -62,7 +63,8 @@ func TestThreadWorker(t *testing.T) {
 	}
 
 	lf := &localForge{
-		permissions: map[string]forge.Permission{"onedr0p": forge.PermissionAdmin, "outsider": forge.PermissionRead},
+		threadStates: map[int64]bool{root: true},
+		permissions:  map[string]forge.Permission{"onedr0p": forge.PermissionAdmin, "outsider": forge.PermissionRead},
 		threads: map[int64]forge.Comment{
 			root:  {ID: root, Author: "kritika[bot]", Body: review.FindingMarker(fingerprint) + "\n**Unchecked error**", Inline: true},
 			other: {ID: other, Author: "onedr0p", Body: "nit: rename this", Inline: true},
@@ -106,6 +108,7 @@ func TestThreadWorker(t *testing.T) {
 		ds[0].Author != "onedr0p" || ds[0].Reason != "thread resolved by onedr0p" || ds[0].CommentID != root {
 		t.Fatalf("Dismissals after a maintainer resolved the thread = %+v", ds)
 	}
+	lf.threadStates[root] = false
 	work(root, false, "outsider")
 	if ds := dismissals(); len(ds) != 1 {
 		t.Fatalf("a reader's unresolution restored the finding: %+v", ds)
@@ -114,6 +117,10 @@ func TestThreadWorker(t *testing.T) {
 	if ds := dismissals(); len(ds) != 0 {
 		t.Fatalf("Dismissals after the thread was unresolved = %+v", ds)
 	}
+	work(root, true, "onedr0p")
+	if ds := dismissals(); len(ds) != 0 {
+		t.Fatalf("delayed resolve dismissed an open thread: %+v", ds)
+	}
 	// Nothing to take back is not a failure.
 	work(root, false, "onedr0p")
 	// A push lands between a resolve and its job: the thread's lines were
@@ -121,13 +128,20 @@ func TestThreadWorker(t *testing.T) {
 	pushed := lf.threads[root]
 	pushed.Outdated = true
 	lf.threads[root] = pushed
+	lf.threadStates[root] = true
 	work(root, true, "onedr0p")
 	if ds := dismissals(); len(ds) != 1 {
 		t.Fatalf("a push after the thread was resolved kept it from dismissing: %+v", ds)
 	}
 	work(root, false, "onedr0p")
+	if ds := dismissals(); len(ds) != 1 {
+		t.Fatalf("delayed restore removed a resolved thread's dismissal: %+v", ds)
+	}
+	lf.threadStates[root] = false
+	work(root, false, "onedr0p")
 	// The thread's lines had changed when it was resolved: that says
 	// "fixed", and records nothing.
+	lf.threadStates[root] = true
 	if err := w.Work(ctx, &river.Job[jobs.ThreadArgs]{Args: jobs.ThreadArgs{
 		AccountID: account.ID(), RepositoryID: repoID, Number: number, CommentID: root, Resolved: true, Outdated: true, Sender: "onedr0p",
 	}}); err != nil {
@@ -135,5 +149,38 @@ func TestThreadWorker(t *testing.T) {
 	}
 	if ds := dismissals(); len(ds) != 0 {
 		t.Fatalf("resolving an outdated thread dismissed %+v", ds)
+	}
+}
+
+func TestThreadIgnoresSupersededState(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		resolved, current, found bool
+		err                      error
+	}{
+		{name: "delayed resolve", resolved: true, current: false, found: true},
+		{name: "delayed restore", resolved: false, current: true, found: true},
+		{name: "deleted thread", resolved: true},
+		{name: "state lookup failure", err: errors.New("forge unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lf := &localForge{
+				permissions:  map[string]forge.Permission{"maintainer": forge.PermissionWrite},
+				threads:      map[int64]forge.Comment{1: {Author: "kritika[bot]", Body: review.FindingMarker("fingerprint")}},
+				threadStates: map[int64]bool{}, threadStateErr: tc.err,
+			}
+			if tc.found {
+				lf.threadStates[1] = tc.current
+			}
+			w := &Thread{}
+			outcome, err := w.apply(t.Context(), lf, &pullRequest{repository: "owner/repo", number: 7},
+				jobs.ThreadArgs{CommentID: 1, Sender: "maintainer", Resolved: tc.resolved}, slog.New(slog.DiscardHandler))
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("apply error = %v, want %v", err, tc.err)
+			}
+			if err == nil && outcome != threadIgnored {
+				t.Fatalf("outcome = %q, want ignored", outcome)
+			}
+		})
 	}
 }

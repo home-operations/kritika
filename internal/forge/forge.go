@@ -243,6 +243,10 @@ type Client interface {
 	// PullRequestReaction returns the id of the bot's reaction of content
 	// on the pull request itself, 0 when it has none.
 	PullRequestReaction(ctx context.Context, owner, repo string, number int, content string) (int64, error)
+	// ThreadResolved reads the state of the thread inline comment id opened.
+	// Found is false when the thread no longer exists.
+	ThreadResolved(ctx context.Context, owner, repo string, number int, id int64) (resolved, found bool, err error)
+
 	// ResolveThread resolves the review thread inline comment id opened,
 	// when it is still open, and reports whether it did. With onlyOwn, a
 	// thread someone else has written in is left open: it is a

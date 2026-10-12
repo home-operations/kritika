@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
@@ -21,6 +22,11 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	cfg := &config.Config{ReviewWorkers: 2, IndexWorkers: 1, ThreadWorkers: 1}
+	suffix := "_" + uuid.NewString()
+	queues := make(map[string]river.QueueConfig)
+	for name, queue := range workerQueues(cfg) {
+		queues[name+suffix] = queue
+	}
 	started := make(chan struct{}, cfg.ReviewWorkers)
 	release := make(chan struct{})
 	workers := river.NewWorkers()
@@ -35,13 +41,13 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 	}))
 	river.AddWorker(workers, river.WorkFunc(func(context.Context, *river.Job[jobs.ThreadArgs]) error { return nil }))
 	client, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
-		Queues: workerQueues(cfg), Workers: workers, Logger: slog.New(slog.DiscardHandler),
+		Queues: queues, Workers: workers, Logger: slog.New(slog.DiscardHandler),
 		FetchCooldown: 10 * time.Millisecond, FetchPollInterval: 20 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := make([]int64, 0, cfg.ReviewWorkers+2)
+	ids := make([]int64, 0, cfg.ReviewWorkers+3)
 	t.Cleanup(func() {
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
 		defer done()
@@ -49,8 +55,13 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	unrelated, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91810, Resolved: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids = append(ids, unrelated.Job.ID)
 	for i := range cfg.ReviewWorkers {
-		result, err := client.Insert(ctx, jobs.FollowUpArgs{CommentID: int64(91000 + i)}, nil)
+		result, err := client.Insert(ctx, jobs.FollowUpArgs{CommentID: int64(91000 + i)}, &river.InsertOpts{Queue: (jobs.FollowUpArgs{}).InsertOpts().Queue + suffix})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,19 +88,19 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 	}
 	// An old-queue job stays behind the occupied workers; new thread work
 	// must complete before those workers are released.
-	legacy, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91010, Resolved: true}, &river.InsertOpts{Queue: jobs.QueueFollowUp})
+	legacy, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91010, Resolved: true}, &river.InsertOpts{Queue: jobs.QueueFollowUp + suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ids = append(ids, legacy.Job.ID)
-	fresh, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91011, Resolved: true}, nil)
+	fresh, err := client.Insert(ctx, jobs.ThreadArgs{CommentID: 91011, Resolved: true}, &river.InsertOpts{Queue: (jobs.ThreadArgs{}).InsertOpts().Queue + suffix})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ids = append(ids, fresh.Job.ID)
 	select {
 	case event := <-events:
-		if event.Job.ID != fresh.Job.ID || event.Job.Queue != jobs.QueueThread {
+		if event.Job.ID != fresh.Job.ID || event.Job.Queue != jobs.QueueThread+suffix {
 			t.Fatalf("completed job = %+v, want new thread job %d", event.Job, fresh.Job.ID)
 		}
 	case <-ctx.Done():
@@ -100,8 +111,15 @@ func TestThreadQueueWhileFollowupsSaturated(t *testing.T) {
 		select {
 		case event := <-events:
 			if event.Job.ID == legacy.Job.ID {
-				if event.Job.Queue != jobs.QueueFollowUp {
+				if event.Job.Queue != jobs.QueueFollowUp+suffix {
 					t.Fatalf("legacy job moved queues: %+v", event.Job)
+				}
+				untouched, err := client.JobGet(ctx, unrelated.Job.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if untouched.State != "available" || untouched.Attempt != 0 {
+					t.Fatalf("unrelated job was worked: %+v", untouched)
 				}
 				return
 			}
