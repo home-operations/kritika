@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.65](https://github.com/home-operations/kritika/compare/0.0.64...0.0.65) (2026-10-12)
+
+
+### Features
+
+* **index:** resume interrupted embedding builds ([#920](https://github.com/home-operations/kritika/issues/920)) ([7b5b5a1](https://github.com/home-operations/kritika/commit/7b5b5a11d6766cf0754be18bc0cfeb98827c610f))
+* **observability:** measure queue delays and vector search performance ([#917](https://github.com/home-operations/kritika/issues/917)) ([aaf66fb](https://github.com/home-operations/kritika/commit/aaf66fbddc919dab19b7294e21f298203d5e0f06))
+* **queue:** reserve worker capacity for thread updates ([#918](https://github.com/home-operations/kritika/issues/918)) ([e797385](https://github.com/home-operations/kritika/commit/e7973857ced0d2dfba5deed818862585d06ba202))
+* **web:** unify account workspaces and stabilize loading ([#922](https://github.com/home-operations/kritika/issues/922)) ([9d0ae9b](https://github.com/home-operations/kritika/commit/9d0ae9bd5d35f3651d118d071f4b7bd47b1e0932))
+
+
+### Bug Fixes
+
+* **confidence:** keep P2s and unmentioned lines from lowering the score ([#921](https://github.com/home-operations/kritika/issues/921)) ([fed1924](https://github.com/home-operations/kritika/commit/fed1924b5b30747b98e36bd59a4dabd9bc463be5))
+* **index:** complete forced reindexes atomically ([#916](https://github.com/home-operations/kritika/issues/916)) ([632707d](https://github.com/home-operations/kritika/commit/632707d005e984e8ae05a736f8919aedba2066dd))
+
+
+### Continuous Integration
+
+* **renovate:** regenerate generated files on Renovate pull requests ([#914](https://github.com/home-operations/kritika/issues/914)) ([3f6fda7](https://github.com/home-operations/kritika/commit/3f6fda783864588e1160caf1d4a9b8066f041b83))
+
 ## [0.0.64](https://github.com/home-operations/kritika/compare/0.0.63...0.0.64) (2026-10-12)
 
 
