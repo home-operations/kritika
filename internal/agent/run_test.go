@@ -285,7 +285,11 @@ func TestRefusedArgs(t *testing.T) {
 		{"gh", []string{"config", "list"}, true},
 		{"rg", []string{"-C", "3", "pattern"}, false},
 		{"rg", []string{"--pre-glob", "*.pdf", "pattern"}, false},
-		{"rg", []string{"--", "--pre"}, false},
+		{"rg", []string{"--", "./--pre"}, false},
+		{"rg", []string{"--", "--pre"}, true},
+		{"rg", []string{"-e", "--", "--pre", "sh", "file"}, true},
+		{"rg", []string{"--regexp", "--", "--pre=sh", "file"}, true},
+		{"rg", []string{"-e", "--", "--hostname-bin=sh", "file"}, true},
 		{"rg", []string{"--pre", "sh", "pattern"}, true},
 		{"rg", []string{"--pre=sh", "pattern"}, true},
 		{"rg", []string{"--hostname-bin=sh", "pattern"}, true},
@@ -325,6 +329,22 @@ func TestRunToolRefusesAndMasks(t *testing.T) {
 	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"gh","args":["api","user"]}`))
 	if err != nil || strings.Contains(out, "ghs_run") || !strings.Contains(out, "env=GH_TOKEN=***") {
 		t.Fatalf("out = %q, %v; want the token masked", out, err)
+	}
+}
+
+func TestRunToolRefusesRGExecutionAfterPatternValue(t *testing.T) {
+	for _, flag := range []string{"--pre", "--hostname-bin"} {
+		t.Run(flag, func(t *testing.T) {
+			rt, _ := newTestRunTool(t, false)
+			input, err := json.Marshal(map[string]any{"command": "rg", "args": []string{"-e", "--", flag, "program", "file"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := rt.Run(t.Context(), input)
+			if err == nil || !strings.Contains(err.Error(), "runs another program") || out != "" || len(rt.Ran()) != 0 {
+				t.Fatalf("run = %q, %v, ran %v; want refusal before execution", out, err, rt.Ran())
+			}
+		})
 	}
 }
 

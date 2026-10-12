@@ -161,6 +161,16 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}
+	// Custom settings are writable by either role. Permissive policies
+	// are OR'd, so a runner must not gain account-wide access by setting
+	// app.account_id alongside (or instead of) app.runner_job_id.
+	for _, table := range []string{"runner_runs", "context_packs", "index_packs", "index_staging", "agent_runs", "agent_conversations"} {
+		name := pgx.Identifier{table}.Sanitize()
+		stmts = append(stmts,
+			`ALTER POLICY account_isolation ON `+name+` TO `+app,
+			`ALTER POLICY runner_job ON `+name+` TO `+runner,
+		)
+	}
 	// River's tables are outside row-level security; the application role
 	// inserts and works jobs. Their set changes across River versions, so
 	// grant on whatever River's migrations created rather than a fixed list.
