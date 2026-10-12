@@ -14,6 +14,7 @@ import (
 	"github.com/riverqueue/river/rivertest"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -72,7 +73,7 @@ func TestFilteredPreparation(t *testing.T) {
 				job.State = rivertype.JobStateAvailable
 			}
 			ctx := rivertest.WorkContext(h.ctx, h.insertOnly)
-			_, decision, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`))
+			_, decision, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`), configfile.Confidence{})
 			if (err != nil) != tt.failCompletion {
 				t.Fatalf("preparation = %v", err)
 			}
@@ -116,7 +117,7 @@ func TestFilteredPreparationConcurrentLabelChange(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`))
+		_, _, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`), configfile.Confidence{})
 		done <- err
 	}()
 	waitFor(t, 5*time.Second, "skip waiting to complete its River job", func() bool {
@@ -171,5 +172,72 @@ func TestFilteredPreparationConcurrentLabelChange(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPreparationWaitsForCurrentHead(t *testing.T) {
+	h, job, pr, reviewID, runID := filteredPreparation(t, 1003)
+	ctx, cancel := context.WithTimeout(rivertest.WorkContext(h.ctx, h.insertOnly), 10*time.Second)
+	defer cancel()
+	owner, observer := publicationTestOwner(t), publicationTestOwner(t)
+	tx, err := owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := tx.Rollback(context.Background()); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			t.Error(err)
+		}
+	}()
+	if _, err := tx.Exec(ctx, `UPDATE pull_requests SET head_sha = 'new-head' WHERE id = $1`, pr.id); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	var decision reviewDecision
+	go func() {
+		_, d, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`), configfile.Confidence{})
+		decision = d
+		done <- err
+	}()
+	waitFor(t, 5*time.Second, "preparation waiting on ingest", func() bool {
+		var blocked bool
+		if err := observer.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, owner.PgConn().PID()).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		return blocked
+	})
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if decision.end.Status != store.ReviewSuperseded {
+		t.Fatalf("preparation decided %s from a stale head", decision.end.Status)
+	}
+	row, err := h.insertOnly.JobGet(ctx, job.ID)
+	if err != nil || row.State != rivertype.JobStateRunning {
+		t.Fatalf("old-head job was completed by the filter: %+v, %v", row, err)
+	}
+}
+
+func TestFilteredPreparationCancelAfterShutdown(t *testing.T) {
+	h, job, pr, reviewID, runID := filteredPreparation(t, 1004)
+	jobCtx, stop := context.WithCancelCause(h.ctx)
+	stop(errors.New("shutdown"))
+	ctx, cancel := preparationContext(rivertest.WorkContext(jobCtx, h.insertOnly))
+	defer cancel()
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return jobs.RequestCancel(h.ctx, tx, h.insertOnly, reviewID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, decision, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`), configfile.Confidence{})
+	if err != nil || decision.end.Status != store.ReviewCanceled {
+		t.Fatalf("preparation = %s, %v", decision.end.Status, err)
+	}
+	row, err := h.insertOnly.JobGet(h.ctx, job.ID)
+	if err != nil || row.State == rivertype.JobStateCompleted {
+		t.Fatalf("cancelled job was completed by the filter: %+v, %v", row, err)
 	}
 }

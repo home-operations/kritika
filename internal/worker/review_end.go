@@ -130,23 +130,33 @@ func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID strin
 	return errors.Join(err, w.failReview(dctx, e, "", err.Error()), runErr)
 }
 
-// preparationContext lets a completed runner answer reach its publication
-// checkpoint during shutdown. Explicit cancellation, job timeout and fencing
-// still stop preparation; the detached timeout bounds shutdown work.
+// preparationContext gives a completed runner a short opportunity to save its
+// answer after shutdown. Live work keeps the job's timeout and cancellation policy.
 func preparationContext(job context.Context) (context.Context, context.CancelFunc) {
-	bounded, stopBound := detach(job)
-	ctx, cancel := context.WithCancelCause(bounded)
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(job))
 	forward := func() {
 		cause := context.Cause(job)
-		if cause != nil && (!stoppingCause(cause) || errors.Is(cause, errJobFenced)) {
+		if cause != nil && !shutdownCause(cause) {
 			cancel(cause)
 		}
 	}
-	stopForward := context.AfterFunc(job, forward)
 	forward()
-	return ctx, func() {
-		stopForward()
-		cancel(context.Canceled)
-		stopBound()
-	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-job.Done():
+		}
+		forward()
+		if shutdownCause(context.Cause(job)) {
+			timer := time.NewTimer(10 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+			case <-timer.C:
+				cancel(context.Cause(job))
+			}
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled) }
 }

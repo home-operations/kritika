@@ -73,6 +73,33 @@ func LockPullRequestLabels(ctx context.Context, tx pgx.Tx, prID string) (json.Ra
 	return labels, nil
 }
 
+// LockPullRequestPreparation reads the head and filter labels from the same
+// locked row so ingest cannot change either before preparation commits.
+func LockPullRequestPreparation(ctx context.Context, tx pgx.Tx, prID string) (string, json.RawMessage, error) {
+	var head string
+	var labels json.RawMessage
+	err := tx.QueryRow(ctx, `SELECT head_sha, labels FROM pull_requests WHERE id = $1 FOR UPDATE`, prID).Scan(&head, &labels)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, ErrNotFound
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("store: lock pull request preparation: %w", err)
+	}
+	return head, labels, nil
+}
+
+// LockReviewPreparation serializes preparation with dashboard cancellation.
+func LockReviewPreparation(ctx context.Context, tx pgx.Tx, reviewID string) (ReviewStatus, bool, error) {
+	var status ReviewStatus
+	var canceled bool
+	err := tx.QueryRow(ctx, `SELECT status, cancel_requested_at IS NOT NULL FROM reviews WHERE id = $1 FOR UPDATE`,
+		reviewID).Scan(&status, &canceled)
+	if err != nil {
+		return "", false, fmt.Errorf("store: lock review preparation: %w", err)
+	}
+	return status, canceled, nil
+}
+
 func ReadFilterPullRequest(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {
 	var pr repoconfig.PullRequest
 	var openedAt *time.Time

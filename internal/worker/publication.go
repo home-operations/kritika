@@ -29,30 +29,42 @@ type publicationAnswer struct {
 	Model      string
 }
 
-// publicationSnapshot freezes the inputs to delivery, including repository
-// templates and policy. Credentials and model clients are resolved separately.
+type publicationPreparation struct {
+	Agent                  store.AgentRunRow
+	RunID                  string
+	Parse                  review.ParseOptions
+	Models                 configfile.Models
+	Limits                 configfile.Limits
+	MaxPromptTokens        int
+	Title, Author, BaseRef string
+}
+
+// publicationSnapshot freezes the inputs to preparation and delivery.
+// Credentials and model clients are resolved separately.
 type publicationSnapshot struct {
-	Version        int
-	Answer         publicationAnswer
-	Review         configfile.Review
-	ConfidenceRule configfile.Confidence
-	Effort         model.Effort
-	MaxAutoReviews int
-	Templates      review.Templates
-	Scope          review.Scope
-	Trigger        string
-	Closed         string
-	RepoNotes      []string
-	Sources        []string
-	PriorID        string
-	PriorHead      string
-	Prior          []publicationFinding
-	Dismissed      []store.Dismissal
-	Resolved       []publicationFinding
-	HeldBack       []review.Finding
-	Confidence     *review.Confidence
-	Unscored       bool
-	Unfinished     int
+	Preparation     *publicationPreparation `json:",omitempty"`
+	PriorConfidence *review.Confidence
+	Version         int
+	Answer          publicationAnswer
+	Review          configfile.Review
+	ConfidenceRule  configfile.Confidence
+	Effort          model.Effort
+	MaxAutoReviews  int
+	Templates       review.Templates
+	Scope           review.Scope
+	Trigger         string
+	Closed          string
+	RepoNotes       []string
+	Sources         []string
+	PriorID         string
+	PriorHead       string
+	Prior           []publicationFinding
+	Dismissed       []store.Dismissal
+	Resolved        []publicationFinding
+	HeldBack        []review.Finding
+	Confidence      *review.Confidence
+	Unscored        bool
+	Unfinished      int
 }
 
 type publicationFinding struct {
@@ -79,23 +91,44 @@ func restoreFindings(prior []publicationFinding) []priorFinding {
 
 func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer) error {
 	snapshot := publicationSnapshot{
-		Version: 1, Answer: *answer, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
+		Version: 1, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
 		Effort: p.settings.Models.Effort, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
 		Scope: p.scope, Trigger: p.trigger, Closed: p.pr.closed, RepoNotes: p.repoNotes,
-		PriorID: p.prior.id, PriorHead: p.prior.headSHA, Prior: snapshotFindings(p.prior.findings),
+		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, Prior: snapshotFindings(p.prior.findings),
 		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
 		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished,
 	}
 	if p.agent != nil {
 		snapshot.Sources = p.agent.Sources
 	}
+	if answer == nil {
+		if p.agent == nil {
+			return errors.New("worker: the runner wrote no agent run")
+		}
+		snapshot.Version = 2
+		snapshot.Preparation = &publicationPreparation{Agent: *p.agent, RunID: p.runID, Parse: p.parse,
+			Models: p.settings.Models, Limits: p.settings.Limits, MaxPromptTokens: p.settings.Agent.MaxPromptTokens,
+			Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef}
+	} else {
+		snapshot.Answer = *answer
+	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("worker: encode publication: %w", err)
 	}
-	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		if p.pending != nil {
+			return store.ReplacePublication(ctx, tx, p.reviewID, p.pending, payload)
+		}
 		return store.SavePublication(ctx, tx, p.reviewID, payload)
 	})
+	if err == nil {
+		p.pending = nil
+		if answer == nil {
+			p.pending = payload
+		}
+	}
+	return err
 }
 
 func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, error) {
@@ -103,7 +136,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	if err := json.Unmarshal(payload, &s); err != nil {
 		return nil, fmt.Errorf("worker: decode publication: %w", err)
 	}
-	if s.Version != 1 {
+	if s.Version != 1 && s.Version != 2 {
 		return nil, fmt.Errorf("worker: unsupported publication version %d", s.Version)
 	}
 	p.settings = configfile.Settings{Review: s.Review, Confidence: s.ConfidenceRule,
@@ -113,15 +146,28 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 		p.pr.closed = s.Closed
 	}
 	p.repoNotes = s.RepoNotes
-	p.prior = priorReview{id: s.PriorID, headSHA: s.PriorHead, findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
+	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead,
+		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
 	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
 	p.confidence, p.unscored, p.unfinished = s.Confidence, s.Unscored, s.Unfinished
 	p.agent = &store.AgentRunRow{Sources: s.Sources}
+	if s.Version == 2 {
+		if s.Preparation == nil {
+			return nil, errors.New("worker: publication preparation missing")
+		}
+		prep := s.Preparation
+		p.agent, p.runID, p.parse = &prep.Agent, prep.RunID, prep.Parse
+		p.settings.Models, p.settings.Limits = prep.Models, prep.Limits
+		p.settings.Agent.MaxPromptTokens = prep.MaxPromptTokens
+		p.pr.title, p.pr.author, p.pr.baseRef = prep.Title, prep.Author, prep.BaseRef
+		p.pending = payload
+		return nil, nil
+	}
 	return &s.Answer, nil
 }
 
-// resumePublication runs before admission: a saved answer requires neither
-// a runner nor a model slot, even if model settings have since changed.
+// resumePublication runs before admission. A saved runner answer may still
+// need merge and confidence calls; a finalized answer only needs delivery.
 func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File,
 	logger *slog.Logger,
 ) (resumed bool, err error) {
@@ -138,7 +184,7 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 		return true, err
 	}
 	started := time.Now()
-	p := &publishPhase{w: w, reviewID: saved.ReviewID, jobID: job.ID, logger: logger,
+	p := &publishPhase{w: w, file: file, reviewID: saved.ReviewID, jobID: job.ID, logger: logger,
 		pr: &pullRequest{id: saved.PullRequestID, repositoryID: saved.RepositoryID, repository: saved.Repository,
 			number: saved.Number, headSHA: saved.HeadSHA, authorIsBot: saved.AuthorIsBot, closed: saved.Closed}}
 	handled := false
@@ -177,7 +223,13 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 		p.client = statusless{p.client}
 	}
 	logger.Info("resuming review publication", "review", saved.ReviewID)
-	status, deliveryErr := p.deliver(ctx, answer)
+	var status store.ReviewStatus
+	var deliveryErr error
+	if p.pending != nil {
+		status, deliveryErr = p.run(ctx)
+	} else {
+		status, deliveryErr = p.deliver(ctx, answer)
+	}
 	handled = true
 	return true, w.publicationEnded(ctx, job, p, status, deliveryErr, started)
 }
@@ -225,7 +277,7 @@ func (w *Review) finishPublication(
 }
 
 func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase, started time.Time) error {
-	cctx, cancel := context.WithCancelCause(ctx)
+	cctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	cancel(river.ErrJobCancelledRemotely)
 	return w.publicationEnded(cctx, job, p, store.ReviewCanceled, river.ErrJobCancelledRemotely, started)
 }
@@ -264,6 +316,28 @@ func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.Revie
 	}
 	p.logger.Warn("publication will be retried", "review", p.reviewID, "error", err)
 	return errors.Join(decision.jobError(), readErr)
+}
+
+// preparationCurrent checks durable cancellation even when River's context
+// already carries a shutdown cause and cannot receive a later cancellation.
+func (p *publishPhase) preparationCurrent(ctx context.Context) error {
+	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		saved, err := store.ReadPublication(ctx, tx, p.jobID)
+		if err != nil {
+			return err
+		}
+		if saved.CancelRequested {
+			return river.ErrJobCancelledRemotely
+		}
+		current, err := store.PublicationCurrent(ctx, tx, p.reviewID)
+		if err != nil {
+			return err
+		}
+		if !current {
+			return errSuperseded
+		}
+		return nil
+	})
 }
 
 func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (store.ReviewStatus, error) {

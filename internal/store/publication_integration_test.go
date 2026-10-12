@@ -54,6 +54,21 @@ func TestPublicationCheckpoint(t *testing.T) {
 			return nil
 		}))
 	})
+	t.Run("advancing a checkpoint rejects stale writers", func(t *testing.T) {
+		finalized := json.RawMessage(`{"version":1,"model":"finalized"}`)
+		must(s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return ReplacePublication(ctx, tx, id, payload, finalized)
+		}))
+		err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return ReplacePublication(ctx, tx, id, payload, json.RawMessage(`{}`))
+		})
+		if err == nil {
+			t.Fatal("stale attempt replaced the finalized checkpoint")
+		}
+		must(s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+			return ReplacePublication(ctx, tx, id, finalized, payload)
+		}))
+	})
 	t.Run("another account cannot read the checkpoint", func(t *testing.T) {
 		err := s.WithAccount(ctx, other, func(tx pgx.Tx) error { _, err := ReadPublication(ctx, tx, jobID); return err })
 		if !errors.Is(err, ErrNotFound) {

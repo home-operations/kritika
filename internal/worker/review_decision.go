@@ -51,10 +51,17 @@ func stoppingCause(cause error) bool {
 	return cause != nil && !errors.Is(cause, river.ErrJobCancelledRemotely) && !errors.Is(cause, context.DeadlineExceeded)
 }
 
+func shutdownCause(cause error) bool {
+	return stoppingCause(cause) && !errors.Is(cause, errJobFenced)
+}
+
 func reviewAttemptFailed(cause, err error, finalAttempt bool) bool {
+	if _, snoozed := errors.AsType[*river.JobSnoozeError](err); snoozed {
+		return false
+	}
 	// River refunds a shutdown attempt only when the returned error carries
 	// the stop cause or context.Canceled. Fencing is our own cancellation.
-	refunded := stoppingCause(cause) && !errors.Is(cause, errJobFenced) &&
+	refunded := shutdownCause(cause) &&
 		(errors.Is(err, cause) || errors.Is(err, context.Canceled))
 	return err != nil && finalAttempt && !refunded
 }

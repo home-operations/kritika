@@ -44,7 +44,8 @@ func queuedOutcomeReview(t *testing.T, h *agenticHarness) *river.Job[jobs.Review
 	job.Attempt = 1
 	t.Cleanup(func() {
 		_, err := h.st.App().Exec(context.Background(), `UPDATE river_job SET state = 'cancelled', finalized_at = now()
-			WHERE kind = 'review' AND (args->>'number')::int = $1 AND finalized_at IS NULL`, h.number)
+			WHERE kind = 'review' AND (args->>'number')::int = $1 AND args->>'account_id' = $2
+			AND args->>'repository_id' = $3 AND finalized_at IS NULL`, h.number, job.Args.AccountID, job.Args.RepositoryID)
 		if err != nil {
 			t.Error(err)
 		}
@@ -153,20 +154,18 @@ func TestUnstartedReviewLogsRunnerFailure(t *testing.T) {
 
 func TestSuccessfulRunnerInterruptedBeforeCheckpoint(t *testing.T) {
 	for i, tt := range []struct {
-		name  string
-		retry bool
-		want  store.ReviewStatus
+		name string
+		want store.ReviewStatus
 	}{
-		{"finishes during shutdown", false, store.ReviewCompleted},
-		{"retries delivery only", true, store.ReviewCompleted},
-		{"cancellation before retry", true, store.ReviewCanceled},
-		{"superseded before retry", true, store.ReviewSuperseded},
+		{"resumes a refunded first attempt", store.ReviewCompleted},
+		{"cancellation before retry", store.ReviewCanceled},
+		{"superseded before retry", store.ReviewSuperseded},
 	} {
-		t.Run(tt.name, func(t *testing.T) { checkInterruptedAnswer(t, 990+i, tt.retry, tt.want) })
+		t.Run(tt.name, func(t *testing.T) { checkInterruptedAnswer(t, 990+i, tt.want) })
 	}
 }
 
-func checkInterruptedAnswer(t *testing.T, number int, retry bool, want store.ReviewStatus) {
+func checkInterruptedAnswer(t *testing.T, number int, want store.ReviewStatus) {
 	t.Helper()
 	h := newAgenticHarness(t, number)
 	job := queuedOutcomeReview(t, h)
@@ -174,12 +173,9 @@ func checkInterruptedAnswer(t *testing.T, number int, retry bool, want store.Rev
 	ctx, cancel := context.WithCancelCause(h.ctx)
 	defer cancel(nil)
 	h.exec.after = func() { cancel(errors.New("stop initiated")) }
-	if retry {
-		h.review.Forges = &forges{f: &unavailablePublication{h.lf}}
-	}
 	err := h.review.Work(ctx, job)
-	if (err != nil) != retry {
-		t.Fatalf("Work = %v, retry = %v", err, retry)
+	if !errors.Is(err, context.Cause(ctx)) {
+		t.Fatalf("Work = %v, want shutdown retry", err)
 	}
 	var saved store.Publication
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
@@ -189,7 +185,7 @@ func checkInterruptedAnswer(t *testing.T, number int, retry bool, want store.Rev
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if retry && (saved.Status != store.ReviewPrepared || len(saved.Payload) <= 2) {
+	if saved.Status != store.ReviewPrepared || len(saved.Payload) <= 2 {
 		t.Fatalf("answer not checkpointed for retry: %+v", saved)
 	}
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
@@ -208,7 +204,6 @@ func checkInterruptedAnswer(t *testing.T, number int, retry bool, want store.Rev
 	worker := *h.review
 	worker.Executor, worker.Steppers = nil, nil
 	worker.Forges = &forges{f: h.lf}
-	job.Attempt++
 	for range 2 {
 		if err := worker.Work(h.ctx, job); err != nil {
 			t.Fatalf("replay = %v", err)

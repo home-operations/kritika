@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -160,6 +161,8 @@ func TestReviewAttemptFailed(t *testing.T) {
 		want       bool
 	}{
 		{name: "successful last attempt", final: true},
+		{name: "snooze on last attempt", err: river.JobSnooze(time.Second), final: true},
+		{name: "snooze during shutdown", cause: stopped, err: river.JobSnooze(time.Second), final: true},
 		{name: "retryable failure", err: errors.New("database unavailable")},
 		{name: "exhausted attempts", err: errors.New("database unavailable"), final: true, want: true},
 		{name: "wrapped shutdown is refunded", cause: stopped, err: fmt.Errorf("review: %w", stopped), final: true},
@@ -224,8 +227,8 @@ func TestPreparationContext(t *testing.T) {
 				}
 				ctx, stop := preparationContext(job)
 				defer stop()
-				if _, ok := ctx.Deadline(); !ok {
-					t.Fatal("preparation must be bounded")
+				if _, ok := ctx.Deadline(); ok {
+					t.Fatal("preparation must not impose a deadline on a live job")
 				}
 				endJob(tt.cause)
 				if tt.stops {
@@ -247,4 +250,28 @@ func TestPreparationContext(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestPreparationContextShutdownBudget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		job, cancel := context.WithCancelCause(t.Context())
+		defer cancel(nil)
+		ctx, stop := preparationContext(job)
+		defer stop()
+		time.Sleep(3 * time.Minute)
+		if ctx.Err() != nil {
+			t.Fatal("live preparation acquired its own timeout")
+		}
+		cause := errors.New("shutdown")
+		cancel(cause)
+		synctest.Wait()
+		if ctx.Err() != nil {
+			t.Fatal("shutdown did not allow the answer checkpoint")
+		}
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		if !errors.Is(context.Cause(ctx), cause) {
+			t.Fatalf("preparation outlived shutdown budget: %v", context.Cause(ctx))
+		}
+	})
 }

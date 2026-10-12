@@ -81,10 +81,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	file := w.Current.Get()
 	logger := w.Logger.With("account", args.AccountID, "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
 	started := time.Now()
-	if job.Attempt > 1 {
-		if resumed, err := w.resumePublication(ctx, job, file, logger); resumed {
-			return err
-		}
+	// River refunds shutdown attempts, so a checkpoint may exist on attempt one.
+	if resumed, err := w.resumePublication(ctx, job, file, logger); resumed {
+		return err
 	}
 	account, err := w.account(file, args.AccountID)
 	if err != nil {
@@ -192,16 +191,16 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	defer stopPreparation()
 	prep, status, err := w.afterRun(pctx, job, account, pr, eff, b.notes, client, reviewID, runID, prior,
 		spec.Prompt.PullRequest.Labels, logger)
+	if status != "" && prep.patchID == "" {
+		stopPreparation()
+		w.Metrics.Review(account.Key(), string(status), time.Since(started))
+		return err
+	}
 	if err != nil {
 		// Cancellation and timeout still reach afterRun; the review
 		// ends rather than staying running while River retries the job.
 		return w.finishEnded(ctx, ended, err)
 	}
-	if prep.patchID == "" {
-		w.Metrics.Review(account.Key(), string(status), time.Since(started))
-		return nil
-	}
-	patchID := prep.patchID
 	phase := &publishPhase{
 		w: w, file: file, account: account, settings: prep.eff.Settings, client: client, pr: pr,
 		reviewID: reviewID, runID: runID, jobID: job.ID, lease: admitted.lease, trigger: args.Trigger, logger: logger,
@@ -212,26 +211,21 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,
 	}
+	if err := phase.checkpoint(pctx, nil); err != nil {
+		stopPreparation()
+		if ctx.Err() != nil {
+			return w.finishEnded(ctx, ended, err)
+		}
+		logger.Error("runner answer not checkpointed", "error", err)
+		w.Metrics.Review(account.Key(), string(store.ReviewFailed), time.Since(started))
+		fctx, finish := detach(ctx)
+		defer finish()
+		return w.failReview(fctx, ended, prep.patchID, err.Error())
+	}
+	stopPreparation()
 	status, perr := phase.run(ctx)
-	if phase.checkpointed {
-		publicationHandled = true
-		return w.publicationEnded(ctx, job, phase, status, perr, started)
-	}
-	decision := decidePublication(context.Cause(ctx), status, perr, false, job.Attempt >= job.MaxAttempts)
-	if decision.disposition == reviewInterrupted {
-		return w.finishInterrupted(ctx, ended, decision)
-	}
-	if perr != nil && decision.end.Status == store.ReviewFailed {
-		logger.Error("review failed", "error", perr)
-	}
-	logger.Info("review " + string(decision.end.Status))
-	w.Metrics.Review(account.Key(), string(decision.end.Status), time.Since(started))
-	fctx, fcancel := detach(ctx)
-	defer fcancel()
-	if decision.end.Status == store.ReviewFailed && !phase.statusReported {
-		return w.failReview(fctx, ended, patchID, decision.end.Error)
-	}
-	return w.finishReview(fctx, args.AccountID, reviewID, decision.end.Status, patchID, decision.end.Error)
+	publicationHandled = true
+	return w.publicationEnded(ctx, job, phase, status, perr, started)
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know
