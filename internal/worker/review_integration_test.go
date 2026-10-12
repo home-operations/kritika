@@ -1030,8 +1030,8 @@ func runChunks(ctx context.Context, t *testing.T, st *store.Store, accountID, ru
 }
 
 // checkIndexEmbedFailure fails a forced rebuild's embedding after its first
-// batch and checks neither the chunks its runner staged nor the ones it
-// embedded are left behind for good, and the live index is untouched.
+// batch and checks progress survives a retry but is cleaned after cancellation,
+// while the live index is untouched.
 func checkIndexEmbedFailure(
 	ctx context.Context, t *testing.T, st *store.Store, queue *river.Client[pgx.Tx], fe *fakeEmbedder, accountID, repoID string,
 ) {
@@ -1049,13 +1049,14 @@ func checkIndexEmbedFailure(
 		fe.fail.Store(false)
 	})
 	var packed, staged, embedded int
-	waitFor(t, 20*time.Second, "the failed embedding's staged and embedded chunks to be cleared", func() bool {
+	waitFor(t, 20*time.Second, "the failed embedding to become retryable", func() bool {
 		err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `SELECT p.chunk_count, (SELECT count(*) FROM index_staging s WHERE s.runner_run_id = r.id),
 				(SELECT count(*) FROM index_chunks c WHERE c.index_run_id = i.id)
 				FROM index_runs i JOIN runner_runs r ON r.index_run_id = i.id JOIN index_packs p ON p.runner_run_id = r.id
-				WHERE i.repository_id = $1 AND i.status = 'failed' AND i.error LIKE '%embedder down%'
-				ORDER BY i.created_at LIMIT 1`, repoID).Scan(&packed, &staged, &embedded)
+				JOIN river_job j ON j.id = r.river_job_id
+				WHERE j.id = $1 AND j.state = 'retryable' AND i.status = 'failed' AND i.error LIKE '%embedder down%'
+				ORDER BY i.created_at LIMIT 1`, job.Job.ID).Scan(&packed, &staged, &embedded)
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false
@@ -1063,12 +1064,31 @@ func checkIndexEmbedFailure(
 		if err != nil {
 			t.Fatal(err)
 		}
-		return staged == 0 && embedded == 0
+		return true
 	})
 	// A chunk a batch: with two staged, the first was embedded and written
 	// before the embedder failed.
 	if packed < 2 {
 		t.Fatalf("the runner staged %d chunks, too few for a batch to be written before the failure", packed)
+	}
+	if staged != packed || embedded != 1 {
+		t.Fatalf("retryable progress: staged=%d packed=%d embedded=%d", staged, packed, embedded)
+	}
+	if _, err := queue.JobCancel(ctx, job.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SweepIndexProgress(ctx, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT
+			(SELECT count(*) FROM index_staging s JOIN runner_runs r ON r.id = s.runner_run_id WHERE r.river_job_id = $1),
+			(SELECT count(*) FROM index_chunks c JOIN runner_runs r ON r.index_run_id = c.index_run_id WHERE r.river_job_id = $1)`, job.Job.ID).Scan(&staged, &embedded)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if staged != 0 || embedded != 0 {
+		t.Fatalf("cancelled progress: staged=%d embedded=%d", staged, embedded)
 	}
 	if now := activeIndexGeneration(ctx, t, st, accountID, repoID); now != active || runChunks(ctx, t, st, accountID, active) != live {
 		t.Fatalf("the failed rebuild changed the live index: generation %s, was %s", now, active)
@@ -1529,7 +1549,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkIndexRetry(ctx, t, appStore, insertOnly, exec, account.ID(), repoID)
 	})
 
-	t.Run("a failed embedding leaves no staged chunks", func(t *testing.T) {
+	t.Run("a failed embedding retains progress until cancelled", func(t *testing.T) {
 		checkIndexEmbedFailure(ctx, t, appStore, insertOnly, fe, account.ID(), repoID)
 	})
 

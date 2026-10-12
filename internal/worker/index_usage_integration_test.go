@@ -75,6 +75,10 @@ func TestIndexBatchUsage(t *testing.T) {
 					t.Error(err)
 				}
 			})
+			if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = 'running', attempt = 1 WHERE id = $1`, job.Job.ID); err != nil {
+				t.Fatal(err)
+			}
+			job.Job.State, job.Job.Attempt = "running", 1
 			var run, runner string
 			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 				var err error

@@ -129,7 +129,7 @@ func TestFinishIndexRunPreservesTerminalStatus(t *testing.T) {
 		wantChunks int
 		wantError  string
 	}{
-		{IndexRunning, IndexFailed, 0, "commit acknowledgement lost"},
+		{IndexRunning, IndexFailed, 7, "commit acknowledgement lost"},
 		{IndexCompleted, IndexCompleted, 7, ""},
 		{IndexSuperseded, IndexSuperseded, 7, ""},
 		{IndexFailed, IndexFailed, 7, ""},

@@ -36,8 +36,12 @@ from TensorChord's
 [`vchord-scratch`](https://docs.vectorchord.ai/vectorchord/admin/kubernetes.html)
 image as an
 [image volume extension](https://cloudnative-pg.io/docs/1.30/imagevolume_extensions/).
-Two instances with synchronous replication keep every committed write through
-a failover:
+The two-instance example favors availability when its standby is unavailable.
+While synchronous replication is active and commits use `synchronous_commit=on`,
+acknowledgement waits for the standby to flush WAL. With `dataDurability:
+preferred`, that requirement can be relaxed: if the primary fails before those
+writes reach a surviving standby, acknowledged changes can be lost. This is not
+an unconditional zero-data-loss failover configuration.
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -61,8 +65,8 @@ spec:
           - /usr/share/postgresql/18/
     shared_preload_libraries:
       - vchord
-    # A commit waits for the standby while it is healthy, so a failover
-    # loses nothing; with the standby down, writes go on without it.
+    # Wait for the healthy standby; allow writes without it when unavailable.
+    # Those writes can be lost if the primary fails before replication catches up.
     synchronous:
       method: any
       number: 1
@@ -90,7 +94,10 @@ spec:
   image instead, which has VectorChord built in and is tagged
   `<postgres>-<vchord>` (`18.6-1.1.1`), and leave out `extensions`.
 - `dataDurability: preferred` relaxes the synchronous requirement while the
-  standby is unavailable. `required` would block writes instead.
+  standby is unavailable. `required` keeps the requested synchronous quorum,
+  blocking commits without enough standbys. Neither replaces backups or protects
+  against losing all copies. Choose this policy from recovery objectives;
+  see [CNPG's durability tradeoff](https://cloudnative-pg.io/docs/devel/replication/).
 - `primaryUpdateMethod: switchover` rejects an update that changes the image
   and the Postgres parameters at once; apply them one at a time.
 - `podAntiAffinityType: required` keeps the two instances on different nodes.
@@ -261,8 +268,10 @@ within one `KRITIKA_LEADER_RETRY_INTERVAL`, 15 seconds unless set; until
 then the leader's duties and job fetching pause.
 No kritika pod restarts.
 
-How fast that happens does not depend on the Cluster's settings. kritika's
-pools ask Postgres for TCP keepalives of 30s idle, 10s apart, three missed,
+These application reconnect intervals are not an end-to-end recovery-time
+promise. CNPG must detect the failure, promote a usable standby, and make the
+service reachable first; storage, scheduling and replication state also matter.
+kritika's pools ask Postgres for TCP keepalives of 30s idle, 10s apart, three missed,
 so a kritika pod that dies without closing its sockets loses its session,
 and with it the leader lock, within about a minute; the Cluster's own
 `tcp_keepalives_*` parameters are not involved. In the other direction, a
@@ -286,9 +295,10 @@ kubectl cnpg promote kritika-postgres kritika-postgres-2 -n kritika
 
 ## Backups
 
-The configuration lives in git and the similar-code index rebuilds on its
-own, but reviews, findings, feedback, usage and the audit log exist only in
-the database. CNPG backs a cluster up two ways
+The configuration lives in git and the similar-code index can be rebuilt, but
+reviews, findings, dismissals, feedback, usage, the audit log and queued jobs
+exist in the database. Embedding checkpoints and staging save repeated work,
+but are also database state: losing them can repeat paid embedding calls. CNPG backs a cluster up two ways
 ([backups](https://cloudnative-pg.io/docs/1.30/backup/)):
 
 - **Object storage** through the
@@ -310,6 +320,82 @@ Secret in `bootstrap.recovery`, with `database: kritika` and `owner: kritika`,
 and CNPG sets the owner's password from it once recovery completes; the
 `DatabaseRole`s apply their own Secrets' passwords the same way. kritika's
 `uri` keys then match, whether the Secrets were kept or generated anew.
+
+## Recovery objectives and verification
+
+Recovery-point objective (RPO) is the amount of data loss the deployment accepts;
+recovery-time objective (RTO) is how long service may be unavailable. Both are
+**undecided** for the deployment reviewed on 2026-10-12. No numerical recovery
+guarantee has been established, and the replication policy was left unchanged.
+With `preferred`, acknowledged queue inserts, review records and embedding
+checkpoints share the same potential loss window as other database writes.
+
+A read-only inspection on that date found:
+
+| Area | Evidence | Meaning / remaining gap |
+| --- | --- | --- |
+| Replication policy | Two instances; `method: any`, `number: 1`, `dataDurability: preferred`, `failoverQuorum: false` | Matches this example's availability preference; a zero-loss objective would require a separate policy decision and validation. |
+| Live replication | Both instances ready; primary `synchronous_commit=on`; one streaming quorum standby in `synchronous_standby_names` | Synchronous replication was active at inspection time. This does not prove behavior during standby loss or failover. |
+| Backup configuration | No Cluster backup configuration or plugins; no CNPG `Backup` or `ScheduledBackup` resources for this cluster | No CNPG-managed base-backup coverage was demonstrated. External backup systems were not verified. |
+| WAL archiving | `archive_mode=on`, `archive_timeout=5min`, CNPG archive hook, nonzero archive counters and `ContinuousArchiving=True` | Hook success and counters do not establish an independently stored, retrievable WAL chain. No archive destination was configured in the inspected Cluster. |
+| Snapshots | No `VolumeSnapshot` resources in the deployment namespace | No snapshot recovery point was demonstrated by this inspection. |
+| Restore evidence | No last-successful-backup or first-recoverability timestamp reported; no restore exercise performed | Restore coverage and measured RTO remain unverified. A healthy standby is not restore-test evidence. |
+
+This is a dated observation, not a statement that the example manifest proves
+production durability. Recheck the Cluster specification and status, backup
+resources, snapshots, and PostgreSQL's `pg_stat_replication` and
+`pg_stat_archiver` when deployment settings change.
+
+Before claiming recoverability:
+
+1. Decide acceptable RPO/RTO and whether writes should pause when synchronous
+   standbys are unavailable. Compare those targets with the deployed policy and
+   effective session settings, including any `synchronous_commit` overrides.
+2. Establish and verify base backups and a continuous WAL archive in an
+   independent failure domain, with retention sufficient for the intended
+   recovery window. Check actual objects, recent backup results and archive
+   failures, not just the presence of an archive hook. See
+   [CNPG backup requirements](https://cloudnative-pg.io/docs/devel/backup/).
+3. Restore a selected recovery point into an isolated cluster and record the
+   last recovered transaction and measured recovery time. Verify reviews,
+   findings/dismissals, usage and queue rows; test application-role access and
+   the restored embedding checkpoint's agreement with its vectors. Keep
+   production workers and forge/provider egress disconnected during validation
+   so restored jobs cannot post duplicate reviews or spend tokens.
+4. Record the tested backup, recovery target, WAL coverage, result and remaining
+   gaps. Rebuild vector indexes when appropriate, but do not substitute an index
+   rebuild for recovery of durable application records. See
+   [CNPG recovery procedures](https://cloudnative-pg.io/docs/devel/recovery/).
+
+The inspection did not perform failover, restore, or replication-policy changes.
+Those are separate operational work after recovery objectives are agreed.
+
+## Interrupted embedding builds
+
+Index jobs retain completed staging and checkpoint each batch in the same
+transaction as its vectors. A retry of the same River job resumes at the last
+committed chunk, reusing its index and runner records. Compatibility includes
+the target commit, incremental base, ignore rules, embedding endpoint/model,
+dimensions and input limits. Changed inputs discard incompatible progress and
+build anew. A runner that did not finish staging is restarted.
+
+An embedding request can still be repeated if the process stops after the
+provider handles it but before its vectors and checkpoint commit. Usage is
+recorded separately when the provider reports it; checkpoints do not promise
+exactly-once external calls. No database transaction stays open during an
+embedding request.
+
+Publication still swaps or advances the generation atomically, so searches see
+only a completed index. Forced rebuilds also complete their River job and enqueue
+catch-up work in that transaction. Retryable failures retain partial vectors;
+completed or superseded work clears them as appropriate, and the leader's
+bounded recovery sweep removes remaining progress for completed, cancelled, discarded or
+missing jobs. To restart a cancelled index, request a fresh reindex. The pinned
+River version retains `cancel_attempted_at` when retrying a cancelled job ID;
+its cancellation polling and state transitions still treat that job as cancelled.
+The worker keeps that cancellation fence rather than ignoring the marker.
+Checkpoints inherit the database's replication and backup
+limitations described above.
 
 ## Queue upgrades and rollbacks
 

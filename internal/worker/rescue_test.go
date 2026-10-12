@@ -29,6 +29,7 @@ type fakeRescueStore struct {
 
 	rescues, revoked, ended []string
 	swept                   int
+	progressSweeps          int
 }
 
 func (f *fakeRescueStore) AbandonedJobs(context.Context, time.Duration, int) ([]store.AbandonedJob, error) {
@@ -61,6 +62,11 @@ func (f *fakeRescueStore) EndOrphanedRun(_ context.Context, run store.OrphanedRu
 		return errors.New("end failed")
 	}
 	f.ended = append(f.ended, run.ID)
+	return nil
+}
+
+func (f *fakeRescueStore) SweepIndexProgress(context.Context, int) error {
+	f.progressSweeps++
 	return nil
 }
 
@@ -172,6 +178,9 @@ func TestRescue(t *testing.T) {
 			}
 			if !slices.Equal(tt.st.ended, tt.wantEnded) {
 				t.Errorf("ended = %v, want %v", tt.st.ended, tt.wantEnded)
+			}
+			if tt.st.progressSweeps != 1 {
+				t.Errorf("index progress sweeps = %d, want 1", tt.st.progressSweeps)
 			}
 			if tt.st.swept != 1 {
 				t.Errorf("heartbeat sweeps = %d, want 1", tt.st.swept)

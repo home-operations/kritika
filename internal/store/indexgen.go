@@ -84,6 +84,7 @@ type NewIndexRun struct {
 	AccountID, RepositoryID, Commit, Base, Mode, Trigger string
 	Embedding                                            configfile.Embedding
 	IgnoreHash                                           string
+	ResumeKey                                            string
 	// JobID is the River job working the run.
 	JobID int64
 	// StrayAfter is how old a run other than the active generation must be
@@ -93,21 +94,20 @@ type NewIndexRun struct {
 }
 
 // StartIndexRun records a running index run and its runner run and
-// returns their ids. Only the active generation keeps its chunks: any
-// other run's were left by a job that could not clear them, such as one
-// killed mid-build. A forced rebuild can run beside an update, so a run is
-// swept only once it is StrayAfter old.
+// returns their ids. Checkpointed runs are left to SweepIndexProgress, which
+// locks their jobs before cleanup so a manual retry cannot race deletion.
 func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runnerRunID string, err error) {
 	if _, err := tx.Exec(ctx, `DELETE FROM index_chunks WHERE index_run_id IN (
 		SELECT x.id FROM index_runs x JOIN repositories r ON r.id = x.repository_id
-		WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id AND x.created_at < now() - make_interval(secs => $2))`,
+		WHERE r.id = $1 AND x.id IS DISTINCT FROM r.active_index_run_id AND x.created_at < now() - make_interval(secs => $2)
+		AND x.resume_key = '')`,
 		r.RepositoryID, r.StrayAfter.Seconds()); err != nil {
 		return "", "", fmt.Errorf("store: drop stray chunks: %w", err)
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO index_runs
-		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger, ignore_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8, $9) RETURNING id`,
-		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Mode, r.Trigger, r.IgnoreHash).
+		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger, ignore_hash, resume_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8, $9, $10) RETURNING id`,
+		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Mode, r.Trigger, r.IgnoreHash, r.ResumeKey).
 		Scan(&runID); err != nil {
 		return "", "", fmt.Errorf("store: insert index run: %w", err)
 	}
@@ -115,14 +115,23 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 	return runID, runnerRunID, err
 }
 
-// FinishIndexRun ends an index run as status, with the chunks it embedded
-// and why it failed. Terminal runs are left unchanged: a lost COMMIT
-// acknowledgement must not let failure cleanup overwrite a published run.
+// FinishIndexRun ends an index run as status. Checkpoints own the chunk count
+// until successful publication; failure bookkeeping cannot overwrite it.
+// Publication requires a running run; failure cleanup leaves terminal runs
+// unchanged so a lost COMMIT acknowledgement cannot overwrite a published run.
 func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRunStatus, chunks int, errText string) error {
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2, chunk_count = $3, error = left($4, 2000), finished_at = now()
+	tag, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2,
+		chunk_count = CASE WHEN $2 = 'completed' THEN $3 ELSE chunk_count END,
+		error = left($4, 2000), finished_at = now(),
+		resume_key = CASE WHEN $2 = 'completed' THEN '' ELSE resume_key END,
+		embedding_ready = CASE WHEN $2 = 'completed' THEN false ELSE embedding_ready END
 		WHERE id = $1 AND status = 'running'`,
-		runID, status, chunks, errText); err != nil {
+		runID, status, chunks, errText)
+	if err != nil {
 		return fmt.Errorf("store: finish index run: %w", err)
+	}
+	if status == IndexCompleted && tag.RowsAffected() != 1 {
+		return errors.New("store: cannot publish an index run that is no longer running")
 	}
 	return nil
 }

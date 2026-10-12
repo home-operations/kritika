@@ -3,6 +3,9 @@ package worker
 import (
 	"slices"
 	"testing"
+
+	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/store"
 )
 
 func TestIndexIgnoreHash(t *testing.T) {
@@ -28,5 +31,31 @@ func TestIndexIgnoreHash(t *testing.T) {
 				t.Fatal("mutated input rules")
 			}
 		})
+	}
+}
+
+func TestIndexResumeIdentity(t *testing.T) {
+	emb := &configfile.Embedding{BaseURL: "https://embed.example", Model: "model", Dims: 8}
+	active := &store.Generation{ID: "base-run"}
+	key := indexResumeKey("head", store.IndexModeIncremental, "base", active, emb, "ignore")
+	for _, tc := range []struct {
+		name string
+		key  string
+		same bool
+	}{
+		{"same", indexResumeKey("head", store.IndexModeIncremental, "base", active, emb, "ignore"), true},
+		{"new base commit", indexResumeKey("head", store.IndexModeIncremental, "other", active, emb, "ignore"), false},
+		{"replacement base", indexResumeKey("head", store.IndexModeIncremental, "base", &store.Generation{ID: "other"}, emb, "ignore"), false},
+		{"batch limits", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxBatch: 1, MaxBatchChars: 100}, "ignore"), true},
+		{"input truncation", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxItemChars: 12}, "ignore"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if (tc.key == key) != tc.same {
+				t.Fatalf("key match = %v, want %v", tc.key == key, tc.same)
+			}
+		})
+	}
+	if indexResumeKey("head", store.IndexModeFull, "", active, emb, "ignore") != indexResumeKey("head", store.IndexModeFull, "", nil, emb, "ignore") {
+		t.Fatal("full build depends on the active generation")
 	}
 }
