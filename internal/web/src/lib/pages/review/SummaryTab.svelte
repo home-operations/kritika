@@ -53,7 +53,10 @@
 {#each groups as g (g.s)}
   <section class="finding-group" aria-labelledby="sev-{g.s}">
     <h2 id="sev-{g.s}" class="finding-group-head"><span class="sev sev-{g.s}">{g.s}</span> {g.items.length}</h2>
-    {#each g.items as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />{/each}
+    {#each g.items as f (f.id)}
+      <FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />
+      <a class="finding-code-link" href={href({ name: 'review', slug, id: d.review.id, tab: 'diff', finding: f.id })}>Inspect {f.path}:{f.line} in code →</a>
+    {/each}
   </section>
 {/each}
 

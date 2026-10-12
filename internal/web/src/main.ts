@@ -5,6 +5,7 @@ import './reset.css';
 import './app.css';
 import './pages.css';
 import './admin.css';
+import './workspace.css';
 import App from './App.svelte';
 import { bootedFrom } from './lib/events.svelte';
 

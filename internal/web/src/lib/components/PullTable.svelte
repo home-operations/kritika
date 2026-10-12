@@ -100,9 +100,9 @@
               <span class="badge" title="Automatic reviews are paused: a push is not reviewed until someone asks for a review or resumes them">paused</span>
             {/if}
           </td>
-          <td class="num">{wholeNumber(p.reviewCount)}</td>
-          <td class="num">{costTotal(p.costUsd, p.unpricedCalls)}</td>
-          <td class="num"><Time iso={p.updatedAt} /></td>
+          <td class="num" data-label="Reviews">{wholeNumber(p.reviewCount)}</td>
+          <td class="num" data-label="API spend">{costTotal(p.costUsd, p.unpricedCalls)}</td>
+          <td class="num" data-label="Updated"><Time iso={p.updatedAt} /></td>
         </tr>
       {/each}
     </tbody>

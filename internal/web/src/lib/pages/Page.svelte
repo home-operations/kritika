@@ -19,13 +19,9 @@
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
   import Admin from './admin/Admin.svelte';
-  import SettingsNav from './SettingsNav.svelte';
-  import { sectionOf } from '../sections';
+  import { tick } from 'svelte';
 
   let { route }: { route: Route } = $props();
-  // The Configuration page lists its parts beside it, as the account's
-  // settings list their pages.
-  const settings = $derived(sectionOf(route) === 'settings' || route.name === 'console');
 
   function keyOf(r: Route): string {
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
@@ -33,11 +29,18 @@
     return JSON.stringify(r);
   }
   const key = $derived(keyOf(route));
+  $effect(() => {
+    void key;
+    void tick().then(() => {
+      const main = document.querySelector('main');
+      main?.setAttribute('tabindex', '-1');
+      main?.setAttribute('id', 'main-content');
+    });
+  });
 </script>
 
 <!-- data-route exposes the parsed route to the router tests. -->
-<div class="route-host" class:with-subnav={settings} data-route={JSON.stringify(route)}>
-{#if settings}<SettingsNav {route} />{/if}
+<div class="route-host" data-route={JSON.stringify(route)}>
 {#key key}
   {#if route.name === 'overview'}
     <Overview />

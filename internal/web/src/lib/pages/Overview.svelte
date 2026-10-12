@@ -11,6 +11,9 @@
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
+  import { pullRoute } from '../links';
+  import Time from '../components/Time.svelte';
+  import RecentPulls from '../components/RecentPulls.svelte';
   import WebhookState from '../components/WebhookState.svelte';
 
   const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
@@ -62,11 +65,54 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1>All accounts</h1></header>
+    <header class="page-head"><p class="crumbs">All accounts</p><h1>Your review workspace</h1><p class="muted">What needs your attention across your accounts.</p></header>
     <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}
-        <section class="tiles" aria-label="Across all accounts">
+        <div class="overview-work">
+          <section class="attention-list" aria-labelledby="overview-attention">
+            <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
+            {#each list as account (account.slug)}
+              {#each WANTS.filter((w) => account.attention[w.key] > 0) as w (w.key)}
+                <a class="attention-item" href={href({ name: 'pulls', slug: account.slug, filter: w.filter })}>
+                  <Pill tone={w.tone} label={w.label} />
+                  <span><strong>{wholeNumber(account.attention[w.key])} open pull {account.attention[w.key] === 1 ? 'request' : 'requests'} {w.why}</strong><span class="mono small muted">{account.slug}</span></span>
+                  <span class="attention-action">View pull requests →</span>
+                </a>
+              {/each}
+              {#each nearCaps(account.usage) as cap (cap)}
+                <a class="attention-item" href={href({ name: 'usage', slug: account.slug })}>
+                  <Pill tone="warn" label="Near limit" />
+                  <span><strong>{cap}</strong><span class="mono small muted">{account.slug}</span></span>
+                  <span class="attention-action">View usage →</span>
+                </a>
+              {/each}
+            {/each}
+            {#if !all.wants.length && !list.some((a) => nearCaps(a.usage).length)}
+              <p class="state-msg">All clear. No open pull request needs attention and no usage limit is close.</p>
+            {/if}
+          </section>
+          <section class="running-list" aria-labelledby="overview-running">
+            <header class="panel-head"><h2 id="overview-running">Running work</h2></header>
+            <StateView res={queue} retry={() => queue.load()}>
+              {#snippet children(q)}
+                {#each q.jobs.filter((j) => j.state === 'running') as job (job.id)}
+                  <div class="running-item">
+                    <Pill tone="accent" label={job.kind} />
+                    {#if job.args.repository && job.args.number}
+                      <a class="mono" href={href(pullRoute(job.account, job.args))}>{job.args.repository}#{job.args.number}</a>
+                    {:else}<a href={href({ name: 'queue', slug: job.account })}>{job.kind} job {job.id}</a>{/if}
+                    <span class="small muted">{job.account} · started <Time iso={job.attemptedAt} /></span>
+                  </div>
+                {:else}<p class="state-msg">Nothing running right now.</p>{/each}
+                <a class="running-queue" href={href(list.length === 1 ? { name: 'queue', slug: list[0]!.slug } : { name: 'instanceQueue' })}>Open queue →</a>
+              {/snippet}
+            </StateView>
+          </section>
+        </div>
+        {#if list.length === 1}<RecentPulls slug={list[0]!.slug} />{/if}
+
+        <section class="tiles overview-totals" aria-label="Across all accounts">
           <div class="tile">
             <span class="tile-label">Needs attention</span>
             <span class="tile-value">{wholeNumber(all.wants.reduce((n, w) => n + w.n, 0))}</span>

@@ -12,12 +12,6 @@
 .route-host {
   display: contents;
 }
-/* Settings pages sit beside the section's own navigation. */
-.route-host.with-subnav {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
 .subnav {
   flex: 0 0 210px;
   display: flex;
@@ -1795,9 +1789,6 @@ table.diff td.code {
 @media (max-width: 640px) {
   .page-inner {
     padding: 12px 12px 32px;
-  }
-  .route-host.with-subnav {
-    flex-direction: column;
   }
   .subnav {
     flex: 0 0 auto;

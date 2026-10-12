@@ -11,6 +11,7 @@
   import type { ReviewDetail } from '../../types';
   import StateView from '../../components/StateView.svelte';
   import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
+  import Markdown from '../../components/Markdown.svelte';
   import ReviewMeta from '../../components/ReviewMeta.svelte';
   import Time from '../../components/Time.svelte';
   import NoMoreReviews from '../../components/NoMoreReviews.svelte';
@@ -52,7 +53,7 @@
 
   const labels: Record<ReviewTab, string> = {
     summary: 'Summary',
-    diff: 'Diff',
+    diff: 'Findings & code',
     conversation: 'Conversation',
     timeline: 'Timeline',
     raw: 'Raw',
@@ -62,7 +63,7 @@
 
 <svelte:head><title>{title} · kritika</title></svelte:head>
 
-<main class="page">
+<main class="page review-page">
   <div class="page-inner">
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
@@ -82,7 +83,7 @@
               <span>after <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a></span>
             {/if}
           </p>
-          <ReviewMeta {r} scopeReason={r.scopeReason} />
+          <details class="review-details"><summary>Review details</summary><ReviewMeta {r} scopeReason={r.scopeReason} /></details>
           {#if r.newestReviewId}
             <p class="notice newer-notice" role="note">
               The pull request has been reviewed again since.
@@ -117,6 +118,14 @@
           {/if}
         </header>
 
+        {#if tab === 'diff' && d.summary}
+          <section class="review-conclusion" aria-label="Review summary">
+            <h2>{d.summary.headline || 'Review summary'}</h2>
+            <Markdown text={d.summary.take} />
+            {#if d.summary.impact?.length}<div class="merge-impact"><strong>Merge impact</strong><Markdown text={d.summary.impact.join('\n\n')} /></div>{/if}
+          </section>
+        {/if}
+
         <!-- What the review said comes first; how it ran sits apart, to the right. -->
         <nav class="tabs" aria-label="Review sections">
           {#each REVIEW_TABS as t (t)}
@@ -131,7 +140,7 @@
           {#if tab === 'summary'}
             <SummaryTab {slug} {d} {finding} />
           {:else if tab === 'diff'}
-            <DiffTab {base} {d} {version} />
+            <DiffTab {base} {d} {version} {finding} />
           {:else if tab === 'conversation'}
             <ConversationTab {base} {version} {slug} />
           {:else if tab === 'timeline'}

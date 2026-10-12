@@ -25,7 +25,7 @@ export const SECTIONS: Record<Section, SectionDef> = {
   settings: { label: 'Settings', names: ['repos', 'repo', 'admin'], home: (slug) => ({ name: 'repos', slug }) },
 };
 
-export const SECTION_ORDER: readonly Section[] = ['analytics', 'pulls', 'rules', 'settings'];
+export const SECTION_ORDER: readonly Section[] = ['pulls', 'analytics', 'rules', 'settings'];
 
 export function sectionOf(r: Route): Section | undefined {
   return SECTION_ORDER.find((s) => SECTIONS[s].names.includes(r.name));

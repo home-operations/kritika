@@ -20,6 +20,7 @@ const ROUTES: Route[] = [
   { name: 'pull', slug: 'github/acme', owner: 'kritika', repo: 'kritika', number: 42 },
   { name: 'review', slug: 'github/acme', id: 'r1' },
   { name: 'review', slug: 'github/acme', id: 'r1', tab: 'diff' },
+    { name: 'review', slug: 'github/acme', id: 'r1', tab: 'diff', finding: 'f 1/2' },
   { name: 'review', slug: 'github/acme', id: 'r1', finding: 'f 1/2' },
   { name: 'findings', slug: 'github/acme' },
   { name: 'rules', slug: 'github/acme' },

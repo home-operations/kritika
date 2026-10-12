@@ -14,9 +14,13 @@
     findings,
     pullUrl,
     initiallyOpen = true,
-  }: { file: DiffFile; findings: Finding[]; pullUrl: string; initiallyOpen?: boolean } = $props();
+    reveal,
+  }: { file: DiffFile; findings: Finding[]; pullUrl: string; initiallyOpen?: boolean; reveal?: { path: string; serial: number } } = $props();
   let open = $state(untrack(() => initiallyOpen));
   const id = $props.id();
+  $effect(() => {
+    if (reveal?.path === file.path) open = true;
+  });
 
   // Findings keyed by the new-side line they point at; anything that points
   // outside the hunks shown is listed under the file header instead.
@@ -38,7 +42,7 @@
   const highlighted = $derived(tokens.value);
 </script>
 
-<section class="diff-file">
+<section class="diff-file" id={`diff-file-${file.path}`} tabindex="-1">
   <h3 class="diff-file-head">
     <button aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
       <Icon path={open ? mdiChevronDown : mdiChevronRight} size={14} />
@@ -50,7 +54,7 @@
   </h3>
   {#if open}
     <div {id}>
-      {#each orphans as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} /></div>{/each}
+      {#each orphans as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} id={`diff-finding-${f.id}`} /></div>{/each}
       {#if file.lines.length === 0}
         <p class="small muted diff-empty">{file.header.slice(1).join(' · ') || 'No textual changes.'}</p>
       {:else}
@@ -67,7 +71,7 @@
                 {#if anchored}
                   <tr class="dl-finding">
                     <td colspan="3">
-                      {#each anchored as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} compact /></div>{/each}
+                      {#each anchored as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} compact id={`diff-finding-${f.id}`} /></div>{/each}
                     </td>
                   </tr>
                 {/if}
