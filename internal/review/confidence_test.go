@@ -160,6 +160,23 @@ func TestConfidenceSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestConfidenceSystemConcerns(t *testing.T) {
+	system := strings.Join(strings.Fields(ConfidenceSystem), " ")
+	for _, rule := range []string{
+		"score it as reported: a P2 you would rate higher still takes nothing off",
+		"no reported finding raises, whatever its severity",
+		"a prerequisite for merging that is unmet or that nothing in the description or the account shows was met",
+		"their silence about a changed line is no sign that the review skipped it",
+		"neither is a step the description sets for a release that comes after the merge",
+	} {
+		t.Run(rule, func(t *testing.T) {
+			if !strings.Contains(system, rule) {
+				t.Error("the scorer's instructions do not say so")
+			}
+		})
+	}
+}
+
 func TestConfidenceRubric(t *testing.T) {
 	plain := ConfidenceRubric(ConfidenceSystemPrompt(""))
 	if plain != ConfidenceRubric(ConfidenceSystem) || len(plain) != 16 {
