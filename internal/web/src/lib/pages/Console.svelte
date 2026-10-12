@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
   // The instance's configuration for an admin, read-only: what setup still
   // lacks, the accounts its connections serve, each setting with where it
   // comes from, the connections and their installations, and the admin
@@ -25,14 +26,11 @@
   const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default' };
 </script>
 
-<svelte:head><title>Configuration · kritika</title></svelte:head>
+<svelte:head><title>Instance settings · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <h1>Configuration</h1>
-      <p class="muted">What the instance runs. It is read from the configuration file and changed there; the dashboard does not edit it.</p>
-    </header>
+    <PageHeader title="Instance settings" description="Manage connections and inspect instance configuration." />
     {#if res.data}<Checklist accounts={res.data} />{/if}
     <section class="panel" aria-labelledby="op-accounts">
       <header class="panel-head"><h2 id="op-accounts">Accounts</h2></header>

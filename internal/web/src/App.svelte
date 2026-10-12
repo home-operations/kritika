@@ -21,13 +21,17 @@
     mdiSourcePull,
     mdiScaleBalance,
     mdiCogOutline,
+    mdiSourceRepository,
+    mdiCurrencyUsd,
+    mdiBugOutline,
+    mdiClipboardTextClockOutline,
     mdiAccountOutline,
     mdiLogout,
     mdiChevronDown,
     mdiUnfoldMoreHorizontal,
     mdiCheck,
   } from './lib/icons';
-  import { INSTANCE_TABS, SECTIONS, SECTION_ORDER, SUB_TABS, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
+  import { INSTANCE_TABS, SECTIONS, NAV_GROUPS, reportingRoute, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
   import type { Route } from './lib/routes';
   import { focusWhenShown, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
@@ -101,6 +105,11 @@
   const sectionIcon: Record<Section, string> = {
     analytics: mdiChartBoxOutline,
     pulls: mdiSourcePull,
+    usage: mdiCurrencyUsd,
+    repos: mdiSourceRepository,
+    queue: mdiTrayFull,
+    followups: mdiClipboardTextClockOutline,
+    findings: mdiBugOutline,
     rules: mdiScaleBalance,
     settings: mdiCogOutline,
   };
@@ -148,25 +157,26 @@
     </nav>
   {:else if me && currentSlug}
     <nav class="sections" aria-label="Sections">
-      {#each SECTION_ORDER as s (s)}
-        {#if s === 'pulls' || s === 'analytics' || s === 'rules'}<p class="workspace-heading">{s === 'pulls' ? 'Operations' : s === 'analytics' ? 'Insights' : 'Configuration'}</p>{/if}
-        <a
-          class="section-tab"
-          class:active={currentSection === s}
-          aria-current={router.route.name === SECTIONS[s].home(currentSlug).name ? 'page' : undefined}
-          href={href(SECTIONS[s].home(currentSlug))}
-          {@attach currentSection === s && revealInNav}
-        >
-          <Icon path={sectionIcon[s]} size={15} />
-          <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
-        </a>
-        {#each (SUB_TABS[s] ?? []).filter((t) => t.name !== SECTIONS[s].home(currentSlug).name) as t (t.name)}
-          <a class="workspace-sub-link" class:active={router.route.name === t.name} aria-current={router.route.name === t.name ? 'page' : undefined} href={href(t.route(currentSlug))}>{t.label}</a>
+      {#each NAV_GROUPS as group (group.label)}
+        <p class="workspace-heading">{group.label}</p>
+        {#if group.before && (!group.before.admin || me.admin)}
+          <a class="section-tab" href={href(group.before.route)}><Icon path={mdiViewGridOutline} size={15} /><span class="section-label">{group.before.label}</span><span class="nav-scope">All</span></a>
+        {/if}
+        {#each group.sections.filter((s) => !SECTIONS[s].admin || me?.admin) as s (s)}
+          {@const on = currentSection === s}
+          <a class="section-tab" class:active={on} aria-current={on ? 'page' : undefined}
+            href={href(reportingRoute(SECTIONS[s].home(currentSlug), router.route))}>
+            <Icon path={sectionIcon[s]} size={15} />
+            <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
+          </a>
         {/each}
+        {#if group.after && (!group.after.admin || me.admin)}
+          <a class="section-tab" href={href(group.after.route)}><Icon path={mdiCogOutline} size={15} /><span class="section-label">{group.after.label}</span></a>
+        {/if}
       {/each}
     </nav>
   {/if}
-  {#if me && (currentSection === 'settings' || router.route.name === 'console')}<SettingsNav route={router.route} />{/if}
+  {#if me && router.route.name === 'console'}<SettingsNav />{/if}
 {/snippet}
 
 {#if router.route.name === 'signin'}

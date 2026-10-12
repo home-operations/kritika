@@ -2,8 +2,8 @@
   // The account's home: what its reviews came to over a window, against the
   // window before, and what needs attention now.
   import { getJSON } from '../api.svelte';
-  import { usageFilter } from '../routes';
-  import { href } from '../router.svelte';
+  import { usageFilter, analyticsFilter, type AnalyticsFilter } from '../routes';
+  import { href, navigate } from '../router.svelte';
   import { hookURL } from '../session.svelte';
   import { unsignedWebhooks } from '../setup';
   import { Resource, live } from '../resource.svelte';
@@ -13,7 +13,8 @@
   import type { AccountDetail, Analytics, AnalyticsPoint, Attention } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
-  import SectionTabs from '../components/SectionTabs.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
+  import HelpPopover from '../components/HelpPopover.svelte';
   import Segmented from '../components/Segmented.svelte';
   import StatTile from '../components/StatTile.svelte';
   import ColumnChart from '../components/ColumnChart.svelte';
@@ -21,23 +22,27 @@
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
 
-  let { slug }: { slug: string } = $props();
+  let { slug, filter }: { slug: string; filter?: AnalyticsFilter } = $props();
   const base = $derived(accountApi(slug));
 
   const PERIODS = [
+    { value: '1', label: '24 hours' },
     { value: '7', label: '7 days' },
     { value: '30', label: '30 days' },
     { value: '90', label: '90 days' },
   ] as const;
-  let days = $state<'7' | '30' | '90'>('30');
+  const days = $derived(filter?.days ?? '30');
   let trend = $state<'failed' | 'duration' | 'tokens' | 'cost'>('failed');
   let operationsView = $state<'chart' | 'table'>('chart');
   const TRENDS = [{ value: 'failed', label: 'Failure rate' }, { value: 'duration', label: 'Duration' }, { value: 'tokens', label: 'Tokens' }, { value: 'cost', label: 'API spend' }] as const;
   // A quarter reads better by week than as ninety thin columns.
   const group = $derived(days === '90' ? 'week' : 'day');
+  const bucketLabel = $derived(days === '1' ? 'partial day' : group);
 
   const res = new Resource(() => {
-    const p = new URLSearchParams({ from: daysAgo(Number(days), Date.now()), group });
+    const now = Date.now();
+    const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
+    const p = new URLSearchParams({ from, group });
     return getJSON<Analytics>(`${base}/analytics?${p}`);
   });
   const detail = new Resource(() => getJSON<AccountDetail>(base));
@@ -70,7 +75,7 @@
     return series.map((p) => ({
       key: p.key,
       label: day(p.key, true),
-      title: group === 'week' ? `Week of ${day(p.key)}` : day(p.key),
+      title: group === 'week' ? `Week of ${day(p.key)}` : `${day(p.key)}${days === '1' ? ' (partial day)' : ''}`,
       values: values(p),
     }));
   }
@@ -92,7 +97,12 @@
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="analytics" {slug} current="account" />
+    <PageHeader title="Analytics" {slug}>
+      {#snippet actions()}<HelpPopover label="About these metrics"><p>Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p><p>Failure rate is failed / (completed + failed). Duration is the median of completed reviews. API spend includes priced calls and excludes subscription fees.</p></HelpPopover>{/snippet}
+    </PageHeader>
+    <div class="toolbar">
+      <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => navigate({ name: 'account', slug, filter: analyticsFilter({ days }) })} />
+    </div>
     {#if detail.data && (unsignedWebhooks(detail.data.connection) || !detail.data.connection.lastWebhookAt)}
       {@const inst = detail.data.connection}
       <section class="panel" aria-labelledby="an-connection">
@@ -119,7 +129,7 @@
       {@const near = nearCaps(detail.data.usage)}
       {#if wants.length || near.length}
         <section class="panel" aria-labelledby="an-attention">
-          <header class="panel-head"><h2 id="an-attention">Needs attention</h2></header>
+          <header class="panel-head"><h2 id="an-attention">Needs attention</h2><span class="small muted">Right now</span></header>
           <ul class="rows">
             {#each wants as w (w.key)}
               <li class="row">
@@ -142,11 +152,7 @@
       {/if}
     {/if}
 
-    <!-- The period scopes everything below it; what needs attention is now. -->
-    <div class="toolbar">
-      <Segmented label="Period" options={PERIODS} value={days} onchange={(d) => (days = d)} />
-    </div>
-    <p class="small muted">Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p>
+    {#if days === '1'}<p class="small muted">Last 24 hours, split by date. Each chart column includes only the part of that day inside the selected period.</p>{/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const c = d.current}
@@ -187,7 +193,7 @@
           <section class="panel" aria-labelledby="an-operations">
             <header class="panel-head"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>
             <div class="toolbar"><Segmented label="Operational metric" options={TRENDS} value={trend} onchange={(v) => (trend = v)} /></div>
-            <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${group}`}
+            <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${bucketLabel}`}
               series={[{ label: TRENDS.find((t) => t.value === trend)!.label, color: 'var(--chart-ink)' }]}
               rows={rows(d.series.filter((x) => trend === 'duration' ? x.medianReviewMs !== null : trend === 'failed' ? x.reviews + x.failed > 0 : true),
                 (x) => [trend === 'failed' ? rate(x.failed, x.reviews + x.failed)! : trend === 'duration' ? x.medianReviewMs! : trend === 'tokens' ? x.tokens : x.costUsd])}
@@ -247,7 +253,7 @@
                 <Segmented label="Reviews view" options={VIEWS} value={reviewsView} onchange={(v) => (reviewsView = v)} />
               </header>
               <ColumnChart
-                label="Completed reviews per {group}"
+                label="Completed reviews per {bucketLabel}"
                 series={[{ label: 'Reviews', color: 'var(--chart-ink)' }]}
                 rows={rows(d.series, (x) => [x.reviews])}
                 format={wholeNumber}
@@ -261,7 +267,7 @@
                 <Segmented label="Findings view" options={VIEWS} value={findingsView} onchange={(v) => (findingsView = v)} />
               </header>
               <ColumnChart
-                label="Findings first reported per {group}, by severity"
+                label="Findings first reported per {bucketLabel}, by severity"
                 series={SEV_SERIES}
                 rows={rows(d.series, (x) => [x.findings.p0, x.findings.p1, x.findings.p2])}
                 format={wholeNumber}

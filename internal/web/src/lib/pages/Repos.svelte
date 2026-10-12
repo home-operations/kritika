@@ -1,6 +1,7 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
   import { Switch } from 'bits-ui';
-  import { href } from '../router.svelte';
+  import { href, replace } from '../router.svelte';
   import { Paged, live } from '../resource.svelte';
   import { indexTone } from '../format';
   import { repoRoute, accountApi, reindexPath, turnedOnPath } from '../links';
@@ -20,16 +21,21 @@
   import { mdiCheck, mdiProgressClock, mdiAlertCircleOutline, mdiSwapHorizontal } from '../icons';
   import type { IndexRunStatus } from '../types';
 
-  let { slug }: { slug: string } = $props();
-  let filter = $state('');
+  import { repoFilter, type RepoFilter } from '../routes';
+
+  let { slug, filter }: { slug: string; filter?: RepoFilter } = $props();
+  const search = $derived(filter?.q ?? '');
+  function setFilter(patch: RepoFilter): void {
+    replace({ name: 'repos', slug, filter: repoFilter({ ...filter, ...patch }) });
+  }
   // Which repositories the list shows: by default those kritika can run,
   // neither archived nor forks but the forks turned on; or the forks, or
   // the archived ones.
-  let kind = $state<'' | 'forks' | 'archived'>('');
+  const kind = $derived(filter?.type ?? '');
   let filterEl = $state<HTMLInputElement | undefined>(undefined);
 
   function clearFilter(): void {
-    filter = '';
+    setFilter({ q: undefined });
     filterEl?.focus();
   }
 
@@ -46,7 +52,7 @@
   $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.refresh()));
 
   function visible(): Repository[] {
-    const needle = filter.trim().toLowerCase();
+    const needle = search.trim().toLowerCase();
     const all = paged.items;
     return needle ? all.filter((r) => r.fullName.toLowerCase().includes(needle)) : all;
   }
@@ -54,6 +60,10 @@
   const manage = $derived(isAdmin());
   // Full names picked for a bulk action.
   let selected = $state<string[]>([]);
+  $effect(() => {
+    kind;
+    selected = [];
+  });
   let busy = $state(false);
   let confirmReindex = $state(false);
 
@@ -115,11 +125,8 @@
     }
   }
 
-  // show switches the list to another kind, dropping a selection made in
-  // the one it leaves.
   function show(k: typeof kind): void {
-    kind = k;
-    selected = [];
+    setFilter({ type: k || undefined });
   }
 
   const empty = $derived(kind === 'forks' ? 'No forks.' : kind === 'archived' ? 'No archived repositories.' : 'No repositories yet.');
@@ -131,11 +138,11 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head"><h1>Repositories</h1></header>
+    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
     <div class="toolbar">
       <label class="search-box">
         <span class="sr-only">Filter repositories</span>
-        <input type="search" placeholder="Filter by name" bind:value={filter} bind:this={filterEl} />
+        <input type="search" placeholder="Filter by name" bind:value={() => search, (q) => setFilter({ q })} bind:this={filterEl} />
       </label>
       <label class="select">
         <span class="sr-only">Type</span>
@@ -145,9 +152,6 @@
           <option value="archived">Archived</option>
         </select>
       </label>
-      {#if isAdmin()}
-        <button class="btn btn-small" disabled={busy} onclick={resync} title="List the repositories the App reaches again">Resync from GitHub</button>
-      {/if}
       {#if manage && selected.length}
         <div class="bulk-actions" role="group" aria-label="Selected repositories">
           <span class="small">{selected.length} selected</span>
@@ -168,7 +172,7 @@
         {@const rows = visible()}
         {#if rows.length === 0}
           <div class="state-msg">
-            <span>{paged.cursor ? `Nothing loaded yet matches “${filter}”: load more to look further.` : `Nothing matches “${filter}”.`}</span>
+            <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
             <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
           </div>
         {:else}

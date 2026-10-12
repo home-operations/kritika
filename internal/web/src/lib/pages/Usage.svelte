@@ -13,7 +13,8 @@
   import Segmented from '../components/Segmented.svelte';
   import StatTile from '../components/StatTile.svelte';
   import Meter from '../components/Meter.svelte';
-  import SectionTabs from '../components/SectionTabs.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
+  import HelpPopover from '../components/HelpPopover.svelte';
   import ChatGPTAllowances from '../components/ChatGPTAllowances.svelte';
 
   let { slug, filter }: { slug: string; filter?: UsageFilter } = $props();
@@ -140,68 +141,57 @@
   }
 </script>
 
-<svelte:head><title>Usage · {slug} · kritika</title></svelte:head>
+<svelte:head><title>Usage & costs · {slug} · kritika</title></svelte:head>
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="analytics" {slug} current="usage" />
-    <p class="muted">Follow spending from a repository to its models and review runs.</p>
-    <p class="small muted">API spend excludes subscription fees. Cache detail is available only while transcripts are retained.</p>
+    <PageHeader title="Usage & costs" {slug}>
+      {#snippet actions()}<HelpPopover label="About usage">
+        <p>Changes compare the selection with the preceding period of equal length. API spend excludes subscription fees. Cache detail is available only while transcripts are retained.</p>
+        <p>Follow-ups and usage without an associated review are listed as unattributed. Review groups show up to 50 runs with the most usage by the selected metric; Other reviews includes the remainder. Totals include all usage.</p>
+        {#if month}<p>This month: {reviewSpend(month)}.</p>{/if}
+      </HelpPopover>{/snippet}
+    </PageHeader>
+    {#snippet limits()}
+      {#if month}
+        <section class="limits-strip" aria-label="This month">
+          <div><span class="small muted">API spend this month</span><strong>{costTotal(month.costUsd, month.unpricedCalls)}</strong></div>
+          <div><span class="small muted">Tokens this month</span><strong title={wholeNumber(month.tokens)}>{tokens(month.tokens)} <span class="small muted">{month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}</span></strong><Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" /></div>
+          <div><span class="small muted">Reviews today</span><strong>{wholeNumber(month.reviewsToday)} <span class="small muted">{month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}</span></strong><Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" /></div>
+        </section>
+      {/if}
+    {/snippet}
+    <div class="toolbar">
+      <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => setFilter({ days })} />
+      <label class="filter-select">Group by
+        <select aria-label="Group by" value={group} onchange={(e) => { const group = e.currentTarget.value as UsageGroup; setFilter({ group, days: group === 'hour' ? '1' : days }); }}>
+          {#each GROUPS as option}<option value={option.value}>{option.label}</option>{/each}
+        </select>
+      </label>
+      <Segmented label="Chart metric" options={METRICS} value={metric} onchange={(metric) => setFilter({ metric })} />
+      {#if chatgptEnabled}
+        <Segmented label="Billing" options={BILLING} value={billing} onchange={(billing) => setFilter({ billing, metric: billing === 'chatgpt' ? 'tokens' : metric })} />
+      {/if}
+    </div>
     <nav class="usage-drilldown" aria-label="Spending drilldown">
       <button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined, group: 'repo' })}>All repositories</button>
       {#if repository !== undefined}<span>→</span><button class="btn" onclick={() => setFilter({ model: undefined, group: 'model' })}>{repository || 'Unattributed repository'}</button>{/if}
       {#if model !== undefined}<span>→</span><span class="badge mono">{model || 'Unattributed model'}</span>{/if}
       {#if repository !== undefined || model !== undefined}<button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined })}>Clear filters</button>{/if}
     </nav>
-    {#if chatgptEnabled}<ChatGPTAllowances {slug} />{/if}
-    {#if month}
-      <section class="stats stats-3" aria-label="This month">
-        <StatTile
-          label="API spend this month"
-          value={costTotal(month.costUsd, month.unpricedCalls)}
-          sub={reviewSpend(month)}
-        />
-        <div class="stat">
-          <span class="stat-label">Tokens this month</span>
-          <span class="stat-value" title={wholeNumber(month.tokens)}>{tokens(month.tokens)}</span>
-          <span class="stat-sub">{month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no monthly cap'}</span>
-          <Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" />
-        </div>
-        <div class="stat">
-          <span class="stat-label">Reviews today</span>
-          <span class="stat-value">{wholeNumber(month.reviewsToday)}</span>
-          <span class="stat-sub">{month.reviewsPerDay ? `of ${month.reviewsPerDay} a day` : 'no daily cap'}</span>
-          <Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" />
-        </div>
-      </section>
-    {/if}
-    <div class="toolbar">
-      <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => setFilter({ days })} />
-      <Segmented label="Group by" options={GROUPS} value={group} onchange={(group) => setFilter({ group, days: group === 'hour' ? '1' : days })} />
-      <Segmented label="Chart metric" options={METRICS} value={metric} onchange={(metric) => setFilter({ metric })} />
-      {#if chatgptEnabled}
-        <Segmented label="Billing" options={BILLING} value={billing} onchange={(billing) => setFilter({ billing, metric: billing === 'chatgpt' ? 'tokens' : metric })} />
-      {/if}
-    </div>
     <StateView {res} retry={() => res.load()} isEmpty={(s) => s.rows.length === 0 && s.previous.length === 0} empty="No model usage in this range.">
       {#snippet children(s)}
         {@const t = sum(s.rows)}
         {@const before = sum(s.previous)}
         {@const previous = new Map(s.previous.map((r) => [r.key, r]))}
         {#if t.unpricedCalls}<p class="small muted">API spend is incomplete: {wholeNumber(t.unpricedCalls)} unpriced calls. Charts show priced spend only.</p>{/if}
-        {#if chatgptEnabled && billing === 'chatgpt'}
-          <section class="stats stats-3" aria-label="ChatGPT usage in this period">
-            <StatTile label="ChatGPT calls" value={wholeNumber(t.calls)} sub={`Last ${periodLabel}`} />
-            <StatTile label="ChatGPT tokens" value={tokens(total(t))} define={wholeNumber(total(t))} sub="Input includes cached tokens" />
-            <StatTile label="Billing" value="Included in plan" sub="Allowance consumption is reported separately by OpenAI" />
-          </section>
-        {/if}
+        {#if chatgptEnabled && billing === 'chatgpt'}<p class="small muted" role="note">ChatGPT plan usage is included in the subscription. Allowance consumption is reported separately by OpenAI.</p>{/if}
         <section class="stats stats-3" aria-label="Selected usage">
           <StatTile label="API spend in selection" value={costTotal(t.costUsd, t.unpricedCalls)} now={t.costUsd} before={t.unpricedCalls || before.unpricedCalls ? undefined : before.costUsd} sub={`Last ${periodLabel} vs preceding period`} />
           <StatTile label="Tokens in selection" value={tokens(total(t))} now={total(t)} before={total(before)} define={wholeNumber(total(t))} />
           <StatTile label="Calls in selection" value={wholeNumber(t.calls)} now={t.calls} before={before.calls} />
         </section>
-        {#if s.group === 'review'}<p class="small muted">Follow-ups and usage without an associated review are listed as unattributed. Up to 50 review runs with the most usage by the selected metric are shown individually; remaining reviews are combined as Other reviews. Totals include all usage.</p>{/if}
+
         <section class="panel" aria-labelledby="usage-chart">
           <header class="panel-head"><h2 id="usage-chart">{metric === 'cost' ? 'API spend' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
           <ColumnChart
@@ -212,6 +202,7 @@
             whole={metric !== 'cost'}
           />
         </section>
+        {@render limits()}
         <div class="table-wrap table-card">
           <table class="data">
             <thead>
@@ -268,5 +259,7 @@
         </div>
       {/snippet}
     </StateView>
+    {#if !res.data || (!res.data.rows.length && !res.data.previous.length)}{@render limits()}{/if}
+    {#if chatgptEnabled}<ChatGPTAllowances {slug} />{/if}
   </div>
 </main>

@@ -488,7 +488,7 @@ test("sidebar tab order and current-page markers match visible navigation", asyn
   await expect(nav.getByRole("link", { name: "Reviews", exact: true })).toHaveCount(0);
   await page.locator(".account-button").focus();
   await page.keyboard.press("Tab");
-  await expect(nav.getByRole("link", { name: "Analytics", exact: true })).toBeFocused();
+  await expect(nav.getByRole("link", { name: "Overview", exact: false })).toBeFocused();
   await nav.getByRole("link", { name: "Findings", exact: true }).click();
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   await expect(nav.locator('[aria-current="page"]')).toHaveText("Findings");

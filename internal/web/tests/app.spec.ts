@@ -135,7 +135,7 @@ test.describe('signed-in shell', () => {
 
     // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
-    await expect(instance).toHaveText(['Overview', 'Configuration']);
+    await expect(instance).toHaveText(['Overview', 'Instance settings']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
     for (const href of await instance.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) expect(href).not.toContain('/a/');
@@ -144,8 +144,8 @@ test.describe('signed-in shell', () => {
     await page.locator('.account-button').click();
     await scopes.getByRole('link', { name: 'github/acme' }).click();
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).locator('.section-tab');
-    await expect(tabs).toHaveText(['Analytics', 'Pull requests', 'Rules', 'Settings']);
-    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
+    await expect(tabs).toHaveText(['OverviewAll', 'Queue', 'Repositories', 'Analytics', 'Usage & costs', 'Pull requests', 'Follow-ups', 'Findings', 'Rules', 'Audit log', 'Instance settings']);
+    await expect(tabs.first()).toHaveAttribute('href', '#/');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Instance' })).toHaveCount(0);
     await page.goto('/');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
@@ -159,26 +159,23 @@ test.describe('signed-in shell', () => {
     await expect(page.locator('.user-email')).toHaveText(DEFAULT_ME.user.email);
   });
 
-  test("settings lists a member only the account's repositories", async ({ page, signIn }) => {
+  test('repositories are a direct destination for members', async ({ page, signIn }) => {
     await signIn(DEFAULT_ME);
     await page.goto('/#/a/github/acme/repos');
-    const nav = page.getByRole('navigation', { name: 'Settings' });
-    await expect(nav.getByRole('link')).toHaveText(['Repositories']);
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
+    const nav = page.getByRole('navigation', { name: 'Sections' });
+    await expect(nav.locator('[aria-current="page"]')).toHaveText('Repositories');
+    await expect(nav.getByRole('link', { name: 'Audit log' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Instance settings' })).toHaveCount(0);
   });
 
-  test("settings lists an admin the account's audit log, and the instance's configuration is the instance's", async ({ page, signIn }) => {
+  test('admin settings stay distinct from account operations', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/#/a/github/acme/repos');
-    const nav = page.getByRole('navigation', { name: 'Settings' });
-    await expect(nav.getByRole('link')).toHaveText(['Repositories', 'Audit log']);
-
+    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Audit log' })).toBeVisible();
     await page.goto('/#/admin');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Configuration');
-    // Beside the page are its own parts, and no account's pages.
-    await expect(nav.getByRole('link', { name: 'Configuration', exact: true })).toHaveAttribute('aria-current', 'page');
-    await expect(nav.getByRole('link', { name: 'Repositories' })).toHaveCount(0);
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Instance settings');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Accounts', exact: true })).toBeVisible();
   });
 
   test('a member has no Configuration tab, and the Queue tab comes with a second account', async ({ page, signIn }) => {
@@ -292,7 +289,7 @@ test.describe('keyboard shortcuts', () => {
 
     await page.keyboard.type('console');
     // The Configuration page's sections match too, after the page itself.
-    await expect(page.locator('.row-title').first()).toHaveText('Configuration');
+    await expect(page.locator('.row-title').first()).toHaveText('Instance settings');
 
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/admin$/);

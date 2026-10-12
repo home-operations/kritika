@@ -2,8 +2,11 @@
 // renders the same loading, error and loaded states. A load that finishes
 // after a newer one started is dropped, so a slow response can't overwrite
 // a fresher one.
+import { untrack } from 'svelte';
+import { router } from './router.svelte';
 import { ApiError, getJSON } from './api.svelte';
 import { subscribe } from './events.svelte';
+import { loadedSize, rememberSize } from './viewstate';
 import type { EventKind, LiveEvent, Page } from './types';
 
 export class Resource<T> {
@@ -113,13 +116,14 @@ export function live(
   };
 }
 
-// Paged refreshes the loaded row count from fresh cursors and publishes
-// the results together. Larger requests reduce work for deep lists.
+// Live refreshes publish a coherent snapshot from fresh cursors. Initial
+// restoration reveals pages as they arrive so a deep list stays usable.
 export class Paged<T> {
   readonly first: Resource<Page<T>>;
   loadingMore = $state(false);
   moreError = $state<Error | undefined>(undefined);
   #loaded = 0;
+  #entry = '';
   #gen = 0;
   #revision = 0;
   #base: string | undefined;
@@ -137,15 +141,20 @@ export class Paged<T> {
       const gen = this.#gen;
       const revision = this.#revision;
       const target = this.#loaded;
+      const progressive = untrack(() => this.first.data === undefined);
       let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined));
       const items = [...page.items];
       while (items.length < target && page.nextCursor) {
         if (gen !== this.#gen || revision !== this.#revision) return page;
+        if (progressive) this.first.data = { items: this.#unique(items), nextCursor: page.nextCursor };
         page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length));
         items.push(...page.items);
       }
       const unique = this.#unique(items);
-      if (gen === this.#gen && revision === this.#revision) this.#loaded = unique.length;
+      if (gen === this.#gen && revision === this.#revision) {
+        this.#loaded = unique.length;
+        if (this.#base) rememberSize(this.#entry, this.#base, unique.length);
+      }
       return { items: unique, nextCursor: page.nextCursor };
     });
   }
@@ -156,7 +165,8 @@ export class Paged<T> {
     const [path, query] = url.split('?');
     const params = new URLSearchParams(query);
     // The list endpoints cap each response at 200 rows.
-    params.set('limit', String(Math.min(limit, 200)));
+    const defaultLimit = Number(params.get('limit') ?? 50);
+    params.set('limit', String(Math.min(Math.max(limit, defaultLimit), 200)));
     return path + '?' + params;
   }
 
@@ -190,12 +200,14 @@ export class Paged<T> {
 
   #load(background: boolean): Promise<void> {
     const base = this.#url();
-    if (base !== this.#base) {
+    const entry = router.entry;
+    if (base !== this.#base || entry !== this.#entry) {
+      this.#entry = entry;
       this.#base = base;
       this.#gen++;
       this.#revision++;
       this.first.invalidate();
-      this.#loaded = 0;
+      this.#loaded = untrack(() => router.traversal) ? loadedSize(entry, base) : 0;
       this.#more = undefined;
       this.#afterMore = undefined;
       this.#refresh = undefined;
@@ -254,6 +266,7 @@ export class Paged<T> {
       if (gen !== this.#gen) return;
       this.first.data = { items: this.#unique([...this.items, ...p.items]), nextCursor: p.nextCursor };
       this.#loaded = this.items.length;
+      if (this.#base) rememberSize(this.#entry, this.#base, this.#loaded);
     } catch (err) {
       if (gen === this.#gen) this.moreError = err instanceof Error ? err : new Error(String(err));
     } finally {

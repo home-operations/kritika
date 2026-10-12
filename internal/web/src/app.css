@@ -7,10 +7,10 @@
    highlighter itself does not reach 3:1 on the light sheet. */
 :root,
 .light {
-  --bg: #eceee9;
-  --panel: #fbfbf8;
-  --panel-alt: #f1f2ee;
-  --border: #d3d7ce;
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --panel-alt: #f0f2f5;
+  --border: #dce0e6;
   --text: #1b2130;
   --muted: #555c6a; /* ≥5.7:1 on panel/bg/panel-alt and the mark wash — much of the UI is 11–12px muted text */
   --accent: #2447b8;
@@ -426,11 +426,12 @@ kbd {
   visibility: hidden;
   font-weight: 600;
 }
+.section-label::after {
+  font-weight: 650;
+}
 .section-tab.active .section-label {
-  padding: 0 0.2em;
-  margin: 0 -0.2em;
-  border-radius: 0.15em 0.35em 0.2em 0.4em / 0.4em 0.2em 0.35em 0.15em;
-  background: linear-gradient(transparent 38%, var(--mark) 38%, var(--mark) 94%, transparent 94%);
+  color: var(--text);
+  font-weight: 650;
 }
 
 /* ---- menus (account switcher, user) ------------------------------------ */

@@ -13,7 +13,7 @@
   import StateView from '../components/StateView.svelte';
   import PullTable from '../components/PullTable.svelte';
   import LoadMore from '../components/LoadMore.svelte';
-  import SectionTabs from '../components/SectionTabs.svelte';
+  import PageHeader from '../components/PageHeader.svelte';
   import Segmented from '../components/Segmented.svelte';
   import TokenSearch from '../components/TokenSearch.svelte';
   import Dialog from '../components/Dialog.svelte';
@@ -155,7 +155,7 @@
 
 <main class="page">
   <div class="page-inner">
-    <SectionTabs section="pulls" {slug} current="pulls" />
+    <PageHeader title="Pull requests" {slug} />
     <div class="toolbar" role="search">
       <TokenSearch
         id="pull-search"

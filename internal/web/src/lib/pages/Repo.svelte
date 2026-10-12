@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
   import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
@@ -150,13 +151,9 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <p class="crumbs"><a href={href({ name: 'repos', slug })}>Repositories</a> /</p>
-      <h1 class="mono">{fullName}</h1>
-      {#if res.data?.fork || res.data?.archived}<p class="meta-line"><RepoTraits r={res.data} /></p>{/if}
-      <!-- A repository that is off is not indexed. -->
-      {#if isAdmin() && res.data?.enabled}
-        <div class="page-actions">
+    <PageHeader title={fullName} {slug} parents={[{ label: 'Repositories', route: { name: 'repos', slug } }]}>
+      {#snippet actions()}
+        {#if isAdmin() && res.data?.enabled}
           <ActionButton
             label="Reindex"
             title="Reindex the repository?"
@@ -165,9 +162,10 @@
             done="Reindex queued"
             ondone={() => res.load()}
           />
-        </div>
-      {/if}
-    </header>
+        {/if}
+      {/snippet}
+    </PageHeader>
+    {#if res.data?.fork || res.data?.archived}<p class="meta-line"><RepoTraits r={res.data} /></p>{/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const rc = d.repoConfig}

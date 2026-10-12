@@ -33,28 +33,7 @@
 .subnav-group:first-child {
   margin-top: 0;
 }
-.subnav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--radius-md);
-  color: var(--muted);
-  font-size: var(--type-md);
-  white-space: nowrap;
-}
-.subnav-item:hover {
-  color: var(--text);
-  background: var(--panel);
-  text-decoration: none;
-}
 
-.subnav-parts {
-  list-style: none;
-  margin: 2px 0 6px 18px;
-  padding: 0 0 0 10px;
-  border-left: 1px solid var(--border);
-}
 .subnav-part {
   display: block;
   padding: 3px 8px;
@@ -67,12 +46,6 @@
   color: var(--text);
   background: var(--panel);
   text-decoration: none;
-}
-.subnav-item.active {
-  color: var(--text);
-  font-weight: 600;
-  background: var(--mark-wash);
-  box-shadow: inset 3px 0 0 var(--edge);
 }
 .page {
   flex: 1 1 auto;
@@ -106,9 +79,6 @@
 }
 .page-head p {
   margin: 0;
-}
-.section-head {
-  gap: 0;
 }
 .no-more-reviews {
   display: flex;
@@ -1685,14 +1655,14 @@ table.diff td.code {
 }
 
 /* ---- stat tiles --------------------------------------------------------- */
-/* Headline numbers share one card, a hairline between each. */
+/* Headline numbers form a responsive grid with a divider below each tile. */
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  gap: 20px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
 }
 /* Eight tiles fill four columns, or two, or one, and three fill three or
@@ -1719,8 +1689,9 @@ table.diff td.code {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 12px 14px;
-  background: var(--panel);
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
 }
 .stat-label {
   font-size: var(--type-sm);
@@ -1801,9 +1772,6 @@ table.diff td.code {
   }
   .subnav-group {
     margin: 0 6px;
-  }
-  .subnav-parts {
-    display: none;
   }
   .row {
     flex-wrap: wrap;

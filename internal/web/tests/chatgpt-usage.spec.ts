@@ -110,10 +110,10 @@ test("ChatGPT filtering supports hour and week and counts cached input once", as
   ]);
   await page.goto(`/${account}/usage`);
   await page.getByRole("radio", { name: "ChatGPT plan", exact: true }).click();
-  const summary = page.getByRole("region", { name: "ChatGPT usage in this period" });
+  const summary = page.getByRole("region", { name: "Selected usage" });
   await expect(summary).toBeVisible();
   await expect(summary.locator('[title="1,200"]')).toBeVisible();
-  await page.getByRole("radio", { name: "Hour", exact: true }).click();
+  await page.getByRole("combobox", { name: "Group by" }).selectOption("hour");
   await expect(page.getByRole("img", { name: "Tokens by hour, last 24 hours" })).toBeVisible();
   await expect
     .poll(() =>
@@ -127,7 +127,7 @@ test("ChatGPT filtering supports hour and week and counts cached input once", as
   const since = Date.now() - Date.parse(hourly.searchParams.get("from")!);
   expect(since).toBeGreaterThan(23.9 * 3_600_000);
   expect(since).toBeLessThan(24.1 * 3_600_000);
-  await page.getByRole("radio", { name: "Week", exact: true }).click();
+  await page.getByRole("combobox", { name: "Group by" }).selectOption("week");
   await expect(page.getByRole("img", { name: "Tokens by week, last 24 hours" })).toBeVisible();
   await expect(page.locator("tbody")).toContainText("Week of");
   await expect

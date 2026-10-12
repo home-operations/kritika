@@ -83,8 +83,8 @@ test('queue members can inspect errors but cannot mutate jobs', async ({ page })
   await page.route('**/api/v1/me', (r) => r.fulfill({ json: { ...g.me, admin: false } }));
   await page.goto(`${account}/queue`);
   await expect(page.locator('.queue-actions')).toHaveCount(0);
-  await page.getByText('Last attempt error', { exact: true }).click();
-  await expect(page.getByText('Runner exited before publishing its result')).toBeVisible();
+  await page.getByText('Details', { exact: true }).nth(3).click();
+  await expect(page.locator('details[open] .error-text')).toHaveText('Runner exited before publishing its result');
 });
 
 test('spending drilldown keeps its period and carries repository and model filters', async ({ page }) => {

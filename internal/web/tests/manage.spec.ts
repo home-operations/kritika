@@ -18,7 +18,7 @@ test('an account member cannot open the audit log', async ({ page }) => {
   await setup(page, memberMe);
   await page.goto(`/${ADMIN}/audit`);
   await expect(page.getByRole('alert')).toContainText('Only an admin');
-  await expect(page.getByRole('navigation', { name: 'Settings' }).getByRole('link')).toHaveText(['Repositories']);
+  await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Audit log' })).toHaveCount(0);
 });
 
 test('the audit log pages and expands detail', async ({ page }) => {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageHeader from '../components/PageHeader.svelte';
+  import HelpPopover from '../components/HelpPopover.svelte';
   // What the account's reviews check: rules written in the configuration,
   // as text or a file, and context files that explain the code, with where
   // each is set and the repositories that read it. Read-only: rules are set
@@ -70,16 +72,19 @@
 
 <main class="page">
   <div class="page-inner">
-    <header class="page-head">
-      <h1>Rules</h1>
-      <p class="muted small">
-        What reviews check: rules written in the configuration, as text or a file, and context files that explain the code.
-        Rules are written, and files named, under <span class="mono">rules</span> and
-        <span class="mono">context</span> in the configuration file or a repository's own
-        <span class="mono">.kritika.yaml</span>. To offer <span class="mono">AGENTS.md</span> or
-        <span class="mono">CLAUDE.md</span> as reference material, list it under <span class="mono">context</span>.
-      </p>
-    </header>
+    <PageHeader title="Rules" {slug}>
+      {#snippet actions()}
+        <HelpPopover label="About rules">
+          <p>
+            What reviews check: rules written in the configuration, as text or a file, and context files that explain the code.
+            Rules are written, and files named, under <span class="mono">rules</span> and
+            <span class="mono">context</span> in the configuration file or a repository's own
+            <span class="mono">.kritika.yaml</span>. To offer <span class="mono">AGENTS.md</span> or
+            <span class="mono">CLAUDE.md</span> as reference material, list it under <span class="mono">context</span>.
+          </p>
+        </HelpPopover>
+      {/snippet}
+    </PageHeader>
     <div class="toolbar" role="search">
       <TokenSearch
         id="rule-search"
