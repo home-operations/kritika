@@ -162,7 +162,8 @@ func ReadIndexPack(ctx context.Context, tx pgx.Tx, runID, runnerRunID string) (I
 type StagedChunk struct {
 	ID                                        int64
 	Path, Language, Symbol, Kind, Scope, Text string
-	StartLine, EndLine                        int
+	StartLine                                 int `db:"start_line"`
+	EndLine                                   int `db:"end_line"`
 }
 
 // ReadStagedChunks reads up to limit of a runner run's staged chunks with
@@ -173,11 +174,7 @@ func ReadStagedChunks(ctx context.Context, tx pgx.Tx, runnerRunID string, after 
 	if err != nil {
 		return nil, fmt.Errorf("store: read staged chunks: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (StagedChunk, error) {
-		var c StagedChunk
-		err := row.Scan(&c.ID, &c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text)
-		return c, err
-	})
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByName[StagedChunk])
 	if err != nil {
 		return nil, fmt.Errorf("store: read staged chunks: %w", err)
 	}

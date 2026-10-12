@@ -22,7 +22,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.InitVectorSearch("account")
 	none.VectorSearch("account", "ok", time.Second)
 
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
 	m.Webhook("onedr0p-github", "enqueued")
 	m.Review("onedr0p", "completed", 12*time.Second)
@@ -79,12 +79,15 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader after stepping down = %v", v)
 	}
+	if problems, err := testutil.GatherAndLint(reg); err != nil || len(problems) != 0 {
+		t.Fatalf("metric lint = %v, %v", problems, err)
+	}
 }
 
 // Startup initialization must expose zero counts without recording observations,
 // and must not reset a count when called again.
 func TestInitVectorSearch(t *testing.T) {
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
 	m.InitVectorSearch("account")
 	if n := testutil.CollectAndCount(m.vectorSearch); n != 3 {
