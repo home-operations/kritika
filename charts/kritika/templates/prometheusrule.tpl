@@ -99,4 +99,54 @@ spec:
             {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+    - name: kritika.queue
+      rules:
+        - alert: KritikaQueueDelayed
+          expr: max by (namespace, job, queue) (last_over_time(kritika_queue_oldest_runnable_seconds{queue!="index"}[5m])) > {{ .Values.monitoring.prometheusRule.queueAgeSeconds }}
+          for: {{ .Values.monitoring.prometheusRule.queueDelayFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: >-
+              kritika queue {{ "{{" }} $labels.queue {{ "}}" }} has overdue work
+            description: >-
+              The oldest runnable job has waited more than {{ .Values.monitoring.prometheusRule.queueAgeSeconds }} seconds.
+              Check worker capacity, paused queues, model-slot contention and database health.
+              Future scheduled work and the index queue are excluded.
+              The latest successful snapshot is retained for up to 5 minutes across read failures.
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        - alert: KritikaQueueStatsUnavailable
+          expr: max by (namespace, job) (avg_over_time(kritika_queue_stats_up[5m])) < 0.75
+          for: {{ .Values.monitoring.prometheusRule.queueStatsUnavailableFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: kritika queue snapshots are unreliable
+            description: >-
+              Every scraped replica has succeeded on fewer than 75% of snapshot reads over 5 minutes.
+              Check app-pool contention, database connectivity and the queue metrics logs.
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+    - name: kritika.vector
+      rules:
+        - alert: KritikaVectorSearchErrors
+          expr: >-
+            (sum by (namespace, job) (increase(kritika_vector_search_seconds_count{outcome="error"}[15m]))
+            / sum by (namespace, job) (increase(kritika_vector_search_seconds_count{outcome!="canceled"}[15m])) > 0.1)
+            and on (namespace, job)
+            (sum by (namespace, job) (increase(kritika_vector_search_seconds_count{outcome!="canceled"}[15m])) >= 10)
+          for: {{ .Values.monitoring.prometheusRule.vectorSearchErrorsFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: kritika vector searches are failing
+            description: >-
+              More than 10% of database search requests failed, with at least 10 requests in 15 minutes.
+              Embedding-provider errors and client cancellations are excluded. Check the gateway logs, database and index schema.
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
 {{- end }}

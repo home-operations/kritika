@@ -32,6 +32,10 @@ type SimilarHit struct {
 	Similarity float64
 }
 
+const similarChunksSQL = `SELECT path, start_line, end_line, language, symbol, kind, scope, text, 1 - (embedding <=> $1::halfvec)
+			FROM index_chunks WHERE index_run_id = $2 AND NOT (path = ANY($3))
+			ORDER BY embedding <=> $1::halfvec LIMIT $4`
+
 // SimilarChunks finds, for each query vector, the perQuery chunks of the
 // generation nearest it, outside the excluded paths, in the order the
 // index ranks them. The generation and account filters are strict and
@@ -48,9 +52,7 @@ func SimilarChunks(
 	}
 	var hits []SimilarHit
 	for _, v := range vectors {
-		rows, err := tx.Query(ctx, `SELECT path, start_line, end_line, language, symbol, kind, scope, text, 1 - (embedding <=> $1::halfvec)
-			FROM index_chunks WHERE index_run_id = $2 AND NOT (path = ANY($3))
-			ORDER BY embedding <=> $1::halfvec LIMIT $4`, model.VectorLiteral(v), runID, exclude, perQuery)
+		rows, err := tx.Query(ctx, similarChunksSQL, model.VectorLiteral(v), runID, exclude, perQuery)
 		if err != nil {
 			return nil, fmt.Errorf("store: similar chunks: %w", err)
 		}

@@ -187,7 +187,18 @@ func serve(
 	drift := server.NewConfigDriftGauge(reg)
 	configErrors := server.NewConfigErrorGauge(reg)
 	m := metrics.New(reg)
-	reg.MustRegister(metrics.NewPoolCollector(st.PoolStats()))
+	for _, account := range file.Accounts {
+		m.InitVectorSearch(account.Key())
+	}
+	queueCollector := metrics.NewQueueCollector(ctx, func(ctx context.Context) ([]metrics.QueueStats, error) {
+		stats, err := st.QueueStats(ctx)
+		out := make([]metrics.QueueStats, len(stats))
+		for i, s := range stats {
+			out[i] = metrics.QueueStats(s)
+		}
+		return out, err
+	}, logger)
+	reg.MustRegister(metrics.NewPoolCollector(st.PoolStats()), queueCollector)
 	logConfig(logger, file, "configuration loaded")
 	for _, u := range file.UnpricedModels() {
 		logger.Warn("model is unpriced: its provider reports no cost and pricing has no price for it; configure provider pricing",
@@ -328,7 +339,7 @@ func startWorker(
 		// Every job this replica works carries its heartbeat, so the
 		// leader can hand back the jobs of a replica that dies without
 		// a soft stop long before River's rescuer may.
-		Middleware: []rivertype.Middleware{&worker.JobHeartbeat{Store: st, Logger: logger}},
+		Middleware: []rivertype.Middleware{&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}},
 		Queues: map[string]river.QueueConfig{
 			jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
 			jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},

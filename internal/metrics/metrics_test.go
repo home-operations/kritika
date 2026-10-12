@@ -7,6 +7,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func TestMetricsRecordAndNilIsSafe(t *testing.T) {
@@ -17,6 +18,9 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.TranscriptWrite("review", "ok")
 	none.ConfidenceScored("t", 5, "low")
 	none.Leading(true)
+	none.QueueWait("review", time.Second)
+	none.InitVectorSearch("account")
+	none.VectorSearch("account", "ok", time.Second)
 
 	reg := prometheus.NewRegistry()
 	m := New(reg)
@@ -74,5 +78,34 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	m.Leading(false)
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader after stepping down = %v", v)
+	}
+}
+
+// Startup initialization must expose zero counts without recording observations,
+// and must not reset a count when called again.
+func TestInitVectorSearch(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := New(reg)
+	m.InitVectorSearch("account")
+	if n := testutil.CollectAndCount(m.vectorSearch); n != 3 {
+		t.Fatalf("outcome series = %d, want 3", n)
+	}
+	for _, outcome := range []string{"ok", "error", "canceled"} {
+		t.Run(outcome, func(t *testing.T) {
+			histogram := m.vectorSearch.WithLabelValues("account", outcome).(prometheus.Metric)
+			for _, count := range []uint64{0, 1} {
+				var metric dto.Metric
+				if err := histogram.Write(&metric); err != nil {
+					t.Fatal(err)
+				}
+				if got := metric.GetHistogram().GetSampleCount(); got != count {
+					t.Fatalf("sample count = %d, want %d", got, count)
+				}
+				if count == 0 {
+					m.VectorSearch("account", outcome, time.Second)
+					m.InitVectorSearch("account")
+				}
+			}
+		})
 	}
 }

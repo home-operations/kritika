@@ -29,6 +29,8 @@ type Metrics struct {
 	runnerRuns     *prometheus.CounterVec
 	runnerDuration *prometheus.HistogramVec
 	leaseWait      *prometheus.HistogramVec
+	queueWait      *prometheus.HistogramVec
+	vectorSearch   *prometheus.HistogramVec
 	reviewSnoozes  *prometheus.CounterVec
 	jobsRescued    *prometheus.CounterVec
 	modelCalls     *prometheus.CounterVec
@@ -49,6 +51,7 @@ const (
 	lblOutcome    = "outcome"
 	lblConnection = "connection"
 	lblKind       = "kind"
+	lblQueue      = "queue"
 )
 
 // New registers the collectors on reg.
@@ -116,6 +119,15 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_runner_duration_seconds", Help: "Runner Job time from start to finish.",
 			Buckets: []float64{2, 5, 10, 20, 30, 60, 120, 300, 600, 900},
 		}, []string{"kind"}),
+		queueWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "kritika_queue_wait_seconds", Help: "Time from scheduled eligibility to worker start, per pickup including retries and snoozes.",
+			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300, 600, 1800},
+		}, []string{lblQueue}),
+		vectorSearch: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "kritika_vector_search_seconds",
+			Help:    "Database vector-search transaction time per request, excluding embedding and model-slot waits.",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
+		}, []string{lblAccount, lblOutcome}),
 		leaseWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300},
@@ -143,7 +155,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
 	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.threads, m.findings, m.confidence,
-		m.indexRuns, m.indexChunks, m.contextChunks,
+		m.indexRuns, m.indexChunks, m.contextChunks, m.queueWait, m.vectorSearch,
 		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.modelUnpriced,
 		m.egress,
 		m.forgeLimits, m.transcripts,
@@ -319,5 +331,29 @@ func (m *Metrics) Leading(held bool) {
 func (m *Metrics) TranscriptWrite(kind, outcome string) {
 	if m != nil {
 		m.transcripts.WithLabelValues(kind, outcome).Inc()
+	}
+}
+
+// QueueWait records time spent eligible for pickup, excluding intentional delays.
+func (m *Metrics) QueueWait(queue string, took time.Duration) {
+	if m != nil {
+		m.queueWait.WithLabelValues(queue).Observe(took.Seconds())
+	}
+}
+
+// InitVectorSearch exposes zero counters before requests arrive so a first
+// error following a scrape is visible to rate/increase.
+func (m *Metrics) InitVectorSearch(account string) {
+	if m != nil {
+		for _, outcome := range []string{"ok", "error", "canceled"} {
+			m.vectorSearch.WithLabelValues(account, outcome)
+		}
+	}
+}
+
+// VectorSearch records the database phase; outcome is ok, error or canceled.
+func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
+	if m != nil {
+		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
 	}
 }

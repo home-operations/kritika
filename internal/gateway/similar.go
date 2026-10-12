@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -184,11 +185,17 @@ func (g *Server) similar(
 		return nil, tokens, true, err
 	}
 	var hits []store.SimilarHit
+	started := time.Now()
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
 		hits, err = store.SimilarChunks(ctx, tx, runID, vectors, r.exclude, similarPerQuery)
 		return err
 	})
+	outcome := adapter.Outcome(err)
+	if err != nil && ctx.Err() != nil {
+		outcome = "canceled"
+	}
+	g.Metrics.VectorSearch(r.account.Key(), outcome, time.Since(started))
 	if err != nil {
 		return nil, tokens, true, err
 	}
