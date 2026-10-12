@@ -217,7 +217,11 @@ one. They come in five groups, with a few keys beside them:
 `ignore` lists globs of the paths kritika never looks at: they are left out
 of a review's context and of the index, on top of kritika's own (vendored
 trees, lockfiles, generated and minified code, source maps and logs), and a
-pull request that changes nothing else is skipped.
+pull request that changes nothing else is skipped. Changing the effective
+ignore rules triggers a full rebuild on the next index run, including files
+whose contents have not changed. Editing instance configuration does not
+queue index jobs by itself; reindex an idle repository from the dashboard
+to apply new ignore rules immediately.
 
 ```yaml
 review:

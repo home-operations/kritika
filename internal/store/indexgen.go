@@ -60,15 +60,16 @@ func RecordDefaultBranch(ctx context.Context, tx pgx.Tx, repositoryID, branch st
 // Generation is a repository's active index generation: what it covers
 // and the embedder it was built with.
 type Generation struct {
-	ID, Commit, Model string
-	Dims              int
+	ID, Commit, Model, IgnoreHash string
+	Dims                          int
 }
 
 // FindGeneration reads a completed index generation, or ErrNotFound.
 func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, error) {
 	g := Generation{ID: runID}
-	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims FROM index_runs WHERE id = $1 AND status = 'completed'`, runID).
-		Scan(&g.Commit, &g.Model, &g.Dims)
+	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash FROM index_runs
+		WHERE id = $1 AND status = 'completed'`, runID).
+		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -82,6 +83,7 @@ func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, e
 type NewIndexRun struct {
 	AccountID, RepositoryID, Commit, Base, Mode, Trigger string
 	Embedding                                            configfile.Embedding
+	IgnoreHash                                           string
 	// JobID is the River job working the run.
 	JobID int64
 	// StrayAfter is how old a run other than the active generation must be
@@ -103,9 +105,10 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 		return "", "", fmt.Errorf("store: drop stray chunks: %w", err)
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO index_runs
-		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8) RETURNING id`,
-		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Mode, r.Trigger).Scan(&runID); err != nil {
+		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger, ignore_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8, $9) RETURNING id`,
+		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Mode, r.Trigger, r.IgnoreHash).
+		Scan(&runID); err != nil {
 		return "", "", fmt.Errorf("store: insert index run: %w", err)
 	}
 	runnerRunID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindIndex, runID, r.JobID)

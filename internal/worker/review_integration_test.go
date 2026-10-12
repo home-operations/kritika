@@ -1538,6 +1538,10 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		checkUpdateOverRebuild(ctx, t, appStore, insertOnly, exec, account.ID(), repoID, head)
 	})
 
+	t.Run("ignore rules rebuild unchanged files", func(t *testing.T) {
+		checkIndexIgnoreChanges(ctx, t, appStore, insertOnly, lf, current, account.ID(), repoID, head)
+	})
+
 	t.Run("completed with a context pack, findings and a sticky comment", func(t *testing.T) {
 		checkContextPack(ctx, t, appStore, lf, fc, dispatch, waitReview, account.ID(), head, base)
 	})
