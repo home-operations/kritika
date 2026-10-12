@@ -87,7 +87,8 @@ var findingIssues = findingIssuesOf("")
 
 // findingIssuesOf is findingIssues over the completed reviews scope keeps:
 // a predicate on v, the review, led by AND, or "" for every one. It is the
-// one definition of what became of a finding, whoever asks.
+// one definition of what became of a finding, whoever asks. The base fragment
+// must stay parameter-free; scope must use the enclosing query's binding style.
 func findingIssuesOf(scope string) string {
 	return `seen AS (
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.category, f.title, f.explanation, f.suggested_fix, f.replacement,
@@ -127,16 +128,21 @@ func ListAccountFindings(ctx context.Context, tx pgx.Tx, f FindingFilter, p Page
 	}
 	like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Query) + "%"
 	rows, err := tx.Query(ctx, accountFindings+`
-		WHERE ($1::uuid IS NULL OR p.repository_id = $1)
-			AND ($2 = '' OR l.severity = $2)
-			AND ($3 = '' OR CASE $3 WHEN 'dismissed' THEN l.dismissed WHEN 'addressed' THEN l.addressed ELSE NOT l.addressed AND NOT l.dismissed END)
-			AND ($4 = '' OR l.title ILIKE $5 OR l.explanation ILIKE $5 OR l.path ILIKE $5 OR p.title ILIKE $5 OR p.number = $6)
-			AND ($7 OR (l.seen_at, l.id) < ($8, $9::uuid))
-			AND ($11 = '' OR $11 = ANY (l.rules))
-			AND ($12 = '' OR l.category = $12)
-		ORDER BY l.seen_at DESC, l.id DESC LIMIT $10`,
-		uuidParam(f.RepositoryID), string(f.Severity), string(f.Status), f.Query, like, number,
-		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Rule, string(f.Category))
+		WHERE (@repository_id::uuid IS NULL OR p.repository_id = @repository_id)
+			AND (@severity = '' OR l.severity = @severity)
+			AND (@status = '' OR CASE @status WHEN 'dismissed' THEN l.dismissed WHEN 'addressed' THEN l.addressed
+				ELSE NOT l.addressed AND NOT l.dismissed END)
+			AND (@query = '' OR l.title ILIKE @like OR l.explanation ILIKE @like OR l.path ILIKE @like
+				OR p.title ILIKE @like OR p.number = @number)
+			AND (@first OR (l.seen_at, l.id) < (@after_time, @after_id::uuid))
+			AND (@rule = '' OR @rule = ANY (l.rules))
+			AND (@category = '' OR l.category = @category)
+		ORDER BY l.seen_at DESC, l.id DESC LIMIT @limit`, pgx.StrictNamedArgs{
+		"repository_id": uuidParam(f.RepositoryID), "severity": string(f.Severity), "status": string(f.Status),
+		"query": f.Query, "like": like, "number": number,
+		"first": p.After.First(), "after_time": p.After.T, "after_id": p.afterID(), "limit": p.Limit + 1,
+		"rule": f.Rule, "category": string(f.Category),
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list account findings: %w", err)
 	}

@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 )
 
 func TestQueueCollector(t *testing.T) {
 	var fail bool
 	var count int64 = 3
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	reg.MustRegister(NewQueueCollector(t.Context(), func(ctx context.Context) ([]QueueStats, error) {
 		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 2*time.Second {
 			t.Error("queue snapshot must have a bounded deadline")
@@ -35,6 +36,9 @@ func TestQueueCollector(t *testing.T) {
 			families, err := reg.Gather()
 			if err != nil {
 				t.Fatal(err)
+			}
+			if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
+				t.Fatalf("metric lint = %v, %v", problems, err)
 			}
 			want := map[string]float64{"kritika_queue_stats_up": 0}
 			if !fail {
