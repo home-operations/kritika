@@ -17,6 +17,8 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.TranscriptWrite("review", "ok")
 	none.ConfidenceScored("t", 5, "low")
 	none.Leading(true)
+	none.QueueWait("review", time.Second)
+	none.VectorSearch("account", "ok", time.Second)
 
 	reg := prometheus.NewRegistry()
 	m := New(reg)

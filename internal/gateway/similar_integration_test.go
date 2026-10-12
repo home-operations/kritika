@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
@@ -117,7 +119,8 @@ repositories:
 				}
 				return [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, tt.tokens, nil
 			})
-			g := Server{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler),
+			reg := prometheus.NewRegistry()
+			g := Server{Metrics: metrics.New(reg), Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler),
 				Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
 			}
 			req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(`{"queries":["hello"]}`)).WithContext(rctx)
@@ -127,6 +130,15 @@ repositories:
 			if out.Code != tt.status {
 				t.Fatalf("status=%d, want %d: %s", out.Code, tt.status, out.Body.String())
 			}
+			var wantSearches uint64
+			if tt.status == http.StatusOK || tt.name == "search failure" {
+				wantSearches = 1
+			}
+			outcome := "ok"
+			if tt.name == "search failure" {
+				outcome = "error"
+			}
+			checkVectorSearchMetric(t, reg, wantSearches, outcome)
 			grant, err := st.LookupGatewayToken(ctx, token)
 			if err != nil || grant.Spent != tt.tokens {
 				t.Fatalf("spent=%d, want %d: %v", grant.Spent, tt.tokens, err)
@@ -147,5 +159,33 @@ repositories:
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func checkVectorSearchMetric(t *testing.T, reg *prometheus.Registry, wantSearches uint64, wantOutcome string) {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var searches uint64
+	for _, family := range families {
+		if family.GetName() != "kritika_vector_search_seconds" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			searches += metric.GetHistogram().GetSampleCount()
+			for _, label := range metric.Label {
+				if label.GetName() == "outcome" {
+					want := wantOutcome
+					if label.GetValue() != want {
+						t.Errorf("search outcome = %q, want %q", label.GetValue(), want)
+					}
+				}
+			}
+		}
+	}
+	if searches != wantSearches {
+		t.Errorf("database searches = %d, want %d; embedding failures must not count", searches, wantSearches)
 	}
 }

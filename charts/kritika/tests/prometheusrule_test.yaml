@@ -12,7 +12,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders the leader and config groups when enabled
+  - it: renders the leader, config, queue and vector groups when enabled
     set:
       monitoring.prometheusRule.enabled: true
     asserts:
@@ -28,7 +28,7 @@ tests:
           value: kritika
       - lengthEqual:
           path: spec.groups
-          count: 2
+          count: 4
       - equal:
           path: spec.groups[0].name
           value: kritika.leader
@@ -114,3 +114,39 @@ tests:
       - equal:
           path: spec.groups[1].rules[1].for
           value: 30m
+
+  - it: renders shared queue aggregation and search errors with custom thresholds
+    set:
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.queueAgeSeconds: 900
+      monitoring.prometheusRule.queueDelayFor: 20m
+      monitoring.prometheusRule.queueStatsUnavailableFor: 3m
+      monitoring.prometheusRule.vectorSearchErrorsFor: 5m
+      monitoring.prometheusRule.additionalRuleLabels: { team: platform }
+      monitoring.prometheusRule.additionalRuleAnnotations:
+        { runbook_url: https://example.com/queues }
+    asserts:
+      - equal:
+          path: spec.groups[2].rules[0].expr
+          value: max by (namespace, job, queue) (kritika_queue_oldest_runnable_seconds) > 900
+      - equal:
+          path: spec.groups[2].rules[0].for
+          value: 20m
+      - equal:
+          path: spec.groups[2].rules[1].expr
+          value: max by (namespace, job) (kritika_queue_stats_up) == 0
+      - equal:
+          path: spec.groups[2].rules[1].for
+          value: 3m
+      - equal:
+          path: spec.groups[3].rules[0].alert
+          value: KritikaVectorSearchErrors
+      - equal:
+          path: spec.groups[3].rules[0].for
+          value: 5m
+      - equal:
+          path: spec.groups[3].rules[0].labels
+          value: { severity: warning, team: platform }
+      - equal:
+          path: spec.groups[3].rules[0].annotations.runbook_url
+          value: https://example.com/queues

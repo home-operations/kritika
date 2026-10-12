@@ -29,7 +29,7 @@ import (
 //   KRITIKA_TEST_RUNNER_URL  runner role, owns nothing
 //   KRITIKA_TEST_SUPER_URL   a superuser, used only to assert refusal
 
-func testEnv(t *testing.T, key string) string {
+func testEnv(t testing.TB, key string) string {
 	t.Helper()
 	v := os.Getenv(key)
 	if v == "" {
@@ -38,7 +38,7 @@ func testEnv(t *testing.T, key string) string {
 	return v
 }
 
-func openStore(t *testing.T) *Store {
+func openStore(t testing.TB) *Store {
 	t.Helper()
 	ctx := t.Context()
 	s, err := Open(ctx, Options{

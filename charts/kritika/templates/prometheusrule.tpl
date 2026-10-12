@@ -99,4 +99,53 @@ spec:
             {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+    - name: kritika.queue
+      rules:
+        - alert: KritikaQueueDelayed
+          expr: max by (namespace, job, queue) (kritika_queue_oldest_runnable_seconds) > {{ .Values.monitoring.prometheusRule.queueAgeSeconds }}
+          for: {{ .Values.monitoring.prometheusRule.queueDelayFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: >-
+              kritika queue {{ "{{" }} $labels.queue {{ "}}" }} has overdue work
+            description: >-
+              The oldest runnable job has waited more than {{ .Values.monitoring.prometheusRule.queueAgeSeconds }} seconds.
+              Check worker capacity, paused queues, model-slot contention and database health.
+              Future scheduled work is excluded. Backlog is shared across replicas.
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        - alert: KritikaQueueStatsUnavailable
+          expr: max by (namespace, job) (kritika_queue_stats_up) == 0
+          for: {{ .Values.monitoring.prometheusRule.queueStatsUnavailableFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: No kritika replica can read queue metrics
+            description: >-
+              Shared queue snapshots are failing on every scraped replica.
+              Queue gauges are absent, not zero. Check database connectivity and the queue metrics logs.
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+    - name: kritika.vector
+      rules:
+        - alert: KritikaVectorSearchErrors
+          expr: >-
+            (sum by (namespace, job) (increase(kritika_vector_search_seconds_count{outcome="error"}[15m]))
+            / clamp_min(sum by (namespace, job) (increase(kritika_vector_search_seconds_count[15m])), 1) > 0.1)
+            and on (namespace, job)
+            (sum by (namespace, job) (increase(kritika_vector_search_seconds_count[15m])) >= 10)
+          for: {{ .Values.monitoring.prometheusRule.vectorSearchErrorsFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: kritika vector searches are failing
+            description: >-
+              More than 10% of database search requests failed, with at least 10 requests in 15 minutes.
+              Embedding-provider errors are excluded. Check the gateway logs, database and index schema.
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
 {{- end }}

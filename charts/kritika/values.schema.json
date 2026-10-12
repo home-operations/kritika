@@ -929,7 +929,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration the leader could not apply, and a replica whose configuration file drifted from the applied one.",
+              "description": "Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration the leader could not apply, configuration drift, delayed queues, unavailable queue metrics and vector-search errors.",
               "title": "enabled",
               "type": "boolean"
             },
@@ -949,6 +949,30 @@
               "default": "5m",
               "description": "How long no replica may hold the leader lock before KritikaNoLeader fires. A standby takes the lock within one leader retry interval of the database answering, and a dead leader's session is dropped by Postgres within about a minute.",
               "title": "noLeaderFor",
+              "type": "string"
+            },
+            "queueAgeSeconds": {
+              "default": 600,
+              "description": "Oldest runnable job age in seconds that triggers KritikaQueueDelayed; tune for normal onboarding and review traffic.",
+              "title": "queueAgeSeconds",
+              "type": "integer"
+            },
+            "queueDelayFor": {
+              "default": "15m",
+              "description": "How long runnable work must exceed queueAgeSeconds before warning.",
+              "title": "queueDelayFor",
+              "type": "string"
+            },
+            "queueStatsUnavailableFor": {
+              "default": "5m",
+              "description": "How long every scraped replica may fail to read queue metrics before warning.",
+              "title": "queueStatsUnavailableFor",
+              "type": "string"
+            },
+            "vectorSearchErrorsFor": {
+              "default": "10m",
+              "description": "How long the vector-search error ratio must exceed 10% (at least 10 requests in 15 minutes) before warning.",
+              "title": "vectorSearchErrorsFor",
               "type": "string"
             }
           },

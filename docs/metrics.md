@@ -39,6 +39,50 @@ Beyond the Go runtime and process collectors, every series is prefixed
 | `kritika_config_error`                  |                                | 1 while the leader's latest attempt to apply the configuration to the store was refused; the last applied configuration stays live meanwhile                                                                          |
 | `kritika_leader`                        |                                | 1 while this replica holds the leader lock                                                                                                                                                                            |
 
+## Queue and vector-search measurements
+
+| Series | Labels | Meaning |
+| ------ | ------ | ------- |
+| `kritika_queue_runnable_jobs` | queue | Due available, retryable and scheduled jobs in the shared database |
+| `kritika_queue_oldest_runnable_seconds` | queue | Time since the oldest runnable job's `scheduled_at`; zero when empty |
+| `kritika_queue_stats_up` | | Whether this replica read the queue snapshot successfully |
+| `kritika_queue_wait_seconds` | queue | Histogram from `scheduled_at` to worker start, recorded for every pickup |
+| `kritika_vector_search_seconds` | account, outcome | Histogram of database search transaction time, outcome `ok` or `error` |
+
+Each replica reads the same queue state on scrape with a two-second timeout.
+Use `max by (namespace, job, queue)` for backlog and oldest age, never a sum
+across replicas. Keep the deployment's cluster label as well when querying
+multiple clusters. A failed read emits `kritika_queue_stats_up = 0` and omits
+the queue gauges; it does not report an empty queue or retain stale values.
+Known queues emit zero when empty. Queue labels are limited to `review`,
+`followup` and `index`; thread changes currently share `followup`.
+
+Runnable work includes overdue retries and scheduled jobs waiting for River's
+scheduler to promote them. Future work, pending jobs, running jobs and terminal
+jobs are excluded. Paused queues still have overdue work and can alert. Oldest
+age measures time since eligibility, not time since creation. Queue wait also
+excludes intentional retry backoff, scheduling and snooze delays, and records
+another sample on each pickup. Negative waits from clock skew are clamped to
+zero. Recording at worker entry makes delays visible before long jobs finish.
+
+Histograms record different work on each replica, so sum their bucket rates
+before computing quantiles:
+
+```promql
+histogram_quantile(0.95,
+  sum by (namespace, job, queue, le) (rate(kritika_queue_wait_seconds_bucket[5m]))
+)
+```
+
+Vector timing begins after embedding, lease release and usage recording. It
+includes pool acquisition, account transaction setup, all vectors in the
+request, result decoding and commit. It excludes embedding-provider latency,
+model-slot waits and result filtering. Requests without a compatible index or
+with an embedding failure produce no vector-search sample. The histogram's
+`_count` provides search volume and database error counts; use the existing
+model-call counters for embedding failures. No repository, query text, job ID
+or generation becomes a metric label.
+
 ## Alerts
 
 The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
@@ -53,6 +97,9 @@ label to every rule, and `additionalRuleAnnotations` an annotation.
 | `KritikaMultipleLeaders` | `sum(kritika_leader) > 1`: more than one replica reports holding it   | critical | 2m   |
 | `KritikaConfigError`     | `kritika_config_error == 1`: the leader could not apply the file      | warning  | 5m   |
 | `KritikaConfigDrift`     | `kritika_config_drift == 1`: a replica's file differs from the applied one | warning | 15m |
+| `KritikaQueueDelayed` | Oldest runnable job exceeds 600 seconds, using max across replicas | warning | 15m |
+| `KritikaQueueStatsUnavailable` | Every scraped replica reports queue snapshot failure | warning | 5m |
+| `KritikaVectorSearchErrors` | More than 10% database search errors, with at least 10 requests in 15m | warning | 10m |
 
 Without a leader nothing migrates, applies configuration, polls or rescues
 the jobs a dead replica left; a standby takes the lock within one leader
@@ -63,6 +110,11 @@ while the old leader's lock connection has not yet failed; longer than that
 means the replicas are not on one database. Drift is expected for the
 minute or two a rollout takes, until the new pod leads and applies its
 file.
+
+Queue age and alert waits are configurable under `monitoring.prometheusRule`.
+The defaults are starting thresholds, not measured production SLOs; tune queue
+age for normal review and onboarding traffic. Vector latency is graphed without
+an alert threshold until a representative production baseline is available.
 
 ## Grafana dashboard
 
@@ -77,4 +129,72 @@ follow a review's path: health (leaders, configuration, drift, rescued
 jobs), intake (webhooks, backstop polls, rate limits), reviews (status,
 duration, findings, follow-ups, the wait for a model slot), models (calls,
 tokens, cost per hour and over the time range), runner Jobs, the gateway's
-egress and the index, and the database pools.
+egress and the index, database pools, and queue delays and vector searches.
+Queue panels span all accounts; vector panels follow the account filter.
+
+
+## Reproducing the vector-search baseline
+
+Run on a machine with Docker through the integration task, which creates and
+removes a disposable database. No provider credentials or model calls are needed:
+
+```sh
+mise run test-integration -- -run '^$' -bench BenchmarkSimilarChunks -benchtime=20x -v
+```
+
+`BenchmarkSimilarChunks` exercises the unchanged `SimilarChunks` SQL with
+`vchordrq.prefilter = on`, 1,024 and 1,536 dimensions, and 1,000 or 10,000 chunks
+in the target generation. A second repository in the same account and a second
+account each contribute the same number of vectors: 3,000 or 30,000 total rows.
+Each case excludes either no paths or 10% of target paths. Data comes from a
+fixed-seed, 16-cluster synthetic distribution with one chunk per path.
+
+All retrieval runs as `kritika_app` with RLS enabled, the transaction's account
+setting, the generation filter and the actual path exclusions. A foreign-account
+lookup must return no results. Recall@4 compares the application's results with
+an exact table scan for 20 deterministic queries. The harness disables index
+and bitmap scans only for that reference, verifies its sequential-scan plan,
+and restores them before further application queries. It compares chunk paths
+directly because fixture paths are unique within a generation; this also keeps
+the ground truth on the same full-result SQL as the application rather than a
+separate row-identifier query. VectorChord's
+[recall evaluator](https://docs.vectorchord.ai/vectorchord/usage/measure-recall.html)
+is another option for production query samples.
+
+The verbose output captures `EXPLAIN (ANALYZE, BUFFERS)` for both plans, plus the
+PostgreSQL and VectorChord versions. Setup, recall evaluation and plan collection
+are excluded from the reported `ns/op`. Timing includes the account transaction,
+vector serialization, search and result decoding for one query vector. It is a
+warm microbenchmark with the integration task's race detector enabled, not a
+cold-start or concurrent-traffic test.
+
+### Local baseline, 2026-10-12
+
+Measured on Linux amd64, AMD EPYC 7502P, using the task's
+`ghcr.io/tensorchord/vchord-postgres:pg18-v1.1.1` container (PostgreSQL 18.3,
+VectorChord 1.1.1). Each mean below covers 20 timed requests. EXPLAIN times are
+individual diagnostic queries, not averages or percentiles.
+
+| Dimensions | Target chunks | Excluded paths | Mean request (ms) | Recall@4 | VectorChord EXPLAIN (ms) | Exact EXPLAIN (ms) |
+| ---------- | ------------- | -------------- | ----------------- | -------- | ----------------------- | ------------------ |
+| 1,024 | 1,000 | 0 | 2.36 | 1.00 | 0.42 | 9.50 |
+| 1,024 | 1,000 | 100 | 2.54 | 1.00 | 0.43 | 8.83 |
+| 1,024 | 10,000 | 0 | 6.49 | 1.00 | 3.94 | 101.19 |
+| 1,024 | 10,000 | 1,000 | 18.57 | 1.00 | 4.82 | 93.77 |
+| 1,536 | 1,000 | 0 | 2.86 | 1.00 | 0.51 | 10.91 |
+| 1,536 | 1,000 | 100 | 2.98 | 1.00 | 0.52 | 9.38 |
+| 1,536 | 10,000 | 0 | 8.10 | 1.00 | 5.96 | 109.11 |
+| 1,536 | 10,000 | 1,000 | 19.78 | 1.00 | 6.40 | 100.54 |
+
+Every application plan chose `index_chunks_embedding_idx`; every exact plan
+used a sequential scan and top-N sort. The filters included both the generation
+and the RLS account predicate. Plans reported shared-buffer hits for these warm
+queries; the full buffer counts are emitted by the command above.
+
+The current index performed well on this fixture. The longer requests with
+large exclusion lists include their client-side encoding and transfer, so do not
+attribute all of that difference to the index. These small, synthetic samples
+are not evidence of production recall or an SLO, and do not justify changing
+partitioning, search parameters, prewarming or worker concurrency. Use the new
+runtime histograms and repeat with representative embeddings and traffic before
+tuning those settings. No production database was measured for this baseline.
