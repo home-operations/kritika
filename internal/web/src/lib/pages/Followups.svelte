@@ -26,7 +26,7 @@
 <main class="page">
   <div class="page-inner">
     <SectionTabs section="pulls" {slug} current="followups" />
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.items.length === 0} empty="No follow-up questions yet.">
+    <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} empty="No follow-up questions yet.">
       {#snippet children()}
         <ul class="followups">
           {#each paged.items as f (f.id)}<FollowupItem {slug} {f} showPull />{/each}

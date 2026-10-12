@@ -58,8 +58,8 @@
       active = active <= 0 ? n - 1 : active - 1;
     } else if (e.key === 'Enter' && active >= 0) {
       accept(suggestions[active]!);
-    } else if (e.key === 'Tab' && !e.shiftKey) {
-      accept(suggestions[Math.max(active, 0)]!);
+    } else if (e.key === 'Tab' && !e.shiftKey && active >= 0) {
+      accept(suggestions[active]!);
     } else if (e.key === 'Escape') {
       dismissed = true;
       e.stopPropagation();

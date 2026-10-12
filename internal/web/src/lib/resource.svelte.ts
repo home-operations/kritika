@@ -100,38 +100,55 @@ export function live(
   };
 }
 
-// Paged is a keyset-paginated list: the first page is a Resource (so
-// StateView renders it), and "Load more" appends further pages. Reloading
-// the same query (a live refetch) refreshes the first page but keeps the
-// pages already loaded; changing the query (url() returns a different base)
-// drops them, and a Load more still in flight for the old query is
-// discarded when it lands.
+// Paged refreshes the loaded number of pages from fresh cursors, publishing
+// them together so a live update cannot mix old and new page boundaries.
+// Changing the query clears its data and discards any pending Load more.
 export class Paged<T> {
   readonly first: Resource<Page<T>>;
-  extra = $state<T[]>([]);
   loadingMore = $state(false);
   moreError = $state<Error | undefined>(undefined);
-  // The cursor after the last extra page; undefined until one is loaded.
-  #after = $state<string | null | undefined>(undefined);
+  #pages = 1;
   #gen = 0;
   #base: string | undefined;
+  #more: Promise<void> | undefined;
+  #refresh: Promise<void> | undefined;
+  #refreshAgain = false;
   readonly #url: (cursor?: string) => string;
   readonly #key: (t: T) => string;
 
   constructor(url: (cursor?: string) => string, key: (t: T) => string) {
     this.#url = url;
     this.#key = key;
-    this.first = new Resource(() => getJSON<Page<T>>(url()));
+    this.first = new Resource(async () => {
+      const gen = this.#gen;
+      const pages = this.#pages;
+      let page = await getJSON<Page<T>>(url());
+      const items = [...page.items];
+      for (let i = 1; i < pages && page.nextCursor; i++) {
+        if (gen !== this.#gen) return page;
+        page = await getJSON<Page<T>>(url(page.nextCursor));
+        items.push(...page.items);
+      }
+      return { items: this.#unique(items), nextCursor: page.nextCursor };
+    });
+  }
+
+  #unique(items: T[]): T[] {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const key = this.#key(item);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   get cursor(): string | null {
-    return this.#after !== undefined ? this.#after : (this.first.data?.nextCursor ?? null);
+    return this.first.data?.nextCursor ?? null;
   }
 
   get items(): T[] {
-    const head = this.first.data?.items ?? [];
-    const seen = new Set(head.map(this.#key));
-    return [...head, ...this.extra.filter((t) => !seen.has(this.#key(t)))];
+    return this.first.data?.items ?? [];
   }
 
   load(): Promise<void> {
@@ -139,30 +156,63 @@ export class Paged<T> {
     if (base !== this.#base) {
       this.#base = base;
       this.#gen++;
-      this.extra = [];
-      this.#after = undefined;
+      this.#pages = 1;
+      this.#more = undefined;
+      this.#refresh = undefined;
+      this.#refreshAgain = false;
+      this.first.data = undefined;
+      this.first.error = undefined;
       this.moreError = undefined;
       this.loadingMore = false;
+    } else if (this.#more) {
+      // Finish appending before refreshing, so a live event cannot lose
+      // the page the user is currently asking to see.
+      const gen = this.#gen;
+      return this.#more.then(() => {
+        if (gen === this.#gen) return this.load();
+      });
     }
-    return this.first.load();
+    if (this.#refresh) {
+      this.#refreshAgain = true;
+      return this.#refresh;
+    }
+    this.#refresh = this.#refreshPages(this.#gen);
+    return this.#refresh;
   }
 
-  async more(): Promise<void> {
+  // Coalesce events during a multi-page fetch without discarding its
+  // result: a busy account must still make progress through live updates.
+  async #refreshPages(gen: number): Promise<void> {
+    do {
+      this.#refreshAgain = false;
+      await this.first.load();
+    } while (gen === this.#gen && this.#refreshAgain);
+    if (gen === this.#gen) this.#refresh = undefined;
+  }
+
+  more(): Promise<void> {
     const cursor = this.cursor;
-    if (!cursor) return;
+    if (!cursor || this.first.loading || this.#more) return Promise.resolve();
+    this.#more = this.#loadMore(cursor);
+    return this.#more;
+  }
+
+  async #loadMore(cursor: string): Promise<void> {
     const gen = this.#gen;
     this.loadingMore = true;
     this.moreError = undefined;
     try {
       const p = await getJSON<Page<T>>(this.#url(cursor));
       if (gen !== this.#gen) return;
-      const have = new Set(this.extra.map(this.#key));
-      this.extra = [...this.extra, ...p.items.filter((t) => !have.has(this.#key(t)))];
-      this.#after = p.nextCursor;
+      this.first.data = { items: this.#unique([...this.items, ...p.items]), nextCursor: p.nextCursor };
+      this.#pages++;
     } catch (err) {
       if (gen === this.#gen) this.moreError = err instanceof Error ? err : new Error(String(err));
     } finally {
-      if (gen === this.#gen) this.loadingMore = false;
+      if (gen === this.#gen) {
+        this.loadingMore = false;
+        this.#more = undefined;
+      }
     }
   }
 }

@@ -19,7 +19,10 @@
 
 {#if res.data !== undefined}
   {#if res.error}
-    <p class="state-msg state-error" role="alert">Refresh failed: {errorMessage(res.error)}</p>
+    <div class="state-msg state-error" role="alert">
+      <span>Refresh failed: {errorMessage(res.error)}</span>
+      {#if retry}<button class="btn" onclick={retry}>Retry</button>{/if}
+    </div>
   {/if}
   {#if isEmpty?.(res.data)}
     <p class="state-msg">{empty}</p>

@@ -56,7 +56,7 @@
   $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void paged.load()));
 
   const specs = $derived<TokenSpec[]>([
-    { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName) },
+    { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName), open: true },
     { key: 'severity', hint: 'p0, p1 or p2', values: SEVERITIES },
     { key: 'category', hint: 'what kind of problem', values: CATEGORIES },
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
@@ -142,7 +142,7 @@
         onchange={(status) => replace({ name: 'findings', slug, filter: findingFilter({ ...filter, status }) })}
       />
     </div>
-    <StateView {res} retry={() => res.load()}>
+    <StateView {res} retry={() => paged.load()}>
       {#snippet children()}
         {#if paged.items.length === 0 && filter}
           <div class="state-msg">

@@ -8,7 +8,7 @@
   <p class="state-msg state-error" role="alert">Loading more failed: {errorMessage(paged.moreError)}</p>
 {/if}
 {#if paged.cursor}
-  <button class="btn load-more" onclick={() => paged.more()} disabled={paged.loadingMore}>
+  <button class="btn load-more" onclick={() => paged.more()} disabled={paged.loadingMore || paged.first.loading}>
     {paged.loadingMore ? 'Loading…' : 'Load more'}
   </button>
 {/if}
