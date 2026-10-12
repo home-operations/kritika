@@ -78,7 +78,7 @@
     try {
       await sendJSON('POST', '/auth/logout');
     } catch (err) {
-      toast(`Sign out failed: ${describe(err)}. Try again.`, 'danger');
+      toast(`Sign out failed: ${describe(err)}`, 'danger');
       return;
     }
     closeEvents();

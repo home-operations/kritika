@@ -282,6 +282,8 @@ func TestWebAPI(t *testing.T) {
 	t.Run("plan billing reaches the dashboard", func(t *testing.T) { testChatGPTBilling(t, e) })
 	t.Run("plan allowances respect provider and account scope", func(t *testing.T) { testChatGPTAllowances(t, e) })
 	t.Run("unpriced billing reaches the dashboard", func(t *testing.T) { testUnpricedDashboard(t, e) })
+	t.Run("unknown repository searches are empty", func(t *testing.T) { testUnknownRepositorySearch(t, e) })
+	t.Run("diff preparation is explicit", func(t *testing.T) { testDiffPreparation(t, e) })
 }
 
 func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {

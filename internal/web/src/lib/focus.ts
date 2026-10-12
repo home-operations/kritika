@@ -3,7 +3,12 @@ import type { Attachment } from 'svelte/attachments';
 // revealInNav scrolls a navigation's current item into view, for a strip
 // that scrolls sideways on a narrow screen.
 export const revealInNav: Attachment<HTMLElement> = (node) => {
-  node.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const nav = node.closest('nav');
+  if (!nav) return;
+  const item = node.getBoundingClientRect();
+  const strip = nav.getBoundingClientRect();
+  if (item.left < strip.left) nav.scrollLeft += item.left - strip.left;
+  else if (item.right > strip.right) nav.scrollLeft += item.right - strip.right;
 };
 
 // focusWhenShown focuses the element target selects once the page shows

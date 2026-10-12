@@ -61,8 +61,10 @@ export function saveSettings(change: Partial<UserSettings>): Promise<void> {
   const chosenTheme = theme.pref;
   writer.tail = writer.tail.then(async () => {
     if (session.me !== me) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error('Settings request timed out; try again.')), 15_000);
     try {
-      await sendJSON('PUT', '/api/v1/me/settings', settings);
+      await sendJSON('PUT', '/api/v1/me/settings', settings, controller.signal);
       writer.saved = settings;
       writer.theme = chosenTheme;
     } catch (err) {
@@ -71,8 +73,10 @@ export function saveSettings(change: Partial<UserSettings>): Promise<void> {
         me.settings = writer.saved;
         applySettings(writer.saved);
         setTheme(writer.theme);
+        toast(`Not saved: ${describe(err)}`, 'danger');
       }
-      toast(`Not saved: ${describe(err)}`, 'danger');
+    } finally {
+      clearTimeout(timeout);
     }
   });
   return writer.tail;

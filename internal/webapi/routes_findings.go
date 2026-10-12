@@ -34,9 +34,11 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 	var rows []store.AccountFinding
 	var next *store.Cursor
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
-		if f.RepositoryID, err = repoFilter(ctx, tx, r); err != nil {
+		id, found, err := searchRepoFilter(ctx, tx, r)
+		if err != nil || !found {
 			return err
 		}
+		f.RepositoryID = id
 		rows, next, err = store.ListAccountFindings(ctx, tx, f, page)
 		return err
 	}); err != nil {

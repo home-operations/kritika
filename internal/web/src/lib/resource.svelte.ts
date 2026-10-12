@@ -17,6 +17,10 @@ export class Resource<T> {
     this.#fetcher = fetcher;
   }
 
+  invalidate(): void {
+    this.#seq++;
+  }
+
   async load(): Promise<void> {
     const seq = ++this.#seq;
     this.loading = true;
@@ -100,17 +104,18 @@ export function live(
   };
 }
 
-// Paged refreshes the loaded number of pages from fresh cursors, publishing
-// them together so a live update cannot mix old and new page boundaries.
-// Changing the query clears its data and discards any pending Load more.
+// Paged refreshes the loaded row count from fresh cursors and publishes
+// the results together. Larger requests reduce work for deep lists.
 export class Paged<T> {
   readonly first: Resource<Page<T>>;
   loadingMore = $state(false);
   moreError = $state<Error | undefined>(undefined);
-  #pages = 1;
+  #loaded = 0;
   #gen = 0;
+  #revision = 0;
   #base: string | undefined;
   #more: Promise<void> | undefined;
+  #afterMore: Promise<void> | undefined;
   #refresh: Promise<void> | undefined;
   #refreshAgain = false;
   readonly #url: (cursor?: string) => string;
@@ -121,16 +126,29 @@ export class Paged<T> {
     this.#key = key;
     this.first = new Resource(async () => {
       const gen = this.#gen;
-      const pages = this.#pages;
-      let page = await getJSON<Page<T>>(url());
+      const revision = this.#revision;
+      const target = this.#loaded;
+      let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined));
       const items = [...page.items];
-      for (let i = 1; i < pages && page.nextCursor; i++) {
-        if (gen !== this.#gen) return page;
-        page = await getJSON<Page<T>>(url(page.nextCursor));
+      while (items.length < target && page.nextCursor) {
+        if (gen !== this.#gen || revision !== this.#revision) return page;
+        page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length));
         items.push(...page.items);
       }
-      return { items: this.#unique(items), nextCursor: page.nextCursor };
+      const unique = this.#unique(items);
+      if (gen === this.#gen && revision === this.#revision) this.#loaded = unique.length;
+      return { items: unique, nextCursor: page.nextCursor };
     });
+  }
+
+  #pageURL(cursor?: string, limit?: number): string {
+    const url = this.#url(cursor);
+    if (limit === undefined) return url;
+    const [path, query] = url.split('?');
+    const params = new URLSearchParams(query);
+    // The list endpoints cap each response at 200 rows.
+    params.set('limit', String(Math.min(limit, 200)));
+    return path + '?' + params;
   }
 
   #unique(items: T[]): T[] {
@@ -151,26 +169,46 @@ export class Paged<T> {
     return this.first.data?.items ?? [];
   }
 
+  // Explicit loads discard a snapshot started before a user action.
   load(): Promise<void> {
+    return this.#load(false);
+  }
+
+  // Live refreshes coalesce without starving a slow snapshot.
+  refresh(): Promise<void> {
+    return this.#load(true);
+  }
+
+  #load(background: boolean): Promise<void> {
     const base = this.#url();
     if (base !== this.#base) {
       this.#base = base;
       this.#gen++;
-      this.#pages = 1;
+      this.#revision++;
+      this.first.invalidate();
+      this.#loaded = 0;
       this.#more = undefined;
+      this.#afterMore = undefined;
       this.#refresh = undefined;
       this.#refreshAgain = false;
       this.first.data = undefined;
       this.first.error = undefined;
       this.moreError = undefined;
       this.loadingMore = false;
-    } else if (this.#more) {
-      // Finish appending before refreshing, so a live event cannot lose
-      // the page the user is currently asking to see.
-      const gen = this.#gen;
-      return this.#more.then(() => {
-        if (gen === this.#gen) return this.load();
-      });
+    } else if (!background && this.#refresh) {
+      this.#revision++;
+      this.first.invalidate();
+    }
+    if (this.#more) {
+      if (!this.#afterMore) {
+        const gen = this.#gen;
+        this.#afterMore = this.#more.then(() => {
+          if (gen !== this.#gen) return;
+          this.#afterMore = undefined;
+          return this.refresh();
+        });
+      }
+      return this.#afterMore;
     }
     if (this.#refresh) {
       this.#refreshAgain = true;
@@ -180,38 +218,40 @@ export class Paged<T> {
     return this.#refresh;
   }
 
-  // Coalesce events during a multi-page fetch without discarding its
-  // result: a busy account must still make progress through live updates.
   async #refreshPages(gen: number): Promise<void> {
+    let revision: number;
     do {
+      revision = this.#revision;
       this.#refreshAgain = false;
       await this.first.load();
-    } while (gen === this.#gen && this.#refreshAgain);
+      // A queued append takes the next turn, even during a steady stream.
+    } while (gen === this.#gen && (revision !== this.#revision || (this.#refreshAgain && !this.#more)));
     if (gen === this.#gen) this.#refresh = undefined;
   }
 
   more(): Promise<void> {
-    const cursor = this.cursor;
-    if (!cursor || this.first.loading || this.#more) return Promise.resolve();
-    this.#more = this.#loadMore(cursor);
+    if (!this.cursor || this.#more) return this.#more ?? Promise.resolve();
+    this.loadingMore = true;
+    this.moreError = undefined;
+    this.#more = this.#loadMore(this.#gen);
     return this.#more;
   }
 
-  async #loadMore(cursor: string): Promise<void> {
-    const gen = this.#gen;
-    this.loadingMore = true;
-    this.moreError = undefined;
+  async #loadMore(gen: number): Promise<void> {
     try {
-      const p = await getJSON<Page<T>>(this.#url(cursor));
+      if (this.#refresh) await this.#refresh;
+      if (gen !== this.#gen || !this.cursor) return;
+      const p = await getJSON<Page<T>>(this.#url(this.cursor));
       if (gen !== this.#gen) return;
       this.first.data = { items: this.#unique([...this.items, ...p.items]), nextCursor: p.nextCursor };
-      this.#pages++;
+      this.#loaded = this.items.length;
     } catch (err) {
       if (gen === this.#gen) this.moreError = err instanceof Error ? err : new Error(String(err));
     } finally {
       if (gen === this.#gen) {
         this.loadingMore = false;
         this.#more = undefined;
+        if (this.#refreshAgain && !this.#afterMore) void this.refresh();
       }
     }
   }

@@ -18,7 +18,7 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.refresh()));
 </script>
 
 <svelte:head><title>Follow-ups · {slug} · kritika</title></svelte:head>

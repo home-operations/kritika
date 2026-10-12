@@ -43,7 +43,7 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.refresh()));
 
   function visible(): Repository[] {
     const needle = filter.trim().toLowerCase();

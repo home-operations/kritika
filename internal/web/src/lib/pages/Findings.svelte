@@ -53,7 +53,7 @@
   $effect(() => {
     void repos.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void paged.load()));
+  $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void paged.refresh()));
 
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName), open: true },
@@ -132,7 +132,6 @@
         {specs}
         bind:text
         bind:input={searchEl}
-        ready={!!repos.data}
         {onapply}
       />
       <Segmented

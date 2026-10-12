@@ -189,8 +189,12 @@ func (s *Server) getReviewDiff(w http.ResponseWriter, r *http.Request, t *accoun
 	d := ReviewDiff{}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		rec, err := loadReview(ctx, tx, r, true)
-		if err != nil || rec.run == nil {
+		if err != nil {
 			return err
+		}
+		d.Pending = rec.review.Status == store.ReviewRunning || rec.review.Status == store.ReviewPrepared
+		if rec.run == nil {
+			return nil
 		}
 		changes, err := store.ContextPackDiffs(ctx, tx, rec.run.ID)
 		if none, err := missing(err); none || err != nil {

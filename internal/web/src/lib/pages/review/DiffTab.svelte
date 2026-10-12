@@ -20,7 +20,7 @@
   $effect(() => {
     void version;
     untrack(() => {
-      if (!res.data || (!res.data.diff && !res.data.deltaDiff && !res.data.swept)) void res.load();
+      if (!res.data || res.data.pending) void res.load();
     });
   });
 
@@ -36,7 +36,7 @@
   {res}
   retry={() => res.load()}
   isEmpty={(x) => !x.diff && !x.deltaDiff}
-  empty={res.data?.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}
+  empty={res.data?.pending ? 'Preparing the diff…' : res.data?.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}
 >
   {#snippet children(x)}
     <div class="toolbar">

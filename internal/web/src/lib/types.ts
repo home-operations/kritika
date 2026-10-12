@@ -704,6 +704,7 @@ export interface ReviewDetail {
 }
 
 export interface ReviewDiff {
+  pending?: boolean;
   diff: string;
   deltaDiff: string;
   swept: boolean;
