@@ -851,6 +851,8 @@ export interface JobArgs {
 }
 
 export interface Job {
+  heartbeatOverdue?: boolean;
+  recentFailure?: boolean;
   cancelableReviewId?: string;
   heartbeatAt?: string;
   id: number;

@@ -183,7 +183,7 @@ func readAnalyticsSeries(
 		rev AS (
 			SELECT date_trunc($3, created_at) AS b, count(*) FILTER (WHERE status = 'completed') AS n,
 				count(*) FILTER (WHERE status = 'failed') AS failed,
-				(percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - created_at) * 1000)
+				trunc(percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - created_at) * 1000)
 					FILTER (WHERE status = 'completed' AND finished_at IS NOT NULL))::bigint AS duration FROM reviews
 			WHERE created_at >= $1 AND created_at < $2 GROUP BY 1),
 		spend AS (

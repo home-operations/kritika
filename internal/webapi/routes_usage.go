@@ -55,14 +55,16 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScop
 	ctx := r.Context()
 	chatgptOnly := billing == "chatgpt"
 
-	filter := store.UsageFilter{Repository: queryString(r, "repo"), Model: queryString(r, "model")}
+	filter := store.UsageFilter{
+		Repository: queryString(r, "repo"), Model: queryString(r, "model"), OrderByTokens: r.URL.Query().Get("metric") == "tokens",
+	}
 	out := UsageSeries{Group: group, From: from, To: to}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		rows, err := store.UsageSeries(ctx, tx, group, from, to, chatgptOnly, filter)
 		if err != nil {
 			return err
 		}
-		previous, err := store.UsageSeries(ctx, tx, group, from.Add(-to.Sub(from)), from, chatgptOnly, filter)
+		previous, err := store.UsageComparison(ctx, tx, group, from.Add(-to.Sub(from)), from, chatgptOnly, filter)
 		if err != nil {
 			return err
 		}
@@ -168,6 +170,7 @@ func jobItem(j store.JobRow) Job {
 		ID: j.ID, Kind: j.Kind, State: j.State, Attempt: j.Attempt, MaxAttempts: j.MaxAttempts, CreatedAt: j.CreatedAt,
 		ScheduledAt: j.ScheduledAt, AttemptedAt: j.AttemptedAt, FinalizedAt: j.FinalizedAt, LastError: j.LastError, Cause: jobCause(j.LastError),
 		CancelableReviewID: j.CancelableReviewID, HeartbeatAt: j.HeartbeatAt,
+		HeartbeatOverdue: j.HeartbeatOverdue, RecentFailure: j.RecentFailure,
 		Args: JobArgs{Repository: j.Repository, Number: j.Number, Head: j.Head, Trigger: j.Trigger, CommentID: j.CommentID},
 	}
 }

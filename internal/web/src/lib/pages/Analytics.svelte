@@ -2,6 +2,7 @@
   // The account's home: what its reviews came to over a window, against the
   // window before, and what needs attention now.
   import { getJSON } from '../api.svelte';
+  import { usageFilter } from '../routes';
   import { href } from '../router.svelte';
   import { hookURL } from '../session.svelte';
   import { unsignedWebhooks } from '../setup';
@@ -181,7 +182,7 @@
               now={rate(c.failed, c.reviews + c.failed)} before={rate(p.failed, p.reviews + p.failed)} points good="down"
               sub={`${c.failed} failed of ${c.reviews + c.failed} completed or failed reviews`} />
             <StatTile label="Tokens" value={tokens(c.tokens)} now={c.tokens} before={p.tokens} define="Input (including cached input) plus output tokens" />
-            <a class="stat" href={href({ name: 'usage', slug })}><span class="stat-label">Investigate spending</span><span class="stat-value">{costTotal(c.costUsd, c.unpricedCalls)}</span><span class="stat-sub">Repository → model → review run</span></a>
+            <a class="stat" href={href({ name: 'usage', slug, filter: usageFilter({ days }) })}><span class="stat-label">Investigate spending</span><span class="stat-value">{costTotal(c.costUsd, c.unpricedCalls)}</span><span class="stat-sub">Repository → model → review run</span></a>
           </section>
           <section class="panel" aria-labelledby="an-operations">
             <header class="panel-head"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>

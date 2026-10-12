@@ -9,10 +9,10 @@ const now = new Date('2026-10-12T16:00:00Z').getTime();
 const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
 const jobs: Job[] = [
   { ...g.job, id: 101, state: 'running', attemptedAt: ago(10), heartbeatAt: ago(0.2), cancelableReviewId: 'rev-1', lastError: '', cause: '' },
-  { ...g.job, id: 102, state: 'running', attemptedAt: ago(12), heartbeatAt: ago(5), cancelableReviewId: 'rev-2', lastError: '', cause: '' },
+  { ...g.job, id: 102, state: 'running', attemptedAt: ago(12), heartbeatAt: ago(5), heartbeatOverdue: true, cancelableReviewId: 'rev-2', lastError: '', cause: '' },
   { ...g.job, id: 103, state: 'retryable', scheduledAt: ago(-2), attemptedAt: ago(3) },
-  { ...g.job, id: 104, state: 'discarded', finalizedAt: ago(7), lastError: 'Runner exited before publishing its result', cause: '' },
-  { ...g.job, id: 105, state: 'available', attempt: 0, attemptedAt: null, lastError: '', cause: '' },
+  { ...g.job, id: 104, state: 'discarded', recentFailure: true, finalizedAt: ago(7), lastError: 'Runner exited before publishing its result', cause: '' },
+  { ...g.job, id: 105, state: 'available', args: { ...g.job.args, number: 8 }, attempt: 0, attemptedAt: null, lastError: '', cause: '' },
 ];
 
 const analytics: Analytics = {
@@ -38,11 +38,9 @@ async function mockOperations(page: Parameters<typeof g.mockApi>[0]) {
   ]);
 }
 
-test('heartbeat warnings allow initial startup and ignore a previous attempt heartbeat', () => {
-  expect(overdue({ ...jobs[0]!, heartbeatAt: ago(4) }, now)).toBe(true);
-  expect(overdue({ ...jobs[0]!, attemptedAt: ago(1), heartbeatAt: ago(10) }, now)).toBe(false);
-  expect(overdue({ ...jobs[0]!, heartbeatAt: undefined }, now)).toBe(true);
-  expect(overdue({ ...jobs[0]!, state: 'completed', heartbeatAt: ago(20) }, now)).toBe(false);
+test('heartbeat warnings use the server verdict despite browser clock skew', () => {
+  expect(overdue({ ...jobs[0]!, heartbeatAt: ago(100) })).toBe(false);
+  expect(overdue({ ...jobs[1]!, heartbeatAt: ago(-100) })).toBe(true);
 });
 
 test('queue filters distinguish failures, automatic retries and overdue workers', async ({ page }) => {
@@ -202,6 +200,9 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'alpha/one →' }).click();
     await expect(page.getByRole('heading', { name: 'API spend by model' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`operations-spend-${theme}.png`) });
+    await page.getByRole('button', { name: 'acme/large →' }).click();
+    await expect(page.getByRole('heading', { name: 'API spend by review run' })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`operations-review-usage-${theme}.png`) });
     await page.goto(`${account}/queue`);
     await expect(page.locator('.queue-table tbody tr')).toHaveCount(5);
     await page.screenshot({ path: testInfo.outputPath(`operations-queue-${theme}.png`) });
@@ -215,3 +216,86 @@ for (const theme of ['light', 'dark'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`operations-queue-mobile-${theme}.png`) });
   });
 }
+
+test('queue confirmation survives a poll that removes every job', async ({ page }) => {
+  await page.clock.install({ time: now });
+  await mockOperations(page);
+  let current = jobs;
+  await page.route('**/api/v1/accounts/**/queue', (r) => r.fulfill({ json: current }));
+  const sent = await g.mockWrites(page, [['POST', /\/reviews\/rev-1\/cancel$/, { status: 202, body: g.accepted }]]);
+  await page.goto(`${account}/queue`);
+  await page.getByRole('radio', { name: 'Running (2)' }).click();
+  await page.locator('.queue-table tbody tr').first().getByRole('button', { name: 'Cancel review' }).click();
+  current = [];
+  await page.clock.fastForward(15_000);
+  await expect(page.locator('.queue-table tbody tr')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toContainText('job #101');
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel review' }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]!.url.pathname).toBe(`/api/v1/accounts/${g.SLUG}/reviews/rev-1/cancel`);
+});
+
+test('review groups omit prior runs and keep the remainder out of review links', async ({ page }) => {
+  await mockOperations(page);
+  const row = g.usageSeries.rows[0]!;
+  await page.route('**/usage?*', (r) => r.fulfill({ json: {
+    ...g.usageSeries, group: 'review', rows: [{ ...row, key: 'current-review' }, { ...row, key: '__other__' }],
+    previous: [{ ...row, key: 'previous-review' }],
+  } }));
+  await page.goto(`${account}/usage?group=review`);
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('columnheader', { name: 'Change' })).toHaveCount(0);
+  await expect(page.locator('tbody').getByRole('link')).toHaveCount(1);
+  await expect(page.locator('tbody')).toContainText('Other reviews');
+  await expect(page.getByText('previous-review')).toHaveCount(0);
+});
+
+test('token comparisons sort by tokens and include unpriced calls', async ({ page }) => {
+  await mockOperations(page);
+  const row = { ...g.usageSeries.rows[0]!, costUsd: 0, outputTokens: 0, calls: 1, planCalls: 1 };
+  await page.route('**/api/v1/accounts', (r) => r.fulfill({ json: [{ ...g.accountSummary, chatgptEnabled: true }] }));
+  await page.route('**/usage?*', (r) => r.fulfill({ json: {
+    ...g.usageSeries, group: 'model', rows: [{ ...row, key: 'a/small', inputTokens: 100 }, { ...row, key: 'z/large', inputTokens: 400, unpricedCalls: 1 }],
+    previous: [{ ...row, key: 'z/large', inputTokens: 200 }],
+  } }));
+  await page.goto(`${account}/usage?group=model&billing=chatgpt&metric=tokens`);
+  await expect(page.locator('tbody tr').first()).toContainText('z/large');
+  await expect(page.locator('tbody tr').first().locator('td').last()).toHaveText('+100%');
+});
+
+test('analytics spending link preserves the selected period', async ({ page }) => {
+  await mockOperations(page);
+  await page.goto(account);
+  await page.getByRole('radio', { name: '90 days', exact: true }).click();
+  await page.getByRole('link', { name: /Investigate spending/ }).click();
+  await expect(page.getByRole('radio', { name: '90 days', exact: true })).toBeChecked();
+});
+
+test('background usage refresh leaves drilldown available and cannot overwrite a new scope', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.EventSource = class extends EventTarget {
+      constructor() {
+        super();
+        window.addEventListener('refresh-usage', () => this.dispatchEvent(new MessageEvent('model_call', { data: JSON.stringify({ kind: 'model_call', account: 'github/alpha' }) })));
+      }
+      close() {}
+    } as unknown as typeof EventSource;
+  });
+  await mockOperations(page);
+  await page.goto(`${account}/usage?group=repo`);
+  const drill = page.getByRole('button', { name: 'alpha/one →' });
+  await expect(drill).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let pending = false;
+  await page.route('**/usage?**group=repo**', async (r) => { pending = true; await held; await r.fulfill({ json: { ...g.usageSeries, group: 'repo' } }); });
+  await page.evaluate(() => window.dispatchEvent(new Event('refresh-usage')));
+  await expect.poll(() => pending).toBe(true);
+  await expect(drill).toBeEnabled();
+  await drill.click();
+  await expect(page.getByRole('heading', { name: 'API spend by model' })).toBeVisible();
+  const refreshed = page.waitForResponse((r) => r.url().includes('/usage?') && new URL(r.url()).searchParams.get('group') === 'repo');
+  release();
+  await refreshed;
+  await expect(page.getByRole('button', { name: 'acme/large →' })).toBeVisible();
+});

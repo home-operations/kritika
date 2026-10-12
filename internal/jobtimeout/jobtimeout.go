@@ -12,6 +12,11 @@ import "time"
 // deletes the runner Job when that happens, so a job's timeout must cover
 // everything the worker does around the runner as well as the runner.
 const (
+	// HeartbeatInterval is the worker liveness cadence. Six missed beats
+	// allow for a slow database before a job is eligible for rescue.
+	HeartbeatInterval       = 30 * time.Second
+	HeartbeatAbandonedAfter = 6 * HeartbeatInterval
+
 	// LeaseWaitHeadroom is the time a review or a follow-up may spend
 	// taking its model lease before its runner starts.
 	LeaseWaitHeadroom = 15 * time.Minute

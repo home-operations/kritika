@@ -1,7 +1,7 @@
 <script lang="ts">
   // Maps the active route to its page. Keyed so switching account or record
   // starts the page fresh (filters, cursors), while switching review tabs
-  // or the pull list's filters keeps the page mounted.
+  // or pull, finding and usage filters keeps the page mounted.
   import type { Route } from '../routes';
   import Overview from './Overview.svelte';
   import Console from './Console.svelte';

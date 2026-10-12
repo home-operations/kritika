@@ -759,8 +759,8 @@ func testUsageComparison(t *testing.T, e *apiEnv) {
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, rows := range [][]UsagePoint{got.Rows, got.Previous} {
-		if len(rows) != 1 || rows[0].Key != e.a.reviewID || rows[0].CostUSD != 2 || rows[0].InputTokens != 100 {
+	for key, rows := range map[string][]UsagePoint{e.a.reviewID: got.Rows, "Total": got.Previous} {
+		if len(rows) != 1 || rows[0].Key != key || rows[0].CostUSD != 2 || rows[0].InputTokens != 100 {
 			t.Fatalf("usage = %+v", got)
 		}
 	}

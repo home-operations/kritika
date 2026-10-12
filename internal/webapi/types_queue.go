@@ -18,6 +18,8 @@ type JobArgs struct {
 
 // Job is one River job of the account.
 type Job struct {
+	HeartbeatOverdue   bool               `json:"heartbeatOverdue,omitzero"`
+	RecentFailure      bool               `json:"recentFailure,omitzero"`
 	HeartbeatAt        *time.Time         `json:"heartbeatAt,omitzero"`
 	CancelableReviewID string             `json:"cancelableReviewId,omitzero"`
 	ID                 int64              `json:"id"`

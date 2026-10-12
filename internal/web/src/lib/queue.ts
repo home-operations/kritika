@@ -4,13 +4,11 @@ export const waiting = (j: Job) => ['available', 'scheduled', 'retryable', 'pend
 
 // An overdue heartbeat is a signal to investigate, not proof that a runner
 // has stopped. Its worker can recover or be rescued between queue polls.
-export function overdue(j: Job, now: number): boolean {
-  return j.state === 'running' && !!j.attemptedAt &&
-    now - Math.max(Date.parse(j.heartbeatAt ?? j.attemptedAt), Date.parse(j.attemptedAt)) > 180_000;
-}
+export const overdue = (j: Job): boolean => j.heartbeatOverdue ?? false;
+export const attention = (j: Job): boolean => !!j.recentFailure || j.state === 'retryable' || overdue(j);
 
-export function waitingReason(j: Job, now: number): string {
-  if (overdue(j, now)) return 'No worker heartbeat for over 3 minutes';
+export function waitingReason(j: Job): string {
+  if (overdue(j)) return 'Worker heartbeat is overdue; waiting for recovery';
   if (j.state === 'retryable') return 'Waiting for automatic retry';
   if (j.state === 'scheduled') return 'Scheduled for a later attempt';
   if (j.state === 'available') return 'Ready for a worker';

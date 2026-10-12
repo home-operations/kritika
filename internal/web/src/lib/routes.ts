@@ -18,7 +18,7 @@
 //   #/a/<slug>/findings[?<filter>]            account's findings; filter is a FindingFilter
 //   #/a/<slug>/rules                          the files reviews read
 //   #/a/<slug>/queue                          run queue
-//   #/a/<slug>/usage                          usage/cost dashboard
+//   #/a/<slug>/usage[?<filter>]                          usage/cost dashboard
 //   #/a/<slug>/followups                      follow-up tracker
 //   #/a/<slug>/admin[/<section>]              an account's settings: its configuration or audit log
 //

@@ -22,7 +22,7 @@
 <main class="page">
   <div class="page-inner">
     <SectionTabs section="pulls" {slug} current="queue" />
-    <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="The queue is empty.">
+    <StateView {res} retry={() => res.load()}>
       {#snippet children(jobs)}
         <JobTable ondone={() => void res.load()} {jobs} account={() => slug} />
       {/snippet}

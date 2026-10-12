@@ -3,18 +3,26 @@
   import { jobCauseText, jobTone, shortSha } from '../format';
   import { pullRoute, rerunPath, cancelPath, reindexPath } from '../links';
   import { isAdmin } from '../session.svelte';
-  import { clock } from '../time.svelte';
-  import { waiting, overdue, waitingReason } from '../queue';
+  import { waiting, overdue, waitingReason, attention } from '../queue';
   import type { Job } from '../types';
   import Pill from './Pill.svelte';
   import Time from './Time.svelte';
   import Segmented from './Segmented.svelte';
-  import ActionButton from './ActionButton.svelte';
+  import ActionDialog from './ActionDialog.svelte';
+  import type { ComponentProps } from 'svelte';
 
   let { jobs, account, several = false, ondone }: { jobs: J[]; account: (j: J) => string; several?: boolean; ondone?: () => void } = $props();
   let filter = $state<'all' | 'attention' | 'running' | 'waiting' | 'finished'>('all');
   let search = $state('');
-  const attention = (j: Job) => j.state === 'discarded' || j.state === 'retryable' || overdue(j, clock.now);
+  type Action = Omit<ComponentProps<typeof ActionDialog>, 'open' | 'ondone'>;
+  let selected = $state<Action>();
+  let actionOpen = $state(false);
+  function actionFor(j: J): Action | undefined {
+    if (j.cancelableReviewId) return { label: 'Cancel review', title: `Cancel review for job #${j.id}?`, body: 'The run stops at its next checkpoint and nothing more is posted to the pull request.', path: cancelPath(account(j), j.cancelableReviewId), danger: true, done: 'Cancel requested' };
+    if (j.state !== 'discarded' && j.state !== 'cancelled') return;
+    if (j.kind === 'review' && j.args.repository && j.args.number) return { label: 'Re-run', title: `Re-run ${j.args.repository}#${j.args.number}?`, body: "Queue a fresh review of the pull request's current head. This may differ from the failed job's commit. Closed or merged pull requests will be skipped.", path: rerunPath(account(j), j.args), done: 'Re-run queued' };
+    if (j.kind === 'index' && j.args.repository) return { label: 'Reindex', title: `Reindex ${j.args.repository}?`, body: "Queue a full index of the repository's current default branch.", path: reindexPath(account(j), j.args.repository), done: 'Reindex queued' };
+  }
   const visible = $derived(jobs.filter((j) => {
     const matches = filter === 'all' || (filter === 'attention' ? attention(j) : filter === 'running' ? j.state === 'running' : filter === 'waiting' ? waiting(j) : !!j.finalizedAt);
     return matches && `${account(j)} ${j.args.repository} ${j.args.number} ${j.kind} ${j.id}`.toLowerCase().includes(search.toLowerCase());
@@ -32,7 +40,7 @@
   <Segmented label="Queue state" options={filters} value={filter} onchange={(v) => (filter = v)} />
   <label class="queue-search">Search jobs <input type="search" bind:value={search} placeholder="Repository, account or job" /></label>
 </div>
-<p class="small muted">Showing {visible.length} of {jobs.length} loaded jobs. Up to 500 active and 50 finished jobs per account. Refreshes every 15 seconds.</p>
+<p class="small muted">Showing {visible.length} of {jobs.length} loaded jobs. Up to 500 active and 50 finished jobs per account. Refreshes every 15 seconds. Failed-job alerts cover the last 24 hours and clear when a replacement is active or completed.</p>
 <div class="table-wrap table-card">
   <table class="data queue-table">
     <thead>
@@ -47,7 +55,7 @@
         <tr>
           {#if several}<td data-label="Account" class="mono small"><a href={href({ name: 'queue', slug: account(j) })}>{account(j)}</a></td>{/if}
           <td data-label="Job"><strong>#{j.id} · {j.kind}</strong><span class="queue-detail">Attempt {j.attempt}/{j.maxAttempts}</span></td>
-          <td data-label="State"><Pill tone={overdue(j, clock.now) ? 'warn' : jobTone[j.state]} label={overdue(j, clock.now) ? 'Heartbeat overdue' : j.state} /><span class="queue-detail">{waitingReason(j, clock.now)}</span></td>
+          <td data-label="State"><Pill tone={overdue(j) ? 'warn' : jobTone[j.state]} label={overdue(j) ? 'Heartbeat overdue' : j.state} /><span class="queue-detail">{waitingReason(j)}</span></td>
           <td data-label="Pull" class="small">
             {#if j.args.repository && j.args.number}
               <a class="mono" href={href(pullRoute(account(j), j.args))}>{j.args.repository}#{j.args.number}</a>
@@ -65,14 +73,9 @@
           <td data-label="Error / actions" class="queue-error">
             {#if j.lastError}<details><summary>{j.cause ? jobCauseText[j.cause] : 'Last attempt error'}</summary><p class="error-text">{j.lastError}</p></details>{/if}
             {#if isAdmin()}
+              {@const action = actionFor(j)}
               <div class="queue-actions">
-                {#if j.cancelableReviewId}
-                  <ActionButton label="Cancel review" title={`Cancel review for job #${j.id}?`} body="The run stops at its next checkpoint and nothing more is posted to the pull request." path={cancelPath(account(j), j.cancelableReviewId)} danger done="Cancel requested" {ondone} />
-                {:else if (j.state === 'discarded' || j.state === 'cancelled') && j.kind === 'review' && j.args.repository && j.args.number}
-                  <ActionButton label="Re-run" title={`Re-run ${j.args.repository}#${j.args.number}?`} body="Queue a fresh review of the pull request's current head. This may differ from the failed job's commit. Closed or merged pull requests will be skipped." path={rerunPath(account(j), j.args)} done="Re-run queued" {ondone} />
-                {:else if (j.state === 'discarded' || j.state === 'cancelled') && j.kind === 'index' && j.args.repository}
-                  <ActionButton label="Reindex" title={`Reindex ${j.args.repository}?`} body="Queue a full index of the repository's current default branch." path={reindexPath(account(j), j.args.repository)} done="Reindex queued" {ondone} />
-                {/if}
+                {#if action}<button class="btn" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
               </div>
             {/if}
             {#if j.state === 'retryable'}<span class="queue-detail">Retries automatically; no manual action needed.</span>{/if}
@@ -81,5 +84,7 @@
       {/each}
     </tbody>
   </table>
-  {#if !visible.length}<p class="state-msg">No jobs match these filters.</p>{/if}
+  {#if !visible.length}<p class="state-msg">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
 </div>
+
+{#if selected}<ActionDialog {...selected} bind:open={actionOpen} {ondone} />{/if}

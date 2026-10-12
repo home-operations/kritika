@@ -51,26 +51,19 @@
   const periodLabel = $derived(days === '1' ? '24 hours' : `${days} days`);
 
   const total = (p: UsagePoint) => p.inputTokens + p.outputTokens;
+  const value = (p: UsagePoint) => metric === 'cost' ? p.costUsd : total(p);
 
   // The 24-hour period is the last 24 hours, not a whole day: a date would
   // start it at midnight UTC.
-  let loadedScope = '';
-  const res: Resource<UsageSeries> = new Resource(() => {
-    const scope = JSON.stringify([group, days, chatgptEnabled ? billing : 'all', repository, model]);
-    if (loadedScope !== scope) {
-      // Background refreshes retain data; a different selection must not
-      // display the preceding selection's totals under its new filters.
-      res.data = undefined;
-      res.error = undefined;
-      loadedScope = scope;
-    }
+  const res = new Resource(() => {
     const now = Date.now();
     const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
     const p = new URLSearchParams({ group, from, billing: chatgptEnabled ? billing : 'all' });
+    if (group === 'review') p.set('metric', metric);
     if (repository !== undefined) p.set('repo', repository);
     if (model !== undefined) p.set('model', model);
     return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`);
-  });
+  }, () => JSON.stringify([group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
   // The month so far against the account's caps.
   const summary = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
   const account = $derived(summary.data?.find((t) => t.slug === slug));
@@ -131,18 +124,18 @@
   function tableRows(s: UsageSeries): UsagePoint[] {
     if (timed(s.group)) return [...s.rows].reverse();
     const rows = new Map(s.rows.map((r) => [r.key, r]));
-    for (const r of s.previous) {
+    for (const r of s.group === 'review' ? [] : s.previous) {
       if (!rows.has(r.key)) rows.set(r.key, { ...sum([]), key: r.key });
     }
-    return [...rows.values()].sort((a, b) => b.costUsd - a.costUsd || a.key.localeCompare(b.key));
+    return [...rows.values()].sort((a, b) => value(b) - value(a) || a.key.localeCompare(b.key));
   }
 
   function columns(rows: UsagePoint[], g: UsageGroup) {
     return rows.map((r) => ({
       key: r.key,
-      label: timed(g) ? keyLabel(r.key, g, true) : (r.key.split('/').pop() ?? r.key),
+      label: g === 'review' ? (r.key === '__other__' ? 'Other reviews' : r.key.slice(0, 8) || 'Unattributed') : timed(g) ? keyLabel(r.key, g, true) : (r.key.split('/').pop() ?? r.key),
       title: keyLabel(r.key, g),
-      values: [metric === 'cost' ? r.costUsd : total(r)],
+      values: [value(r)],
     }));
   }
 </script>
@@ -208,7 +201,7 @@
           <StatTile label="Tokens in selection" value={tokens(total(t))} now={total(t)} before={total(before)} define={wholeNumber(total(t))} />
           <StatTile label="Calls in selection" value={wholeNumber(t.calls)} now={t.calls} before={before.calls} />
         </section>
-        {#if s.group === 'review'}<p class="small muted">Reviews include follow-up calls attributed to them. Usage without an associated review, such as indexing, is listed separately.</p>{/if}
+        {#if s.group === 'review'}<p class="small muted">Follow-ups and usage without an associated review are listed as unattributed. Up to 50 review runs with the most usage by the selected metric are shown individually; remaining reviews are combined as Other reviews. Totals include all usage.</p>{/if}
         <section class="panel" aria-labelledby="usage-chart">
           <header class="panel-head"><h2 id="usage-chart">{metric === 'cost' ? 'API spend' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
           <ColumnChart
@@ -226,7 +219,7 @@
                 <th scope="col">{groupLabel(s.group)}</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input</th>
                 <th scope="col" class="num">Cache read</th><th scope="col" class="num">Cache write</th><th scope="col" class="num">Output</th>
                 <th scope="col">Billing</th><th scope="col" class="num">API spend</th>
-                {#if !timed(s.group)}<th scope="col" class="num" title="API spend compared with the preceding period of equal length">Change</th>{/if}
+                {#if !timed(s.group) && s.group !== 'review'}<th scope="col" class="num" title={`${metric === 'cost' ? 'API spend' : 'Tokens'} compared with the preceding period of equal length`}>Change</th>{/if}
               </tr>
             </thead>
             <tbody>
@@ -236,7 +229,8 @@
                 <tr>
                   <td class:mono={s.group === 'model' || s.group === 'repo'} class="small">
                     {#if s.group === 'repo' || s.group === 'model'}
-                      <button class="drill-link" disabled={res.loading} onclick={() => drill(r.key, s.group)}>{keyLabel(r.key, s.group)} →</button>
+                      <button class="drill-link" onclick={() => drill(r.key, s.group)}>{keyLabel(r.key, s.group)} →</button>
+                    {:else if s.group === 'review' && r.key === '__other__'}<span>Other reviews</span>
                     {:else if s.group === 'review' && r.key}
                       <a href={href({ name: 'review', slug, id: r.key, tab: 'usage' })}>Review {r.key.slice(0, 8)} →</a>
                     {:else if s.group === 'review'}<span>Unattributed usage</span>
@@ -253,7 +247,7 @@
                     {:else}API{/if}
                   </td>
                   <td class="num">{callCost(r.costUsd, r.planCalls === r.calls && r.calls > 0, !!r.unpricedCalls)}</td>
-                  {#if !timed(s.group)}<td class="num" title={prior ? `Previous period: ${costTotal(prior.costUsd, prior.unpricedCalls)}` : 'No spend in the previous period'}>{r.unpricedCalls || prior?.unpricedCalls ? 'Incomplete' : change(r.costUsd, prior?.costUsd ?? 0)?.text ?? '—'}</td>{/if}
+                  {#if !timed(s.group) && s.group !== 'review'}<td class="num" title={prior ? `Previous period: ${metric === 'cost' ? costTotal(prior.costUsd, prior.unpricedCalls) : tokens(total(prior))}` : 'No usage in the previous period'}>{metric === 'cost' && (r.unpricedCalls || prior?.unpricedCalls) ? 'Incomplete' : change(value(r), prior ? value(prior) : 0)?.text ?? '—'}</td>{/if}
                 </tr>
               {/each}
             </tbody>
@@ -267,7 +261,7 @@
                 <td class="num" title={wholeNumber(t.outputTokens)}>{tokens(t.outputTokens)}</td>
                 <td></td>
                 <td class="num">{costTotal(t.costUsd, t.unpricedCalls)}</td>
-                {#if !timed(s.group)}<td></td>{/if}
+                {#if !timed(s.group) && s.group !== 'review'}<td></td>{/if}
               </tr>
             </tfoot>
           </table>

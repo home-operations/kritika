@@ -6,7 +6,7 @@
   import { href } from '../router.svelte';
   import { Resource, live, pollJobs } from '../resource.svelte';
   import { tokens, costTotal, reviewsLeftOut, usd, wholeNumber } from '../format';
-  import type { AccountSummary, InstanceQueue, JobState } from '../types';
+  import type { AccountSummary, InstanceQueue } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
   import Meter from '../components/Meter.svelte';
@@ -14,8 +14,7 @@
   import { pullRoute } from '../links';
   import Time from '../components/Time.svelte';
   import { unsignedWebhooks } from '../setup';
-  import { overdue } from '../queue';
-  import { clock } from '../time.svelte';
+  import { overdue, waiting } from '../queue';
   import AttentionPulls from '../components/AttentionPulls.svelte';
   import WebhookState from '../components/WebhookState.svelte';
 
@@ -49,12 +48,11 @@
 
   const operationalWants = WANTS.filter((w) => w.key !== 'p0');
   const connectionIssue = (a: AccountSummary) => unsignedWebhooks(a) || !a.lastWebhookAt;
-  const WAITING: readonly JobState[] = ['available', 'scheduled', 'retryable', 'pending'];
   function work(q: InstanceQueue) {
     const capped = q.slots.filter((s) => s.slots > 0);
     return {
       running: q.jobs.filter((j) => j.state === 'running').length,
-      waiting: q.jobs.filter((j) => WAITING.includes(j.state)).length,
+      waiting: q.jobs.filter(waiting).length,
       held: capped.reduce((n, s) => n + s.held, 0),
       slots: capped.reduce((n, s) => n + s.slots, 0),
     };
@@ -163,12 +161,12 @@
                 {#each q.slots.filter((s) => s.slots > 0 && s.held >= s.slots) as slot (`${slot.account}/${slot.model}`)}
                   <a class="attention-item" href={href({ name: 'queue', slug: slot.account })}><Pill tone="warn" label="At capacity" /><span>{slot.account}<span class="queue-detail">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span></a>
                 {/each}
-                {#each q.jobs.filter((j) => j.state === 'discarded').slice(0, 5) as job (job.id)}
+                {#each q.jobs.filter((j) => j.recentFailure).slice(0, 5) as job (job.id)}
                   <a class="attention-item" href={href({ name: 'queue', slug: job.account })}><Pill tone="danger" label="Failed job" /><span>{job.args.repository || job.account}<span class="queue-detail">{job.kind} #{job.id} · inspect error and recovery options</span></span></a>
                 {/each}
                 {#each q.jobs.filter((j) => j.state === 'running').slice(0, 5) as job (job.id)}
                   <div class="running-item">
-                    <Pill tone={overdue(job, clock.now) ? 'warn' : 'accent'} label={overdue(job, clock.now) ? 'Heartbeat overdue' : job.kind} />
+                    <Pill tone={overdue(job) ? 'warn' : 'accent'} label={overdue(job) ? 'Heartbeat overdue' : job.kind} />
                     {#if job.args.repository && job.args.number}
                       <a class="mono" href={href(pullRoute(job.account, job.args))}>{job.args.repository}#{job.args.number}</a>
                     {:else}<a href={href({ name: 'queue', slug: job.account })}>{job.kind} job {job.id}</a>{/if}

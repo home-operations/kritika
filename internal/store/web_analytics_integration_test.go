@@ -42,7 +42,7 @@ func TestReadAnalytics(t *testing.T) {
 		review := func(pr, head, status string, at time.Time, took time.Duration, findings ...[2]string) {
 			var id string
 			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, created_at, finished_at)
-				VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, account, pr, head, status, at, at.Add(took)).Scan(&id); err != nil {
+				VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, account, pr, head, status, at, at.Add(took+900*time.Microsecond)).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 			for _, f := range findings {
