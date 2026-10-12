@@ -431,6 +431,10 @@ export interface Followup {
   createdAt: string;
 }
 
+export interface InstancePull extends Pull {
+  account: string;
+}
+
 export interface PullDetail {
   pull: Pull;
   reviews: Review[];

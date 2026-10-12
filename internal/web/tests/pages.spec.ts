@@ -60,19 +60,19 @@ test.describe('overview', () => {
     const tile = page.getByRole('link', { name: /Running now/ });
     await expect(tile.locator('.tile-value')).toHaveText('1');
     await expect(tile).toContainText('2 waiting · 2 of 2 model slots busy');
-    await expect(tile).toHaveAttribute('href', `#/a/${g.accountSummary.slug}/queue`);
+    await expect(tile).toHaveAttribute('href', '#/queue');
 
     await g.mockApi(page, [[/\/api\/v1\/queue$/, q], [/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, slug: 'beta' }]], ...g.defaultApi()]);
     await page.reload();
     await expect(tile).toHaveAttribute('href', '#/queue');
   });
 
-  test('the overview stands without the queue: only its tile is missing', async ({ page }) => {
+  test('the overview reserves the queue tile and offers retry on failure', async ({ page }) => {
     await page.route('**/api/v1/queue', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify(g.golden('error')) }));
     await page.goto('/#/');
     await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.tile')).toHaveCount(5);
-    await expect(page.getByText('Running now')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.tile')).toHaveCount(6);
+    await expect(page.getByRole('button', { name: 'Retry queue' })).toBeVisible();
   });
 
   test("each account's row says how many of today's reviews are done, against its cap where it has one", async ({ page }) => {
@@ -142,7 +142,7 @@ test('a long account or App name is cut short, whole in its title, before a tabl
 
 test('analytics shows the totals against the window before, the charts and the repositories', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   const stats = page.locator('.analytics');
   const stat = (label: string) => stats.locator('.stat').filter({ has: page.getByText(label, { exact: true }) });
   const c = g.analytics.current;
@@ -182,7 +182,7 @@ test('tables over time read newest first', async ({ page }) => {
     [/\/reviews\/rev-1$/, { ...g.reviewDetail, usage: [call, { ...call, role: 'followup' }] }],
     ...g.defaultApi(),
   ]);
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   const reviews = page.getByRole('region', { name: 'Reviews', exact: true });
   await reviews.getByRole('radio', { name: 'Table' }).click();
   await expect(reviews.locator('tbody tr')).toHaveText([/Sep 2, 2026\s*7/, /Sep 1, 2026\s*5/]);
@@ -208,7 +208,7 @@ test('the spend table names its group, and usage with none', async ({ page }) =>
 });
 
 test('a chart reads one column at a time, by pointer or by keyboard', async ({ page }) => {
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   const chart = page.getByRole('img', { name: /^Completed reviews per day/ });
   await chart.focus();
   await page.keyboard.press('ArrowRight');
@@ -231,7 +231,7 @@ test("a chart of counts has whole numbers on its axis, and one of cost its cents
     [250, ['0', '125', '250']],
   ] as const) {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/analytics$`), series(reviews)], ...g.defaultApi()]);
-    await page.goto(`/${T}`);
+    await page.goto(`/${T}/analytics`);
     await expect(ticks).toHaveText([...axis]);
     await page.goto('about:blank');
   }
@@ -267,7 +267,7 @@ test("a chart's axis has room for its longest label", async ({ page }) => {
 
 test('analytics says what needs attention now, each kind linking to its pull requests', async ({ page }) => {
   const attention = page.getByRole('region', { name: 'Needs attention' });
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   await expect(page.getByRole('region', { name: 'Most reviewed repositories' })).toBeVisible();
   await expect(attention).toHaveCount(0);
 
@@ -296,7 +296,7 @@ test('analytics says what needs attention now, each kind linking to its pull req
 test('analytics says when no webhook has reached the connection', async ({ page }) => {
   const detail = g.golden<AccountDetail>('account_detail');
   const panel = page.getByRole('region', { name: 'Connection', exact: true });
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   await expect(page.getByRole('region', { name: 'Totals' })).toBeVisible();
   await expect(panel).toHaveCount(0);
 
@@ -317,7 +317,7 @@ test("analytics says when the connection's webhooks arrive unsigned", async ({ p
     [new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastUnsignedWebhookAt: later } }],
     ...g.defaultApi(),
   ]);
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   const note = page.getByRole('region', { name: 'Connection', exact: true }).getByRole('note');
   await expect(note).toContainText('with no signature');
   await expect(note).toContainText("Set the GitHub App's webhook secret");
@@ -1449,7 +1449,7 @@ test('a stream from a server running another build reloads the page instead of r
 });
 
 test('the user menu shows the version the server reports', async ({ page }) => {
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   await page.locator('.user-button').click();
   await expect(page.locator('.user-panel .user-version')).toHaveText(`kritika ${g.meta.version}`);
 });
@@ -1458,7 +1458,7 @@ test('each page names itself in the browser tab', async ({ page }) => {
   const r = g.reviewDetail.review;
   for (const [h, title] of [
     ['#/', 'All accounts · kritika'],
-    [T, `Analytics · ${g.SLUG} · kritika`],
+    [`${T}/analytics`, `Analytics · ${g.SLUG} · kritika`],
     [`${T}/repos/alpha/one`, 'alpha/one · kritika'],
     [`${T}/pulls?outcome=failed`, `Pull requests · ${g.SLUG} · kritika`],
     [`${T}/pulls/alpha/one/7`, `${g.pullDetail.pull.title} · alpha/one#7 · kritika`],
@@ -1510,7 +1510,7 @@ test('nothing slides for a viewer who asked for less motion', async ({ page }) =
 
 test('a tab stays where it is whichever tab is the current one', async ({ page }) => {
   const lefts = (sel: string) => page.locator(sel).evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
-  await page.goto(`/${T}`);
+  await page.goto(`/${T}/analytics`);
   await expect(page.locator('.section-tab.active')).toHaveText('Analytics');
   const sections = await lefts('.section-tab');
   await page.goto(`/${T}/rules`);

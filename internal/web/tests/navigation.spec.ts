@@ -35,8 +35,8 @@ test('queue and repository URLs round-trip reserved text and sanitize unsupporte
 test('switching reporting pages or accounts retains dates without leaking repository filters', () => {
   const usage = { name: 'usage', slug: g.SLUG, filter: { days: '90', metric: 'tokens', repo: 'alpha/one', model: 'private/model', billing: 'chatgpt' } } as const;
   expect(pageIn(usage, 'github/beta')).toEqual({ name: 'usage', slug: 'github/beta', filter: { days: '90', metric: 'tokens' } });
-  expect(reportingRoute({ name: 'account', slug: g.SLUG }, usage)).toEqual({ name: 'account', slug: g.SLUG, filter: { days: '90' } });
-  expect(reportingRoute({ name: 'account', slug: g.SLUG }, { ...usage, filter: { days: '1' } })).toEqual({ name: 'account', slug: g.SLUG, filter: { days: '1' } });
+  expect(reportingRoute({ name: 'analytics', slug: g.SLUG }, usage)).toEqual({ name: 'analytics', slug: g.SLUG, filter: { days: '90' } });
+  expect(reportingRoute({ name: 'analytics', slug: g.SLUG }, { ...usage, filter: { days: '1' } })).toEqual({ name: 'analytics', slug: g.SLUG, filter: { days: '1' } });
 });
 
 test('queue filters survive reload and returning from a pull request', async ({ page }) => {
@@ -87,7 +87,7 @@ test('repository filters, loaded pages and scroll return after opening a reposit
 
 test('reporting period follows sidebar navigation and account switching', async ({ page }) => {
   await mock(page);
-  await page.goto(`${account}?days=90`);
+  await page.goto(`${account}/analytics?days=90`);
   const nav = page.locator('.desktop-navigation');
   await nav.getByRole('link', { name: 'Usage & costs', exact: true }).click();
   await expect(page.getByRole('radio', { name: '90 days', exact: true })).toBeChecked();
@@ -95,7 +95,7 @@ test('reporting period follows sidebar navigation and account switching', async 
   await expect(page).toHaveURL(/\?days=90$/);
   await page.locator('.account-button').click();
   await page.getByRole('navigation', { name: 'Scope' }).getByRole('link', { name: 'github/beta' }).click();
-  await expect(page).toHaveURL(/github\/beta\?days=90$/);
+  await expect(page).toHaveURL(/github\/beta\/analytics\?days=90$/);
   await expect(page.getByRole('radio', { name: '90 days', exact: true })).toBeChecked();
 });
 

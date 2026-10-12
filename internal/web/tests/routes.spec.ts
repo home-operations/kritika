@@ -11,6 +11,8 @@ const ROUTES: Route[] = [
   { name: 'signin' },
   { name: 'console' },
   { name: 'instanceQueue' },
+  { name: 'instancePulls', filter: { state: 'all', outcome: 'failed', q: 'a b&c' } },
+  { name: 'analytics', slug: 'github/acme', filter: { days: '7' } },
   { name: 'preferences' },
   { name: 'account', slug: 'github/acme' },
   { name: 'repos', slug: 'github/acme' },
@@ -113,7 +115,7 @@ test('switching account keeps the page, and a record gives way to its list', () 
     [{ name: 'account', slug: a }, { name: 'account', slug: b }],
     [{ name: 'queue', slug: a }, { name: 'queue', slug: b }],
     [{ name: 'findings', slug: a, filter: { repo: 'acme/one' } }, { name: 'findings', slug: b }],
-    [{ name: 'pulls', slug: a, filter: { state: 'all' } }, { name: 'pulls', slug: b }],
+    [{ name: 'pulls', slug: a, filter: { state: 'all' } }, { name: 'pulls', slug: b, filter: { state: 'all' } }],
     [{ name: 'pull', slug: a, owner: 'acme', repo: 'one', number: 7 }, { name: 'pulls', slug: b }],
     [{ name: 'review', slug: a, id: 'r1', tab: 'diff' }, { name: 'pulls', slug: b }],
     [{ name: 'repo', slug: a, owner: 'acme', repo: 'one' }, { name: 'repos', slug: b }],
@@ -125,10 +127,22 @@ test('switching account keeps the page, and a record gives way to its list', () 
   for (const [from, to] of cases) expect(pageIn(from, b), JSON.stringify(from)).toEqual(to);
 });
 
-test("switching to the instance lands on its queue from an account's, and its overview otherwise", () => {
-  const a = 'github/acme';
-  expect(pageOfInstance({ name: 'queue', slug: a }, true)).toEqual({ name: 'instanceQueue' });
-  expect(pageOfInstance({ name: 'queue', slug: a }, false)).toEqual({ name: 'overview' });
-  expect(pageOfInstance({ name: 'pulls', slug: a }, true)).toEqual({ name: 'overview' });
-  expect(pageOfInstance({ name: 'console' }, true)).toEqual({ name: 'console' });
+test('widening scope preserves pull and queue filters', () => {
+  const slug = 'github/acme';
+  expect(pageOfInstance({ name: 'queue', slug, filter: { state: 'waiting' } })).toEqual({ name: 'instanceQueue', filter: { state: 'waiting' } });
+  expect(pageOfInstance({ name: 'pulls', slug, filter: { outcome: 'failed' } })).toEqual({ name: 'instancePulls', filter: { outcome: 'failed' } });
+  expect(pageOfInstance({ name: 'console' })).toEqual({ name: 'console' });
+});
+
+test('repository filters stay with their account while portable pull filters travel', () => {
+  const filter = { repo: 'alpha/one', state: 'all' as const, author: 'ada', q: 'fix', outcome: 'failed' as const, is: 'paused' as const };
+  const from: Route = { name: 'pulls', slug: 'github/alpha', filter };
+  expect(pageIn(from, 'github/beta')).toEqual({ name: 'pulls', slug: 'github/beta', filter: { state: 'all', author: 'ada', q: 'fix', outcome: 'failed', is: 'paused' } });
+  expect(pageIn(from, 'github/alpha')).toEqual(from);
+  expect(pageIn({ name: 'pulls', slug: 'github/alpha', filter: { repo: 'alpha/one' } }, 'github/beta')).toEqual({ name: 'pulls', slug: 'github/beta' });
+  expect(pageIn({ name: 'instancePulls', filter }, 'github/alpha')).toEqual(from);
+});
+
+test('dated account bookmarks retain their analytics destination', () => {
+  expect(parse('#/a/github/acme?days=90')).toEqual({ name: 'analytics', slug: 'github/acme', filter: { days: '90' } });
 });

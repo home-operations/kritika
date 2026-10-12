@@ -102,6 +102,7 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/me$/, me],
     [/\/api\/v1\/accounts$/, [accountSummary]],
     [/\/api\/v1\/queue$/, instanceQueue],
+    [/\/api\/v1\/pulls$/, pageOf([{ ...pull, account: SLUG }])],
     [/\/api\/v1\/admin\/accounts$/, [adminAccount]],
     [/\/api\/v1\/admin\/instance$/, [instanceSetting]],
     [/\/api\/v1\/admin\/connections$/, [golden<T.AccountDetail>('account_detail').connection]],

@@ -18,28 +18,47 @@ the pull request's page here.
 
 ## Navigation
 
-The scope switcher chooses between two scopes, each with its own navigation: the
-instance, and one of the accounts you can read. No tab chooses an account
-for you: you enter one from the switcher or a link that names it. The
-switcher keeps the page: from one account's queue it opens another's, or
-the instance's.
+The scope switcher chooses **All accounts** or one account you can read.
+Pull requests and Queue keep their portable filters when you change scope.
+Switching directly between accounts clears a pull request's repository filter;
+narrowing a global repository search to an account retains it. From a
+record, switching accounts opens the corresponding list. The account name
+stays visible in the switcher and page breadcrumbs.
 
-The instance's tabs are about every account at once:
+All accounts has these destinations:
 
-| Tab           | What it shows                                                                                                                                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overview      | totals across the accounts you can read, and each account's own with its health: the open pull requests that want a look, a cap that is close, and whether its App's webhooks arrive or kritika only polls it; each links to where the account shows it |
-| Queue         | with more than one account, the review, follow-up, thread and index jobs of all of them, and how many of each account's model slots (`limits.concurrency`) running reviews hold, which is why a review of it waits                                              |
-| Configuration | for an admin, the [Configuration page](#configuration-page)                                                                                                                                                                                             |
+| Tab | What it shows |
+| --- | --- |
+| Overview | Review alerts, running work, usage totals and a comparison of accounts. Alerts link to the relevant filtered list. |
+| Pull requests | A paginated, searchable list across readable accounts, with an Account column and the same filters as an account's list. |
+| Queue | Jobs across readable accounts and the model slots they hold. |
+| Instance settings | For an admin, the [configuration page](#configuration-page). |
 
-An account's tabs are its sections:
+Choosing an account opens its operational overview. Its navigation stays
+within that account; use the scope switcher to return to All accounts.
 
-| Tab           | What it shows                                                                                                    |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Analytics     | the account's reviews over time, its findings and its spend ([analytics](#analytics))                            |
-| Pull requests | its pull requests and their reviews, the run queue and the follow-up questions ([pull requests](#pull-requests)) |
-| Rules         | what its reviews check ([rules](#rules))                                                                         |
-| Settings      | its [repositories](#repositories), and for an admin its audit log                                                |
+| Tab | What it shows |
+| --- | --- |
+| Overview | Review alerts, running and waiting work, usage, connection health and repositories. |
+| Pull requests | The account's [pull requests](#pull-requests) and reviews. |
+| Queue | The account's running, waiting and finished jobs. |
+| Repositories | Connected [repositories](#repositories) and their status. |
+| Analytics | Review trends, findings and spend over time ([analytics](#analytics)). |
+| Usage & costs | Usage, costs and limits for the account. |
+| Follow-ups | Follow-up questions and replies. |
+| Findings | Findings across the account's reviews. |
+| Rules | What its reviews check ([rules](#rules)). |
+| Audit log | For an admin, the account's recorded management actions. |
+
+Opening a pull request or review from a list keeps a **Back to** link to
+that list, including its filters, loaded rows and scroll position during
+navigation. Analytics lives at `#/a/<forge>/<account>/analytics`; dated
+bookmarks on the account's root still open Analytics.
+
+On reload, a neutral loading screen waits for the session check before
+showing login or the workspace. Initial data loads reserve content space;
+background refreshes keep the current content visible. A failed session
+check offers Retry and preserves the requested page.
 
 The command palette, `Ctrl`/`⌘` `K`, opens any page of the instance or of
 an account, the recently updated pull requests of every account you can

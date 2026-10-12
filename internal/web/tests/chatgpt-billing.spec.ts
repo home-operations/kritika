@@ -134,7 +134,7 @@ test("spend summaries mark incomplete totals and avoid comparing incomplete peri
   await expect(tile).toContainText('$1.50 + unpriced');
   // The mean is of the reviews whose cost is known.
   await expect(tile).toContainText('$0.11 per review, mean of 11 · 1 with unpriced calls left out');
-  await page.goto(`/${account}`);
+  await page.goto(`/${account}/analytics`);
   const spend = page.locator('.stat').filter({ has: page.getByText('API spend', { exact: true }) });
   await expect(spend).toContainText('$1.25 + unpriced');
   await expect(spend).toContainText('spend is incomplete');

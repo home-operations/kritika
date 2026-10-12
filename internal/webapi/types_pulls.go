@@ -48,6 +48,12 @@ type Pull struct {
 	UnpricedCalls int64   `json:"unpricedCalls,omitzero"`
 }
 
+// InstancePull identifies the account owning a pull in the global list.
+type InstancePull struct {
+	Pull
+	Account string `json:"account"`
+}
+
 // Attention counts the account's open pull requests that want a look, by
 // why: their newest review failed, hit a cap or found a P0,
 // or their automatic reviews are paused. One may count under several.

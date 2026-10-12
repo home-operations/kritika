@@ -5,7 +5,6 @@
   import type { Snippet } from 'svelte';
   import type { Resource } from '../resource.svelte';
   import { errorMessage } from '../resource.svelte';
-  import Spinner from '../Spinner.svelte';
 
   interface Props {
     res: Resource<T>;
@@ -13,8 +12,9 @@
     isEmpty?: (data: T) => boolean;
     empty?: string;
     retry?: () => void;
+    layout?: 'table' | 'overview';
   }
-  let { res, children, isEmpty, empty = 'Nothing here yet.', retry }: Props = $props();
+  let { res, children, isEmpty, empty = 'Nothing here yet.', retry, layout = 'table' }: Props = $props();
 </script>
 
 <span hidden data-loading={res.loading || (res.data === undefined && !res.error)}></span>
@@ -37,5 +37,9 @@
     {#if retry}<button class="btn" onclick={retry}>Retry</button>{/if}
   </div>
 {:else}
-  <p class="state-msg" aria-live="polite"><Spinner size={16} /> Loading…</p>
+  <div class="loading-placeholder" class:loading-overview={layout !== 'table'} role="status" aria-label="Loading content" aria-busy="true">
+    <span class="sr-only">Loading…</span>
+    {#if layout === 'overview'}<div class="tiles overview-totals" aria-hidden="true">{#each [1, 2, 3, 4, 5, 6] as tile (tile)}<div class="tile skeleton-tile"><span class="skeleton-line"></span><span class="skeleton-value"></span><span class="skeleton-line"></span></div>{/each}</div>{/if}
+    <div class="skeleton-table" aria-hidden="true">{#each [1, 2, 3, 4, 5] as row (row)}<div class="skeleton-row"><span class="skeleton-line"></span><span class="skeleton-line"></span><span class="skeleton-line"></span></div>{/each}</div>
+  </div>
 {/if}

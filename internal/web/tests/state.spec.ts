@@ -38,6 +38,72 @@ function gate() {
   return { promise, release };
 }
 
+test('retryable jobs need attention even without recent-failure or overdue flags', async ({ page }) => {
+  await page.route('**/accounts/github/alpha/queue', (route) => json(route, [{ ...g.job, state: 'retryable', recentFailure: false, heartbeatOverdue: false }]));
+  await page.goto(account);
+  await expect(page.getByRole('link', { name: /Inspect failed, retrying or overdue work/ })).toBeVisible();
+  await expect(page.getByText('All clear. No review alerts or queue issues.')).toHaveCount(0);
+});
+
+for (const failed of ['queue', 'attention', 'account']) {
+  test(`account overview survives an independent ${failed} failure and retries it`, async ({ page }, testInfo) => {
+    const detail = g.golden<AccountDetail>('account_detail');
+    let fail = true;
+    await page.route(`**/accounts/github/alpha${failed === 'account' ? '' : '/' + failed}`, async (route) => {
+      if (fail) return json(route, { message: `${failed} unavailable` }, 503);
+      return route.fallback();
+    });
+    await page.goto(account);
+    await expect(page.getByRole('alert')).toContainText(`${failed} unavailable`);
+    await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
+    const tiles = page.getByRole('region', { name: 'Account activity' });
+    await expect(tiles.locator('.tile')).toHaveCount(4);
+    if (failed !== 'account') {
+      await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText(detail.connection.name);
+      await expect(tiles.locator('.tile').filter({ hasText: 'Reviews today' }).locator('.tile-value')).toHaveText(String(detail.usage.reviewsToday));
+    }
+    if (failed !== 'queue') await expect(tiles.locator('.tile').filter({ hasText: 'Running now' }).locator('.tile-value')).toHaveText(/\d+/);
+    await expect(page.getByText('All clear. No review alerts or queue issues.')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`account-${failed}-unavailable.png`) });
+    fail = false;
+    await page.getByRole('alert').getByRole('button', { name: /Retry/ }).click();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(tiles.locator('.tile-value')).toHaveCount(4);
+  });
+}
+
+test('account overview polls only jobs and refreshes only data affected by live events', async ({ page }) => {
+  await page.clock.install();
+  const seen = await g.mockApi(page, g.defaultApi());
+  await page.goto(account);
+  await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
+  await expect(page.locator('.account-activity .tile-value')).toHaveCount(4);
+  const calls = () => seen.filter((u) => u.pathname.startsWith('/api/v1/accounts/')).map((u) => u.pathname.replace('/api/v1/accounts/github/alpha', '')).sort();
+  seen.length = 0;
+  await page.clock.runFor(15_001);
+  await expect.poll(calls).toEqual(['/queue']);
+  seen.length = 0;
+  await emit(page, 'runner_run');
+  await page.clock.runFor(301);
+  await expect.poll(calls).toEqual(['/queue']);
+  seen.length = 0;
+  await emit(page, 'index_run');
+  await page.clock.runFor(301);
+  await expect.poll(calls).toEqual(['/queue', '/repos']);
+  seen.length = 0;
+  await emit(page, 'review');
+  await page.clock.runFor(301);
+  await expect.poll(calls).toEqual(['', '/attention', '/queue', '/repos']);
+  seen.length = 0;
+  await emit(page, 'followup');
+  await page.clock.runFor(301);
+  await expect.poll(calls).toEqual(['', '/queue']);
+  seen.length = 0;
+  await emit(page, 'resync');
+  await page.clock.runFor(301);
+  await expect.poll(calls).toEqual(['', '/attention', '/queue', '/repos']);
+});
+
 test('failed sign-out keeps the session visible and can be retried', async ({ page, mockProviders }) => {
   let calls = 0;
   await mockProviders();
@@ -524,24 +590,20 @@ test('reconnect status stays inside the mobile header without obscuring content'
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
 });
 
-test('attention previews defer offscreen accounts and refresh them when shown', async ({ page }) => {
+test('the overview summarizes many accounts without fetching individual pull lists', async ({ page }) => {
   const accounts = Array.from({ length: 25 }, (_, i) => ({ ...g.accountSummary, slug: `github/account-${i}`, attention: { failed: 1, capped: 1, p0: 1, paused: 1 } }));
   const calls: string[] = [];
   await page.route('**/api/v1/accounts', (route) => json(route, accounts));
   await page.route('**/pulls?*', (route) => { calls.push(route.request().url()); return json(route, g.pageOf([g.pull])); });
   await page.goto('/');
-  await expect(page.locator('.attention-group')).toHaveCount(75);
-  await expect(page.locator('.attention-pull').first()).toBeVisible();
-  expect(calls.length).toBeLessThan(12);
-  const last = page.locator('.attention-group').last();
-  await last.scrollIntoViewIfNeeded();
-  await expect(last.locator('.attention-pull')).toBeVisible();
-  const firstCount = () => calls.filter((url) => url.includes('/account-0/')).length;
-  const before = firstCount();
+  const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+  await expect(attention.getByRole('link')).toHaveCount(75);
+  await attention.getByRole('link').last().scrollIntoViewIfNeeded();
+  expect(calls).toEqual([]);
+  accounts[0]!.attention.failed = 2;
+  const refreshed = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/accounts');
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('test-live-event', { detail: { kind: 'review', data: { kind: 'review', account: 'github/account-0', reviewId: 'rev-1' } } })));
-  // Wait for the same event's account refresh, without bringing its previews onscreen.
-  await page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/accounts');
-  expect(firstCount()).toBe(before);
-  await page.locator('.attention-group').first().scrollIntoViewIfNeeded();
-  await expect.poll(firstCount).toBeGreaterThan(before);
+  await refreshed;
+  await expect(attention.getByRole('link').first()).toContainText('2 failed');
+  expect(calls).toEqual([]);
 });

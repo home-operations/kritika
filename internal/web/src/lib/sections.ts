@@ -4,9 +4,9 @@
 // account at once. No tab chooses an account: one is entered by the scope
 // switcher or a link that names it. Rune-free, like routes.ts, so tests can
 // import it.
-import { analyticsFilter, usageFilter, type Route } from './routes';
+import { analyticsFilter, pullFilter, usageFilter, type Route } from './routes';
 
-export type Section = 'analytics' | 'usage' | 'pulls' | 'findings' | 'queue' | 'followups' | 'repos' | 'rules' | 'settings';
+export type Section = 'overview' | 'analytics' | 'usage' | 'pulls' | 'findings' | 'queue' | 'followups' | 'repos' | 'rules' | 'settings';
 
 interface SectionDef {
   label: string;
@@ -16,7 +16,8 @@ interface SectionDef {
 }
 
 export const SECTIONS: Record<Section, SectionDef> = {
-  analytics: { label: 'Analytics', names: ['account'], home: (slug) => ({ name: 'account', slug }) },
+  overview: { label: 'Overview', names: ['account'], home: (slug) => ({ name: 'account', slug }) },
+  analytics: { label: 'Analytics', names: ['analytics'], home: (slug) => ({ name: 'analytics', slug }) },
   usage: { label: 'Usage & costs', names: ['usage'], home: (slug) => ({ name: 'usage', slug }) },
   pulls: { label: 'Pull requests', names: ['pulls', 'pull', 'review'], home: (slug) => ({ name: 'pulls', slug }) },
   findings: { label: 'Findings', names: ['findings'], home: (slug) => ({ name: 'findings', slug }) },
@@ -27,11 +28,11 @@ export const SECTIONS: Record<Section, SectionDef> = {
   settings: { label: 'Audit log', names: ['admin'], home: (slug) => ({ name: 'admin', slug, section: 'audit' }), admin: true },
 };
 
-export const NAV_GROUPS: readonly { label: string; sections: readonly Section[]; before?: InstanceTab; after?: InstanceTab }[] = [
-  { label: 'Operations', sections: ['queue', 'repos'], before: { label: 'Overview', route: { name: 'overview' } } },
+export const NAV_GROUPS: readonly { label: string; sections: readonly Section[] }[] = [
+  { label: 'Operations', sections: ['overview', 'pulls', 'queue', 'repos'] },
   { label: 'Insights', sections: ['analytics', 'usage'] },
-  { label: 'Activity', sections: ['pulls', 'followups', 'findings'] },
-  { label: 'Configuration', sections: ['rules', 'settings'], after: { label: 'Instance settings', route: { name: 'console' }, admin: true } },
+  { label: 'Activity', sections: ['followups', 'findings'] },
+  { label: 'Configuration', sections: ['rules', 'settings'] },
 ];
 
 export function sectionOf(r: Route): Section | undefined {
@@ -41,8 +42,8 @@ export function sectionOf(r: Route): Section | undefined {
 // Reporting dates travel between analytics and usage; repository and model
 // selections stay on their own page and account.
 export function reportingRoute(to: Route, from: Route): Route {
-  if (from.name !== 'account' && from.name !== 'usage') return to;
-  if (to.name === 'account') {
+  if (from.name !== 'analytics' && from.name !== 'usage') return to;
+  if (to.name === 'analytics') {
     const filter = analyticsFilter({ days: from.filter?.days });
     return { ...to, ...(filter ? { filter } : {}) };
   }
@@ -53,18 +54,17 @@ export function reportingRoute(to: Route, from: Route): Route {
   return to;
 }
 
-// One of the instance's tabs; admin is one only an admin has, and several
-// one that only says something new with more than one account.
+// Global destinations available without choosing an account.
 export interface InstanceTab {
   label: string;
   route: Route;
   admin?: boolean;
-  several?: boolean;
 }
 
 export const INSTANCE_TABS: readonly InstanceTab[] = [
   { label: 'Overview', route: { name: 'overview' } },
-  { label: 'Queue', route: { name: 'instanceQueue' }, several: true },
+  { label: 'Pull requests', route: { name: 'instancePulls' } },
+  { label: 'Queue', route: { name: 'instanceQueue' } },
   { label: 'Instance settings', route: { name: 'console' }, admin: true },
 ];
 
@@ -77,18 +77,17 @@ export function scopeOf(r: Route): string | undefined {
 // pageIn is the page r shows, in the account slug: the same list or
 // settings page, and for a record, which the other account does not have,
 // the list it belongs to. Account-specific filters stay behind; reporting
-// dates, metrics and grouping carry across. The instance queue becomes the account's.
+// dates, metrics and grouping carry across. Portable pull and queue filters
+// follow scope; a global repository query is retained when narrowing it.
 export function pageIn(r: Route, slug: string): Route {
   switch (r.name) {
-    case 'account':
-      return reportingRoute({ name: 'account', slug }, r);
+    case 'analytics':
+      return reportingRoute({ name: 'analytics', slug }, r);
     case 'usage': {
       const filter = usageFilter({ days: r.filter?.days, metric: r.filter?.metric, group: r.filter?.group });
       return { name: 'usage', slug, ...(filter ? { filter } : {}) };
     }
     case 'findings':
-    case 'pulls':
-    case 'queue':
     case 'followups':
     case 'rules':
     case 'repos':
@@ -100,16 +99,24 @@ export function pageIn(r: Route, slug: string): Route {
       return { name: 'pulls', slug };
     case 'repo':
       return { name: 'repos', slug };
+    case 'instancePulls':
+    case 'pulls': {
+      const filter = r.name === 'pulls' && r.slug !== slug ? pullFilter({ ...r.filter, repo: undefined }) : r.filter;
+      return { name: 'pulls', slug, ...(filter ? { filter } : {}) };
+    }
     case 'instanceQueue':
-      return { name: 'queue', slug };
+    case 'queue':
+      return { name: 'queue', slug, ...(r.filter ? { filter: r.filter } : {}) };
     default:
       return { name: 'account', slug };
   }
 }
 
-// pageOfInstance is the instance's page for what r shows: its queue from
-// an account's, when the instance has that tab, and its overview otherwise.
-export function pageOfInstance(r: Route, queue: boolean): Route {
+// pageOfInstance preserves the list and its filters when widening scope.
+export function pageOfInstance(r: Route): Route {
   if (!scopeOf(r)) return r.name === 'signin' ? { name: 'overview' } : r;
-  return r.name === 'queue' && queue ? { name: 'instanceQueue' } : { name: 'overview' };
+  if (r.name === 'queue') return { name: 'instanceQueue', ...(r.filter ? { filter: r.filter } : {}) };
+  if (r.name === 'pulls') return { name: 'instancePulls', ...(r.filter ? { filter: r.filter } : {}) };
+  if (r.name === 'pull' || r.name === 'review') return { name: 'instancePulls' };
+  return { name: 'overview' };
 }

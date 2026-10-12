@@ -5,7 +5,8 @@
   // not a link opens the pull request. With onpick, each row has a checkbox
   // for a bulk action, picked naming the ones checked by pullKey; a merged
   // or closed pull request takes no more reviews, so it has none.
-  import { href, navigate } from '../router.svelte';
+  import { href, navigate, router } from '../router.svelte';
+  import { pageIn } from '../sections';
   import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
   import { noMoreReviews, costTotal, wholeNumber } from '../format';
@@ -22,14 +23,16 @@
     selected = -1,
     picked = [],
     onpick,
-  }: { slug: string; items: Pull[]; selected?: number; picked?: string[]; onpick?: (keys: string[], on: boolean) => void } = $props();
+    keyOf = pullKey,
+  }: { slug?: string; items: (Pull & { account?: string })[]; keyOf?: (p: Pull & { account?: string }) => string; selected?: number; picked?: string[]; onpick?: (keys: string[], on: boolean) => void } = $props();
 
+  const accountOf = (p: Pull & { account?: string }): string => slug ?? p.account!;
   const open = $derived(items.filter((p) => p.state === 'open'));
 
 
-  function onRowClick(e: MouseEvent, p: Pull): void {
+  function onRowClick(e: MouseEvent, p: Pull & { account?: string }): void {
     if ((e.target as Element).closest('a, button, input, label') || getSelection()?.toString()) return;
-    navigate(pullRoute(slug, p));
+    navigate(pullRoute(accountOf(p), p));
   }
 </script>
 
@@ -38,9 +41,9 @@
     <input
       type="checkbox"
       aria-label="Select every pull request shown"
-      checked={open.length > 0 && open.every((p) => picked.includes(pullKey(p)))}
+      checked={open.length > 0 && open.every((p) => picked.includes(keyOf(p)))}
       disabled={open.length === 0}
-      onchange={(e) => onpick(open.map(pullKey), e.currentTarget.checked)}
+      onchange={(e) => onpick(open.map(keyOf), e.currentTarget.checked)}
     />
     Select every pull request shown
   </label>
@@ -54,6 +57,7 @@
             <span class="sr-only">Selection</span>
           </th>
         {/if}
+        {#if !slug}<th scope="col">Account</th>{/if}
         <th scope="col">Pull request</th>
         <th scope="col" title="P0, P1 and P2, in that order">Findings</th>
         <th scope="col">Last review</th>
@@ -63,7 +67,7 @@
       </tr>
     </thead>
     <tbody class="pull-rows">
-      {#each items as p, i (p.url)}
+      {#each items as p, i (`${accountOf(p)}:${pullKey(p)}`)}
         {@const life = lifecycle(p)}
         <!-- The title is the row's link; the click is a larger target for a pointer. -->
         <tr class="pull-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, p)}>
@@ -73,8 +77,8 @@
                 <input
                   type="checkbox"
                   aria-label="Select {p.repository}#{p.number}"
-                  checked={picked.includes(pullKey(p))}
-                  onchange={(e) => onpick([pullKey(p)], e.currentTarget.checked)}
+                  checked={picked.includes(keyOf(p))}
+                  onchange={(e) => onpick([keyOf(p)], e.currentTarget.checked)}
                 />
               {:else}
                 <span class="muted" title={`${noMoreReviews(p.merged)}, from its page`}>
@@ -83,8 +87,9 @@
               {/if}
             </td>
           {/if}
+          {#if !slug}<td data-label="Account" class="mono small"><a href={href(pageIn(router.route, accountOf(p)))}>{accountOf(p)}</a></td>{/if}
           <td class="pull-main">
-            <a class="pull-title" href={href(pullRoute(slug, p))} aria-current={i === selected ? 'true' : undefined}>
+            <a class="pull-title" href={href(pullRoute(accountOf(p), p))} aria-current={i === selected ? 'true' : undefined}>
               <!-- A row marks what is no longer simply open, and only a merge in colour: a list of red marks would shout. -->
               {#if life.state !== 'open'}<span class="lifecycle tone-{life.state === 'merged' ? life.tone : 'muted'}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}
               <span class="pull-text">{p.title}</span>

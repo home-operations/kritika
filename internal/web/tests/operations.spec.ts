@@ -161,7 +161,7 @@ test('spending URLs encode model names and distinguish unfiltered from unattribu
 test('operational trends compare rates and omit buckets without outcomes', async ({ page }) => {
   await mockOperations(page);
   await page.route('**/analytics?*', (r) => r.fulfill({ json: { ...analytics, current: { ...analytics.current, reviews: 8, failed: 2 }, previous: { ...analytics.previous, reviews: 9, failed: 1 }, series: [...analytics.series, { ...analytics.series[0], key: '2026-10-15', reviews: 0, failed: 0, medianReviewMs: null }] } }));
-  await page.goto(account);
+  await page.goto(`${account}/analytics`);
   const rate = page.getByRole('region', { name: 'Operational metrics' }).locator('.stat').filter({ has: page.getByText('Failure rate', { exact: true }) });
   await expect(rate).toContainText('20.0%');
   await expect(rate.locator('.delta')).toContainText('10');
@@ -192,7 +192,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByText('No webhooks received')).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`operations-overview-${theme}.png`) });
-    await page.goto(account);
+    await page.goto(`${account}/analytics`);
     await expect(page.getByRole('region', { name: 'Operational metrics' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`operations-analytics-${theme}.png`) });
     await page.goto(`${account}/usage`);
@@ -265,7 +265,7 @@ test('token comparisons sort by tokens and include unpriced calls', async ({ pag
 
 test('analytics spending link preserves the selected period', async ({ page }) => {
   await mockOperations(page);
-  await page.goto(account);
+  await page.goto(`${account}/analytics`);
   await page.getByRole('radio', { name: '90 days', exact: true }).click();
   await page.getByRole('link', { name: /Investigate spending/ }).click();
   await expect(page.getByRole('radio', { name: '90 days', exact: true })).toBeChecked();

@@ -23,14 +23,31 @@ function entryID(): string {
   return id;
 }
 
-export const router = $state({ route: parse(location.hash), entry: entryID(), traversal: false });
+interface ListOrigin { hash: string; label: string; depth: number }
+
+export const router = $state({ route: parse(location.hash), entry: entryID(), traversal: false, origin: history.state?.kritikaOrigin as ListOrigin | undefined });
+
+function originFor(to: Route): ListOrigin | undefined {
+  if (to.name !== 'pull' && to.name !== 'review') return;
+  const from = router.route;
+  if (from.name === 'instancePulls' || from.name === 'pulls' || from.name === 'instanceQueue' || from.name === 'queue') {
+    return { hash: href(from), label: `${'slug' in from ? from.slug : 'all accounts'} · ${from.name.toLowerCase().includes('queue') ? 'Queue' : 'Pull requests'}`, depth: 1 };
+  }
+  if (router.origin) return { ...router.origin, depth: router.origin.depth + 1 };
+}
+
+export function returnToList(): void {
+  if (router.origin) history.go(-router.origin.depth);
+}
 
 export function navigate(to: Route): void {
   const next = href(to);
   if (location.hash === next) {
     router.route = to;
   } else {
-    history.pushState({ kritikaEntry: newEntry() }, '', next);
+    const origin = originFor(to);
+    history.pushState({ kritikaEntry: newEntry(), kritikaOrigin: origin }, '', next);
+    router.origin = origin;
     router.entry = entryID();
     router.traversal = false;
     router.route = to;
@@ -40,9 +57,10 @@ export function navigate(to: Route): void {
 // replace preserves the history entry while synchronizing in-page filters.
 export function replace(to: Route): void {
   router.traversal = false;
+  if (to.name !== 'pull' && to.name !== 'review') router.origin = undefined;
   router.route = to;
   try {
-    history.replaceState(history.state, '', href(to));
+    history.replaceState({ ...history.state, kritikaOrigin: $state.snapshot(router.origin) }, '', href(to));
   } catch {
     // Safari rate-limits replaceState (SecurityError past ~100 calls/30s).
     // The in-memory route is already updated; the URL syncs on the next call.
@@ -54,6 +72,10 @@ export function initRouter(): void {
     const existing = typeof history.state?.kritikaEntry === 'string';
     const entry = entryID();
     if (entry === router.entry && href(router.route) === href(parse(location.hash))) return;
+    const next = parse(location.hash);
+    const origin = existing ? history.state?.kritikaOrigin : originFor(next);
+    history.replaceState({ ...history.state, kritikaOrigin: origin }, '');
+    router.origin = origin;
     router.entry = entry;
     router.traversal = existing;
     router.route = parse(location.hash);

@@ -101,7 +101,7 @@
       {#snippet actions()}<HelpPopover label="About these metrics"><p>Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p><p>Failure rate is failed / (completed + failed). Duration is the median of completed reviews. API spend includes priced calls and excludes subscription fees.</p></HelpPopover>{/snippet}
     </PageHeader>
     <div class="toolbar">
-      <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => navigate({ name: 'account', slug, filter: analyticsFilter({ days }) })} />
+      <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => navigate({ name: 'analytics', slug, filter: analyticsFilter({ days }) })} />
     </div>
     {#if detail.data && (unsignedWebhooks(detail.data.connection) || !detail.data.connection.lastWebhookAt)}
       {@const inst = detail.data.connection}
