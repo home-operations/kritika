@@ -82,7 +82,7 @@
     for (const slug of slugs) {
       entries.push(
         { label: 'Overview', hint: slug, route: { name: 'account', slug }, icon: mdiViewGridOutline },
-        { label: 'Analytics', hint: slug, route: reportingRoute({ name: 'analytics', slug }, r), icon: mdiChartBoxOutline, keywords: 'overview reviews dashboard' },
+        { label: 'Analytics', hint: slug, route: reportingRoute({ name: 'analytics', slug }, r), icon: mdiChartBoxOutline, keywords: 'reviews dashboard' },
         { label: 'Repositories', hint: slug, route: { name: 'repos', slug }, icon: mdiSourceRepository },
         { label: 'Pull requests', hint: slug, route: { name: 'pulls', slug }, icon: mdiSourcePull },
         { label: 'Findings', hint: slug, route: { name: 'findings', slug }, icon: mdiBugOutline, keywords: 'bugs caught addressed' },

@@ -134,6 +134,15 @@ test('widening scope preserves pull and queue filters', () => {
   expect(pageOfInstance({ name: 'console' })).toEqual({ name: 'console' });
 });
 
+test('repository filters stay with their account while portable pull filters travel', () => {
+  const filter = { repo: 'alpha/one', state: 'all' as const, author: 'ada', q: 'fix', outcome: 'failed' as const, is: 'paused' as const };
+  const from: Route = { name: 'pulls', slug: 'github/alpha', filter };
+  expect(pageIn(from, 'github/beta')).toEqual({ name: 'pulls', slug: 'github/beta', filter: { state: 'all', author: 'ada', q: 'fix', outcome: 'failed', is: 'paused' } });
+  expect(pageIn(from, 'github/alpha')).toEqual(from);
+  expect(pageIn({ name: 'pulls', slug: 'github/alpha', filter: { repo: 'alpha/one' } }, 'github/beta')).toEqual({ name: 'pulls', slug: 'github/beta' });
+  expect(pageIn({ name: 'instancePulls', filter }, 'github/alpha')).toEqual(from);
+});
+
 test('dated account bookmarks retain their analytics destination', () => {
   expect(parse('#/a/github/acme?days=90')).toEqual({ name: 'analytics', slug: 'github/acme', filter: { days: '90' } });
 });

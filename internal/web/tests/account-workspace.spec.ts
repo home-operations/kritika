@@ -67,6 +67,48 @@ test('session errors offer retry and keep the requested route', async ({ page })
   await expect(page).toHaveURL(new RegExp(`/a/${g.SLUG}/pulls$`));
 });
 
+test('a stalled session check times out and can recover on the requested route', async ({ page }, testInfo) => {
+  await workspace(page);
+  await page.clock.install();
+  let calls = 0;
+  await page.route('**/api/v1/me', (r) => { if (++calls > 1) return r.fulfill({ json: g.me }); });
+  await page.goto(`/#/a/${g.SLUG}/pulls`);
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.runFor(15_001);
+  await expect(page.getByRole('alert')).toContainText('Session request timed out');
+  await expect(page.locator('.app, .signin-card')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('session-timeout.png') });
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.locator('.pull-row')).toHaveCount(1);
+  await expect(page).toHaveURL(new RegExp(`/a/${g.SLUG}/pulls$`));
+});
+
+for (const status of [403, 503]) {
+  test(`explicit sign-in stays available after a ${status} session failure`, async ({ page, mockProviders }) => {
+    await workspace(page);
+    await mockProviders();
+    await page.route('**/api/v1/me', (r) => r.fulfill({ status, contentType: 'text/html', body: '<h1>Unavailable</h1>' }));
+    await page.goto('/#/signin');
+    await expect(page.locator('.signin-card')).toBeVisible();
+    await expect(page.getByRole('link', { name: /GitHub/ })).toBeVisible();
+    await expect(page.locator('.app')).toHaveCount(0);
+  });
+}
+
+test('overview search excludes analytics while recent pulls retain account priority', async ({ page }) => {
+  await workspace(page);
+  await page.route('**/accounts/github/alpha/pulls?*', (r) => r.fulfill({ json: g.pageOf([{ ...g.pull, title: 'Older current-account pull', updatedAt: '2026-01-01T00:00:00Z' }]) }));
+  await page.route('**/accounts/github/beta/pulls?*', (r) => r.fulfill({ json: g.pageOf(Array.from({ length: 20 }, (_, i) => ({ ...g.pull, number: i + 1, title: `Newer other-account pull ${i}`, updatedAt: '2026-10-01T00:00:00Z' }))) }));
+  await page.goto(`/#/a/${g.SLUG}`);
+  await page.keyboard.press('ControlOrMeta+k');
+  const recent = page.locator('.palette-row').filter({ hasText: /account pull/ });
+  await expect(recent).toHaveCount(21);
+  await expect(recent.first()).toContainText('Older current-account pull');
+  await page.getByRole('combobox', { name: 'Go to' }).fill('overview');
+  await expect(page.locator('.palette-row')).toHaveCount(3);
+  await expect(page.locator('.palette-row').filter({ hasText: 'Analytics' })).toHaveCount(0);
+});
+
 test('global pulls keep account identity, pagination, filters and return context', async ({ page }, testInfo) => {
   await workspace(page);
   await page.goto('/#/pulls?state=all');
@@ -100,6 +142,8 @@ test('overview and account navigation expose consistent scope', async ({ page },
   await page.goto(`/#/a/${g.SLUG}`);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Account activity' })).toBeVisible();
+  await expect(page.locator('.account-activity .tile-value')).toHaveCount(4);
+  await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
   const nav = page.locator('.desktop-navigation');
   for (const link of await nav.getByRole('link').evaluateAll((links) => links.map((l) => l.getAttribute('href')))) expect(link).toContain(`/a/${g.SLUG}`);
   await expect(nav.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -110,6 +154,8 @@ test('overview and account navigation expose consistent scope', async ({ page },
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/#/a/${g.SLUG}`);
   await expect(page.getByRole('region', { name: 'Account activity' })).toBeVisible();
+  await expect(page.locator('.account-activity .tile-value')).toHaveCount(4);
+  await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
   await testInfo.attach('account-mobile', { body: await page.screenshot({ path: testInfo.outputPath('account-mobile.png') }), contentType: 'image/png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

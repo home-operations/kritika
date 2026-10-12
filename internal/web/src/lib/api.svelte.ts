@@ -67,9 +67,10 @@ async function handle<T>(res: Response): Promise<T> {
   }
 }
 
-export async function getJSON<T>(path: string): Promise<T> {
+export async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${basePath}${path}`, {
     method: 'GET',
+    signal,
     headers: commonHeaders,
     credentials: 'same-origin',
   });

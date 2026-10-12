@@ -7,14 +7,22 @@ import (
 	"net/url"
 	"slices"
 	"testing"
+	"time"
 )
 
 func testInstancePulls(t *testing.T, e *apiEnv) {
 	e.signIn("member-both", "both", memberOfAccounts("github/wa", "github/wb"))
-	e.exec(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
-  VALUES ($1, $2, 8, 'Second pull', 'grace', 'head8')`, e.a.accountID, e.a.repoID)
+	for _, id := range []string{e.a.prID, e.b.prID} {
+		var updatedAt time.Time
+		if err := e.owner.QueryRow(t.Context(), `SELECT updated_at FROM pull_requests WHERE id = $1`, id).Scan(&updatedAt); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { e.exec(`UPDATE pull_requests SET updated_at = $1 WHERE id = $2`, updatedAt, id) })
+	}
+	pullID := e.scalar(`INSERT INTO pull_requests (account_id, repository_id, number, title, author, head_sha)
+  VALUES ($1, $2, 8, 'Second pull', 'grace', 'head8') RETURNING id::text`, e.a.accountID, e.a.repoID)
 	t.Cleanup(func() { e.exec(`DELETE FROM pull_requests WHERE repository_id = $1 AND number = 8`, e.a.repoID) })
-	e.exec(`UPDATE pull_requests SET updated_at = '2026-10-12T12:00:00Z' WHERE account_id IN ($1, $2)`, e.a.accountID, e.b.accountID)
+	e.exec(`UPDATE pull_requests SET updated_at = '2026-10-12T12:00:00Z' WHERE id IN ($1, $2, $3)`, e.a.prID, e.b.prID, pullID)
 	for _, tc := range []struct {
 		who      string
 		accounts []string

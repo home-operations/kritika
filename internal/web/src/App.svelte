@@ -63,11 +63,14 @@
   async function loadMe(): Promise<void> {
     checkingSession = true;
     sessionError = '';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error('Session request timed out; try again.')), 15_000);
     try {
-      session.me = await getJSON<Me>('/api/v1/me');
+      session.me = await getJSON<Me>('/api/v1/me', controller.signal);
     } catch (err) {
-      if (!(err instanceof ApiError && err.status === 401)) sessionError = describe(err);
+      if (!(err instanceof ApiError && err.status === 401)) sessionError = describe(controller.signal.aborted ? controller.signal.reason : err);
     } finally {
+      clearTimeout(timeout);
       checkingSession = false;
     }
   }
@@ -184,7 +187,7 @@
   {#if me && router.route.name === 'console'}<SettingsNav />{/if}
 {/snippet}
 
-{#if checkingSession || (me && router.route.name === 'signin') || sessionError}
+{#if checkingSession || (me && router.route.name === 'signin') || (!me && sessionError && router.route.name !== 'signin')}
   <main class="session-screen" aria-busy={checkingSession}>
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
     <span class="wordmark marked">kritika</span>

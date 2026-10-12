@@ -4,7 +4,7 @@
 // account at once. No tab chooses an account: one is entered by the scope
 // switcher or a link that names it. Rune-free, like routes.ts, so tests can
 // import it.
-import { analyticsFilter, usageFilter, type Route } from './routes';
+import { analyticsFilter, pullFilter, usageFilter, type Route } from './routes';
 
 export type Section = 'overview' | 'analytics' | 'usage' | 'pulls' | 'findings' | 'queue' | 'followups' | 'repos' | 'rules' | 'settings';
 
@@ -77,7 +77,8 @@ export function scopeOf(r: Route): string | undefined {
 // pageIn is the page r shows, in the account slug: the same list or
 // settings page, and for a record, which the other account does not have,
 // the list it belongs to. Account-specific filters stay behind; reporting
-// dates, metrics and grouping carry across. Pull and queue filters follow scope.
+// dates, metrics and grouping carry across. Portable pull and queue filters
+// follow scope; a global repository query is retained when narrowing it.
 export function pageIn(r: Route, slug: string): Route {
   switch (r.name) {
     case 'analytics':
@@ -99,8 +100,10 @@ export function pageIn(r: Route, slug: string): Route {
     case 'repo':
       return { name: 'repos', slug };
     case 'instancePulls':
-    case 'pulls':
-      return { name: 'pulls', slug, ...(r.filter ? { filter: r.filter } : {}) };
+    case 'pulls': {
+      const filter = r.name === 'pulls' && r.slug !== slug ? pullFilter({ ...r.filter, repo: undefined }) : r.filter;
+      return { name: 'pulls', slug, ...(filter ? { filter } : {}) };
+    }
     case 'instanceQueue':
     case 'queue':
       return { name: 'queue', slug, ...(r.filter ? { filter: r.filter } : {}) };

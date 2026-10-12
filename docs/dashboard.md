@@ -19,7 +19,9 @@ the pull request's page here.
 ## Navigation
 
 The scope switcher chooses **All accounts** or one account you can read.
-Pull requests and Queue keep their filters when you change scope. From a
+Pull requests and Queue keep their portable filters when you change scope.
+Switching directly between accounts clears a pull request's repository filter;
+narrowing a global repository search to an account retains it. From a
 record, switching accounts opens the corresponding list. The account name
 stays visible in the switcher and page breadcrumbs.
 

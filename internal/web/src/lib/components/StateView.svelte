@@ -12,7 +12,7 @@
     isEmpty?: (data: T) => boolean;
     empty?: string;
     retry?: () => void;
-    layout?: 'table' | 'overview' | 'account';
+    layout?: 'table' | 'overview';
   }
   let { res, children, isEmpty, empty = 'Nothing here yet.', retry, layout = 'table' }: Props = $props();
 </script>
@@ -39,7 +39,7 @@
 {:else}
   <div class="loading-placeholder" class:loading-overview={layout !== 'table'} role="status" aria-label="Loading content" aria-busy="true">
     <span class="sr-only">Loading…</span>
-    {#if layout !== 'table'}<div class="tiles" class:overview-totals={layout === 'overview'} aria-hidden="true">{#each (layout === 'overview' ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4]) as tile (tile)}<div class="tile skeleton-tile"><span class="skeleton-line"></span><span class="skeleton-value"></span><span class="skeleton-line"></span></div>{/each}</div>{/if}
+    {#if layout === 'overview'}<div class="tiles overview-totals" aria-hidden="true">{#each [1, 2, 3, 4, 5, 6] as tile (tile)}<div class="tile skeleton-tile"><span class="skeleton-line"></span><span class="skeleton-value"></span><span class="skeleton-line"></span></div>{/each}</div>{/if}
     <div class="skeleton-table" aria-hidden="true">{#each [1, 2, 3, 4, 5] as row (row)}<div class="skeleton-row"><span class="skeleton-line"></span><span class="skeleton-line"></span><span class="skeleton-line"></span></div>{/each}</div>
   </div>
 {/if}
