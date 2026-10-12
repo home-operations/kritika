@@ -107,7 +107,7 @@ func TestLoadConfigRefusesNoSignIn(t *testing.T) {
 }
 
 func TestStoreOptionsOwnerDSN(t *testing.T) {
-	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner"}
+	cfg := &config.Config{DatabaseURL: "postgres://app", DatabaseOwnerURL: "postgres://owner", DatabaseRunnerRole: "custom_runner"}
 	for _, tt := range []struct {
 		command config.Command
 		owner   string
@@ -117,6 +117,9 @@ func TestStoreOptionsOwnerDSN(t *testing.T) {
 	} {
 		t.Run(string(tt.command), func(t *testing.T) {
 			opts := storeOptions(tt.command, cfg, slog.New(slog.DiscardHandler))
+			if tt.command == config.CommandRun && opts.ExpectedRole != "custom_runner" {
+				t.Fatalf("runner role = %q", opts.ExpectedRole)
+			}
 			if opts.OwnerURL != tt.owner || opts.AppURL != "postgres://app" {
 				t.Errorf("owner = %q, app = %q; want owner %q", opts.OwnerURL, opts.AppURL, tt.owner)
 			}

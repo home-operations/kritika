@@ -161,16 +161,6 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}
-	// Custom settings are writable by either role. Permissive policies
-	// are OR'd, so a runner must not gain account-wide access by setting
-	// app.account_id alongside (or instead of) app.runner_job_id.
-	for _, table := range []string{"runner_runs", "context_packs", "index_packs", "index_staging", "agent_runs", "agent_conversations"} {
-		name := pgx.Identifier{table}.Sanitize()
-		stmts = append(stmts,
-			`ALTER POLICY account_isolation ON `+name+` TO `+app,
-			`ALTER POLICY runner_job ON `+name+` TO `+runner,
-		)
-	}
 	// River's tables are outside row-level security; the application role
 	// inserts and works jobs. Their set changes across River versions, so
 	// grant on whatever River's migrations created rather than a fixed list.
@@ -190,6 +180,9 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		return fmt.Errorf("store: begin grants: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := bindPolicies(ctx, tx, appRole, runnerRole); err != nil {
+		return err
+	}
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(ctx, stmt); err != nil {
 			grant, _, _ := strings.Cut(stmt, " TO ")
@@ -205,3 +198,30 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 // runnerRunColumns are the runner_runs columns a runner writes: its phase,
 // its error and its heartbeat.
 var runnerRunColumns = []string{"phase", "error", "heartbeat_at"}
+
+// bindPolicies scopes policies to roles only when their bindings differ.
+// ALTER POLICY takes an exclusive table lock even for an unchanged binding.
+func bindPolicies(ctx context.Context, tx pgx.Tx, appRole, runnerRole string) error {
+	rows, err := tx.Query(ctx, `SELECT tablename, policyname,
+		CASE policyname WHEN 'account_isolation' THEN $1 ELSE $2 END AS role
+		FROM pg_policies WHERE schemaname = current_schema()
+		AND policyname IN ('account_isolation', 'runner_job')
+		AND roles::text[] <> ARRAY[CASE policyname WHEN 'account_isolation' THEN $1 ELSE $2 END]::text[]
+		ORDER BY tablename, policyname`, appRole, runnerRole)
+	if err != nil {
+		return fmt.Errorf("store: inspect policy roles: %w", err)
+	}
+	type binding struct{ Table, Policy, Role string }
+	bindings, err := pgx.CollectRows(rows, pgx.RowToStructByPos[binding])
+	if err != nil {
+		return fmt.Errorf("store: read policy roles: %w", err)
+	}
+	for _, b := range bindings {
+		stmt := `ALTER POLICY ` + pgx.Identifier{b.Policy}.Sanitize() + ` ON ` + pgx.Identifier{b.Table}.Sanitize() +
+			` TO ` + pgx.Identifier{b.Role}.Sanitize()
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("store: bind policy: %w", err)
+		}
+	}
+	return nil
+}

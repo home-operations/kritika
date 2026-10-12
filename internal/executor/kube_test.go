@@ -36,7 +36,7 @@ func spec() Spec {
 			Agent:  &runner.AgentLimits{}, Model: &runner.ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
 			Prompt: &runner.Prompt{Repository: "acme/widgets"},
 		},
-		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token"},
+		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", DatabaseToken: "db_run_token"},
 		Deadline:  5 * time.Minute,
 		Resources: map[string]any{"limits": map[string]any{"memory": "2Gi"}},
 	}
@@ -44,7 +44,7 @@ func spec() Spec {
 
 func TestJobSpec(t *testing.T) {
 	k := &Kube{Namespace: "kritika", Image: "ttl.sh/x:1h", ImagePullPolicy: "IfNotPresent", ServiceAccount: "kritika-runner", DatabaseSecret: "kritika-postgres-runner", DatabaseSecretKey: "uri",
-		GatewayURL: "http://kritika-gateway:8082", RuntimeClass: "gvisor", TTL: 10 * time.Minute}
+		DatabaseRole: "custom_runner", GatewayURL: "http://kritika-gateway:8082", RuntimeClass: "gvisor", TTL: 10 * time.Minute}
 	j := mustJob(t, k, spec())
 	if j.Name != "kritika-run-01234567" || j.Namespace != "kritika" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
@@ -194,14 +194,14 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 		t.Fatal("the job document must not travel as a variable")
 	}
 	for _, e := range vars {
-		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "krk_run_token") {
+		if strings.Contains(e.Value, "ghs_secret_token") || strings.Contains(e.Value, "krk_run_token") || strings.Contains(e.Value, "db_run_token") {
 			t.Fatalf("%s carries a secret in plain text", e.Name)
 		}
 	}
 	for name, want := range map[string]struct {
 		key      string
 		optional bool
-	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", true}} {
+	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", true}, "KRITIKA_DATABASE_TOKEN": {"database-token", false}} {
 		ref := env[name].ValueFrom
 		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritika-run-01234567" || ref.SecretKeyRef.Key != want.key ||
 			(ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) != want.optional {
@@ -212,6 +212,9 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 		if _, ok := env[name]; ok {
 			t.Fatalf("%s is replaced by the job document", name)
 		}
+	}
+	if env["KRITIKA_DATABASE_RUNNER_ROLE"].Value != "custom_runner" {
+		t.Fatalf("runner role = %v", env["KRITIKA_DATABASE_RUNNER_ROLE"])
 	}
 	if ref := env["KRITIKA_DATABASE_URL"].ValueFrom.SecretKeyRef; ref.Name != "kritika-postgres-runner" || ref.Key != "uri" {
 		t.Fatalf("db env = %+v", ref)
@@ -437,7 +440,8 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	if err != nil || len(sec.OwnerReferences) != 1 {
 		t.Fatalf("secret = %+v, %v; want one owner reference", sec, err)
 	}
-	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["gateway-token"]) != "krk_run_token" {
+	if string(sec.Data["git-token"]) != "ghs_secret_token" || string(sec.Data["gateway-token"]) != "krk_run_token" ||
+		string(sec.Data["database-token"]) != "db_run_token" {
 		t.Fatalf("secret data = %v", sec.Data)
 	}
 	got, err := runner.DecodeSpec(sec.Data["run-spec.json"])

@@ -353,15 +353,13 @@ func refusedArgs(command string, args []string) string {
 		for _, a := range args {
 			name, _, _ := strings.Cut(a, "=")
 			if name == "--pre" || name == "--hostname-bin" {
-				return name + " is not offered: it runs another program"
+				return name + " is an execution option and is not offered; use --regexp=" + name + " for a pattern or ./" + name + " for a path"
 			}
 		}
 	case "fd":
 		for _, a := range args {
 			name, _, _ := strings.Cut(a, "=")
 			switch {
-			case a == "--":
-				return ""
 			case name == "--exec" || name == "--exec-batch":
 				return name + " is not offered: it runs another program"
 			case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):

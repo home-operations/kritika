@@ -68,7 +68,7 @@ func TestDecodeSpec(t *testing.T) {
 			wantErr: "a followup spec needs a base"},
 		{name: "a follow-up without a prompt", in: func() string { s := followUpSpec(); s.Prompt = nil; return encode(s) }(),
 			wantErr: "a followup spec needs a prompt"},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":25`, `"version":26`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":26`, `"version":27`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
@@ -161,8 +161,8 @@ func TestSecretsMask(t *testing.T) {
 		want    string
 	}{
 		{name: "empty secrets leave text untouched", in: "clone ok", want: "clone ok"},
-		{name: "both replaced", secrets: Secrets{GitToken: "tok-123", GatewayToken: "key-456"},
-			in: "auth tok-123 and key-456 twice tok-123", want: "auth *** and *** twice ***"},
+		{name: "all replaced", secrets: Secrets{GitToken: "tok-123", GatewayToken: "key-456", DatabaseToken: "db-789"},
+			in: "auth tok-123 and key-456 and db-789 twice tok-123", want: "auth *** and *** and *** twice ***"},
 		{name: "overlapping secrets mask the longer whole", secrets: Secrets{GitToken: "abc", GatewayToken: "abcdef"},
 			in: "x abcdef y abc", want: "x *** y ***"},
 		{name: "only one set", secrets: Secrets{GatewayToken: "key"}, in: "key", want: "***"},

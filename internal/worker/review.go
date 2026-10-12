@@ -151,6 +151,10 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		accountID: args.AccountID, accountKey: account.Key(), reviewID: reviewID, headSHA: args.HeadSHA,
 		owner: owner, repo: repo, client: client, started: started, logger: logger,
 	}
+	secrets.DatabaseToken, err = w.Store.MintRunnerToken(ctx, args.AccountID, runID)
+	if err != nil {
+		return w.agentSpecFailed(ctx, ended, runID, err)
+	}
 	provider, _ := file.Provider(account, settings.Models.Review.Provider())
 	granted := pinModels(ctx, logger, w.Steppers, file, account, settings.Models)
 	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, granted.Review, provider.Type)
