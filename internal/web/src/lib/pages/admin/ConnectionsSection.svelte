@@ -11,6 +11,7 @@
   import Pill from '../../components/Pill.svelte';
   import WebhookState from '../../components/WebhookState.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import { AlertDialog } from 'bits-ui';
 
   const conns = new Resource(() => getJSON<Connection[]>('/api/v1/admin/connections'));
   $effect(() => {
@@ -127,13 +128,13 @@
   {/if}
 </section>
 
-<Dialog bind:open={confirmOpen} title="Uninstall the App?" fallback="#op-connections">
+<Dialog alert bind:open={confirmOpen} title="Uninstall the App?" fallback="#op-connections">
   <p>
     GitHub removes <span class="mono">{selected}</span>'s App from <span class="mono">{removing?.account}</span>. kritika does
     not serve that account, so nothing it reviews changes.
   </p>
   {#snippet footer()}
-    <button class="btn" onclick={() => (confirmOpen = false)}>Keep it</button>
-    <button class="btn btn-primary btn-danger" onclick={uninstall} disabled={busy}>{busy ? 'Working…' : 'Uninstall'}</button>
+    <AlertDialog.Cancel class="btn">Keep it</AlertDialog.Cancel>
+    <AlertDialog.Action class="btn btn-primary btn-danger" onclick={uninstall} disabled={busy}>{busy ? 'Working…' : 'Uninstall'}</AlertDialog.Action>
   {/snippet}
 </Dialog>

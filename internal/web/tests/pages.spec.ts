@@ -1279,7 +1279,8 @@ test.describe('your settings', () => {
     await expect(page).toHaveURL(/#\/settings$/);
     await expect(page.locator('.page-head h1')).toHaveText('Your settings');
 
-    await page.getByLabel('Time zone').selectOption('Asia/Tokyo');
+    await page.getByRole('combobox', { name: 'Time zone', exact: true }).fill('Tokyo');
+    await page.getByRole('option', { name: 'Asia/Tokyo', exact: true }).click();
     await page.getByRole('radio', { name: '24-hour', exact: true }).click();
     await expect.poll(() => sent.map((s) => s.body)).toEqual([
       { timeZone: 'Asia/Tokyo', clock: '', theme: '' },

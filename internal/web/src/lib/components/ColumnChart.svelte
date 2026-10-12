@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChartCore, Svg, Bar } from 'layerchart/svg';
+  import { ChartCore, Svg, Bar, Axis, Tooltip } from 'layerchart/svg';
   // Columns over time, one or several stacked series, in inline SVG that
   // fills its container's width. Pointer and arrow keys read one column at
   // a time; the table view carries every value without hovering.
@@ -68,7 +68,6 @@
     e.preventDefault();
   }
   const activeRow = $derived(active >= 0 ? rows[active] : undefined);
-  const tipLeft = $derived(active >= 0 ? pad.left + band * (active + 0.5) : 0);
 </script>
 
 {#if view === 'table'}
@@ -126,10 +125,8 @@
               {onkeydown}
               onblur={() => (active = -1)}
             >
-              {#each ticks as t (t)}
-                <line class="chart-grid" x1={0} x2={context.width} y1={context.yScale(t)} y2={context.yScale(t)} />
-                <text class="chart-tick" x={-6} y={context.yScale(t) + 3.5} text-anchor="end">{format(t)}</text>
-              {/each}
+              <Axis aria-hidden="true" placement="left" {ticks} {format} tickMarks={false} grid={{ class: 'chart-grid' }} classes={{ tickLabel: 'chart-tick' }} />
+              <Axis aria-hidden="true" placement="bottom" ticks={rows.filter((_, i) => i % every === 0).map((r) => r.key)} format={(key) => rows.find((r) => r.key === key)?.label ?? ''} tickMarks={false} classes={{ tickLabel: 'chart-tick' }} />
               {#if active >= 0}
                 <rect class="chart-hover" x={band * active} y={0} width={band} height={context.height} />
               {/if}
@@ -149,27 +146,24 @@
                     {/if}
                   {/each}
                 </g>
-                {#if i % every === 0}
-                  <text class="chart-tick" x={band * (i + 0.5)} y={context.height + 16} text-anchor="middle">{r.label}</text>
-                {/if}
               {/each}
             </Svg>
+            {#if activeRow}
+              <Tooltip.Root data={activeRow} x="data" y={pad.top} xOffset={12} portal={false} variant="none" motion="none" fadeDuration={0} class="chart-tip" classes={{ root: 'chart-tooltip' }}>
+                <p class="chart-tip-head">{activeRow.title}</p>
+                {#each [...series.keys()].reverse() as j (j)}
+                  <p class="chart-tip-row">
+                    <span class="chart-key" style:background={series[j]!.color}></span>
+                    <strong>{format(activeRow.values[j]!)}</strong>
+                    <span class="muted">{series[j]!.label}</span>
+                  </p>
+                {/each}
+              </Tooltip.Root>
+            {/if}
           {/snippet}
         </ChartCore>
       {/if}
     </div>
-    {#if activeRow}
-      <div class="chart-tip" style:left="{tipLeft + 12}px" class:flip={tipLeft > width * 0.6}>
-        <p class="chart-tip-head">{activeRow.title}</p>
-        {#each [...series.keys()].reverse() as j (j)}
-          <p class="chart-tip-row">
-            <span class="chart-key" style:background={series[j]!.color}></span>
-            <strong>{format(activeRow.values[j]!)}</strong>
-            <span class="muted">{series[j]!.label}</span>
-          </p>
-        {/each}
-      </div>
-    {/if}
     <p class="sr-only" aria-live="polite">
       {#if activeRow}{activeRow.title}: {series.map((s, j) => `${format(activeRow.values[j]!)} ${s.label}`).join(', ')}{/if}
     </p>

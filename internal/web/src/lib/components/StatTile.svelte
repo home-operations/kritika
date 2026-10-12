@@ -2,6 +2,7 @@
   // One headline number: its label, value, and change against the window
   // before, coloured by whether that change is good rather than by its sign.
   import { change } from '../format';
+  import Tooltip from './Tooltip.svelte';
 
   let {
     label,
@@ -30,8 +31,12 @@
   const tone = $derived(!delta || delta.dir === 0 || !good ? 'muted' : (delta.dir > 0) === (good === 'up') ? 'ok' : 'danger');
 </script>
 
-<div class="stat" title={define || undefined}>
-  <span class="stat-label">{label}</span>
+<div class="stat">
+  {#if define}
+    <Tooltip text={define} class="stat-label stat-help" aria-label={`About ${label}`}>{label}</Tooltip>
+  {:else}
+    <span class="stat-label">{label}</span>
+  {/if}
   <span class="stat-line">
     <span class="stat-value">{value}</span>
     {#if delta}<span class="delta tone-{tone}" title="Against the window before">{delta.text}</span>{/if}

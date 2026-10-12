@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { Dialog, Popover } from 'bits-ui';
+  import { Dialog, Popover, Tooltip as BitsTooltip } from 'bits-ui';
+  import Tooltip from './lib/components/Tooltip.svelte';
   import { basePath } from './lib/base';
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
@@ -187,6 +188,7 @@
   {#if me && router.route.name === 'console'}<SettingsNav />{/if}
 {/snippet}
 
+<BitsTooltip.Provider delayDuration={300}>
 {#if checkingSession || (me && router.route.name === 'signin') || (!me && sessionError && router.route.name !== 'signin')}
   <main class="session-screen" aria-busy={checkingSession}>
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
@@ -246,15 +248,15 @@
 
         <div class="desktop-navigation">{@render workspaceNav()}</div>
         <div class="actions">
-          <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
+          <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to">
             <Icon path={mdiMagnify} label="Go to" /><span class="search-label">Go to…</span><kbd class="search-label">⌘ K</kbd>
-          </button>
-          <button class="btn btn-icon keys-button" onclick={toggleHelp} title="Keyboard shortcuts (?)">
+          </Tooltip>
+          <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button" onclick={toggleHelp} aria-label="Keyboard shortcuts">
             <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
-          </button>
-          <button class="btn btn-icon" onclick={cycleTheme} title={`Theme: ${theme.pref}`}>
+          </Tooltip>
+          <Tooltip text={`Theme: ${theme.pref}`} class="btn btn-icon" onclick={cycleTheme} aria-label="Toggle theme">
             <Icon path={themeIconPath} label="Toggle theme" />
-          </button>
+          </Tooltip>
           {#if me}
             <Popover.Root bind:open={userOpen}>
               <Popover.Trigger class="btn btn-icon user-button" title={me.user.displayName}>
@@ -346,3 +348,4 @@
     </Dialog.Root>
   </div>
 {/if}
+</BitsTooltip.Provider>

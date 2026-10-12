@@ -29,6 +29,24 @@ for (const theme of ['light', 'dark'] as const) {
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     });
 
+    test('searchable time zones', async ({ page }) => {
+      await page.goto('/#/settings');
+      await page.getByRole('combobox', { name: 'Time zone', exact: true }).fill('America');
+      await expect(page.getByRole('listbox', { name: 'Time zones' })).toBeVisible();
+      expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    });
+
+    test('destructive confirmation', async ({ page }) => {
+      await g.mockApi(page, [
+        [/\/reviews\/rev-1$/, { ...g.reviewDetail, review: { ...g.reviewDetail.review, status: 'running' } }],
+        ...g.defaultApi(),
+      ]);
+      await page.goto(`/#/a/${g.SLUG}/reviews/rev-1`);
+      await page.getByRole('button', { name: 'Cancel review', exact: true }).click();
+      await expect(page.getByRole('alertdialog')).toBeVisible();
+      expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    });
+
     test('command dialog', async ({ page }) => {
       await page.goto(`/#/a/${g.SLUG}/pulls`);
       await expect(page.getByRole('heading', { name: 'Pull requests', exact: true })).toBeVisible();

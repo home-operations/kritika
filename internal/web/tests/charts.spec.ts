@@ -32,6 +32,11 @@ for (const width of [1280, 390]) {
     await expect(panel.locator('[aria-live="polite"]')).toContainText('Sep 1');
     await chart.press('End');
     await expect(panel.locator('[aria-live="polite"]')).toContainText('Sep 3');
+    await expect.poll(async () => {
+      const tip = (await panel.locator('.chart-tip').boundingBox())!;
+      const bounds = (await chart.boundingBox())!;
+      return tip.x >= bounds.x - 1 && tip.x + tip.width <= bounds.x + bounds.width + 1;
+    }).toBe(true);
     await chart.press('Escape');
     await expect(panel.locator('.chart-tip')).toHaveCount(0);
     await panel.getByRole('radio', { name: 'Table', exact: true }).click();

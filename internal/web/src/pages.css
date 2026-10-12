@@ -831,7 +831,8 @@ table.data th.wrap {
   display: flex;
 }
 .search-box input,
-.select select {
+.select select,
+.zone-picker input {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1057,9 +1058,6 @@ table.data th.wrap {
 }
 .account-wants a {
   text-decoration: none;
-}
-.prefs select {
-  max-width: 100%;
 }
 .prefs p {
   margin: 4px 0 0;
@@ -1574,22 +1572,16 @@ table.diff td.code {
   height: 10px;
   border-radius: 2px;
 }
+.chart-tooltip { z-index: var(--z-tip); }
 .chart-tip {
-  position: absolute;
-  top: 8px;
-  z-index: var(--z-tip);
   min-width: 120px;
   padding: 8px 10px;
-  transform: translateX(12px);
   pointer-events: none;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 12%, transparent);
   font-size: var(--type-sm);
-}
-.chart-tip.flip {
-  transform: translateX(calc(-100% - 12px));
 }
 .chart-tip-head {
   margin: 0 0 4px;
@@ -1758,3 +1750,27 @@ table.diff td.code {
 .settings-filter {
   max-width: 200px;
 }
+
+.hint {
+  z-index: calc(var(--z-modal) + 1);
+  max-width: min(300px, calc(100vw - 16px));
+  padding: 6px 10px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 12%, transparent);
+  font-size: var(--type-sm);
+}
+.stat-help {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.zone-picker { width: min(100%, 320px); }
+.zone-options { max-height: 240px; overflow-y: auto; }
+.zone-empty { margin: 6px 12px; }

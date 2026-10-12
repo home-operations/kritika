@@ -8,6 +8,7 @@
   import { clock, stamp } from '../time.svelte';
   import { zoneKnown } from '../dates';
   import Segmented from '../components/Segmented.svelte';
+  import TimeZonePicker from '../components/TimeZonePicker.svelte';
   import Spinner from '../Spinner.svelte';
 
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -44,12 +45,7 @@
         <dl class="deflist prefs">
           <dt><label for="pref-zone">Time zone</label></dt>
           <dd>
-            <span class="select">
-              <select id="pref-zone" value={settings.timeZone} onchange={(e) => saveSettings({ timeZone: e.currentTarget.value })}>
-                <option value="">Auto</option>
-                {#each zones as z (z)}<option value={z}>{z}</option>{/each}
-              </select>
-            </span>
+            <TimeZonePicker value={settings.timeZone} {zones} onchange={(timeZone) => saveSettings({ timeZone })} />
             {#if settings.timeZone && !zoneKnown(settings.timeZone)}
               <span class="small muted">This browser does not know {settings.timeZone}, and uses its own.</span>
             {/if}
