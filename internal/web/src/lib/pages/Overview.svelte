@@ -22,7 +22,19 @@
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.kind !== 'model_call', () => void res.load()));
+  let attentionVersions = $state<Record<string, number>>({});
+  $effect(() => {
+    const changed = new Set<string>();
+    return live((e) => {
+      if (e.kind === 'review' || e.kind === 'followup') changed.add(e.account);
+      return e.kind !== 'model_call';
+    }, (dirty) => {
+      void res.load();
+      const accounts = dirty.has('resync') ? res.data?.map((a) => a.slug) ?? [] : [...changed];
+      for (const slug of accounts) attentionVersions[slug] = (attentionVersions[slug] ?? 0) + 1;
+      changed.clear();
+    });
+  });
 
   // The queue is its own fetch: the page stands without it, and only the
   // one tile waits on it.
@@ -75,7 +87,7 @@
             <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
             {#each list as account (account.slug)}
               {#each WANTS.filter((w) => account.attention[w.key] > 0) as w (w.key)}
-                <AttentionPulls slug={account.slug} want={w} count={account.attention[w.key]} />
+                <AttentionPulls version={attentionVersions[account.slug] ?? 0} slug={account.slug} want={w} count={account.attention[w.key]} />
               {/each}
               {#each nearCaps(account.usage) as cap (cap)}
                 <a class="attention-item" href={href({ name: 'usage', slug: account.slug })}>

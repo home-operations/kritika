@@ -483,3 +483,65 @@ test('sign-out errors use the existing actionable hint without duplicate punctua
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.locator('.toast span')).toHaveText('Sign out failed: The request was refused as not coming from this page; reload and try again.');
 });
+
+test('hidden review tabs defer live refetches until they become visible', async ({ page }) => {
+  let transcriptCalls = 0;
+  let rawCalls = 0;
+  let reviewCalls = 0;
+  await page.route('**/reviews/rev-1', (route) => { reviewCalls++; return json(route, { ...g.reviewDetail, review: { ...g.reviewDetail.review, status: 'running' } }); });
+  await page.route('**/reviews/rev-1/transcript', (route) => { transcriptCalls++; return json(route, g.transcript); });
+  await page.route('**/reviews/rev-1/raw', (route) => { rawCalls++; return json(route, g.reviewRaw); });
+  await page.goto(`${account}/reviews/rev-1/conversation`);
+  await expect(page.locator('.conversation-top')).toBeVisible();
+  await page.getByRole('link', { name: 'Raw', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Submitted result' })).toBeVisible();
+  await page.getByRole('link', { name: /^Summary/ }).click();
+  await emit(page, 'model_call');
+  await expect.poll(() => reviewCalls).toBe(2);
+  expect(transcriptCalls).toBe(1);
+  expect(rawCalls).toBe(1);
+  await page.getByRole('link', { name: 'Conversation', exact: true }).click();
+  await expect.poll(() => transcriptCalls).toBe(2);
+  expect(rawCalls).toBe(1);
+  await page.getByRole('link', { name: 'Raw', exact: true }).click();
+  await expect.poll(() => rawCalls).toBe(2);
+});
+
+test('reconnect status stays inside the mobile header without obscuring content', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${account}/pulls`);
+  await expect(page.locator('.page-head h1')).toBeVisible();
+  await page.evaluate(() => {
+    window.EventSource = class extends EventTarget { close() {} } as unknown as typeof EventSource;
+    window.dispatchEvent(new CustomEvent('test-live-event', { detail: { kind: 'error', data: {} } }));
+  });
+  await expect(page.locator('.live-down')).toBeVisible();
+  const header = (await page.locator('.topbar').boundingBox())!;
+  const notice = (await page.locator('.live-down').boundingBox())!;
+  const main = (await page.locator('main').boundingBox())!;
+  expect(notice.y + notice.height).toBeLessThanOrEqual(header.y + header.height);
+  expect(notice.y + notice.height).toBeLessThanOrEqual(main.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+});
+
+test('attention previews defer offscreen accounts and refresh them when shown', async ({ page }) => {
+  const accounts = Array.from({ length: 25 }, (_, i) => ({ ...g.accountSummary, slug: `github/account-${i}`, attention: { failed: 1, capped: 1, p0: 1, paused: 1 } }));
+  const calls: string[] = [];
+  await page.route('**/api/v1/accounts', (route) => json(route, accounts));
+  await page.route('**/pulls?*', (route) => { calls.push(route.request().url()); return json(route, g.pageOf([g.pull])); });
+  await page.goto('/');
+  await expect(page.locator('.attention-group')).toHaveCount(100);
+  await expect(page.locator('.attention-pull').first()).toBeVisible();
+  expect(calls.length).toBeLessThan(12);
+  const last = page.locator('.attention-group').last();
+  await last.scrollIntoViewIfNeeded();
+  await expect(last.locator('.attention-pull')).toBeVisible();
+  const firstCount = () => calls.filter((url) => url.includes('/account-0/')).length;
+  const before = firstCount();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('test-live-event', { detail: { kind: 'review', data: { kind: 'review', account: 'github/account-0', reviewId: 'rev-1' } } })));
+  // Wait for the same event's account refresh, without bringing its previews onscreen.
+  await page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/accounts');
+  expect(firstCount()).toBe(before);
+  await page.locator('.attention-group').first().scrollIntoViewIfNeeded();
+  await expect.poll(firstCount).toBeGreaterThan(before);
+});

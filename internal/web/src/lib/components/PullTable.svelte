@@ -33,19 +33,25 @@
   }
 </script>
 
+{#if onpick}
+  <label class="pull-select-all">
+    <input
+      type="checkbox"
+      aria-label="Select every pull request shown"
+      checked={open.length > 0 && open.every((p) => picked.includes(pullKey(p)))}
+      disabled={open.length === 0}
+      onchange={(e) => onpick(open.map(pullKey), e.currentTarget.checked)}
+    />
+    Select every pull request shown
+  </label>
+{/if}
 <div class="table-wrap table-card">
   <table class="data pull-table">
     <thead>
       <tr>
         {#if onpick}
           <th scope="col" class="pick">
-            <input
-              type="checkbox"
-              aria-label="Select every pull request shown"
-              checked={open.length > 0 && open.every((p) => picked.includes(pullKey(p)))}
-              disabled={open.length === 0}
-              onchange={(e) => onpick(open.map(pullKey), e.currentTarget.checked)}
-            />
+            <span class="sr-only">Selection</span>
           </th>
         {/if}
         <th scope="col">Pull request</th>

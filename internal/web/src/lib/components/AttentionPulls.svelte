@@ -2,24 +2,35 @@
   import { getJSON } from '../api.svelte';
   import { accountApi, pullRoute } from '../links';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource } from '../resource.svelte';
   import type { WANTS } from '../attention';
   import type { Page, Pull } from '../types';
   import Pill from './Pill.svelte';
   import StateView from './StateView.svelte';
 
-  let { slug, want, count }: { slug: string; want: (typeof WANTS)[number]; count: number } = $props();
+  let { slug, want, count, version }: { slug: string; want: (typeof WANTS)[number]; count: number; version: number } = $props();
   const res = new Resource(() => {
     const params = new URLSearchParams({ state: 'open', limit: '3' });
     if (want.filter.outcome) params.set('outcome', want.filter.outcome);
     if (want.filter.is) params.set('is', want.filter.is);
     return getJSON<Page<Pull>>(`${accountApi(slug)}/pulls?${params}`);
   });
-  $effect(() => { void res.load(); });
-  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void res.load()));
+  let visible = $state(false);
+  let requestedVersion = -1;
+  $effect(() => {
+    if (visible && requestedVersion !== version) {
+      requestedVersion = version;
+      void res.load();
+    }
+  });
+  function observe(node: HTMLElement): () => void {
+    const observer = new IntersectionObserver(([entry]) => { visible = !!entry?.isIntersecting; }, { rootMargin: '160px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }
 </script>
 
-<div class="attention-group">
+<div class="attention-group" {@attach observe}>
   <div class="attention-group-head">
     <Pill tone={want.tone} label={want.label} />
     <span class="mono small muted">{slug}</span>

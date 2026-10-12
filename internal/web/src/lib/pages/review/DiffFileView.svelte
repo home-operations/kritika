@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
   import type { DiffFile } from '../../diff';
   import type { Finding } from '../../types';
   import Icon from '../../Icon.svelte';
@@ -13,14 +12,10 @@
     file,
     findings,
     pullUrl,
-    initiallyOpen = true,
-    reveal,
-  }: { file: DiffFile; findings: Finding[]; pullUrl: string; initiallyOpen?: boolean; reveal?: { path: string; serial: number } } = $props();
-  let open = $state(untrack(() => initiallyOpen));
-  const id = $props.id();
-  $effect(() => {
-    if (reveal?.path === file.path) open = true;
-  });
+    open = $bindable(false),
+    id,
+  }: { file: DiffFile; findings: Finding[]; pullUrl: string; open?: boolean; id: string } = $props();
+  const contentId = $props.id();
 
   // Findings keyed by the new-side line they point at; anything that points
   // outside the hunks shown is listed under the file header instead.
@@ -42,18 +37,18 @@
   const highlighted = $derived(tokens.value);
 </script>
 
-<section class="diff-file" id={`diff-file-${file.path}`} tabindex="-1">
+<section class="diff-file" {id}>
   <h3 class="diff-file-head">
-    <button aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
+    <button aria-expanded={open} aria-controls={open ? contentId : undefined} onclick={() => (open = !open)}>
       <Icon path={open ? mdiChevronDown : mdiChevronRight} size={14} />
       <span class="mono diff-path">{file.oldPath && file.oldPath !== file.newPath && file.newPath ? `${file.oldPath} → ${file.newPath}` : file.path}</span>
       <span class="small"><span class="add">+{file.added}</span> <span class="del">−{file.removed}</span></span>
-      {#if !open && !initiallyOpen}<span class="small muted">{file.lines.length} lines, collapsed</span>{/if}
+      {#if !open}<span class="small muted">{file.lines.length} lines, collapsed</span>{/if}
       {#if findings.length}<span class="badge">{findings.length} finding{findings.length === 1 ? '' : 's'}</span>{/if}
     </button>
   </h3>
   {#if open}
-    <div {id}>
+    <div id={contentId}>
       {#each orphans as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} id={`diff-finding-${f.id}`} /></div>{/each}
       {#if file.lines.length === 0}
         <p class="small muted diff-empty">{file.header.slice(1).join(' · ') || 'No textual changes.'}</p>

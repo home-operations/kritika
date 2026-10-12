@@ -19,7 +19,6 @@
   import Usage from './Usage.svelte';
   import Followups from './Followups.svelte';
   import Admin from './admin/Admin.svelte';
-  import { tick } from 'svelte';
 
   let { route }: { route: Route } = $props();
 
@@ -29,14 +28,6 @@
     return JSON.stringify(r);
   }
   const key = $derived(keyOf(route));
-  $effect(() => {
-    void key;
-    void tick().then(() => {
-      const main = document.querySelector('main');
-      main?.setAttribute('tabindex', '-1');
-      main?.setAttribute('id', 'main-content');
-    });
-  });
 </script>
 
 <!-- data-route exposes the parsed route to the router tests. -->

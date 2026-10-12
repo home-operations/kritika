@@ -6,11 +6,11 @@
   import StateView from '../../components/StateView.svelte';
   import Conversation from '../../components/conversation/Conversation.svelte';
 
-  let { base, version, slug }: { base: string; version: number; slug: string } = $props();
+  let { active, base, version, slug }: { active: boolean; base: string; version: number; slug: string } = $props();
   const res = new Resource(() => getJSON<Transcript>(`${base}/transcript`));
   $effect(() => {
     void version;
-    void res.load();
+    if (active) void res.load();
   });
 </script>
 

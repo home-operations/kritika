@@ -29,7 +29,7 @@
   } from './lib/icons';
   import { INSTANCE_TABS, SECTIONS, SECTION_ORDER, SUB_TABS, pageIn, pageOfInstance, scopeOf, sectionOf, type Section } from './lib/sections';
   import type { Route } from './lib/routes';
-  import { revealInNav } from './lib/focus';
+  import { focusWhenShown, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
@@ -149,18 +149,18 @@
   {:else if me && currentSlug}
     <nav class="sections" aria-label="Sections">
       {#each SECTION_ORDER as s (s)}
-        {#if s === 'pulls' || s === 'analytics'}<p class="workspace-heading">{s === 'pulls' ? 'Workspace' : 'Insights'}</p>{/if}
+        {#if s === 'pulls' || s === 'analytics' || s === 'rules'}<p class="workspace-heading">{s === 'pulls' ? 'Workspace' : s === 'analytics' ? 'Insights' : 'Configuration'}</p>{/if}
         <a
           class="section-tab"
           class:active={currentSection === s}
-          aria-current={currentSection === s ? 'page' : undefined}
+          aria-current={router.route.name === SECTIONS[s].home(currentSlug).name ? 'page' : undefined}
           href={href(SECTIONS[s].home(currentSlug))}
           {@attach currentSection === s && revealInNav}
         >
           <Icon path={sectionIcon[s]} size={15} />
           <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
         </a>
-        {#each (SUB_TABS[s] ?? []).filter((t) => t.name !== SECTIONS[s].home(currentSlug).name || s === 'analytics') as t (t.name)}
+        {#each (SUB_TABS[s] ?? []).filter((t) => t.name !== SECTIONS[s].home(currentSlug).name) as t (t.name)}
           <a class="workspace-sub-link" class:active={router.route.name === t.name} aria-current={router.route.name === t.name ? 'page' : undefined} href={href(t.route(currentSlug))}>{t.label}</a>
         {/each}
       {/each}
@@ -173,7 +173,7 @@
   <SignIn />
 {:else}
   <div class="app">
-    <a class="skip-link" href="#main-content" onclick={(e) => { e.preventDefault(); document.querySelector<HTMLElement>('main')?.focus(); }}>Skip to content</a>
+    <a class="skip-link" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
     <header class="topbar">
       <div class="topbar-row">
         <a class="brand" href="#/">
@@ -216,18 +216,8 @@
           </Popover.Root>
         {/if}
 
+        <div class="desktop-navigation">{@render workspaceNav()}</div>
         <div class="actions">
-          {#if me}
-            <span
-              class="live"
-              class:live-down={stream.down}
-              aria-live="polite"
-              title={stream.down ? `Live updates stopped at ${stamp(stream.since)}; this page may be out of date.` : 'Live updates on'}
-            >
-              <span class="live-dot" aria-hidden="true"></span>
-              {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
-            </span>
-          {/if}
           <button class="btn btn-icon" onclick={togglePalette} title="Go to (Ctrl/⌘ K)">
             <Icon path={mdiMagnify} label="Go to" /><span class="search-label">Go to…</span><kbd class="search-label">⌘ K</kbd>
           </button>
@@ -261,7 +251,6 @@
         </div>
       </div>
 
-      <div class="desktop-navigation">{@render workspaceNav()}</div>
       {#if me}
         <div class="mobile-navigation">
           <Dialog.Root bind:open={navOpen}>
@@ -283,6 +272,17 @@
             </Dialog.Portal>
           </Dialog.Root>
         </div>
+      {/if}
+      {#if me}
+        <span
+          class="live"
+          class:live-down={stream.down}
+          aria-live="polite"
+          title={stream.down ? `Live updates stopped at ${stamp(stream.since)}; this page may be out of date.` : 'Live updates on'}
+        >
+          <span class="live-dot" aria-hidden="true"></span>
+          {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
+        </span>
       {/if}
     </header>
 

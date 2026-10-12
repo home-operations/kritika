@@ -13,6 +13,7 @@
   import StateView from '../../components/StateView.svelte';
   import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
   import Markdown from '../../components/Markdown.svelte';
+  import ReviewImpact from './ReviewImpact.svelte';
   import ReviewMeta from '../../components/ReviewMeta.svelte';
   import Time from '../../components/Time.svelte';
   import NoMoreReviews from '../../components/NoMoreReviews.svelte';
@@ -26,6 +27,9 @@
   let { slug, id, tab = 'summary', finding }: { slug: string; id: string; tab?: ReviewTab; finding?: string } = $props();
 
   let page: HTMLElement;
+  let selectedFinding = $state('');
+  // Inspect links refocus a finding; returning to its tab preserves scroll.
+  let inspection = $state(0);
   let visited = $state<ReviewTab[]>([]);
   let shown: ReviewTab | undefined;
   const positions = new Map<ReviewTab, number>();
@@ -140,7 +144,7 @@
           <section class="review-conclusion" aria-label="Review summary">
             <h2>{d.summary.headline || 'Review summary'}</h2>
             <Markdown text={d.summary.take} />
-            {#if d.summary.impact?.length}<div class="merge-impact"><strong>Merge impact</strong><Markdown text={d.summary.impact.join('\n\n')} /></div>{/if}
+            {#if d.summary.impact?.length}<div class="merge-impact"><strong>Merge impact</strong><ReviewImpact notes={d.summary.impact} /></div>{/if}
           </section>
         {/if}
 
@@ -148,7 +152,7 @@
         <nav class="tabs" aria-label="Review sections">
           {#each REVIEW_TABS as t (t)}
             {#if t === RUN_TABS[0]}<span class="tabs-group-label">Run</span>{/if}
-            <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t })} {@attach t === tab && revealInNav}>
+            <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t, finding: t === 'diff' ? selectedFinding || undefined : undefined })} {@attach t === tab && revealInNav}>
               <span class="tab-label" data-label={labels[t]}>{labels[t]}</span>{#if t === 'summary' && d.findings.length}<span class="tab-count">{d.findings.length}</span>{/if}
             </a>
           {/each}
@@ -158,15 +162,15 @@
           {#each visited as view (view)}
             <div class="review-tab" hidden={view !== tab}>
               {#if view === 'summary'}
-                <SummaryTab {slug} {d} finding={tab === view ? finding : undefined} />
+                <SummaryTab {slug} {d} oninspect={() => inspection++} finding={tab === view ? finding : undefined} />
               {:else if view === 'diff'}
-                <DiffTab {base} {d} {version} {finding} active={tab === view} />
+                <DiffTab {base} {d} {version} {finding} {inspection} bind:selected={selectedFinding} active={tab === view} />
               {:else if view === 'conversation'}
-                <ConversationTab {base} {version} {slug} />
+                <ConversationTab active={tab === view} {base} {version} {slug} />
               {:else if view === 'timeline'}
                 <TimelineTab {slug} {d} />
               {:else if view === 'raw'}
-                <RawTab {base} {d} {version} />
+                <RawTab active={tab === view} {base} {d} {version} />
               {:else}
                 <UsageTab {d} />
               {/if}

@@ -158,6 +158,8 @@ for (const swept of [false, true]) {
     await expect(page.locator(".review-tab > .state-msg")).toContainText(
       swept ? "retention window" : "No diff recorded",
     );
+    await expect(page.getByText("No files match these filters.")).toHaveCount(0);
+    await expect(page.getByRole("searchbox", { name: "Search files" })).toHaveCount(0);
     await page.getByRole("button", { name: /p2 Include/ }).click();
     await expect(page.locator("#diff-finding-logging")).toBeFocused();
   });
@@ -193,6 +195,10 @@ for (const width of [390, 768, 1536]) {
 test("skip link focuses the page content", async ({ page }) => {
   await mockWorkspace(page);
   await page.goto("/");
+  await page.locator(".page-head h1").click();
+  await expect(page.locator("main")).not.toBeFocused();
+  await expect(page.locator("main")).not.toHaveAttribute("tabindex");
+  await page.reload();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -398,4 +404,113 @@ test("summary links can revisit a finding after selecting a different one", asyn
   await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await expect(page).toHaveURL(/finding=shutdown$/);
+});
+
+const typeChangeDiff = `diff --git a/internal/worker/worker.go b/internal/worker/worker.go
+deleted file mode 100644
+--- a/internal/worker/worker.go
++++ /dev/null
+@@ -1 +0,0 @@
+-old content
+diff --git a/internal/worker/worker.go b/internal/worker/worker.go
+new file mode 120000
+--- /dev/null
++++ b/internal/worker/worker.go
+@@ -0,0 +1 @@
++target.go
+`;
+
+test("type-change diff entries have unique targets and anchor each finding once", async ({ page }) => {
+  await mockWorkspace(page);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.route("**/reviews/rev-1", (route) => route.fulfill({ json: { ...review, findings: [{ ...review.findings[0]!, line: 1, endLine: 1 }] } }));
+  await page.route("**/reviews/rev-1/diff", (route) => route.fulfill({ json: { diff: typeChangeDiff } }));
+  await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
+  await expect(page.locator(".file-jump")).toHaveCount(2);
+  expect(errors).toEqual([]);
+  await expect(page.locator("#diff-finding-shutdown")).toHaveCount(1);
+  const ids = await page.locator(".diff-file").evaluateAll((els) => els.map((el) => el.id));
+  expect(new Set(ids).size).toBe(2);
+  await page.getByRole("button", { name: "Next finding" }).click();
+  await expect(page.locator(".diff-file").last().locator("#diff-finding-shutdown")).toBeFocused();
+  for (let i = 0; i < 2; i++) {
+    await page.locator(".file-jump").nth(i).click();
+    await expect(page.locator(".diff-file").nth(i)).toBeFocused();
+  }
+});
+
+test("explicit summary links refocus the already-selected finding after scrolling away", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.setViewportSize({ width: 1280, height: 650 });
+  await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff?finding=shutdown`);
+  await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
+  await page.locator("main").evaluate((el) => { el.scrollTop = 0; });
+  await page.getByRole("link", { name: /^Summary/ }).click();
+  await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
+  await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
+  await page.getByRole("link", { name: /^Summary/ }).click();
+  await page.getByRole("link", { name: "Findings & code", exact: true }).click();
+  await expect(page).toHaveURL(/finding=shutdown$/);
+});
+
+test("code selection does not draw a file focus ring, keyboard file navigation does", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
+  const file = page.locator(".diff-file").first();
+  await file.locator(".code").first().click();
+  expect(await file.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
+  await expect(page.locator("main")).not.toBeFocused();
+  await page.locator(".file-jump").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(file).toBeFocused();
+  expect(await file.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
+});
+
+for (const width of [390, 768, 1536]) {
+  test(`admin select-all remains usable at ${width}px`, async ({ page }) => {
+    await mockWorkspace(page);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/#/a/${g.SLUG}/pulls`);
+    const all = page.getByRole("checkbox", { name: "Select every pull request shown" });
+    await all.check();
+    await expect(page.getByRole("group", { name: "Selected pull requests" })).toContainText("3 selected");
+    await all.uncheck();
+    await expect(page.getByRole("group", { name: "Selected pull requests" })).toHaveCount(0);
+  });
+}
+
+test("sidebar tab order and current-page markers match visible navigation", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto(`/#/a/${g.SLUG}`);
+  const nav = page.locator(".desktop-navigation nav.sections");
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+  await expect(nav.getByRole("link", { name: "Reviews", exact: true })).toHaveCount(0);
+  await page.locator(".account-button").focus();
+  await page.keyboard.press("Tab");
+  await expect(nav.getByRole("link", { name: "Pull requests", exact: true })).toBeFocused();
+  await nav.getByRole("link", { name: "Findings", exact: true }).click();
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+  await expect(nav.locator('[aria-current="page"]')).toHaveText("Findings");
+  await expect(nav).toContainText("Configuration");
+});
+
+test("summary and code use the same list formatting for multiline merge impact", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.route("**/reviews/rev-1", (route) => route.fulfill({ json: { ...review, summary: { ...review.summary, impact: ["First concern\ncontinued here", "Second concern"] } } }));
+  await page.goto(`/#/a/${g.SLUG}/reviews/rev-1`);
+  const summary = await page.locator('[aria-labelledby="sum-impact"] .md').innerHTML();
+  await page.getByRole("link", { name: "Findings & code", exact: true }).click();
+  await expect(page.locator(".merge-impact .md")).toHaveJSProperty("innerHTML", summary);
+});
+
+test("file-only navigation does not reopen stale targets after changing diff scope", async ({ page }) => {
+  await mockWorkspace(page);
+  const diff = `diff --git a/large.go b/large.go\n--- a/large.go\n+++ b/large.go\n@@ -1,600 +1,600 @@\n${" unchanged\n".repeat(600)}`;
+  await page.route("**/reviews/rev-1/diff", (route) => route.fulfill({ json: { diff, deltaDiff: diff } }));
+  await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
+  await page.getByRole("button", { name: "Open large.go", exact: true }).click();
+  await expect(page.locator("table.diff")).toHaveCount(1);
+  await page.getByRole("button", { name: "Since last review", exact: true }).click();
+  await expect(page.locator("table.diff")).toHaveCount(0);
 });
