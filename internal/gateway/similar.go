@@ -195,6 +195,7 @@ func (g *Server) similar(
 // similar first and at most similarMax of them, each labelled with its
 // similarity.
 func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
+	slices.SortStableFunc(hits, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
 	seen := map[string]bool{}
 	kept := make([]store.SimilarHit, 0, len(hits))
 	for _, h := range hits {
@@ -206,7 +207,6 @@ func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
 		h.Chunk.Ref = fmt.Sprintf("similarity %.2f", h.Similarity)
 		kept = append(kept, h)
 	}
-	slices.SortStableFunc(kept, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
 	kept = kept[:min(len(kept), similarMax)]
 	chunks := make([]contextpack.Chunk, 0, len(kept))
 	for _, h := range kept {

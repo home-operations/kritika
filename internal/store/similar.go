@@ -40,6 +40,9 @@ type SimilarHit struct {
 func SimilarChunks(
 	ctx context.Context, tx pgx.Tx, runID string, vectors [][]float32, exclude []string, perQuery int,
 ) ([]SimilarHit, error) {
+	if exclude == nil {
+		exclude = []string{}
+	}
 	if _, err := tx.Exec(ctx, `SET LOCAL vchordrq.prefilter = on`); err != nil {
 		return nil, fmt.Errorf("store: enable prefilter: %w", err)
 	}

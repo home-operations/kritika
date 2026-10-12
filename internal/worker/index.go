@@ -3,9 +3,11 @@ package worker
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,18 +106,6 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	logger = logger.With("commit", review.ShortSHA(commit))
 
-	active, err := w.activeGeneration(ctx, args.AccountID, repo.ActiveRun)
-	if err != nil {
-		return err
-	}
-	mode, base := store.IndexModeFull, ""
-	if !args.Full && active != nil && active.Model == emb.Model && active.Dims == emb.Dims {
-		if active.Commit == commit {
-			logger.Info("index already at this commit")
-			return nil
-		}
-		mode, base = store.IndexModeIncremental, active.Commit
-	}
 	// The repository's own .kritika.yaml, as of the commit indexed, can stop
 	// indexing and add ignore globs.
 	doc, _, err := readRepoConfig(ctx, client, owner, name, commit)
@@ -127,6 +117,19 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		logger.Info("index skipped, disabled in .kritika.yaml")
 		return nil
 	}
+	ignoreHash := indexIgnoreHash(eff.Ignore)
+	active, err := w.activeGeneration(ctx, args.AccountID, repo.ActiveRun)
+	if err != nil {
+		return err
+	}
+	mode, base := store.IndexModeFull, ""
+	if !args.Full && indexMatches(active, emb, ignoreHash) {
+		if active.Commit == commit {
+			logger.Info("index already at this commit")
+			return nil
+		}
+		mode, base = store.IndexModeIncremental, active.Commit
+	}
 	token, err := client.GitToken(ctx, name)
 	if err != nil {
 		return err
@@ -136,7 +139,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		var err error
 		runID, runnerRunID, err = store.StartIndexRun(ctx, tx, store.NewIndexRun{
 			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Commit: commit, Base: base, Mode: mode, Trigger: args.Trigger,
-			Embedding: *emb, StrayAfter: jobtimeout.RescueStuckJobsAfter, JobID: job.ID,
+			Embedding: *emb, IgnoreHash: ignoreHash, StrayAfter: jobtimeout.RescueStuckJobsAfter, JobID: job.ID,
 		})
 		return err
 	})
@@ -273,7 +276,6 @@ func (w *Index) embed(
 		return 0, pack.Mode, err
 	}
 	var total int
-	var tokens int64
 	err = w.withLease(ctx, account, "embed:"+embedModel, indexSlots(settings.Limits.Concurrency), jobID, func(ctx context.Context) error {
 		var last int64
 		for {
@@ -291,12 +293,22 @@ func (w *Index) embed(
 				texts[i] = embedText(c)
 			}
 			vectors, used, err := embedder.Embed(ctx, texts)
+			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
+			if used > 0 {
+				// Provider usage survives cancellation and failures to store its vectors.
+				dctx, cancel := detach(ctx)
+				uerr := w.Store.WithAccount(dctx, args.AccountID, func(tx pgx.Tx) error {
+					return store.InsertUsage(dctx, tx, store.Usage{
+						AccountID: args.AccountID, RepositoryID: args.RepositoryID, RunnerRunID: runnerRunID,
+						Role: store.RoleEmbedding, Model: embedModel, Input: used,
+					})
+				})
+				cancel()
+				err = errors.Join(err, uerr)
+			}
 			if err != nil {
-				w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "error", 0, 0, 0, 0, false)
 				return err
 			}
-			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, "ok", used, 0, 0, 0, false)
-			tokens += used
 			err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
 				return store.InsertIndexChunks(ctx, tx, args.AccountID, args.RepositoryID, runID, batch, vectors)
 			})
@@ -306,14 +318,6 @@ func (w *Index) embed(
 			total += len(batch)
 			last = batch[len(batch)-1].ID
 		}
-	})
-	if err != nil {
-		return total, pack.Mode, err
-	}
-	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		return store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: args.AccountID, RepositoryID: args.RepositoryID, Role: store.RoleEmbedding, Model: embedModel, Input: tokens,
-		})
 	})
 	if err != nil {
 		return total, pack.Mode, err
@@ -347,6 +351,19 @@ func (w *Index) embed(
 		return nil
 	})
 	return total, pack.Mode, err
+}
+
+func indexMatches(g *store.Generation, emb *configfile.Embedding, ignoreHash string) bool {
+	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.IgnoreHash == ignoreHash
+}
+
+// indexIgnoreHash treats ignore rules as a set; order and duplicates do not
+// change which files the index covers. An empty stored hash requires a rebuild.
+func indexIgnoreHash(ignore []string) string {
+	patterns := slices.Clone(ignore)
+	slices.Sort(patterns)
+	patterns = slices.Compact(patterns)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%q", patterns))))
 }
 
 // embedText is what the embedder sees: the path and symbol give the

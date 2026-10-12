@@ -83,11 +83,15 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 		if err != nil {
 			return nil, tokens, fmt.Errorf("model: embed batch %d..%d: %w", start, end, openAIError(err))
 		}
+		tokens += resp.Usage.PromptTokens
 		if len(resp.Data) != len(batch) {
 			return nil, tokens, fmt.Errorf("model: embed returned %d vectors for %d inputs", len(resp.Data), len(batch))
 		}
-		tokens += resp.Usage.PromptTokens
+		vectors := make([][]float32, len(batch))
 		for _, d := range resp.Data {
+			if d.Index < 0 || d.Index >= int64(len(batch)) || vectors[d.Index] != nil {
+				return nil, tokens, fmt.Errorf("model: embed returned invalid or duplicate index %d", d.Index)
+			}
 			v := make([]float32, len(d.Embedding))
 			for i, f := range d.Embedding {
 				v[i] = float32(f)
@@ -95,8 +99,9 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 			if e.dims > 0 && int64(len(v)) != e.dims {
 				return nil, tokens, fmt.Errorf("model: %s returned %d dimensions, configured %d", e.model, len(v), e.dims)
 			}
-			out = append(out, v)
+			vectors[d.Index] = v
 		}
+		out = append(out, vectors...)
 		start = end
 	}
 	return out, tokens, nil

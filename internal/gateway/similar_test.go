@@ -45,3 +45,19 @@ func TestKeepSimilar(t *testing.T) {
 		t.Fatalf("kept %d chunks, want at most %d", len(got), similarMax)
 	}
 }
+
+func TestKeepSimilarBestScore(t *testing.T) {
+	hits := make([]store.SimilarHit, 0, 3+similarMax)
+	hits = append(hits, []store.SimilarHit{
+		{Chunk: contextpack.Chunk{Path: "best.go", StartLine: 1}, Similarity: 0.55},
+		{Chunk: contextpack.Chunk{Path: "other.go", StartLine: 1}, Similarity: 0.80},
+		{Chunk: contextpack.Chunk{Path: "best.go", StartLine: 1}, Similarity: 0.99},
+	}...)
+	for i := range similarMax {
+		hits = append(hits, store.SimilarHit{Chunk: contextpack.Chunk{Path: fmt.Sprintf("candidate%d.go", i), StartLine: 1}, Similarity: 0.70})
+	}
+	got := keepSimilar(hits, 0.5)
+	if len(got) != similarMax || got[0].Path != "best.go" || got[0].Ref != "similarity 0.99" {
+		t.Fatalf("best match should rank first at 0.99; got %+v", got)
+	}
+}

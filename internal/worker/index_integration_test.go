@@ -240,8 +240,8 @@ func checkUpdateOverRebuild(
 			if err := tx.QueryRow(ctx, `SELECT id::text FROM index_runs WHERE repository_id = $1 AND status = 'running' ORDER BY created_at DESC LIMIT 1`, repository).Scan(&displaced); err != nil {
 				return err
 			}
-			if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-    VALUES ($1, $2, $3, $4, $5, 'full', 'running') RETURNING id`, account, repository, active.Commit, active.Model, active.Dims).Scan(&rebuilt); err != nil {
+			if err := tx.QueryRow(ctx, `INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status, ignore_hash)
+    VALUES ($1, $2, $3, $4, $5, 'full', 'running', $6) RETURNING id`, account, repository, active.Commit, active.Model, active.Dims, active.IgnoreHash).Scan(&rebuilt); err != nil {
 				return err
 			}
 			// The rebuild covers the whole tree, as a full build would; only
@@ -322,11 +322,11 @@ func checkIndexAt(
 			t.Fatalf("staging=%d unused=%d", staging, unused)
 		}
 		var usage int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM usage WHERE role = 'embedding' AND repository_id = $1 AND created_at >= $2`, repository, since).Scan(&usage); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(DISTINCT runner_run_id) FROM usage WHERE role = 'embedding' AND repository_id = $1 AND created_at >= $2`, repository, since).Scan(&usage); err != nil {
 			return err
 		}
 		if usage != 2 {
-			t.Fatalf("embedding usage rows = %d, want both passes", usage)
+			t.Fatalf("embedding runs with usage = %d, want both passes", usage)
 		}
 		return nil
 	}); err != nil {
