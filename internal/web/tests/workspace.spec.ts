@@ -236,7 +236,7 @@ test("review tabs remember selection, scope, filters, expansion and scroll", asy
   await page.locator("main").evaluate((el) => { el.scrollTop = 300; });
   const scroll = await page.locator("main").evaluate((el) => el.scrollTop);
   // Activate without scrolling the tab into view first, as browser history does.
-  await page.getByRole("link", { name: /^Summary/ }).evaluate((el: HTMLAnchorElement) => el.click());
+  await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).evaluate((el: HTMLAnchorElement) => el.click());
   await expect(page.locator(".finding-nav")).toBeHidden();
   await page.keyboard.press("j");
   await page.goBack();
@@ -396,7 +396,7 @@ test("summary links can revisit a finding after selecting a different one", asyn
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.getByRole("button", { name: "Next finding" }).click();
   await expect(page).toHaveURL(/finding=logging$/);
-  await page.getByRole("link", { name: /^Summary/ }).click();
+  await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
   await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await expect(page).toHaveURL(/finding=shutdown$/);
@@ -442,10 +442,10 @@ test("explicit summary links refocus the already-selected finding after scrollin
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff?finding=shutdown`);
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.locator("main").evaluate((el) => { el.scrollTop = 0; });
-  await page.getByRole("link", { name: /^Summary/ }).click();
+  await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
   await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
-  await page.getByRole("link", { name: /^Summary/ }).click();
+  await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
   await page.getByRole("link", { name: "Findings & code", exact: true }).click();
   await expect(page).toHaveURL(/finding=shutdown$/);
 });

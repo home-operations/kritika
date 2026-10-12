@@ -22,7 +22,7 @@ func TestPoolCollector(t *testing.T) {
 		return pool
 	}
 	app, owner := newPool("7"), newPool("2")
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	reg.MustRegister(NewPoolCollector(map[string]func() *pgxpool.Stat{"app": app.Stat, "owner": owner.Stat}))
 	want := `# HELP kritika_db_pool_connections Connections the pool holds, by state: idle, acquired (in use), constructing.
 # TYPE kritika_db_pool_connections gauge
@@ -47,5 +47,8 @@ kritika_db_pool_empty_acquires_total{pool="owner"} 0
 	}
 	if n, err := testutil.GatherAndCount(reg); err != nil || n != 14 {
 		t.Fatalf("gathered %d series, %v; want 14", n, err)
+	}
+	if problems, err := testutil.GatherAndLint(reg); err != nil || len(problems) != 0 {
+		t.Fatalf("metric lint = %v, %v", problems, err)
 	}
 }

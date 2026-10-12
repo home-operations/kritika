@@ -16,10 +16,13 @@
     // save that remounted it, or a disabled button that dropped focus to
     // the body): a selector, by default the page title.
     fallback?: string;
+    // A moving selection can return to a different target than the opener.
+    returnFocus?: string;
     // wide makes room for a form.
     wide?: boolean;
+    side?: boolean;
   }
-  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1', wide = false }: Props = $props();
+  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1', returnFocus, wide = false, side = false }: Props = $props();
   let restore: HTMLElement | null = null;
 
   // The dialog opens from state, not a trigger of its own, so what to
@@ -30,8 +33,9 @@
 
   function closing(e: Event): void {
     e.preventDefault();
-    if (restore && restore !== document.body && restore.isConnected) {
-      restore.focus();
+    const target = returnFocus ? document.querySelector<HTMLElement>(returnFocus) : restore;
+    if (target && target !== document.body && target.isConnected) {
+      target.focus();
     } else {
       const el = document.querySelector<HTMLElement>(fallback) ?? document.querySelector<HTMLElement>('main h1');
       if (el) {
@@ -46,7 +50,7 @@
 <Dialog.Root bind:open onOpenChange={(now) => !now && onclose?.()}>
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
-    <Dialog.Content class={['modal modal-centered dialog', wide && 'dialog-wide']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
+    <Dialog.Content class={['modal modal-centered dialog', wide && 'dialog-wide', side && 'dialog-side']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
       <Dialog.Title>
         {#snippet child({ props })}<h2 {...props} class="dialog-title">{title}</h2>{/snippet}
       </Dialog.Title>

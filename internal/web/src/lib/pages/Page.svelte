@@ -12,7 +12,6 @@
   import Repos from './Repos.svelte';
   import Repo from './Repo.svelte';
   import Pulls from './Pulls.svelte';
-  import Pull from './Pull.svelte';
   import Review from './review/Review.svelte';
   import Queue from './Queue.svelte';
   import InstanceQueue from './InstanceQueue.svelte';
@@ -28,6 +27,7 @@
   const LIST_PAGES: readonly Route['name'][] = ['overview', 'account', 'analytics', 'instancePulls', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage'];
 
   function keyOf(r: Route): string {
+    if (r.name === 'pull') return JSON.stringify({ n: r.name, s: r.slug, owner: r.owner, repo: r.repo, number: r.number });
     if (r.name === 'review') return JSON.stringify({ n: r.name, s: r.slug, id: r.id });
     if (LIST_PAGES.includes(r.name)) return JSON.stringify({ n: r.name, s: 'slug' in r ? r.slug : undefined });
     return JSON.stringify(r);
@@ -59,7 +59,7 @@
   {:else if route.name === 'pulls'}
     <Pulls slug={route.slug} filter={route.filter} />
   {:else if route.name === 'pull'}
-    <Pull slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} />
+    <Review slug={route.slug} owner={route.owner} repo={route.repo} number={route.number} run={route.run} tab={route.tab} finding={route.finding} />
   {:else if route.name === 'review'}
     <Review slug={route.slug} id={route.id} tab={route.tab} finding={route.finding} />
   {:else if route.name === 'findings'}

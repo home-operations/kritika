@@ -83,6 +83,7 @@ type PullFilter struct {
 
 // The last review, lr, is the newest that was not skipped: a skipped one
 // said nothing, so what the one before it found still stands.
+// Shared by named and positional queries, so this fragment must stay parameter-free.
 const pullColumns = `p.id, p.repository_id, r.name, p.number, p.title, p.author, p.state, p.draft, p.fork, p.merged, p.paused,
 	p.head_sha, p.head_ref, p.base_ref, p.url, p.opened_at, p.updated_at, p.labels,
 	lr.id, lr.status, lr.scope, lr.created_at, lr.p0, lr.p1, lr.p2,
@@ -144,16 +145,19 @@ func ListPulls(ctx context.Context, tx pgx.Tx, f PullFilter, p Page) ([]PullRow,
 	}
 	like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Query) + "%"
 	rows, err := tx.Query(ctx, `SELECT `+pullColumns+`
-		WHERE ($1::uuid IS NULL OR p.repository_id = $1)
-			AND ($2 = 'all' OR p.state = $2)
-			AND ($3 = '' OR lr.status = $3)
-			AND ($4 = '' OR p.title ILIKE $5 OR p.author ILIKE $5 OR p.number = $6)
-			AND ($7 OR (p.updated_at, p.id) < ($8, $9::uuid))
-			AND ($11 = '' OR lower(p.author) = lower($11))
-			AND ($12 = '' OR CASE $12 WHEN 'paused' THEN p.paused ELSE coalesce(lr.p0, 0) > 0 END)
-		ORDER BY p.updated_at DESC, p.id DESC LIMIT $10`,
-		uuidParam(f.RepositoryID), string(f.State), string(f.Outcome), f.Query, like, number,
-		p.After.First(), p.After.T, p.afterID(), p.Limit+1, f.Author, string(f.Is))
+		WHERE (@repository_id::uuid IS NULL OR p.repository_id = @repository_id)
+			AND (@state = 'all' OR p.state = @state)
+			AND (@outcome = '' OR lr.status = @outcome)
+			AND (@query = '' OR p.title ILIKE @like OR p.author ILIKE @like OR p.number = @number)
+			AND (@first OR (p.updated_at, p.id) < (@after_time, @after_id::uuid))
+			AND (@author = '' OR lower(p.author) = lower(@author))
+			AND (@is = '' OR CASE @is WHEN 'paused' THEN p.paused ELSE coalesce(lr.p0, 0) > 0 END)
+		ORDER BY p.updated_at DESC, p.id DESC LIMIT @limit`, pgx.StrictNamedArgs{
+		"repository_id": uuidParam(f.RepositoryID), "state": string(f.State), "outcome": string(f.Outcome),
+		"query": f.Query, "like": like, "number": number,
+		"first": p.After.First(), "after_time": p.After.T, "after_id": p.afterID(), "limit": p.Limit + 1,
+		"author": f.Author, "is": string(f.Is),
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("store: list pull requests: %w", err)
 	}
