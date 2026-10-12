@@ -44,6 +44,7 @@ type rescueStore interface {
 	RevokeGatewayTokens(ctx context.Context, runID string) error
 	EndOrphanedRun(ctx context.Context, run store.OrphanedRun, reason string) error
 	SweepJobHeartbeats(ctx context.Context) (int64, error)
+	SweepIndexProgress(ctx context.Context, limit int) error
 }
 
 // Rescuer hands the jobs of a replica that died back to the queue, and
@@ -128,6 +129,9 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 		r.Logger.Warn("orphaned runner run reaped", "run", run.ID, "kind", run.Kind)
 	}
 	if _, err := r.Store.SweepJobHeartbeats(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := r.Store.SweepIndexProgress(ctx, rescueBatch); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
