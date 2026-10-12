@@ -7,7 +7,7 @@
   import { initEvents, closeEvents, stream } from './lib/events.svelte';
   import { theme, nextTheme, setTheme, initTheme } from './lib/theme.svelte';
   import { initClock, stamp } from './lib/time.svelte';
-  import { initKeyboard, help, closeOverlays, toggleHelp, togglePalette } from './lib/keyboard.svelte';
+  import { initKeyboard, help, palette, closeOverlays, toggleHelp, togglePalette } from './lib/keyboard.svelte';
   import {
     mdiThemeLightDark,
     mdiWeatherNight,
@@ -121,13 +121,53 @@
   // a click outside, and following a link in one closes it here.
   let scopeOpen = $state(false);
   let userOpen = $state(false);
+  let navOpen = $state(false);
+
+  $effect(() => {
+    if (help.open || palette.open) navOpen = false;
+  });
 
   $effect(() => {
     void router.route;
+    navOpen = false;
     scopeOpen = false;
     userOpen = false;
   });
 </script>
+
+{#snippet workspaceNav()}
+  {#if me && !currentSlug}
+    <nav class="sections" aria-label="Instance">
+      {#each instanceTabs as t (t.route.name)}
+        {@const on = router.route.name === t.route.name}
+        <a class="section-tab" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
+          <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
+          <span class="section-label" data-label={t.label}>{t.label}</span>
+        </a>
+      {/each}
+    </nav>
+  {:else if me && currentSlug}
+    <nav class="sections" aria-label="Sections">
+      {#each SECTION_ORDER as s (s)}
+        {#if s === 'pulls' || s === 'analytics'}<p class="workspace-heading">{s === 'pulls' ? 'Workspace' : 'Insights'}</p>{/if}
+        <a
+          class="section-tab"
+          class:active={currentSection === s}
+          aria-current={currentSection === s ? 'page' : undefined}
+          href={href(SECTIONS[s].home(currentSlug))}
+          {@attach currentSection === s && revealInNav}
+        >
+          <Icon path={sectionIcon[s]} size={15} />
+          <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
+        </a>
+        {#each (SUB_TABS[s] ?? []).filter((t) => t.name !== SECTIONS[s].home(currentSlug).name || s === 'analytics') as t (t.name)}
+          <a class="workspace-sub-link" class:active={router.route.name === t.name} aria-current={router.route.name === t.name ? 'page' : undefined} href={href(t.route(currentSlug))}>{t.label}</a>
+        {/each}
+      {/each}
+    </nav>
+  {/if}
+  {#if me && (currentSection === 'settings' || router.route.name === 'console')}<SettingsNav route={router.route} />{/if}
+{/snippet}
 
 {#if router.route.name === 'signin'}
   <SignIn />
@@ -221,37 +261,29 @@
         </div>
       </div>
 
-      {#if me && !currentSlug}
-        <nav class="sections" aria-label="Instance">
-          {#each instanceTabs as t (t.route.name)}
-            {@const on = router.route.name === t.route.name}
-            <a class="section-tab" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
-              <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
-              <span class="section-label" data-label={t.label}>{t.label}</span>
-            </a>
-          {/each}
-        </nav>
-      {:else if me && currentSlug}
-        <nav class="sections" aria-label="Sections">
-          {#each SECTION_ORDER as s (s)}
-            {#if s === 'pulls' || s === 'analytics'}<p class="workspace-heading">{s === 'pulls' ? 'Workspace' : 'Insights'}</p>{/if}
-            <a
-              class="section-tab"
-              class:active={currentSection === s}
-              aria-current={currentSection === s ? 'page' : undefined}
-              href={href(SECTIONS[s].home(currentSlug))}
-              {@attach currentSection === s && revealInNav}
-            >
-              <Icon path={sectionIcon[s]} size={15} />
-              <span class="section-label" data-label={SECTIONS[s].label}>{SECTIONS[s].label}</span>
-            </a>
-            {#each (SUB_TABS[s] ?? []).filter((t) => t.name !== SECTIONS[s].home(currentSlug).name || s === 'analytics') as t (t.name)}
-              <a class="workspace-sub-link" class:active={router.route.name === t.name} aria-current={router.route.name === t.name ? 'page' : undefined} href={href(t.route(currentSlug))}>{t.label}</a>
-            {/each}
-          {/each}
-        </nav>
+      <div class="desktop-navigation">{@render workspaceNav()}</div>
+      {#if me}
+        <div class="mobile-navigation">
+          <Dialog.Root bind:open={navOpen}>
+            <Dialog.Trigger class="btn mobile-nav-trigger" aria-label="Open navigation">
+              <Icon path={mdiViewGridOutline} size={16} />
+              Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : 'All accounts'}</span>
+              <Icon path={mdiChevronDown} size={14} />
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay class="overlay" />
+              <Dialog.Content class="modal mobile-nav-panel" onclick={(e) => { if ((e.target as Element).closest('a')) navOpen = false; }}>
+                <div class="mobile-nav-head">
+                  <Dialog.Title>Navigation</Dialog.Title>
+                  <Dialog.Close class="btn">Close</Dialog.Close>
+                </div>
+                <Dialog.Description class="small muted">{currentSlug || 'All accounts'}</Dialog.Description>
+                {@render workspaceNav()}
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </div>
       {/if}
-      {#if me && (currentSection === 'settings' || router.route.name === 'console')}<SettingsNav route={router.route} />{/if}
     </header>
 
     <div class="main-col">

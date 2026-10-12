@@ -14,6 +14,7 @@
   import { pullRoute } from '../links';
   import Time from '../components/Time.svelte';
   import RecentPulls from '../components/RecentPulls.svelte';
+  import AttentionPulls from '../components/AttentionPulls.svelte';
   import WebhookState from '../components/WebhookState.svelte';
 
   const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
@@ -74,11 +75,7 @@
             <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
             {#each list as account (account.slug)}
               {#each WANTS.filter((w) => account.attention[w.key] > 0) as w (w.key)}
-                <a class="attention-item" href={href({ name: 'pulls', slug: account.slug, filter: w.filter })}>
-                  <Pill tone={w.tone} label={w.label} />
-                  <span><strong>{wholeNumber(account.attention[w.key])} open pull {account.attention[w.key] === 1 ? 'request' : 'requests'} {w.why}</strong><span class="mono small muted">{account.slug}</span></span>
-                  <span class="attention-action">View pull requests →</span>
-                </a>
+                <AttentionPulls slug={account.slug} want={w} count={account.attention[w.key]} />
               {/each}
               {#each nearCaps(account.usage) as cap (cap)}
                 <a class="attention-item" href={href({ name: 'usage', slug: account.slug })}>
