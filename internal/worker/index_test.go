@@ -46,6 +46,7 @@ func TestIndexResumeIdentity(t *testing.T) {
 		{"same", indexResumeKey("head", store.IndexModeIncremental, "base", active, emb, "ignore"), true},
 		{"new base commit", indexResumeKey("head", store.IndexModeIncremental, "other", active, emb, "ignore"), false},
 		{"replacement base", indexResumeKey("head", store.IndexModeIncremental, "base", &store.Generation{ID: "other"}, emb, "ignore"), false},
+		{"batch limits", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxBatch: 1, MaxBatchChars: 100}, "ignore"), true},
 		{"input truncation", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxItemChars: 12}, "ignore"), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

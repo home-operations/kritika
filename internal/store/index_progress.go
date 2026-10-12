@@ -11,8 +11,8 @@ import (
 )
 
 // LockIndexJob fences database writes from cancelled or superseded attempts.
-// Lock it before the run or repository so publication and checkpoints agree
-// on lock order. River tables have no RLS, so account ownership is explicit.
+// Lock it before the run. Publication must lock the repository first to agree
+// with webhook ingestion. River tables have no RLS, so ownership is explicit.
 func LockIndexJob(ctx context.Context, tx pgx.Tx, accountID string, jobID int64, attempt int) error {
 	var owned bool
 	err := tx.QueryRow(ctx, `SELECT state = 'running' AND attempt = $3 AND NOT (metadata ? 'cancel_attempted_at')
@@ -24,6 +24,40 @@ func LockIndexJob(ctx context.Context, tx pgx.Tx, accountID string, jobID int64,
 		return fmt.Errorf("store: lock index job: %w", err)
 	}
 	return nil
+}
+
+// LockIndexBuild follows ingestion's repository-before-job lock order.
+// Run creation also needs this order because its foreign key locks the repository.
+func LockIndexBuild(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, jobID int64, attempt int) error {
+	if _, err := lockActiveGeneration(ctx, tx, repositoryID); err != nil {
+		return err
+	}
+	return LockIndexJob(ctx, tx, accountID, jobID, attempt)
+}
+
+// MintIndexRunnerToken fences capability creation against superseded attempts
+// and discarded staging. Revocation and minting share the same job lock.
+func (s *Store) MintIndexRunnerToken(ctx context.Context, accountID, runID string, jobID int64, attempt int) (string, error) {
+	token := RandomToken()
+	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		if err := LockIndexJob(ctx, tx, accountID, jobID, attempt); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE runner_runs r SET access_token_hash = $2 FROM index_runs x
+			WHERE r.id = $1 AND r.river_job_id = $3 AND x.id = r.index_run_id
+			AND x.resume_key <> '' AND x.status = 'running' AND NOT x.embedding_ready`, runID, tokenHash(token), jobID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return errors.New("index staging is no longer writable")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("store: mint index runner credential: %w", err)
+	}
+	return token, nil
 }
 
 // ResumeIndexRun reuses completed staging for the same job and input identity.
@@ -65,14 +99,16 @@ func ResumeIndexRun(ctx context.Context, tx pgx.Tx, jobID int64, key string) (ru
 
 // ReadyIndexRun seals staging only after the runner has exited successfully.
 func ReadyIndexRun(ctx context.Context, tx pgx.Tx, runID, runnerRunID string) error {
-	if _, err := ReadIndexPack(ctx, tx, runID, runnerRunID); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `UPDATE runner_runs SET access_token_hash = NULL WHERE id = $1`, runnerRunID); err != nil {
 		return fmt.Errorf("store: seal index staging: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET embedding_ready = true WHERE id = $1 AND status = 'running'`, runID); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE index_runs SET embedding_ready = true WHERE id = $1 AND status = 'running'
+		AND EXISTS (SELECT 1 FROM index_packs WHERE runner_run_id = $2)`, runID, runnerRunID)
+	if err != nil {
 		return fmt.Errorf("store: mark index ready: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return errors.New("store: index staging is incomplete or no longer running")
 	}
 	return nil
 }
@@ -110,6 +146,8 @@ func DiscardIndexProgress(ctx context.Context, tx pgx.Tx, runID, runnerRunID str
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE index_runs SET resume_key = '', embedding_ready = false,
+		error = CASE WHEN status = 'running' AND error = ''
+			THEN 'index progress discarded: incompatible inputs, incomplete staging, or job ended' ELSE error END,
 		status = CASE WHEN status = 'running' THEN 'failed' ELSE status END,
 		finished_at = coalesce(finished_at, now()) WHERE id = $1`, runID); err != nil {
 		return fmt.Errorf("store: discard index progress: %w", err)
@@ -139,6 +177,7 @@ func (s *Store) SweepIndexProgress(ctx context.Context, limit int) error {
 	if err != nil {
 		return fmt.Errorf("store: read finished index progress: %w", err)
 	}
+	var errs []error
 	for _, c := range candidates {
 		if err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
 			var live bool
@@ -151,8 +190,8 @@ func (s *Store) SweepIndexProgress(ctx context.Context, limit int) error {
 			}
 			return DiscardIndexProgress(ctx, tx, c.Run, c.Runner)
 		}); err != nil {
-			return fmt.Errorf("store: sweep index progress: %w", err)
+			errs = append(errs, fmt.Errorf("store: sweep index progress %s: %w", c.Run, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }

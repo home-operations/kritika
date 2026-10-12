@@ -30,8 +30,9 @@ import (
 
 type resumeForge struct {
 	forge.Client
-	tip    string
-	config []byte
+	tip      string
+	config   []byte
+	gitToken func() error
 }
 
 func (f *resumeForge) BranchTip(context.Context, string, string, string) (string, string, error) {
@@ -43,13 +44,19 @@ func (f *resumeForge) FileAt(context.Context, string, string, string, string) ([
 	}
 	return f.config, nil
 }
-func (*resumeForge) GitToken(context.Context, string) (string, error) { return "", nil }
-func (*resumeForge) CloneURL(string, string) string                   { return "unused" }
+func (f *resumeForge) GitToken(context.Context, string) (string, error) {
+	if f.gitToken != nil {
+		return "", f.gitToken()
+	}
+	return "", nil
+}
+func (*resumeForge) CloneURL(string, string) string { return "unused" }
 
 type resumeExecutor struct {
 	st      *store.Store
 	account string
 	calls   int
+	after   func()
 }
 
 func (e *resumeExecutor) Run(ctx context.Context, spec executor.Spec) executor.Result {
@@ -66,6 +73,9 @@ func (e *resumeExecutor) Run(ctx context.Context, spec executor.Spec) executor.R
    SELECT $1,$2,'main.go',n,n,'chunk-' || n FROM generate_series(1,3) n`, spec.Job.RunID, e.account)
 		return err
 	})
+	if e.after != nil {
+		e.after()
+	}
 	return executor.Result{Err: err}
 }
 

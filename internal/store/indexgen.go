@@ -115,18 +115,23 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 	return runID, runnerRunID, err
 }
 
-// FinishIndexRun ends an index run as status, with the chunks it embedded
-// and why it failed. Terminal runs are left unchanged: a lost COMMIT
-// acknowledgement must not let failure cleanup overwrite a published run.
+// FinishIndexRun ends an index run as status. Checkpoints own the chunk count
+// until successful publication; failure bookkeeping cannot overwrite it.
+// Publication requires a running run; failure cleanup leaves terminal runs
+// unchanged so a lost COMMIT acknowledgement cannot overwrite a published run.
 func FinishIndexRun(ctx context.Context, tx pgx.Tx, runID string, status IndexRunStatus, chunks int, errText string) error {
-	if _, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2,
-		chunk_count = CASE WHEN $2 = 'failed' AND embedding_cursor > 0 THEN greatest(chunk_count, $3) ELSE $3 END,
+	tag, err := tx.Exec(ctx, `UPDATE index_runs SET status = $2,
+		chunk_count = CASE WHEN $2 = 'completed' THEN $3 ELSE chunk_count END,
 		error = left($4, 2000), finished_at = now(),
 		resume_key = CASE WHEN $2 = 'completed' THEN '' ELSE resume_key END,
 		embedding_ready = CASE WHEN $2 = 'completed' THEN false ELSE embedding_ready END
 		WHERE id = $1 AND status = 'running'`,
-		runID, status, chunks, errText); err != nil {
+		runID, status, chunks, errText)
+	if err != nil {
 		return fmt.Errorf("store: finish index run: %w", err)
+	}
+	if status == IndexCompleted && tag.RowsAffected() != 1 {
+		return errors.New("store: cannot publish an index run that is no longer running")
 	}
 	return nil
 }

@@ -136,7 +136,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	var runID, runnerRunID string
 	var resumed bool
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		if err := store.LockIndexJob(ctx, tx, args.AccountID, job.ID, job.Attempt); err != nil {
+		if err := store.LockIndexBuild(ctx, tx, args.AccountID, args.RepositoryID, job.ID, job.Attempt); err != nil {
 			return err
 		}
 		var err error
@@ -166,7 +166,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 			w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
 			fctx, cancel := detach(ctx)
 			defer cancel()
-			return errors.Join(err, w.finish(fctx, job, runID, store.IndexFailed, 0, err.Error()))
+			return errors.Join(err, w.finish(fctx, job, runID, runnerRunID, store.IndexFailed, 0, err.Error()))
 		}
 	} else {
 		logger.Info("index embedding resumed", "run", runID)
@@ -177,7 +177,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexSuperseded), n)
 		fctx, fcancel := detach(ctx)
 		defer fcancel()
-		if err := w.finish(fctx, job, runID, store.IndexSuperseded, n, ""); err != nil {
+		if err := w.finish(fctx, job, runID, runnerRunID, store.IndexSuperseded, n, ""); err != nil {
 			return err
 		}
 		return river.JobSnooze(0)
@@ -187,7 +187,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)
 		fctx, fcancel := detach(ctx)
 		defer fcancel()
-		return errors.Join(err, w.finish(fctx, job, runID, store.IndexFailed, n, err.Error()))
+		return errors.Join(err, w.finish(fctx, job, runID, runnerRunID, store.IndexFailed, n, err.Error()))
 	}
 	logger.Info("index completed", "mode", mode, "chunks", n)
 	w.Metrics.IndexRun(account.Key(), mode, string(store.IndexCompleted), n)
@@ -226,7 +226,7 @@ func (w *Index) activeGeneration(ctx context.Context, accountID, runID string) (
 }
 
 func (w *Index) finish(
-	ctx context.Context, job *river.Job[jobs.IndexArgs], runID string, status store.IndexRunStatus, chunks int, errText string,
+	ctx context.Context, job *river.Job[jobs.IndexArgs], runID, runnerRunID string, status store.IndexRunStatus, chunks int, errText string,
 ) error {
 	return w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
 		if err := store.LockIndexJob(ctx, tx, job.Args.AccountID, job.ID, job.Attempt); err != nil {
@@ -236,11 +236,7 @@ func (w *Index) finish(
 			return err
 		}
 		if status == store.IndexSuperseded {
-			var runner string
-			if err := tx.QueryRow(ctx, `SELECT id::text FROM runner_runs WHERE index_run_id = $1`, runID).Scan(&runner); err != nil {
-				return err
-			}
-			return store.DiscardIndexProgress(ctx, tx, runID, runner)
+			return store.DiscardIndexProgress(ctx, tx, runID, runnerRunID)
 		}
 		return nil
 	})
@@ -330,10 +326,7 @@ func (w *Index) embed(
 		return total, pack.Mode, err
 	}
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		if err := store.LockIndexJob(ctx, tx, args.AccountID, job.ID, job.Attempt); err != nil {
-			return err
-		}
-		if _, _, err := store.IndexProgress(ctx, tx, runID); err != nil {
+		if err := store.LockIndexBuild(ctx, tx, args.AccountID, args.RepositoryID, job.ID, job.Attempt); err != nil {
 			return err
 		}
 		if pack.Mode == store.IndexModeIncremental && active != nil {
@@ -441,12 +434,12 @@ func indexResumeKey(commit, mode, base string, active *store.Generation, emb *co
 	if mode == store.IndexModeIncremental && active != nil {
 		baseRun = active.ID
 	}
-	batch, batchChars, itemChars := emb.Bounds()
+	_, _, itemChars := emb.Bounds()
 	identity := struct {
 		Version                                              int
 		Commit, Mode, Base, BaseRun, Ignore, Endpoint, Model string
-		Dims, Batch, BatchChars, ItemChars                   int
-	}{1, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, batch, batchChars, itemChars}
+		Dims, ItemChars                                      int
+	}{1, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars}
 	data, _ := json.Marshal(identity) // Only strings and integers; encoding cannot fail.
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }

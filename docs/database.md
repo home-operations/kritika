@@ -389,8 +389,12 @@ Publication still swaps or advances the generation atomically, so searches see
 only a completed index. Forced rebuilds also complete their River job and enqueue
 catch-up work in that transaction. Retryable failures retain partial vectors;
 completed or superseded work clears them as appropriate, and the leader's
-bounded recovery sweep removes remaining progress for cancelled, discarded or
-missing jobs. Checkpoints inherit the database's replication and backup
+bounded recovery sweep removes remaining progress for completed, cancelled, discarded or
+missing jobs. To restart a cancelled index, request a fresh reindex. The pinned
+River version retains `cancel_attempted_at` when retrying a cancelled job ID;
+its cancellation polling and state transitions still treat that job as cancelled.
+The worker keeps that cancellation fence rather than ignoring the marker.
+Checkpoints inherit the database's replication and backup
 limitations described above.
 
 ## Queue upgrades and rollbacks
