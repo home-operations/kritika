@@ -46,72 +46,41 @@ func (w *Review) afterRun(
 	client forge.Client, reviewID, runID string, prior priorReview, judged json.RawMessage, logger *slog.Logger,
 ) (prepared, store.ReviewStatus, error) {
 	args := job.Args
-	var pack store.ContextPackRecord
-	var superseded bool
-	err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		currentHead, err := store.PullRequestHead(ctx, tx, pr.id)
-		if err != nil {
-			return fmt.Errorf("worker: re-read head: %w", err)
-		}
-		if currentHead != args.HeadSHA {
-			superseded = true
-			return nil
-		}
-		pack, err = store.ReadContextPack(ctx, tx, runID)
-		return err
-	})
+	pack, decision, err := w.recordPreparation(ctx, job, pr.id, reviewID, runID, prior.id, judged, eff.Confidence)
 	if err != nil {
 		return prepared{}, "", err
 	}
-	decision := decidePreparedReview(superseded, pack.SkipReason, false)
 	if decision.end.Status == store.ReviewSuperseded {
 		logger.Info("review superseded", "patch_id", review.ShortSHA(pack.PatchID))
-		return prepared{}, decision.end.Status, w.finishReview(ctx, args.AccountID, reviewID, decision.end.Status, pack.PatchID, "")
+		return prepared{}, decision.end.Status, decision.jobError()
+	}
+	if decision.end.Status == store.ReviewCanceled {
+		sctx, cancel := detach(ctx)
+		defer cancel()
+		owner, repo := pr.ownerRepo()
+		if err := client.SetStatus(sctx, owner, repo, args.HeadSHA, forge.StatusError, decision.description); err != nil {
+			logger.Warn("commit status not set", "error", err)
+		}
+		return prepared{}, decision.end.Status, nil
 	}
 	for stage, n := range pack.StageCounts {
 		w.Metrics.ContextChunks(account.Key(), stage, n)
 	}
 	if decision.end.Status == store.ReviewSkipped {
 		logger.Info("review skipped", "reason", pack.SkipReason, "patch_id", review.ShortSHA(pack.PatchID))
-		end := decision.end
-		end.PatchID = pack.PatchID
-		moved := false
-		if pack.SkipReason == string(repoconfig.SkipFiltered) {
-			moved, err = w.endFiltered(ctx, job, pr.id, reviewID, end, judged)
-		} else {
-			_, err = w.endReview(ctx, args.AccountID, reviewID, end)
-		}
-		if err != nil {
-			return prepared{}, "", err
-		}
-		var carried *review.Confidence
-		if pack.SkipReason == runner.SkipUnchangedPatch {
-			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-				var err error
-				carried, _, err = carriedConfidence(ctx, tx, pr.id, reviewID, eff.Confidence)
-				return err
-			})
-			if err != nil {
-				return prepared{}, "", err
-			}
-		}
+		// The skip is committed; reporting it must survive a job ending now.
+		sctx, cancel := detach(ctx)
+		defer cancel()
 		owner, repo := pr.ownerRepo()
-		state, desc := skipVerdict(carried, eff.Confidence.Gate, skipDescription(pack.SkipReason, pack.SkipDetail))
-		if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
+		state, desc := skipVerdict(pack.carried, eff.Confidence.Gate, skipDescription(pack.SkipReason, pack.SkipDetail))
+		if err := client.SetStatus(sctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
 			logger.Warn("commit status not set", "error", err)
 		}
-		carryApproval(ctx, logger, client, pr, eff.Settings, carried)
-		if moved {
+		carryApproval(sctx, logger, client, pr, eff.Settings, pack.carried)
+		if decision.disposition == reviewSnooze {
 			logger.Info("labels moved while the runner judged the filter; the review is judged again")
 		}
-		decision = decidePreparedReview(false, pack.SkipReason, moved)
 		return prepared{}, decision.end.Status, decision.jobError()
-	}
-	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, prior.id)
-	})
-	if err != nil {
-		return prepared{}, "", err
 	}
 	logger.Info("review prepared", "patch_id", review.ShortSHA(pack.PatchID), "scope", pack.Scope, "scope_reason", pack.ScopeReason)
 	return prepared{
@@ -120,29 +89,62 @@ func (w *Review) afterRun(
 	}, decision.end.Status, nil
 }
 
-// endFiltered ends a review the runner skipped as filtered, and reports
-// whether the pull request's labels moved since they were judged. A label
-// change that reaches ingest while this job is still to finish queues
-// nothing, the job being the head's review to come, so the skip is final
-// only when the labels are seen unchanged in the transaction that
-// completes the job, under the pull request's row lock that ingest's own
-// write waits on. With labels that moved the job is left to run again.
-func (w *Review) endFiltered(
-	ctx context.Context, job *river.Job[jobs.ReviewArgs], prID, reviewID string, end store.ReviewEnd, judged json.RawMessage,
-) (moved bool, err error) {
+type preparationRecord struct {
+	store.ContextPackRecord
+	carried *review.Confidence
+}
+
+// recordPreparation gathers the facts for one outcome decision and persists
+// it atomically. A filtered skip is final only when labels remain unchanged
+// under the row lock shared with ingest and the River job completes in the
+// same transaction. Changed labels leave the job unfinished for a snooze.
+func (w *Review) recordPreparation(
+	ctx context.Context, job *river.Job[jobs.ReviewArgs], prID, reviewID, runID, priorID string, judged json.RawMessage,
+	confidence configfile.Confidence,
+) (pack preparationRecord, decision reviewDecision, err error) {
 	err = w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
-		labels, err := store.LockPullRequestLabels(ctx, tx, prID)
+		head, labels, err := store.LockPullRequestPreparation(ctx, tx, prID)
 		if err != nil {
-			return fmt.Errorf("worker: read the pull request's labels: %w", err)
+			return fmt.Errorf("worker: read preparation head and labels: %w", err)
 		}
-		if _, err := store.EndReview(ctx, tx, reviewID, end); err != nil {
+		status, canceled, err := store.LockReviewPreparation(ctx, tx, reviewID)
+		if err != nil {
 			return err
 		}
-		if moved = !bytes.Equal(labels, judged); moved {
-			return nil
+		if status != store.ReviewRunning {
+			return fmt.Errorf("worker: review is %s before preparation", status)
 		}
-		_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+		if canceled {
+			decision = decideInterruptedReview(river.ErrJobCancelledRemotely, nil)
+			_, err = store.EndReview(ctx, tx, reviewID, decision.end)
+			return err
+		}
+		superseded := head != job.Args.HeadSHA
+		if !superseded {
+			pack.ContextPackRecord, err = store.ReadContextPack(ctx, tx, runID)
+			if err != nil {
+				return fmt.Errorf("worker: read preparation context pack: %w", err)
+			}
+		}
+		filtered := pack.SkipReason == string(repoconfig.SkipFiltered)
+		decision = decidePreparedReview(superseded, pack.SkipReason, filtered && !bytes.Equal(labels, judged))
+		if decision.disposition == reviewContinue {
+			return store.MarkReviewPrepared(ctx, tx, reviewID, pack.PatchID, pack.Scope, pack.ScopeReason, priorID)
+		}
+		if pack.SkipReason == runner.SkipUnchangedPatch {
+			pack.carried, _, err = carriedConfidence(ctx, tx, prID, reviewID, confidence)
+			if err != nil {
+				return err
+			}
+		}
+		decision.end.PatchID = pack.PatchID
+		if _, err := store.EndReview(ctx, tx, reviewID, decision.end); err != nil {
+			return err
+		}
+		if filtered && decision.disposition == reviewFinish {
+			_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+		}
 		return err
 	})
-	return moved, err
+	return pack, decision, err
 }

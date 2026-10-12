@@ -42,6 +42,14 @@ func queuedOutcomeReview(t *testing.T, h *agenticHarness) *river.Job[jobs.Review
 		t.Fatal(err)
 	}
 	job.Attempt = 1
+	t.Cleanup(func() {
+		_, err := h.st.App().Exec(context.Background(), `UPDATE river_job SET state = 'cancelled', finalized_at = now()
+			WHERE kind = 'review' AND (args->>'number')::int = $1 AND args->>'account_id' = $2
+			AND args->>'repository_id' = $3 AND finalized_at IS NULL`, h.number, job.Args.AccountID, job.Args.RepositoryID)
+		if err != nil {
+			t.Error(err)
+		}
+	})
 	return job
 }
 
@@ -145,31 +153,91 @@ func TestUnstartedReviewLogsRunnerFailure(t *testing.T) {
 }
 
 func TestSuccessfulRunnerInterruptedBeforeCheckpoint(t *testing.T) {
-	h := newAgenticHarness(t, 984)
+	for i, tt := range []struct {
+		name string
+		want store.ReviewStatus
+	}{
+		{"resumes a refunded first attempt", store.ReviewCompleted},
+		{"cancellation before retry", store.ReviewCanceled},
+		{"superseded before retry", store.ReviewSuperseded},
+	} {
+		t.Run(tt.name, func(t *testing.T) { checkInterruptedAnswer(t, 990+i, tt.want) })
+	}
+}
+
+func checkInterruptedAnswer(t *testing.T, number int, want store.ReviewStatus) {
+	t.Helper()
+	h := newAgenticHarness(t, number)
 	job := queuedOutcomeReview(t, h)
 	h.sm.reset(scriptSubmit)
 	ctx, cancel := context.WithCancelCause(h.ctx)
 	defer cancel(nil)
-	stopped := errors.New("stop initiated")
-	h.exec.after = func() { cancel(stopped) }
-	if err := h.review.Work(ctx, job); !errors.Is(err, stopped) {
-		t.Fatalf("Work = %v, want retry after interruption", err)
+	h.exec.after = func() { cancel(errors.New("stop initiated")) }
+	err := h.review.Work(ctx, job)
+	if !errors.Is(err, context.Cause(ctx)) {
+		t.Fatalf("Work = %v, want shutdown retry", err)
 	}
-	id, status, _ := h.waitReview(t, h.head)
-	if status != "superseded" {
-		t.Fatalf("review = %s", status)
+	var saved store.Publication
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		saved, err = store.ReadPublication(h.ctx, tx, job.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Status != store.ReviewPrepared || len(saved.Payload) <= 2 {
+		t.Fatalf("answer not checkpointed for retry: %+v", saved)
 	}
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		var checkpointed bool
-		if err := tx.QueryRow(h.ctx, `SELECT publication IS NOT NULL FROM reviews WHERE id = $1`, id).Scan(&checkpointed); err != nil {
+		switch want {
+		case store.ReviewCanceled:
+			return jobs.RequestCancel(h.ctx, tx, h.insertOnly, saved.ReviewID)
+		case store.ReviewSuperseded:
+			_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = 'new-head' WHERE id = $1`, saved.PullRequestID)
+			return err
+		default:
+			return nil
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	worker := *h.review
+	worker.Executor, worker.Steppers = nil, nil
+	worker.Forges = &forges{f: h.lf}
+	for range 2 {
+		if err := worker.Work(h.ctx, job); err != nil {
+			t.Fatalf("replay = %v", err)
+		}
+	}
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var status store.ReviewStatus
+		var reviews, runs int
+		if err := tx.QueryRow(h.ctx, `SELECT status,
+			(SELECT count(*) FROM reviews WHERE river_job_id = $2),
+			(SELECT count(*) FROM runner_runs WHERE river_job_id = $2)
+			FROM reviews WHERE id = $1`, saved.ReviewID, job.ID).Scan(&status, &reviews, &runs); err != nil {
 			return err
 		}
-		if checkpointed {
-			t.Fatal("unexpected checkpoint before afterRun")
+		if status != want || reviews != 1 || runs != 1 {
+			t.Fatalf("status=%s reviews=%d runs=%d; want %s,1,1", status, reviews, runs, want)
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+	h.sm.mu.Lock()
+	defer h.sm.mu.Unlock()
+	if h.sm.requests != 3 {
+		t.Fatalf("model calls = %d, want one three-call run", h.sm.requests)
+	}
+	h.lf.mu.Lock()
+	defer h.lf.mu.Unlock()
+	comments := 0
+	if want == store.ReviewCompleted {
+		comments = 1
+	}
+	if len(h.lf.comments) != comments {
+		t.Fatalf("sticky comments = %d, want %d", len(h.lf.comments), comments)
 	}
 }
 
@@ -266,5 +334,61 @@ DROP FUNCTION IF EXISTS reject_record_test()`); err != nil {
 	defer h.lf.mu.Unlock()
 	if h.lf.status != "error: kritika: review canceled" {
 		t.Fatal(h.lf.status)
+	}
+}
+
+func TestSuccessfulRunnerPreparationTermination(t *testing.T) {
+	for i, tt := range []struct {
+		name     string
+		cause    error
+		moveHead bool
+		want     store.ReviewStatus
+		retry    bool
+	}{
+		{"cancel", river.ErrJobCancelledRemotely, false, store.ReviewCanceled, false},
+		{"timeout", context.DeadlineExceeded, false, store.ReviewFailed, false},
+		{"fencing", errJobFenced, false, store.ReviewSuperseded, true},
+		{"new head during shutdown", errors.New("stop initiated"), true, store.ReviewSuperseded, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newAgenticHarness(t, 994+i)
+			job := queuedOutcomeReview(t, h)
+			h.sm.reset(scriptSubmit)
+			ctx, cancel := context.WithCancelCause(h.ctx)
+			defer cancel(nil)
+			h.exec.after = func() {
+				if tt.moveHead {
+					if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+						_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = 'new-head' WHERE number = $1`, h.number)
+						return err
+					}); err != nil {
+						t.Error(err)
+					}
+				}
+				cancel(tt.cause)
+			}
+			err := h.review.Work(ctx, job)
+			if (err != nil) != tt.retry || (tt.retry && !errors.Is(err, tt.cause)) {
+				t.Fatalf("Work = %v, retry = %v", err, tt.retry)
+			}
+			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+				var status store.ReviewStatus
+				var checkpointed bool
+				if err := tx.QueryRow(h.ctx, `SELECT status, publication IS NOT NULL FROM reviews WHERE river_job_id = $1`, job.ID).Scan(&status, &checkpointed); err != nil {
+					return err
+				}
+				if status != tt.want || checkpointed {
+					t.Fatalf("status=%s checkpointed=%v", status, checkpointed)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			h.lf.mu.Lock()
+			defer h.lf.mu.Unlock()
+			if len(h.lf.comments) != 0 || len(h.lf.inline) != 0 {
+				t.Fatal("terminated answer was published")
+			}
+		})
 	}
 }

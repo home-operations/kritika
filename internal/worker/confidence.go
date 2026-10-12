@@ -31,16 +31,14 @@ const (
 // confidence score and the scorer gave none.
 const unscoredNote = "The confidence model did not answer, so this review has no confidence score"
 
-// judge has the repository's confidence model score the reviewed pull
-// request, on a context of its own so the score is had even if job ends
-// meanwhile. It returns the note the summary states when the scorer gave
-// none: the review still stands, without a verdict on it.
+// judge scores the review within the finalization context. It returns the
+// note the summary states when the scorer gave no answer.
 func (p *publishPhase) judge(job context.Context, res review.Result, diff string) string {
 	ref := p.settings.Confidence.Model
 	if ref == "" {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(job), confidenceTimeout)
+	ctx, cancel := context.WithTimeout(job, confidenceTimeout)
 	defer cancel()
 	// The agent is done with its slot on the review model. Scoring takes a
 	// slot of its own, and a job that held one while it waited for another

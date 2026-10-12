@@ -129,3 +129,34 @@ func (w *Review) agentSpecFailed(ctx context.Context, e endedReview, runID strin
 	}
 	return errors.Join(err, w.failReview(dctx, e, "", err.Error()), runErr)
 }
+
+// preparationContext gives a completed runner a short opportunity to save its
+// answer after shutdown. Live work keeps the job's timeout and cancellation policy.
+func preparationContext(job context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(job))
+	forward := func() {
+		cause := context.Cause(job)
+		if cause != nil && !shutdownCause(cause) {
+			cancel(cause)
+		}
+	}
+	forward()
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-job.Done():
+		}
+		forward()
+		if shutdownCause(context.Cause(job)) {
+			timer := time.NewTimer(10 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+			case <-timer.C:
+				cancel(context.Cause(job))
+			}
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled) }
+}

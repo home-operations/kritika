@@ -363,8 +363,9 @@ func startWorker(
 // own bound: deleting the runner Job and reading its pod (20s each),
 // revoking its token (10s) and waiting for its agent row (40s). A job
 // still at it when the process is killed is not recorded by River and
-// waits on the rescuer instead. Both fit in the chart's 200s termination
-// grace period.
+// waits on the rescuer instead. Completed runner answers are checkpointed
+// before merge and confidence calls, so rescue can resume those answers.
+// The two waits fit in the chart's 200s termination grace period.
 const (
 	queueDrain        = 100 * time.Second
 	queueStopHeadroom = 90 * time.Second

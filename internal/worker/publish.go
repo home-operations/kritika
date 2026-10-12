@@ -3,6 +3,7 @@ package worker
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -58,7 +59,8 @@ type publishPhase struct {
 	// statusReported is set once incomplete has written the head's commit
 	// status with its reason, which the job's ending then leaves alone.
 	statusReported bool
-	checkpointed   bool
+	invalidAnswer  bool
+	pending        json.RawMessage
 	// confidence is the score judge got, nil when the repository asks for
 	// none or, with unscored set, when the scorer did not answer.
 	confidence *review.Confidence
@@ -79,28 +81,43 @@ type publishPhase struct {
 // run publishes what the runner's agent submitted; the run's usage is
 // already recorded.
 func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
+	if cause := context.Cause(job); cause != nil {
+		return store.ReviewPrepared, cause
+	}
 	answer, err := p.prepare(job)
+	if errors.Is(err, errSuperseded) {
+		_, endErr := p.w.endReview(job, p.account.ID(), p.reviewID,
+			store.ReviewEnd{Status: store.ReviewSuperseded, OnlyUnfinished: true})
+		return store.ReviewSuperseded, endErr
+	}
 	if err != nil {
+		if p.invalidAnswer && job.Err() == nil {
+			if !p.statusReported {
+				owner, repo := p.pr.ownerRepo()
+				if statusErr := p.client.SetStatus(job, owner, repo, p.pr.headSHA, forge.StatusError, reviewFailedDescription); statusErr != nil {
+					p.logger.Warn("commit status not set", "error", statusErr)
+				}
+			}
+			_, endErr := p.w.endReview(job, p.account.ID(), p.reviewID,
+				store.ReviewEnd{Status: store.ReviewFailed, Error: err.Error(), OnlyUnfinished: true})
+			return store.ReviewFailed, endErr
+		}
 		return store.ReviewFailed, err
 	}
-	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
-		return store.ReviewSuperseded, cause
+	if cause := context.Cause(job); cause != nil {
+		return store.ReviewPrepared, cause
 	}
-	ctx, cancel := detach(job)
-	defer cancel()
-	if err := p.checkpoint(ctx, answer); err != nil {
+	if err := p.checkpoint(job, answer); err != nil {
 		return store.ReviewFailed, err
 	}
-	p.checkpointed = true
 	return p.deliver(job, answer)
 }
 
 // prepare settles the findings, summary and confidence before delivery.
-func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) {
-	// The agent has already answered, so publishing runs to the end even if
-	// the job's ctx ends meanwhile.
-	ctx, cancel := detach(job)
-	defer cancel()
+func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) {
+	if err := p.preparationCurrent(ctx); err != nil {
+		return nil, err
+	}
 	if p.agent == nil {
 		return nil, errors.New("worker: the runner wrote no agent run")
 	}
@@ -122,10 +139,12 @@ func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) 
 	p.logger.Info("agent answered", "stop", run.StopReason, "steps", run.Steps, "model", run.Model, "input_tokens", run.Usage.Prompt(),
 		"cached_tokens", run.Usage.CacheRead, "output_tokens", run.Usage.Output, "cost_usd", run.CostUSD)
 	if stopErr := stopError(run); stopErr != nil {
+		p.invalidAnswer = true
 		return nil, errors.Join(stopErr, p.incomplete(ctx, "agent stopped: "+run.StopReason, run.Model))
 	}
 	res, dropped, err := review.Parse(string(run.Result), review.Anchors(diff), p.parse)
 	if err != nil {
+		p.invalidAnswer = true
 		return nil, errors.Join(err, p.incomplete(ctx, "the submitted review was invalid", run.Model))
 	}
 	for _, d := range dropped {
@@ -169,9 +188,12 @@ func (p *publishPhase) prepare(job context.Context) (*publicationAnswer, error) 
 			res.Findings = append(res.Findings, carried...)
 		}
 	}
+	if err := p.preparationCurrent(ctx); err != nil {
+		return nil, err
+	}
 	// A finding on a line the diff does not show has no inline comment, but
 	// weighs on the score, the counts and the approval all the same.
-	if note := p.judge(job, review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}, diff); note != "" {
+	if note := p.judge(ctx, review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}, diff); note != "" {
 		notes = append(notes, note)
 	}
 	if note := skillsNote(run.SkillsOffered, run.SkillsOpened); note != "" {

@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Publication is the checkpoint a review job resumes without model work.
+// Publication is the checkpoint a review job resumes without another runner.
 // Terminal checkpoints keep an empty marker so a retry after completion is a no-op.
 type Publication struct {
 	CancelRequested                  bool
@@ -22,7 +22,7 @@ type Publication struct {
 	Status                           ReviewStatus
 }
 
-// SavePublication keeps the first finalized answer of a prepared review.
+// SavePublication keeps the first answer checkpoint of a prepared review.
 func SavePublication(ctx context.Context, tx pgx.Tx, reviewID string, payload json.RawMessage) error {
 	tag, err := tx.Exec(ctx, `UPDATE reviews SET publication = $2
 		WHERE id = $1 AND status = 'prepared' AND publication IS NULL`, reviewID, payload)
@@ -31,6 +31,20 @@ func SavePublication(ctx context.Context, tx pgx.Tx, reviewID string, payload js
 	}
 	if tag.RowsAffected() != 1 {
 		return errors.New("store: review is not ready for a publication checkpoint")
+	}
+	return nil
+}
+
+// ReplacePublication advances the checkpoint only if this attempt still owns
+// the saved input. It cannot overwrite another publisher's finalized answer.
+func ReplacePublication(ctx context.Context, tx pgx.Tx, reviewID string, previous, payload json.RawMessage) error {
+	tag, err := tx.Exec(ctx, `UPDATE reviews SET publication = $3
+		WHERE id = $1 AND status = 'prepared' AND publication = $2::jsonb`, reviewID, previous, payload)
+	if err != nil {
+		return fmt.Errorf("store: replace publication: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return errors.New("store: publication checkpoint changed")
 	}
 	return nil
 }
