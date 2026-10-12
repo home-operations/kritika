@@ -561,11 +561,12 @@ test('hidden review tabs defer live refetches until they become visible', async 
   await expect(page.locator('.conversation-top')).toBeVisible();
   await page.getByRole('link', { name: 'Raw', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Submitted result' })).toBeVisible();
-  await page.getByRole('link', { name: /^Summary/ }).click();
+  await page.getByRole('navigation', { name: 'Review sections' }).getByRole('link', { name: 'Overview' }).click();
   await emit(page, 'model_call');
   await expect.poll(() => reviewCalls).toBe(2);
   expect(transcriptCalls).toBe(1);
   expect(rawCalls).toBe(1);
+  await page.getByRole('link', { name: 'Run details', exact: true }).click();
   await page.getByRole('link', { name: 'Conversation', exact: true }).click();
   await expect.poll(() => transcriptCalls).toBe(2);
   expect(rawCalls).toBe(1);
@@ -606,4 +607,27 @@ test('the overview summarizes many accounts without fetching individual pull lis
   await refreshed;
   await expect(attention.getByRole('link').first()).toContainText('2 failed');
   expect(calls).toEqual([]);
+});
+
+
+test('the PR workspace follows the latest run while an explicitly selected run stays pinned', async ({ page }) => {
+  const second = { ...g.reviewDetail.review, id: 'rev-2', headSha: '2222222' };
+  const third = { ...second, id: 'rev-3', headSha: '3333333' };
+  let reviews = [g.reviewDetail.review];
+  await page.route('**/pulls/alpha/one/7', (route) => json(route, { ...g.pullDetail, reviews }));
+  await page.route('**/reviews/rev-2', (route) => json(route, { ...g.reviewDetail, review: second, summary: { ...g.reviewDetail.summary!, take: 'Second review conclusion' } }));
+  await page.goto(`${account}/pulls/alpha/one/7`);
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  reviews = [second, g.reviewDetail.review];
+  await emit(page, 'review', second.id);
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText('Second review conclusion');
+  await expect(page.getByLabel('Review run')).toHaveValue('');
+  await page.getByLabel('Review run').selectOption('rev-1');
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  reviews = [third, second, g.reviewDetail.review];
+  await emit(page, 'review', third.id);
+  await expect(page.getByLabel('Review run').locator('option[value="rev-3"]')).toHaveCount(1);
+  await expect(page.getByLabel('Review run')).toHaveValue('rev-1');
+  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await expect(page.locator('.newer-notice')).toContainText('Historical review');
 });

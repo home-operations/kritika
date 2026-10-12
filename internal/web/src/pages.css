@@ -1040,14 +1040,6 @@ table.data th.wrap {
   display: block;
   margin: 4px 0;
 }
-.latest-review {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.latest-take {
-  font-size: 14px;
-}
 .confidence-line {
   margin: 0 0 6px;
   font-size: 14px;
@@ -1056,20 +1048,6 @@ table.data th.wrap {
 .confidence-line .md p {
   display: inline;
   margin: 0;
-}
-.finding-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.finding-list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
 }
 .followup-links {
   display: flex;

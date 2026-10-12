@@ -7,11 +7,12 @@
   import FindingCard from './FindingCard.svelte';
 
   import { focusWhenShown } from '../../focus';
+  import type { ReviewTab, Route } from '../../routes';
   import { href } from '../../router.svelte';
 
   // finding is the id of the finding a link led here for.
   // slug is the account, for the links to a rule's findings.
-  let { slug, d, finding, oninspect }: { slug: string; d: ReviewDetail; finding?: string; oninspect: () => void } = $props();
+  let { slug, d, finding, oninspect, to }: { slug: string; d: ReviewDetail; finding?: string; oninspect: () => void; to: (tab: ReviewTab, finding?: string) => Route } = $props();
   $effect(() => {
     if (finding) focusWhenShown(`#finding-${CSS.escape(finding)}`, true);
   });
@@ -49,14 +50,14 @@
 {/if}
 
 {#if groups.length === 0}
-  <p class="state-msg">No findings.</p>
+  <p class="state-msg">{d.review.status === 'completed' ? 'No findings.' : d.review.status === 'running' || d.review.status === 'prepared' ? 'Findings will appear as the review progresses.' : 'No findings recorded. The review did not complete.'}</p>
 {/if}
 {#each groups as g (g.s)}
   <section class="finding-group" aria-labelledby="sev-{g.s}">
     <h2 id="sev-{g.s}" class="finding-group-head"><span class="sev sev-{g.s}">{g.s}</span> {g.items.length}</h2>
     {#each g.items as f (f.id)}
       <FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />
-      <a class="finding-code-link" onclick={(e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) oninspect(); }} href={href({ name: 'review', slug, id: d.review.id, tab: 'diff', finding: f.id })}>Inspect {f.path}:{f.line} in code →</a>
+      <a class="finding-code-link" onclick={(e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) oninspect(); }} href={href(to('diff', f.id))}>Inspect {f.path}:{f.line} in code →</a>
     {/each}
   </section>
 {/each}

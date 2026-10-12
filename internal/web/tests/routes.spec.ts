@@ -20,6 +20,8 @@ const ROUTES: Route[] = [
   { name: 'pulls', slug: 'github/acme' },
   { name: 'pulls', slug: 'github/acme', filter: { state: 'all', outcome: 'failed', is: 'paused', repo: 'kritika/kritika', author: 'ada', q: 'a b&c#d' } },
   { name: 'pull', slug: 'github/acme', owner: 'kritika', repo: 'kritika', number: 42 },
+  { name: 'pull', slug: 'github/acme', owner: 'kritika', repo: 'kritika', number: 42, run: 'r/1', tab: 'diff', finding: 'f 1/2' },
+  { name: 'pull', slug: 'github/acme', owner: 'kritika', repo: 'kritika', number: 42, tab: 'activity' },
   { name: 'review', slug: 'github/acme', id: 'r1' },
   { name: 'review', slug: 'github/acme', id: 'r1', tab: 'diff' },
     { name: 'review', slug: 'github/acme', id: 'r1', tab: 'diff', finding: 'f 1/2' },

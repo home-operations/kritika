@@ -18,8 +18,9 @@
     fallback?: string;
     // wide makes room for a form.
     wide?: boolean;
+    side?: boolean;
   }
-  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1', wide = false }: Props = $props();
+  let { open = $bindable(false), title, children, footer, onclose, fallback = 'main h1', wide = false, side = false }: Props = $props();
   let restore: HTMLElement | null = null;
 
   // The dialog opens from state, not a trigger of its own, so what to
@@ -46,7 +47,7 @@
 <Dialog.Root bind:open onOpenChange={(now) => !now && onclose?.()}>
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
-    <Dialog.Content class={['modal modal-centered dialog', wide && 'dialog-wide']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
+    <Dialog.Content class={['modal modal-centered dialog', wide && 'dialog-wide', side && 'dialog-side']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
       <Dialog.Title>
         {#snippet child({ props })}<h2 {...props} class="dialog-title">{title}</h2>{/snippet}
       </Dialog.Title>

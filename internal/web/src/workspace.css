@@ -443,14 +443,6 @@ table.pull-table td {
 .tab-count {
   font-weight: 600;
 }
-.review-details summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: var(--type-sm);
-}
-.review-details .facts {
-  margin-top: 12px;
-}
 .account-breakdown .account-wants {
   min-width: 150px;
 }
@@ -698,3 +690,89 @@ table.account-breakdown th {
 .back-to-list { font-size: 13px; margin-bottom: 4px; }
 
 .overview-totals .tile, .account-activity .tile { min-height: 128px; }
+
+.pr-workspace-head {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-actions,
+.run-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.workspace-actions > *,
+.run-picker select {
+  max-width: 100%;
+  min-width: 0;
+}
+.run-picker {
+  font-size: var(--type-sm);
+}
+.run-picker select {
+  width: 290px;
+}
+.review-signals {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+}
+.review-signals .meta-line {
+  margin: 0;
+}
+.run-details-tab {
+  margin-left: auto;
+}
+.run-details {
+  display: grid;
+  gap: 16px;
+}
+.review-workspace.code-focused {
+  grid-template-columns: minmax(0, 1fr);
+}
+.finding-nav[hidden] {
+  display: none;
+}
+button.finding-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.finding-link:hover {
+  text-decoration: underline;
+}
+.modal.dialog-side {
+  inset: 0 0 0 auto;
+  transform: none;
+  width: min(680px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+.finding-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.finding-inspector .finding-controls {
+  flex-wrap: wrap;
+}
+@media (max-width: 800px) {
+  .run-picker {
+    width: 100%;
+  }
+  .run-picker select {
+    flex: 1;
+  }
+  .review-signals .meta-line {
+    align-items: flex-start;
+  }
+}

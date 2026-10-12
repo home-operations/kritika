@@ -626,6 +626,8 @@ test.describe('findings', () => {
     await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Findings', exact: true })).toHaveAttribute('aria-current', 'page');
 
     await row.locator('.finding-sub').first().click();
+    await expect(page.getByRole('dialog', { name: 'Finding details' })).toContainText(f.explanation);
+    await page.getByRole('link', { name: 'Open review', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}\\?finding=${f.id}$`));
     await expect(page.locator(`#finding-${f.id}`)).toBeFocused();
   });
@@ -666,7 +668,8 @@ test.describe('findings', () => {
     await expect(page.getByRole('combobox', { name: 'Search findings' })).toBeFocused();
     await page.getByRole('combobox', { name: 'Search findings' }).blur();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}\\?finding=${f.id}$`));
+    await expect(page.getByRole('dialog', { name: 'Finding details' })).toContainText(f.title);
+    await expect(page).toHaveURL(new RegExp(`${T}/findings$`));
   });
 
   test('filters by severity, status and repository tokens, in the URL', async ({ page }) => {
@@ -786,40 +789,38 @@ test.describe('rules', () => {
   });
 });
 
-test('pull detail leads with its latest review, then the history and follow-ups with a transcript', async ({ page }) => {
-  // A newer review that was skipped is the header's to tell of: the latest
-  // review and the history are of the reviews that were not.
+test('pull workspace leads with the latest review and keeps skipped attempts in activity', async ({ page }) => {
   const golden = g.pullDetail.reviews[0]!;
-  // The scorer's reason is prose: a reference to another repository comes linked.
   const first = { ...golden, confidence: { ...golden.confidence!, reason: `${golden.confidence!.reason} See [up/stream#12](https://redirect.github.com/up/stream/issues/12).` } };
-  await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [{ ...first, id: 'rev-2', status: 'skipped', skipReason: 'filtered' }, first] }], ...g.defaultApi()]);
+  await g.mockApi(page, [
+    [/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [{ ...first, id: 'rev-2', status: 'skipped', skipReason: 'filtered' }, first] }],
+    [/\/reviews\/rev-1$/, { ...g.reviewDetail, review: { ...g.reviewDetail.review, confidence: first.confidence } }],
+    ...g.defaultApi(),
+  ]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
   const p = g.pullDetail.pull;
-  await expect(page.locator('.page-inner > .meta-line')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
-  const latest = page.getByRole('region', { name: 'Latest review' });
+  await expect(page.locator('.pr-workspace-head')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
+  const latest = page.getByRole('region', { name: 'Take', exact: true });
   await expect(latest).toContainText(g.reviewDetail.summary!.take);
   const c = golden.confidence!;
   await expect(latest.locator('.confidence-line')).toHaveText(`Confidence ${c.score}/5, below the ${c.threshold} this repository asks for\u00a0· ${c.risk} risk: ${c.reason} See up/stream#12.`);
   await expect(latest.locator('.confidence-line').getByRole('link', { name: 'up/stream#12' })).toHaveAttribute('href', 'https://redirect.github.com/up/stream/issues/12');
   await expect(latest.locator('.confidence-line')).toHaveAttribute('title', `scored by ${c.model}`);
   const f = g.reviewDetail.findings[0]!;
-  await expect(latest.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toHaveText([`${f.severity} ${f.title} ${f.path}:${f.line} Thread`]);
-  await expect(latest.getByRole('link', { name: 'Thread' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
-  await expect(latest.getByRole('link', { name: 'Open the review' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/rev-1`);
-  await expect(page.locator('.page-inner > .meta-line')).toContainText('last synchronized');
-  await expect(page.locator('.page-inner > .meta-line')).toContainText('not reviewed: excluded by a trigger condition');
-  await expect(page.locator('.timeline-item')).toHaveCount(1);
-  await expect(page.locator('.timeline-item')).toContainText('$0.42');
+  await expect(page.locator('.finding').getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
+  await expect(page.locator('.pr-workspace-head')).toContainText('last synchronized');
+  await expect(page.locator('.pr-workspace-head')).toContainText('Latest attempt skipped: excluded by a trigger condition');
+  await page.getByRole('navigation', { name: 'Review sections' }).getByRole('link', { name: 'Activity', exact: true }).click();
+  await expect(page.locator('.timeline-item')).toHaveCount(2);
+  await expect(page.locator('.timeline-item').last()).toContainText('$0.42');
   await expect(page.locator('.followup')).toContainText(g.followup.author);
   await page.getByRole('button', { name: 'Transcript' }).click();
   await expect(page.locator('.followup .turn')).toHaveCount(g.transcript.turns.length);
-  await page.locator('.timeline-link').first().click();
+  await page.locator('.timeline-link').last().click();
   await expect(page).toHaveURL(new RegExp(`${T}/reviews/rev-1$`));
   await page.goBack();
-  await latest.getByRole('link', { name: f.title }).click();
-  await expect(page).toHaveURL(new RegExp(`${T}/reviews/rev-1\\?finding=${f.id}$`));
-  await expect(page.locator(`#finding-${f.id}`)).toBeFocused();
+  await expect(page.getByRole('heading', { name: 'Review history' })).toBeVisible();
 });
 
 test.describe('review', () => {
@@ -870,8 +871,8 @@ test.describe('review', () => {
       `${g.reviewDetail.review.pull.url}#discussion_r${f.forgeCommentId}`,
     );
     const r = g.reviewDetail.review;
-    await page.locator('.review-details summary').click();
-    const fact = (name: string) => page.locator('.page-head .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
+    await page.getByRole('link', { name: 'Run details', exact: true }).click();
+    const fact = (name: string) => page.locator('.run-details .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
     await expect(fact('Scope')).toHaveText(new RegExp(`^${r.scope}\\s\\(${r.scopeReason}\\)$`));
     await expect(fact('Risk')).toHaveText(r.confidence!.risk);
     await expect(fact('Confidence')).toHaveText(new RegExp(`^${r.confidence!.score}/5\\s\\(below ${r.confidence!.threshold}\\)$`));
@@ -887,7 +888,7 @@ test.describe('review', () => {
       await expect(page).toHaveURL(new RegExp(`/reviews/rev-1/${tab.toLowerCase()}$`));
       await expect(page.locator('.tab-panel')).toContainText(text);
     }
-    await expect(page.locator('.tab.active')).toHaveText('Usage');
+    await expect(page.getByRole('navigation', { name: 'Run sections' }).locator('.tab.active')).toHaveText('Usage');
     await page.locator('.tabs').getByRole('link', { name: 'Timeline', exact: true }).click();
     const a = g.reviewDetail.agentRun!;
     const skills = page.locator('.deflist').filter({ hasText: 'Skills' }).getByRole('definition').filter({ hasText: a.skillsOffered[0]! });
@@ -916,7 +917,9 @@ test.describe('review', () => {
     await expect(page.locator('#finding-f-d')).toContainText('Dismissed: house style');
     await expect(page.locator('#finding-f-o .pill')).toHaveCount(0);
     await page.goto(`/${T}/pulls/alpha/one/7`);
-    await expect(page.getByRole('list', { name: 'Findings' }).getByRole('listitem')).toContainText(['addressed', 'dismissed', f.title]);
+    await expect(page.locator('#finding-f-a .pill')).toHaveText('addressed');
+    await expect(page.locator('#finding-f-d')).toContainText('Dismissed: house style');
+    await expect(page.locator('#finding-f-o')).toContainText(f.title);
   });
 
   test('a review that is no longer the latest leads to the one that is', async ({ page }) => {
@@ -925,7 +928,7 @@ test.describe('review', () => {
     await expect(page.locator('.newer-notice')).toHaveCount(0);
     await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, review: { ...g.reviewDetail.review, newestReviewId: 'rev-2' } }], ...g.defaultApi()]);
     await page.reload();
-    await expect(page.locator('.newer-notice').getByRole('link', { name: 'Open its latest review' })).toHaveAttribute('href', `${T}/reviews/rev-2`);
+    await expect(page.locator('.newer-notice').getByRole('link', { name: 'Open its latest review' })).toHaveAttribute('href', `${T}/pulls/alpha/one/7`);
   });
 
   test('the summary lists the rules the review checked, and how many findings cite each', async ({ page }) => {
@@ -1100,17 +1103,17 @@ test('a skipped review says why, on its own page and on the pull request', async
     ...g.defaultApi(),
   ]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
-  await expect(page.locator('.page-inner > .meta-line')).toContainText('not reviewed: more changed lines than the repository allows');
+  await expect(page.locator('.page-inner > .notice')).toContainText('Latest attempt skipped: more changed lines than the repository allows');
   await expect(page.getByText('Not reviewed yet.')).toBeVisible();
   await page.goto(`/${T}/reviews/rev-1`);
-  await expect(page.locator('.page-head .meta-line')).toContainText('skipped: patch unchanged since the last review');
+  await expect(page.locator('.page-head .notice').filter({ hasText: 'Review skipped:' })).toContainText('Review skipped: patch unchanged since the last review');
 });
 
 test('a skipped review with no reason of its own says what it recorded on the pull request', async ({ page }) => {
   const skipped = { ...g.pullDetail.reviews[0]!, status: 'skipped' as const, skipReason: '' as const, error: 'the pull request is closed' };
   await g.mockApi(page, [[/\/pulls\/alpha\/one\/7$/, { ...g.pullDetail, reviews: [skipped] }], ...g.defaultApi()]);
   await page.goto(`/${T}/pulls/alpha/one/7`);
-  await expect(page.locator('.page-inner > .meta-line')).toContainText('not reviewed: the pull request is closed');
+  await expect(page.locator('.page-inner > .notice')).toContainText('Latest attempt skipped: the pull request is closed');
 });
 
 test('no tab strip scrolls vertically', async ({ page }) => {
@@ -1518,11 +1521,11 @@ test('a tab stays where it is whichever tab is the current one', async ({ page }
   expect(await lefts('.section-tab')).toEqual(sections);
 
   await page.goto(`/${T}/reviews/rev-1`);
-  await expect(page.locator('.tab.active')).toContainText('Summary');
-  const tabs = await lefts('.tabs .tab');
+  await expect(page.locator('.tab.active')).toContainText('Overview');
+  const tabs = await lefts('[aria-label="Review sections"] .tab');
   await page.goto(`/${T}/reviews/rev-1/conversation`);
-  await expect(page.locator('.tab.active')).toHaveText('Conversation');
-  expect(await lefts('.tabs .tab')).toEqual(tabs);
+  await expect(page.getByRole('navigation', { name: 'Run sections' }).locator('.tab.active')).toHaveText('Conversation');
+  expect(await lefts('[aria-label="Review sections"] .tab')).toEqual(tabs);
 });
 
 test('dark theme renders every page without console errors', async ({ page }) => {

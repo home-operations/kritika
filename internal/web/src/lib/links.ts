@@ -9,7 +9,7 @@ export function pullKey(p: { repository: string; number: number }): string {
   return `${p.repository}#${p.number}`;
 }
 
-export function pullRoute(slug: string, p: { repository: string; number: number }): Route {
+export function pullRoute(slug: string, p: { repository: string; number: number }): Extract<Route, { name: 'pull' }> {
   const n = splitRepo(p.repository);
   return { name: 'pull', slug, owner: n.owner, repo: n.repo, number: p.number };
 }
