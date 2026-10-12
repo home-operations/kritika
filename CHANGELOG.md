@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.63](https://github.com/home-operations/kritika/compare/0.0.62...0.0.63) (2026-10-12)
+
+
+### Bug Fixes
+
+* **embedding:** correct retrieval, rebuilds, and usage accounting ([#898](https://github.com/home-operations/kritika/issues/898)) ([b984134](https://github.com/home-operations/kritika/commit/b984134ebe55f5fd4a585ae3beffe9b856d0976b))
+* **web:** correct dashboard state and navigation ([#900](https://github.com/home-operations/kritika/issues/900)) ([3a23506](https://github.com/home-operations/kritika/commit/3a23506879c0725e94549907db7f1514b95d6dc2))
+
 ## [0.0.62](https://github.com/home-operations/kritika/compare/0.0.61...0.0.62) (2026-10-12)
 
 
