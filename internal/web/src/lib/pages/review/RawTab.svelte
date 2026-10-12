@@ -7,11 +7,11 @@
   import CodeBlock from '../../components/CodeBlock.svelte';
   import Collapsible from '../../components/Collapsible.svelte';
 
-  let { base, d, version }: { base: string; d: ReviewDetail; version: number } = $props();
+  let { active, base, d, version }: { active: boolean; base: string; d: ReviewDetail; version: number } = $props();
   const res = new Resource(() => getJSON<ReviewRaw>(`${base}/raw`));
   $effect(() => {
     void version;
-    void res.load();
+    if (active) void res.load();
   });
   const pack = $derived(d.contextPack);
 </script>

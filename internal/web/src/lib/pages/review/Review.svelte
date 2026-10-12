@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte';
   import { getJSON } from '../../api.svelte';
   import { revealInNav } from '../../focus';
   import { href } from '../../router.svelte';
@@ -11,6 +12,8 @@
   import type { ReviewDetail } from '../../types';
   import StateView from '../../components/StateView.svelte';
   import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
+  import Markdown from '../../components/Markdown.svelte';
+  import ReviewImpact from './ReviewImpact.svelte';
   import ReviewMeta from '../../components/ReviewMeta.svelte';
   import Time from '../../components/Time.svelte';
   import NoMoreReviews from '../../components/NoMoreReviews.svelte';
@@ -22,6 +25,26 @@
   import UsageTab from './UsageTab.svelte';
 
   let { slug, id, tab = 'summary', finding }: { slug: string; id: string; tab?: ReviewTab; finding?: string } = $props();
+
+  let page: HTMLElement;
+  let selectedFinding = $state('');
+  // Inspect links refocus a finding; returning to its tab preserves scroll.
+  let inspection = $state(0);
+  let visited = $state<ReviewTab[]>([]);
+  let shown: ReviewTab | undefined;
+  const positions = new Map<ReviewTab, number>();
+  // Keep visited tabs mounted: file expansion, filters, and loaded transcripts
+  // must survive a trip to another tab of this review.
+  $effect.pre(() => {
+    const next = tab;
+    untrack(() => {
+      if (shown === next) return;
+      if (shown && page) positions.set(shown, page.scrollTop);
+      if (!visited.includes(next)) visited = [...visited, next];
+      shown = next;
+      void tick().then(() => { if (page) page.scrollTop = positions.get(next) ?? 0; });
+    });
+  });
 
   const base = $derived(`${accountApi(slug)}/reviews/${encodeURIComponent(id)}`);
   const res = new Resource(() => getJSON<ReviewDetail>(base));
@@ -52,7 +75,7 @@
 
   const labels: Record<ReviewTab, string> = {
     summary: 'Summary',
-    diff: 'Diff',
+    diff: 'Findings & code',
     conversation: 'Conversation',
     timeline: 'Timeline',
     raw: 'Raw',
@@ -62,7 +85,7 @@
 
 <svelte:head><title>{title} · kritika</title></svelte:head>
 
-<main class="page">
+<main class="page review-page" bind:this={page}>
   <div class="page-inner">
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
@@ -82,7 +105,7 @@
               <span>after <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a></span>
             {/if}
           </p>
-          <ReviewMeta {r} scopeReason={r.scopeReason} />
+          <details class="review-details"><summary>Review details</summary><ReviewMeta {r} scopeReason={r.scopeReason} /></details>
           {#if r.newestReviewId}
             <p class="notice newer-notice" role="note">
               The pull request has been reviewed again since.
@@ -117,30 +140,42 @@
           {/if}
         </header>
 
+        {#if tab === 'diff' && d.summary}
+          <section class="review-conclusion" aria-label="Review summary">
+            <h2>{d.summary.headline || 'Review summary'}</h2>
+            <Markdown text={d.summary.take} />
+            {#if d.summary.impact?.length}<div class="merge-impact"><strong>Merge impact</strong><ReviewImpact notes={d.summary.impact} /></div>{/if}
+          </section>
+        {/if}
+
         <!-- What the review said comes first; how it ran sits apart, to the right. -->
         <nav class="tabs" aria-label="Review sections">
           {#each REVIEW_TABS as t (t)}
             {#if t === RUN_TABS[0]}<span class="tabs-group-label">Run</span>{/if}
-            <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t })} {@attach t === tab && revealInNav}>
+            <a class="tab" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href({ name: 'review', slug, id, tab: t, finding: t === 'diff' ? selectedFinding || undefined : undefined })} {@attach t === tab && revealInNav}>
               <span class="tab-label" data-label={labels[t]}>{labels[t]}</span>{#if t === 'summary' && d.findings.length}<span class="tab-count">{d.findings.length}</span>{/if}
             </a>
           {/each}
         </nav>
 
         <section class="tab-panel" aria-label={labels[tab]}>
-          {#if tab === 'summary'}
-            <SummaryTab {slug} {d} {finding} />
-          {:else if tab === 'diff'}
-            <DiffTab {base} {d} {version} />
-          {:else if tab === 'conversation'}
-            <ConversationTab {base} {version} {slug} />
-          {:else if tab === 'timeline'}
-            <TimelineTab {slug} {d} />
-          {:else if tab === 'raw'}
-            <RawTab {base} {d} {version} />
-          {:else}
-            <UsageTab {d} />
-          {/if}
+          {#each visited as view (view)}
+            <div class="review-tab" hidden={view !== tab}>
+              {#if view === 'summary'}
+                <SummaryTab {slug} {d} oninspect={() => inspection++} finding={tab === view ? finding : undefined} />
+              {:else if view === 'diff'}
+                <DiffTab {base} {d} {version} {finding} {inspection} bind:selected={selectedFinding} active={tab === view} />
+              {:else if view === 'conversation'}
+                <ConversationTab active={tab === view} {base} {version} {slug} />
+              {:else if view === 'timeline'}
+                <TimelineTab {slug} {d} />
+              {:else if view === 'raw'}
+                <RawTab active={tab === view} {base} {d} {version} />
+              {:else}
+                <UsageTab {d} />
+              {/if}
+            </div>
+          {/each}
         </section>
       {/snippet}
     </StateView>

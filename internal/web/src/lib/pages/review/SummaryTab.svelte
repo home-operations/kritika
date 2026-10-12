@@ -2,6 +2,7 @@
   import type { ReviewDetail, Severity } from '../../types';
   import { SEVERITIES } from '../../format';
   import Markdown from '../../components/Markdown.svelte';
+  import ReviewImpact from './ReviewImpact.svelte';
   import Confidence from '../../components/Confidence.svelte';
   import FindingCard from './FindingCard.svelte';
 
@@ -10,7 +11,7 @@
 
   // finding is the id of the finding a link led here for.
   // slug is the account, for the links to a rule's findings.
-  let { slug, d, finding }: { slug: string; d: ReviewDetail; finding?: string } = $props();
+  let { slug, d, finding, oninspect }: { slug: string; d: ReviewDetail; finding?: string; oninspect: () => void } = $props();
   $effect(() => {
     if (finding) focusWhenShown(`#finding-${CSS.escape(finding)}`, true);
   });
@@ -42,7 +43,7 @@
   <section class="panel" aria-labelledby="sum-impact">
     <header class="panel-head"><h2 id="sum-impact">Merge impact</h2></header>
     <div class="panel-body">
-      <Markdown text={d.summary.impact.map((note) => `- ${note.replaceAll('\n', '\n  ')}`).join('\n')} />
+      <ReviewImpact notes={d.summary.impact} />
     </div>
   </section>
 {/if}
@@ -53,7 +54,10 @@
 {#each groups as g (g.s)}
   <section class="finding-group" aria-labelledby="sev-{g.s}">
     <h2 id="sev-{g.s}" class="finding-group-head"><span class="sev sev-{g.s}">{g.s}</span> {g.items.length}</h2>
-    {#each g.items as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />{/each}
+    {#each g.items as f (f.id)}
+      <FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} />
+      <a class="finding-code-link" onclick={(e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) oninspect(); }} href={href({ name: 'review', slug, id: d.review.id, tab: 'diff', finding: f.id })}>Inspect {f.path}:{f.line} in code →</a>
+    {/each}
   </section>
 {/each}
 

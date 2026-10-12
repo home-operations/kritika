@@ -104,8 +104,8 @@ body {
 }
 
 /* ---- shell + topbar -------------------------------------------------- */
-/* The top bar holds the brand, the account switcher and the actions, and
-   under them the section tabs; the routed page fills the rest. */
+/* Shared shell primitives; workspace.css arranges the desktop sidebar
+   and compact mobile header around the routed page. */
 .app {
   display: flex;
   flex-direction: column;
@@ -182,9 +182,9 @@ body {
 /* The sizes text is set in and the corners boxes are cut with. A size or
    a corner outside these is one of a kind, and written where it is used. */
 :root {
-  --type-xs: 11px;
-  --type-sm: 12px;
-  --type-md: 13px;
+  --type-xs: 12px;
+  --type-sm: 13px;
+  --type-md: 14px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;

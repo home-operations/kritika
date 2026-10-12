@@ -1,6 +1,4 @@
 <script lang="ts">
-  // A review's findings by severity as one small tinted square each,
-  // P0 first; a severity with none is left out.
   import type { SeverityCounts } from '../types';
   import { SEVERITIES } from '../format';
   let { counts }: { counts: SeverityCounts } = $props();
@@ -9,7 +7,7 @@
 <span class="sev-counts">
   {#each SEVERITIES as s (s)}
     {#if counts[s] > 0}
-      <span class="sev-chip sev-{s}" title="{counts[s]} {s}">{counts[s]}<span class="sr-only">{` ${s} `}</span></span>
+      <span class="sev-chip sev-{s}" title="{counts[s]} {s}">{counts[s]}<span class="sev-count-label">{` ${s} `}</span></span>
     {/if}
   {/each}
 </span>

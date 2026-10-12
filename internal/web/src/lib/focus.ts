@@ -5,10 +5,17 @@ import type { Attachment } from 'svelte/attachments';
 export const revealInNav: Attachment<HTMLElement> = (node) => {
   const nav = node.closest('nav');
   if (!nav) return;
-  const item = node.getBoundingClientRect();
-  const strip = nav.getBoundingClientRect();
-  if (item.left < strip.left) nav.scrollLeft += item.left - strip.left;
-  else if (item.right > strip.right) nav.scrollLeft += item.right - strip.right;
+  const reveal = (): void => {
+    const item = node.getBoundingClientRect();
+    const strip = nav.getBoundingClientRect();
+    if (item.left < strip.left) nav.scrollLeft += item.left - strip.left;
+    else if (item.right > strip.right) nav.scrollLeft += item.right - strip.right;
+  };
+  reveal();
+  const observer = new ResizeObserver(reveal);
+  observer.observe(nav);
+  observer.observe(node);
+  return () => observer.disconnect();
 };
 
 // focusWhenShown focuses the element target selects once the page shows

@@ -121,7 +121,7 @@ test.describe('sign-in page', () => {
 });
 
 test.describe('signed-in shell', () => {
-  test('shows the scope switcher, the scope\'s tabs and the user menu', async ({ page, signIn }) => {
+  test('shows the scope switcher, the scope\'s navigation and the user menu', async ({ page, signIn }) => {
     await signIn({ ...DEFAULT_ME, admin: true });
     await page.goto('/');
 
@@ -133,8 +133,7 @@ test.describe('signed-in shell', () => {
     await page.keyboard.press('Escape');
     await expect(scopes).toBeHidden();
 
-    // The instance's tabs are under the topbar's first row, above the page,
-    // and none of them leads into an account.
+    // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
     await expect(instance).toHaveText(['Overview', 'Configuration']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
@@ -144,15 +143,15 @@ test.describe('signed-in shell', () => {
     // An account's sections replace them once the scope is that account.
     await page.locator('.account-button').click();
     await scopes.getByRole('link', { name: 'github/acme' }).click();
-    const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).getByRole('link');
-    await expect(tabs).toHaveText(['Analytics', 'Pull requests', 'Rules', 'Settings']);
-    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme');
+    const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Sections' }).locator('.section-tab');
+    await expect(tabs).toHaveText(['Pull requests', 'Analytics', 'Rules', 'Settings']);
+    await expect(tabs.first()).toHaveAttribute('href', '#/a/github/acme/pulls');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Instance' })).toHaveCount(0);
     await page.goto('/');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
     const bar = await page.locator('.topbar').boundingBox();
     const main = await page.locator('main.page').boundingBox();
-    expect(bar && main && bar.y + bar.height <= main.y).toBe(true);
+    expect(bar && main && bar.x + bar.width <= main.x).toBe(true);
     await expect(page.locator('.user-button')).toHaveAttribute('title', DEFAULT_ME.user.displayName);
 
     await page.locator('.user-button').click();

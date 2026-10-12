@@ -33,19 +33,25 @@
   }
 </script>
 
+{#if onpick}
+  <label class="pull-select-all">
+    <input
+      type="checkbox"
+      aria-label="Select every pull request shown"
+      checked={open.length > 0 && open.every((p) => picked.includes(pullKey(p)))}
+      disabled={open.length === 0}
+      onchange={(e) => onpick(open.map(pullKey), e.currentTarget.checked)}
+    />
+    Select every pull request shown
+  </label>
+{/if}
 <div class="table-wrap table-card">
   <table class="data pull-table">
     <thead>
       <tr>
         {#if onpick}
           <th scope="col" class="pick">
-            <input
-              type="checkbox"
-              aria-label="Select every pull request shown"
-              checked={open.length > 0 && open.every((p) => picked.includes(pullKey(p)))}
-              disabled={open.length === 0}
-              onchange={(e) => onpick(open.map(pullKey), e.currentTarget.checked)}
-            />
+            <span class="sr-only">Selection</span>
           </th>
         {/if}
         <th scope="col">Pull request</th>
@@ -100,9 +106,9 @@
               <span class="badge" title="Automatic reviews are paused: a push is not reviewed until someone asks for a review or resumes them">paused</span>
             {/if}
           </td>
-          <td class="num">{wholeNumber(p.reviewCount)}</td>
-          <td class="num">{costTotal(p.costUsd, p.unpricedCalls)}</td>
-          <td class="num"><Time iso={p.updatedAt} /></td>
+          <td class="num" data-label="Reviews">{wholeNumber(p.reviewCount)}</td>
+          <td class="num" data-label="API spend">{costTotal(p.costUsd, p.unpricedCalls)}</td>
+          <td class="num" data-label="Updated"><Time iso={p.updatedAt} /></td>
         </tr>
       {/each}
     </tbody>

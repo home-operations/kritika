@@ -189,7 +189,10 @@ function parseAccountRoute(slug: string, rest: string[], query: URLSearchParams)
         const finding = query.get('finding');
         return finding ? { name: 'review', slug, id: tail[0]!, finding } : { name: 'review', slug, id: tail[0]! };
       }
-      if (tail.length === 2) return { name: 'review', slug, id: tail[0]!, tab: isReviewTab(tail[1]) ? tail[1] : undefined };
+      if (tail.length === 2) {
+        const finding = query.get('finding');
+        return { name: 'review', slug, id: tail[0]!, tab: isReviewTab(tail[1]) ? tail[1] : undefined, ...(finding ? { finding } : {}) };
+      }
       break;
     case 'findings':
       if (tail.length === 0) {
@@ -270,7 +273,7 @@ export function href(r: Route): string {
     case 'pull':
       return `#/a/${slugPath(r.slug)}/pulls/${s(r.owner)}/${s(r.repo)}/${r.number}`;
     case 'review':
-      if (r.tab) return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}`;
+      if (r.tab) return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}/${s(r.tab)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
       return `#/a/${slugPath(r.slug)}/reviews/${s(r.id)}${r.finding ? `?finding=${s(r.finding)}` : ''}`;
     case 'findings': {
       const query = new URLSearchParams(Object.entries(r.filter ?? {})).toString();

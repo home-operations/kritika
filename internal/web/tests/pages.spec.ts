@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 test.describe('overview', () => {
   test('a single-account member stays on the breakdown instead of leaving for the account', async ({ page }) => {
     await page.goto('/#/');
-    await expect(page.locator('.page-head h1')).toHaveText('All accounts');
+    await expect(page.locator('.page-head h1')).toHaveText('Your review workspace');
     await expect(page).toHaveURL(/#\/$/);
     const rows = page.locator('table.account-breakdown tbody tr');
     await expect(rows).toHaveCount(1);
@@ -82,7 +82,7 @@ test.describe('overview', () => {
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [a, free, full]], ...g.defaultApi()]);
     await page.goto('/#/');
     const today = (slug: string) => page.getByRole('row').filter({ hasText: slug }).getByRole('cell').nth(4);
-    await expect(page.getByRole('columnheader').nth(4)).toHaveText('Today');
+    await expect(page.locator('.account-breakdown').getByRole('columnheader').nth(4)).toHaveText('Today');
     await expect(today(a.slug)).toContainText(`${a.usage.reviewsToday} of ${a.usage.reviewsPerDay}`);
     await expect(today('github/free')).toHaveText('7');
     await expect(today('github/free').getByRole('meter')).toHaveCount(0);
@@ -133,7 +133,7 @@ test('a long account or App name is cut short, whole in its title, before a tabl
     const row = page.getByRole('row').filter({ hasText: 'an-organization' });
     await expect(row.locator('td.name-fill')).toHaveAttribute('title', slug);
     await expect(row.locator('td.name-clip')).toHaveAttribute('title', connection);
-    expect(await row.locator('xpath=ancestor::div[contains(@class,"table-wrap")]').evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+    expect(await row.locator('xpath=ancestor::div[contains(@class,"table-wrap")]').evaluate((el) => el.scrollWidth - el.clientWidth), h).toBe(0);
   }
   await page.goto('/#/');
   const wants = page.getByRole('row').filter({ hasText: 'an-organization' }).locator('.account-wants .pill');
@@ -622,7 +622,7 @@ test.describe('findings', () => {
     await expect(row.getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${f.pull.url}#discussion_r${f.forgeCommentId}`);
     await expect(row.locator('.finding-rules').getByRole('link')).toHaveText(f.rules);
     await expect(page.locator('.sections .section-tab.active')).toHaveText('Analytics');
-    await expect(page.getByRole('navigation', { name: 'Analytics' }).getByRole('link', { name: 'Findings' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Findings', exact: true })).toHaveAttribute('aria-current', 'page');
 
     await row.locator('.finding-sub').first().click();
     await expect(page).toHaveURL(new RegExp(`${T}/reviews/${f.reviewId}\\?finding=${f.id}$`));
@@ -869,6 +869,7 @@ test.describe('review', () => {
       `${g.reviewDetail.review.pull.url}#discussion_r${f.forgeCommentId}`,
     );
     const r = g.reviewDetail.review;
+    await page.locator('.review-details summary').click();
     const fact = (name: string) => page.locator('.page-head .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
     await expect(fact('Scope')).toHaveText(new RegExp(`^${r.scope}\\s\\(${r.scopeReason}\\)$`));
     await expect(fact('Risk')).toHaveText(r.confidence!.risk);
@@ -1005,7 +1006,7 @@ test.describe('review', () => {
     await expect(anchored.locator('xpath=preceding-sibling::tr[1]')).toContainText('var x *int');
     await expect(page.locator('tr.dl-marked')).toHaveCount(1);
     await expect(page.locator('tr.dl-marked')).toContainText('var x *int');
-    await page.getByRole('button', { name: /a\.go/ }).click();
+    await page.locator('.diff-file-head').getByRole('button', { name: /a\.go/ }).click();
     await expect(page.locator('table.diff')).toHaveCount(0);
   });
 
@@ -1478,7 +1479,7 @@ test('a signed-in user navigating to sign-in is sent back', async ({ page, mockP
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await page.evaluate(() => (location.hash = '#/signin'));
   await expect(page).toHaveURL(/#\/$/);
-  await expect(page.locator('.page-head h1')).toHaveText('All accounts');
+  await expect(page.locator('.page-head h1')).toHaveText('Your review workspace');
   await expect(page.locator('.signin-card')).toHaveCount(0);
 });
 
