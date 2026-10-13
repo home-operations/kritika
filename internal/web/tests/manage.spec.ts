@@ -232,7 +232,8 @@ test.describe('configuration page', () => {
     ]);
     await page.goto('/#/admin');
     const panel = page.locator('#op-setup').locator('../..');
-    await expect(panel).toContainText('3 of 4 done');
+    await expect(panel).toContainText('Complete · 3 of 4 done');
+    await panel.getByRole('button', { name: 'Steps', exact: true }).click();
     await expect(panel.locator('li.done')).toHaveCount(3);
     await expect(panel.getByRole('listitem').last()).toContainText('Set embedding');
   });
