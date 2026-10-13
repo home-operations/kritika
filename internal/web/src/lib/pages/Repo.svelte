@@ -163,7 +163,7 @@
       {#snippet children(d)}
         {@const rc = d.repoConfig}
         {@const enabled = d.enabled && (rc?.settings.enabled ?? true) ? 'yes' : 'no'}
-        {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
+        {@const why = d.archived ? 'archived on GitHub' : d.turnedOn === false ? 'off in the dashboard' : d.turnedOn === true ? 'turned on in the dashboard' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
         {@const rows = shown(d, settingRows)}
         {@const agent = shown(d, agentRows)}
         <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-3.5">

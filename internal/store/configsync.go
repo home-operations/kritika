@@ -157,14 +157,16 @@ func upsertConnection(ctx context.Context, tx pgx.Tx, in *configfile.Connection)
 // upsertRepository records a repository the configuration lists, enabled
 // as listed: whether it runs is File.Runs's call. It also takes over a
 // forge-discovered row: listing a repository the poller or a webhook
-// already found makes it declared. A known row keeps its spelling, which is
-// GitHub's once it reported one.
+// already found makes it declared. A discovery default has no turned_at;
+// only an admin's timestamped choice overrides the configuration. A known
+// row keeps its spelling, which is GitHub's once it reported one.
 func upsertRepository(ctx context.Context, tx pgx.Tx, a *configfile.Account, r *configfile.Repository) error {
 	name := a.Name + "/" + r.Name
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO repositories (id, account_id, name, managed_by, enabled)
 		VALUES ($1, $2, $3, 'file', true)
-		ON CONFLICT (id) DO UPDATE SET managed_by = 'file', enabled = true, disabled_at = NULL, updated_at = now()`,
+		ON CONFLICT (id) DO UPDATE SET managed_by = 'file', enabled = true, disabled_at = NULL,
+			turned_on = CASE WHEN repositories.turned_at IS NULL THEN NULL ELSE repositories.turned_on END, updated_at = now()`,
 		configfile.RepositoryID(a.ID(), name), a.ID(), name); err != nil {
 		return fmt.Errorf("store: upsert repository %s: %w", name, err)
 	}

@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -25,6 +26,17 @@ func TestDiscoveredRepositoryWaitsForEnablement(t *testing.T) {
 		if _, err := st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id > $1`, lastJob); err != nil {
 			t.Error(err)
 		}
+		ctx := context.Background()
+		if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE repository_id IN
+				(SELECT id FROM repositories WHERE name LIKE 'onedr0p/discovered-%')`); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `DELETE FROM repositories WHERE name LIKE 'onedr0p/discovered-%'`)
+			return err
+		}); err != nil {
+			t.Error(err)
+		}
 	})
 	f.Defaults.Enabled = new(true)
 	a.Enabled = new(true)
@@ -36,11 +48,23 @@ func TestDiscoveredRepositoryWaitsForEnablement(t *testing.T) {
 	} {
 		t.Run(string(ev.Kind), func(t *testing.T) {
 			ev.Repository = repo("onedr0p/discovered-" + string(ev.Kind))
-			for range 2 {
+			var registeredAt time.Time
+			for attempt := range 2 {
 				out, err := svc.Dispatch(ctx, request(f, ev))
 				if err != nil || out != (Outcome{Status: Skipped, Reason: reasonDisabled}) {
 					t.Fatalf("dispatch before enablement = %+v, %v", out, err)
 				}
+				var updatedAt time.Time
+				if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
+					return tx.QueryRow(ctx, `SELECT updated_at FROM repositories WHERE id = $1`,
+						configfile.RepositoryID(a.ID(), ev.Repository.FullName)).Scan(&updatedAt)
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if attempt > 0 && !updatedAt.Equal(registeredAt) {
+					t.Fatal("a skipped event rewrote a known repository")
+				}
+				registeredAt = updatedAt
 			}
 			if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
 				r, err := store.FindRepo(ctx, tx, ev.Repository.FullName)

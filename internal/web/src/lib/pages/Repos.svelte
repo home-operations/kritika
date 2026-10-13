@@ -165,7 +165,9 @@
     {#if kind === 'forks'}
       <p class="small muted text-ui-sm">A fork is only reviewed and indexed once turned on here.</p>
     {:else if kind === 'archived'}
-      <p class="small muted text-ui-sm">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
+      <p class="small muted text-ui-sm">An archived repository is never reviewed or indexed. Unarchive it on GitHub, resync, then turn it on if it is off.</p>
+    {:else}
+      <p class="small muted text-ui-sm">Newly discovered repositories start off. Turn on the repositories you want reviewed and indexed.</p>
     {/if}
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {@const rows = visible()}

@@ -100,17 +100,30 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 
 // TurnedOn is the repository's dashboard enablement: false for a newly
 // discovered repository, then the admin's choice. It is nil for repositories
-// using the configuration's default or not known yet.
+// using the configuration's default. An unknown repository returns ErrNotFound.
 func TurnedOn(ctx context.Context, tx pgx.Tx, id string) (*bool, error) {
 	var on *bool
 	err := tx.QueryRow(ctx, `SELECT turned_on FROM repositories WHERE id = $1`, id).Scan(&on)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: read whether repository %s is turned on: %w", id, err)
 	}
 	return on, nil
+}
+
+// PreserveRenamedEnablement carries the old name's enablement within the
+// account, unless an admin has already chosen a state for the new name.
+func PreserveRenamedEnablement(ctx context.Context, tx pgx.Tx, previousID, id string) error {
+	_, err := tx.Exec(ctx, `UPDATE repositories r SET turned_on = old.turned_on, turned_at = old.turned_at
+		FROM repositories old WHERE old.id = $1 AND r.id = $2 AND r.account_id = old.account_id AND r.turned_at IS NULL
+			AND (r.managed_by = 'forge' OR old.turned_at IS NOT NULL)`,
+		previousID, id)
+	if err != nil {
+		return fmt.Errorf("store: preserve renamed repository enablement: %w", err)
+	}
+	return nil
 }
 
 // TurnOn records an admin's choice to review the repository with id or

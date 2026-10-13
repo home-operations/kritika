@@ -36,8 +36,8 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 }
 
 // registerReached records every repository connection r names reaches on
-// an account it serves, so the leader polls them and, with an embedder,
-// indexes them before any webhook names them, and disables the ones an
+// an account it serves, so they appear in the dashboard for enablement
+// before any webhook names them, and disables the ones an
 // account's listing no longer has, as the leader's sync does.
 func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 	in, app, err := s.connectionApp(r)

@@ -210,6 +210,12 @@ func TestActionsJobs(t *testing.T) {
 func testEnableDiscovered(t *testing.T, e *actionsEnv) {
 	ctx := t.Context()
 	reached := []store.ReachedRepository{{FullName: "aj/discovered", DefaultBranch: "main"}}
+	t.Cleanup(func() {
+		if _, err := e.owner.Exec(context.Background(), `DELETE FROM repositories WHERE id = $1`,
+			configfile.RepositoryID(e.accountID, "aj/discovered")); err != nil {
+			t.Error(err)
+		}
+	})
 	const path = "/api/v1/accounts/github/aj/repos/aj/discovered"
 	for _, on := range []bool{false, true, false} {
 		if _, _, err := e.st.RegisterRepositories(ctx, e.accountID, reached, time.Time{}); err != nil {

@@ -230,12 +230,15 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if err := p.closeMissed(ctx, file, account, in, client, r, prs); err != nil {
 			skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
 		}
+		// Enabling a repository also picks up open pulls from while it was
+		// off, even when the account's poll cursor has passed their updates.
+		catchUp := r.TurnedAt != nil && (state.Polled == nil || !r.TurnedAt.Before(*state.Polled))
 		for _, pr := range prs {
-			if pr.UpdatedAt.Before(since) {
+			if !catchUp && pr.UpdatedAt.Before(since) {
 				continue
 			}
 			action := ingest.ActionPoll
-			if state.Polled == nil && !pr.UpdatedAt.After(state.Known) {
+			if !catchUp && state.Polled == nil && !pr.UpdatedAt.After(state.Known) {
 				action = ingest.ActionBaseline
 			}
 			ev := webhook.Event{

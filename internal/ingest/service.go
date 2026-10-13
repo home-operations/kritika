@@ -134,7 +134,7 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
 	settings := req.File.Settings(req.Account, ev.Repository.FullName)
-	runs, err := s.runs(ctx, req)
+	runs, err := s.registerAndCheckRepository(ctx, req)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -300,7 +300,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	if runs, err := s.runs(ctx, req); err != nil || !runs {
+	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "followup"}
@@ -340,7 +340,7 @@ func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
 	if th.SenderIsBot {
 		return Outcome{Status: Skipped, Reason: "bot"}, nil
 	}
-	if runs, err := s.runs(ctx, req); err != nil || !runs {
+	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "thread"}
@@ -375,7 +375,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	if runs, err := s.runs(ctx, req); err != nil || !runs {
+	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "index"}
@@ -462,8 +462,15 @@ func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) 
 		if ev.Action == "deleted" {
 			return store.DisableForgeRepositories(ctx, tx, req.Account.ID(), repoID(req, ev.Repository.FullName))
 		}
-		_, err := ensureRepository(ctx, tx, req, ev.Repository)
-		return err
+		id, err := ensureRepository(ctx, tx, req, ev.Repository)
+		if err != nil {
+			return err
+		}
+		owner, _, _ := strings.Cut(ev.Previous, "/")
+		if ev.Previous != "" && strings.EqualFold(owner, req.Account.Name) && repoID(req, ev.Previous) != id {
+			return store.PreserveRenamedEnablement(ctx, tx, repoID(req, ev.Previous), id)
+		}
+		return nil
 	})
 	if err != nil || ev.Previous == "" {
 		return out, err
@@ -490,14 +497,19 @@ func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook
 	return id, err
 }
 
-// runs reports whether the event's repository is reviewed: what the event
-// says of it, and the choice an admin made for it in the dashboard.
-func (s *Service) runs(ctx context.Context, req Request) (bool, error) {
+// registerAndCheckRepository discovers unknown repositories before checking
+// enablement. Known repositories need only a read until an event is accepted.
+func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (bool, error) {
 	repo := req.Event.Repository
 	t := repo.RepoTraits
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-		id, err := ensureRepository(ctx, tx, req, repo)
-		if err != nil {
+		id := repoID(req, repo.FullName)
+		var err error
+		t.TurnedOn, err = store.TurnedOn(ctx, tx, id)
+		if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if _, err := ensureRepository(ctx, tx, req, repo); err != nil {
 			return err
 		}
 		t.TurnedOn, err = store.TurnedOn(ctx, tx, id)
