@@ -8,6 +8,7 @@
   import Collapsible from '../../components/Collapsible.svelte';
   import HelpPopover from '../../components/HelpPopover.svelte';
   import RowToggle from '../../components/RowToggle.svelte';
+  import { rowToggles } from '../../rowclick';
 
   import { focusWhenShown } from '../../focus';
   import type { ReviewTab, Route } from '../../routes';
@@ -63,7 +64,7 @@
         <thead><tr><th scope="col">Severity</th><th scope="col">Finding</th><th scope="col">Status</th><th scope="col" class="relative"><span class="sr-only">Details</span></th></tr></thead>
         <tbody>
           {#each findings as f (f.id)}
-            <tr class:row-expanded={expanded[f.id]} data-finding={f.id}>
+            <tr class="row-toggles" class:row-expanded={expanded[f.id]} data-finding={f.id} onclick={(e) => { if (rowToggles(e)) expanded[f.id] = !expanded[f.id]; }}>
               <td><span class="sev sev-{f.severity}">{f.severity}</span></td>
               <td class="finding-summary-cell">
                 <a class="finding-code-link font-semibold" aria-label={`Inspect ${f.path}:${f.line} in code`} onclick={(e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) oninspect(); }} href={href(to('diff', f.id))}>{f.title}</a>

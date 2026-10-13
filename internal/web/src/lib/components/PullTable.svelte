@@ -2,10 +2,11 @@
   // One row per pull request: its title over its repository, number and
   // author; its last review's findings and status.
   // `selected` marks the keyboard cursor; a click anywhere on a row that is
-  // not a link opens the pull request. With onpick, each row has a checkbox
+  // not a control opens its preview. With onpick, each row has a checkbox
   // for a bulk action, picked naming the ones checked by pullKey; a merged
   // or closed pull request takes no more reviews, so it has none.
-  import { href, navigate, router } from '../router.svelte';
+  import { href, router } from '../router.svelte';
+  import { rowToggles } from '../rowclick';
   import { pageIn } from '../sections';
   import { pullKey, pullRoute } from '../links';
   import type { Pull } from '../types';
@@ -33,9 +34,8 @@
   const open = $derived(items.filter((p) => p.state === 'open'));
 
 
-  function onRowClick(e: MouseEvent, p: Pull & { account?: string }): void {
-    if ((e.target as Element).closest('a, button, input, label') || getSelection()?.toString()) return;
-    navigate(pullRoute(accountOf(p), p));
+  function onRowClick(e: MouseEvent, key: string): void {
+    if (rowToggles(e)) expanded[key] = !expanded[key];
   }
 </script>
 
@@ -71,8 +71,8 @@
         {@const life = lifecycle(p)}
         {@const key = `${accountOf(p)}:${pullKey(p)}`}
         {@const previewId = `${tableId}-${i}`}
-        <!-- The title is the row's link; the click is a larger target for a pointer. -->
-        <tr class="pull-row cursor-pointer" class:selected={i === selected} class:row-expanded={expanded[key]} data-index={i} onclick={(e) => onRowClick(e, p)}>
+        <!-- The title is the row's link; the rest of the row toggles its preview. -->
+        <tr class="pull-row row-toggles" class:selected={i === selected} class:row-expanded={expanded[key]} data-index={i} onclick={(e) => onRowClick(e, key)}>
           {#if onpick}
             <td class="pick">
               {#if p.state === 'open'}

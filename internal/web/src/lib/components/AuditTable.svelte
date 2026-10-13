@@ -6,6 +6,7 @@
   import LoadMore from './LoadMore.svelte';
   import Time from './Time.svelte';
   import RowToggle from './RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
 
   let { path, showAccount = false }: { path: string; showAccount?: boolean } = $props();
 
@@ -38,7 +39,7 @@
       <tbody>
         {#each paged.items as e (e.id)}
           {@const previewId = `${tableId}-${e.id}`}
-          <tr class:row-expanded={expanded[e.id]}>
+          <tr class:row-toggles={hasDetail(e)} class:row-expanded={expanded[e.id]} onclick={(ev) => { if (hasDetail(e) && rowToggles(ev)) expanded[e.id] = !expanded[e.id]; }}>
             <td><Time iso={e.at} /></td>
             {#if showAccount}<td class="mono">{e.account || '—'}</td>{/if}
             <td>{e.actor?.displayName ?? 'system'}</td>

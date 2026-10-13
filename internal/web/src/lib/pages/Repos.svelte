@@ -17,6 +17,7 @@
   import LoadMore from '../components/LoadMore.svelte';
   import RepoTraits from '../components/RepoTraits.svelte';
   import RowToggle from '../components/RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
   import RepoPreview from '../components/RepoPreview.svelte';
   import Dialog from '../components/Dialog.svelte';
   import Icon from '../Icon.svelte';
@@ -206,7 +207,7 @@
               {#each rows as repo, i (repo.id)}
                 {@const key = `${slug}:${repo.id}`}
                 {@const previewId = `${tableId}-${i}`}
-                <tr class:row-expanded={expanded[key]}>
+                <tr class="row-toggles" class:row-expanded={expanded[key]} onclick={(e) => { if (rowToggles(e)) expanded[key] = !expanded[key]; }}>
                   {#if manage}
                     <td>
                       {#if !repo.archived}

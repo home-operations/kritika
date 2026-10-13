@@ -516,10 +516,16 @@ test.describe('pulls list', () => {
     await expect(page).toHaveURL(/repo=nope%2Fnope$/);
   });
 
-  test('a click anywhere on a row opens its pull request', async ({ page }) => {
+  test('a click anywhere on a row opens and closes its preview; the title opens the pull request', async ({ page }) => {
     await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/pulls`);
-    await page.locator('.pull-rows .pull-row').first().getByText('ada', { exact: false }).click();
+    const row = page.locator('.pull-rows .pull-row').first();
+    await row.getByText('ada', { exact: false }).click();
+    await expect(page.getByRole('region', { name: 'Preview of alpha/one#7', exact: true })).toBeVisible();
+    await row.getByText('ada', { exact: false }).click();
+    await expect(page.getByRole('region', { name: 'Preview of alpha/one#7', exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
+    await row.getByRole('link', { name: 'Add widgets' }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
   });
 

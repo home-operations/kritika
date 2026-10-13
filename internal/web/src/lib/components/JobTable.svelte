@@ -11,6 +11,7 @@
   import Segmented from './Segmented.svelte';
   import ActionDialog from './ActionDialog.svelte';
   import RowToggle from './RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
   import type { ComponentProps } from 'svelte';
 
   let { jobs, account, several = false, ondone, filter, onfilter }: { jobs: J[]; account: (j: J) => string; several?: boolean; ondone?: () => void; filter?: QueueFilter; onfilter: (filter: QueueFilter) => void } = $props();
@@ -59,7 +60,7 @@
       {#each visible as j, i (`${account(j)}:${j.id}`)}
         {@const key = `${account(j)}:${j.id}`}
         {@const previewId = `${tableId}-${i}`}
-        <tr class:row-expanded={expanded[key]}>
+        <tr class="row-toggles" class:row-expanded={expanded[key]} onclick={(e) => { if (rowToggles(e)) expanded[key] = !expanded[key]; }}>
           {#if several}<td data-label="Account" class="mono small text-ui-sm"><a href={href({ name: 'queue', slug: account(j) })}>{account(j)}</a></td>{/if}
           <td data-label="Job / target"><strong>#{j.id} · {j.kind}</strong>
             {#if j.kind === 'thread' && j.args.resolved !== undefined}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">{j.args.resolved ? 'Resolve thread' : 'Restore thread'}</span>{/if}

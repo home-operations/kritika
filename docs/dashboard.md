@@ -135,9 +135,10 @@ finding rows. Expand a row for the explanation and suggested fix, or select its
 title to inspect the code. Confidence explanations, positive notes and checked
 rules open on demand. Incomplete reviews and pending retries remain visible.
 
-Use a row's chevron to preview its latest review and up to three findings
-without leaving the list. The title still opens the pull request. Previews
-load when opened and follow live review updates.
+Use a row's chevron, or click anywhere on the row that is not a link, to
+preview its latest review and up to three findings without leaving the
+list. The title opens the pull request. Previews load when opened and
+follow live review updates.
 
 Each row counts the reviews that completed and what every review of it
 cost. An admin can pick open pull requests, by checkbox or with Space on

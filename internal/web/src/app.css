@@ -1289,6 +1289,9 @@
   table.data .row-toggle-cell {
     @apply w-12 text-right align-middle;
   }
+  table.data tr.row-toggles {
+    @apply cursor-pointer;
+  }
   /* Only some audit rows have detail; the toggle must not make theirs taller. */
   table.audit .row-toggle-cell {
     @apply py-0;
