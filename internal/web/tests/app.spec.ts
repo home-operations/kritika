@@ -365,11 +365,13 @@ test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn
   await expect(page.locator('.account-button')).toHaveCount(0);
 });
 
-test('the wordmark takes a review pass on hover, then rests, and holds still under reduced motion', async ({ page, signIn }) => {
+test('the wordmark takes a review pass on load and on hover, then rests, and holds still under reduced motion', async ({ page, signIn }) => {
   await signIn();
   await page.goto('/');
   const mark = page.locator('.brand .wordmark');
   await expect(mark).toHaveText('kritika');
+  await expect(mark).toHaveClass(/playing/);
+  await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
   const last = mark.locator('.letter').last();
   await page.locator('.brand').hover();
   await expect(mark).toHaveClass(/playing/);
@@ -378,7 +380,10 @@ test('the wordmark takes a review pass on hover, then rests, and holds still und
   await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
   await expect(mark).toHaveText('kritika');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.mouse.move(0, 0);
+  await page.reload();
+  await expect(mark).toHaveText('kritika');
+  await page.waitForTimeout(400);
+  await expect(mark).not.toHaveClass(/playing/);
   await page.locator('.brand').hover();
   await page.waitForTimeout(200);
   await expect(mark).not.toHaveClass(/playing/);
