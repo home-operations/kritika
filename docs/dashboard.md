@@ -32,7 +32,9 @@ All accounts has these destinations:
 | Overview | A compact summary of running work and usage, one list of review and queue alerts, then a comparison of accounts. Alerts link to the relevant filtered list. |
 | Pull requests | A paginated, searchable list across readable accounts, with an Account column and the same filters as an account's list. |
 | Queue | Jobs across readable accounts and the model slots they hold. |
-| Instance settings | For an admin, the [configuration page](#configuration-page). |
+| Analytics | The [analytics](#analytics) of every readable account added up: no medians, since each account's is its own, and an Account column on the repositories. |
+| Usage & costs | The spend of every readable account added up, with a By account grouping whose rows open each account's own page; the month tiles carry no caps. |
+| Settings | For an admin, the [configuration page](#configuration-page). |
 
 Choosing an account opens its operational overview. Its navigation stays
 within that account; use the scope switcher to return to All accounts.

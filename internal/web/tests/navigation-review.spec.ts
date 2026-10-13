@@ -152,6 +152,6 @@ for (const [word, label] of [['spend', 'Usage & costs'], ['configuration', 'Inst
     await page.goto(`${account}/queue`);
     await page.keyboard.press('Control+k');
     await page.locator('.palette-input input').fill(word!);
-    await expect(page.locator('.palette-row').filter({ hasText: label })).toBeVisible();
+    await expect(page.locator('.palette-row').filter({ hasText: label }).first()).toBeVisible();
   });
 }

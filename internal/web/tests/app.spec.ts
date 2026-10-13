@@ -138,7 +138,7 @@ test.describe('signed-in shell', () => {
 
     // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
-    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Instance settings']);
+    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs', 'Settings']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
     for (const href of await instance.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) expect(href).not.toContain('/a/');
@@ -168,7 +168,7 @@ test.describe('signed-in shell', () => {
     const nav = page.getByRole('navigation', { name: 'Sections' });
     await expect(nav.locator('[aria-current="page"]')).toHaveText('Repositories');
     await expect(nav.getByRole('link', { name: 'Audit log' })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: 'Instance settings' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
   });
 
   test('admin settings stay distinct from account operations', async ({ page, signIn }) => {
@@ -177,18 +177,19 @@ test.describe('signed-in shell', () => {
     await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Audit log' })).toBeVisible();
     await page.goto('/#/admin');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Instance settings');
-    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Accounts', exact: true })).toBeVisible();
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
   });
 
   test('global pull and queue navigation stays consistent as accounts are added', async ({ page, signIn }) => {
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
     await signIn(DEFAULT_ME);
     await page.goto('/');
-    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue']);
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs']);
     await signIn({ ...DEFAULT_ME, accounts: ['github/acme', 'github/globex'] });
     await page.reload();
-    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue']);
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs']);
     await expect(tabs.nth(2)).toHaveAttribute('href', '#/queue');
   });
 

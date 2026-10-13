@@ -8,6 +8,8 @@
 //   #/admin                                   admin console (cross-account)
 //   #/pulls[?<filter>]                       pull requests across accounts
 //   #/queue[?<filter>]                       the queue of every account
+//   #/analytics[?days=1|7|90]                analytics across accounts
+//   #/usage[?<filter>]                       usage/cost across accounts
 //   #/settings                                the viewer's own settings
 //   #/a/<slug>                              account overview; slug is <forge>/<name>
 //   #/a/<slug>/analytics[?days=1|7|90]       account analytics
@@ -128,7 +130,7 @@ export interface UsageFilter {
 export function usageFilter(f: Record<string, string | undefined>): UsageFilter | undefined {
   const out: UsageFilter = {};
   if (f.days === '1' || f.days === '7' || f.days === '90') out.days = f.days;
-  const groups: UsageGroup[] = ['hour', 'week', 'model', 'repo', 'role', 'review'];
+  const groups: UsageGroup[] = ['hour', 'week', 'model', 'repo', 'role', 'review', 'account'];
   const group = groups.find((g) => g === f.group);
   if (group) out.group = group;
   if (f.metric === 'tokens') out.metric = f.metric;
@@ -169,6 +171,8 @@ export type Route =
   | { name: 'instancePulls'; filter?: PullFilter }
   | { name: 'analytics'; slug: string; filter?: AnalyticsFilter }
   | { name: 'instanceQueue'; filter?: QueueFilter }
+  | { name: 'instanceAnalytics'; filter?: AnalyticsFilter }
+  | { name: 'instanceUsage'; filter?: UsageFilter }
   | { name: 'preferences' }
   | { name: 'account'; slug: string }
   | { name: 'repos'; slug: string; filter?: RepoFilter }
@@ -314,6 +318,14 @@ export function parse(hash: string): Route {
     const filter = queueFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
     return { name: 'instanceQueue', ...(filter ? { filter } : {}) };
   }
+  if (parts.length === 1 && parts[0] === 'analytics') {
+    const filter = analyticsFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
+    return { name: 'instanceAnalytics', ...(filter ? { filter } : {}) };
+  }
+  if (parts.length === 1 && parts[0] === 'usage') {
+    const filter = usageFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
+    return { name: 'instanceUsage', ...(filter ? { filter } : {}) };
+  }
   if (parts.length === 1 && parts[0] === 'settings') return { name: 'preferences' };
   if (slug) return parseAccountRoute(slug, parts.slice(3), new URLSearchParams(q < 0 ? '' : hash.slice(q + 1)));
   return { name: 'overview' };
@@ -345,6 +357,10 @@ export function href(r: Route): string {
       return `#/a/${slugPath(r.slug)}/analytics${querySuffix(r.filter)}`;
     case 'instanceQueue':
       return `#/queue${querySuffix(r.filter)}`;
+    case 'instanceAnalytics':
+      return `#/analytics${querySuffix(r.filter)}`;
+    case 'instanceUsage':
+      return `#/usage${querySuffix(r.filter)}`;
     case 'preferences':
       return '#/settings';
     case 'account':

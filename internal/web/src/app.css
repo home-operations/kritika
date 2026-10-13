@@ -497,15 +497,6 @@
       @apply hidden;
     }
   }
-  .subnav-group:first-child {
-    @apply mt-0;
-  }
-  .subnav-part:hover {
-    @apply text-ink bg-panel no-underline;
-  }
-  .topbar .subnav-part {
-    @apply pl-[33px] py-1;
-  }
   .page-head h1 {
     @apply m-0 text-[length:clamp(24px,_2vw,_28px)] font-bold tracking-[-0.025em] [word-break:break-word];
   }
@@ -1022,12 +1013,6 @@
     @apply bg-accent;
   }
   @media (max-width: 640px) {
-    .subnav {
-      @apply flex-none flex-row items-center overflow-x-auto py-1.5 px-2.5 border-r-0 border-b border-solid border-b-line;
-    }
-    .subnav-group {
-      @apply my-0 mx-1.5;
-    }
     .row {
       @apply flex-wrap;
     }
@@ -1305,12 +1290,6 @@
   table.account-breakdown th {
     @apply pl-2 pr-2;
   }
-  .topbar .subnav {
-    @apply flex-none py-3 px-0 border-0 overflow-visible;
-  }
-  .topbar .subnav-group {
-    @apply hidden;
-  }
   .review-tab[hidden] {
     @apply hidden;
   }
@@ -1325,9 +1304,6 @@
   }
   .mobile-nav-panel .workspace-heading {
     @apply block;
-  }
-  .mobile-nav-panel .subnav {
-    @apply flex-col overflow-visible p-0 border-0;
   }
   @media (max-width: 800px) {
     .desktop-navigation {

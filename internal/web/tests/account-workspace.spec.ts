@@ -168,7 +168,7 @@ test('a delayed queue reserves its overview tile', async ({ page }) => {
   await page.goto('/#/');
   const tiles = page.getByRole('region', { name: 'Across all accounts' });
   await expect(tiles.locator('.stat')).toHaveCount(3);
-  const reviews = tiles.locator('.stat').filter({ hasText: 'Reviews, last 7 days' });
+  const reviews = tiles.locator('.stat').filter({ hasText: 'Reviews today' });
   const before = await reviews.boundingBox();
   release();
   await expect(tiles.getByRole('link', { name: /Running now/ })).toBeVisible();

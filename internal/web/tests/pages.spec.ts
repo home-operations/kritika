@@ -1327,7 +1327,7 @@ test.describe('your settings', () => {
     const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
     await page.goto('/#/');
     await page.locator('.user-button').click();
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.locator('.user-panel').getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/settings$/);
     await expect(page.locator('.page-head h1')).toHaveText('Your settings');
 

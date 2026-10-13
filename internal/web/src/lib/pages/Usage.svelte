@@ -17,9 +17,12 @@
   import HelpPopover from '../components/HelpPopover.svelte';
   import ChatGPTAllowances from '../components/ChatGPTAllowances.svelte';
 
-  let { slug, filter }: { slug: string; filter?: UsageFilter } = $props();
+  // No slug is the instance: every readable account added up, grouped by
+  // account if wanted, with no caps.
+  let { slug, filter }: { slug?: string; filter?: UsageFilter } = $props();
   function setFilter(patch: UsageFilter) {
-    navigate({ name: 'usage', slug, filter: usageFilter({ ...filter, ...patch }) });
+    const next = usageFilter({ ...filter, ...patch });
+    navigate(slug ? { name: 'usage', slug, filter: next } : { name: 'instanceUsage', filter: next });
   }
   const PERIODS = [
     { value: '1', label: '24 hours' },
@@ -27,15 +30,17 @@
     { value: '30', label: '30 days' },
     { value: '90', label: '90 days' },
   ] as const;
-  const GROUPS: readonly { value: UsageGroup; label: string }[] = [
+  const ALL_GROUPS: readonly { value: UsageGroup; label: string }[] = [
     { value: 'hour', label: 'Hour' },
     { value: 'day', label: 'Day' },
     { value: 'week', label: 'Week' },
+    { value: 'account', label: 'Account' },
     { value: 'model', label: 'Model' },
     { value: 'repo', label: 'Repository' },
     { value: 'role', label: 'Role' },
     { value: 'review', label: 'Review run' },
   ];
+  const GROUPS = $derived(ALL_GROUPS.filter((g) => !slug || g.value !== 'account'));
   const METRICS = [
     { value: 'cost', label: 'API spend' },
     { value: 'tokens', label: 'Tokens' },
@@ -65,22 +70,36 @@
     if (group === 'review') p.set('metric', metric);
     if (repository !== undefined) p.set('repo', repository);
     if (model !== undefined) p.set('model', model);
-    return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`, signal);
-  }, () => JSON.stringify([accountApi(slug), 'usage', group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
-  // The month so far against the account's caps.
+    return getJSON<UsageSeries>(`${base}/usage?${p}`, signal);
+  }, () => JSON.stringify([base, 'usage', group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
+  const base = $derived(slug ? accountApi(slug) : '/api/v1');
+  // The month so far against the account's caps; the instance's is the
+  // accounts' added up, which no cap applies to.
   const summary = Resource.json<AccountSummary[]>(() => '/api/v1/accounts');
   const account = $derived(summary.data?.find((t) => t.slug === slug));
-  const detail = Resource.json<AccountDetail>(() => accountApi(slug));
-  const month = $derived(detail.data?.usage ?? account?.usage);
+  const detail = Resource.json<AccountDetail>(() => accountApi(slug ?? ''));
+  const month = $derived(slug ? (detail.data?.usage ?? account?.usage) : summary.data && instanceMonth(summary.data));
 
-  // The median and the mean are of the reviews whose cost is known.
+  function instanceMonth(list: AccountSummary[]): MonthUsage {
+    const sum = (f: (u: MonthUsage) => number) => list.reduce((n, t) => n + f(t.usage), 0);
+    return {
+      tokens: sum((u) => u.tokens), costUsd: sum((u) => u.costUsd), unpricedCalls: sum((u) => u.unpricedCalls ?? 0),
+      tokensPerMonth: 0, reviewsToday: sum((u) => u.reviewsToday), reviewsPerDay: 0, reviews: sum((u) => u.reviews),
+      unpricedReviews: sum((u) => u.unpricedReviews ?? 0), reviewCostUsd: sum((u) => u.reviewCostUsd), medianReviewCostUsd: null,
+    };
+  }
+
+  // The median and the mean are of the reviews whose cost is known. The
+  // instance has only the mean: each account reports its own median, and
+  // medians do not add up.
   function reviewSpend(m: MonthUsage): string {
     const priced = m.reviews - (m.unpricedReviews ?? 0);
     if (!m.reviews) return 'no review completed this month';
-    if (!priced || m.medianReviewCostUsd === null) return `${wholeNumber(m.reviews)} reviews this month, all with unpriced calls`;
+    if (!priced) return `${wholeNumber(m.reviews)} reviews this month, all with unpriced calls`;
+    if (m.medianReviewCostUsd === null) return `${usd(m.reviewCostUsd / priced)} per review, mean of ${wholeNumber(priced)}${reviewsLeftOut(m.unpricedReviews)}`;
     return `${usd(m.medianReviewCostUsd)} per review (median) · ${usd(m.reviewCostUsd / priced)} mean of ${wholeNumber(priced)}${reviewsLeftOut(m.unpricedReviews)}`;
   }
-  const chatgptEnabled = $derived(account?.chatgptEnabled ?? false);
+  const chatgptEnabled = $derived(slug ? (account?.chatgptEnabled ?? false) : (summary.data?.some((t) => t.chatgptEnabled) ?? false));
   $effect(() => {
     void res.load();
   });
@@ -89,10 +108,11 @@
   });
   $effect(() =>
     live(
-      (e) => e.account === slug && (e.kind === 'model_call' || e.kind === 'review'),
+      (e) => (!slug || e.account === slug) && (e.kind === 'model_call' || e.kind === 'review'),
       (dirty) => {
         if (dirty.has('model_call') || dirty.has('resync')) void res.load();
-        void detail.load();
+        if (slug) void detail.load();
+        else void summary.load();
       },
       2000,
     ),
@@ -118,6 +138,8 @@
   const named = (key: string) => key || '(none)';
   const timed = (g: UsageGroup) => g === 'hour' || g === 'day' || g === 'week';
   const keyLabel = (key: string, g: UsageGroup, short = false) => g === 'hour' ? stamp(key) : g === 'week' ? `Week of ${day(key, short)}` : g === 'day' ? day(key, short) : named(key);
+  // An account's row opens its own usage page, at the same period and metric.
+  const accountRoute = (key: string) => ({ name: 'usage' as const, slug: key, filter: usageFilter({ days, metric }) });
 
   function drill(key: string, by: UsageGroup) {
     if (by === 'repo') setFilter({ repo: key, model: undefined, group: 'model' });
@@ -143,7 +165,7 @@
   }
 </script>
 
-<svelte:head><title>Usage & costs · {slug} · kritika</title></svelte:head>
+<svelte:head><title>Usage & costs · {slug ?? 'All accounts'} · kritika</title></svelte:head>
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner @container w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
@@ -228,12 +250,14 @@
                 {#each tableRows(s) as r (r.key)}
                   {@const prior = previous.get(r.key)}
                   <tr>
-                    <td class:mono={s.group === 'model' || s.group === 'repo'} class="small text-ui-sm">
+                    <td class:mono={s.group === 'model' || s.group === 'repo' || s.group === 'account'} class="small text-ui-sm">
                       {#if s.group === 'repo' || s.group === 'model'}
                         <button class="drill-link border-0 bg-transparent text-accent text-left cursor-pointer py-1.5 px-0 wrap-anywhere" onclick={() => drill(r.key, s.group)}>{keyLabel(r.key, s.group)} →</button>
+                      {:else if s.group === 'account'}
+                        <a href={href(accountRoute(r.key))}>{r.key} →</a>
                       {:else if s.group === 'review' && r.key === '__other__'}<span>Other reviews</span>
                       {:else if s.group === 'review' && r.key}
-                        <a href={href({ name: 'review', slug, id: r.key, tab: 'usage' })}>Review {r.key.slice(0, 8)} →</a>
+                        <a href={href({ name: 'review', slug: r.account ?? slug!, id: r.key, tab: 'usage' })}>Review {r.key.slice(0, 8)} →</a>
                       {:else if s.group === 'review'}<span>Unattributed usage</span>
                       {:else}{keyLabel(r.key, s.group)}{/if}
                     </td>
@@ -275,6 +299,6 @@
       {/snippet}
     </StateView>
     {#if month && (!res.data || (!res.data.rows.length && !res.data.previous.length))}<section class="stats stats-3" aria-label="Totals">{@render limits()}</section>{/if}
-    {#if chatgptEnabled}<ChatGPTAllowances {slug} />{/if}
+    {#if chatgptEnabled && slug}<ChatGPTAllowances {slug} />{/if}
   </div>
 </main>

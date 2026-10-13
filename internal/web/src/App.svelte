@@ -44,7 +44,6 @@
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
   import Page from './lib/pages/Page.svelte';
-  import SettingsNav from './lib/pages/SettingsNav.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import SetupBanner from './lib/pages/admin/SetupBanner.svelte';
   import { describe } from './lib/manage';
@@ -119,6 +118,8 @@
     overview: mdiViewGridOutline,
     instanceQueue: mdiTrayFull,
     instancePulls: mdiSourcePull,
+    instanceAnalytics: mdiChartBoxOutline,
+    instanceUsage: mdiCurrencyUsd,
     console: mdiConsoleLine,
   };
 
@@ -288,7 +289,6 @@
       {/each}
     </nav>
   {/if}
-  {#if me && router.route.name === 'console'}<SettingsNav />{/if}
 {/snippet}
 
 <QueryClientProvider client={queryClient}>

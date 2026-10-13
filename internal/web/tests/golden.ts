@@ -102,6 +102,8 @@ export function defaultApi(): [RegExp, Body][] {
     [/\/api\/v1\/me$/, me],
     [/\/api\/v1\/accounts$/, [accountSummary]],
     [/\/api\/v1\/queue$/, instanceQueue],
+    [/\/api\/v1\/analytics$/, { ...analytics, current: { ...analytics.current, medianReviewMs: null, medianMergeMs: null }, repositories: analytics.repositories.map((r) => ({ ...r, account: SLUG })) }],
+    [/\/api\/v1\/usage$/, usageSeries],
     [/\/api\/v1\/pulls$/, pageOf([{ ...pull, account: SLUG }])],
     [/\/api\/v1\/admin\/accounts$/, [adminAccount]],
     [/\/api\/v1\/admin\/instance$/, [instanceSetting]],

@@ -13,6 +13,8 @@ const ROUTES: Route[] = [
   { name: 'console' },
   { name: 'instanceQueue' },
   { name: 'instancePulls', filter: { state: 'all', outcome: 'failed', q: 'a b&c' } },
+  { name: 'instanceAnalytics', filter: { days: '7' } },
+  { name: 'instanceUsage', filter: { group: 'account', metric: 'tokens' } },
   { name: 'analytics', slug: 'github/acme', filter: { days: '7' } },
   { name: 'preferences' },
   { name: 'account', slug: 'github/acme' },
@@ -124,6 +126,8 @@ test('switching account keeps the page, and a record gives way to its list', () 
     [{ name: 'repo', slug: a, owner: 'acme', repo: 'one' }, { name: 'repos', slug: b }],
     [{ name: 'admin', slug: a, section: 'audit' }, { name: 'admin', slug: b, section: 'audit' }],
     [{ name: 'instanceQueue' }, { name: 'queue', slug: b }],
+    [{ name: 'instanceAnalytics', filter: { days: '7' } }, { name: 'analytics', slug: b, filter: { days: '7' } }],
+    [{ name: 'instanceUsage', filter: { days: '90', group: 'account', repo: 'acme/one' } }, { name: 'usage', slug: b, filter: { days: '90' } }],
     [{ name: 'overview' }, { name: 'account', slug: b }],
     [{ name: 'console' }, { name: 'account', slug: b }],
   ];
@@ -134,6 +138,8 @@ test('widening scope preserves pull and queue filters', () => {
   const slug = 'github/acme';
   expect(pageOfInstance({ name: 'queue', slug, filter: { state: 'waiting' } })).toEqual({ name: 'instanceQueue', filter: { state: 'waiting' } });
   expect(pageOfInstance({ name: 'pulls', slug, filter: { outcome: 'failed' } })).toEqual({ name: 'instancePulls', filter: { outcome: 'failed' } });
+  expect(pageOfInstance({ name: 'analytics', slug, filter: { days: '7' } })).toEqual({ name: 'instanceAnalytics', filter: { days: '7' } });
+  expect(pageOfInstance({ name: 'usage', slug, filter: { group: 'model', metric: 'tokens' } })).toEqual({ name: 'instanceUsage', filter: { group: 'model', metric: 'tokens' } });
   expect(pageOfInstance({ name: 'console' })).toEqual({ name: 'console' });
 });
 
