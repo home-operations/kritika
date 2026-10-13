@@ -1,14 +1,13 @@
 <script lang="ts">
   import { accountApi } from '../links';
   // Lazily loads and shows one follow-up's model conversation.
-  import { getJSON } from '../api.svelte';
   import { Resource } from '../resource.svelte';
   import type { Transcript } from '../types';
   import StateView from './StateView.svelte';
   import Conversation from './conversation/Conversation.svelte';
 
   let { slug, commentId }: { slug: string; commentId: number } = $props();
-  const res = new Resource((signal) => getJSON<Transcript>(`${accountApi(slug)}/followups/${commentId}/transcript`, signal), () => `${accountApi(slug)}/followups/${commentId}/transcript`);
+  const res = Resource.json<Transcript>(() => `${accountApi(slug)}/followups/${commentId}/transcript`);
   $effect(() => {
     void res.load();
   });

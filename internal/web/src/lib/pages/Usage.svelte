@@ -66,9 +66,9 @@
     return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`, signal);
   }, () => JSON.stringify([accountApi(slug), 'usage', group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
   // The month so far against the account's caps.
-  const summary = new Resource((signal) => getJSON<AccountSummary[]>('/api/v1/accounts', signal), () => '/api/v1/accounts');
+  const summary = Resource.json<AccountSummary[]>(() => '/api/v1/accounts');
   const account = $derived(summary.data?.find((t) => t.slug === slug));
-  const detail = new Resource((signal) => getJSON<AccountDetail>(accountApi(slug), signal), () => accountApi(slug));
+  const detail = Resource.json<AccountDetail>(() => accountApi(slug));
   const month = $derived(detail.data?.usage ?? account?.usage);
 
   // The median and the mean are of the reviews whose cost is known.

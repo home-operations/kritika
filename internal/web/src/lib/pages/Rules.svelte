@@ -5,7 +5,6 @@
   // as text or a file, and context files that explain the code, with where
   // each is set and the repositories that read it. Read-only: rules are set
   // in the configuration or a repository's .kritika.yaml.
-  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
@@ -20,7 +19,7 @@
 
   let { slug }: { slug: string } = $props();
 
-  const res = new Resource((signal) => getJSON<Rule[]>(`${accountApi(slug)}/rules`, signal), () => `${accountApi(slug)}/rules`);
+  const res = Resource.json<Rule[]>(() => `${accountApi(slug)}/rules`);
   $effect(() => {
     void res.load();
   });

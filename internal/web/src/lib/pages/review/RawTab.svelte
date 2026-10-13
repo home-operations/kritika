@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { getJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { pretty, bytes } from '../../format';
   import type { ReviewDetail, ReviewRaw } from '../../types';
@@ -8,7 +7,7 @@
   import Collapsible from '../../components/Collapsible.svelte';
 
   let { active, base, d, version }: { active: boolean; base: string; d: ReviewDetail; version: number } = $props();
-  const res = new Resource((signal) => getJSON<ReviewRaw>(`${base}/raw`, signal), () => `${base}/raw`);
+  const res = Resource.json<ReviewRaw>(() => `${base}/raw`);
   $effect(() => {
     void version;
     if (active) void res.load();

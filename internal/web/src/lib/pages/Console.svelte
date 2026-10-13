@@ -4,7 +4,6 @@
   // lacks, the accounts its connections serve, each setting with where it
   // comes from, the connections and their installations, and the admin
   // audit log.
-  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, costTotal, wholeNumber } from '../format';
@@ -15,8 +14,8 @@
   import Checklist from './admin/Checklist.svelte';
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
 
-  const res = new Resource((signal) => getJSON<AdminAccount[]>('/api/v1/admin/accounts', signal), () => '/api/v1/admin/accounts');
-  const instance = new Resource((signal) => getJSON<InstanceSetting[]>('/api/v1/admin/instance', signal), () => '/api/v1/admin/instance');
+  const res = Resource.json<AdminAccount[]>(() => '/api/v1/admin/accounts');
+  const instance = Resource.json<InstanceSetting[]>(() => '/api/v1/admin/instance');
   $effect(() => {
     void res.load();
   });

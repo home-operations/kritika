@@ -673,3 +673,164 @@ test('new runs preserve an open diff and review pages ignore runner traffic for 
   await emit(page, 'followup', 'another-review');
   await expect.poll(() => pullReads).toBe(activityReads + 1);
 });
+
+test('a live refresh supersedes an unfinished initial queue request', async ({ page }) => {
+  const held = gate();
+  let reads = 0;
+  await page.route('**/accounts/github/alpha/queue', async (route) => {
+    if (++reads === 1) {
+      await held.promise;
+      return json(route, [g.job]);
+    }
+    return json(route, []);
+  });
+  await page.goto(`${account}/queue`);
+  await expect.poll(() => reads).toBe(1);
+  await emit(page, 'runner_run');
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.locator('[data-loading="true"]')).toHaveCount(0);
+  held.release();
+  await expect(page.locator('table.data tbody tr')).toHaveCount(0);
+});
+
+test('review polling keeps its interval across an unchanged live response', async ({ page }) => {
+  await page.clock.install();
+  let reads = 0;
+  await page.route('**/pulls/alpha/one/7', (route) => {
+    reads++;
+    return json(route, { ...g.pullDetail, job: g.job });
+  });
+  await page.goto(`${account}/pulls/alpha/one/7`);
+  await expect.poll(() => reads).toBe(1);
+  await expect(page.locator('main h1')).toContainText(g.pullDetail.pull.title);
+  await page.clock.runFor(10_000);
+  await emit(page, 'review');
+  await page.clock.runFor(301);
+  await expect.poll(() => reads).toBe(2);
+  await page.clock.runFor(5_000);
+  await expect.poll(() => reads).toBe(3);
+});
+
+test('palette data is invalidated on a page without live subscribers', async ({ page }) => {
+  let changed = false;
+  let reads = 0;
+  await page.route('**/pulls?state=all&limit=20', (route) => {
+    reads++;
+    return json(route, g.pageOf([{ ...g.pull, title: changed ? 'Updated palette pull' : 'Original palette pull' }]));
+  });
+  await page.goto(`${account}/rules`);
+  await expect(page.locator('main')).toContainText(g.rule.text);
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('.palette-row').filter({ hasText: 'Original palette pull' }).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  const before = reads;
+  changed = true;
+  await emit(page, 'review');
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('.palette-row').filter({ hasText: 'Updated palette pull' }).first()).toBeVisible();
+  expect(reads).toBeGreaterThan(before);
+});
+
+for (const change of ['event', 'write'] as const) {
+  test(`an unrelated account ${change} leaves cached rules fresh`, async ({ page }) => {
+    let reads = 0;
+    await page.route('**/accounts/github/alpha/rules', (route) => {
+      reads++;
+      return json(route, [g.rule]);
+    });
+    await page.goto(`${account}/rules`);
+    await expect(page.locator('main')).toContainText(g.rule.text);
+    await page.route('**/accounts/github/beta/queue', (route) => json(route, [{ ...g.job, cancelableReviewId: 'rev-1' }]));
+    await page.evaluate(() => { location.hash = '#/a/github/beta/queue'; });
+    await expect(page.locator('main h1')).toContainText('Queue');
+    if (change === 'event') {
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('test-live-event', { detail: {
+        kind: 'model_call', data: { kind: 'model_call', account: 'github/beta', id: 'call-1', reviewId: 'rev-2' },
+      } })));
+    } else {
+      const sent = await g.mockWrites(page, [['POST', /\/accounts\/github\/beta\/reviews\/rev-1\/cancel$/, { status: 202, body: g.accepted }]]);
+      await page.locator('.queue-table tbody tr').first().getByRole('button', { name: 'Cancel review' }).click();
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel review' }).click();
+      await expect.poll(() => sent.length).toBe(1);
+      await expect(page.getByRole('status')).toContainText('Cancel requested');
+    }
+    await page.evaluate((hash) => { location.hash = hash; }, `${account.slice(1)}/rules`);
+    await expect(page.locator('main')).toContainText(g.rule.text);
+    await expect(page.locator('[data-loading="true"]')).toHaveCount(0);
+    expect(reads).toBe(1);
+  });
+}
+
+test('leaving a list aborts its pending Load more request', async ({ page }) => {
+  const held = gate();
+  let moreReads = 0;
+  let cancelled = false;
+  page.on('requestfailed', (request) => {
+    if (new URL(request.url()).searchParams.has('cursor')) cancelled = true;
+  });
+  await page.route('**/pulls?*', async (route) => {
+    if (!new URL(route.request().url()).searchParams.has('cursor')) return json(route, g.pageOf([pull(1)], 'more'));
+    moreReads++;
+    await held.promise;
+    return json(route, g.pageOf([pull(2)]));
+  });
+  await page.goto(`${account}/pulls`);
+  await page.getByRole('button', { name: 'Load more' }).click();
+  await expect.poll(() => moreReads).toBe(1);
+  await page.evaluate((hash) => { location.hash = hash; }, `${account.slice(1)}/rules`);
+  await expect.poll(() => cancelled).toBe(true);
+  held.release();
+  await expect(page.locator('main')).toContainText(g.rule.text);
+});
+
+test('offline reads report an error and allow retry without waiting for an online event', async ({ page }) => {
+  await page.goto(`${account}/queue`);
+  await expect(page.locator('.queue-table')).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await page.route('**/rules', (route) => route.abort('internetdisconnected'));
+  await page.evaluate((hash) => { location.hash = hash; }, `${account.slice(1)}/rules`);
+  await expect(page.getByRole('alert')).toContainText('Failed to fetch');
+  await page.unroute('**/rules');
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.locator('main')).toContainText(g.rule.text);
+});
+
+test('palette logs each failed fetch only once across other query updates', async ({ page }) => {
+  const held = gate();
+  const errors: string[] = [];
+  page.on('console', (message) => {
+    if (message.text().startsWith('palette recent pulls:')) errors.push(message.text());
+  });
+  await page.route('**/api/v1/me', (route) => json(route, { ...g.me, accounts: [g.SLUG, 'github/beta'] }));
+  await page.route('**/accounts/github/alpha/pulls?state=all&limit=20', (route) => json(route, { message: 'Palette unavailable' }, 503));
+  await page.route('**/accounts/github/beta/pulls?state=all&limit=20', async (route) => {
+    await held.promise;
+    return json(route, g.pageOf([g.pull]));
+  });
+  await page.goto(`${account}/rules`);
+  await expect(page.locator('main')).toContainText(g.rule.text);
+  await page.keyboard.press('Control+k');
+  await expect.poll(() => errors.length).toBe(1);
+  held.release();
+  await expect(page.locator('.palette-row').filter({ hasText: g.pull.title })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.palette-row')).toHaveCount(0);
+  expect(errors).toHaveLength(1);
+});
+
+for (const [tab, endpoint, reviewId] of [['diff', 'diff', 'rev-1'], ['diff', 'diff', 'rev-other'], ['raw', 'raw', 'rev-other'], ['conversation', 'transcript', 'rev-other']]) {
+  test(`${reviewId === 'rev-1' ? 'same-review' : 'unrelated review'} events preserve the cached ${tab} payload`, async ({ page }) => {
+    const seen = await g.mockApi(page, g.defaultApi());
+    const reads = () => seen.filter((url) => url.pathname.endsWith(`/reviews/rev-1/${endpoint}`)).length;
+    await page.goto(`${account}/reviews/rev-1/${tab}`);
+    await expect.poll(reads).toBe(1);
+    await expect(page.locator('[data-loading="true"]')).toHaveCount(0);
+    await page.evaluate((hash) => { location.hash = hash; }, `${account.slice(1)}/rules`);
+    await expect(page.locator('main')).toContainText(g.rule.text);
+    await emit(page, 'review', reviewId);
+    await page.evaluate((hash) => { location.hash = hash; }, `${account.slice(1)}/reviews/rev-1/${tab}`);
+    await expect(page.locator('main h1')).not.toHaveText('Rules');
+    await expect(page.locator('[data-loading="true"]')).toHaveCount(0);
+    expect(reads()).toBe(1);
+  });
+}

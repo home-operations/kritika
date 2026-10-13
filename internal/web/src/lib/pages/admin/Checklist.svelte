@@ -2,7 +2,6 @@
   // What the instance still lacks before it reviews, each step with what to
   // set in the configuration file, and why the file's latest content was
   // refused, when it was.
-  import { getJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { checklist } from '../../setup';
   import type { AdminAccount, SetupStatus } from '../../types';
@@ -11,7 +10,7 @@
 
   let { accounts }: { accounts: AdminAccount[] } = $props();
 
-  const status = new Resource((signal) => getJSON<SetupStatus>('/api/v1/admin/setup', signal), () => '/api/v1/admin/setup');
+  const status = Resource.json<SetupStatus>(() => '/api/v1/admin/setup');
   $effect(() => {
     void status.load();
   });

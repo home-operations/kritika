@@ -45,8 +45,8 @@
     const p = new URLSearchParams({ from, group });
     return getJSON<Analytics>(`${base}/analytics?${p}`, signal);
   }, () => JSON.stringify([base, 'analytics', days, group]));
-  const detail = new Resource((signal) => getJSON<AccountDetail>(base, signal), () => base);
-  const attention = new Resource((signal) => getJSON<Attention>(`${base}/attention`, signal), () => `${base}/attention`);
+  const detail = Resource.json<AccountDetail>(() => base);
+  const attention = Resource.json<Attention>(() => `${base}/attention`);
   $effect(() => {
     void res.load();
   });

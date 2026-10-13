@@ -1,6 +1,5 @@
 <script lang="ts">
   import PageHeader from '../components/PageHeader.svelte';
-  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
@@ -18,8 +17,8 @@
   const fullName = $derived(`${owner}/${repo}`);
   const account = $derived(`${accountApi(slug)}`);
 
-  const res = new Resource((signal) => getJSON<RepoDetail>(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, signal), () => `${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
-  const pulls = new Resource((signal) => getJSON<Page<Pull>>(`${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`, signal), () => `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`);
+  const res = Resource.json<RepoDetail>(() => `${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+  const pulls = Resource.json<Page<Pull>>(() => `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`);
 
   $effect(() => {
     void res.load();

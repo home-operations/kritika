@@ -1,6 +1,5 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { getJSON } from '../../api.svelte';
   import { router, replace } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
   import { listKeys } from '../../listkeys';
@@ -23,7 +22,7 @@
     base: string; d: ReviewDetail; version: number; finding?: string;
     active?: boolean; selected?: string; inspection: number;
   } = $props();
-  const res = new Resource((signal) => getJSON<ReviewDiff>(`${base}/diff`, signal), () => `${base}/diff`);
+  const res = Resource.json<ReviewDiff>(() => `${base}/diff`);
   let delta = $state(false);
   let navigatorShown = $state(true);
   $effect(() => {
@@ -186,7 +185,7 @@
             <DiffFileView
               {file}
               id={fileId(i)}
-              bind:open={open[i]}
+              bind:open={() => open[i] ?? (total <= TOTAL_LINES && file.lines.length <= FILE_LINES), (value) => { open[i] = value; }}
               findings={findingsByFile.get(i) ?? []}
               pullUrl={d.review.pull.url}
             />

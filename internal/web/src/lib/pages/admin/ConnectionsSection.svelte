@@ -2,7 +2,7 @@
   // The running connections, and the accounts one's GitHub App is installed
   // on: kritika serves only the accounts a connection lists, and an
   // installation on any other can be removed.
-  import { getJSON, sendJSON } from '../../api.svelte';
+  import { sendJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { describe } from '../../manage';
   import { toast } from '../../toast.svelte';
@@ -13,14 +13,14 @@
   import Dialog from '../../components/Dialog.svelte';
   import { AlertDialog } from 'bits-ui';
 
-  const conns = new Resource((signal) => getJSON<Connection[]>('/api/v1/admin/connections', signal), () => '/api/v1/admin/connections');
+  const conns = Resource.json<Connection[]>(() => '/api/v1/admin/connections');
   $effect(() => {
     void conns.load();
   });
 
   let selected = $state('');
   const installationsPath = $derived(`/api/v1/admin/connections/${encodeURIComponent(selected)}/installations`);
-  const installs = new Resource((signal) => getJSON<AppInstallation[]>(installationsPath, signal), () => installationsPath);
+  const installs = Resource.json<AppInstallation[]>(() => installationsPath);
 
   function show(name: string): void {
     selected = name;

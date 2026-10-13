@@ -1,7 +1,6 @@
 <script lang="ts">
   import { queueFilter, type QueueFilter } from '../routes';
   import { replace } from '../router.svelte';
-  import { getJSON } from '../api.svelte';
   import { Resource, live, pollJobs } from '../resource.svelte';
   import { accountApi } from '../links';
   import type { Job } from '../types';
@@ -10,7 +9,7 @@
   import PageHeader from '../components/PageHeader.svelte';
 
   let { slug, filter }: { slug: string; filter?: QueueFilter } = $props();
-  const res = new Resource((signal) => getJSON<Job[]>(`${accountApi(slug)}/queue`, signal), () => `${accountApi(slug)}/queue`);
+  const res = Resource.json<Job[]>(() => `${accountApi(slug)}/queue`);
 
   $effect(() => {
     void res.load();

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { accountApi, repoRoute } from '../links';
   import { Resource, errorMessage, live, pollJobs } from '../resource.svelte';
@@ -16,10 +15,10 @@
 
   let { slug }: { slug: string } = $props();
   const base = $derived(accountApi(slug));
-  const account = new Resource((signal) => getJSON<AccountDetail>(base, signal), () => base);
-  const attention = new Resource((signal) => getJSON<Attention>(`${base}/attention`, signal), () => `${base}/attention`);
-  const queue = new Resource((signal) => getJSON<Job[]>(`${base}/queue`, signal), () => `${base}/queue`);
-  const repos = new Resource((signal) => getJSON<Page<Repository>>(`${base}/repos?limit=5`, signal), () => `${base}/repos?limit=5`);
+  const account = Resource.json<AccountDetail>(() => base);
+  const attention = Resource.json<Attention>(() => `${base}/attention`);
+  const queue = Resource.json<Job[]>(() => `${base}/queue`);
+  const repos = Resource.json<Page<Repository>>(() => `${base}/repos?limit=5`);
   $effect(() => { void account.load(); void attention.load(); void queue.load(); void repos.load(); });
   $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void account.load()));
   $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void attention.load()));

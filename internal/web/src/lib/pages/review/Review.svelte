@@ -34,7 +34,7 @@
     }
     return detail;
   }, () => requestKey);
-  const pull = new Resource((signal) => getJSON<PullDetail>(pullPath!, signal), () => pullPath ?? '');
+  const pull = Resource.json<PullDetail>(() => pullPath ?? '');
   const pullPath = $derived(owner && repo && number !== undefined
     ? `${account}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`
     : res.data ? `${account}/pulls/${res.data.review.pull.repository.split('/').map(encodeURIComponent).join('/')}/${res.data.review.pull.number}` : undefined);

@@ -11,7 +11,7 @@
   import { palette, closeOverlays } from './keyboard.svelte';
   import Icon from './Icon.svelte';
   import type { Me, Page, Pull } from './types';
-  import { getJSON } from './api.svelte';
+  import { apiQuery } from './query';
   import { createQueries } from '@tanstack/svelte-query';
   import { pullRoute, accountApi } from './links';
   import { CONSOLE_SECTIONS } from './settingsindex';
@@ -108,8 +108,7 @@
     queries: slugs.map((slug) => {
       const path = `${accountApi(slug)}/pulls?state=all&limit=20`;
       return {
-        queryKey: ['api', path],
-        queryFn: ({ signal }: { signal: AbortSignal }) => getJSON<Page<Pull>>(path, signal),
+        ...apiQuery<Page<Pull>>(path),
         enabled: palette.open,
       };
     }),
@@ -118,9 +117,13 @@
     (query.data?.items ?? []).map((pull) => ({ slug: slugs[i], pull })),
   ).sort((a, b) => Number(b.slug === current) - Number(a.slug === current) || Date.parse(b.pull.updatedAt) - Date.parse(a.pull.updatedAt)));
 
+  const loggedErrors = new WeakSet<Error>();
   $effect(() => {
     for (const query of recentQueries) {
-      if (query.error) console.error('palette recent pulls:', query.error);
+      if (query.error && !loggedErrors.has(query.error)) {
+        loggedErrors.add(query.error);
+        console.error('palette recent pulls:', query.error);
+      }
     }
   });
 

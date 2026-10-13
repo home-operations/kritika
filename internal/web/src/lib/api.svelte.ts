@@ -7,7 +7,7 @@
 import { basePath } from './base';
 import { parse, replace } from './router.svelte';
 import { session } from './session.svelte';
-import { queryClient } from './query';
+import { invalidateApi, queryClient } from './query';
 import type { ErrorBody } from './types';
 
 export class ApiError extends Error {
@@ -91,6 +91,6 @@ export async function sendJSON<T>(method: WriteMethod, path: string, body?: unkn
   });
   const data = await handle<T>(res);
   // Page callbacks coordinate list snapshots and refresh the affected views.
-  if (path.startsWith('/api/')) void queryClient.invalidateQueries({ queryKey: ['api'], refetchType: 'none' });
+  if (path.startsWith('/api/')) invalidateApi(path);
   return data;
 }
