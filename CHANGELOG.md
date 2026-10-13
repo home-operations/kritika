@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.66](https://github.com/home-operations/kritika/compare/0.0.65...0.0.66) (2026-10-13)
+
+
+### Features
+
+* **web:** adopt Tailwind, accessible controls, and chart primitives ([#926](https://github.com/home-operations/kritika/issues/926)) ([af47bcf](https://github.com/home-operations/kritika/commit/af47bcf7d872398b2f470dc0cce45739e623f9d4))
+* **web:** adopt TanStack Query for dashboard data ([#927](https://github.com/home-operations/kritika/issues/927)) ([f58a2a4](https://github.com/home-operations/kritika/commit/f58a2a445000a1914779bf818c56aac1311ba458))
+* **web:** unify pull request review workspaces ([#923](https://github.com/home-operations/kritika/issues/923)) ([aaebea5](https://github.com/home-operations/kritika/commit/aaebea5d62792f799de1c24ba761927b96a74b6c))
+
+
+### Code Refactoring
+
+* use strict SQL bindings and validate metric families ([#924](https://github.com/home-operations/kritika/issues/924)) ([a69d9f0](https://github.com/home-operations/kritika/commit/a69d9f0fd72249d4d43d70fd41a0b09a64f66069))
+
 ## [0.0.65](https://github.com/home-operations/kritika/compare/0.0.64...0.0.65) (2026-10-12)
 
 
