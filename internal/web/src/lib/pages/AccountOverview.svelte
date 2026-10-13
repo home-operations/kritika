@@ -5,7 +5,7 @@
   import { WANTS, nearCaps } from '../attention';
   import { hookURL } from '../session.svelte';
   import { unsignedWebhooks } from '../setup';
-  import { attention as jobNeedsAttention, waiting } from '../queue';
+  import { attention as jobNeedsAttention, overdue, waiting } from '../queue';
   import { costTotal, tokens, wholeNumber } from '../format';
   import type { AccountDetail, Attention, Job, Page, Repository } from '../types';
   import PageHeader from '../components/PageHeader.svelte';
@@ -30,7 +30,7 @@
 
   const wants = $derived(attention.data ? WANTS.filter((w) => attention.data![w.key] > 0) : []);
   const caps = $derived(account.data ? nearCaps(account.data.usage) : []);
-  const queueIssue = $derived(queue.data?.some(jobNeedsAttention));
+  const queueIssues = $derived(queue.data?.filter(jobNeedsAttention) ?? []);
   const connectionIssue = $derived(account.data && (unsignedWebhooks(account.data.connection) || !account.data.connection.lastWebhookAt));
   const complete = $derived(account.data && attention.data && queue.data && !account.error && !attention.error && !queue.error);
 </script>
@@ -60,16 +60,16 @@
       {#each wants as want (want.key)}
         <a class="attention-item" href={href({ name: 'pulls', slug, filter: want.filter })}><Pill tone={want.tone} label={`${attention.data![want.key]} ${want.label}`} /><strong>{want.key === 'failed' ? 'Review failures' : want.key === 'capped' ? 'Review limits reached' : want.key === 'p0' ? 'Critical findings' : 'Automatic reviews paused'}</strong><span class="attention-action text-accent text-ui-sm">View pull requests →</span></a>
       {/each}
-      {#if queueIssue}
-        <a class="attention-item" href={href({ name: 'queue', slug, filter: { state: 'attention' } })}><Pill tone="warn" label="Queue" /><strong>Failed, retrying or overdue work</strong><span class="attention-action text-accent text-ui-sm">Inspect queue →</span></a>
-      {/if}
+      {#each queueIssues.slice(0, 5) as job (job.id)}
+        <a class="attention-item" href={href({ name: 'queue', slug, filter: { state: 'attention' } })}><Pill tone={job.recentFailure ? 'danger' : 'warn'} label={overdue(job) ? 'Heartbeat overdue' : job.recentFailure ? 'Failed job' : 'Retrying'} /><span><strong>{job.args.repository || slug}</strong><span class="small muted text-ui-sm">{job.kind} #{job.id}</span></span><span class="attention-action text-accent text-ui-sm">Inspect job →</span></a>
+      {/each}
       {#each caps as cap (cap)}
         <a class="attention-item" href={href({ name: 'usage', slug })}><Pill tone="warn" label="Near limit" /><strong>{cap}</strong><span class="attention-action text-accent text-ui-sm">View usage →</span></a>
       {/each}
       {#if connectionIssue}
         <div class="attention-item"><Pill tone="warn" label="Connection" /><strong>{unsignedWebhooks(account.data!.connection) ? 'Unsigned webhooks refused' : 'No webhooks received'}</strong><HelpPopover label="Fix connection">{@render connectionDetails()}</HelpPopover></div>
       {/if}
-      {#if complete && !wants.length && !caps.length && !queueIssue && !connectionIssue}
+      {#if complete && !wants.length && !caps.length && !queueIssues.length && !connectionIssue}
         <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">All clear. No issues need attention.</p>
       {/if}
     </section>
@@ -77,7 +77,7 @@
       <header class="panel-head"><h2 id="account-repos">Repositories</h2><a href={href({ name: 'repos', slug })}>View all repositories →</a></header>
       <StateView res={repos} retry={() => repos.load()} isEmpty={(p) => p.items.length === 0} empty="No repositories connected yet.">
         {#snippet children(p)}
-          <div class="table-wrap overflow-x-auto max-w-full"><table class="data"><thead><tr><th scope="col">Repository</th><th scope="col">Reviews</th><th scope="col">Index</th></tr></thead>
+          <div class="table-wrap overflow-x-auto max-w-full"><table class="data"><thead><tr><th scope="col">Repository</th><th scope="col">Reviewing</th><th scope="col">Index</th></tr></thead>
             <tbody>{#each p.items as repo (repo.id)}<tr><td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a></td><td>{repo.enabled ? 'enabled' : 'disabled'}</td><td>{repo.index.lastRunStatus || 'not indexed'}</td></tr>{/each}</tbody>
           </table></div>
         {/snippet}

@@ -41,7 +41,7 @@ function gate() {
 test('retryable jobs need attention even without recent-failure or overdue flags', async ({ page }) => {
   await page.route('**/accounts/github/alpha/queue', (route) => json(route, [{ ...g.job, state: 'retryable', recentFailure: false, heartbeatOverdue: false }]));
   await page.goto(account);
-  await expect(page.getByRole('link', { name: /Failed, retrying or overdue work/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Retrying/ })).toHaveAttribute('href', `#/a/${g.SLUG}/queue?state=attention`);
   await expect(page.getByText('All clear. No issues need attention.')).toHaveCount(0);
 });
 
