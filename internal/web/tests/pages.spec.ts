@@ -522,7 +522,9 @@ test.describe('pulls list', () => {
     const row = page.locator('.pull-rows .pull-row').first();
     await row.getByText('ada', { exact: false }).click();
     await expect(page.getByRole('region', { name: 'Preview of alpha/one#7', exact: true })).toBeVisible();
-    await row.getByText('ada', { exact: false }).click();
+    // The space to the right of the title is the row's, not the link's.
+    const cell = (await row.locator('td.pull-main').boundingBox())!;
+    await row.locator('td.pull-main').click({ position: { x: cell.width - 8, y: 12 } });
     await expect(page.getByRole('region', { name: 'Preview of alpha/one#7', exact: true })).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
     await row.getByRole('link', { name: 'Add widgets' }).click();

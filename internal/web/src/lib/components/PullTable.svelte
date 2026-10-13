@@ -91,7 +91,7 @@
           {/if}
           {#if !slug}<td data-label="Account" class="mono small text-ui-sm"><a href={href(pageIn(router.route, accountOf(p)))}>{accountOf(p)}</a></td>{/if}
           <td class="pull-main">
-            <a class="pull-title flex items-center gap-1.5 min-w-0 text-ink [font-weight:550] text-[length:15px] leading-[1.5]" href={href(pullRoute(accountOf(p), p))} aria-current={i === selected ? 'true' : undefined}>
+            <a class="pull-title inline-flex max-w-full items-center gap-1.5 min-w-0 align-top text-ink [font-weight:550] text-[length:15px] leading-[1.5]" href={href(pullRoute(accountOf(p), p))} aria-current={i === selected ? 'true' : undefined}>
               <!-- A row marks what is no longer simply open, and only a merge in colour: a list of red marks would shout. -->
               {#if life.state !== 'open'}<span class="lifecycle tone-{life.state === 'merged' ? life.tone : 'muted'}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}
               <span class="pull-text min-w-0 overflow-hidden text-ellipsis">{p.title}</span>
