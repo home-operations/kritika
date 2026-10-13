@@ -132,13 +132,13 @@
               <thead>
                 <tr>
                   <th scope="col">Account</th>
-                  <th scope="col" class="num wrap">Enabled repos</th>
-                  <th scope="col" class="num">Reviews 7d</th>
+                  <th scope="col" class="num" title="Repositories with reviews turned on">Repos</th>
+                  <th scope="col" class="num" title="Reviews completed in the last 7 days">7 days</th>
                   <th scope="col" title="Reviews done today, against the account's daily cap where it has one">Today</th>
-                  <th scope="col" title="Open pull requests whose last review failed, hit a limit or found a P0, or whose automatic reviews are paused; and a cap that is close">Needs attention</th>
+                  <th scope="col" title="Open pull requests whose last review failed, hit a limit or found a P0, or whose automatic reviews are paused; and a cap that is close">Attention</th>
                   <th scope="col" title="Whether GitHub's webhooks reach kritika, and when it last polled instead">Webhooks</th>
-                  <th scope="col" class="num">API spend</th>
-                  <th scope="col" class="wrap">Tokens this month</th>
+                  <th scope="col" class="num" title="API spend this month, subscription fees excluded">Spend</th>
+                  <th scope="col" title="Tokens this month, against the account's cap where it has one">Tokens</th>
                 </tr>
               </thead>
               <tbody>
