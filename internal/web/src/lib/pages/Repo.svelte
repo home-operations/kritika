@@ -178,7 +178,7 @@
         {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
         {@const rows = shown(d, settingRows)}
         {@const agent = shown(d, agentRows)}
-        {#if rc?.ignored}<p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Repository configuration ignored: {rc.ignored}</p>{/if}
+        {#if rc?.ignored}<p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Repository configuration ignored: {rc.ignored}</p>{/if}
         <Collapsible title="Repository settings">
           {#snippet meta()}<span class="text-ui-sm text-muted">Reviews {enabled === 'yes' ? 'enabled' : 'disabled'} · default branch <span class="mono">{d.defaultBranch}</span></span>{/snippet}
           <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-x-6 gap-y-3">
@@ -187,7 +187,7 @@
                 <h3 id="repo-settings">Effective settings</h3>
                 <label class="search-box max-w-50 flex"><span class="sr-only">Filter settings</span><input type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} /></label>
               </header>
-              <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+              <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
                 {#if matches('Enabled', 'enabled', enabled)}
                   <dt>Enabled</dt><dd>{enabled} <span class="muted small text-ui-sm">({why})</span></dd>
                 {/if}
@@ -196,11 +196,11 @@
                   {@render setting(d, r)}
                 {/each}
               </dl>
-              {#if rows.length === 0 && agent.length === 0}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No setting matches “{settingFilter.trim()}”.</p>{/if}
+              {#if rows.length === 0 && agent.length === 0}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No setting matches “{settingFilter.trim()}”.</p>{/if}
             </section>
             <section class="min-w-0" aria-labelledby="repo-agent">
               <header class="subpanel-head"><h3 id="repo-agent">Agent limits</h3></header>
-              <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+              <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
                 {#each agent as r (r.label)}
                   {@render setting(d, r)}
                 {/each}
@@ -211,9 +211,9 @@
           <section class="min-w-0 border-t border-solid border-t-line" aria-labelledby="repo-file">
             <header class="subpanel-head"><h3 id="repo-file" class="mono">.kritika.yaml</h3></header>
             {#if !rc}
-              <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No review has read it yet.</p>
+              <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No review has read it yet.</p>
             {:else}
-              <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+              <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
                 <dt>Read at</dt>
                 <dd>
                   <span class="mono" title={rc.commit}>{shortSha(rc.commit)}</span>
@@ -225,13 +225,13 @@
                 {/if}
               </dl>
               {#if !rc.found}
-                <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">There was no .kritika.yaml at that commit.</p>
+                <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">There was no .kritika.yaml at that commit.</p>
               {/if}
               {#if rc.ignored}
-                <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Ignored as a whole: {rc.ignored}</p>
+                <p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Ignored as a whole: {rc.ignored}</p>
               {/if}
               {#if rc.dropped.length}
-                <h3 class="subhead mt-3 mx-3 mb-1 text-ui-sm font-[650] text-muted">Settings controlled by the administrator</h3>
+                <h3 class="subhead mt-3 mx-4 mb-1 text-ui-sm font-[650] text-muted">Settings controlled by the administrator</h3>
                 <ul class="plain-list m-0 pl-4">
                   {#each rc.dropped as note (note)}<li class="small text-ui-sm">{note}</li>{/each}
                 </ul>
@@ -245,7 +245,7 @@
           {#snippet meta()}{#if d.indexRuns[0]}<span class="text-ui-sm text-muted">latest {d.indexRuns[0].status} <Time iso={d.indexRuns[0].createdAt} /></span>{/if}{/snippet}
           <section id="repo-index" class="min-w-0" aria-label="Index runs">
             {#if d.indexRuns.length === 0}
-              <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Never indexed.</p>
+              <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">Never indexed.</p>
             {:else}
               <div class="table-wrap overflow-x-auto max-w-full">
                 <table class="data">

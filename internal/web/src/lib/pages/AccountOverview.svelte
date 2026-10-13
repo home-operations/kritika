@@ -52,9 +52,9 @@
       {#each [{ res: account, label: 'Account details' }, { res: attention, label: 'Review alerts' }, { res: queue, label: 'Queue' }] as source (source.label)}
         <span hidden data-loading={source.res.loading || (source.res.data === undefined && !source.res.error)}></span>
         {#if source.res.error}
-          <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>{source.label}: {errorMessage(source.res.error)}</span><button class="btn" onclick={() => void source.res.load()}>Retry {source.label.toLowerCase()}</button></div>
+          <div class="state-msg state-error flex items-center gap-2 m-0 py-3 px-4 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>{source.label}: {errorMessage(source.res.error)}</span><button class="btn" onclick={() => void source.res.load()}>Retry {source.label.toLowerCase()}</button></div>
         {:else if source.res.data === undefined}
-          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" role="status">Loading {source.label.toLowerCase()}…</p>
+          <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted" role="status">Loading {source.label.toLowerCase()}…</p>
         {/if}
       {/each}
       {#each wants as want (want.key)}
@@ -70,7 +70,7 @@
         <div class="attention-item"><Pill tone="warn" label="Connection" /><strong>{unsignedWebhooks(account.data!.connection) ? 'Unsigned webhooks refused' : 'No webhooks received'}</strong><HelpPopover label="Fix connection">{@render connectionDetails()}</HelpPopover></div>
       {/if}
       {#if complete && !wants.length && !caps.length && !queueIssue && !connectionIssue}
-        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">All clear. No issues need attention.</p>
+        <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">All clear. No issues need attention.</p>
       {/if}
     </section>
     <section class="panel" aria-labelledby="account-repos">

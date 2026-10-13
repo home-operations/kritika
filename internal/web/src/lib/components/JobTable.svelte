@@ -114,7 +114,7 @@
       {/each}
     </tbody>
   </table>
-  {#if !visible.length}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
+  {#if !visible.length}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
 </div>
 
 {#if selected}<ActionDialog {...selected} bind:open={actionOpen} {ondone} />{/if}

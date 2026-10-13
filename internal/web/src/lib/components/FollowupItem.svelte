@@ -24,7 +24,7 @@
 <!-- The chevron is the keyboard's toggle; the card's whitespace is the pointer's, as in the tables. -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<li class="followup row-toggles border-b border-solid border-b-line py-2 px-3 flex flex-col gap-1 cursor-pointer" onclick={(e) => { if (rowToggles(e) && !(e.target as Element).closest('.followup-transcript')) open = !open; }}>
+<li class="followup row-toggles border-b border-solid border-b-line py-3 px-4 flex flex-col gap-1 cursor-pointer" onclick={(e) => { if (rowToggles(e) && !(e.target as Element).closest('.followup-transcript')) open = !open; }}>
   <div class="followup-head flex flex-wrap items-center gap-y-1.5 gap-x-2.5">
     <Pill tone={followupTone[f.status]} label={f.status} />
     <span><strong>{f.author}</strong> asked</span>

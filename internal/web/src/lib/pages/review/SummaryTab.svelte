@@ -51,11 +51,11 @@
     {/if}
   </section>
 {:else}
-  <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No summary{isActive(d.review.status) ? ' yet' : ''}.</p>
+  <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No summary{isActive(d.review.status) ? ' yet' : ''}.</p>
 {/if}
 
 {#if findings.length === 0}
-  <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{d.review.status === 'completed' ? 'No findings.' : isActive(d.review.status) ? 'Findings will appear as the review progresses.' : d.review.status === 'skipped' ? 'No findings recorded. This review was skipped.' : 'No findings recorded. The review did not complete.'}</p>
+  <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{d.review.status === 'completed' ? 'No findings.' : isActive(d.review.status) ? 'Findings will appear as the review progresses.' : d.review.status === 'skipped' ? 'No findings recorded. This review was skipped.' : 'No findings recorded. The review did not complete.'}</p>
 {:else}
   <section class="panel" aria-label="Findings">
     <header class="panel-head"><h2>Findings</h2><span class="text-ui-sm text-muted">{findings.length} reported</span></header>
@@ -97,7 +97,7 @@
   <section aria-label="Rules checked">
     <Collapsible title="Rules checked">
       {#snippet meta()}<span class="text-ui-sm text-muted">{d.contextPack!.ruleIds.length}</span>{/snippet}
-    <ul class="rule-checks list-none m-0 py-2.5 px-3 flex flex-wrap gap-y-2 gap-x-4.5">
+    <ul class="rule-checks list-none m-0 p-0 flex flex-wrap gap-y-2 gap-x-4.5">
       {#each d.contextPack.ruleIds as id (id)}
         {@const n = cited(id)}
         <li>

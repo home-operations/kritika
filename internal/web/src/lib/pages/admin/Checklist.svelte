@@ -23,7 +23,7 @@
       <h2 id="op-setup">Setup</h2>
       <span class="small muted text-ui-sm">{items.filter((i) => i.done).length} of {items.length} done</span>
     </header>
-    <ul class="checklist flex flex-col gap-2 m-0 py-2.5 px-3 list-none text-ui-md">
+    <ul class="checklist flex flex-col gap-2 m-0 py-3 px-4 list-none text-ui-md">
       {#each items as item (item.label)}
         <li class:done={item.done}>
           <span class="check-mark inline-flex flex-none mt-0.5 text-muted"><Icon path={item.done ? mdiCheck : mdiCircleOutline} size={14} label={item.done ? 'done' : 'to do'} /></span>

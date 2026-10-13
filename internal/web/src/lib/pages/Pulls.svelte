@@ -182,12 +182,12 @@
     </div>
     <StateView {res} retry={() => paged.load()}>
       {#if items.length === 0 && filter}
-        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+        <div class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">
           <span>No pull requests match these filters.</span>
           <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
         </div>
       {:else if items.length === 0}
-        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
+        <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
       {:else}
         <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
         <LoadMore {paged} />

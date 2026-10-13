@@ -21,18 +21,18 @@
 
 {#if res.data !== undefined}
   {#if res.error}
-    <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">
+    <div class="state-msg state-error flex items-center gap-2 m-0 py-3 px-4 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">
       <span>Refresh failed: {errorMessage(res.error)}</span>
       {#if retry}<button class="btn" onclick={retry}>Retry</button>{/if}
     </div>
   {/if}
   {#if isEmpty?.(res.data)}
-    <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{empty}</p>
+    <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{empty}</p>
   {:else}
     {@render children(res.data)}
   {/if}
 {:else if res.error}
-  <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">
+  <div class="state-msg state-error flex items-center gap-2 m-0 py-3 px-4 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">
     <span>{errorMessage(res.error)}</span>
     {#if retry}<button class="btn" onclick={retry}>Retry</button>{/if}
   </div>

@@ -134,7 +134,7 @@
 
 <StateView {res} retry={() => res.load()}>
   {#snippet children(x)}
-    {#if !x.diff && !x.deltaDiff}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{x.pending ? 'Preparing the diff…' : x.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}</p>{/if}
+    {#if !x.diff && !x.deltaDiff}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{x.pending ? 'Preparing the diff…' : x.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}</p>{/if}
     <div class="toolbar flex flex-wrap items-center gap-2">
       <button class="btn" aria-expanded={navigatorShown} aria-controls="review-navigator" onclick={() => (navigatorShown = !navigatorShown)}>{navigatorShown ? 'Hide navigator' : 'Show navigator'}</button>
       {#if files.length}<span class="small muted text-ui-sm">{visibleFiles.length} of {files.length} {files.length === 1 ? 'file' : 'files'}</span>{/if}
@@ -159,18 +159,18 @@
             <strong>{f.title}</strong>
             <span class="mono small muted text-ui-sm">{f.path}:{f.line}</span>
           </button>
-        {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No findings.</p>{/each}
+        {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No findings.</p>{/each}
         <h2>Changed files <span class="tab-count text-ui-xs bg-panel border border-solid border-line rounded-sm py-0 px-1.5 font-semibold">{files.length}</span></h2>
         {#if files.length}
-          <div class="file-filters flex flex-col gap-2 pt-2 px-3 pb-3 text-ui-sm">
+          <div class="file-filters flex flex-col gap-2 pt-2 px-4 pb-3 text-ui-sm">
             <label for="file-search">Search files</label>
             <input id="file-search" type="search" bind:this={search} bind:value={query} placeholder="Path or filename" />
             <label class="toggle inline-flex items-center gap-1.5 [vertical-align:middle]"><input type="checkbox" bind:checked={onlyFindings} /> Files with findings</label>
           </div>
           {#each visibleFiles as { file, i } (i)}
             <button class="file-jump mono flex flex-col items-start gap-2 w-full p-4 border-0 border-b border-solid border-b-line bg-transparent text-ink text-left cursor-pointer wrap-anywhere" onclick={() => void showFile(i)}>Open {file.path}{!file.newPath ? ' (deleted)' : !file.oldPath ? ' (added)' : ''}</button>
-          {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No files match these filters.</p>{/each}
-        {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{x.pending ? 'Changed files will appear when the diff is ready.' : x.swept ? 'Changed files are unavailable after diff retention expires.' : 'No changed files recorded.'}</p>{/if}
+          {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No files match these filters.</p>{/each}
+        {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{x.pending ? 'Changed files will appear when the diff is ready.' : x.swept ? 'Changed files are unavailable after diff retention expires.' : 'No changed files recorded.'}</p>{/if}
         <p class="small muted finding-nav-help text-ui-sm py-0 px-4"><kbd>j</kbd> / <kbd>k</kbd> navigate findings</p>
       </nav>
       <div class="review-code min-w-0 flex flex-col gap-4">

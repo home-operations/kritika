@@ -41,7 +41,7 @@
           <h2 id="pref-time">Dates and times</h2>
           <span class="small muted text-ui-sm">Now: {now}</span>
         </header>
-        <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+        <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
           <dt><label for="pref-zone">Time zone</label></dt>
           <dd>
             <TimeZonePicker value={settings.timeZone} {zones} onchange={(timeZone) => saveSettings({ timeZone })} />
@@ -56,7 +56,7 @@
       </section>
       <section class="panel" aria-labelledby="pref-look">
         <header class="panel-head"><h2 id="pref-look">Appearance</h2></header>
-        <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+        <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
           <dt>Theme</dt>
           <dd>
             <Segmented label="Theme" options={THEMES} value={settings.theme} onchange={(theme) => saveSettings({ theme })} />
@@ -65,7 +65,7 @@
         </dl>
       </section>
     {:else}
-      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" aria-live="polite"><Spinner size={16} /> Loading…</p>
+      <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {/if}
   </div>
 </main>

@@ -175,7 +175,7 @@
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {@const rows = visible()}
       {#if rows.length === 0}
-        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+        <div class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">
           <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
           <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
         </div>

@@ -228,7 +228,7 @@
           <Icon path={mdiChevronDown} size={12} />
         </Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content class="menu-panel user-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] gap-2 min-w-50 py-3 px-3.5 rounded-lg" align="end" sideOffset={6}>
+          <Popover.Content class="menu-panel user-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] gap-2 min-w-50 p-4 rounded-lg" align="end" sideOffset={6}>
           <p class="user-name m-0 font-semibold text-ui-md">{me.user.displayName}</p>
           <p class="user-email m-0 text-muted text-ui-sm overflow-hidden text-ellipsis whitespace-nowrap">{me.user.email}</p>
           <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>

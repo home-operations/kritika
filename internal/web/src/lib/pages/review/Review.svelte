@@ -172,23 +172,23 @@
       </div>
       {#if r}
         {#if historical && ref}
-          <p class="notice newer-notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Historical review. A newer review is available. <a href={href(pullRoute(slug, ref))} onclick={openLatest}>Open its latest review</a></p>
+          <p class="notice newer-notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Historical review. A newer review is available. <a href={href(pullRoute(slug, ref))} onclick={openLatest}>Open its latest review</a></p>
         {:else if p && r.headSha !== p.headSha}
-          <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">The current head has not been reviewed by this run.</p>
+          <p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">The current head has not been reviewed by this run.</p>
         {/if}
         {#if !p && r.priorReviewId}<p class="small muted text-ui-sm">Continues <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a>.</p>{/if}
-        {#if r.error && r.status !== 'skipped'}<p class="notice error-text text-danger whitespace-pre-wrap [word-break:break-word] m-0 border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
+        {#if r.error && r.status !== 'skipped'}<p class="notice error-text text-danger whitespace-pre-wrap [word-break:break-word] m-0 border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
         {#if r.cancelRequestedAt}<p class="small muted text-ui-sm">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
       {/if}
       {#if pullState === 'closed'}<NoMoreReviews {merged} />{/if}
       {#if p?.paused && p.state === 'open'}
-        <p class="notice paused-notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Automatic reviews are paused. Ask the bot to <span class="mono">review</span> once or <span class="mono">resume</span> automatic reviews.</p>
+        <p class="notice paused-notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Automatic reviews are paused. Ask the bot to <span class="mono">review</span> once or <span class="mono">resume</span> automatic reviews.</p>
       {/if}
       {#if r && latest && latestAttempt?.status === 'skipped' && r.id === latest.id && r.id !== latestAttempt.id}
-        <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Latest attempt skipped: {skippedReason(latestAttempt)} Showing the last review.</p>
+        <p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Latest attempt skipped: {skippedReason(latestAttempt)} Showing the last review.</p>
       {/if}
       {#if job && (job.state !== 'running' || job.lastError || historical)}
-        <div class="notice job-notice flex items-center flex-wrap gap-x-3 gap-y-1 m-0 border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-sm" role="note">
+        <div class="notice job-notice flex items-center flex-wrap gap-x-3 gap-y-1 m-0 border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-sm" role="note">
           <span>{#if job.state === 'running'}A review is running, attempt {job.attempt} of {job.maxAttempts}.
           {:else if job.lastError}A review is waiting to run again.{job.cause ? ` ${jobCauseText[job.cause]}` : ''}
           {:else}A review is queued.{/if}
@@ -203,7 +203,7 @@
     </div>
 
     {#if pull.error}
-      <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>Pull request details: {errorMessage(pull.error)}</span><button class="btn" onclick={() => void pull.load()}>Retry pull request</button></div>
+      <div class="state-msg state-error flex items-center gap-2 m-0 py-3 px-4 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>Pull request details: {errorMessage(pull.error)}</span><button class="btn" onclick={() => void pull.load()}>Retry pull request</button></div>
     {/if}
     {#if selectedId}
       <StateView {res} retry={() => res.load()}>
@@ -212,9 +212,9 @@
         {/snippet}
       </StateView>
     {:else if pull.data}
-      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Not reviewed yet.</p>
-      {#if latestAttempt?.status === 'skipped'}<p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md">Latest attempt skipped: {skippedReason(latestAttempt)}</p>{/if}
+      <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">Not reviewed yet.</p>
+      {#if latestAttempt?.status === 'skipped'}<p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md">Latest attempt skipped: {skippedReason(latestAttempt)}</p>{/if}
       {#if pull.data.followups.length}<section class="panel" aria-label="Follow-ups"><header class="panel-head"><h2>Follow-ups</h2></header><ul class="followups list-none m-0 p-0">{#each pull.data.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul></section>{/if}
-    {:else if !pull.error}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" role="status">Loading pull request…</p>{/if}
+    {:else if !pull.error}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted" role="status">Loading pull request…</p>{/if}
   </div>
 </main>

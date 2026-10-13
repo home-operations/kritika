@@ -94,11 +94,11 @@
   </div>
 {:else}
   {#if series.length > 1}
-    <ul class="chart-legend flex flex-wrap gap-y-1 gap-x-3.5 mt-2.5 mx-3 mb-0 p-0 list-none text-ui-sm text-muted" aria-label="{label} legend">
+    <ul class="chart-legend flex flex-wrap gap-y-1 gap-x-3.5 mt-2.5 mx-4 mb-0 p-0 list-none text-ui-sm text-muted" aria-label="{label} legend">
       {#each series as s (s.label)}<li><span class="chart-swatch w-2.5 h-2.5 rounded-[2px]" style:background={s.color}></span>{s.label}</li>{/each}
     </ul>
   {/if}
-  <div class="column-chart relative pt-2 px-3 pb-2.5">
+  <div class="column-chart relative pt-3 px-4 pb-3">
     <div bind:clientWidth={width}>
       {#if width > 0}
         <ChartCore

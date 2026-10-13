@@ -458,14 +458,14 @@
   .panel > .phase-bar,
   .panel > .plain-list,
   .panel > .deflist {
-    @apply my-2.5 mx-3;
+    @apply my-3 mx-4;
   }
   .panel-head h2 {
     @apply m-0 text-[length:16px] font-[650];
   }
   /* A section inside a collapsible: a heading row without a second border. */
   .subpanel-head {
-    @apply flex items-center justify-between flex-wrap gap-3 py-1.5 px-3;
+    @apply flex items-center justify-between flex-wrap gap-3 py-2 px-4;
   }
   .subpanel-head h3 {
     @apply m-0 text-ui-md font-[650];
@@ -493,7 +493,16 @@
   }
   table.data th,
   table.data td {
-    @apply text-left py-1.5 px-2.5 border-b border-solid border-b-line [vertical-align:middle] whitespace-nowrap;
+    @apply text-left py-2.5 px-3 border-b border-solid border-b-line [vertical-align:middle] whitespace-nowrap;
+  }
+  /* The first and last columns meet the card's 16px gutter. */
+  table.data th:first-child,
+  table.data td:first-child {
+    @apply pl-4;
+  }
+  table.data th:last-child,
+  table.data td:last-child {
+    @apply pr-4;
   }
   table.data td.error-cell {
     @apply whitespace-normal;
@@ -548,7 +557,7 @@
     @apply shadow-[inset_3px_0_0_var(--edge)];
   }
   table.data td.pull-main {
-    @apply w-full max-w-0 min-w-60 pt-2 pb-2;
+    @apply w-full max-w-0 min-w-60;
   }
   .lifecycle {
     @apply inline-flex text-[var(--tone)];
@@ -658,7 +667,7 @@
     @apply inline-flex items-center gap-1.5;
   }
   .finding {
-    @apply bg-panel border border-solid border-line rounded-lg py-4.5 px-5 flex flex-col gap-3 font-ui whitespace-normal;
+    @apply bg-panel border border-solid border-line rounded-lg p-4 flex flex-col gap-3 font-ui whitespace-normal;
   }
   .finding:focus {
     @apply [outline:2px_solid_var(--accent)] [outline-offset:2px];
@@ -725,7 +734,7 @@
     @apply font-code text-ui-sm bg-surface rounded-[3px] py-0 px-1;
   }
   .code-block pre {
-    @apply m-0 py-2 px-2.5 text-ui-sm leading-[1.5] whitespace-pre-wrap [word-break:break-word] overflow-x-auto;
+    @apply m-0 py-2.5 px-3 text-ui-sm leading-[1.5] whitespace-pre-wrap [word-break:break-word] overflow-x-auto;
   }
   .code-block.plain {
     @apply bg-transparent border-0 relative;
@@ -749,11 +758,11 @@
   .tone-danger-edge {
     border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
   }
-  .collapsible-head:hover {
+  .collapsible-row:hover {
     @apply bg-surface;
   }
   .turn > :not(.turn-head) {
-    @apply my-0 mx-3;
+    @apply my-0 mx-4;
   }
   .turn-error {
     @apply shadow-[inset_3px_0_0_var(--danger)];
@@ -980,7 +989,7 @@
     }
   }
   table.pull-table td {
-    @apply pt-[15px] pb-[15px];
+    @apply py-3;
   }
   .pull-table td.num {
     @apply text-muted text-ui-sm;
@@ -994,7 +1003,7 @@
     @apply block mb-1.5;
   }
   .finding-nav h2 {
-    @apply text-[length:16px] py-4.5 px-4 m-0 border-b border-solid border-b-line;
+    @apply text-[length:16px] py-3 px-4 m-0 border-b border-solid border-b-line;
   }
   .finding-jump:hover,
   .file-jump:hover {
@@ -1371,7 +1380,7 @@
   }
   @media (min-width: 801px) {
     .queue-table td {
-      @apply pt-3.5 pb-3.5;
+      @apply py-3;
     }
   }
   @media (max-width: 600px) {

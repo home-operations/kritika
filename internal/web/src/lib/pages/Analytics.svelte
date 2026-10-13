@@ -156,14 +156,14 @@
               format={formatValue}
               whole={trend === 'reviews' || trend === 'findings' || trend === 'tokens'} {view} />
             {#if trend === 'findings'}
-              <div class="panel-foot flex flex-wrap items-center gap-2 py-2 px-3 border-t border-solid border-t-line text-ui-sm">
+              <div class="panel-foot flex flex-wrap items-center gap-2 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">
                 {#each CATEGORIES.filter((k) => c.categories[k] > 0) as k (k)}
                   <a class="badge inline-flex items-center gap-1 text-ui-xs border border-solid border-line py-0 px-[7px] text-muted rounded-sm" href={href({ name: 'findings', slug, filter: { category: k } })}>{k} {wholeNumber(c.categories[k])}</a>
                 {/each}
                 <a class="ml-auto" href={href({ name: 'findings', slug })}>See every finding →</a>
               </div>
             {:else if trend !== 'reviews'}
-              <p class="panel-foot small muted m-0 py-2 px-3 border-t border-solid border-t-line text-ui-sm">{trend === 'failed' ? 'Failed / (completed + failed). Periods with no outcomes are omitted.' : trend === 'duration' ? 'Median duration of completed reviews. Periods with no completed reviews are omitted.' : trend === 'cost' ? 'Priced API spend only; subscription fees excluded.' : 'Input (including cached input) plus output tokens.'}</p>
+              <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">{trend === 'failed' ? 'Failed / (completed + failed). Periods with no outcomes are omitted.' : trend === 'duration' ? 'Median duration of completed reviews. Periods with no completed reviews are omitted.' : trend === 'cost' ? 'Priced API spend only; subscription fees excluded.' : 'Input (including cached input) plus output tokens.'}</p>
             {/if}
           </section>
 
@@ -219,7 +219,7 @@
           <section class="panel" aria-labelledby="an-repos">
             <header class="panel-head"><h2 id="an-repos">Most reviewed repositories</h2></header>
             {#if d.repositories.length === 0}
-              <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No reviews in this period.</p>
+              <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No reviews in this period.</p>
             {:else}
               <div class="table-wrap overflow-x-auto max-w-full">
                 <table class="data">

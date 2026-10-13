@@ -121,10 +121,10 @@
           {#each queueIssues.slice(0, 5) as job (job.id)}
             <a class="attention-item" href={href({ name: 'queue', slug: job.account, filter: { state: 'attention' } })}><Pill tone={overdue(job) ? 'warn' : 'danger'} label={overdue(job) ? 'Heartbeat overdue' : 'Failed job'} /><span><strong>{job.args.repository || job.account}</strong><span class="small muted text-ui-sm">{job.kind} #{job.id}</span></span><span class="attention-action text-accent text-ui-sm">Inspect job →</span></a>
           {/each}
-          {#if queue.error}<p class="state-msg flex items-center gap-2 m-0 p-3 text-danger" role="alert">Queue alerts unavailable.{#if queue.data}<button class="btn btn-small" onclick={() => void queue.load()}>Retry queue alerts</button>{/if}</p>
-          {:else if !queue.data}<p class="state-msg m-0 p-3 text-muted" role="status">Checking queue…</p>
+          {#if queue.error}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-danger" role="alert">Queue alerts unavailable.{#if queue.data}<button class="btn btn-small" onclick={() => void queue.load()}>Retry queue alerts</button>{/if}</p>
+          {:else if !queue.data}<p class="state-msg m-0 py-3 px-4 text-muted" role="status">Checking queue…</p>
           {:else if !all.wants.length && !list.some((a) => nearCaps(a.usage).length || connectionIssue(a)) && !fullSlots.length && !queueIssues.length}
-            <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">All clear. No issues need attention.</p>
+            <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">All clear. No issues need attention.</p>
           {/if}
         </section>
         <section class="panel" aria-labelledby="account-breakdown">

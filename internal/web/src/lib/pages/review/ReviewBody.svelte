@@ -97,7 +97,7 @@
             <ol class="timeline list-none m-0 p-0">
               {#each pull.reviews as r (r.id)}
                 <li class="timeline-item border-b border-solid border-b-line">
-                  <a class="timeline-link flex flex-col gap-1 py-2 px-3 text-ink" href={href({ ...pullRoute(slug, d.review.pull), run: r.id })}>
+                  <a class="timeline-link flex flex-col gap-1 py-3 px-4 text-ink" href={href({ ...pullRoute(slug, d.review.pull), run: r.id })}>
                     <span class="timeline-top flex items-center gap-2"><ReviewStatusTile status={r.status} /><Time iso={r.createdAt} /></span>
                     <ReviewMeta {r} />
                     {#if r.error}<span class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{r.error}</span>{/if}
@@ -110,9 +110,9 @@
             <header class="panel-head"><h2 id="pull-followups">Follow-ups</h2></header>
             {#if pull.followups.length}
               <ul class="followups list-none m-0 p-0">{#each pull.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul>
-            {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No follow-up questions.</p>{/if}
+            {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No follow-up questions.</p>{/if}
           </section>
-        {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Pull request activity is unavailable until its details load.</p>{/if}
+        {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">Pull request activity is unavailable until its details load.</p>{/if}
       {:else if view === 'conversation'}
         <ConversationTab active={tab === view} {base} {version} {slug} />
       {:else if view === 'timeline'}

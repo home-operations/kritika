@@ -84,7 +84,7 @@
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance configuration</h2><HelpPopover label="About instance configuration"><p>Read-only values from this process's environment and configuration file. Source shows where each value is set.</p></HelpPopover></header>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">
-        <div class="toolbar flex flex-wrap items-center gap-2 p-3">
+        <div class="toolbar flex flex-wrap items-center gap-2 py-3 px-4">
           <input type="search" aria-label="Search configuration" placeholder="Search configuration" bind:value={search} />
           <select aria-label="Configuration section" bind:value={section}>
             <option value="">All sections</option>

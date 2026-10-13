@@ -27,7 +27,7 @@
 </script>
 
 {#if d.usage.length === 0}
-  <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No usage recorded.</p>
+  <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No usage recorded.</p>
 {:else}
   {#if planUsage.length > 0}
     <section class="stats stats-3 grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label="ChatGPT usage for this review">

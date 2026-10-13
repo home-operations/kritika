@@ -104,7 +104,7 @@
       {#snippet children(rules)}
         {@const rows = shown(rules)}
         {#if rows.length === 0}
-          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No rule matches.</p>
+          <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No rule matches.</p>
         {:else}
           <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
             <table class="data rule-table">
