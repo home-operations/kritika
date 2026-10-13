@@ -304,9 +304,6 @@
   .account-button > span {
     @apply overflow-hidden text-ellipsis whitespace-nowrap;
   }
-  .account-button:hover {
-    @apply bg-panel;
-  }
   .account-button .icon {
     @apply text-muted;
   }
@@ -947,6 +944,9 @@
   .topbar .live .sr-only {
     @apply static w-auto h-auto [clip:auto] [clip-path:none];
   }
+  .workspace-bar .actions {
+    @apply ml-auto;
+  }
   .workspace-bar .actions > button:has(.search-label) {
     @apply w-60 justify-start;
   }
@@ -1043,7 +1043,7 @@
       @apply hidden;
     }
     .account-button {
-      @apply w-auto max-w-50 m-0;
+      @apply max-w-50;
     }
     .topbar .actions {
       @apply ml-auto gap-1 flex-nowrap;

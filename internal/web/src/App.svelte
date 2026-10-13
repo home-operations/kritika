@@ -173,6 +173,43 @@
   });
 </script>
 
+{#snippet scope()}
+  {#if me && me.accounts.length > 0}
+    <Popover.Root bind:open={scopeOpen}>
+      <Popover.Trigger class="account-button btn btn-icon min-w-0 max-w-80 justify-between font-semibold" title="Switch between the instance and an account">
+        {#if currentSlug}
+          <span class="mono">{currentSlug}</span>
+        {:else}
+          <span>All accounts</span>
+        {/if}
+        <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch scope" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content class="menu-panel account-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line rounded-[10px] shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] min-w-55 max-h-[60vh] overflow-y-auto py-1 px-0" align="start" sideOffset={6}>
+          <nav aria-label="Scope">
+        <a
+          class="menu-item flex items-center gap-2 py-1.5 px-3 text-ink text-ui-md whitespace-nowrap"
+          href={href(pageOfInstance(router.route))}
+          aria-current={currentSlug ? undefined : 'true'}
+        >
+          <span class="menu-check inline-flex w-[15px] flex-none">{#if !currentSlug}<Icon path={mdiCheck} size={14} />{/if}</span>
+          All accounts
+        </a>
+        <p class="menu-heading mt-1.5 mx-0 mb-0.5 py-0 px-2.5 text-ui-xs text-muted">Accounts</p>
+        {#each me.accounts as slug (slug)}
+          {@const on = slug === currentSlug}
+          <a class="menu-item mono flex items-center gap-2 py-1.5 px-3 text-ink text-ui-md whitespace-nowrap" href={href(pageIn(router.route, slug))} aria-current={on ? 'true' : undefined}>
+            <span class="menu-check inline-flex w-[15px] flex-none">{#if on}<Icon path={mdiCheck} size={14} />{/if}</span>
+            {slug}
+          </a>
+        {/each}
+          </nav>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  {/if}
+{/snippet}
+
 {#snippet actions()}
   <div class="actions flex gap-2 items-center">
     <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to">
@@ -273,40 +310,7 @@
           <span class="wordmark marked py-0 px-[0.2em] rounded-[0.15em_0.35em_0.2em_0.4em_/_0.4em_0.2em_0.35em_0.15em] [background:linear-gradient(transparent_38%,_var(--mark)_38%,_var(--mark)_94%,_transparent_94%)] [box-decoration-break:clone] font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
         </a>
 
-        {#if me && me.accounts.length > 0}
-          <Popover.Root bind:open={scopeOpen}>
-            <Popover.Trigger class="account-button inline-flex items-center gap-1.5 min-w-0 py-1 px-2 rounded-md text-ink text-ui-md font-semibold cursor-pointer w-full max-w-full justify-between mb-3 min-h-10" title="Switch between the instance and an account">
-              {#if currentSlug}
-                <span class="mono">{currentSlug}</span>
-              {:else}
-                <span>All accounts</span>
-              {/if}
-              <Icon path={mdiUnfoldMoreHorizontal} size={14} label="Switch scope" />
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content class="menu-panel account-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line rounded-[10px] shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] min-w-55 max-h-[60vh] overflow-y-auto py-1 px-0" align="start" sideOffset={6}>
-                <nav aria-label="Scope">
-              <a
-                class="menu-item flex items-center gap-2 py-1.5 px-3 text-ink text-ui-md whitespace-nowrap"
-                href={href(pageOfInstance(router.route))}
-                aria-current={currentSlug ? undefined : 'true'}
-              >
-                <span class="menu-check inline-flex w-[15px] flex-none">{#if !currentSlug}<Icon path={mdiCheck} size={14} />{/if}</span>
-                All accounts
-              </a>
-              <p class="menu-heading mt-1.5 mx-0 mb-0.5 py-0 px-2.5 text-ui-xs text-muted">Accounts</p>
-              {#each me.accounts as slug (slug)}
-                {@const on = slug === currentSlug}
-                <a class="menu-item mono flex items-center gap-2 py-1.5 px-3 text-ink text-ui-md whitespace-nowrap" href={href(pageIn(router.route, slug))} aria-current={on ? 'true' : undefined}>
-                  <span class="menu-check inline-flex w-[15px] flex-none">{#if on}<Icon path={mdiCheck} size={14} />{/if}</span>
-                  {slug}
-                </a>
-              {/each}
-                </nav>
-              </Popover.Content>
-            </Popover.Portal>
-          </Popover.Root>
-        {/if}
+        {#if narrow}{@render scope()}{/if}
 
         <div class="desktop-navigation">{@render workspaceNav()}</div>
         {#if narrow}{@render actions()}{/if}
@@ -339,7 +343,8 @@
 
     <div class="main-col flex-auto min-w-0 min-h-0 flex flex-col">
       {#if !narrow}
-        <div class="workspace-bar flex-none flex items-center justify-end py-2 px-7 border-b border-solid border-b-line">
+        <div class="workspace-bar flex-none flex items-center justify-between gap-3 py-2 px-7 border-b border-solid border-b-line">
+          {@render scope()}
           {@render actions()}
         </div>
       {/if}
