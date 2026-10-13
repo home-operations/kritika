@@ -1436,17 +1436,12 @@
   table.audit .row-toggle {
     @apply h-7;
   }
-  /* An expanded row and its detail are one block: the detail's accent edge
-     runs up through the row, and a dotted line parts the two. */
   table.data .row-expanded > td {
-    @apply bg-surface border-b-line border-dotted;
+    @apply bg-surface border-b-transparent;
   }
-  table.data .row-expanded > td:first-child {
-    @apply border-l-2 border-l-accent;
-    border-left-style: solid;
-  }
+  /* A dotted line parts an expanded row from its detail. */
   table.data .row-preview > td {
-    @apply p-0 whitespace-normal;
+    @apply p-0 whitespace-normal border-t border-dotted border-t-line;
   }
   /* Every table's expanded row shares one compact body of one height; a
      body with more to say grows, a short one does not shrink. */
