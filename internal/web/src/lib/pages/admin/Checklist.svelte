@@ -19,8 +19,8 @@
 </script>
 
 {#if items.length}
-  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="op-setup">
-    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+  <section class="panel" aria-labelledby="op-setup">
+    <header class="panel-head">
       <h2 id="op-setup">Setup</h2>
       <span class="small muted text-ui-sm">{items.filter((i) => i.done).length} of {items.length} done</span>
     </header>

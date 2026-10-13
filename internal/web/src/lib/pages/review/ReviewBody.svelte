@@ -89,8 +89,8 @@
         <DiffTab {base} {d} {version} {finding} {inspection} bind:selected={selectedFinding} active={tab === view} />
       {:else if view === 'activity'}
         {#if pull}
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="pull-reviews">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="pull-reviews">Review history</h2></header>
+          <section class="panel" aria-labelledby="pull-reviews">
+            <header class="panel-head"><h2 id="pull-reviews">Review history</h2></header>
             <ol class="timeline list-none m-0 p-0">
               {#each pull.reviews as r (r.id)}
                 <li class="timeline-item border-b border-solid border-b-line">
@@ -103,8 +103,8 @@
               {/each}
             </ol>
           </section>
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="pull-followups">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="pull-followups">Follow-ups</h2></header>
+          <section class="panel" aria-labelledby="pull-followups">
+            <header class="panel-head"><h2 id="pull-followups">Follow-ups</h2></header>
             {#if pull.followups.length}
               <ul class="followups list-none m-0 p-0">{#each pull.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul>
             {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No follow-up questions.</p>{/if}

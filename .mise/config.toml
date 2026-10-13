@@ -28,15 +28,15 @@ zizmor = "1.30.1"
 
 [tasks.build]
 description = "Compile the binary (and the whole module)"
-run = "go build ./..."
+run = "packages=$(scripts/go-packages.sh) && go build $packages"
 
 [tasks.vet]
 description = "Run go vet, including the integration and bench build-tagged files"
-run = "go vet -tags integration,bench ./..."
+run = "packages=$(scripts/go-packages.sh -tags integration,bench) && go vet -tags integration,bench $packages"
 
 [tasks.vulncheck]
 description = "Scan for known vulnerabilities with govulncheck"
-run = "govulncheck ./..."
+run = "packages=$(scripts/go-packages.sh) && govulncheck $packages"
 
 [tasks.test]
 description = "Run the unit test suite with the race detector and coverage; arguments go to go test, and name packages to narrow it (mise run test -- ./internal/worker/)"
@@ -45,7 +45,7 @@ run = """
 # mise appends the arguments to the last line. Every package unless one is
 # named: a package starts with "." or has a "/", a flag's value has neither.
 unit() {
-  pkgs=./...
+  pkgs=$(scripts/go-packages.sh) || return
   for a in "$@"; do case $a in -*) ;; .*|*/*) pkgs=;; esac; done
   go test -race $pkgs "$@" -coverprofile cover.out
 }
@@ -54,11 +54,14 @@ unit
 
 [tasks.fmt]
 description = "Format the code in place"
-run = "go fmt ./..."
+run = "packages=$(scripts/go-packages.sh) && go fmt $packages"
 
 [tasks.fmt-check]
 description = "Verify formatting without changing files (CI gate)"
-run = "test -z \"$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
+run = """
+unformatted=$(git ls-files --cached --others --exclude-standard -z -- '*.go' | xargs -0 gofmt -l)
+test -z "$unformatted" || { printf '%s\\n' "$unformatted"; exit 1; }
+"""
 
 [tasks.lint]
 description = "Run golangci-lint"

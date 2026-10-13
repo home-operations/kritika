@@ -165,7 +165,7 @@
 
 <svelte:head><title>Findings · {slug} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Findings" {slug} />
     <div class="toolbar flex flex-wrap items-center gap-2" role="search">
@@ -189,7 +189,7 @@
       {#if paged.items.length === 0 && filter}
         <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
           <span>No findings match these filters.</span>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
+          <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
         </div>
       {:else if paged.items.length === 0}
         <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No findings yet: they appear here as reviews report them.</p>
@@ -261,17 +261,17 @@
   {#if inspected}
     <div class="finding-inspector flex flex-col gap-4 min-w-0 wrap-anywhere" bind:this={inspector} role="group" aria-label="Finding inspection">
       <div class="finding-controls flex items-center flex-wrap gap-y-2 gap-x-4" role="group" aria-label="Browse findings">
-        <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={paged.loadingMore || inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
+        <button class="btn" disabled={paged.loadingMore || inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
         <span class="small muted text-ui-sm" aria-live="polite">{inspectedIndex + 1} of {paged.items.length} loaded</span>
-        <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={paged.loadingMore || (inspectedIndex >= paged.items.length - 1 && !paged.cursor)} onclick={() => void step(1)}>Next →</button>
-        <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => (inspectedId = '')}>Close</button>
+        <button class="btn" disabled={paged.loadingMore || (inspectedIndex >= paged.items.length - 1 && !paged.cursor)} onclick={() => void step(1)}>Next →</button>
+        <button class="btn" onclick={() => (inspectedId = '')}>Close</button>
       </div>
-      {#if paged.moreError}<p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => void step(1)}>Retry</button></p>{/if}
+      {#if paged.moreError}<p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn" onclick={() => void step(1)}>Retry</button></p>{/if}
       <p><a class="mono" href={href(pullRoute(slug, inspected.pull))}>{inspected.pull.repository}#{inspected.pull.number}</a> · {inspected.pull.title}</p>
       {#key inspected.id}<FindingCard f={inspected} pullUrl={inspected.pull.url} />{/key}
       <div class="workspace-actions flex items-center flex-wrap gap-2.5">
-        <a class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" href={href({ ...reviewOf(inspected), tab: 'diff' })}>Inspect in code →</a>
-        <a class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" href={href(reviewOf(inspected))}>Open review</a>
+        <a class="btn btn-primary" href={href({ ...reviewOf(inspected), tab: 'diff' })}>Inspect in code →</a>
+        <a class="btn" href={href(reviewOf(inspected))}>Open review</a>
       </div>
       <p class="small muted text-ui-sm">First found <Time iso={inspected.firstSeenAt} /> · Last seen <Time iso={inspected.lastSeenAt} /></p>
       <p class="small muted text-ui-sm"><kbd>j</kbd>/<kbd>k</kbd> browse · <kbd>Esc</kbd> return to findings</p>

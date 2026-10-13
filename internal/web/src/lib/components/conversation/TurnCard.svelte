@@ -28,7 +28,7 @@
     </span>
     <span class="small text-ui-sm" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{callCost(turn.costUsd, turn.chatgptPlan, turn.unpriced)}</span>
     <span class="small muted text-ui-sm">{duration(turn.durationMs)}</span>
-    <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" aria-pressed={raw} onclick={() => (raw = !raw)}>raw JSON</button>
+    <button class="btn btn-small" aria-pressed={raw} onclick={() => (raw = !raw)}>raw JSON</button>
   </header>
   {#if turn.error}<p class="error-text turn-error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0" role="note">{turn.error}</p>{/if}
 

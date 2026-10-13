@@ -196,7 +196,7 @@
     {#if sessionError}
       <h1>Unable to load your session</h1>
       <p role="alert">{sessionError}</p>
-      <button class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" onclick={() => void loadMe()}>Retry</button>
+      <button class="btn btn-primary" onclick={() => void loadMe()}>Retry</button>
     {:else}<p role="status">Loading your workspace…</p>{/if}
   </main>
 {:else if !me}
@@ -248,18 +248,18 @@
 
         <div class="desktop-navigation">{@render workspaceNav()}</div>
         <div class="actions flex gap-2 items-center">
-          <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon border border-solid border-line bg-surface text-ink rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 py-1.5 px-[9px]" onclick={togglePalette} aria-label="Go to">
+          <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to">
             <Icon path={mdiMagnify} label="Go to" /><span class="search-label">Go to…</span><kbd class="search-label">⌘ K</kbd>
           </Tooltip>
-          <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button border border-solid border-line bg-surface text-ink rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 py-1.5 px-[9px]" onclick={toggleHelp} aria-label="Keyboard shortcuts">
+          <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button" onclick={toggleHelp} aria-label="Keyboard shortcuts">
             <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
           </Tooltip>
-          <Tooltip text={`Theme: ${theme.pref}`} class="btn btn-icon border border-solid border-line bg-surface text-ink rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 py-1.5 px-[9px]" onclick={cycleTheme} aria-label="Toggle theme">
+          <Tooltip text={`Theme: ${theme.pref}`} class="btn btn-icon" onclick={cycleTheme} aria-label="Toggle theme">
             <Icon path={themeIconPath} label="Toggle theme" />
           </Tooltip>
           {#if me}
             <Popover.Root bind:open={userOpen}>
-              <Popover.Trigger class="btn btn-icon user-button border border-solid border-line bg-surface text-ink rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 py-1.5 px-[9px]" title={me.user.displayName}>
+              <Popover.Trigger class="btn btn-icon user-button" title={me.user.displayName}>
                 <Icon path={mdiAccountOutline} label="User" />
                 <Icon path={mdiChevronDown} size={12} />
               </Popover.Trigger>
@@ -267,8 +267,8 @@
                 <Popover.Content class="menu-panel user-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] gap-2 min-w-50 py-3 px-3.5 rounded-lg" align="end" sideOffset={6}>
                 <p class="user-name m-0 font-semibold text-ui-md">{me.user.displayName}</p>
                 <p class="user-email m-0 text-muted text-ui-sm overflow-hidden text-ellipsis whitespace-nowrap">{me.user.email}</p>
-                <a class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>
-                <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={signOut}>
+                <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>
+                <button class="btn" onclick={signOut}>
                   <Icon path={mdiLogout} size={14} /> Sign out
                 </button>
                 {#if session.meta?.version}
@@ -284,7 +284,7 @@
       {#if me}
         <div class="mobile-navigation hidden">
           <Dialog.Root bind:open={navOpen}>
-            <Dialog.Trigger class="btn mobile-nav-trigger border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" aria-label="Open navigation">
+            <Dialog.Trigger class="btn mobile-nav-trigger" aria-label="Open navigation">
               <Icon path={mdiViewGridOutline} size={16} />
               Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : 'All accounts'}</span>
               <Icon path={mdiChevronDown} size={14} />
@@ -294,7 +294,7 @@
               <Dialog.Content class="modal mobile-nav-panel top-4 left-3 w-[min(380px,_calc(100vw_-_24px))] max-h-[calc(100dvh_-_32px)] overflow-y-auto p-5" onclick={(e) => { if ((e.target as Element).closest('a')) navOpen = false; }}>
                 <div class="mobile-nav-head flex justify-between items-center gap-3">
                   <Dialog.Title>Navigation</Dialog.Title>
-                  <Dialog.Close class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5">Close</Dialog.Close>
+                  <Dialog.Close class="btn">Close</Dialog.Close>
                 </div>
                 <Dialog.Description class="small muted text-ui-sm">{currentSlug || 'All accounts'}</Dialog.Description>
                 {@render workspaceNav()}
@@ -316,7 +316,7 @@
       {/if}
     </header>
 
-    <div class="main-col flex-auto min-w-0 min-h-0 flex flex-col" id="main-content" tabindex="-1">
+    <div class="main-col flex-auto min-w-0 min-h-0 flex flex-col">
       {#if me?.admin}<SetupBanner />{/if}
       <Page route={router.route} />
     </div>

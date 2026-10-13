@@ -32,12 +32,12 @@
 
 <svelte:head><title>Your settings · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Your settings" description="Display preferences, saved to your account across browsers." />
     {#if settings}
-      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="pref-time">
-        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+      <section class="panel" aria-labelledby="pref-time">
+        <header class="panel-head">
           <h2 id="pref-time">Dates and times</h2>
           <span class="small muted text-ui-sm">Now: {now}</span>
         </header>
@@ -54,8 +54,8 @@
           <dd><Segmented label="Clock" options={CLOCKS} value={settings.clock} onchange={(clock) => saveSettings({ clock })} /></dd>
         </dl>
       </section>
-      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="pref-look">
-        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="pref-look">Appearance</h2></header>
+      <section class="panel" aria-labelledby="pref-look">
+        <header class="panel-head"><h2 id="pref-look">Appearance</h2></header>
         <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
           <dt>Theme</dt>
           <dd>

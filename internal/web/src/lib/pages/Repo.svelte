@@ -149,7 +149,7 @@
   </dd>
 {/snippet}
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title={fullName} {slug} parents={[{ label: 'Repositories', route: { name: 'repos', slug } }]}>
       {#snippet actions()}
@@ -174,8 +174,8 @@
         {@const rows = shown(d, settingRows)}
         {@const agent = shown(d, agentRows)}
         <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-3.5">
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="repo-settings">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+          <section class="panel" aria-labelledby="repo-settings">
+            <header class="panel-head">
               <h2 id="repo-settings">Effective settings</h2>
               <input class="settings-filter max-w-50" type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} />
             </header>
@@ -190,8 +190,8 @@
             </dl>
             {#if rows.length === 0 && agent.length === 0}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No setting matches “{settingFilter.trim()}”.</p>{/if}
           </section>
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="repo-agent">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="repo-agent">Agent limits</h2></header>
+          <section class="panel" aria-labelledby="repo-agent">
+            <header class="panel-head"><h2 id="repo-agent">Agent limits</h2></header>
             <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
               {#each agent as r (r.label)}
                 {@render setting(d, r)}
@@ -200,8 +200,8 @@
           </section>
         </div>
 
-        <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="repo-file">
-          <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="repo-file" class="mono">.kritika.yaml</h2></header>
+        <section class="panel" aria-labelledby="repo-file">
+          <header class="panel-head"><h2 id="repo-file" class="mono">.kritika.yaml</h2></header>
           {#if !rc}
             <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No review has read it yet.</p>
           {:else}
@@ -231,8 +231,8 @@
           {/if}
         </section>
 
-        <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="repo-index">
-          <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="repo-index">Index runs</h2></header>
+        <section class="panel" aria-labelledby="repo-index">
+          <header class="panel-head"><h2 id="repo-index">Index runs</h2></header>
           {#if d.indexRuns.length === 0}
             <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Never indexed.</p>
           {:else}
@@ -267,8 +267,8 @@
       {/snippet}
     </StateView>
 
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="repo-pulls">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+    <section class="panel" aria-labelledby="repo-pulls">
+      <header class="panel-head">
         <h2 id="repo-pulls">Pull requests</h2>
         <a class="small text-ui-sm" href={href({ name: 'pulls', slug, filter: { state: 'all', repo: fullName } })}>See all</a>
       </header>

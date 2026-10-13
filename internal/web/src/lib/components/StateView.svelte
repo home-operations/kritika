@@ -23,7 +23,7 @@
   {#if res.error}
     <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">
       <span>Refresh failed: {errorMessage(res.error)}</span>
-      {#if retry}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={retry}>Retry</button>{/if}
+      {#if retry}<button class="btn" onclick={retry}>Retry</button>{/if}
     </div>
   {/if}
   {#if isEmpty?.(res.data)}
@@ -34,7 +34,7 @@
 {:else if res.error}
   <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">
     <span>{errorMessage(res.error)}</span>
-    {#if retry}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={retry}>Retry</button>{/if}
+    {#if retry}<button class="btn" onclick={retry}>Retry</button>{/if}
   </div>
 {:else}
   <div class="loading-placeholder w-full" class:loading-overview={layout !== 'table'} role="status" aria-label="Loading content" aria-busy="true">

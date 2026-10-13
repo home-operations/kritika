@@ -35,10 +35,10 @@
 
 <svelte:head><title>Overview · {slug} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Overview" {slug} description="Review health, active work and repositories for this account.">
-      {#snippet actions()}<a class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" href={href({ name: 'pulls', slug })}>View pull requests →</a>{/snippet}
+      {#snippet actions()}<a class="btn" href={href({ name: 'pulls', slug })}>View pull requests →</a>{/snippet}
     </PageHeader>
     <section class="tiles account-activity grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-2.5" aria-label="Account activity">
       {@render metric('Running now', queue.data?.filter((j) => j.state === 'running').length, { name: 'queue', slug, filter: { state: 'running' } }, 'Open running work →', !queue.error)}
@@ -48,11 +48,11 @@
     </section>
     <div class="overview-work grid grid-cols-[minmax(0,_1fr)_minmax(220px,_28%)] gap-7">
       <section class="attention-list min-w-0" aria-labelledby="account-attention">
-        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="account-attention">Needs attention</h2></header>
+        <header class="panel-head"><h2 id="account-attention">Needs attention</h2></header>
         {#each [{ res: account, label: 'Account details' }, { res: attention, label: 'Review alerts' }, { res: queue, label: 'Queue' }] as source (source.label)}
           <span hidden data-loading={source.res.loading || (source.res.data === undefined && !source.res.error)}></span>
           {#if source.res.error}
-            <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>{source.label}: {errorMessage(source.res.error)}</span><button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => void source.res.load()}>Retry {source.label.toLowerCase()}</button></div>
+            <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>{source.label}: {errorMessage(source.res.error)}</span><button class="btn" onclick={() => void source.res.load()}>Retry {source.label.toLowerCase()}</button></div>
           {:else if source.res.data === undefined}
             <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" role="status">Loading {source.label.toLowerCase()}…</p>
           {/if}
@@ -70,8 +70,8 @@
           <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">All clear. No review alerts or queue issues.</p>
         {/if}
       </section>
-      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="account-connection">
-        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="account-connection">Connection</h2></header>
+      <section class="panel" aria-labelledby="account-connection">
+        <header class="panel-head"><h2 id="account-connection">Connection</h2></header>
         <div class="panel-body py-2.5 px-3">
           {#if account.data}
             <p class="mono">{account.data.connection.name}</p>
@@ -81,8 +81,8 @@
         </div>
       </section>
     </div>
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="account-repos">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="account-repos">Repositories</h2><a href={href({ name: 'repos', slug })}>View all repositories →</a></header>
+    <section class="panel" aria-labelledby="account-repos">
+      <header class="panel-head"><h2 id="account-repos">Repositories</h2><a href={href({ name: 'repos', slug })}>View all repositories →</a></header>
       <StateView res={repos} retry={() => repos.load()} isEmpty={(p) => p.items.length === 0} empty="No repositories connected yet.">
         {#snippet children(p)}
           <div class="table-wrap overflow-x-auto max-w-full"><table class="data"><thead><tr><th scope="col">Repository</th><th scope="col">Reviews</th><th scope="col">Index</th></tr></thead>

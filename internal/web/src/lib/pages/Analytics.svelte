@@ -95,7 +95,7 @@
 
 <svelte:head><title>Analytics · {slug} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Analytics" {slug}>
       {#snippet actions()}<HelpPopover label="About these metrics"><p>Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p><p>Failure rate is failed / (completed + failed). Duration is the median of completed reviews. API spend includes priced calls and excludes subscription fees.</p></HelpPopover>{/snippet}
@@ -105,8 +105,8 @@
     </div>
     {#if detail.data && (unsignedWebhooks(detail.data.connection) || !detail.data.connection.lastWebhookAt)}
       {@const inst = detail.data.connection}
-      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="an-connection">
-        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="an-connection">Connection</h2></header>
+      <section class="panel" aria-labelledby="an-connection">
+        <header class="panel-head"><h2 id="an-connection">Connection</h2></header>
         {#if unsignedWebhooks(inst)}
           <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">
             GitHub sends <span class="mono">{inst.name}</span>'s webhooks with no signature, so kritika refuses them, only polls for
@@ -128,8 +128,8 @@
       {@const wants = WANTS.filter((w) => attention.data![w.key] > 0)}
       {@const near = nearCaps(detail.data.usage)}
       {#if wants.length || near.length}
-        <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="an-attention">
-          <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="an-attention">Needs attention</h2><span class="small muted text-ui-sm">Right now</span></header>
+        <section class="panel" aria-labelledby="an-attention">
+          <header class="panel-head"><h2 id="an-attention">Needs attention</h2><span class="small muted text-ui-sm">Right now</span></header>
           <ul class="rows list-none m-0 p-0 bg-panel border border-solid border-line rounded-lg">
             {#each wants as w (w.key)}
               <li class="row flex items-center gap-2.5 py-[7px] px-3 border-b border-solid border-b-line min-w-0">
@@ -190,8 +190,8 @@
             <StatTile label="Tokens" value={tokens(c.tokens)} now={c.tokens} before={p.tokens} define="Input (including cached input) plus output tokens" />
             <a class="stat flex flex-col gap-1 min-w-0 pt-1 px-0 pb-4 border-b border-solid border-b-line bg-transparent" href={href({ name: 'usage', slug, filter: usageFilter({ days }) })}><span class="stat-label text-ui-sm text-muted">Investigate spending</span><span class="stat-value text-[length:26px] font-bold tracking-[-0.01em]">{costTotal(c.costUsd, c.unpricedCalls)}</span><span class="stat-sub text-ui-sm text-muted">Repository → model → review run</span></a>
           </section>
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="an-operations">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>
+          <section class="panel" aria-labelledby="an-operations">
+            <header class="panel-head"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>
             <div class="toolbar flex flex-wrap items-center gap-2"><Segmented label="Operational metric" options={TRENDS} value={trend} onchange={(v) => (trend = v)} /></div>
             <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${bucketLabel}`}
               series={[{ label: TRENDS.find((t) => t.value === trend)!.label, color: 'var(--chart-ink)' }]}
@@ -247,8 +247,8 @@
           </section>
 
           <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-3.5">
-            <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="an-reviews">
-              <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+            <section class="panel" aria-labelledby="an-reviews">
+              <header class="panel-head">
                 <h2 id="an-reviews">Reviews</h2>
                 <Segmented label="Reviews view" options={VIEWS} value={reviewsView} onchange={(v) => (reviewsView = v)} />
               </header>
@@ -261,8 +261,8 @@
                 view={reviewsView}
               />
             </section>
-            <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="an-findings">
-              <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+            <section class="panel" aria-labelledby="an-findings">
+              <header class="panel-head">
                 <h2 id="an-findings">Findings by severity</h2>
                 <Segmented label="Findings view" options={VIEWS} value={findingsView} onchange={(v) => (findingsView = v)} />
               </header>
@@ -283,8 +283,8 @@
             </section>
           </div>
 
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="an-repos">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="an-repos">Most reviewed repositories</h2></header>
+          <section class="panel" aria-labelledby="an-repos">
+            <header class="panel-head"><h2 id="an-repos">Most reviewed repositories</h2></header>
             {#if d.repositories.length === 0}
               <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No reviews in this period.</p>
             {:else}

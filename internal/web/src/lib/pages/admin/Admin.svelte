@@ -14,7 +14,7 @@
 
 <svelte:head><title>{title} · {slug} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader {title} {slug} />
     {#if !session.me}
@@ -24,7 +24,7 @@
     {:else if !Object.hasOwn(SECTIONS, current)}
       <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No such section.</p>
     {:else}
-      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0">
+      <section class="panel">
         <AuditTable path={`${accountApi(slug)}/audit`} />
       </section>
     {/if}

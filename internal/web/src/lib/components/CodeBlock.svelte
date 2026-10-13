@@ -49,7 +49,7 @@
     <pre class:mono={!plain}>{shown}</pre>
   {/if}
   {#if lines.length > maxLines}
-    <button class="btn btn-small code-more border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs self-start mt-0 mx-2.5 mb-2" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
+    <button class="btn btn-small code-more self-start mt-0 mx-2.5 mb-2" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
       {expanded ? 'Show less' : `Show all ${lines.length} lines`}
     </button>
   {/if}

@@ -116,7 +116,7 @@
 
 <svelte:head><title>{title} · kritika</title></svelte:head>
 
-<main class="page review-page flex-auto min-w-0 min-h-0 overflow-auto relative" bind:this={page}>
+<main id="main-content" class="page review-page flex-auto min-w-0 min-h-0 overflow-auto relative" bind:this={page}>
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <div class="page-head pr-workspace-head flex flex-col gap-2 pb-4 border-b border-solid border-b-line">
       <PageHeader title={ref?.title ?? (owner && repo ? `${owner}/${repo}#${number}` : 'Pull request')} {slug} parents={[{ label: 'Pull requests', route: { name: 'pulls', slug } }, ...(ref ? [{ label: ref.repository, route: repoRoute(slug, ref.repository) }] : [])]} />
@@ -141,7 +141,7 @@
               {/each}
             </select>
           </label>
-          {#if forgeUrl}<a class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" href={forgeUrl} target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a>{/if}
+          {#if forgeUrl}<a class="btn btn-primary" href={forgeUrl} target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a>{/if}
           {#if isAdmin()}
             <ActionButton label="Re-run" title="Re-run the review?" body={rerunBody(`${ref.repository}#${ref.number}`, pullState === 'open', merged)} path={rerunPath(slug, ref)} done="Re-run queued" ondone={refresh} />
             {#if r && isActive(r.status) && !r.cancelRequestedAt}
@@ -189,7 +189,7 @@
     </div>
 
     {#if pull.error}
-      <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>Pull request details: {errorMessage(pull.error)}</span><button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => void pull.load()}>Retry pull request</button></div>
+      <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>Pull request details: {errorMessage(pull.error)}</span><button class="btn" onclick={() => void pull.load()}>Retry pull request</button></div>
     {/if}
     {#if selectedId}
       <StateView {res} retry={() => res.load()}>
@@ -200,7 +200,7 @@
     {:else if pull.data}
       <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Not reviewed yet.</p>
       {#if latestAttempt?.status === 'skipped'}<p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md">Latest attempt skipped: {skippedReason(latestAttempt)}</p>{/if}
-      {#if pull.data.followups.length}<section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-label="Follow-ups"><header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2>Follow-ups</h2></header><ul class="followups list-none m-0 p-0">{#each pull.data.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul></section>{/if}
+      {#if pull.data.followups.length}<section class="panel" aria-label="Follow-ups"><header class="panel-head"><h2>Follow-ups</h2></header><ul class="followups list-none m-0 p-0">{#each pull.data.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul></section>{/if}
     {:else if !pull.error}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" role="status">Loading pull request…</p>{/if}
   </div>
 </main>

@@ -18,18 +18,18 @@
 
 <StateView {res} retry={() => res.load()}>
   {#snippet children(x)}
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="raw-result">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="raw-result">Submitted result</h2></header>
+    <section class="panel" aria-labelledby="raw-result">
+      <header class="panel-head"><h2 id="raw-result">Submitted result</h2></header>
       {#if x.result === null}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Nothing was submitted.</p>{:else}<CodeBlock text={pretty(x.result)} label="result.json" />{/if}
     </section>
 
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="raw-log">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="raw-log">Log tail</h2></header>
+    <section class="panel" aria-labelledby="raw-log">
+      <header class="panel-head"><h2 id="raw-log">Log tail</h2></header>
       {#if x.logTail}<CodeBlock text={x.logTail} label="runner log" maxLines={80} />{:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No log captured.</p>{/if}
     </section>
 
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="raw-pack">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="raw-pack">Context pack</h2></header>
+    <section class="panel" aria-labelledby="raw-pack">
+      <header class="panel-head"><h2 id="raw-pack">Context pack</h2></header>
       {#if pack}
         <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
           <dt>Head / base</dt><dd class="mono">{pack.headSha} / {pack.baseSha}</dd>
@@ -54,8 +54,8 @@
       {/each}
     </section>
 
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="raw-files">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="raw-files">Repository files</h2></header>
+    <section class="panel" aria-labelledby="raw-files">
+      <header class="panel-head"><h2 id="raw-files">Repository files</h2></header>
       {#each Object.entries(x.repoFiles) as [path, text] (path)}
         <Collapsible title={path}>
           {#snippet meta()}<span class="small muted text-ui-sm">{bytes(text.length)}</span>{/snippet}

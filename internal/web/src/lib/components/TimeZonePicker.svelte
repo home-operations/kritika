@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { KeyboardEventHandler } from 'svelte/elements';
   import { Combobox } from 'bits-ui';
 
   let { value, zones, onchange }: { value: string; zones: string[]; onchange: (value: string) => void } = $props();
@@ -26,7 +27,14 @@
       aria-controls={open ? 'pref-zone-options' : undefined}
       onfocus={() => (open = true)}
       oninput={(e) => { open = true; search = e.currentTarget.value; }}
-    />
+    >
+      {#snippet child({ props })}
+        <input {...props} onkeydown={(e) => {
+          if (['Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) return;
+          (props.onkeydown as KeyboardEventHandler<HTMLInputElement> | undefined)?.(e);
+        }} />
+      {/snippet}
+    </Combobox.Input>
     <Combobox.ContentStatic id="pref-zone-options" class="suggest zone-options absolute top-[calc(100%_+_4px)] left-0 right-0 z-[var(--z-popup)] m-0 py-1 px-0 list-none bg-panel border border-solid border-line rounded-lg shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_12%,_transparent)] max-h-60 overflow-y-auto" aria-label="Time zones" preventScroll={false}>
       {#each matches as option (option.value)}
         <Combobox.Item value={option.value} label={option.label}>{option.label}</Combobox.Item>

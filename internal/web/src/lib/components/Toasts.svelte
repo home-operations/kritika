@@ -6,7 +6,7 @@
   {#each toasts.list as t (t.id)}
     <div class="toast tone-{t.tone}">
       <span>{t.text}</span>
-      <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" aria-label="Dismiss" onclick={() => dismiss(t.id)}>×</button>
+      <button class="btn btn-small" aria-label="Dismiss" onclick={() => dismiss(t.id)}>×</button>
     </div>
   {/each}
 </div>

@@ -88,7 +88,7 @@
             <input type="password" autocomplete="current-password" required bind:value={password} />
           </label>
           <div aria-live="assertive">{#if localError}<p class="signin-error m-0 text-ui-md text-danger" role="alert">{localError}</p>{/if}</div>
-          <button class="btn btn-primary signin-provider border border-solid rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 justify-center py-2 px-3 bg-accent border-accent text-on-accent" type="submit" disabled={signingIn}>
+          <button class="btn btn-primary signin-provider justify-center py-2" type="submit" disabled={signingIn}>
             {signingIn ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
@@ -97,7 +97,7 @@
         {#if local}<p class="signin-or my-1.5 mx-0 text-muted text-ui-sm">or</p>{/if}
         <div class="signin-providers flex flex-col gap-2 w-full">
           {#each redirects as p (p.name)}
-            <a class="btn signin-provider border border-solid border-line bg-surface text-ink rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 justify-center py-2 px-3" href={loginHref(p)}>
+            <a class="btn signin-provider justify-center py-2" href={loginHref(p)}>
               <Icon path={iconFor(p.type)} size={16} />
               {p.displayName}
             </a>

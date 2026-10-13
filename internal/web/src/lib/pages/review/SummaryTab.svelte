@@ -22,8 +22,8 @@
 </script>
 
 {#if d.summary}
-  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="sum-take">
-    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="sum-take">Take</h2></header>
+  <section class="panel" aria-labelledby="sum-take">
+    <header class="panel-head"><h2 id="sum-take">Take</h2></header>
     <div class="panel-body py-2.5 px-3">
       {#if d.summary.headline}<p class="headline mt-0 mx-0 mb-1.5 font-semibold leading-[1.5]">{d.summary.headline}</p>{/if}
       {#if d.review.confidence}<Confidence c={d.review.confidence} />{/if}
@@ -41,8 +41,8 @@
 {/if}
 
 {#if d.summary?.impact?.length}
-  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="sum-impact">
-    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="sum-impact">Merge impact</h2></header>
+  <section class="panel" aria-labelledby="sum-impact">
+    <header class="panel-head"><h2 id="sum-impact">Merge impact</h2></header>
     <div class="panel-body py-2.5 px-3">
       <ReviewImpact notes={d.summary.impact} />
     </div>
@@ -65,8 +65,8 @@
 <!-- The rules this review was given: one it cites nowhere was checked and found kept. -->
 {#if d.contextPack?.ruleIds.length}
   {@const cited = (id: string) => d.findings.filter((f) => f.rules.includes(id)).length}
-  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="sum-rules">
-    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+  <section class="panel" aria-labelledby="sum-rules">
+    <header class="panel-head">
       <h2 id="sum-rules">Rules checked</h2>
       <span class="small muted text-ui-sm">{d.contextPack.ruleIds.length} applied to this change</span>
     </header>

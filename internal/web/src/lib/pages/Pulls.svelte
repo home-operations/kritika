@@ -158,7 +158,7 @@
 
 <svelte:head><title>Pull requests · {slug ?? 'All accounts'} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Pull requests" {slug} description={slug ? undefined : "Review activity across all your accounts. Choose an account to narrow this list."} />
     <div class="toolbar flex flex-wrap items-center gap-2" role="search">
@@ -175,8 +175,8 @@
       {#if picked.length}
         <div class="bulk-actions flex flex-wrap items-center gap-1.5" role="group" aria-label="Selected pull requests">
           <span class="small text-ui-sm">{picked.length} selected</span>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => (confirmRerun = true)}>Re-run…</button>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => pick(picked, false)}>Clear</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => (confirmRerun = true)}>Re-run…</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => pick(picked, false)}>Clear</button>
         </div>
       {/if}
     </div>
@@ -184,7 +184,7 @@
       {#if items.length === 0 && filter}
         <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
           <span>No pull requests match these filters.</span>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
+          <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
         </div>
       {:else if items.length === 0}
         <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
@@ -203,7 +203,7 @@
 <Dialog bind:open={confirmRerun} title={`Re-run ${plural(picked.length)}?`}>
   <p>Each is reviewed again at its current head, which spends model tokens. One already queued or running is left as it is.</p>
   {#snippet footer()}
-    <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => (confirmRerun = false)}>Cancel</button>
-    <button class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" disabled={busy} onclick={rerunPicked}>{busy ? 'Queuing…' : 'Re-run'}</button>
+    <button class="btn" onclick={() => (confirmRerun = false)}>Cancel</button>
+    <button class="btn btn-primary" disabled={busy} onclick={rerunPicked}>{busy ? 'Queuing…' : 'Re-run'}</button>
   {/snippet}
 </Dialog>

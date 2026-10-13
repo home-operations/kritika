@@ -137,7 +137,7 @@
   {#snippet children(x)}
     {#if !x.diff && !x.deltaDiff}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{x.pending ? 'Preparing the diff…' : x.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}</p>{/if}
     <div class="toolbar flex flex-wrap items-center gap-2">
-      <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" aria-expanded={navigatorShown} aria-controls="review-navigator" onclick={() => (navigatorShown = !navigatorShown)}>{navigatorShown ? 'Hide navigator' : 'Show navigator'}</button>
+      <button class="btn" aria-expanded={navigatorShown} aria-controls="review-navigator" onclick={() => (navigatorShown = !navigatorShown)}>{navigatorShown ? 'Hide navigator' : 'Show navigator'}</button>
       {#if files.length}<span class="small muted text-ui-sm">{visibleFiles.length} of {files.length} files</span>{/if}
       {#if x.deltaDiff}
         <div class="view-toggle inline-flex border border-solid border-line rounded-md overflow-hidden" role="group" aria-label="Diff scope">
@@ -147,9 +147,9 @@
       {/if}
     </div>
     <div class="finding-controls flex items-center flex-wrap gap-y-2 gap-x-4" role="group" aria-label="Finding navigation">
-      <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={selectedIndex <= 0} onclick={() => step(-1)}>← Previous finding</button>
+      <button class="btn" disabled={selectedIndex <= 0} onclick={() => step(-1)}>← Previous finding</button>
       <span class="small muted text-ui-sm" aria-live="polite">{selectedIndex < 0 ? `${findings.length} findings` : `Finding ${selectedIndex + 1} of ${findings.length}`}</span>
-      <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={!findings.length || selectedIndex === findings.length - 1} onclick={() => step(1)}>Next finding →</button>
+      <button class="btn" disabled={!findings.length || selectedIndex === findings.length - 1} onclick={() => step(1)}>Next finding →</button>
     </div>
     <div class="review-workspace grid grid-cols-[minmax(220px,_27%)_minmax(0,_1fr)] gap-5 items-start" class:code-focused={!navigatorShown}>
       <nav id="review-navigator" class="finding-nav sticky top-4 max-h-[75vh] overflow-y-auto bg-panel border border-solid border-line rounded-lg" aria-label="Findings and files" hidden={!navigatorShown}>
@@ -176,8 +176,8 @@
       </nav>
       <div class="review-code min-w-0 flex flex-col gap-4">
         {#if outside.length}
-          <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-label="Findings outside this diff">
-            <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2>Outside this diff</h2></header>
+          <section class="panel" aria-label="Findings outside this diff">
+            <header class="panel-head"><h2>Outside this diff</h2></header>
             {#each outside as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} id={`diff-finding-${f.id}`} />{/each}
           </section>
         {/if}

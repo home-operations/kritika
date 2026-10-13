@@ -42,7 +42,7 @@
   <Segmented label="Queue state" options={filters} value={queueState} onchange={(v) => onfilter({ ...filter, state: v === 'all' ? undefined : v })} />
   <label class="queue-search flex items-center gap-2 text-[length:12px] whitespace-nowrap">Search jobs <input type="search" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Repository, account or job" /></label>
 </div>
-<div class="table-caption flex items-center justify-between gap-3"><span class="small muted text-ui-sm">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
+<div class="queue-caption flex items-center justify-between gap-3"><span class="small muted text-ui-sm">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
 <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
   <table class="data queue-table">
     <thead>
@@ -76,7 +76,7 @@
             {#if isAdmin()}
               {@const action = actionFor(j)}
               <div class="queue-actions flex items-center flex-wrap gap-2.5 mt-0 mx-0 mb-2">
-                {#if action}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
+                {#if action}<button class="btn" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
               </div>
             {/if}
             <details class="job-details">

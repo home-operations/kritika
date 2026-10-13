@@ -35,8 +35,8 @@
   const remaining = (w: ChatGPTAllowanceWindow) => Math.max(0, 100 - w.usedPercent).toLocaleString('en', { maximumFractionDigits: 1 });
 </script>
 
-<section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-label="ChatGPT allowances">
-  <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+<section class="panel" aria-label="ChatGPT allowances">
+  <header class="panel-head">
     <h2>ChatGPT allowances</h2>
     <a class="small text-ui-sm" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage ChatGPT usage</a>
   </header>

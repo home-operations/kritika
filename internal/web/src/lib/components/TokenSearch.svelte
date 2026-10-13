@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { KeyboardEventHandler } from 'svelte/elements';
   // A search box that also takes filter tokens and suggests them: a
   // combobox whose list opens while the box has focus and something
   // matches. It reports the parsed text once typing pauses, so typing
@@ -39,7 +40,7 @@
 
   let open = $state(false);
   let selected = $state('');
-  let tabCompletion = $state(false);
+  let keyboardSelection = $state(false);
   const suggestions = $derived(suggest(text, specs));
   const optionId = (label: string) => `${id}-suggest-${encodeURIComponent(label)}`;
 
@@ -50,7 +51,7 @@
     // the next token while keeping the caret in the same input.
     await tick();
     selected = '';
-    tabCompletion = false;
+    keyboardSelection = false;
     open = suggestions.length > 0;
     input?.focus();
   }
@@ -75,15 +76,15 @@
       {placeholder}
       oninput={(e) => {
         text = e.currentTarget.value;
-        tabCompletion = false;
+        keyboardSelection = false;
         open = true;
         apply();
       }}
-      onfocus={() => { open = true; tabCompletion = false; }}
+      onfocus={() => { open = true; keyboardSelection = false; }}
       onblur={() => (open = false)}
       onkeydown={(e) => {
-        if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) tabCompletion = true;
-        if (e.key !== 'Tab' || e.shiftKey || !tabCompletion || !open || e.isComposing) return;
+        if (['ArrowDown', 'ArrowUp'].includes(e.key)) keyboardSelection = true;
+        if (e.key !== 'Tab' || e.shiftKey || !keyboardSelection || !open || e.isComposing) return;
         const active = suggestions.find((s) => e.currentTarget.getAttribute('aria-activedescendant') === optionId(s.label));
         if (active) {
           e.preventDefault();
@@ -97,6 +98,11 @@
         <input
           {...props}
           aria-activedescendant={active ? optionId(active.label) : undefined}
+          onkeydown={(e) => {
+            if (['Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) return;
+            if (e.key === 'Enter' && (!keyboardSelection || e.isComposing)) return;
+            (props.onkeydown as KeyboardEventHandler<HTMLInputElement> | undefined)?.(e);
+          }}
           bind:this={input}
         />
       {/snippet}

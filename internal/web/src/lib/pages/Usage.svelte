@@ -143,7 +143,7 @@
 
 <svelte:head><title>Usage & costs · {slug} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Usage & costs" {slug}>
       {#snippet actions()}<HelpPopover label="About usage">
@@ -174,10 +174,10 @@
       {/if}
     </div>
     <nav class="usage-drilldown flex items-center flex-wrap my-4 mx-0 text-ui-sm gap-2" aria-label="Spending drilldown">
-      <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => setFilter({ repo: undefined, model: undefined, group: 'repo' })}>All repositories</button>
-      {#if repository !== undefined}<span>→</span><button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => setFilter({ model: undefined, group: 'model' })}>{repository || 'Unattributed repository'}</button>{/if}
+      <button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined, group: 'repo' })}>All repositories</button>
+      {#if repository !== undefined}<span>→</span><button class="btn" onclick={() => setFilter({ model: undefined, group: 'model' })}>{repository || 'Unattributed repository'}</button>{/if}
       {#if model !== undefined}<span>→</span><span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">{model || 'Unattributed model'}</span>{/if}
-      {#if repository !== undefined || model !== undefined}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => setFilter({ repo: undefined, model: undefined })}>Clear filters</button>{/if}
+      {#if repository !== undefined || model !== undefined}<button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined })}>Clear filters</button>{/if}
     </nav>
     <StateView {res} retry={() => res.load()} isEmpty={(s) => s.rows.length === 0 && s.previous.length === 0} empty="No model usage in this range.">
       {#snippet children(s)}
@@ -192,8 +192,8 @@
           <StatTile label="Calls in selection" value={wholeNumber(t.calls)} now={t.calls} before={before.calls} />
         </section>
 
-        <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="usage-chart">
-          <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="usage-chart">{metric === 'cost' ? 'API spend' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
+        <section class="panel" aria-labelledby="usage-chart">
+          <header class="panel-head"><h2 id="usage-chart">{metric === 'cost' ? 'API spend' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
           <ColumnChart
             label="{metric === 'cost' ? 'API spend' : 'Tokens'} by {s.group}, last {periodLabel}"
             series={[{ label: metric === 'cost' ? 'API spend' : 'Tokens', color: 'var(--chart-ink)' }]}

@@ -136,9 +136,9 @@
 
 <svelte:head><title>Repositories · {slug} · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
+    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
     <div class="toolbar flex flex-wrap items-center gap-2">
       <label class="search-box [flex:1_1_240px] min-w-0 flex">
         <span class="sr-only">Filter repositories</span>
@@ -155,10 +155,10 @@
       {#if manage && selected.length}
         <div class="bulk-actions flex flex-wrap items-center gap-1.5" role="group" aria-label="Selected repositories">
           <span class="small text-ui-sm">{selected.length} selected</span>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => setEnabled(selected, true)}>Turn on</button>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => setEnabled(selected, false)}>Turn off</button>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => (confirmReindex = true)}>Reindex…</button>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => (selected = [])}>Clear</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, true)}>Turn on</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, false)}>Turn off</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => (confirmReindex = true)}>Reindex…</button>
+          <button class="btn btn-small" disabled={busy} onclick={() => (selected = [])}>Clear</button>
         </div>
       {/if}
     </div>
@@ -172,7 +172,7 @@
       {#if rows.length === 0}
         <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
           <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
-          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilter}>Clear filter</button>
+          <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
         </div>
       {:else}
         <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
@@ -266,7 +266,7 @@
     {#if selectedOff}{plural(selectedOff)} that {selectedOff === 1 ? 'is' : 'are'} off {selectedOff === 1 ? 'is' : 'are'} skipped.{/if}
   </p>
   {#snippet footer()}
-    <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => (confirmReindex = false)}>Cancel</button>
-    <button class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" disabled={busy || selected.length === selectedOff} onclick={reindex}>{busy ? 'Queuing…' : 'Reindex'}</button>
+    <button class="btn" onclick={() => (confirmReindex = false)}>Cancel</button>
+    <button class="btn btn-primary" disabled={busy || selected.length === selectedOff} onclick={reindex}>{busy ? 'Queuing…' : 'Reindex'}</button>
   {/snippet}
 </Dialog>

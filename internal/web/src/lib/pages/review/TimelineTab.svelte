@@ -55,8 +55,8 @@
 
 {#if d.runnerRun}
   {@const r = d.runnerRun}
-  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="tl-runner">
-    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+  <section class="panel" aria-labelledby="tl-runner">
+    <header class="panel-head">
       <h2 id="tl-runner">Runner</h2>
       <span class="small muted text-ui-sm">{r.phase}{totalMs ? ` · ${duration(totalMs)} total` : ''}</span>
     </header>
@@ -93,8 +93,8 @@
 
 {#if d.agentRun}
   {@const a = d.agentRun}
-  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="tl-agent">
-    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
+  <section class="panel" aria-labelledby="tl-agent">
+    <header class="panel-head">
       <h2 id="tl-agent">Agent steps</h2>
       <span class="small muted text-ui-sm">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {costTotal(a.costUsd, a.unpricedSteps)} API spend</span>
     </header>

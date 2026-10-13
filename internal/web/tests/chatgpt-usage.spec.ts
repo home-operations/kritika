@@ -112,7 +112,7 @@ test("ChatGPT filtering supports hour and week and counts cached input once", as
   await page.getByRole("radio", { name: "ChatGPT plan", exact: true }).click();
   const summary = page.getByRole("region", { name: "Selected usage" });
   await expect(summary).toBeVisible();
-  await summary.getByRole("button", { name: "About Tokens in selection", exact: true }).focus();
+  await summary.getByRole("button", { name: /^About Tokens in selection:/ }).focus();
   await expect(page.getByRole("tooltip")).toHaveText("1,200");
   await page.getByRole("combobox", { name: "Group by" }).selectOption("hour");
   await expect(page.getByRole("img", { name: "Tokens by hour, last 24 hours" })).toBeVisible();
@@ -160,7 +160,7 @@ test("review plan usage is totalled per run and excludes API fallback tokens", a
   await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, usage }], ...g.defaultApi()]);
   await page.goto(`/${account}/reviews/rev-1/usage`);
   const summary = page.getByRole("region", { name: "ChatGPT usage for this review" });
-  await summary.getByRole("button", { name: "About ChatGPT input tokens", exact: true }).focus();
+  await summary.getByRole("button", { name: /^About ChatGPT input tokens:/ }).focus();
   await expect(page.getByRole("tooltip")).toHaveText("4,000");
   const runs = page.getByRole("region", { name: "ChatGPT usage by run" });
   await expect(runs.locator("tbody tr")).toHaveCount(3);

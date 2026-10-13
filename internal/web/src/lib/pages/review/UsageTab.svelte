@@ -35,8 +35,8 @@
       <StatTile label="ChatGPT input tokens" value={tokens(planTotal.in)} define={wholeNumber(planTotal.in)} sub="Includes cached tokens" />
       <StatTile label="ChatGPT output tokens" value={tokens(planTotal.out)} define={wholeNumber(planTotal.out)} sub="Included in plan" />
     </section>
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-label="ChatGPT usage by run">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2>ChatGPT usage by run</h2></header>
+    <section class="panel" aria-label="ChatGPT usage by run">
+      <header class="panel-head"><h2>ChatGPT usage by run</h2></header>
       <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data">
           <thead><tr><th scope="col">Run</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input</th><th scope="col" class="num">Output</th><th scope="col" class="num">Total tokens</th></tr></thead>

@@ -16,7 +16,7 @@
   }
 </script>
 
-<Tooltip text={label} class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={copy} aria-label={label}>
+<Tooltip text={label} class="btn btn-small" onclick={copy} aria-label={label}>
   <Icon path={done ? mdiCheck : mdiContentCopy} size={13} />
   <span>{done ? 'Copied' : 'Copy'}</span>
 </Tooltip>

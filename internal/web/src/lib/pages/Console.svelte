@@ -28,12 +28,12 @@
 
 <svelte:head><title>Instance settings · kritika</title></svelte:head>
 
-<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Instance settings" description="Manage connections and inspect instance configuration." />
     {#if res.data}<Checklist accounts={res.data} />{/if}
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="op-accounts">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="op-accounts">Accounts</h2></header>
+    <section class="panel" aria-labelledby="op-accounts">
+      <header class="panel-head"><h2 id="op-accounts">Accounts</h2></header>
       <p class="muted small panel-body text-ui-sm py-2.5 px-3">Every account a GitHub App serves, and entries of the configuration no App serves.</p>
       <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="No accounts yet: declare a GitHub App under apps in the configuration file.">
         {#snippet children(list)}
@@ -78,8 +78,8 @@
       </StateView>
     </section>
 
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="op-instance">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="op-instance">Instance settings</h2></header>
+    <section class="panel" aria-labelledby="op-instance">
+      <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
       <p class="muted small panel-body text-ui-sm py-2.5 px-3">
         The environment is this web process's; sign-in, the GitHub Apps and the instance settings are the configuration
         file's, or its environment's where a variable sets them.
@@ -109,8 +109,8 @@
 
     <ConnectionsSection />
 
-    <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="op-audit">
-      <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="op-audit">Admin audit log</h2></header>
+    <section class="panel" aria-labelledby="op-audit">
+      <header class="panel-head"><h2 id="op-audit">Admin audit log</h2></header>
       <AuditTable path="/api/v1/admin/audit" showAccount />
     </section>
   </div>
