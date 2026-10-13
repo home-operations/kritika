@@ -79,7 +79,7 @@
               {#if queue.error}<button class="btn btn-small self-start" onclick={() => void queue.load()}>Retry queue</button>{/if}
             </StatTile>
           {/if}
-          <StatTile label="Reviews, last 7 days" value={wholeNumber(all.reviews7d)} sub={`${wholeNumber(all.reviewsToday)} today`} />
+          <StatTile label="Reviews today" value={wholeNumber(all.reviewsToday)} sub={`${wholeNumber(all.reviews7d)} in the last 7 days`} />
           <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
           <StatTile
             label="API spend this month"
@@ -132,7 +132,6 @@
               <thead>
                 <tr>
                   <th scope="col">Account</th>
-                  <th scope="col">Connection</th>
                   <th scope="col" class="num wrap">Enabled repos</th>
                   <th scope="col" class="num">Reviews 7d</th>
                   <th scope="col" title="Reviews done today, against the account's daily cap where it has one">Today</th>
@@ -146,7 +145,6 @@
                 {#each list as t (t.slug)}
                   <tr>
                     <td class="mono name-fill" title={t.slug}><a href={href({ name: 'account', slug: t.slug })}>{t.slug}</a></td>
-                    <td class="mono small name-clip text-ui-sm" title={t.connection}>{t.connection}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>
                     <td>

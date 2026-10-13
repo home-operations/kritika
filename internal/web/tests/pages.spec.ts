@@ -41,7 +41,7 @@ test.describe('overview', () => {
     await page.goto('/#/');
     await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(2);
     const tiles = page.getByRole('region', { name: 'Across all accounts' });
-    await expect(tiles.locator('.stat').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
+    await expect(tiles.locator('.stat').filter({ hasText: 'Reviews today' })).toContainText(String(2 * g.accountSummary.usage.reviewsToday));
     const spend = tiles.locator('.stat').filter({ hasText: 'API spend this month' });
     await expect(spend.locator('.stat-value')).toHaveText('$3.00');
     // The per-review figure is a mean over both accounts' reviews, not a sum of their medians.
@@ -80,8 +80,8 @@ test.describe('overview', () => {
     const full = { ...a, slug: 'github/full', usage: { ...a.usage, reviewsToday: 48, reviewsPerDay: 50 } };
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [a, free, full]], ...g.defaultApi()]);
     await page.goto('/#/');
-    const today = (slug: string) => page.getByRole('row').filter({ hasText: slug }).getByRole('cell').nth(4);
-    await expect(page.locator('.account-breakdown').getByRole('columnheader').nth(4)).toHaveText('Today');
+    const today = (slug: string) => page.getByRole('row').filter({ hasText: slug }).getByRole('cell').nth(3);
+    await expect(page.locator('.account-breakdown').getByRole('columnheader').nth(3)).toHaveText('Today');
     await expect(today(a.slug)).toContainText(`${a.usage.reviewsToday} of ${a.usage.reviewsPerDay}`);
     await expect(today('github/free')).toHaveText('7');
     await expect(today('github/free').getByRole('meter')).toHaveCount(0);
@@ -147,7 +147,7 @@ test('a long account or App name is cut short, whole in its title, before a tabl
     await page.goto(`/${h}`);
     const row = page.getByRole('row').filter({ hasText: 'an-organization' });
     await expect(row.locator('td.name-fill')).toHaveAttribute('title', slug);
-    await expect(row.locator('td.name-clip')).toHaveAttribute('title', connection);
+    if (h === '#/admin') await expect(row.locator('td.name-clip')).toHaveAttribute('title', connection);
     expect(await row.locator('xpath=ancestor::div[contains(@class,"table-wrap")]').evaluate((el) => el.scrollWidth - el.clientWidth), h).toBe(0);
   }
   await page.goto('/#/');
