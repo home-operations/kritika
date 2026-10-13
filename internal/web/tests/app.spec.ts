@@ -377,6 +377,7 @@ test('the wordmark takes a review pass on load and on hover, then rests, and hol
   await expect(mark).toHaveClass(/playing/);
   expect(await last.evaluate((el) => getComputedStyle(el).animationName)).toBe('letter-review');
   expect(await mark.evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe('review-sweep');
+  expect(await page.locator('.brand .logo').evaluate((el) => getComputedStyle(el).animationName)).toBe('logo-peek');
   await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
   await expect(mark).toHaveText('kritika');
   await page.emulateMedia({ reducedMotion: 'reduce' });

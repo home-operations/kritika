@@ -149,6 +149,26 @@
     opacity: 0;
   }
 }
+/* While the name takes its pass, the glass peeks and the lens rereads. */
+@keyframes logo-peek {
+  0% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-12deg) translateY(-1px);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes line-read {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
 @keyframes letter-review {
   0% {
     transform: translateY(0);
@@ -428,6 +448,19 @@
     animation: letter-review 480ms cubic-bezier(0.33, 1, 0.68, 1) both;
     animation-delay: calc(var(--i) * 55ms);
   }
+  .logo {
+    @apply origin-[42%_42%];
+  }
+  .logo .line {
+    @apply origin-left;
+  }
+  .brand:has(.wordmark.playing) .logo {
+    animation: logo-peek 560ms cubic-bezier(0.33, 1, 0.68, 1) both;
+  }
+  .brand:has(.wordmark.playing) .logo .line {
+    animation: line-read 260ms ease-out both;
+    animation-delay: calc(90ms + var(--i) * 80ms);
+  }
   .live-dot {
     animation: live-pulse 2.4s ease-out infinite;
   }
@@ -448,7 +481,9 @@
     }
     .live-dot,
     .wordmark .letter,
-    .wordmark::after {
+    .wordmark::after,
+    .logo,
+    .logo .line {
       @apply [animation:none]!;
     }
   }
