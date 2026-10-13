@@ -4,6 +4,7 @@
 // a real page -- this file calls them directly and needs no browser.
 import { test, expect } from '@playwright/test';
 import { href, parse, type Route } from '../src/lib/routes';
+import { change } from '../src/lib/format';
 import { INSTANCE_TABS, pageIn, pageOfInstance, scopeOf, sectionOf, SECTIONS, NAV_GROUPS } from '../src/lib/sections';
 
 const ROUTES: Route[] = [
@@ -147,4 +148,11 @@ test('repository filters stay with their account while portable pull filters tra
 
 test('dated account bookmarks retain their analytics destination', () => {
   expect(parse('#/a/github/acme?days=90')).toEqual({ name: 'analytics', slug: 'github/acme', filter: { days: '90' } });
+});
+
+test('a change in points keeps a zero baseline, a relative one does not', () => {
+  expect(change(20, 0, true)).toEqual({ text: '+20 pts', dir: 1 });
+  expect(change(20, 0)).toBeUndefined();
+  expect(change(0, 0, true)).toBeUndefined();
+  expect(change(5, 10)).toEqual({ text: '-50%', dir: -1 });
 });

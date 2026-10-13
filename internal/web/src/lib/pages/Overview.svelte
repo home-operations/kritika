@@ -13,7 +13,7 @@
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
   import { unsignedWebhooks } from '../setup';
-  import { overdue, waiting } from '../queue';
+  import { attention as jobNeedsAttention, overdue, waiting } from '../queue';
   import WebhookState from '../components/WebhookState.svelte';
 
   const res = Resource.json<AccountSummary[]>(() => '/api/v1/accounts');
@@ -35,7 +35,7 @@
   const operationalWants = WANTS.filter((w) => w.key !== 'p0');
   const connectionIssue = (a: AccountSummary) => unsignedWebhooks(a) || !a.lastWebhookAt;
   const fullSlots = $derived(queue.data?.slots.filter((s) => s.slots > 0 && s.held >= s.slots) ?? []);
-  const queueIssues = $derived(queue.data?.jobs.filter((j) => j.recentFailure || overdue(j)) ?? []);
+  const queueIssues = $derived(queue.data?.jobs.filter(jobNeedsAttention) ?? []);
   function work(q: InstanceQueue) {
     const capped = q.slots.filter((s) => s.slots > 0);
     return {
@@ -119,7 +119,7 @@
             <a class="attention-item" href={href({ name: 'queue', slug: slot.account })}><Pill tone="warn" label="At capacity" /><span><strong>{slot.account}</strong><span class="small muted text-ui-sm wrap-anywhere">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span><span class="attention-action text-accent text-ui-sm">Open queue →</span></a>
           {/each}
           {#each queueIssues.slice(0, 5) as job (job.id)}
-            <a class="attention-item" href={href({ name: 'queue', slug: job.account, filter: { state: 'attention' } })}><Pill tone={overdue(job) ? 'warn' : 'danger'} label={overdue(job) ? 'Heartbeat overdue' : 'Failed job'} /><span><strong>{job.args.repository || job.account}</strong><span class="small muted text-ui-sm">{job.kind} #{job.id}</span></span><span class="attention-action text-accent text-ui-sm">Inspect job →</span></a>
+            <a class="attention-item" href={href({ name: 'queue', slug: job.account, filter: { state: 'attention' } })}><Pill tone={job.recentFailure ? 'danger' : 'warn'} label={overdue(job) ? 'Heartbeat overdue' : job.recentFailure ? 'Failed job' : 'Retrying'} /><span><strong>{job.args.repository || job.account}</strong><span class="small muted text-ui-sm">{job.kind} #{job.id}</span></span><span class="attention-action text-accent text-ui-sm">Inspect job →</span></a>
           {/each}
           {#if queue.error}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-danger" role="alert">Queue alerts unavailable.{#if queue.data}<button class="btn btn-small" onclick={() => void queue.load()}>Retry queue alerts</button>{/if}</p>
           {:else if !queue.data}<p class="state-msg m-0 py-3 px-4 text-muted" role="status">Checking queue…</p>

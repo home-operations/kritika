@@ -102,6 +102,14 @@ test.describe('overview', () => {
     await expect(attention.getByRole('link', { name: /Failed job/ })).toHaveAttribute('href', `#/a/${g.SLUG}/queue?state=attention`);
     await expect(attention).not.toContainText('All clear');
   });
+
+  test('a job waiting to retry is an alert here as it is on the account overview and the queue', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [{ ...g.instanceQueue.jobs[0]!, kind: 'index', state: 'retryable', recentFailure: false }], slots: [] }], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+    await expect(attention.getByRole('link', { name: /Retrying/ })).toHaveAttribute('href', `#/a/${g.SLUG}/queue?state=attention`);
+    await expect(attention).not.toContainText('All clear');
+  });
 });
 
 test('a count of a thousand or more groups its digits, in every table', async ({ page }) => {

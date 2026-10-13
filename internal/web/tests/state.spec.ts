@@ -603,7 +603,7 @@ test('the overview summarizes many accounts without fetching individual pull lis
   await page.route('**/pulls?*', (route) => { calls.push(route.request().url()); return json(route, g.pageOf([g.pull])); });
   await page.goto('/');
   const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
-  await expect(attention.getByRole('link')).toHaveCount(76);
+  await expect(attention.getByRole('link')).toHaveCount(77);
   await attention.getByRole('link').last().scrollIntoViewIfNeeded();
   expect(calls).toEqual([]);
   accounts[0]!.attention.failed = 2;
