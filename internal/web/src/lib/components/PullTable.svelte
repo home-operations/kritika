@@ -53,7 +53,7 @@
                 disabled={open.length === 0}
                 onchange={(e) => onpick(open.map(keyOf), e.currentTarget.checked)}
               />
-              <span class="sr-only max-[800px]:not-sr-only">Select all</span>
+              <span class="pick-label sr-only">Select all</span>
             </label>
           </th>
         {/if}

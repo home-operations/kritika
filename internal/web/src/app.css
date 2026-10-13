@@ -941,17 +941,14 @@
   .checklist li.done .check-mark {
     @apply text-success;
   }
-  .topbar .actions {
-    @apply mt-auto pt-7 flex-wrap gap-2;
-  }
   .topbar .live {
-    @apply w-full py-2 px-1;
+    @apply mt-auto w-full py-2 px-1;
   }
   .topbar .live .sr-only {
     @apply static w-auto h-auto [clip:auto] [clip-path:none];
   }
-  .actions > button:has(.search-label) {
-    @apply w-full justify-start;
+  .workspace-bar .actions > button:has(.search-label) {
+    @apply w-60 justify-start;
   }
   .actions kbd {
     @apply ml-auto;
@@ -1049,10 +1046,7 @@
       @apply w-auto max-w-50 m-0;
     }
     .topbar .actions {
-      @apply mt-0 mr-0 mb-0 ml-auto p-0 gap-1 flex-nowrap;
-    }
-    .actions > button:has(.search-label) {
-      @apply w-auto;
+      @apply ml-auto gap-1 flex-nowrap;
     }
     .search-label {
       @apply hidden;
@@ -1085,7 +1079,10 @@
       @apply hidden;
     }
     table.pull-table thead th.pick {
-      @apply block w-auto py-2.5 px-4 border-0 border-b border-solid border-b-line;
+      @apply block w-auto p-0 border-0 bg-transparent;
+    }
+    table.pull-table thead th.pick .pick-label {
+      @apply static w-auto h-auto m-0 overflow-visible whitespace-normal [clip:auto] [clip-path:none] text-ui-sm;
     }
     .pull-table,
     .pull-table tbody {

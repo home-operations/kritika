@@ -150,6 +150,17 @@
   let userOpen = $state(false);
   let navOpen = $state(false);
 
+  // On a phone the actions sit in the header row; on a desktop in a bar
+  // over the page, beside the sidebar. One copy of each, placed by width.
+  const NARROW = '(max-width: 800px)';
+  let narrow = $state(typeof matchMedia !== 'undefined' && matchMedia(NARROW).matches);
+  $effect(() => {
+    const query = matchMedia(NARROW);
+    const sync = () => { narrow = query.matches; };
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  });
+
   $effect(() => {
     if (help.open || palette.open) navOpen = false;
   });
@@ -161,6 +172,53 @@
     userOpen = false;
   });
 </script>
+
+{#snippet actions()}
+  <div class="actions flex gap-2 items-center">
+    <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to">
+      <Icon path={mdiMagnify} label="Go to" /><span class="search-label">Go to…</span><kbd class="search-label">⌘ K</kbd>
+    </Tooltip>
+    <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button" onclick={toggleHelp} aria-label="Keyboard shortcuts">
+      <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
+    </Tooltip>
+    <Tooltip text={`Theme: ${theme.pref}`} class="btn btn-icon" onclick={cycleTheme} aria-label="Toggle theme">
+      <Icon path={themeIconPath} label="Toggle theme" />
+    </Tooltip>
+    {#if me}
+      <Popover.Root bind:open={userOpen}>
+        <Popover.Trigger class="btn btn-icon user-button" title={me.user.displayName}>
+          <Icon path={mdiAccountOutline} label="User" />
+          <Icon path={mdiChevronDown} size={12} />
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content class="menu-panel user-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] gap-2 min-w-50 py-3 px-3.5 rounded-lg" align="end" sideOffset={6}>
+          <p class="user-name m-0 font-semibold text-ui-md">{me.user.displayName}</p>
+          <p class="user-email m-0 text-muted text-ui-sm overflow-hidden text-ellipsis whitespace-nowrap">{me.user.email}</p>
+          <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>
+          <button class="btn" onclick={signOut}>
+            <Icon path={mdiLogout} size={14} /> Sign out
+          </button>
+          {#if session.meta?.version}
+            <p class="user-version mono m-0 text-muted overflow-hidden text-ellipsis whitespace-nowrap pt-2 border-t border-solid border-t-line text-ui-xs" title="kritika {session.meta.version}">kritika {session.meta.version}</p>
+          {/if}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet live()}
+  <span
+    class="live [--live:var(--ok)] inline-flex items-center gap-1.5 py-0 px-1 text-ui-sm text-muted whitespace-nowrap"
+    class:live-down={stream.down}
+    aria-live="polite"
+    title={stream.down ? `Live updates stopped at ${stamp(stream.since)}; this page may be out of date.` : 'Live updates on'}
+  >
+    <span class="live-dot w-2 h-2 rounded-[50%] bg-[var(--live)] shadow-[0_0_0_2px_color-mix(in_srgb,_var(--live)_25%,_transparent)]" aria-hidden="true"></span>
+    {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
+  </span>
+{/snippet}
 
 {#snippet workspaceNav()}
   {#if me && !currentSlug}
@@ -251,38 +309,7 @@
         {/if}
 
         <div class="desktop-navigation">{@render workspaceNav()}</div>
-        <div class="actions flex gap-2 items-center">
-          <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to">
-            <Icon path={mdiMagnify} label="Go to" /><span class="search-label">Go to…</span><kbd class="search-label">⌘ K</kbd>
-          </Tooltip>
-          <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button" onclick={toggleHelp} aria-label="Keyboard shortcuts">
-            <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
-          </Tooltip>
-          <Tooltip text={`Theme: ${theme.pref}`} class="btn btn-icon" onclick={cycleTheme} aria-label="Toggle theme">
-            <Icon path={themeIconPath} label="Toggle theme" />
-          </Tooltip>
-          {#if me}
-            <Popover.Root bind:open={userOpen}>
-              <Popover.Trigger class="btn btn-icon user-button" title={me.user.displayName}>
-                <Icon path={mdiAccountOutline} label="User" />
-                <Icon path={mdiChevronDown} size={12} />
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content class="menu-panel user-panel z-[var(--z-menu)] flex flex-col bg-panel border border-solid border-line shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)] gap-2 min-w-50 py-3 px-3.5 rounded-lg" align="end" sideOffset={6}>
-                <p class="user-name m-0 font-semibold text-ui-md">{me.user.displayName}</p>
-                <p class="user-email m-0 text-muted text-ui-sm overflow-hidden text-ellipsis whitespace-nowrap">{me.user.email}</p>
-                <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>
-                <button class="btn" onclick={signOut}>
-                  <Icon path={mdiLogout} size={14} /> Sign out
-                </button>
-                {#if session.meta?.version}
-                  <p class="user-version mono m-0 text-muted overflow-hidden text-ellipsis whitespace-nowrap pt-2 border-t border-solid border-t-line text-ui-xs" title="kritika {session.meta.version}">kritika {session.meta.version}</p>
-                {/if}
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-          {/if}
-        </div>
+        {#if narrow}{@render actions()}{/if}
       </div>
 
       {#if me}
@@ -307,20 +334,15 @@
           </Dialog.Root>
         </div>
       {/if}
-      {#if me}
-        <span
-          class="live [--live:var(--ok)] inline-flex items-center gap-1.5 py-0 px-1 text-ui-sm text-muted whitespace-nowrap"
-          class:live-down={stream.down}
-          aria-live="polite"
-          title={stream.down ? `Live updates stopped at ${stamp(stream.since)}; this page may be out of date.` : 'Live updates on'}
-        >
-          <span class="live-dot w-2 h-2 rounded-[50%] bg-[var(--live)] shadow-[0_0_0_2px_color-mix(in_srgb,_var(--live)_25%,_transparent)]" aria-hidden="true"></span>
-          {#if stream.down}Reconnecting…{:else}<span class="sr-only">Live updates on</span>{/if}
-        </span>
-      {/if}
+      {#if me}{@render live()}{/if}
     </header>
 
     <div class="main-col flex-auto min-w-0 min-h-0 flex flex-col">
+      {#if !narrow}
+        <div class="workspace-bar flex-none flex items-center justify-end py-2 px-7 border-b border-solid border-b-line">
+          {@render actions()}
+        </div>
+      {/if}
       {#if me?.admin}<SetupBanner />{/if}
       <Page route={router.route} />
     </div>
