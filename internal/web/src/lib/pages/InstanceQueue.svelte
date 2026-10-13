@@ -27,7 +27,7 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Queue" description="Jobs across all your accounts.">{#snippet actions()}<QueueHelp />{/snippet}</PageHeader>
+    <PageHeader title="Queue">{#snippet actions()}<QueueHelp />{/snippet}</PageHeader>
     <StateView {res} retry={() => res.load()}>
       {#snippet children(q)}
         <JobTable {filter} onfilter={(f) => replace({ name: 'instanceQueue', filter: queueFilter({ ...f }) })} ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />

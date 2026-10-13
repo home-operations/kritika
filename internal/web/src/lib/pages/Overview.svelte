@@ -66,9 +66,7 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Operations overview" description="Service health, running work and usage across your accounts.">
-      {#snippet actions()}<a class="btn" href={href({ name: 'instancePulls' })}>View pull requests →</a><a class="btn" href={href({ name: 'instanceQueue' })}>Open queue →</a>{/snippet}
-    </PageHeader>
+    <PageHeader title="Operations overview" />
     <StateView {res} layout="overview" retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}

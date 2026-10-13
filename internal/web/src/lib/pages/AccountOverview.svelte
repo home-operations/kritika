@@ -39,8 +39,8 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Overview" {slug} description="Review health, active work and repositories for this account.">
-      {#snippet actions()}<HelpPopover label="Connection details">{@render connectionDetails()}</HelpPopover><a class="btn" href={href({ name: 'pulls', slug })}>View pull requests →</a><a class="btn" href={href({ name: 'queue', slug })}>Open queue →</a>{/snippet}
+    <PageHeader title="Overview" {slug}>
+      {#snippet actions()}<HelpPopover label="Connection details">{@render connectionDetails()}</HelpPopover>{/snippet}
     </PageHeader>
     <section class="stats stats-3 account-activity" aria-label="Account activity">
       <StatTile label="Running now" value={queue.data ? wholeNumber(queue.data.filter((j) => j.state === 'running').length) : undefined} pending={!queue.error} href={href({ name: 'queue', slug })} sub={queue.data ? `${queue.data.filter(waiting).length} waiting` : ''} />

@@ -32,7 +32,7 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Instance settings" description="Manage connections and inspect instance configuration." />
+    <PageHeader title="Instance settings" />
     {#if res.data}<Checklist accounts={res.data} />{/if}
     <section class="panel" aria-labelledby="op-accounts">
       <header class="panel-head"><h2 id="op-accounts">Accounts</h2><HelpPopover label="About accounts"><p>Accounts served by a GitHub App, including configured accounts that are not yet connected.</p></HelpPopover></header>

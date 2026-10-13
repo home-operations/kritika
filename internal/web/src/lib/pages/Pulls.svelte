@@ -160,7 +160,7 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Pull requests" {slug} description={slug ? undefined : "Review activity across all accounts."} />
+    <PageHeader title="Pull requests" {slug} />
     <div class="toolbar flex flex-wrap items-center gap-2" role="search">
       <TokenSearch
         id="pull-search"
