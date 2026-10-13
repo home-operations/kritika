@@ -221,9 +221,6 @@
     <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button" onclick={toggleHelp} aria-label="Keyboard shortcuts">
       <Icon path={mdiKeyboardOutline} label="Keyboard shortcuts" />
     </Tooltip>
-    <Tooltip text={`Theme: ${theme.pref}`} class="btn btn-icon" onclick={cycleTheme} aria-label="Toggle theme">
-      <Icon path={themeIconPath} label="Toggle theme" />
-    </Tooltip>
     {#if me}
       <Popover.Root bind:open={userOpen}>
         <Popover.Trigger class="btn btn-icon user-button" title={me.user.displayName}>
@@ -235,6 +232,7 @@
           <p class="user-name m-0 font-semibold text-ui-md">{me.user.displayName}</p>
           <p class="user-email m-0 text-muted text-ui-sm overflow-hidden text-ellipsis whitespace-nowrap">{me.user.email}</p>
           <a class="btn" href={href({ name: 'preferences' })}><Icon path={mdiCogOutline} size={14} /> Settings</a>
+          <button class="btn" onclick={cycleTheme}><Icon path={themeIconPath} size={14} /> Theme: {theme.pref}</button>
           <button class="btn" onclick={signOut}>
             <Icon path={mdiLogout} size={14} /> Sign out
           </button>

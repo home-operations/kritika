@@ -242,7 +242,8 @@ test.describe('theme toggle', () => {
     await signIn();
     await page.route('**/api/v1/me/settings', (r) => r.fulfill({ status: 204 }));
     await page.goto('/');
-    const button = page.getByRole('button', { name: 'Toggle theme', exact: true });
+    await page.locator('.user-button').click();
+    const button = page.getByRole('button', { name: /^Theme: / });
     const currentClass = () => page.evaluate(() => document.documentElement.className);
     const stored = () => page.evaluate(() => localStorage.getItem('kritika-theme'));
 

@@ -1380,11 +1380,13 @@ test.describe('your settings', () => {
     await expect(page.locator('html')).toHaveClass(/dark/);
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'dark' });
 
-    // The top bar's button steps dark to auto, which is the browser's own.
-    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    // The user menu's button steps dark to auto, which is the browser's own.
+    await page.locator('.user-button').click();
+    const button = page.getByRole('button', { name: /^Theme: / });
+    await button.click();
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: '' });
     await expect(themes.getByRole('radio', { name: 'Auto' })).toBeChecked();
-    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    await button.click();
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'light' });
     await expect(themes.getByRole('radio', { name: 'Light' })).toBeChecked();
 
