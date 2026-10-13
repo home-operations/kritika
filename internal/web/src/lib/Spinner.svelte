@@ -5,7 +5,7 @@
 </script>
 
 <svg
-  class="spinner"
+  class="spinner [animation:spin_0.8s_linear_infinite]"
   width={size}
   height={size}
   viewBox="0 0 32 32"

@@ -95,12 +95,12 @@
 
 <svelte:head><title>Analytics · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Analytics" {slug}>
       {#snippet actions()}<HelpPopover label="About these metrics"><p>Changes compare with the preceding period of equal length. Review counts use start dates; spend and tokens use call dates.</p><p>Failure rate is failed / (completed + failed). Duration is the median of completed reviews. API spend includes priced calls and excludes subscription fees.</p></HelpPopover>{/snippet}
     </PageHeader>
-    <div class="toolbar">
+    <div class="toolbar flex flex-wrap items-center gap-2">
       <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => navigate({ name: 'analytics', slug, filter: analyticsFilter({ days }) })} />
     </div>
     {#if detail.data && (unsignedWebhooks(detail.data.connection) || !detail.data.connection.lastWebhookAt)}
@@ -108,17 +108,17 @@
       <section class="panel" aria-labelledby="an-connection">
         <header class="panel-head"><h2 id="an-connection">Connection</h2></header>
         {#if unsignedWebhooks(inst)}
-          <p class="notice" role="note">
+          <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">
             GitHub sends <span class="mono">{inst.name}</span>'s webhooks with no signature, so kritika refuses them, only polls for
             new pull requests and cannot answer mentions. Set the GitHub App's webhook secret to the one kritika holds.
           </p>
         {:else}
-          <p class="notice" role="note">
+          <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">
             No webhook has reached <span class="mono">{inst.name}</span>, so kritika only polls it for new pull requests and
             cannot answer mentions. Point the GitHub App's webhook at <span class="mono">{hookURL(inst.hookPath)}</span>.
           </p>
         {/if}
-        <p class="small muted panel-body last-poll">
+        <p class="small muted panel-body last-poll text-ui-sm py-2.5 px-3">
           {#if detail.data.lastPolledAt}Last polled <Time iso={detail.data.lastPolledAt} />.{:else}Not polled yet.{/if}
         </p>
       </section>
@@ -129,21 +129,21 @@
       {@const near = nearCaps(detail.data.usage)}
       {#if wants.length || near.length}
         <section class="panel" aria-labelledby="an-attention">
-          <header class="panel-head"><h2 id="an-attention">Needs attention</h2><span class="small muted">Right now</span></header>
-          <ul class="rows">
+          <header class="panel-head"><h2 id="an-attention">Needs attention</h2><span class="small muted text-ui-sm">Right now</span></header>
+          <ul class="rows list-none m-0 p-0 bg-panel border border-solid border-line rounded-lg">
             {#each wants as w (w.key)}
-              <li class="row">
-                <a class="row-link" href={href({ name: 'pulls', slug, filter: w.filter })}>
+              <li class="row flex items-center gap-2.5 py-[7px] px-3 border-b border-solid border-b-line min-w-0">
+                <a class="row-link flex-auto min-w-0 flex items-baseline gap-2 text-ink" href={href({ name: 'pulls', slug, filter: w.filter })}>
                   <Pill tone={w.tone} label={w.label} />
-                  <span class="row-text">{plural(attention.data[w.key])} {w.why}</span>
+                  <span class="row-text overflow-hidden text-ellipsis whitespace-nowrap font-medium">{plural(attention.data[w.key])} {w.why}</span>
                 </a>
               </li>
             {/each}
             {#each near as text (text)}
-              <li class="row">
-                <a class="row-link" href={href({ name: 'usage', slug })}>
+              <li class="row flex items-center gap-2.5 py-[7px] px-3 border-b border-solid border-b-line min-w-0">
+                <a class="row-link flex-auto min-w-0 flex items-baseline gap-2 text-ink" href={href({ name: 'usage', slug })}>
                   <Pill tone="warn" label="cap" />
-                  <span class="row-text">{text}</span>
+                  <span class="row-text overflow-hidden text-ellipsis whitespace-nowrap font-medium">{text}</span>
                 </a>
               </li>
             {/each}
@@ -152,13 +152,13 @@
       {/if}
     {/if}
 
-    {#if days === '1'}<p class="small muted">Last 24 hours, split by date. Each chart column includes only the part of that day inside the selected period.</p>{/if}
+    {#if days === '1'}<p class="small muted text-ui-sm">Last 24 hours, split by date. Each chart column includes only the part of that day inside the selected period.</p>{/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const c = d.current}
         {@const p = d.previous}
-        <div class="analytics" class:stale={res.loading}>
-          <section class="stats stats-3" aria-label="Operational metrics">
+        <div class="analytics flex flex-col gap-3.5 [transition:opacity_0.15s]" class:stale={res.loading}>
+          <section class="stats stats-3 grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label="Operational metrics">
             <StatTile
               label="Reviews"
               value={wholeNumber(c.reviews)}
@@ -188,20 +188,20 @@
               now={rate(c.failed, c.reviews + c.failed)} before={rate(p.failed, p.reviews + p.failed)} points good="down"
               sub={`${c.failed} failed of ${c.reviews + c.failed} completed or failed reviews`} />
             <StatTile label="Tokens" value={tokens(c.tokens)} now={c.tokens} before={p.tokens} define="Input (including cached input) plus output tokens" />
-            <a class="stat" href={href({ name: 'usage', slug, filter: usageFilter({ days }) })}><span class="stat-label">Investigate spending</span><span class="stat-value">{costTotal(c.costUsd, c.unpricedCalls)}</span><span class="stat-sub">Repository → model → review run</span></a>
+            <a class="stat flex flex-col gap-1 min-w-0 pt-1 px-0 pb-4 border-b border-solid border-b-line bg-transparent" href={href({ name: 'usage', slug, filter: usageFilter({ days }) })}><span class="stat-label text-ui-sm text-muted">Investigate spending</span><span class="stat-value text-[length:26px] font-bold tracking-[-0.01em]">{costTotal(c.costUsd, c.unpricedCalls)}</span><span class="stat-sub text-ui-sm text-muted">Repository → model → review run</span></a>
           </section>
           <section class="panel" aria-labelledby="an-operations">
             <header class="panel-head"><h2 id="an-operations">Operational trends</h2><Segmented label="Operational trend view" options={VIEWS} value={operationsView} onchange={(v) => (operationsView = v)} /></header>
-            <div class="toolbar"><Segmented label="Operational metric" options={TRENDS} value={trend} onchange={(v) => (trend = v)} /></div>
+            <div class="toolbar flex flex-wrap items-center gap-2"><Segmented label="Operational metric" options={TRENDS} value={trend} onchange={(v) => (trend = v)} /></div>
             <ColumnChart label={`${TRENDS.find((t) => t.value === trend)!.label} per ${bucketLabel}`}
               series={[{ label: TRENDS.find((t) => t.value === trend)!.label, color: 'var(--chart-ink)' }]}
               rows={rows(d.series.filter((x) => trend === 'duration' ? x.medianReviewMs !== null : trend === 'failed' ? x.reviews + x.failed > 0 : true),
                 (x) => [trend === 'failed' ? rate(x.failed, x.reviews + x.failed)! : trend === 'duration' ? x.medianReviewMs! : trend === 'tokens' ? x.tokens : x.costUsd])}
               format={trend === 'failed' ? (n) => `${n.toFixed(1)}%` : trend === 'duration' ? duration : trend === 'tokens' ? tokens : usd}
               whole={trend === 'tokens'} view={operationsView} />
-            <p class="panel-foot small muted">{trend === 'failed' ? 'Failed / (completed + failed). Periods with no outcomes are omitted.' : trend === 'duration' ? 'Median duration of completed reviews. Periods with no completed reviews are omitted.' : trend === 'cost' ? 'Priced API spend only; subscription fees excluded.' : 'Input (including cached input) plus output tokens.'}</p>
+            <p class="panel-foot small muted m-0 py-2 px-3 border-t border-solid border-t-line text-ui-sm">{trend === 'failed' ? 'Failed / (completed + failed). Periods with no outcomes are omitted.' : trend === 'duration' ? 'Median duration of completed reviews. Periods with no completed reviews are omitted.' : trend === 'cost' ? 'Priced API spend only; subscription fees excluded.' : 'Input (including cached input) plus output tokens.'}</p>
           </section>
-          <section class="stats stats-related" aria-label="Totals">
+          <section class="stats stats-related grid gap-5 bg-transparent border-0 rounded-[0] overflow-hidden grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))]" aria-label="Totals">
             <StatTile
               label="Pull requests reviewed"
               value={wholeNumber(c.pullRequests)}
@@ -246,7 +246,7 @@
             />
           </section>
 
-          <div class="grid-2">
+          <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-3.5">
             <section class="panel" aria-labelledby="an-reviews">
               <header class="panel-head">
                 <h2 id="an-reviews">Reviews</h2>
@@ -274,21 +274,21 @@
                 whole
                 view={findingsView}
               />
-              <p class="panel-foot badge-row">
+              <p class="panel-foot badge-row m-0 py-2 px-3 border-t border-solid border-t-line text-ui-sm flex flex-wrap gap-1.5">
                 {#each CATEGORIES as k (k)}
-                  <a class="badge" href={href({ name: 'findings', slug, filter: { category: k } })} title="Findings of this kind first reported in the period">{k} {wholeNumber(c.categories[k])}</a>
+                  <a class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" href={href({ name: 'findings', slug, filter: { category: k } })} title="Findings of this kind first reported in the period">{k} {wholeNumber(c.categories[k])}</a>
                 {/each}
               </p>
-              <p class="panel-foot"><a href={href({ name: 'findings', slug })}>See every finding</a></p>
+              <p class="panel-foot m-0 py-2 px-3 border-t border-solid border-t-line text-ui-sm"><a href={href({ name: 'findings', slug })}>See every finding</a></p>
             </section>
           </div>
 
           <section class="panel" aria-labelledby="an-repos">
             <header class="panel-head"><h2 id="an-repos">Most reviewed repositories</h2></header>
             {#if d.repositories.length === 0}
-              <p class="state-msg">No reviews in this period.</p>
+              <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No reviews in this period.</p>
             {:else}
-              <div class="table-wrap">
+              <div class="table-wrap overflow-x-auto max-w-full">
                 <table class="data">
                   <thead>
                     <tr>

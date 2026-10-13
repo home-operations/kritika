@@ -14,7 +14,7 @@ export interface ListKeys {
 
 export function listKeys(k: ListKeys): () => void {
   const onKey = (e: KeyboardEvent) => {
-    if ((e.target instanceof Element && e.target.closest('[role="dialog"]')) || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey || help.open || palette.open) return;
+    if ((e.target instanceof Element && e.target.closest('[role="dialog"], [role="alertdialog"]')) || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey || help.open || palette.open) return;
     const n = k.count();
     if (e.key === 'j' && n) k.set(Math.min(n - 1, k.get() + 1));
     else if (e.key === 'k' && n) k.set(Math.max(0, k.get() - 1));

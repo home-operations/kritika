@@ -27,23 +27,23 @@
 </script>
 
 {#if d.usage.length === 0}
-  <p class="state-msg">No usage recorded.</p>
+  <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No usage recorded.</p>
 {:else}
   {#if planUsage.length > 0}
-    <section class="stats stats-3" aria-label="ChatGPT usage for this review">
+    <section class="stats stats-3 grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label="ChatGPT usage for this review">
       <StatTile label="ChatGPT calls" value={wholeNumber(planUsage.length)} sub="Across all runs of this review" />
       <StatTile label="ChatGPT input tokens" value={tokens(planTotal.in)} define={wholeNumber(planTotal.in)} sub="Includes cached tokens" />
       <StatTile label="ChatGPT output tokens" value={tokens(planTotal.out)} define={wholeNumber(planTotal.out)} sub="Included in plan" />
     </section>
     <section class="panel" aria-label="ChatGPT usage by run">
       <header class="panel-head"><h2>ChatGPT usage by run</h2></header>
-      <div class="table-wrap">
+      <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data">
           <thead><tr><th scope="col">Run</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input</th><th scope="col" class="num">Output</th><th scope="col" class="num">Total tokens</th></tr></thead>
           <tbody>
             {#each planRuns as run (run.id)}
               <tr>
-                <td class="mono small" title={run.id || undefined}>{run.id ? `Run ${run.id.slice(0, 8)}` : 'Run not recorded'}</td>
+                <td class="mono small text-ui-sm" title={run.id || undefined}>{run.id ? `Run ${run.id.slice(0, 8)}` : 'Run not recorded'}</td>
                 <td class="num">{wholeNumber(run.calls)}</td>
                 <td class="num" title={wholeNumber(run.input)}>{tokens(run.input)}</td>
                 <td class="num" title={wholeNumber(run.output)}>{tokens(run.output)}</td>
@@ -55,7 +55,7 @@
       </div>
     </section>
   {/if}
-  <div class="table-wrap table-card">
+  <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
     <table class="data">
       <thead>
         <tr>
@@ -67,10 +67,10 @@
         {#each [...d.usage].reverse() as u, i (i)}
           <tr>
             <td>{u.role}</td>
-            <td class="mono small">{u.model}</td>
-            <td class="mono small">{u.upstream}</td>
+            <td class="mono small text-ui-sm">{u.model}</td>
+            <td class="mono small text-ui-sm">{u.upstream}</td>
             <td>{u.chatgptPlan ? 'ChatGPT plan' : 'API'}</td>
-            {#if showRuns}<td class="mono small" title={u.runnerRunId}>{u.runnerRunId ? u.runnerRunId.slice(0, 8) : '—'}</td>{/if}
+            {#if showRuns}<td class="mono small text-ui-sm" title={u.runnerRunId}>{u.runnerRunId ? u.runnerRunId.slice(0, 8) : '—'}</td>{/if}
             <td class="num" title={wholeNumber(u.inputTokens)}>{tokens(u.inputTokens)}</td>
             <td class="num" title={wholeNumber(u.outputTokens)}>{tokens(u.outputTokens)}</td>
             <td class="num">{callCost(u.costUsd, u.chatgptPlan, u.unpriced)}</td>
@@ -89,6 +89,6 @@
       </tfoot>
     </table>
   </div>
-  <p class="small muted">API spend excludes subscription fees.</p>
-  {#if unpricedCalls}<p class="small muted">API spend is incomplete: {wholeNumber(unpricedCalls)} unpriced calls.</p>{/if}
+  <p class="small muted text-ui-sm">API spend excludes subscription fees.</p>
+  {#if unpricedCalls}<p class="small muted text-ui-sm">API spend is incomplete: {wholeNumber(unpricedCalls)} unpriced calls.</p>{/if}
 {/if}

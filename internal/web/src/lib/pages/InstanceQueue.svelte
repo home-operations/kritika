@@ -25,8 +25,8 @@
 
 <svelte:head><title>Queue · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Queue" description="Jobs across all your accounts." />
     <StateView {res} retry={() => res.load()}>
       {#snippet children(q)}
@@ -34,9 +34,9 @@
           <section class="panel" aria-labelledby="iq-slots">
             <header class="panel-head">
               <h2 id="iq-slots">Model slots</h2>
-              <span class="small muted">A review waits while every slot of its account's model is busy.</span>
+              <span class="small muted text-ui-sm">A review waits while every slot of its account's model is busy.</span>
             </header>
-            <div class="table-wrap">
+            <div class="table-wrap overflow-x-auto max-w-full">
               <table class="data">
                 <thead>
                   <tr><th scope="col">Account</th><th scope="col">Model</th><th scope="col">Busy</th></tr>
@@ -45,9 +45,9 @@
                   {#each q.slots as s (`${s.account}\u0000${s.model}`)}
                     <tr>
                       <td class="mono"><a href={href({ name: 'queue', slug: s.account })}>{s.account}</a></td>
-                      <td class="mono small">{s.model}</td>
+                      <td class="mono small text-ui-sm">{s.model}</td>
                       <td>
-                        <span class="small">{s.slots ? `${s.held} of ${s.slots}` : `${s.held}, no limit`}</span>
+                        <span class="small text-ui-sm">{s.slots ? `${s.held} of ${s.slots}` : `${s.held}, no limit`}</span>
                         {#if s.slots}<Meter value={s.held} max={s.slots} label={`Slots of ${s.model} busy for ${s.account}`} />{/if}
                       </td>
                     </tr>

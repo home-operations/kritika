@@ -6,6 +6,7 @@
   import { toast } from '../toast.svelte';
   import type { Accepted } from '../types';
   import Dialog from './Dialog.svelte';
+  import { AlertDialog } from 'bits-ui';
 
   interface Props {
     open: boolean;
@@ -36,10 +37,15 @@
   }
 </script>
 
-<Dialog bind:open {title}>
+<Dialog bind:open {title} alert={danger}>
   <p>{body}</p>
   {#snippet footer()}
-    <button class="btn" onclick={() => (open = false)}>Keep as is</button>
-    <button class="btn btn-primary" class:btn-danger={danger} onclick={run} disabled={busy}>{busy ? 'Working…' : label}</button>
+    {#if danger}
+      <AlertDialog.Cancel class="btn">Keep as is</AlertDialog.Cancel>
+      <AlertDialog.Action class="btn btn-primary btn-danger" onclick={run} disabled={busy}>{busy ? 'Working…' : label}</AlertDialog.Action>
+    {:else}
+      <button class="btn" onclick={() => (open = false)}>Keep as is</button>
+      <button class="btn btn-primary" onclick={run} disabled={busy}>{busy ? 'Working…' : label}</button>
+    {/if}
   {/snippet}
 </Dialog>

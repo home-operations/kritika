@@ -21,6 +21,6 @@
 </script>
 
 <span class="status tone-{reviewTone[status]}" {title}>
-  <span class="status-tile"><Icon path={icons[status]} size={12} /></span>
+  <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={icons[status]} size={12} /></span>
   <span class="status-word">{status}</span>
 </span>

@@ -6,7 +6,7 @@
   let { tools }: { tools: ToolDef[] } = $props();
 </script>
 
-<ul class="tool-defs">
+<ul class="tool-defs list-none m-0 p-0">
   {#each tools as t, i (i)}
     <li>
       <Collapsible title={t.name}>

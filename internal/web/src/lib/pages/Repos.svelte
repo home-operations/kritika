@@ -61,7 +61,7 @@
   // Full names picked for a bulk action.
   let selected = $state<string[]>([]);
   $effect(() => {
-    kind;
+    void kind;
     selected = [];
   });
   let busy = $state(false);
@@ -136,11 +136,11 @@
 
 <svelte:head><title>Repositories · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
-    <div class="toolbar">
-      <label class="search-box">
+    <div class="toolbar flex flex-wrap items-center gap-2">
+      <label class="search-box [flex:1_1_240px] min-w-0 flex">
         <span class="sr-only">Filter repositories</span>
         <input type="search" placeholder="Filter by name" bind:value={() => search, (q) => setFilter({ q })} bind:this={filterEl} />
       </label>
@@ -153,8 +153,8 @@
         </select>
       </label>
       {#if manage && selected.length}
-        <div class="bulk-actions" role="group" aria-label="Selected repositories">
-          <span class="small">{selected.length} selected</span>
+        <div class="bulk-actions flex flex-wrap items-center gap-1.5" role="group" aria-label="Selected repositories">
+          <span class="small text-ui-sm">{selected.length} selected</span>
           <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, true)}>Turn on</button>
           <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, false)}>Turn off</button>
           <button class="btn btn-small" disabled={busy} onclick={() => (confirmReindex = true)}>Reindex…</button>
@@ -163,101 +163,99 @@
       {/if}
     </div>
     {#if kind === 'forks'}
-      <p class="small muted">A fork is only reviewed and indexed once turned on here.</p>
+      <p class="small muted text-ui-sm">A fork is only reviewed and indexed once turned on here.</p>
     {:else if kind === 'archived'}
-      <p class="small muted">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
+      <p class="small muted text-ui-sm">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
     {/if}
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
-      {#snippet children()}
-        {@const rows = visible()}
-        {#if rows.length === 0}
-          <div class="state-msg">
-            <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
-            <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
-          </div>
-        {:else}
-          <div class="table-wrap table-card">
-            <table class="data repo-table">
-              <thead>
+      {@const rows = visible()}
+      {#if rows.length === 0}
+        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+          <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
+          <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
+        </div>
+      {:else}
+        <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
+          <table class="data repo-table">
+            <thead>
+              <tr>
+                {#if manage}
+                  <th scope="col">
+                    {#if rows.some((r) => !r.archived)}
+                      <input
+                        type="checkbox"
+                        aria-label="Select every repository shown"
+                        checked={rows.every((r) => r.archived || selected.includes(r.fullName))}
+                        onchange={(e) => pickAll(rows, e.currentTarget.checked)}
+                      />
+                    {/if}
+                  </th>
+                {/if}
+                <th scope="col">Repository</th>
+                <th scope="col">Enabled</th>
+                <th scope="col">Index</th>
+                <th scope="col">Indexed commit</th>
+                <th scope="col">Last review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each rows as repo (repo.id)}
                 <tr>
                   {#if manage}
-                    <th scope="col">
-                      {#if rows.some((r) => !r.archived)}
+                    <td>
+                      {#if !repo.archived}
                         <input
                           type="checkbox"
-                          aria-label="Select every repository shown"
-                          checked={rows.every((r) => r.archived || selected.includes(r.fullName))}
-                          onchange={(e) => pickAll(rows, e.currentTarget.checked)}
+                          aria-label={`Select ${repo.fullName}`}
+                          checked={selected.includes(repo.fullName)}
+                          onchange={(e) => pick(repo.fullName, e.currentTarget.checked)}
                         />
                       {/if}
-                    </th>
+                    </td>
                   {/if}
-                  <th scope="col">Repository</th>
-                  <th scope="col">Enabled</th>
-                  <th scope="col">Index</th>
-                  <th scope="col">Indexed commit</th>
-                  <th scope="col">Last review</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each rows as repo (repo.id)}
-                  <tr>
+                  <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
+                  <td>
                     {#if manage}
-                      <td>
-                        {#if !repo.archived}
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${repo.fullName}`}
-                            checked={selected.includes(repo.fullName)}
-                            onchange={(e) => pick(repo.fullName, e.currentTarget.checked)}
-                          />
-                        {/if}
-                      </td>
-                    {/if}
-                    <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
-                    <td>
-                      {#if manage}
-                        <span class="toggle" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
-                          <Switch.Root
-                            class="switch"
-                            aria-label={`Review and index ${repo.fullName}`}
-                            checked={isOn(repo)}
-                            disabled={busy || repo.archived}
-                            onCheckedChange={(on) => setEnabled([repo.fullName], on)}
-                          >
-                            <Switch.Thumb class="switch-thumb" />
-                          </Switch.Root>
-                          <span>{isOn(repo) ? 'On' : 'Off'}</span>
-                        </span>
-                      {:else if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}
-                    </td>
-                    <td>
-                      {#if repo.index.lastRunStatus}
-                        {@const st = repo.index.lastRunStatus}
-                        <span class="status tone-{indexTone[st]}">
-                          <span class="status-tile"><Icon path={indexIcon[st]} size={12} /></span>
-                          <span class="status-word">{st}</span>
-                        </span>
-                        <Time iso={repo.index.lastRunAt} />
-                      {:else}<span class="muted">never</span>{/if}
-                    </td>
-                    <td class="small">
-                      {#if repo.index.activeCommit}<span class="mono">{repo.index.activeCommit.slice(0, 7)}</span>{:else}<span class="muted">—</span>{/if}
-                    </td>
-                    <td>
-                      {#if repo.lastReview}
-                        <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusTile status={repo.lastReview.status} /></a>
-                        <Time iso={repo.lastReview.createdAt} />
-                      {:else}<span class="muted">—</span>{/if}
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-        <LoadMore {paged} />
-      {/snippet}
+                      <span class="toggle inline-flex items-center gap-1.5 [vertical-align:middle]" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
+                        <Switch.Root
+                          class="switch relative flex-none w-7.5 h-4.5 p-0 border-0 rounded-[999px] [background:color-mix(in_srgb,_var(--muted)_70%,_var(--panel))] cursor-pointer [transition:background_0.15s]"
+                          aria-label={`Review and index ${repo.fullName}`}
+                          checked={isOn(repo)}
+                          disabled={busy || repo.archived}
+                          onCheckedChange={(on) => setEnabled([repo.fullName], on)}
+                        >
+                          <Switch.Thumb class="switch-thumb absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-[50%] bg-panel shadow-[0_1px_2px_color-mix(in_srgb,_var(--text)_30%,_transparent)] [transition:transform_0.15s]" />
+                        </Switch.Root>
+                        <span>{isOn(repo) ? 'On' : 'Off'}</span>
+                      </span>
+                    {:else if repo.enabled}<Pill tone="ok" label="on" />{:else}<Pill label="off" />{/if}
+                  </td>
+                  <td>
+                    {#if repo.index.lastRunStatus}
+                      {@const st = repo.index.lastRunStatus}
+                      <span class="status tone-{indexTone[st]}">
+                        <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={indexIcon[st]} size={12} /></span>
+                        <span class="status-word">{st}</span>
+                      </span>
+                      <Time iso={repo.index.lastRunAt} />
+                    {:else}<span class="muted">never</span>{/if}
+                  </td>
+                  <td class="small text-ui-sm">
+                    {#if repo.index.activeCommit}<span class="mono">{repo.index.activeCommit.slice(0, 7)}</span>{:else}<span class="muted">—</span>{/if}
+                  </td>
+                  <td>
+                    {#if repo.lastReview}
+                      <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusTile status={repo.lastReview.status} /></a>
+                      <Time iso={repo.lastReview.createdAt} />
+                    {:else}<span class="muted">—</span>{/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+      <LoadMore {paged} />
     </StateView>
   </div>
 </main>

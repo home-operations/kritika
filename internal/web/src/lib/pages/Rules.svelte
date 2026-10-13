@@ -70,8 +70,8 @@
 
 <svelte:head><title>Rules · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Rules" {slug}>
       {#snippet actions()}
         <HelpPopover label="About rules">
@@ -85,7 +85,7 @@
         </HelpPopover>
       {/snippet}
     </PageHeader>
-    <div class="toolbar" role="search">
+    <div class="toolbar flex flex-wrap items-center gap-2" role="search">
       <TokenSearch
         id="rule-search"
         label="Search rules"
@@ -105,9 +105,9 @@
       {#snippet children(rules)}
         {@const rows = shown(rules)}
         {#if rows.length === 0}
-          <p class="state-msg">No rule matches.</p>
+          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No rule matches.</p>
         {:else}
-          <div class="table-wrap table-card">
+          <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
             <table class="data rule-table">
               <thead>
                 <tr>
@@ -123,51 +123,51 @@
                   {@const k = KINDS[r.kind]}
                   <tr>
                     <td class="wrap">
-                      <div class="rule-main">
-                        <span class="rule-kind" title="{k.label}: {k.what}"><Icon path={k.icon} size={14} label={k.label} /></span>
+                      <div class="rule-main flex items-start gap-2 min-w-60">
+                        <span class="rule-kind inline-flex items-center justify-center flex-none w-5.5 h-5.5 rounded-sm text-ink bg-surface border border-solid border-line" title="{k.label}: {k.what}"><Icon path={k.icon} size={14} label={k.label} /></span>
                         {#if r.kind === 'rule' && r.path}
-                          <span class="rule-text">
-                            <span class="mono rule-path">{r.path}</span>
-                            <span class="mono rule-sub">{r.id}</span>
+                          <span class="rule-text flex flex-col gap-0.5 min-w-0">
+                            <span class="mono rule-path text-ui-md font-semibold wrap-anywhere">{r.path}</span>
+                            <span class="mono rule-sub text-ui-sm text-muted">{r.id}</span>
                           </span>
                         {:else if r.kind === 'rule'}
-                          <span class="rule-text">
-                            <span class="rule-body" title={r.text}>{r.text}</span>
-                            <span class="mono rule-sub">{r.id}</span>
+                          <span class="rule-text flex flex-col gap-0.5 min-w-0">
+                            <span class="rule-body [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] [line-clamp:3] overflow-hidden text-ui-md whitespace-pre-line" title={r.text}>{r.text}</span>
+                            <span class="mono rule-sub text-ui-sm text-muted">{r.id}</span>
                           </span>
                         {:else}
-                          <span class="rule-text">
-                            <span class="mono rule-path">{r.path}</span>
-                            {#if r.description}<span class="rule-sub">{r.description}</span>{/if}
+                          <span class="rule-text flex flex-col gap-0.5 min-w-0">
+                            <span class="mono rule-path text-ui-md font-semibold wrap-anywhere">{r.path}</span>
+                            {#if r.description}<span class="rule-sub text-ui-sm text-muted">{r.description}</span>{/if}
                           </span>
                         {/if}
                       </div>
                     </td>
                     <td>
                       {#if r.paths.length}
-                        <span class="rule-globs">{#each r.paths as p (p)}<code>{p}</code>{/each}</span>
-                      {:else if !r.when.length}<span class="muted small">every change</span>{/if}
+                        <span class="rule-globs inline-flex flex-wrap gap-1">{#each r.paths as p (p)}<code>{p}</code>{/each}</span>
+                      {:else if !r.when.length}<span class="muted small text-ui-sm">every change</span>{/if}
                       {#each r.when as w, i (i)}
-                        <span class="rule-when" title="Applies only to a pull request one of these is true of"
-                          ><span class="small muted">{i ? 'or' : 'when'}{w.name ? ` ${w.name}:` : ''}</span> <code>{w.expr}</code></span
+                        <span class="rule-when block mt-0.5 break-all" title="Applies only to a pull request one of these is true of"
+                          ><span class="small muted text-ui-sm">{i ? 'or' : 'when'}{w.name ? ` ${w.name}:` : ''}</span> <code>{w.expr}</code></span
                         >
                       {/each}
                     </td>
-                    <td class="small" class:mono={r.source === 'repository'}>{SOURCES[r.source] ?? r.source}</td>
+                    <td class="small text-ui-sm" class:mono={r.source === 'repository'}>{SOURCES[r.source] ?? r.source}</td>
                     <td class="wrap" title={r.repositories.join('\n')}>
-                      <div class="rule-repos">
+                      <div class="rule-repos flex flex-wrap items-baseline gap-y-0.5 gap-x-2">
                         {#each r.repositories.slice(0, 2) as name (name)}
-                          <a class="mono small" href={href(repoRoute(slug, name))}>{name}</a>
+                          <a class="mono small text-ui-sm" href={href(repoRoute(slug, name))}>{name}</a>
                         {/each}
-                        {#if r.repositories.length > 2}<span class="small muted">and {r.repositories.length - 2} more</span>{/if}
+                        {#if r.repositories.length > 2}<span class="small muted text-ui-sm">and {r.repositories.length - 2} more</span>{/if}
                       </div>
                     </td>
                     <td class="num">
                       {#if r.kind === 'rule'}
-                        <span class="rule-cited">
+                        <span class="rule-cited inline-flex flex-col items-end">
                           {#if r.findings}
                             <a href={href({ name: 'findings', slug, filter: citedBy(r) })} title="Findings that cite {r.id}">{wholeNumber(r.findings)}</a>
-                            <span class="small muted">{wholeNumber(r.addressed)} addressed</span>
+                            <span class="small muted text-ui-sm">{wholeNumber(r.addressed)} addressed</span>
                           {:else}<span class="muted">0</span>{/if}
                         </span>
                       {/if}

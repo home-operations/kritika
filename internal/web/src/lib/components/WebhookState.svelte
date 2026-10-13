@@ -18,7 +18,7 @@
 {:else}
   <Pill tone="warn" label="polling only" title="No webhook has reached the App, so kritika only polls for new pull requests and cannot answer mentions" />
 {/if}
-<span class="small muted">
+<span class="small muted text-ui-sm">
   {#if polled && (unsigned || !of.lastWebhookAt)}
     {#if polled.at}polled <Time iso={polled.at} />{:else}not polled yet{/if}
   {:else if unsigned}

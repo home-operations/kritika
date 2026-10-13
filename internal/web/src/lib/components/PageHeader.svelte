@@ -12,15 +12,15 @@
   } = $props();
 </script>
 
-<header class="page-head">
+<header class="page-head flex flex-col gap-2">
   {#if router.origin}
-    <a class="back-to-list" href={router.origin.hash} onclick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); returnToList(); } }}>← Back to {router.origin.label}</a>
+    <a class="back-to-list text-[length:13px] mb-1" href={router.origin.hash} onclick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); returnToList(); } }}>← Back to {router.origin.label}</a>
   {/if}
-  <nav class="crumbs" aria-label="Breadcrumb">
+  <nav class="crumbs text-ui-sm text-muted" aria-label="Breadcrumb">
     {#if slug}<a class="mono" href={href({ name: 'account', slug })}>{slug}</a>
     {:else}<span>All accounts</span>{/if}
-    {#each parents as parent}<span aria-hidden="true">/</span><a href={href(parent.route)}>{parent.label}</a>{/each}
+    {#each parents as parent (href(parent.route))}<span aria-hidden="true">/</span><a href={href(parent.route)}>{parent.label}</a>{/each}
   </nav>
-  <div class="page-title-row"><h1>{title}</h1>{#if actions}<div class="page-actions">{@render actions()}</div>{/if}</div>
-  {#if description}<p class="muted page-description">{description}</p>{/if}
+  <div class="page-title-row flex items-center justify-between flex-wrap gap-3"><h1>{title}</h1>{#if actions}<div class="page-actions">{@render actions()}</div>{/if}</div>
+  {#if description}<p class="muted page-description text-ui-sm">{description}</p>{/if}
 </header>

@@ -1,8 +1,9 @@
 // Central icon registry. Importing only the names we use keeps the bundle
-// small (Rollup tree-shakes @mdi/js and simple-icons to just these paths),
+// small (the bundler tree-shakes @mdi/js to just these paths),
 // so the list holds only what src/ references.
 
 export {
+  mdiGithub as githubIcon,
   mdiThemeLightDark,
   mdiWeatherNight,
   mdiWhiteBalanceSunny,
@@ -45,7 +46,3 @@ export {
   mdiThumbUpOutline,
   mdiThumbDownOutline,
 } from '@mdi/js';
-
-import { siGithub } from 'simple-icons';
-
-export const githubIcon = siGithub.path;

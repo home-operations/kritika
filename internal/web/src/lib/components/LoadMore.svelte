@@ -5,10 +5,10 @@
 </script>
 
 {#if paged.moreError}
-  <p class="state-msg state-error" role="alert">Loading more failed: {errorMessage(paged.moreError)}</p>
+  <p class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert">Loading more failed: {errorMessage(paged.moreError)}</p>
 {/if}
 {#if paged.cursor}
-  <button class="btn load-more" onclick={() => paged.more()} disabled={paged.loadingMore}>
+  <button class="btn load-more self-center" onclick={() => paged.more()} disabled={paged.loadingMore}>
     {paged.loadingMore ? 'Loading…' : 'Load more'}
   </button>
 {/if}

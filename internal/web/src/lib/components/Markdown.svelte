@@ -33,8 +33,8 @@
         {/each}
       </svelte:element>
     {:else}
-      <div class="table-wrap">
-        <table class="md-table">
+      <div class="table-wrap overflow-x-auto max-w-full">
+        <table class="md-table border-collapse text-ui-sm">
           <thead>
             <tr>{#each b.header as cell, j (j)}<th scope="col" style:text-align={b.align[j] ?? undefined}>{@render spans(cell)}</th>{/each}</tr>
           </thead>

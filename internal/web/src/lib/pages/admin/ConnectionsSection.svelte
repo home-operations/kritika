@@ -11,6 +11,7 @@
   import Pill from '../../components/Pill.svelte';
   import WebhookState from '../../components/WebhookState.svelte';
   import Dialog from '../../components/Dialog.svelte';
+  import { AlertDialog } from 'bits-ui';
 
   const conns = new Resource(() => getJSON<Connection[]>('/api/v1/admin/connections'));
   $effect(() => {
@@ -56,7 +57,7 @@
   <header class="panel-head"><h2 id="op-connections">GitHub Apps</h2></header>
   <StateView res={conns} retry={() => conns.load()} isEmpty={(d) => d.length === 0} empty="No GitHub Apps yet.">
     {#snippet children(list)}
-      <div class="table-wrap">
+      <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data">
           <thead>
             <tr>
@@ -70,7 +71,7 @@
             {#each list as c (c.name)}
               <tr>
                 <td class="mono">{c.name}</td>
-                <td class="mono small">{c.accounts.join(', ')}</td>
+                <td class="mono small text-ui-sm">{c.accounts.join(', ')}</td>
                 <td>
                   <WebhookState of={c} />
                 </td>
@@ -86,10 +87,10 @@
   </StateView>
 
   {#if selected}
-    <h3 class="small">GitHub installations of <span class="mono">{selected}</span></h3>
+    <h3 class="small text-ui-sm">GitHub installations of <span class="mono">{selected}</span></h3>
     <StateView res={installs} retry={() => installs.load()} isEmpty={(d) => d.length === 0} empty="The App is not installed anywhere yet.">
       {#snippet children(list)}
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto max-w-full">
           <table class="data" aria-label={`Installations of ${selected}`}>
             <thead>
               <tr>
@@ -105,7 +106,7 @@
                   <td>
                     {#if inst.url}<a class="mono" href={inst.url} target="_blank" rel="noopener noreferrer">{inst.account}</a>
                     {:else}<span class="mono">{inst.account}</span>{/if}
-                    <span class="small muted">{inst.accountType === 'Organization' ? 'organization' : 'user'}</span>
+                    <span class="small muted text-ui-sm">{inst.accountType === 'Organization' ? 'organization' : 'user'}</span>
                   </td>
                   <td>{inst.allRepositories ? 'all' : 'selected'}</td>
                   <td>
@@ -127,13 +128,13 @@
   {/if}
 </section>
 
-<Dialog bind:open={confirmOpen} title="Uninstall the App?" fallback="#op-connections">
+<Dialog alert bind:open={confirmOpen} title="Uninstall the App?" fallback="#op-connections">
   <p>
     GitHub removes <span class="mono">{selected}</span>'s App from <span class="mono">{removing?.account}</span>. kritika does
     not serve that account, so nothing it reviews changes.
   </p>
   {#snippet footer()}
-    <button class="btn" onclick={() => (confirmOpen = false)}>Keep it</button>
-    <button class="btn btn-primary btn-danger" onclick={uninstall} disabled={busy}>{busy ? 'Working…' : 'Uninstall'}</button>
+    <AlertDialog.Cancel class="btn">Keep it</AlertDialog.Cancel>
+    <AlertDialog.Action class="btn btn-primary btn-danger" onclick={uninstall} disabled={busy}>{busy ? 'Working…' : 'Uninstall'}</AlertDialog.Action>
   {/snippet}
 </Dialog>

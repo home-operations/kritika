@@ -13,24 +13,24 @@
   const u = $derived(turn.usage);
 </script>
 
-<article class="turn" class:turn-error={!!turn.error} aria-labelledby="turn-{turn.id}">
-  <header class="turn-head">
-    <svelte:element this={heading} id="turn-{turn.id}" class="turn-title">#{turn.index}</svelte:element>
-    <span class="badge">{turn.kind.replace('_', ' ')}{turn.kind === 'agent_step' ? ` ${turn.step}` : ''}</span>
-    <span class="mono small">{turn.model}</span>
-    {#if turn.upstream}<span class="mono small muted">via {turn.upstream}</span>{/if}
-    {#if turn.chatgptPlan}<span class="badge">ChatGPT plan</span>{/if}
-    {#if turn.reset}<span class="badge" title="The request was sent in full rather than as new messages">full request</span>{/if}
-    {#if turn.truncated}<span class="badge badge-warn" title="The recorded request or response was truncated">truncated</span>{/if}
-    <span class="spacer"></span>
-    <span class="small muted turn-usage" title="input / cache read / cache write / output tokens">
+<article class="turn bg-panel border border-solid border-line rounded-lg flex flex-col gap-2 pb-2.5 min-w-0" class:turn-error={!!turn.error} aria-labelledby="turn-{turn.id}">
+  <header class="turn-head flex flex-wrap items-center gap-y-1.5 gap-x-2.5 py-[7px] px-3 border-b border-solid border-b-line bg-surface rounded-[var(--radius-lg)_var(--radius-lg)_0_0]">
+    <svelte:element this={heading} id="turn-{turn.id}" class="turn-title m-0 text-ui-md">#{turn.index}</svelte:element>
+    <span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">{turn.kind.replace('_', ' ')}{turn.kind === 'agent_step' ? ` ${turn.step}` : ''}</span>
+    <span class="mono small text-ui-sm">{turn.model}</span>
+    {#if turn.upstream}<span class="mono small muted text-ui-sm">via {turn.upstream}</span>{/if}
+    {#if turn.chatgptPlan}<span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">ChatGPT plan</span>{/if}
+    {#if turn.reset}<span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="The request was sent in full rather than as new messages">full request</span>{/if}
+    {#if turn.truncated}<span class="badge badge-warn inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid py-0 px-[7px] whitespace-nowrap rounded-[3px] font-medium text-warning border-[color-mix(in_srgb,_var(--warn)_45%,_var(--border))] bg-warning-surface" title="The recorded request or response was truncated">truncated</span>{/if}
+    <span class="spacer flex-auto"></span>
+    <span class="small muted turn-usage text-ui-sm tabular-nums" title="input / cache read / cache write / output tokens">
       {tokens(u.input)} in · {tokens(u.cacheRead)} cache read · {tokens(u.cacheWrite)} cache write · {tokens(u.output)} out
     </span>
-    <span class="small" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{callCost(turn.costUsd, turn.chatgptPlan, turn.unpriced)}</span>
-    <span class="small muted">{duration(turn.durationMs)}</span>
+    <span class="small text-ui-sm" title="{wholeNumber(u.input + u.cacheRead + u.cacheWrite + u.output)} tokens">{callCost(turn.costUsd, turn.chatgptPlan, turn.unpriced)}</span>
+    <span class="small muted text-ui-sm">{duration(turn.durationMs)}</span>
     <button class="btn btn-small" aria-pressed={raw} onclick={() => (raw = !raw)}>raw JSON</button>
   </header>
-  {#if turn.error}<p class="error-text turn-error-text" role="note">{turn.error}</p>{/if}
+  {#if turn.error}<p class="error-text turn-error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0" role="note">{turn.error}</p>{/if}
 
   {#if raw}
     <CodeBlock text={pretty(turn)} label="turn {turn.index}" maxLines={200} lang="json" />
@@ -43,10 +43,10 @@
     {/if}
     {#each turn.messages as m, i (i)}<MessageView {m} {toolNames} />{/each}
     <div class="message role-assistant response">
-      <span class="role-label">response{turn.response.stop ? ` · ${turn.response.stop}` : ''}</span>
+      <span class="role-label text-ui-xs font-[650] text-muted">response{turn.response.stop ? ` · ${turn.response.stop}` : ''}</span>
       {#if turn.response.text}<CodeBlock text={turn.response.text} plain />{/if}
       {#each turn.response.toolCalls as c, i (i)}<ToolCallView call={c} />{/each}
-      {#if !turn.response.text && turn.response.toolCalls.length === 0}<p class="small muted">No content.</p>{/if}
+      {#if !turn.response.text && turn.response.toolCalls.length === 0}<p class="small muted text-ui-sm">No content.</p>{/if}
     </div>
   {/if}
 </article>

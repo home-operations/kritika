@@ -14,15 +14,15 @@
 
 <svelte:head><title>{title} · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader {title} {slug} />
     {#if !session.me}
-      <p class="state-msg" aria-live="polite"><Spinner size={16} /> Loading…</p>
+      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {:else if !isAdmin()}
-      <p class="state-msg" role="alert">Only an admin can see this page.</p>
+      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" role="alert">Only an admin can see this page.</p>
     {:else if !Object.hasOwn(SECTIONS, current)}
-      <p class="state-msg">No such section.</p>
+      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No such section.</p>
     {:else}
       <section class="panel">
         <AuditTable path={`${accountApi(slug)}/audit`} />

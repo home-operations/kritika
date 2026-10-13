@@ -58,16 +58,16 @@
   <section class="panel" aria-labelledby="tl-runner">
     <header class="panel-head">
       <h2 id="tl-runner">Runner</h2>
-      <span class="small muted">{r.phase}{totalMs ? ` · ${duration(totalMs)} total` : ''}</span>
+      <span class="small muted text-ui-sm">{r.phase}{totalMs ? ` · ${duration(totalMs)} total` : ''}</span>
     </header>
     {#if segs.length}
-      <div class="phase-bar" role="img" aria-label={segs.map((s) => `${s.name} ${duration(s.ms)}`).join(', ')}>
+      <div class="phase-bar flex h-5.5 rounded-sm overflow-hidden text-ui-xs" role="img" aria-label={segs.map((s) => `${s.name} ${duration(s.ms)}`).join(', ')}>
         {#each segs as s (s.name)}
           <span class="phase-seg {s.cls}" style:flex-grow={Math.max(s.ms, 1)} title="{s.name}: {duration(s.ms)}">{s.name}</span>
         {/each}
       </div>
     {/if}
-    <div class="table-wrap">
+    <div class="table-wrap overflow-x-auto max-w-full">
       <table class="data">
         <thead><tr><th scope="col">Phase</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Took</th></tr></thead>
         <tbody>
@@ -77,18 +77,18 @@
         </tbody>
       </table>
     </div>
-    <dl class="deflist">
+    <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
       <dt>Job</dt><dd class="mono">{r.jobName || '—'}</dd>
       <dt>Pod</dt><dd class="mono">{r.podName || '—'}</dd>
       <dt>Node</dt><dd class="mono">{r.nodeName || '—'}</dd>
       <dt>Heartbeat</dt><dd><Time iso={r.heartbeatAt} /></dd>
       <dt>Exit code</dt><dd>{r.exitCode ?? '—'}</dd>
       <dt>Termination</dt><dd>{r.terminationReason || '—'}{r.deadlineExceeded ? ' (deadline exceeded)' : ''}</dd>
-      {#if r.error}<dt>Error</dt><dd class="error-text">{r.error}</dd>{/if}
+      {#if r.error}<dt>Error</dt><dd class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{r.error}</dd>{/if}
     </dl>
   </section>
 {:else}
-  <p class="state-msg">No runner was used for this review.</p>
+  <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No runner was used for this review.</p>
 {/if}
 
 {#if d.agentRun}
@@ -96,13 +96,13 @@
   <section class="panel" aria-labelledby="tl-agent">
     <header class="panel-head">
       <h2 id="tl-agent">Agent steps</h2>
-      <span class="small muted">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {costTotal(a.costUsd, a.unpricedSteps)} API spend</span>
+      <span class="small muted text-ui-sm">{a.steps} steps{split ? ` in ${a.parts.length} parts` : ''} · {a.stopReason} · {costTotal(a.costUsd, a.unpricedSteps)} API spend</span>
     </header>
     {#if steps.length}
       <ColumnChart label="Tokens per agent step" series={[{ label: 'Tokens', color: 'var(--chart-ink)' }]} rows={steps} format={tokens} whole />
     {/if}
     {#if split}
-      <div class="table-wrap">
+      <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data" aria-label="Parts">
           <thead>
             <tr><th scope="col" class="num">Part</th><th scope="col">Files</th><th scope="col" class="num">Steps</th><th scope="col">Ended</th><th scope="col">Error</th></tr>
@@ -115,14 +115,14 @@
                 <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span></td>
                 <td class="num">{p.steps}</td>
                 <td>{p.stop}</td>
-                <td class="error-cell">{p.error}</td>
+                <td class="error-cell text-danger text-ui-sm max-w-80 [word-break:break-word]">{p.error}</td>
               </tr>
             {/each}
           </tbody>
         </table>
       </div>
     {/if}
-    <dl class="deflist">
+    <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
       <dt>Model</dt><dd class="mono">{a.model}</dd>
       {#if a.carriedReviewId}
         <dt>Conversation</dt>
@@ -134,25 +134,25 @@
         <dt>Skills</dt>
         <dd>
           {#each a.skillsOffered as s, i (s)}{i ? ', ' : ''}<span class="mono" class:muted={!a.skillsOpened.includes(s)}>{s}</span>{/each}
-          <span class="small muted">({a.skillsOpened.length ? `read ${a.skillsOpened.join(', ')}` : 'none read'})</span>
+          <span class="small muted text-ui-sm">({a.skillsOpened.length ? `read ${a.skillsOpened.join(', ')}` : 'none read'})</span>
         </dd>
       {/if}
       {#if a.commandsOffered.length}
         <dt>Commands</dt>
         <dd>
           {#each a.commandsOffered as c, i (c)}{i ? ', ' : ''}<span class="mono" class:muted={!a.commandsRun.includes(c)}>{c}</span>{/each}
-          <span class="small muted">({a.commandsRun.length ? `ran ${a.commandsRun.join(', ')}` : 'none run'})</span>
+          <span class="small muted text-ui-sm">({a.commandsRun.length ? `ran ${a.commandsRun.join(', ')}` : 'none run'})</span>
         </dd>
       {/if}
       {#if a.sources.length}
         <dt>Sources</dt>
         <dd>
-          <ul class="plain-list">
-            {#each a.sources as s, i (i)}<li class="mono small">{s}</li>{/each}
+          <ul class="plain-list m-0 pl-4">
+            {#each a.sources as s, i (i)}<li class="mono small text-ui-sm">{s}</li>{/each}
           </ul>
         </dd>
       {/if}
-      {#if a.error}<dt>Error</dt><dd class="error-text">{a.error}</dd>{/if}
+      {#if a.error}<dt>Error</dt><dd class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{a.error}</dd>{/if}
     </dl>
   </section>
 {/if}

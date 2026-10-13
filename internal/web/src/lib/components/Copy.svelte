@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../Icon.svelte';
+  import Tooltip from './Tooltip.svelte';
   import { mdiContentCopy, mdiCheck } from '../icons';
   let { text, label = 'Copy' }: { text: string; label?: string } = $props();
   let done = $state(false);
@@ -15,7 +16,7 @@
   }
 </script>
 
-<button class="btn btn-small" onclick={copy} title={label} aria-label={label}>
+<Tooltip text={label} class="btn btn-small" onclick={copy} aria-label={label}>
   <Icon path={done ? mdiCheck : mdiContentCopy} size={13} />
   <span>{done ? 'Copied' : 'Copy'}</span>
-</button>
+</Tooltip>

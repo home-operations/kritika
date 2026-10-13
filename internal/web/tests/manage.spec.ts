@@ -128,7 +128,9 @@ test.describe('actions', () => {
     await expect(page.getByRole('status')).toContainText(`Re-run queued, job #${g.accepted.jobId}`);
 
     await page.getByRole('button', { name: 'Cancel review' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Cancel review' }).click();
+    const cancelDialog = page.getByRole('alertdialog');
+    await expect(cancelDialog.getByRole('button', { name: 'Keep as is' })).toBeFocused();
+    await cancelDialog.getByRole('button', { name: 'Cancel review' }).click();
     await expect(page.getByRole('status')).toContainText('no longer running');
 
     await page.goto(`/#/a/${S}/pulls/alpha/one/7`);
@@ -242,7 +244,20 @@ test.describe('configuration page', () => {
     await expect(stranger).toContainText('not served');
     await expect(table.getByRole('button', { name: 'Uninstall from alpha' })).toHaveCount(0);
     await stranger.getByRole('button', { name: `Uninstall from ${g.appInstallation.account}` }).click();
-    const dialog = page.getByRole('dialog', { name: 'Uninstall the App?' });
+    const dialog = page.getByRole('alertdialog', { name: 'Uninstall the App?' });
+    await expect(dialog.getByRole('button', { name: 'Keep it' })).toBeFocused();
+    await page.locator('.overlay').click({ position: { x: 2, y: 2 } });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Keep it' }).click();
+    await expect(dialog).toBeHidden();
+    expect(sent).toHaveLength(0);
+    const opener = stranger.getByRole('button', { name: `Uninstall from ${g.appInstallation.account}` });
+    await expect(opener).toBeFocused();
+    await opener.click();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    await opener.click();
     await dialog.getByRole('button', { name: 'Uninstall' }).click();
     await expect.poll(() => sent.length).toBe(1);
     await expect(page.getByRole('status')).toContainText(`Uninstalled from ${g.appInstallation.account}`);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Renders a 24×24 SVG path (from @mdi/js or simple-icons) inline, inheriting
+  // Renders a 24×24 SVG path (from @mdi/js) inline, inheriting
   // the surrounding text color. Tree-shaken: only imported icon paths ship.
   interface Props {
     path: string;
@@ -10,7 +10,7 @@
 </script>
 
 <svg
-  class="icon"
+  class="icon [vertical-align:-0.15em] flex-none"
   width={size}
   height={size}
   viewBox="0 0 24 24"

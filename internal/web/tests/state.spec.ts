@@ -390,7 +390,8 @@ for (const key of ['Enter', 'Tab']) {
     await search.fill('author:');
     await expect(page).toHaveURL(/q=author%3A/);
     await expect(page.getByRole('option')).toHaveCount(5);
-    for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+    await search.press('ArrowUp');
+    await expect(search).toHaveAttribute('aria-activedescendant', (await page.getByRole('option').last().getAttribute('id'))!);
     count = 3;
     await emit(page, 'review');
     await expect(page.getByRole('option')).toHaveCount(3);

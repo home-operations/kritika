@@ -7,7 +7,7 @@
   let { c }: { c: Confidence } = $props();
 </script>
 
-<div class="confidence-line" title="scored by {c.model}">
+<div class="confidence-line mt-0 mx-0 mb-1.5 text-[length:14px]" title="scored by {c.model}">
   <strong>Confidence {c.score}/5</strong>{#if !c.passed}, below the {c.threshold} this repository asks for{/if}{#if c.risk}&nbsp;·
     {c.risk} risk{/if}{#if c.reason}: <Markdown text={c.reason} />{/if}
 </div>

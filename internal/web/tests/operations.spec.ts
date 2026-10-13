@@ -69,7 +69,7 @@ test('queue actions use existing account-scoped endpoints and confirm before sen
   await page.goto(`${account}/queue`);
   await page.locator('.queue-table tbody tr').first().getByRole('button', { name: 'Cancel review' }).click();
   expect(sent).toHaveLength(0);
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel review' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel review' }).click();
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0]!.url.pathname).toBe(`/api/v1/accounts/${g.SLUG}/reviews/rev-1/cancel`);
   await page.getByRole('button', { name: 'Re-run', exact: true }).click();
@@ -229,8 +229,8 @@ test('queue confirmation survives a poll that removes every job', async ({ page 
   current = [];
   await page.clock.fastForward(15_000);
   await expect(page.locator('.queue-table tbody tr')).toHaveCount(0);
-  await expect(page.getByRole('dialog')).toContainText('job #101');
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel review' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('job #101');
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel review' }).click();
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0]!.url.pathname).toBe(`/api/v1/accounts/${g.SLUG}/reviews/rev-1/cancel`);
 });

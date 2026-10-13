@@ -21,39 +21,37 @@
 </script>
 
 <StateView res={paged.first} retry={() => paged.load()} isEmpty={(p) => p.items.length === 0} empty="No audit events yet.">
-  {#snippet children()}
-    <div class="table-wrap">
-      <table class="data audit">
-        <thead>
+  <div class="table-wrap overflow-x-auto max-w-full">
+    <table class="data audit">
+      <thead>
+        <tr>
+          <th scope="col">Time</th>
+          {#if showAccount}<th scope="col">Account</th>{/if}
+          <th scope="col">Actor</th>
+          <th scope="col">Action</th>
+          <th scope="col">Target</th>
+          <th scope="col">Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each paged.items as e (e.id)}
           <tr>
-            <th scope="col">Time</th>
-            {#if showAccount}<th scope="col">Account</th>{/if}
-            <th scope="col">Actor</th>
-            <th scope="col">Action</th>
-            <th scope="col">Target</th>
-            <th scope="col">Detail</th>
+            <td><Time iso={e.at} /></td>
+            {#if showAccount}<td class="mono">{e.account || '—'}</td>{/if}
+            <td>{e.actor?.displayName ?? 'system'}</td>
+            <td class="mono">{e.action}</td>
+            <td class="mono">{e.target}</td>
+            <td>
+              {#if hasDetail(e)}
+                <Collapsible title="detail">
+                  <pre class="detail-json m-0 font-code text-ui-xs whitespace-pre-wrap [word-break:break-word]">{JSON.stringify(e.detail, null, 2)}</pre>
+                </Collapsible>
+              {:else}<span class="muted">—</span>{/if}
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {#each paged.items as e (e.id)}
-            <tr>
-              <td><Time iso={e.at} /></td>
-              {#if showAccount}<td class="mono">{e.account || '—'}</td>{/if}
-              <td>{e.actor?.displayName ?? 'system'}</td>
-              <td class="mono">{e.action}</td>
-              <td class="mono">{e.target}</td>
-              <td>
-                {#if hasDetail(e)}
-                  <Collapsible title="detail">
-                    <pre class="detail-json">{JSON.stringify(e.detail, null, 2)}</pre>
-                  </Collapsible>
-                {:else}<span class="muted">—</span>{/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    <LoadMore {paged} />
-  {/snippet}
+        {/each}
+      </tbody>
+    </table>
+  </div>
+  <LoadMore {paged} />
 </StateView>

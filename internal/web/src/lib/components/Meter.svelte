@@ -9,8 +9,8 @@
 
 {#if max > 0}
   <Meter.Root class="meter tone-{tone}" aria-label={label} {value} {max}>
-    <span class="meter-fill" style:width="{pct}%"></span>
+    <span class="meter-fill block h-full bg-[var(--tone,_var(--ok))]" style:width="{pct}%"></span>
   </Meter.Root>
 {:else}
-  <span class="muted small">no cap</span>
+  <span class="muted small text-ui-sm">no cap</span>
 {/if}

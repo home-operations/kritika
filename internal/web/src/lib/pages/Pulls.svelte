@@ -158,10 +158,10 @@
 
 <svelte:head><title>Pull requests · {slug ?? 'All accounts'} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Pull requests" {slug} description={slug ? undefined : "Review activity across all your accounts. Choose an account to narrow this list."} />
-    <div class="toolbar" role="search">
+    <div class="toolbar flex flex-wrap items-center gap-2" role="search">
       <TokenSearch
         id="pull-search"
         label="Search pull requests"
@@ -173,29 +173,28 @@
       />
       <Segmented label="State" options={STATES} value={prState} onchange={(state) => setFilter({ ...filter, state })} />
       {#if picked.length}
-        <div class="bulk-actions" role="group" aria-label="Selected pull requests">
-          <span class="small">{picked.length} selected</span>
+        <div class="bulk-actions flex flex-wrap items-center gap-1.5" role="group" aria-label="Selected pull requests">
+          <span class="small text-ui-sm">{picked.length} selected</span>
           <button class="btn btn-small" disabled={busy} onclick={() => (confirmRerun = true)}>Re-run…</button>
           <button class="btn btn-small" disabled={busy} onclick={() => pick(picked, false)}>Clear</button>
         </div>
       {/if}
     </div>
     <StateView {res} retry={() => paged.load()}>
-      {#snippet children()}
-        {#if items.length === 0 && filter}
-          <div class="state-msg">
-            <span>No pull requests match these filters.</span>
-            <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
-          </div>
-        {:else if items.length === 0}
-          <p class="state-msg">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
-        {:else}
-          <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
-          <LoadMore {paged} />
-        {/if}
-      {/snippet}
+      {#if items.length === 0 && filter}
+        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+          <span>No pull requests match these filters.</span>
+          <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
+        </div>
+      {:else if items.length === 0}
+        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
+      {:else}
+        <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
+        <LoadMore {paged} />
+      {/if}
     </StateView>
-    <p class="muted small key-hints">
+    <p class="muted small key-hints text-ui-sm m-0">
+      <!-- eslint-disable-next-line svelte/no-useless-mustaches -- Preserve the separator at the conditional boundary. -->
       <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if slug && isAdmin()}{' '}· <kbd>space</kbd> select{/if}
     </p>
   </div>

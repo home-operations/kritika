@@ -38,37 +38,37 @@
 <section class="panel" aria-label="ChatGPT allowances">
   <header class="panel-head">
     <h2>ChatGPT allowances</h2>
-    <a class="small" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage ChatGPT usage</a>
+    <a class="small text-ui-sm" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage ChatGPT usage</a>
   </header>
-  <div class="panel-body">
+  <div class="panel-body py-2.5 px-3">
     <StateView {res} retry={() => res.load()}>
       {#snippet children(providers)}
         {#each providers as p (p.provider)}
-          <div class="allowance-provider">
-            <h3 class="mono small">{p.provider}</h3>
+          <div class="allowance-provider [&+.allowance-provider]:mt-6">
+            <h3 class="mono small text-ui-sm mb-3">{p.provider}</h3>
             {#if !p.connected}
-              <p class="small muted">ChatGPT is not connected.</p>
+              <p class="small muted text-ui-sm">ChatGPT is not connected.</p>
             {:else if p.allowances.length === 0}
-              <p class="small muted">Allowance data unavailable. OpenAI has not supplied quota data for this connection.</p>
+              <p class="small muted text-ui-sm">Allowance data unavailable. OpenAI has not supplied quota data for this connection.</p>
             {:else}
               {#each p.allowances as a (a.limitId)}
-                <div class="stats stats-3" aria-label={a.limitId === 'codex' ? `${p.provider} allowances` : `${p.provider} ${a.limitId} allowances`}>
+                <div class="stats stats-3 grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label={a.limitId === 'codex' ? `${p.provider} allowances` : `${p.provider} ${a.limitId} allowances`}>
                   {#each [a.primary, a.secondary].filter((w): w is ChatGPTAllowanceWindow => w !== null) as w, i (i)}
                     {@const reset = resetTime(w)}
-                    <div class="stat">
-                      <span class="stat-label">{windowName(w)}</span>
-                      <span class="stat-value">{remaining(w)}% remaining</span>
+                    <div class="stat flex flex-col gap-1 min-w-0 pt-1 px-0 pb-4 border-b border-solid border-b-line bg-transparent">
+                      <span class="stat-label text-ui-sm text-muted">{windowName(w)}</span>
+                      <span class="stat-value text-[length:26px] font-bold tracking-[-0.01em]">{remaining(w)}% remaining</span>
                       <Meter value={Math.min(100, w.usedPercent)} max={100} label={`${windowName(w)} used`} />
-                      <span class="stat-sub">
+                      <span class="stat-sub text-ui-sm text-muted">
                         {#if expired(w)}Reset time passed; awaiting updated usage
                         {:else if reset}Resets {ago(reset)}
                         {:else}Reset time unavailable{/if}
                       </span>
-                      {#if reset}<span class="small muted"><Time iso={reset} full /></span>{/if}
+                      {#if reset}<span class="small muted text-ui-sm"><Time iso={reset} full /></span>{/if}
                     </div>
                   {/each}
                 </div>
-                <p class="small muted">{a.limitId !== 'codex' ? `${a.limitId} · ` : ''}Last reported <Time iso={a.observedAt} />. Updates when OpenAI returns quota data.</p>
+                <p class="small muted text-ui-sm">{a.limitId !== 'codex' ? `${a.limitId} · ` : ''}Last reported <Time iso={a.observedAt} />. Updates when OpenAI returns quota data.</p>
               {/each}
             {/if}
           </div>
@@ -77,8 +77,3 @@
     </StateView>
   </div>
 </section>
-
-<style>
-  .allowance-provider + .allowance-provider { margin-top: 1.5rem; }
-  h3 { margin: 0 0 0.75rem; }
-</style>
