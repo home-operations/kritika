@@ -251,7 +251,6 @@
         <LoadMore {paged} />
       {/if}
     </StateView>
-    <p class="muted small key-hints text-ui-sm m-0"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>
 </main>
 

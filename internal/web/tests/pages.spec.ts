@@ -449,7 +449,7 @@ test.describe('pulls list', () => {
     await page.keyboard.press('?');
     await expect(page.locator('.help-card')).toHaveCount(0);
 
-    await page.locator('.key-hints').click();
+    await page.locator('main h1').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
     await page.keyboard.press('Enter');
@@ -643,7 +643,7 @@ test.describe('pulls list', () => {
     await page.goto(`/${T}/pulls`);
     const rows = page.locator('.pull-rows .pull-row');
     await expect(rows).toHaveCount(1);
-    await page.locator('.key-hints').click();
+    await page.locator('main h1').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
 

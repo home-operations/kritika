@@ -66,7 +66,7 @@ test.describe('actions', () => {
     await expect(page.getByRole('group', { name: 'Selected pull requests' })).toHaveCount(0);
     await page.getByRole('checkbox', { name: `Select ${g.pull.repository}#7` }).check();
     // Space picks the row the keyboard is on.
-    await page.locator('.key-hints').click();
+    await page.locator('main h1').click();
     await page.keyboard.press('j');
     await page.keyboard.press('j');
     await page.keyboard.press(' ');
@@ -94,7 +94,6 @@ test.describe('actions', () => {
     await page.goto(`/#/a/${S}/pulls`);
     await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
     await expect(page.getByRole('checkbox')).toHaveCount(0);
-    await expect(page.locator('.key-hints')).not.toContainText('select');
   });
 
   test('re-run and cancel on a review, re-run on a pull, reindex on a repository', async ({ page }) => {

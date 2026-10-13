@@ -193,10 +193,6 @@
         <LoadMore {paged} />
       {/if}
     </StateView>
-    <p class="muted small key-hints text-ui-sm m-0">
-      <!-- eslint-disable-next-line svelte/no-useless-mustaches -- Preserve the separator at the conditional boundary. -->
-      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if slug && isAdmin()}{' '}· <kbd>space</kbd> select{/if}
-    </p>
   </div>
 </main>
 

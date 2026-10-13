@@ -713,11 +713,6 @@
   .lifecycle {
     @apply inline-flex text-[var(--tone)];
   }
-  @media (pointer: coarse) {
-    .key-hints {
-      @apply hidden;
-    }
-  }
   table.data td.finding-main {
     @apply w-full max-w-0 min-w-65 pt-2 pb-2;
   }
