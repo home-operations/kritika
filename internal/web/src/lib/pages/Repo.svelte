@@ -227,9 +227,6 @@
               {#if !rc.found}
                 <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">There was no .kritika.yaml at that commit.</p>
               {/if}
-              {#if rc.ignored}
-                <p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Ignored as a whole: {rc.ignored}</p>
-              {/if}
               {#if rc.dropped.length}
                 <h3 class="subhead mt-3 mx-4 mb-1 text-ui-sm font-[650] text-muted">Settings controlled by the administrator</h3>
                 <ul class="plain-list m-0 pl-4">

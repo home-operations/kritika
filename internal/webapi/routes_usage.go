@@ -34,10 +34,14 @@ func parseTime(s string) (time.Time, bool) {
 
 // usageQuery reads ?group=, ?from= and ?to=: by day over the last 30 days
 // unless given.
-func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.Time, error) {
+func (s *Server) usageQuery(r *http.Request, instance bool) (store.UsageGroup, time.Time, time.Time, error) {
 	group := cmp.Or(store.UsageGroup(r.URL.Query().Get("group")), store.UsageByDay)
-	if !group.Valid() {
-		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be hour, day, week, model, repo, role or review")
+	if !group.Valid() && (!instance || group != usageByAccount) {
+		groups := "hour, day, week, model, repo, role or review"
+		if instance {
+			groups += " or account"
+		}
+		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be "+groups)
 	}
 	from, to, err := s.window(r)
 	return group, from, to, err
@@ -63,7 +67,7 @@ func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScop
 	if err != nil {
 		return err
 	}
-	group, from, to, err := s.usageQuery(r)
+	group, from, to, err := s.usageQuery(r, false)
 	if err != nil {
 		return err
 	}

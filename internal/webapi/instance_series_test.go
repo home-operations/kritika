@@ -1,11 +1,76 @@
 package webapi
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/review"
 )
+
+func TestTopReviewUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		count    int
+		byTokens bool
+		other    bool
+	}{
+		{"empty", 0, false, false},
+		{"below limit", 12, false, false},
+		{"at limit", 50, false, false},
+		{"cost", 100, false, true},
+		{"tokens", 100, true, true},
+		{"overflow without existing remainder", 51, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []UsagePoint{}
+			for i := range tc.count {
+				rows = append(rows, UsagePoint{
+					Key: fmt.Sprintf("rev-%03d", i), Account: fmt.Sprintf("github/%d", i%2),
+					CostUSD: float64(i / 2), InputTokens: int64(100 - i), OutputTokens: 1,
+					CacheReadTokens: 2, CacheWriteTokens: 3, Calls: 4, PlanCalls: 1, UnpricedCalls: 1,
+				})
+			}
+			if tc.count > 0 {
+				rows = append(rows, UsagePoint{Key: "", CostUSD: 1000, InputTokens: 1000, Calls: 5})
+			}
+			if tc.other {
+				rows = append(rows, UsagePoint{Key: otherUsageKey, CostUSD: 2000, InputTokens: 2000, Calls: 6})
+			}
+			before := UsagePoint{}
+			for _, row := range rows {
+				before = addUsagePoint(before, row)
+			}
+			got := topReviewUsage(rows, tc.byTokens)
+			after := UsagePoint{}
+			var reviews int
+			for _, row := range got {
+				after = addUsagePoint(after, row)
+				if row.Key == "" || row.Key == otherUsageKey {
+					if row.Account != "" {
+						t.Fatalf("aggregate attributed to %q", row.Account)
+					}
+					continue
+				}
+				reviews++
+				if row.Account == "" || (tc.count == 100 && ((!tc.byTokens && row.CostUSD < 25) || (tc.byTokens && row.InputTokens <= 50))) {
+					t.Fatalf("unexpected top review: %+v", row)
+				}
+			}
+			if tc.count == 51 && slices.ContainsFunc(got, func(row UsagePoint) bool { return row.Key == "rev-001" }) {
+				t.Fatal("equal-cost reviews must break ties by key")
+			}
+			if reviews != min(tc.count, 50) || before != after {
+				t.Fatalf("reviews = %d; totals before %+v, after %+v", reviews, before, after)
+			}
+			if !slices.IsSortedFunc(got, func(a, b UsagePoint) int { return strings.Compare(a.Key, b.Key) }) {
+				t.Fatal("rows are not ordered by key")
+			}
+		})
+	}
+}
 
 func TestAddSeriesSumsBucketsByKey(t *testing.T) {
 	ms := int64(1500)

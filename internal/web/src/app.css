@@ -1065,18 +1065,6 @@
   [aria-invalid="true"] {
     @apply border-danger!;
   }
-  table.audit .collapsible {
-    @apply border-0 bg-transparent bg-none;
-  }
-  table.audit .collapsible-head {
-    @apply w-auto p-0 gap-1;
-  }
-  table.audit .collapsible-head:hover {
-    @apply bg-transparent bg-none text-accent;
-  }
-  table.audit .collapsible-body {
-    @apply pt-1.5 px-0 pb-0.5 border-t-0;
-  }
   .checklist li {
     @apply flex items-start gap-2;
   }

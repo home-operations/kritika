@@ -391,3 +391,23 @@ test('the wordmark takes a review pass on load and on hover, then rests, and hol
   await page.waitForTimeout(200);
   await expect(mark).not.toHaveClass(/playing/);
 });
+
+test('the wordmark stays idle on phones and recovers when hidden mid-animation', async ({ page, signIn }) => {
+  await signIn();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const mark = page.locator('.brand .wordmark');
+  await expect(mark).toBeHidden();
+  await page.waitForTimeout(400);
+  await expect(mark).not.toHaveClass(/playing/);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator('.brand').hover();
+  await expect(mark).toHaveClass(/playing/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(mark).not.toHaveClass(/playing/);
+  await page.mouse.move(380, 800);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator('.brand').hover();
+  await expect(mark).toHaveClass(/playing/);
+  await expect(mark).not.toHaveClass(/playing/);
+});

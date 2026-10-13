@@ -21,7 +21,7 @@
   // account if wanted, with no caps.
   let { slug, filter }: { slug?: string; filter?: UsageFilter } = $props();
   function setFilter(patch: UsageFilter) {
-    const next = usageFilter({ ...filter, ...patch });
+    const next = usageFilter({ ...filter, ...patch }, !slug);
     navigate(slug ? { name: 'usage', slug, filter: next } : { name: 'instanceUsage', filter: next });
   }
   const PERIODS = [
@@ -112,7 +112,7 @@
       (dirty) => {
         if (dirty.has('model_call') || dirty.has('resync')) void res.load();
         if (slug) void detail.load();
-        else void summary.load();
+        else if (dirty.has('review') || dirty.has('resync')) void summary.load();
       },
       2000,
     ),
@@ -178,10 +178,10 @@
     {#snippet limits()}
       {#if month}
         <StatTile label="API spend this month" value={costTotal(month.costUsd, month.unpricedCalls)} sub={reviewSpend(month)} />
-        <StatTile label="Tokens this month" value={tokens(month.tokens)} define={wholeNumber(month.tokens)} sub={month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}>
+        <StatTile label="Tokens this month" value={tokens(month.tokens)} define={wholeNumber(month.tokens)} sub={!slug ? 'caps are set per account' : month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}>
           {#if month.tokensPerMonth}<Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" />{/if}
         </StatTile>
-        <StatTile label="Reviews today" value={wholeNumber(month.reviewsToday)} sub={month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}>
+        <StatTile label="Reviews today" value={wholeNumber(month.reviewsToday)} sub={!slug ? 'caps are set per account' : month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}>
           {#if month.reviewsPerDay}<Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" />{/if}
         </StatTile>
       {/if}
@@ -215,7 +215,7 @@
         {@const previous = new Map(s.previous.map((r) => [r.key, r]))}
         {#if t.unpricedCalls}<p class="small muted text-ui-sm">API spend is incomplete: {wholeNumber(t.unpricedCalls)} unpriced calls. Charts show priced spend only.</p>{/if}
         {#if chatgptEnabled && billing === 'chatgpt'}<p class="small muted text-ui-sm" role="note">ChatGPT plan usage is included in the subscription. Allowance consumption is reported separately by OpenAI.</p>{/if}
-        <section class="stats stats-4" aria-label="Totals">
+        <section class="stats" class:stats-4={!!month} aria-label="Totals">
           <StatTile label="API spend in selection" value={costTotal(t.costUsd, t.unpricedCalls)} now={t.costUsd} before={t.unpricedCalls || before.unpricedCalls ? undefined : before.costUsd} sub={`${tokens(total(t))} tokens over ${wholeNumber(t.calls)} ${t.calls === 1 ? 'call' : 'calls'}`} define={`Priced API spend of the last ${periodLabel}; ${wholeNumber(total(t))} tokens`} />
           {@render limits()}
         </section>
@@ -274,7 +274,7 @@
                       {:else}API{/if}
                     </td>
                     <td class="num">{callCost(r.costUsd, r.planCalls === r.calls && r.calls > 0, !!r.unpricedCalls)}</td>
-                    {#if !timed(s.group) && s.group !== 'review'}<td class="num" title={prior ? `Previous period: ${metric === 'cost' ? costTotal(prior.costUsd, prior.unpricedCalls) : tokens(total(prior))}` : 'No usage in the previous period'}>{metric === 'cost' && (r.unpricedCalls || prior?.unpricedCalls) ? 'Incomplete' : change(value(r), prior ? value(prior) : 0)?.text ?? '—'}</td>{/if}
+                    {#if !timed(s.group) && s.group !== 'review'}<td class="num" title={prior ? `Previous period: ${metric === 'cost' ? costTotal(prior.costUsd, prior.unpricedCalls) : tokens(total(prior))}` : 'No usage in the previous period'}>{metric === 'cost' && (r.unpricedCalls || prior?.unpricedCalls) ? 'Incomplete' : change(value(r), prior ? value(prior) : 0)?.text ?? (value(r) > 0 ? 'new' : '—')}</td>{/if}
                   </tr>
                 {/each}
               </tbody>

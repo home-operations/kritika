@@ -211,7 +211,7 @@ instance runs:
 - the admin audit log.
 
 Its one change is uninstalling an App from an account its entry does not
-list. The navigation beside the page lists its sections while it is open.
+list. Use the section filter to narrow the settings list.
 A repository row's chevron previews its effective review settings and code
 index. The repository page leads with pull requests. Expand **Repository settings**
 to search its effective settings, or **Index runs** to inspect indexing

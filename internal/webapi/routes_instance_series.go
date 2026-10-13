@@ -18,6 +18,8 @@ import (
 // usage as one row keyed by its slug.
 const usageByAccount store.UsageGroup = "account"
 
+const otherUsageKey = "__other__"
+
 // getInstanceAnalytics leaves the medians out: a median of per-account
 // medians is not the instance's median.
 func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) error {
@@ -92,11 +94,7 @@ func (s *Server) getInstanceUsage(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	group := cmp.Or(store.UsageGroup(r.URL.Query().Get("group")), store.UsageByDay)
-	if group != usageByAccount && !group.Valid() {
-		return errBadRequest(CodeBadRequest, "group must be hour, day, week, model, repo, role, review or account")
-	}
-	from, to, err := s.window(r)
+	group, from, to, err := s.usageQuery(r, true)
 	if err != nil {
 		return err
 	}
@@ -127,15 +125,51 @@ func (s *Server) getInstanceUsage(w http.ResponseWriter, r *http.Request) error 
 			current, before = collapseUsage(current, t.Slug()), collapseUsage(before, t.Slug())
 		case store.UsageByReview:
 			for i := range current {
-				if current[i].Key != "" && current[i].Key != "__other__" {
+				if current[i].Key != "" && current[i].Key != otherUsageKey {
 					current[i].Account = t.Slug()
 				}
 			}
 		}
 		out.Rows, out.Previous = addUsage(out.Rows, current), addUsage(out.Previous, before)
 	}
+	if group == store.UsageByReview {
+		out.Rows = topReviewUsage(out.Rows, filter.OrderByTokens)
+	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// Each account's top 50 contains every candidate for the global top 50:
+// an omitted review already has 50 reviews ahead of it in its own account.
+func topReviewUsage(rows []UsagePoint, byTokens bool) []UsagePoint {
+	slices.SortFunc(rows, func(a, b UsagePoint) int {
+		order := cmp.Compare(b.CostUSD, a.CostUSD)
+		if byTokens {
+			order = cmp.Compare(b.InputTokens+b.OutputTokens, a.InputTokens+a.OutputTokens)
+		}
+		return cmp.Or(order, cmp.Compare(a.Key, b.Key))
+	})
+	out := make([]UsagePoint, 0, min(len(rows), 52))
+	other := UsagePoint{Key: otherUsageKey}
+	var reviews int
+	hasOther := false
+	for _, row := range rows {
+		switch {
+		case row.Key == "":
+			out = append(out, row)
+		case row.Key == otherUsageKey || reviews >= 50:
+			other = addUsagePoint(other, row)
+			hasOther = true
+		default:
+			out = append(out, row)
+			reviews++
+		}
+	}
+	if hasOther {
+		out = append(out, other)
+	}
+	slices.SortFunc(out, func(a, b UsagePoint) int { return cmp.Compare(a.Key, b.Key) })
+	return out
 }
 
 // collapseUsage is rows as one, keyed and attributed to the account; none

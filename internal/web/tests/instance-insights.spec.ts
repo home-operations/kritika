@@ -20,7 +20,7 @@ test('all-accounts analytics adds the accounts up, without medians, and names ea
   await expect(page).toHaveURL(/#\/usage\?days=7$/);
 });
 
-test('all-accounts usage groups by account, with uncapped month tiles and a mean per review', async ({ page }) => {
+test('all-accounts usage groups by account, with per-account cap guidance and a mean per review', async ({ page }) => {
   const seen = await g.mockApi(page, [
     [/\/api\/v1\/accounts$/, [g.accountSummary, { ...g.accountSummary, slug: 'github/beta' }]],
     [/\/api\/v1\/usage$/, (u: URL) => u.searchParams.get('group') === 'account'
@@ -33,7 +33,7 @@ test('all-accounts usage groups by account, with uncapped month tiles and a mean
   const totals = page.getByRole('region', { name: 'Totals' });
   await expect(totals.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('$3.00');
   await expect(totals.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('$0.10 per review, mean of 24');
-  await expect(totals.locator('.stat').filter({ hasText: 'Tokens this month' })).toContainText('no cap');
+  await expect(totals.locator('.stat').filter({ hasText: 'Tokens this month' })).toContainText('caps are set per account');
   await expect(totals.getByRole('meter')).toHaveCount(0);
   await page.getByRole('combobox', { name: 'Group by' }).selectOption('account');
   await expect.poll(() => seen.some((u) => u.pathname === '/api/v1/usage' && u.searchParams.get('group') === 'account')).toBe(true);
@@ -50,4 +50,15 @@ test('the account pages keep their medians, caps and findings links', async ({ p
   await expect(page.getByRole('combobox', { name: 'Group by' })).toHaveCount(0);
   await page.goto(`/#/a/${g.SLUG}/usage`);
   await expect(page.getByRole('combobox', { name: 'Group by' }).locator('option')).not.toContainText(['Account']);
+});
+
+test('usage fills its totals width while account summaries are unavailable', async ({ page }) => {
+  await g.mockApi(page, g.defaultApi());
+  await page.route('**/api/v1/accounts', (route) => route.fulfill({ status: 503, json: { message: 'Unavailable' } }));
+  await page.goto('/#/usage');
+  const totals = page.getByRole('region', { name: 'Totals' });
+  await expect(totals.locator('.stat')).toHaveCount(1);
+  const group = await totals.boundingBox();
+  const tile = await totals.locator('.stat').boundingBox();
+  expect(tile!.width).toBeGreaterThan(group!.width - 4);
 });

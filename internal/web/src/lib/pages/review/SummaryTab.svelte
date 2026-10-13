@@ -67,7 +67,7 @@
             <tr class="row-toggles" class:row-expanded={expanded[f.id]} data-finding={f.id} onclick={(e) => { if (rowToggles(e)) expanded[f.id] = !expanded[f.id]; }}>
               <td><span class="sev sev-{f.severity}">{f.severity}</span></td>
               <td class="finding-summary-cell">
-                <a class="finding-code-link font-semibold" aria-label={`Inspect ${f.path}:${f.line} in code`} onclick={(e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) oninspect(); }} href={href(to('diff', f.id))}>{f.title}</a>
+                <a class="finding-code-link font-semibold" aria-label={`${f.title}: Inspect ${f.path}:${f.line} in code`} onclick={(e) => { if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) oninspect(); }} href={href(to('diff', f.id))}>{f.title}</a>
                 <span class="block mono text-ui-xs text-muted wrap-anywhere">{f.path}:{f.line}</span>
               </td>
               <td class="text-ui-sm text-muted">{f.status}</td>

@@ -87,12 +87,67 @@ func testInstanceSeries(t *testing.T, e *apiEnv) {
 			}
 		})
 	}
-	for _, path := range []string{"/api/v1/usage?group=nope", "/api/v1/analytics?group=nope", "/api/v1/usage?billing=plan"} {
+	for _, path := range []string{"/api/v1/usage?group=nope", "/api/v1/analytics?group=nope", "/api/v1/usage?billing=plan", "/api/v1/accounts/github/wa/usage?group=account"} {
 		if status, _ := e.getBody("admin", path); status != 400 {
 			t.Fatalf("%s: %d", path, status)
 		}
 	}
 	if status, _ := e.getBody("nobody", "/api/v1/usage"); status != 401 {
 		t.Fatalf("nobody: %d", status)
+	}
+}
+
+func testInstanceReviewUsageLimit(t *testing.T, e *apiEnv) {
+	for _, account := range []seeded{e.a, e.b} {
+		e.exec(`WITH seeded AS (
+			INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
+			SELECT $1, $2, n::text, 'completed' FROM generate_series(1, 55) n RETURNING id, head_sha)
+			INSERT INTO usage (account_id, repository_id, review_id, role, model, input_tokens, output_tokens, cost_usd, created_at)
+			SELECT $1, $3, id, 'review', 'test', 56 - head_sha::int, 1, head_sha::int, '2052-01-01' FROM seeded`,
+			account.accountID, account.prID, account.repoID)
+		e.exec(`INSERT INTO usage (account_id, repository_id, role, model, input_tokens, output_tokens, cost_usd, created_at)
+			VALUES ($1, $2, 'followup', 'test', 100, 10, 10000, '2052-01-01')`, account.accountID, account.repoID)
+	}
+	for _, metric := range []string{"cost", "tokens"} {
+		t.Run(metric, func(t *testing.T) {
+			status, body := e.getBody("admin", "/api/v1/usage?group=review&from=2052-01-01&to=2052-01-02&metric="+metric)
+			var out UsageSeries
+			if err := json.Unmarshal(body, &out); err != nil || status != 200 {
+				t.Fatalf("usage: %d %s (%v)", status, body, err)
+			}
+			if len(out.Rows) != 52 {
+				t.Fatalf("rows = %d, want 50 plus unattributed and remainder", len(out.Rows))
+			}
+			var cost float64
+			var calls, tokens int64
+			accounts := map[string]int{}
+			for _, row := range out.Rows {
+				cost += row.CostUSD
+				calls += row.Calls
+				tokens += row.InputTokens + row.OutputTokens
+				switch row.Key {
+				case "":
+					if row.Account != "" || row.Calls != 2 || row.CostUSD != 20000 {
+						t.Fatalf("unattributed: %+v", row)
+					}
+				case otherUsageKey:
+					want := 930.0
+					if metric == "tokens" {
+						want = 2430
+					}
+					if row.Account != "" || row.Calls != 60 || row.CostUSD != want {
+						t.Fatalf("remainder: %+v, want cost %v", row, want)
+					}
+				default:
+					accounts[row.Account]++
+					if (metric == "cost" && row.CostUSD < 31) || (metric == "tokens" && row.InputTokens < 31) {
+						t.Fatalf("unexpected top review: %+v", row)
+					}
+				}
+			}
+			if cost != 23080 || calls != 112 || tokens != 3410 || accounts["github/wa"] != 25 || accounts["github/wb"] != 25 {
+				t.Fatalf("totals: cost %v, calls %d, tokens %d, accounts %v", cost, calls, tokens, accounts)
+			}
+		})
 	}
 }

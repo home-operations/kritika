@@ -127,11 +127,11 @@ export interface UsageFilter {
   model?: string;
 }
 
-export function usageFilter(f: Record<string, string | undefined>): UsageFilter | undefined {
+export function usageFilter(f: Record<string, string | undefined>, instance = false): UsageFilter | undefined {
   const out: UsageFilter = {};
   if (f.days === '1' || f.days === '7' || f.days === '90') out.days = f.days;
   const groups: UsageGroup[] = ['hour', 'week', 'model', 'repo', 'role', 'review', 'account'];
-  const group = groups.find((g) => g === f.group);
+  const group = groups.find((g) => g === f.group && (instance || g !== 'account'));
   if (group) out.group = group;
   if (f.metric === 'tokens') out.metric = f.metric;
   if (f.billing === 'chatgpt') out.billing = f.billing;
@@ -323,7 +323,7 @@ export function parse(hash: string): Route {
     return { name: 'instanceAnalytics', ...(filter ? { filter } : {}) };
   }
   if (parts.length === 1 && parts[0] === 'usage') {
-    const filter = usageFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))));
+    const filter = usageFilter(Object.fromEntries(new URLSearchParams(q < 0 ? '' : hash.slice(q + 1))), true);
     return { name: 'instanceUsage', ...(filter ? { filter } : {}) };
   }
   if (parts.length === 1 && parts[0] === 'settings') return { name: 'preferences' };

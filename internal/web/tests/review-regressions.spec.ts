@@ -2,6 +2,31 @@ import { readFileSync } from 'node:fs';
 import { test, expect } from './fixtures';
 import * as g from './golden';
 
+test('review execution metadata survives a failed pull request request', async ({ page }) => {
+  await g.mockApi(page, g.defaultApi());
+  await page.route('**/pulls/alpha/one/7', (route) => route.fulfill({ status: 503, json: { message: 'Unavailable' } }));
+  await page.goto(`/#/a/${g.SLUG}/reviews/${g.reviewDetail.review.id}`);
+  await expect(page.getByRole('alert')).toContainText('Pull request details');
+  const metadata = page.locator('p').filter({ hasText: 'Reviewed commit' });
+  await expect(metadata).toContainText('Started');
+  await expect(metadata.locator('span.mono')).toHaveAttribute('title', g.reviewDetail.review.headSha);
+  await expect(metadata.locator('time')).toHaveAttribute('datetime', g.reviewDetail.review.createdAt);
+});
+
+for (const width of [390, 1280]) {
+  test(`read-only queue omits the Actions column at ${width}px`, async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/me$/, { ...g.me, admin: false }], ...g.defaultApi()]);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/#/a/${g.SLUG}/queue`);
+    await expect(page.locator('.queue-table tbody tr')).not.toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0);
+    await expect(page.locator('td[data-label="Actions"]')).toHaveCount(0);
+    await page.getByRole('button', { name: `Details for job #${g.job.id}` }).click();
+    await expect(page.getByRole('region', { name: `Job #${g.job.id} details` })).toBeVisible();
+    await expect(page.locator('.row-preview > td')).toHaveAttribute('colspan', '4');
+  });
+}
+
 for (const text of ['st', 'status:failed ']) {
   test(`Enter preserves unselected token search: ${JSON.stringify(text)}`, async ({ page }) => {
     await g.mockApi(page, g.defaultApi());

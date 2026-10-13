@@ -137,7 +137,7 @@ test("findings open collapsed files, support keyboard navigation, and survive a 
 test("summary links open the matching finding in code and work after reload", async ({ page }) => {
   await mockWorkspace(page);
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1`);
-  await page.getByRole("link", { name: "Inspect internal/worker/retry.go:2 in code" }).click();
+  await page.getByRole("link", { name: "Include the job ID in retry logs: Inspect internal/worker/retry.go:2 in code" }).click();
   await expect(page).toHaveURL(/\/diff\?finding=logging$/);
   await expect(page.locator("#diff-finding-logging")).toBeFocused();
   await page.reload();
@@ -397,7 +397,7 @@ test("summary links can revisit a finding after selecting a different one", asyn
   await page.getByRole("button", { name: "Next finding" }).click();
   await expect(page).toHaveURL(/finding=logging$/);
   await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
-  await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
+  await page.getByRole("link", { name: "Drain queued jobs before exiting: Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await expect(page).toHaveURL(/finding=shutdown$/);
 });
@@ -443,7 +443,7 @@ test("explicit summary links refocus the already-selected finding after scrollin
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.locator("main").evaluate((el) => { el.scrollTop = 0; });
   await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
-  await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
+  await page.getByRole("link", { name: "Drain queued jobs before exiting: Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
   await page.getByRole("link", { name: "Findings & code", exact: true }).click();

@@ -178,6 +178,7 @@
         {:else if p && r.headSha !== p.headSha}
           <p class="notice border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">The current head has not been reviewed by this run.</p>
         {/if}
+        {#if !p}<p class="small muted text-ui-sm">Started <Time iso={r.createdAt} /> · Reviewed commit <span class="mono" title={r.headSha}>{shortSha(r.headSha)}</span></p>{/if}
         {#if !p && r.priorReviewId}<p class="small muted text-ui-sm">Continues <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a>.</p>{/if}
         {#if r.error && r.status !== 'skipped'}<p class="notice error-text text-danger whitespace-pre-wrap [word-break:break-word] m-0 border border-solid border-line bg-surface rounded-md py-2.5 px-4 text-ui-md" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
         {#if r.cancelRequestedAt}<p class="small muted text-ui-sm">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}

@@ -53,7 +53,7 @@
     <thead>
       <tr>
         {#if several}<th scope="col">Account</th>{/if}
-        <th scope="col">Job / target</th><th scope="col">Status</th><th scope="col">Activity</th><th scope="col">Actions</th><th scope="col" class="relative"><span class="sr-only">Details</span></th>
+        <th scope="col">Job / target</th><th scope="col">Status</th><th scope="col">Activity</th>{#if isAdmin()}<th scope="col">Actions</th>{/if}<th scope="col" class="relative"><span class="sr-only">Details</span></th>
       </tr>
     </thead>
     <tbody>
@@ -79,18 +79,18 @@
             {:else if j.attemptedAt}Last attempt <Time iso={j.attemptedAt} />
             {:else}Created <Time iso={j.createdAt} />{/if}
           </td>
-          <td data-label="Actions">
-            {#if isAdmin()}
-              {@const action = actionFor(j)}
+          {#if isAdmin()}
+            {@const action = actionFor(j)}
+            <td data-label="Actions">
               <div class="queue-actions flex items-center flex-wrap gap-2.5 mt-0 mx-0 mb-2">
                 {#if action}<button class="btn" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
               </div>
-            {/if}
-          </td>
+            </td>
+          {/if}
           <td class="row-toggle-cell"><RowToggle bind:open={expanded[key]} label={`Details for job #${j.id}`} controls={previewId} /></td>
         </tr>
         {#if expanded[key]}
-          <tr class="row-preview"><td colspan={5 + Number(several)}>
+          <tr class="row-preview"><td colspan={4 + Number(several) + Number(isAdmin())}>
             <div class="row-preview-body" id={previewId} role="region" aria-label={`Job #${j.id} details`}>
               <div class="row-preview-grid">
                 <div>

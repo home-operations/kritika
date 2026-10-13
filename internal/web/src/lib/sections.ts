@@ -115,7 +115,7 @@ export function pageIn(r: Route, slug: string): Route {
       return { name: 'analytics', slug, ...(r.filter ? { filter: r.filter } : {}) };
     case 'instanceUsage': {
       // By account is the instance's grouping; the period, metric and other groupings travel.
-      const filter = usageFilter({ days: r.filter?.days, metric: r.filter?.metric, group: r.filter?.group === 'account' ? undefined : r.filter?.group });
+      const filter = usageFilter({ days: r.filter?.days, metric: r.filter?.metric, group: r.filter?.group });
       return { name: 'usage', slug, ...(filter ? { filter } : {}) };
     }
     default:

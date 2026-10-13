@@ -53,6 +53,8 @@ test.describe('routes: parse(href(r)) === r', () => {
 });
 
 const MALFORMED: [string, Route][] = [
+  ['#/a/github/acme/usage?group=account', { name: 'usage', slug: 'github/acme' }],
+  ['#/a/github/acme/usage?group=account&metric=tokens', { name: 'usage', slug: 'github/acme', filter: { metric: 'tokens' } }],
   ['', { name: 'overview' }],
   ['#/', { name: 'overview' }],
   ['#/nonsense', { name: 'overview' }],

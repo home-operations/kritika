@@ -284,6 +284,21 @@ test('a pending diff refreshes on review updates and is cached once available', 
 });
 
 for (const kind of ['model_call', 'review', 'resync'] as const) {
+  test(`instance usage refreshes account summaries only on review or resync: ${kind}`, async ({ page }) => {
+    let summaryReads = 0;
+    let usageReads = 0;
+    await page.route('**/api/v1/accounts', (route) => { summaryReads++; return json(route, [g.accountSummary]); });
+    await page.route('**/api/v1/usage?*', (route) => { usageReads++; return json(route, g.usageSeries); });
+    await page.goto('/#/usage');
+    await expect(page.getByRole('region', { name: 'Totals' })).toContainText('$1.50');
+    await expect.poll(() => usageReads).toBe(1);
+    await emit(page, kind);
+    if (kind === 'review') await expect.poll(() => summaryReads).toBe(2);
+    else await expect.poll(() => usageReads).toBe(2);
+    expect(summaryReads).toBe(kind === 'model_call' ? 1 : 2);
+    expect(usageReads).toBe(kind === 'review' ? 1 : 2);
+  });
+
   test(`usage refreshes only the affected resources on ${kind}`, async ({ page }) => {
     let changed = false;
     let usageReads = 0;
