@@ -174,9 +174,15 @@ func (p *Poller) PollAll(ctx context.Context) {
 // the poll state is then left where it was, so the next poll covers the
 // skipped repository's window too, and the error names each one.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
+	// Capture the boundary before reading enablement, on the same clock as
+	// turned_at, so a concurrent enablement is caught by the next poll.
+	started, err := p.Store.Now(ctx)
+	if err != nil {
+		return 0, err
+	}
 	var repos []store.PollRepo
 	var state store.PollState
-	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
 		if repos, err = store.PollRepositories(ctx, tx); err != nil {
 			return err
@@ -192,7 +198,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		since = *state.Polled
 	}
 	checkTips := state.Delivered == nil || state.Delivered.Before(time.Now().Add(-file.PollLookback()))
-	started := time.Now()
 	handled := 0
 	runs := map[string]bool{}
 	var skipped []error
