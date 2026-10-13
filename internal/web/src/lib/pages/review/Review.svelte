@@ -8,7 +8,7 @@
   import { pullRoute, repoRoute, rerunPath, cancelPath, accountApi } from '../../links';
   import { safeHref } from '../../markdown';
   import { isAdmin } from '../../session.svelte';
-  import { clock, stamp } from '../../time.svelte';
+  import { clock, ago } from '../../time.svelte';
   import { lifecycle } from '../../lifecycle';
   import type { PullDetail, Review, ReviewDetail } from '../../types';
   import ActionButton from '../../components/ActionButton.svelte';
@@ -150,21 +150,23 @@
       <div class="review-toolbar flex items-center flex-wrap gap-x-5 gap-y-2">
         {#if r}
           <ReviewStatusTile status={r.status} />
-          <p class="m-0 text-ui-sm text-muted" aria-label="Review outcome">
-            {#if r.status === 'completed'}<span>{openFindings} open {openFindings === 1 ? 'finding' : 'findings'}{res.data!.findings.length !== openFindings ? ` · ${res.data!.findings.length} reported` : ''}</span>
-            {:else if isActive(r.status)}<span>Review in progress. Findings are not final.</span>
-            {:else if r.status === 'skipped'}<span>No review performed. {skippedReason(r)}</span>
-            {:else}<span>Review incomplete. {openFindings} open {openFindings === 1 ? 'finding' : 'findings'} recorded; this is not a clean review.</span>{/if}
-          </p>
+          <!-- A completed review's counts are on the Findings tab and panel already. -->
+          {#if r.status !== 'completed'}
+            <p class="m-0 text-ui-sm text-muted" aria-label="Review outcome">
+              {#if isActive(r.status)}<span>Review in progress. Findings are not final.</span>
+              {:else if r.status === 'skipped'}<span>No review performed. {skippedReason(r)}</span>
+              {:else}<span>Review incomplete. {openFindings} open {openFindings === 1 ? 'finding' : 'findings'} recorded; this is not a clean review.</span>{/if}
+            </p>
+          {/if}
         {/if}
         {#if ref}
           <label class="run-picker ml-auto flex items-center min-w-0 text-ui-sm">
             <span class="sr-only">Review run</span>
             <select aria-label="Review run" value={historical || id ? selectedId : run ?? ''} onchange={(e) => selectRun(e.currentTarget.value)}>
               <option value="">Latest review</option>
-              {#if r && !pull.data?.reviews.some((review) => review.id === r.id)}<option value={r.id}>{r.status} · {stamp(r.createdAt)}</option>{/if}
+              {#if r && !pull.data?.reviews.some((review) => review.id === r.id)}<option value={r.id}>{r.status} · {ago(r.createdAt)}</option>{/if}
               {#each pull.data?.reviews ?? [] as review (review.id)}
-                <option value={review.id}>{review.status} · {shortSha(review.headSha)} · {stamp(review.createdAt)}</option>
+                <option value={review.id}>{review.status} · {shortSha(review.headSha)} · {ago(review.createdAt)}</option>
               {/each}
             </select>
           </label>

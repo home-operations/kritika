@@ -62,7 +62,7 @@ for (const status of ['running', 'failed', 'capped', 'completed'] satisfies Revi
     await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, findings: [], summary: null, review: { ...g.reviewDetail.review, status, error: status === 'failed' ? 'Provider unavailable' : '' } }], ...g.defaultApi()]);
     await page.goto(reviewURL);
     const outcome = page.getByLabel('Review outcome');
-    if (status === 'completed') await expect(outcome).toContainText('0 open');
+    if (status === 'completed') await expect(outcome).toHaveCount(0);
     else {
       await expect(outcome).toContainText(status === 'running' ? 'not final' : 'not a clean review');
       await expect(page.getByText('No findings.', { exact: true })).toHaveCount(0);
