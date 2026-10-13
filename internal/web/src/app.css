@@ -379,7 +379,7 @@
     @apply text-ink no-underline;
   }
   .section-tab.active {
-    @apply text-ink font-semibold [border-bottom-color:var(--edge)] shadow-[inset_2px_0_var(--accent)];
+    @apply text-ink font-semibold;
     background: color-mix(in srgb, var(--accent) 8%, var(--panel));
   }
   .section-label::after,
@@ -1287,9 +1287,6 @@
   }
   .mobile-nav-panel .workspace-heading {
     @apply block;
-  }
-  .mobile-nav-panel .section-tab.active {
-    @apply shadow-[inset_2px_0_var(--accent)];
   }
   .mobile-nav-panel .subnav {
     @apply flex-col overflow-visible p-0 border-0;
