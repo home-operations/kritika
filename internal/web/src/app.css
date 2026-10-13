@@ -121,6 +121,24 @@
     transform: rotate(360deg);
   }
 }
+/* The live dot breathes a ring while the stream is up and blinks while it
+   reconnects; neither moves for a reader who asked for less motion. */
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@keyframes live-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
 :root {
   --type-xs: 12px;
   --type-sm: 13px;
@@ -367,6 +385,12 @@
     --live: var(--warn);
     @apply text-warning;
   }
+  .live-dot {
+    animation: live-pulse 2.4s ease-out infinite;
+  }
+  .live-down .live-dot {
+    animation: live-blink 1s ease-in-out infinite;
+  }
   .signin-card h1 {
     @apply mt-1 mx-0 mb-0 text-[length:24px] font-extrabold tracking-[-0.01em];
   }
@@ -378,6 +402,9 @@
     }
     .spinner {
       @apply [animation-duration:2.4s];
+    }
+    .live-dot {
+      @apply [animation:none]!;
     }
   }
   @media (max-width: 640px) {
