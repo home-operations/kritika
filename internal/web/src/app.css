@@ -1302,18 +1302,24 @@
   table.data .row-preview > td {
     @apply p-0 whitespace-normal;
   }
+  /* Every table's expanded row shares one compact body of one height; a
+     body with more to say grows, a short one does not shrink. */
   .row-preview-body {
-    @apply p-4 bg-surface border-l-2 border-solid border-accent text-ui-sm wrap-anywhere;
+    @apply py-3 px-4 min-h-40 bg-surface border-l-2 border-solid border-accent text-ui-sm leading-[1.45] wrap-anywhere;
+  }
+  .row-preview-body > .md,
+  .row-preview-body p {
+    @apply m-0;
   }
   .row-preview-grid {
-    @apply grid gap-5;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    @apply grid gap-x-6 gap-y-2;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   }
   .preview-heading {
-    @apply mt-0 mb-2 text-ui-sm font-semibold;
+    @apply mt-0 mb-1 text-ui-xs font-semibold uppercase tracking-[0.04em] text-muted;
   }
   .preview-summary .md {
-    @apply line-clamp-3;
+    @apply line-clamp-2;
   }
   .preview-summary .md > :first-child {
     @apply mt-0;
@@ -1322,13 +1328,20 @@
     @apply mb-0;
   }
   .preview-findings {
-    @apply list-none m-0 p-0 grid gap-2;
+    @apply list-none m-0 p-0 grid gap-1;
   }
   .preview-findings li {
     @apply flex items-start gap-2;
   }
   .preview-facts {
-    @apply grid grid-cols-[auto_1fr] gap-y-1.5 gap-x-3.5 m-0 text-ui-sm;
+    @apply grid grid-cols-[auto_1fr] gap-y-0.5 gap-x-3.5 m-0 text-ui-sm;
+  }
+  /* Many short facts read in two columns where there is room. */
+  .preview-facts-wide {
+    @apply min-[700px]:grid-cols-[auto_max-content_auto_max-content] justify-start gap-x-5;
+  }
+  .preview-actions {
+    @apply mt-2;
   }
   .preview-facts dt {
     @apply text-muted;
@@ -1392,7 +1405,7 @@
     @apply w-full max-w-0 whitespace-normal wrap-anywhere min-w-40;
   }
   .review-findings .row-preview .finding {
-    @apply border-0 bg-transparent shadow-none p-0;
+    @apply border-0 bg-transparent shadow-none p-0 gap-2;
   }
   .review-workspace.code-focused {
     @apply grid-cols-1;

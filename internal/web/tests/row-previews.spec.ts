@@ -126,6 +126,7 @@ test('desktop dark screenshots show expanded pull, queue and repository rows', a
       await page.getByRole('checkbox', { name: 'Select alpha/one', exact: true }).check();
     }
     const rows = page.locator('table').filter({ has: page.getByRole('button', { name: button, exact: true }) }).locator('tbody > tr:not(.row-preview)');
+    await expect(rows).toHaveCount(3);
     await page.mouse.move(0, 0);
     const colors = await rows.evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
     expect(colors).toHaveLength(3);

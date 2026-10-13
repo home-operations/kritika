@@ -94,7 +94,7 @@
               <div class="row-preview-grid">
                 <div>
                   <h2 class="preview-heading">Job details</h2>
-                  <dl class="preview-facts"><dt>Attempt</dt><dd>{j.attempt}/{j.maxAttempts}</dd><dt>Created</dt><dd><Time iso={j.createdAt} /></dd>
+                  <dl class="preview-facts preview-facts-wide"><dt>Attempt</dt><dd>{j.attempt}/{j.maxAttempts}</dd><dt>Created</dt><dd><Time iso={j.createdAt} /></dd>
                     {#if j.attemptedAt}<dt>Last attempt</dt><dd><Time iso={j.attemptedAt} /></dd>{/if}
                     {#if j.heartbeatAt}<dt>Heartbeat</dt><dd><Time iso={j.heartbeatAt} /></dd>{/if}
                     <dt>Scheduled</dt><dd><Time iso={j.scheduledAt} /></dd>

@@ -26,7 +26,7 @@
           <dt>Review model</dt><dd class="mono">{settings.models.review || 'Not configured'}</dd>
           <dt>Settle time</dt><dd>{duration(settings.settleSeconds * 1000) || '0s'}</dd>
         </dl>
-        {#if d.repoConfig?.ignored}<p class="text-danger wrap-anywhere mt-2">Repository configuration ignored: {d.repoConfig.ignored}</p>{/if}
+        {#if d.repoConfig?.ignored}<p class="text-danger wrap-anywhere mt-1">Repository configuration ignored: {d.repoConfig.ignored}</p>{/if}
       </div>
       <div class="min-w-0">
         <h2 class="preview-heading">Code index</h2>
@@ -38,9 +38,9 @@
             <dt>Chunks</dt><dd>{wholeNumber(run.chunkCount)}</dd>
           {/if}
         </dl>
-        {#if run?.error}<p class="text-danger line-clamp-2 wrap-anywhere mt-2">{run.error}</p>{/if}
+        {#if run?.error}<p class="text-danger line-clamp-2 wrap-anywhere mt-1">{run.error}</p>{/if}
       </div>
     </div>
-    <div class="mt-3"><a class="btn btn-small" href={href(repoRoute(slug, repo.fullName))}>Open repository →</a></div>
+    <div class="preview-actions"><a class="btn btn-small" href={href(repoRoute(slug, repo.fullName))}>Open repository →</a></div>
   {/snippet}
 </StateView>

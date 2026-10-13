@@ -26,8 +26,8 @@
         {#if d.summary}<div class="preview-summary"><Markdown text={d.summary.headline || d.summary.take} /></div>
         {:else if d.review.status === 'completed'}<p class="muted">No summary available.</p>{/if}
         {#if d.review.error && d.review.status !== 'skipped'}<p class="text-danger line-clamp-2 wrap-anywhere">{d.review.error}</p>{/if}
-        {#if d.review.confidence}<p class="small muted text-ui-sm mt-2">Confidence {d.review.confidence.score}/5 · {d.review.confidence.risk} risk{d.review.confidence.passed ? '' : ' · below threshold'}</p>{/if}
-        <p class="small muted text-ui-sm mt-2"><span class="mono">{pull.headRef}</span> → <span class="mono">{pull.baseRef}</span></p>
+        {#if d.review.confidence}<p class="small muted text-ui-sm mt-1">Confidence {d.review.confidence.score}/5 · {d.review.confidence.risk} risk{d.review.confidence.passed ? '' : ' · below threshold'}</p>{/if}
+        <p class="small muted text-ui-sm mt-1"><span class="mono">{pull.headRef}</span> → <span class="mono">{pull.baseRef}</span></p>
       </div>
       <div class="min-w-0">
         <h2 class="preview-heading">Findings <span class="muted">({d.findings.length})</span></h2>
@@ -37,10 +37,10 @@
               <li><span class="sev sev-{finding.severity}">{finding.severity.toUpperCase()}</span><a href={href({ ...pullRoute(slug, pull), run: d.review.id, tab: 'diff', finding: finding.id })}>{finding.title}</a>{#if finding.status !== 'open'}<Pill label={finding.status} />{/if}</li>
             {/each}
           </ul>
-          {#if d.findings.length > 3}<p class="small muted text-ui-sm mt-2">Showing 3 of {d.findings.length} findings.</p>{/if}
+          {#if d.findings.length > 3}<p class="small muted text-ui-sm mt-1">Showing 3 of {d.findings.length} findings.</p>{/if}
         {:else}<p class="muted">{d.review.status === 'completed' ? 'No findings.' : 'No findings recorded yet.'}</p>{/if}
       </div>
     </div>
-    <div class="mt-3"><a class="btn btn-small" href={href({ ...pullRoute(slug, pull), run: d.review.id })}>Open full review →</a></div>
+    <div class="preview-actions"><a class="btn btn-small" href={href({ ...pullRoute(slug, pull), run: d.review.id })}>Open full review →</a></div>
   {/snippet}
 </StateView>
