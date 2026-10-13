@@ -59,13 +59,15 @@ export interface InstanceTab {
   label: string;
   route: Route;
   admin?: boolean;
+  // group is the sidebar heading it sits under, shared with NAV_GROUPS.
+  group: string;
 }
 
 export const INSTANCE_TABS: readonly InstanceTab[] = [
-  { label: 'Overview', route: { name: 'overview' } },
-  { label: 'Pull requests', route: { name: 'instancePulls' } },
-  { label: 'Queue', route: { name: 'instanceQueue' } },
-  { label: 'Instance settings', route: { name: 'console' }, admin: true },
+  { label: 'Overview', route: { name: 'overview' }, group: 'Operations' },
+  { label: 'Pull requests', route: { name: 'instancePulls' }, group: 'Operations' },
+  { label: 'Queue', route: { name: 'instanceQueue' }, group: 'Operations' },
+  { label: 'Instance settings', route: { name: 'console' }, admin: true, group: 'Configuration' },
 ];
 
 // scopeOf is the account a route is in the scope of, undefined for one in

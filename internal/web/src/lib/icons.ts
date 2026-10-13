@@ -46,4 +46,5 @@ export {
   mdiFileDocumentOutline,
   mdiThumbUpOutline,
   mdiThumbDownOutline,
+  mdiTextBoxOutline,
 } from '@mdi/js';

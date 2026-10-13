@@ -24,6 +24,7 @@
     mdiSourcePull,
     mdiScaleBalance,
     mdiCogOutline,
+    mdiTextBoxOutline,
     mdiSourceRepository,
     mdiCurrencyUsd,
     mdiBugOutline,
@@ -131,7 +132,7 @@
     followups: mdiClipboardTextClockOutline,
     findings: mdiBugOutline,
     rules: mdiScaleBalance,
-    settings: mdiCogOutline,
+    settings: mdiTextBoxOutline,
   };
 
   const themeIconPath = $derived(
@@ -261,12 +262,15 @@
 {#snippet workspaceNav()}
   {#if me && !currentSlug}
     <nav class="sections flex mb-[-1px] flex-col overflow-visible gap-[3px] p-0" aria-label="Instance">
-      {#each instanceTabs as t (t.route.name)}
-        {@const on = router.route.name === t.route.name}
-        <a class="section-tab inline-flex items-center gap-1.5 border-solid border-b-transparent no-underline text-ui-md whitespace-nowrap min-h-9 py-2 px-3 border-0 rounded-md text-muted" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
-          <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
-          <span class="section-label inline-flex flex-col" data-label={t.label}>{t.label}</span>
-        </a>
+      {#each [...new Set(instanceTabs.map((t) => t.group))] as group (group)}
+        <p class="workspace-heading mt-4 mx-3 mb-1.5 text-muted text-ui-xs uppercase tracking-[0.04em]">{group}</p>
+        {#each instanceTabs.filter((t) => t.group === group) as t (t.route.name)}
+          {@const on = router.route.name === t.route.name}
+          <a class="section-tab inline-flex items-center gap-1.5 border-solid border-b-transparent no-underline text-ui-md whitespace-nowrap min-h-9 py-2 px-3 border-0 rounded-md text-muted" class:active={on} aria-current={on ? 'page' : undefined} href={href(t.route)} {@attach on && revealInNav}>
+            <Icon path={instanceIcon[t.route.name] ?? mdiViewGridOutline} size={15} />
+            <span class="section-label inline-flex flex-col" data-label={t.label}>{t.label}</span>
+          </a>
+        {/each}
       {/each}
     </nav>
   {:else if me && currentSlug}
