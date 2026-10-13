@@ -81,11 +81,11 @@ test('command palette retains its specific radius and shadow', async ({ page }) 
 test('exact metric hints are available over the number', async ({ page }) => {
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/#/a/${g.SLUG}/usage`);
-  const tile = page.locator('.stat').filter({ hasText: 'Tokens in selection' });
+  const tile = page.locator('.stat').filter({ hasText: 'API spend in selection' });
   expect(await tile.getByRole('button').getAttribute('aria-label')).toContain(await tile.locator('.stat-value').innerText());
   await tile.locator('.stat-value').hover();
   await expect(page.getByRole('tooltip')).toBeVisible();
-  await expect(page.getByRole('tooltip')).toHaveText(/^\d[\d,]*$/);
+  await expect(page.getByRole('tooltip')).toHaveText(/; \d[\d,]* tokens$/);
 });
 
 test('chart code loads only when a chart is shown', async ({ page }) => {

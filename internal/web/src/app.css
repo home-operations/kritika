@@ -993,6 +993,11 @@
   .stats.stats-3 {
     @apply grid-cols-3 max-[800px]:grid-cols-1;
   }
+  /* Four tiles: 4, 2 or 1 columns by the container's width, so no row is
+     left short with blank cells. */
+  .stats.stats-4 {
+    @apply grid-cols-4 @max-[760px]:grid-cols-2 @max-[420px]:grid-cols-1;
+  }
   .stat {
     @apply flex flex-col gap-1 min-w-0 py-3 px-4 bg-panel text-inherit no-underline;
   }

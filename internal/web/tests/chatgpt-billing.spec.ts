@@ -140,10 +140,9 @@ test("spend summaries mark incomplete totals and avoid comparing incomplete peri
   await expect(spend).toContainText('spend is incomplete');
   await expect(spend.locator('.delta')).toHaveCount(0);
   await page.goto(`/${account}/usage`);
-  const month = page.getByRole('region', { name: 'This month' });
+  const month = page.getByRole('region', { name: 'Totals' }).locator('.stat').filter({ hasText: 'API spend this month' });
   await expect(month).toContainText('$1.50 + unpriced');
-  await page.getByRole('button', { name: 'About usage' }).click();
-  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('$0.08 per review (median) · $0.11 mean of 11 · 1 with unpriced calls left out');
+  await expect(month).toContainText('$0.08 per review (median) · $0.11 mean of 11 · 1 with unpriced calls left out');
   await page.goto('/#/admin');
   await expect(page.locator('tbody tr').filter({ hasText: g.adminAccount.slug }).first()).toContainText('$1.50 + unpriced');
   await page.goto(`/${account}/reviews/rev-1/timeline`);
@@ -156,6 +155,5 @@ test("per-review spend says so when no review's cost is known", async ({ page })
   await page.goto('/');
   await expect(page.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('12 reviews this month, all with unpriced calls');
   await page.goto(`/${account}/usage`);
-  await page.getByRole('button', { name: 'About usage' }).click();
-  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('12 reviews this month, all with unpriced calls');
+  await expect(page.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('12 reviews this month, all with unpriced calls');
 });

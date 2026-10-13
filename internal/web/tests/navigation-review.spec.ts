@@ -138,12 +138,11 @@ test('completed jobs retain historical errors only inside details', async ({ pag
   await expect(page.locator('.error-text')).toHaveText(job.lastError);
 });
 
-test('reporting navigation keeps the period and 24-hour analytics explains partial days', async ({ page }) => {
+test('reporting navigation keeps the period and 24-hour analytics charts partial days', async ({ page }) => {
   await page.goto(`${account}/usage?days=90`);
   await page.locator('.desktop-navigation').getByRole('link', { name: 'Analytics', exact: true }).click();
   await expect(page).toHaveURL(/\?days=90$/);
   await page.getByRole('radio', { name: '24 hours' }).click();
-  await expect(page.getByText('Last 24 hours, split by date.', { exact: false })).toBeVisible();
   await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('failed');
   await expect(page.getByRole('img', { name: /^Failure rate per partial day/ })).toBeVisible();
 });

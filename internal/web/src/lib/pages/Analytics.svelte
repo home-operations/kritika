@@ -7,7 +7,6 @@
   import { day } from '../dates';
   import { daysAgo, duration, costTotal, wholeNumber, tokens, usd, CATEGORIES } from '../format';
   import type { Analytics, AnalyticsPoint } from '../types';
-  import Collapsible from '../components/Collapsible.svelte';
   import StateView from '../components/StateView.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import HelpPopover from '../components/HelpPopover.svelte';
@@ -105,20 +104,19 @@
     <div class="toolbar flex flex-wrap items-center gap-2">
       <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => navigate({ name: 'analytics', slug, filter: analyticsFilter({ days }) })} />
     </div>
-    {#if days === '1'}<p class="small muted text-ui-sm">Last 24 hours, split by date. Each chart column includes only the part of that day inside the selected period.</p>{/if}
     <StateView {res} retry={() => res.load()}>
       {#snippet children(d)}
         {@const c = d.current}
         {@const p = d.previous}
         <div class="analytics flex flex-col gap-3.5 [transition:opacity_0.15s]" class:stale={res.loading}>
-          <section class="stats" aria-label="Operational metrics">
+          <section class="stats stats-3" aria-label="Totals">
             <StatTile
               label="Reviews"
               value={wholeNumber(c.reviews)}
-              sub={c.failed ? `${c.failed} failed` : ''}
+              sub={[c.failed ? `${c.failed} failed` : '', `on ${wholeNumber(c.pullRequests)} pull ${c.pullRequests === 1 ? 'request' : 'requests'}`].filter(Boolean).join(' · ')}
               now={c.reviews}
               before={p.reviews}
-              define="Completed reviews in the period"
+              define="Completed reviews in the period, and the pull requests they were of"
             />
             <StatTile
               label="Median review"
@@ -129,17 +127,41 @@
               define="How long a completed review took, from start to finish"
             />
             <StatTile
+              label="Time to merge"
+              value={c.medianMergeMs === null ? '—' : duration(c.medianMergeMs)}
+              now={c.medianMergeMs}
+              before={p.medianMergeMs}
+              good="down"
+              define="The median time from opening to merging, of the pull requests kritika knows that merged in the period"
+            />
+            <StatTile
+              label="Addressed"
+              value={rate(c.addressed, found(c.findings)) === null ? '—' : `${Math.round(rate(c.addressed, found(c.findings))!)}%`}
+              sub={`${c.addressed} of ${found(c.findings)} findings · ${c.findings.p0} P0`}
+              now={rate(c.addressed, found(c.findings))}
+              before={rate(p.addressed, found(p.findings))}
+              good="up"
+              points
+              define="Of the findings first reported in the period, each counted once per pull request, the share a later review of the pull request, at a newer head, no longer reported"
+            />
+            <StatTile
+              label="Reactions"
+              value={`${wholeNumber(c.reactionsUp)} up`}
+              sub={`${wholeNumber(c.reactionsDown)} down`}
+              now={c.reactionsUp - c.reactionsDown}
+              before={p.reactionsUp - p.reactionsDown}
+              good="up"
+              define="The thumbs up and down on the inline comments of the findings reported in the period"
+            />
+            <StatTile
               label="API spend"
               value={costTotal(c.costUsd, c.unpricedCalls)}
               now={c.costUsd}
               before={c.unpricedCalls || p.unpricedCalls ? undefined : p.costUsd}
               good="down"
-              define="API spend in the period; subscription fees excluded"
-              sub={c.unpricedCalls ? `${wholeNumber(c.unpricedCalls)} unpriced calls; spend is incomplete` : undefined}
+              define="API spend in the period, subscription fees excluded, and the input (including cached input) plus output tokens behind it"
+              sub={[c.unpricedCalls ? `${wholeNumber(c.unpricedCalls)} unpriced calls; spend is incomplete` : '', `${tokens(c.tokens)} tokens`].filter(Boolean).join(' · ')}
             />
-            <StatTile label="Failure rate" value={rate(c.failed, c.reviews + c.failed) === null ? '—' : `${rate(c.failed, c.reviews + c.failed)!.toFixed(1)}%`}
-              now={rate(c.failed, c.reviews + c.failed)} before={rate(p.failed, p.reviews + p.failed)} points good="down"
-              sub={`${c.failed} failed of ${c.reviews + c.failed} completed or failed reviews`} />
           </section>
           <section class="panel" aria-labelledby="an-trends">
             <header class="panel-head">
@@ -166,55 +188,6 @@
               <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">{trend === 'failed' ? 'Failed / (completed + failed). Periods with no outcomes are omitted.' : trend === 'duration' ? 'Median duration of completed reviews. Periods with no completed reviews are omitted.' : trend === 'cost' ? 'Priced API spend only; subscription fees excluded.' : 'Input (including cached input) plus output tokens.'}</p>
             {/if}
           </section>
-
-          <Collapsible title="More metrics">
-            <section class="stats" aria-label="Totals">
-              <StatTile label="Tokens" value={tokens(c.tokens)} now={c.tokens} before={p.tokens} define="Input (including cached input) plus output tokens" />
-              <StatTile
-                label="Pull requests reviewed"
-                value={wholeNumber(c.pullRequests)}
-                now={c.pullRequests}
-                before={p.pullRequests}
-                define="Pull requests with a completed review in the period"
-              />
-              <StatTile
-                label="Findings"
-                value={wholeNumber(found(c.findings))}
-                sub={`${c.findings.p0} P0`}
-                now={found(c.findings)}
-                before={found(p.findings)}
-                define="Findings first reported in the period, each counted once per pull request"
-              />
-              <StatTile
-                label="Addressed"
-                value={rate(c.addressed, found(c.findings)) === null ? '—' : `${Math.round(rate(c.addressed, found(c.findings))!)}%`}
-                sub={`${c.addressed} of ${found(c.findings)}`}
-                now={rate(c.addressed, found(c.findings))}
-                before={rate(p.addressed, found(p.findings))}
-                good="up"
-                points
-                define="Of those findings, the share a later review of the pull request, at a newer head, no longer reported"
-              />
-              <StatTile
-                label="Time to merge"
-                value={c.medianMergeMs === null ? '—' : duration(c.medianMergeMs)}
-                now={c.medianMergeMs}
-                before={p.medianMergeMs}
-                good="down"
-                define="The median time from opening to merging, of the pull requests kritika knows that merged in the period"
-              />
-              <StatTile
-                label="Reactions"
-                value={`${wholeNumber(c.reactionsUp)} up`}
-                sub={`${wholeNumber(c.reactionsDown)} down`}
-                now={c.reactionsUp - c.reactionsDown}
-                before={p.reactionsUp - p.reactionsDown}
-                good="up"
-                define="The thumbs up and down on the inline comments of the findings reported in the period"
-              />
-            </section>
-
-          </Collapsible>
 
           <section class="panel" aria-labelledby="an-repos">
             <header class="panel-head"><h2 id="an-repos">Most reviewed repositories</h2></header>

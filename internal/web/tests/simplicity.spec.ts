@@ -57,7 +57,7 @@ test('repository details stay accessible without displacing pull requests', asyn
 test('cache details can be shown without changing usage totals', async ({ page }) => {
   await g.mockApi(page, g.defaultApi());
   await page.goto(`${account}/usage`);
-  const totals = page.getByRole('region', { name: 'Selected usage' });
+  const totals = page.getByRole('region', { name: 'Totals' });
   await expect(totals).toBeVisible();
   const before = await totals.innerText();
   await expect(page.getByRole('columnheader', { name: 'Cache read', exact: true })).toHaveCount(0);

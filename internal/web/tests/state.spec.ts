@@ -292,7 +292,7 @@ for (const kind of ['model_call', 'review', 'resync'] as const) {
     await page.route('**/api/v1/accounts/' + g.SLUG, (route) => json(route, { ...g.golden<AccountDetail>('account_detail'), usage: { ...g.accountSummary.usage, costUsd: 150, reviewsToday: 25, tokens: 9000 } }));
     await page.route('**/usage?*', (route) => { usageReads++; return json(route, g.usageSeries); });
     await page.goto(`${account}/usage`);
-    const month = page.getByRole('region', { name: 'This month' });
+    const month = page.getByRole('region', { name: 'Totals' });
     await expect(month).toContainText('$1.50');
     const before = usageReads;
     changed = true;

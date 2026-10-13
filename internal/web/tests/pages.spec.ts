@@ -163,18 +163,17 @@ test('analytics shows the totals against the window before, the charts and the r
   const c = g.analytics.current;
   await expect(stat('Reviews').locator('.stat-value')).toHaveText(String(c.reviews));
   await expect(stat('Reviews').locator('.delta')).toHaveCount(0);
-  await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed`);
-  await page.getByRole('button', { name: 'More metrics', exact: true }).click();
-  await expect(stat('Findings').locator('.stat-sub')).toHaveText(`${c.findings.p0} P0`);
+  await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed · on ${c.pullRequests} pull requests`);
   // 2 of 6 findings, where the window before had none to compare.
   await expect(stat('Addressed').locator('.stat-value')).toHaveText('33%');
-  await expect(stat('Addressed').locator('.stat-sub')).toHaveText('2 of 6');
+  await expect(stat('Addressed').locator('.stat-sub')).toHaveText(`2 of 6 findings · ${c.findings.p0} P0`);
   await expect(stat('Addressed').locator('.delta')).toHaveCount(0);
   await expect(stat('Median review').locator('.stat-value')).toHaveText('1m 30s');
   await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h');
   await expect(stat('Reactions').locator('.stat-value')).toHaveText(`${c.reactionsUp} up`);
   await expect(stat('Reactions').locator('.stat-sub')).toHaveText(`${c.reactionsDown} down`);
   await expect(stat('API spend').locator('.delta')).toHaveCount(0);
+  await expect(stat('API spend').locator('.stat-sub')).toHaveText(/tokens$/);
   await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
   await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
   const findings = page.getByRole('region', { name: 'Review trends' });
@@ -260,16 +259,15 @@ test('the spend page says what a review costs this month, median and mean, or th
   const a = g.accountSummary;
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/usage`);
-  await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
-  await page.getByRole('button', { name: 'About usage' }).click();
-  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('$0.08 per review (median) · $0.10 mean of 12');
+  const spend = page.getByRole('region', { name: 'Totals' }).locator('.stat').filter({ hasText: 'API spend this month' });
+  await expect(spend).toContainText('$1.50');
+  await expect(spend).toContainText('$0.08 per review (median) · $0.10 mean of 12');
 
   const idle = { ...a, usage: { ...a.usage, reviews: 0, reviewCostUsd: 0, medianReviewCostUsd: null } };
   await g.mockApi(page, [[/\/api\/v1\/accounts$/, [idle]], ...g.defaultApi()]);
   await page.goto('about:blank');
   await page.goto(`/${T}/usage`);
-  await page.getByRole('button', { name: 'About usage' }).click();
-  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('no review completed this month');
+  await expect(page.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('no review completed this month');
 });
 
 test("a chart's axis has room for its longest label", async ({ page }) => {
@@ -1407,16 +1405,16 @@ test('the top bar fits a phone: the logo keeps its size and the user menu stays 
   expect((await page.locator('.brand .logo').boundingBox())!.width).toBe(22);
 });
 
-test("this month's tiles fill their grid at every width, with no cell left empty", async ({ page }) => {
+test("the usage tiles fill their grid at every width, with no cell left empty", async ({ page }) => {
   for (const [width, columns] of [
-    [1280, 3],
-    [600, 1],
+    [1280, 4],
+    [600, 2],
     [390, 1],
   ] as const) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(`/${T}/usage`);
-    const tiles = page.getByRole('region', { name: 'This month' });
-    await expect(tiles.locator(':scope > div')).toHaveCount(3);
+    const tiles = page.getByRole('region', { name: 'Totals' });
+    await expect(tiles.locator(':scope > div')).toHaveCount(4);
     expect(await tiles.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
   }
 });
@@ -1443,7 +1441,7 @@ test('queue, usage, follow-ups and admin console pages render their fixtures', a
   await expect(page.locator('tbody tr')).toContainText('Sep 1, 2026');
   await expect(page.getByRole('img', { name: /API spend by day/ })).toBeVisible();
   await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
-  await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
+  await expect(page.getByRole('region', { name: 'Totals' })).toContainText('$1.50');
   await page.getByRole('radio', { name: '7 days' }).click();
   await page.getByRole('combobox', { name: 'Group by' }).selectOption('model');
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/usage') && u.searchParams.get('group') === 'model')).toBe(true);

@@ -116,7 +116,7 @@ test('failed drilldown does not relabel the preceding selection as the new one',
   await page.route('**/usage?**group=model**', (r) => r.fulfill({ status: 503, json: { code: 'unavailable', message: 'Usage unavailable' } }));
   await page.getByRole('button', { name: 'alpha/one →' }).click();
   await expect(page.getByRole('alert')).toContainText('Usage unavailable');
-  await expect(page.getByRole('region', { name: 'Selected usage' })).toHaveCount(0);
+  await expect(page.locator('.stat').filter({ hasText: 'in selection' })).toHaveCount(0);
   await page.unroute('**/usage?**group=model**');
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'API spend by model' })).toBeVisible();
@@ -149,7 +149,7 @@ test('spending changes retain disappeared groups and suppress unpriced compariso
   await expect(rows.filter({ hasText: 'alpha/old' })).toContainText('-100%');
   await expect(rows.filter({ hasText: 'alpha/new' })).toContainText('—');
   await expect(rows.filter({ hasText: 'alpha/unpriced' })).toContainText('Incomplete');
-  await expect(page.getByRole('region', { name: 'Selected usage' }).locator('.stat').first().locator('.delta')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Totals' }).locator('.stat').first().locator('.delta')).toHaveCount(0);
 });
 
 test('spending URLs encode model names and distinguish unfiltered from unattributed', () => {
@@ -163,9 +163,8 @@ test('operational trends compare rates and omit buckets without outcomes', async
   await mockOperations(page);
   await page.route('**/analytics?*', (r) => r.fulfill({ json: { ...analytics, current: { ...analytics.current, reviews: 8, failed: 2 }, previous: { ...analytics.previous, reviews: 9, failed: 1 }, series: [...analytics.series, { ...analytics.series[0], key: '2026-10-15', reviews: 0, failed: 0, medianReviewMs: null }] } }));
   await page.goto(`${account}/analytics`);
-  const rate = page.getByRole('region', { name: 'Operational metrics' }).locator('.stat').filter({ has: page.getByText('Failure rate', { exact: true }) });
-  await expect(rate).toContainText('20.0%');
-  await expect(rate.locator('.delta')).toContainText('10');
+  const reviews = page.getByRole('region', { name: 'Totals' }).locator('.stat').filter({ has: page.getByText('Reviews', { exact: true }) });
+  await expect(reviews.locator('.stat-sub')).toContainText('2 failed');
   const trends = page.getByRole('region', { name: 'Review trends' });
   await trends.getByRole('combobox', { name: 'Trend metric' }).selectOption('failed');
   await trends.getByRole('radio', { name: 'Table', exact: true }).click();
@@ -196,7 +195,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`operations-overview-${theme}.png`) });
     await page.goto(`${account}/analytics`);
-    await expect(page.getByRole('region', { name: 'Operational metrics' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Totals' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`operations-analytics-${theme}.png`) });
     await page.goto(`${account}/usage`);
     await page.getByRole('button', { name: 'All repositories' }).click();

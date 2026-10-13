@@ -146,25 +146,22 @@
 <svelte:head><title>Usage & costs · {slug} · kritika</title></svelte:head>
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
-  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
+  <div class="page-inner @container w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Usage & costs" {slug}>
       {#snippet actions()}<HelpPopover label="About usage">
         <p>Changes compare the selection with the preceding period of equal length. API spend excludes subscription fees. Cache detail is available only while transcripts are retained.</p>
         <p>Follow-ups and usage without an associated review are listed as unattributed. Review groups show up to 50 runs with the most usage by the selected metric; Other reviews includes the remainder. Totals include all usage.</p>
-        {#if month}<p>This month: {reviewSpend(month)}.</p>{/if}
       </HelpPopover>{/snippet}
     </PageHeader>
     {#snippet limits()}
       {#if month}
-        <section class="stats stats-3" aria-label="This month">
-          <StatTile label="API spend this month" value={costTotal(month.costUsd, month.unpricedCalls)} />
-          <StatTile label="Tokens this month" value={tokens(month.tokens)} define={wholeNumber(month.tokens)} sub={month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}>
-            {#if month.tokensPerMonth}<Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" />{/if}
-          </StatTile>
-          <StatTile label="Reviews today" value={wholeNumber(month.reviewsToday)} sub={month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}>
-            {#if month.reviewsPerDay}<Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" />{/if}
-          </StatTile>
-        </section>
+        <StatTile label="API spend this month" value={costTotal(month.costUsd, month.unpricedCalls)} sub={reviewSpend(month)} />
+        <StatTile label="Tokens this month" value={tokens(month.tokens)} define={wholeNumber(month.tokens)} sub={month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}>
+          {#if month.tokensPerMonth}<Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" />{/if}
+        </StatTile>
+        <StatTile label="Reviews today" value={wholeNumber(month.reviewsToday)} sub={month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}>
+          {#if month.reviewsPerDay}<Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" />{/if}
+        </StatTile>
       {/if}
     {/snippet}
     <div class="toolbar flex flex-wrap items-center gap-2">
@@ -196,10 +193,9 @@
         {@const previous = new Map(s.previous.map((r) => [r.key, r]))}
         {#if t.unpricedCalls}<p class="small muted text-ui-sm">API spend is incomplete: {wholeNumber(t.unpricedCalls)} unpriced calls. Charts show priced spend only.</p>{/if}
         {#if chatgptEnabled && billing === 'chatgpt'}<p class="small muted text-ui-sm" role="note">ChatGPT plan usage is included in the subscription. Allowance consumption is reported separately by OpenAI.</p>{/if}
-        <section class="stats stats-3" aria-label="Selected usage">
-          <StatTile label="API spend in selection" value={costTotal(t.costUsd, t.unpricedCalls)} now={t.costUsd} before={t.unpricedCalls || before.unpricedCalls ? undefined : before.costUsd} sub={`Last ${periodLabel} vs preceding period`} />
-          <StatTile label="Tokens in selection" value={tokens(total(t))} now={total(t)} before={total(before)} define={wholeNumber(total(t))} />
-          <StatTile label="Calls in selection" value={wholeNumber(t.calls)} now={t.calls} before={before.calls} />
+        <section class="stats stats-4" aria-label="Totals">
+          <StatTile label="API spend in selection" value={costTotal(t.costUsd, t.unpricedCalls)} now={t.costUsd} before={t.unpricedCalls || before.unpricedCalls ? undefined : before.costUsd} sub={`${tokens(total(t))} tokens over ${wholeNumber(t.calls)} ${t.calls === 1 ? 'call' : 'calls'}`} define={`Priced API spend of the last ${periodLabel}; ${wholeNumber(total(t))} tokens`} />
+          {@render limits()}
         </section>
 
         <section class="panel" aria-labelledby="usage-chart">
@@ -276,10 +272,9 @@
             </table>
           </div>
         </section>
-        {@render limits()}
       {/snippet}
     </StateView>
-    {#if !res.data || (!res.data.rows.length && !res.data.previous.length)}{@render limits()}{/if}
+    {#if month && (!res.data || (!res.data.rows.length && !res.data.previous.length))}<section class="stats stats-3" aria-label="Totals">{@render limits()}</section>{/if}
     {#if chatgptEnabled}<ChatGPTAllowances {slug} />{/if}
   </div>
 </main>

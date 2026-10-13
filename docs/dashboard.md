@@ -77,12 +77,12 @@ span before, by day or week:
 - failure rate, calculated as failed / (completed + failed), excluding
   canceled, capped, skipped and in-progress reviews.
 
-Reviews, median review time, API spend and failure rate lead the page.
-Choose a metric in **Review trends** to see reviews, findings by severity,
-failure rate, duration, tokens or API spend as a chart or table.
-**More metrics** expands the remaining totals. Buckets without completed
-reviews have no median; buckets without completed or failed reviews have
-no failure rate. Both are omitted from their respective charts.
+Six tiles lead the page: reviews, median review, time to merge, addressed,
+reactions and API spend, each with its related counts beneath. Choose a
+metric in **Review trends** to see reviews, findings by severity, failure
+rate, duration, tokens or API spend as a chart or table. Buckets without completed reviews have no median;
+buckets without completed or failed reviews have no failure rate. Both are
+omitted from their respective charts.
 
 Its **Findings** list has each finding once per pull request, however many
 reviews repeated it: addressed once a later review of the pull request, at
