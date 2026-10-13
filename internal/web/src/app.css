@@ -1436,8 +1436,14 @@
   table.audit .row-toggle {
     @apply h-7;
   }
+  /* An expanded row and its detail are one block: the detail's accent edge
+     runs up through the row, and a dotted line parts the two. */
   table.data .row-expanded > td {
-    @apply bg-surface border-b-transparent;
+    @apply bg-surface border-b-line border-dotted;
+  }
+  table.data .row-expanded > td:first-child {
+    @apply border-l-2 border-l-accent;
+    border-left-style: solid;
   }
   table.data .row-preview > td {
     @apply p-0 whitespace-normal;
