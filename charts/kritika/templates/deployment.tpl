@@ -89,6 +89,7 @@ spec:
           securityContext:
             {{- tpl (toYaml $.Values.securityContext) $ | nindent 12 }}
           {{- $serveEnv := include "kritika.serveEnv" $ | fromYamlArray }}
+          {{- $fileEnv := include "kritika.configEnv" ($configuration | fromYaml) | fromYaml }}
           env:
             {{- toYaml $serveEnv | nindent 12 }}
             {{- range $name, $value := $.Values.env }}
@@ -96,6 +97,9 @@ spec:
             {{- if eq .name $name }}
             {{- fail (printf "env.%s: the chart sets this variable from its other values" $name) }}
             {{- end }}
+            {{- end }}
+            {{- if and (not $.Values.existingConfigMap) (hasKey $fileEnv $name) }}
+            {{- fail (printf "env.%s conflicts with config.%s: use one source for each setting" $name (get $fileEnv $name)) }}
             {{- end }}
             - name: {{ $name }}
               {{- if kindIs "map" $value }}

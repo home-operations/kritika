@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +74,21 @@ func TestHelmConfiguration(t *testing.T) {
 	}
 	if c.RunnerRuntimeClass != "gvisor" || c.RunnerServiceAccount != "kritika-runner" || c.WebURL != "https://kritika.example.com" {
 		t.Fatalf("rendered process settings = %+v", c.Settings)
+	}
+}
+
+func TestHelmRejectsEmptyDurations(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is required to validate chart values")
+	}
+	for _, key := range []string{"pollInterval", "pollLookback", "leaderRetryInterval", "gatewayTokenTtl", "indexGrace", "transcriptRetention", "diffRetention"} {
+		t.Run(key, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
+				"--values", "../../charts/kritika/ci/lint-values.yaml", "--set-string", "config."+key+"=")
+			output, err := cmd.CombinedOutput()
+			if err == nil || !strings.Contains(string(output), "/config/"+key) || !strings.Contains(string(output), "minLength") {
+				t.Fatalf("helm template = %v\n%s", err, output)
+			}
+		})
 	}
 }

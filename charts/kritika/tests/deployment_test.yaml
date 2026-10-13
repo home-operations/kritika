@@ -417,3 +417,25 @@ tests:
           content:
             name: config
             configMap: { name: external-config }
+
+  - it: refuses env overriding a chart-owned file setting
+    set:
+      env.KRITIKA_ADDR: ":9"
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_ADDR conflicts with config.addr"
+
+  - it: refuses env duplicating an application file setting
+    set:
+      config.logLevel: debug
+      env.KRITIKA_LOG_LEVEL: debug
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_LOG_LEVEL conflicts with config.logLevel"
+
+  - it: refuses env duplicating a nested runner file setting
+    set:
+      env.KRITIKA_RUNNER_IMAGE: example.com/other:test
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_RUNNER_IMAGE conflicts with config.runner.image"

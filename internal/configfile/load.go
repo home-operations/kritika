@@ -91,6 +91,15 @@ func Parse(raw []byte) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parse(raw, settings)
+}
+
+// FromConfig uses the file snapshot and runtime settings already read by config.Load.
+func FromConfig(cfg *config.Config) (*File, error) {
+	return parse(cfg.FileData(), cfg.Settings)
+}
+
+func parse(raw []byte, settings config.Settings) (*File, error) {
 	var doc fileDoc
 	if len(bytes.TrimSpace(raw)) > 0 {
 		dec := yaml.NewDecoder(bytes.NewReader(raw))
@@ -108,7 +117,7 @@ func Parse(raw []byte) (*File, error) {
 		doc.Apps = map[string]Connection{}
 	}
 	if err := validateTools(doc.Settings.Tools); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configfile: KRITIKA_RUNNER_TOOLS: %w", err)
 	}
 	accounts, err := accountsOf(doc.Accounts, doc.Repositories)
 	if err != nil {
@@ -127,6 +136,9 @@ func Parse(raw []byte) (*File, error) {
 	}
 	slices.Sort(s.env)
 	f.secretEnv = s.env
+	if err := checkPolicyEnv(s.env); err != nil {
+		return nil, err
+	}
 	if err := f.Auth.validate(); err != nil {
 		return nil, err
 	}
@@ -317,24 +329,24 @@ func validateTools(tools []Tool) error {
 	for i, t := range tools {
 		where := fmt.Sprintf("runner.tools[%d]", i)
 		if !toolNameRe.MatchString(t.Name) {
-			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
+			return fmt.Errorf("%s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
 		}
 		if names[t.Name] {
-			return fmt.Errorf("configfile: %s.name %q is listed twice", where, t.Name)
+			return fmt.Errorf("%s.name %q is listed twice", where, t.Name)
 		}
 		names[t.Name] = true
 		if strings.TrimSpace(t.Image) == "" {
-			return fmt.Errorf("configfile: %s.image is required", where)
+			return fmt.Errorf("%s.image is required", where)
 		}
 		if t.Path != "" && (!path.IsAbs(t.Path) || path.Clean(t.Path) != t.Path) {
-			return fmt.Errorf("configfile: %s.path %q must be a clean absolute path inside the image", where, t.Path)
+			return fmt.Errorf("%s.path %q must be a clean absolute path inside the image", where, t.Path)
 		}
 		for _, c := range t.Provides() {
 			if !commandRe.MatchString(c) {
-				return fmt.Errorf("configfile: %s.commands %q must be a bare command name, not a path", where, c)
+				return fmt.Errorf("%s.commands %q must be a bare command name, not a path", where, c)
 			}
 			if other, dup := commands[c]; dup {
-				return fmt.Errorf("configfile: %s provides %q, which tool %q already provides", where, c, other)
+				return fmt.Errorf("%s provides %q, which tool %q already provides", where, c, other)
 			}
 			commands[c] = t.Name
 		}

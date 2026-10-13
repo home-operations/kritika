@@ -101,8 +101,8 @@ func TestTools(t *testing.T) {
 	for list, want := range refused {
 		t.Run(list, func(t *testing.T) {
 			t.Setenv("KRITIKA_RUNNER_TOOLS", "["+list+"]")
-			if _, err := Parse([]byte(minimal)); err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("Parse = %v, want an error containing %q", err, want)
+			if _, err := Parse([]byte(minimal)); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "KRITIKA_RUNNER_TOOLS") {
+				t.Fatalf("Parse = %v, want an error containing %q and KRITIKA_RUNNER_TOOLS", err, want)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -90,20 +91,73 @@ func TestApplyConfig(t *testing.T) {
 // TestLoadConfigRefusesNoSignIn: serve refuses a configuration that leaves
 // the dashboard no way to sign in.
 func TestLoadConfigRefusesNoSignIn(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "kritika.yaml")
-	if err := os.WriteFile(path, []byte("egress: { allow: [first.example] }\n"), 0o600); err != nil {
+	for _, tt := range []struct {
+		name, raw string
+		wantErr   bool
+	}{
+		{"no sign in", "egress: {allow: [first.example]}", true},
+		{"admin", "auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\negress: {allow: [first.example]}", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("KRITIKA_CONFIG_FILE", path)
+			t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
+			t.Setenv("TEST_ADMIN_PASSWORD", "pw")
+			cfg, err := config.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := loadConfig(cfg)
+			if tt.wantErr {
+				if !errors.Is(err, errNoSignIn) {
+					t.Fatalf("loadConfig = %v", err)
+				}
+			} else if err != nil || len(f.Egress.Allow) != 1 {
+				t.Fatalf("loadConfig = %+v, %v", f, err)
+			}
+		})
+	}
+}
+
+func TestConfigurationSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	raw := []byte("auth: {admin: {password: {env: TEST_ADMIN_PASSWORD}}}\nlogLevel: debug\npollInterval: 5m\n")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadConfig(path); !errors.Is(err, errNoSignIn) {
-		t.Fatalf("loadConfig = %v, want errNoSignIn", err)
-	}
+	t.Setenv("KRITIKA_CONFIG_FILE", path)
+	t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
 	t.Setenv("TEST_ADMIN_PASSWORD", "pw")
-	if err := os.WriteFile(path, []byte("auth: { admin: { password: { env: TEST_ADMIN_PASSWORD } } }\negress: { allow: [first.example] }\n"), 0o600); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := loadConfig(path)
-	if err != nil || len(f.Egress.Allow) != 1 {
-		t.Fatalf("loadConfig = %+v, %v", f, err)
+	if err := os.WriteFile(path, []byte("logLevel: error\npollInterval: 10m\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original, err := configfile.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KRITIKA_POLL_INTERVAL", "10m")
+	f, err := loadConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Run.LogLevel != cfg.LogLevel || f.Run.PollInterval != cfg.PollInterval {
+		t.Fatal("process and policy loader used different configuration snapshots")
+	}
+	if original.Hash() != f.Hash() {
+		t.Fatalf("snapshot hash changed: %v", err)
+	}
+}
+
+func TestChatGPTLoginRequiresConfigFile(t *testing.T) {
+	if _, err := validate(config.CommandChatGPTLogin, &config.Config{}); err == nil || !strings.Contains(err.Error(), "KRITIKA_CONFIG_FILE") {
+		t.Fatalf("validate = %v", err)
 	}
 }
 
@@ -137,5 +191,12 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 		if queue, ok := queues[name]; !ok || queue.MaxWorkers <= 0 {
 			t.Errorf("queue %q has no worker capacity", name)
 		}
+	}
+}
+
+func TestRunnerResourceErrorNamesBothSources(t *testing.T) {
+	_, err := newExecutor(t.Context(), &config.Config{}, map[string]any{"limits": map[string]any{"memory": "invalid"}}, slog.New(slog.DiscardHandler))
+	if err == nil || !strings.Contains(err.Error(), "runner.resources") || !strings.Contains(err.Error(), "KRITIKA_RUNNER_RESOURCES") {
+		t.Fatalf("newExecutor = %v", err)
 	}
 }

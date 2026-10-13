@@ -108,3 +108,46 @@ func TestSettingsTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestNullSettingsAreOmitted(t *testing.T) {
+	for _, doc := range []string{"pollInterval: null", "pollInterval:", "runner: null", "runner: {deadline: null}"} {
+		t.Run(doc, func(t *testing.T) {
+			t.Setenv("KRITIKA_POLL_INTERVAL", "5m")
+			t.Setenv("KRITIKA_RUNNER_DEADLINE", "20m")
+			s, err := LoadSettings([]byte(doc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s.PollInterval != 5*time.Minute || s.RunnerDeadline != 20*time.Minute || len(s.fileEnv) != 0 {
+				t.Fatalf("null changed settings or provenance: %+v", s)
+			}
+		})
+	}
+	s, err := LoadSettings([]byte("pollInterval: null\nrunner: {deadline: null}"))
+	if err != nil || s.PollInterval != 10*time.Minute || s.RunnerDeadline != 15*time.Minute || len(s.fileEnv) != 0 {
+		t.Fatalf("null changed defaults: %+v, %v", s, err)
+	}
+}
+
+func TestEnvFormatsStructuredFileSettings(t *testing.T) {
+	s, err := LoadSettings([]byte(`runner:
+  resources: {requests: {cpu: 10m}}
+  tools: [{name: flux, image: example.com/flux:test}]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Settings: s}
+	for _, e := range cfg.Env() {
+		switch e.Name {
+		case "KRITIKA_RUNNER_RESOURCES":
+			if e.Value != `{"requests":{"cpu":"10m"}}` || !e.File || e.Path != "runner.resources" {
+				t.Fatalf("resources = %+v", e)
+			}
+		case "KRITIKA_RUNNER_TOOLS":
+			if e.Value != `[{"name":"flux","image":"example.com/flux:test"}]` || !e.File || e.Path != "runner.tools" {
+				t.Fatalf("tools = %+v", e)
+			}
+		}
+	}
+}

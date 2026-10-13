@@ -23,6 +23,9 @@ func TestSettingsValidation(t *testing.T) {
 		{"negative polling", "pollInterval: -1ns", "pollInterval: KRITIKA_POLL_INTERVAL must not be negative"},
 		{"short retention", "diffRetention: 23h59m59.999999999s", "diffRetention: KRITIKA_DIFF_RETENTION must be at least 24h"},
 		{"long deadline", fmt.Sprintf("runner: {deadline: %s}", jobtimeout.MaxRunnerDeadline+time.Nanosecond), "runner.deadline: KRITIKA_RUNNER_DEADLINE must not exceed"},
+		{"empty public address", "addr: ''", "addr: KRITIKA_ADDR must be set"},
+		{"empty metrics address", "metricsAddr: ''", "metricsAddr: KRITIKA_METRICS_ADDR must be set"},
+		{"empty gateway address", "gatewayAddr: ''", "gatewayAddr: KRITIKA_GATEWAY_ADDR must be set"},
 		{"empty role", "databaseAppRole: ''", "databaseAppRole: KRITIKA_DATABASE_APP_ROLE must be set"},
 		{"same database roles", "databaseRunnerRole: kritika_app", "databaseRunnerRole: KRITIKA_DATABASE_RUNNER_ROLE must be distinct"},
 		{"unknown executor", "executor: docker", "executor: KRITIKA_EXECUTOR must be kubernetes or local"},
@@ -50,5 +53,31 @@ func TestSettingsValidationCollectsErrors(t *testing.T) {
 		if !strings.Contains(err.Error(), path) {
 			t.Errorf("missing %s in %v", path, err)
 		}
+	}
+}
+
+func TestValidationErrorsAreStable(t *testing.T) {
+	const doc = "reviewWorkers: 0\nlogLevel: loud\nrunner: {ttl: 0s}"
+	const want = "config: logLevel: KRITIKA_LOG_LEVEL must be debug, info, warn or error; reviewWorkers: KRITIKA_REVIEW_WORKERS must be positive; runner.ttl: KRITIKA_RUNNER_TTL must be positive"
+	for range 20 {
+		_, err := LoadSettings([]byte(doc))
+		if err == nil || err.Error() != want {
+			t.Fatalf("LoadSettings = %v, want %s", err, want)
+		}
+	}
+}
+
+func TestServeRequiresRunnerSecret(t *testing.T) {
+	for _, key := range []string{"databaseSecret", "databaseSecretKey"} {
+		t.Run(key, func(t *testing.T) {
+			s, err := LoadSettings([]byte("webUrl: https://example.com\ngatewayUrl: http://gateway:8082\nrunner: {image: runner:test, " + key + ": ''}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := Config{Settings: s, ConfigFile: "config.yaml"}
+			if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "runner."+key) {
+				t.Fatalf("ValidateServe = %v", err)
+			}
+		})
 	}
 }

@@ -4,8 +4,9 @@ kritika {{ .Chart.AppVersion }} is installed as {{ include "kritika.fullname" . 
 Application settings are read from {{ include "kritika.configMapName" . }}/config.yaml.
 Open the webUrl configured in that file to sign in.
 {{- else }}
-Open {{ .Values.config.webUrl }} to sign in.
-GitHub delivers each app's webhook to {{ .Values.config.webUrl | trimSuffix "/" }}/hooks/<app name>.
+{{- $config := include "kritika.configuration" . | fromYaml }}
+Open {{ $config.webUrl }} to sign in.
+GitHub delivers each app's webhook to {{ $config.webUrl | trimSuffix "/" }}/hooks/<app name>.
 {{- end }}
 Application settings come from config; runner Jobs and deployment settings come from the chart's other values.
 

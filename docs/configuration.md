@@ -2,7 +2,7 @@
 
 The YAML configuration file is the primary interface for application settings:
 sign-in, GitHub Apps, providers, review policy, logging, workers, polling and
-retention. `KRITIKA_CONFIG_FILE` names the file and is required by `serve`.
+retention. `KRITIKA_CONFIG_FILE` names the file and is required by `serve` and `chatgpt login`.
 Helm's `config` uses exactly that document structure and renders it into a
 ConfigMap.
 
@@ -30,7 +30,8 @@ ConfigMap.
 - **Application declarations and policy** use the file: `auth`, `apps`,
   `providers`, `embedding`, review policy, account and repository settings.
   Environment variables only supply values explicitly referenced by these
-  sections. There are no implicit env declarations or policy overrides.
+  sections. Unreferenced auth, app, provider and policy env variables fail startup with
+  migration guidance. `KRITIKA_REVIEW_WORKERS` remains an operational setting.
 - **Startup** reads and validates the document at startup; changes require
   a restart. Unknown keys and invalid values fail startup. Runtime validation
   reports all failing bounds together, with file paths and environment
@@ -63,7 +64,7 @@ These inputs have no configuration-file equivalent:
 
 | Variable | Purpose |
 | --- | --- |
-| `KRITIKA_CONFIG_FILE` | Configuration file path, required by `serve` |
+| `KRITIKA_CONFIG_FILE` | Configuration file path, required by `serve` and `chatgpt login` |
 | `KRITIKA_DATABASE_URL` | Application DSN for `serve`; runner DSN for `run` |
 | `KRITIKA_DATABASE_OWNER_URL` | Owner DSN for migrations and leader work |
 | `KRITIKA_RUNNER_DATABASE_URL` | Runner DSN for the local executor |
@@ -89,6 +90,8 @@ Move `config.runnerRuntimeClass` to `runner.runtimeClass` and
 Move automatic auth, app, provider and policy env configuration into the file;
 those env names no longer configure the application implicitly. Existing secret
 variable names can still be used in explicit `{ env: NAME }` references.
+Remove old empty-string duration placeholders such as `config.pollInterval: ""`;
+omit the key to use its default. The chart rejects empty duration strings.
 Operational env settings remain supported. Remove their corresponding variables
 from `env` or `envFrom` when moving them into the file, to avoid duplicates.
 

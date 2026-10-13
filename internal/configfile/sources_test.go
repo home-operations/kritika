@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,35 +44,26 @@ runner:
 	}
 }
 
-func TestEnvironmentDoesNotDeclarePolicy(t *testing.T) {
-	setInstanceEnv(t)
-	for name, value := range map[string]string{
-		"KRITIKA_AUTH_ADMIN_PASSWORD": "secret", "KRITIKA_AUTH_SESSION_TTL": "1h",
-		"KRITIKA_APPS_NAME": "other", "KRITIKA_PROVIDERS_TYPE": "anthropic",
-		"KRITIKA_REVIEW_APPROVE": "true", "KRITIKA_REVIEW_MODEL": "unknown/model",
-		"KRITIKA_CONFIDENCE_THRESHOLD": "0", "KRITIKA_TRIGGER_LIMIT": "5", "KRITIKA_EMBEDDING_DIMS": "16",
+func TestPolicyEnvironmentRequiresMigration(t *testing.T) {
+	for _, name := range []string{
+		"KRITIKA_AUTH_SESSION_TTL", "KRITIKA_APPS_NAME", "KRITIKA_PROVIDERS_TYPE",
+		"KRITIKA_REVIEW_APPROVE", "KRITIKA_CONFIDENCE_GATE", "KRITIKA_TRIGGER_LIMIT", "KRITIKA_EMBEDDING_DIMS",
 	} {
-		t.Setenv(name, value)
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, "private-value")
+			_, err := Parse(nil)
+			if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "configuration file") || strings.Contains(err.Error(), "private-value") {
+				t.Fatalf("Parse = %v", err)
+			}
+		})
 	}
-	empty := mustLoad(t, "")
-	if empty.Auth.Configured() || len(empty.Connections) != 0 || len(empty.Providers) != 0 || empty.Embedding != nil || empty.Defaults.Review.Model != nil {
-		t.Fatal("environment declared application configuration")
-	}
-	t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
-	f := mustLoad(t, fileWithDefaults)
-	if f.Run.ReviewWorkers != 5 {
-		t.Fatal("operational environment setting not applied")
-	}
-	if f.Auth.Configured() || len(f.Connections) != 1 || len(f.Providers) != 1 || f.Embedding.Dims != 8 || f.Defaults.Review.Approve != nil || f.Defaults.Trigger.Limit != nil {
-		t.Fatal("environment changed file settings")
-	}
-	if f.FileLayer().Review.Value != "openrouter/big" {
-		t.Fatal("environment changed model")
-	}
-	// A variable is still available when explicitly referenced by the file.
-	f = mustLoad(t, fileWithDefaults+"auth: {admin: {password: {env: KRITIKA_AUTH_ADMIN_PASSWORD}}}\n")
-	_, password, ok := f.Auth.AdminUser()
-	if !ok || password.Value() != "secret" {
-		t.Fatal("explicit secret reference not resolved")
-	}
+	t.Run("explicit secret and operational env", func(t *testing.T) {
+		t.Setenv("KRITIKA_AUTH_ADMIN_PASSWORD", "secret")
+		t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
+		f := mustLoad(t, "auth: {admin: {password: {env: KRITIKA_AUTH_ADMIN_PASSWORD}}}\n")
+		_, password, ok := f.Auth.AdminUser()
+		if !ok || password.Value() != "secret" || f.Run.ReviewWorkers != 5 {
+			t.Fatal("referenced secret or operational env was not applied")
+		}
+	})
 }

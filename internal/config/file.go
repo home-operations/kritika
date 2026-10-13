@@ -40,25 +40,36 @@ func (s *Settings) ReadFile(raw []byte) error {
 	if err := yaml.Unmarshal(raw, &fields); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
-	s.fileEnv = map[string]bool{}
-	if err := checkSources(reflect.TypeFor[Settings](), fields, "", s.fileEnv); err != nil {
+	runtime := map[string]any{}
+	for f := range reflect.TypeFor[Settings]().Fields() {
+		key, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if value, ok := fields[key]; ok && value != nil {
+			runtime[key] = value
+		}
+	}
+	fromFile := map[string]bool{}
+	if err := checkSources(reflect.TypeFor[Settings](), runtime, "", fromFile); err != nil {
 		return err
 	}
 	k := koanf.New(".")
 	if err := k.Load(structs.Provider(*s, "yaml"), nil); err != nil {
 		return fmt.Errorf("config: defaults and environment: %w", err)
 	}
-	if err := k.Load(confmap.Provider(fields, ""), nil); err != nil {
+	if err := k.Load(confmap.Provider(runtime, ""), nil); err != nil {
 		return fmt.Errorf("config: file: %w", err)
 	}
-	if err := k.UnmarshalWithConf("", s, koanf.UnmarshalConf{
+	var merged Settings
+	if err := k.UnmarshalWithConf("", &merged, koanf.UnmarshalConf{
 		Tag: "yaml",
 		DecoderConfig: &mapstructure.DecoderConfig{
-			DecodeHook: durationHook,
+			DecodeHook:  durationHook,
+			ErrorUnused: true,
 		},
 	}); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	merged.fileEnv = fromFile
+	*s = merged
 	return nil
 }
 
@@ -73,6 +84,11 @@ func durationHook(from, to reflect.Type, value any) (any, error) {
 }
 
 func checkSources(typ reflect.Type, fields map[string]any, prefix string, fromFile map[string]bool) error {
+	for key, value := range fields {
+		if value == nil {
+			delete(fields, key)
+		}
+	}
 	for f := range typ.Fields() {
 		key, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		value, set := fields[key]

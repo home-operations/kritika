@@ -237,3 +237,19 @@ an `env` key that would duplicate one of them.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* Environment names corresponding to operational settings present in the file. */}}
+{{- define "kritika.configEnv" -}}
+{{- $names := dict -}}
+{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
+{{- if and (hasKey $ $key) (ne (get $ $key) nil) -}}
+{{- $_ := set $names (printf "KRITIKA_%s" ($key | snakecase | upper)) $key -}}
+{{- end -}}
+{{- end -}}
+{{- range $key, $value := (get . "runner" | default dict) -}}
+{{- if ne $value nil -}}
+{{- $_ := set $names (printf "KRITIKA_RUNNER_%s" ($key | snakecase | upper)) (printf "runner.%s" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $names -}}
+{{- end -}}

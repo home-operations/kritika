@@ -441,7 +441,11 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		} else if e.File {
 			source = configfile.SourceFile
 		}
-		add("environment", e.Name, withoutCredentials(e.Value), source)
+		section, key := "environment", e.Name
+		if e.File {
+			section, key = "file", e.Path
+		}
+		add(section, key, withoutCredentials(e.Value), source)
 	}
 	for _, in := range f.Connections {
 		source := configfile.SourceFile

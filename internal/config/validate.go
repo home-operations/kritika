@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,7 +30,7 @@ func (s Settings) Validate() error {
 	v.AddRule("LogLevel", "enum", []string{"debug", "info", "warn", "warning", "error"})
 	v.AddRule("LogFormat", "enum", []string{"json", "text"})
 	v.AddRule("Executor", "enum", []string{string(ExecutorKubernetes), string(ExecutorLocal)})
-	v.AddRule("DatabaseAppRole,DatabaseRunnerRole", "required")
+	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole,DatabaseRunnerRole", "required")
 	v.AddRule("DatabaseRunnerRole", "neField", "DatabaseAppRole")
 	v.WithMessages(map[string]string{
 		"gt":  "{field} must be positive",
@@ -55,10 +57,7 @@ func (s Settings) Validate() error {
 		labels[f.Name] = path + ": " + name
 	}
 	v.WithTranslates(labels)
-	if err := v.ValidateErr(); err != nil {
-		return fmt.Errorf("config: %w", err)
-	}
-	return nil
+	return validationError(v)
 }
 
 // ValidateServe checks what serve needs beyond the common set.
@@ -68,7 +67,7 @@ func (c *Config) ValidateServe() error {
 	v.SkipOnEmpty = false
 	v.AddRule("ConfigFile,WebURL,GatewayURL", "required")
 	// Executor is a named string type; requiredIf compares it to a plain string.
-	v.AddRule("RunnerImage", "required").SetBeforeFunc(func(*validate.Validation) bool {
+	v.AddRule("RunnerImage,RunnerDatabaseSecret,RunnerDatabaseSecretKey", "required").SetBeforeFunc(func(*validate.Validation) bool {
 		return c.Executor == ExecutorKubernetes
 	})
 	v.AddRule("RunnerDatabaseURL", "required").SetBeforeFunc(func(*validate.Validation) bool {
@@ -76,12 +75,14 @@ func (c *Config) ValidateServe() error {
 	})
 	v.AddRule("RunnerImagePullPolicy", "enum", []string{"", "Always", "IfNotPresent", "Never"})
 	v.WithTranslates(map[string]string{
-		"ConfigFile":            "KRITIKA_CONFIG_FILE",
-		"WebURL":                "webUrl: KRITIKA_WEB_URL",
-		"GatewayURL":            "gatewayUrl: KRITIKA_GATEWAY_URL",
-		"RunnerImage":           "runner.image: KRITIKA_RUNNER_IMAGE",
-		"RunnerDatabaseURL":     "KRITIKA_RUNNER_DATABASE_URL",
-		"RunnerImagePullPolicy": "runner.imagePullPolicy: KRITIKA_RUNNER_IMAGE_PULL_POLICY",
+		"ConfigFile":              "KRITIKA_CONFIG_FILE",
+		"WebURL":                  "webUrl: KRITIKA_WEB_URL",
+		"GatewayURL":              "gatewayUrl: KRITIKA_GATEWAY_URL",
+		"RunnerImage":             "runner.image: KRITIKA_RUNNER_IMAGE",
+		"RunnerDatabaseSecret":    "runner.databaseSecret: KRITIKA_RUNNER_DATABASE_SECRET",
+		"RunnerDatabaseSecretKey": "runner.databaseSecretKey: KRITIKA_RUNNER_DATABASE_SECRET_KEY",
+		"RunnerDatabaseURL":       "KRITIKA_RUNNER_DATABASE_URL",
+		"RunnerImagePullPolicy":   "runner.imagePullPolicy: KRITIKA_RUNNER_IMAGE_PULL_POLICY",
 	})
 	v.WithMessages(map[string]string{
 		"required":                   "{field} is required to serve",
@@ -89,8 +90,19 @@ func (c *Config) ValidateServe() error {
 		"RunnerDatabaseURL.required": "{field} is required with the local executor",
 		"enum":                       "{field} must be Always, IfNotPresent or Never when set",
 	})
-	if err := v.ValidateErr(); err != nil {
-		return fmt.Errorf("config: %w", err)
+	return validationError(v)
+}
+
+func validationError(v *validate.Validation) error {
+	if v.Validate() {
+		return nil
 	}
-	return nil
+	var messages []string
+	for _, rules := range v.Errors {
+		for _, message := range rules {
+			messages = append(messages, message)
+		}
+	}
+	slices.Sort(messages)
+	return fmt.Errorf("config: %w", errors.New(strings.Join(messages, "; ")))
 }

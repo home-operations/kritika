@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -67,7 +68,7 @@ const (
 type Config struct {
 	Settings
 
-	// ConfigFile is the application configuration path, required by serve.
+	// ConfigFile is the application configuration path, required by serve and chatgpt login.
 	// Changes take effect after a restart.
 	ConfigFile string `env:"KRITIKA_CONFIG_FILE"`
 
@@ -101,7 +102,12 @@ type Config struct {
 	// DatabaseToken authenticates this run to its database rows; it has no default.
 	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
 	webURL        *url.URL
+	// fileData is the startup snapshot shared with the policy loader.
+	fileData []byte
 }
+
+// FileData returns the configuration bytes read by Load. Treat the snapshot as read-only.
+func (c *Config) FileData() []byte { return c.fileData }
 
 // ValidateRunner checks what a runner pod needs. The job document itself is
 // decoded and validated by the runner package.
@@ -135,13 +141,13 @@ func (c *Config) parseWebURL() error {
 	trimmed := strings.TrimSuffix(c.WebURL, "/")
 	u, err := url.Parse(trimmed)
 	if err != nil {
-		return fmt.Errorf("config: KRITIKA_WEB_URL: %w", err)
+		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("config: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
+		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("config: KRITIKA_WEB_URL must not have a query or fragment, got %q", c.WebURL)
+		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must not have a query or fragment, got %q", c.WebURL)
 	}
 	c.WebURL = trimmed
 	c.webURL = u
@@ -156,11 +162,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	if cfg.ConfigFile != "" {
-		raw, err := os.ReadFile(cfg.ConfigFile)
+		cfg.fileData, err = os.ReadFile(cfg.ConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("config: %w", err)
 		}
-		if err := cfg.ReadFile(raw); err != nil {
+		if err := cfg.ReadFile(cfg.fileData); err != nil {
 			return nil, err
 		}
 	}
@@ -176,7 +182,7 @@ func (c *Config) validate() error {
 	}
 	if c.GatewayURL != "" {
 		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
-			return fmt.Errorf("config: KRITIKA_GATEWAY_URL: %w", err)
+			return fmt.Errorf("config: gatewayUrl: KRITIKA_GATEWAY_URL: %w", err)
 		}
 	}
 	if err := c.parseWebURL(); err != nil {
@@ -197,15 +203,17 @@ func (c *Config) Level() (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return 0, fmt.Errorf("config: KRITIKA_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
+		return 0, fmt.Errorf("config: logLevel: KRITIKA_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
 	}
 }
 
 // EnvVar is one environment variable Config reads, as this process has it.
 // A secret, one the process unsets once read, shows only whether it is
-// set. Set identifies environment values; File identifies file values.
+// set. Set identifies environment values; File identifies file values, with
+// Path naming their YAML key.
 type EnvVar struct {
 	Name   string
+	Path   string
 	Value  string
 	Secret bool
 	Set    bool
@@ -217,11 +225,16 @@ type EnvVar struct {
 // is set when its field holds a value.
 func (c *Config) Env() []EnvVar {
 	var out []EnvVar
-	var visit func(reflect.Value)
-	visit = func(v reflect.Value) {
+	var visit func(reflect.Value, string)
+	visit = func(v reflect.Value, prefix string) {
 		for i := range v.NumField() {
+			key, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("yaml"), ",")
 			if v.Type().Field(i).Anonymous {
-				visit(v.Field(i))
+				nested := prefix
+				if key != "" {
+					nested += key + "."
+				}
+				visit(v.Field(i), nested)
 				continue
 			}
 			name, opts, _ := strings.Cut(v.Type().Field(i).Tag.Get("env"), ",")
@@ -230,6 +243,9 @@ func (c *Config) Env() []EnvVar {
 			}
 			e := EnvVar{Name: name, Secret: slices.Contains(strings.Split(opts, ","), "unset")}
 			e.File = c.fileEnv[name]
+			if e.File {
+				e.Path = prefix + key
+			}
 			field := v.Field(i)
 			if e.Secret {
 				e.Set, e.Value = !field.IsZero(), "not set"
@@ -238,11 +254,21 @@ func (c *Config) Env() []EnvVar {
 				}
 			} else {
 				_, e.Set = os.LookupEnv(name)
-				e.Value = fmt.Sprint(field.Interface())
+				switch value := field.Interface().(type) {
+				case jsonObject, toolList:
+					raw, err := json.Marshal(value)
+					if err != nil {
+						e.Value = "invalid JSON: " + err.Error()
+					} else {
+						e.Value = string(raw)
+					}
+				default:
+					e.Value = fmt.Sprint(value)
+				}
 			}
 			out = append(out, e)
 		}
 	}
-	visit(reflect.ValueOf(c).Elem())
+	visit(reflect.ValueOf(c).Elem(), "")
 	return out
 }

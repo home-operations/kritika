@@ -45,23 +45,23 @@ strategy:
 #   metricsAddr: { type: string }
 #   gatewayAddr: { type: string }
 #   gatewayUrl: { type: string }
-#   gatewayTokenTtl: { type: string }
+#   gatewayTokenTtl: { type: string, minLength: 1 }
 #   webUrl: { type: string }
 #   databaseAppRole: { type: string }
 #   databaseRunnerRole: { type: string }
-#   leaderRetryInterval: { type: string }
+#   leaderRetryInterval: { type: string, minLength: 1 }
 #   reviewWorkers: { type: integer }
 #   indexWorkers: { type: integer }
 #   threadWorkers: { type: integer }
 #   executor: { type: string }
 #   logLevel: { type: string }
 #   logFormat: { type: string }
-#   pollInterval: { type: string }
-#   pollLookback: { type: string }
+#   pollInterval: { type: string, minLength: 1 }
+#   pollLookback: { type: string, minLength: 1 }
 #   onboardWindow: { type: integer }
-#   indexGrace: { type: string }
-#   transcriptRetention: { type: string }
-#   diffRetention: { type: string }
+#   indexGrace: { type: string, minLength: 1 }
+#   transcriptRetention: { type: string, minLength: 1 }
+#   diffRetention: { type: string, minLength: 1 }
 #   auth: { type: object }
 #   apps: { type: object }
 #   providers: { type: object }

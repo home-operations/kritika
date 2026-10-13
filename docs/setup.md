@@ -118,8 +118,8 @@ review:
 
 Add `embedding` to index each repository for similar code, `repositories`
 entries for an account's or a repository's own settings and rules, and
-`accounts` for an account's limits ([configuration](configuration.md)). The
-App can come from the environment instead ([`apps`](configuration.md#apps)).
+`accounts` for an account's limits ([configuration](configuration.md)). App
+credentials use explicit environment references in [`apps`](configuration.md#apps).
 
 The file lives in git with the rest of the deployment. kritika reads it at
 startup, and the chart rolls the pods when `config` changes. A changed

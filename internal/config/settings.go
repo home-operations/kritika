@@ -107,7 +107,9 @@ type Settings struct {
 	// findings stay.
 	DiffRetention time.Duration `env:"KRITIKA_DIFF_RETENTION" envDefault:"720h" yaml:"diffRetention,omitempty"`
 
-	Runner  `yaml:"runner,omitempty"`
+	// Runner groups the runtime settings used to create runner Jobs.
+	Runner `yaml:"runner,omitempty"`
+	// fileEnv records file-supplied settings by env name for Env's source reporting.
 	fileEnv map[string]bool
 }
 

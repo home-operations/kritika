@@ -196,7 +196,7 @@ func TestHashAndConnectionLookup(t *testing.T) {
 		t.Fatalf("hash = %q", f.Hash())
 	}
 	// Only the file and explicit secret references affect the hash.
-	t.Setenv("KRITIKA_TRIGGER_SETTLE", "90s")
+	t.Setenv("UNUSED_SETTING", "90s")
 	if g, err := load(t, fixture(t)); err != nil || g.Hash() != f.Hash() {
 		t.Fatalf("hash changed by an unused variable: %v", err)
 	}

@@ -140,7 +140,7 @@ func run() (err error) {
 	var file *configfile.File
 	var public *server.Switch
 	if command == config.CommandServe {
-		if file, err = loadConfig(cfg.ConfigFile); err != nil {
+		if file, err = loadConfig(cfg); err != nil {
 			return err
 		}
 		public = server.NewSwitch(server.Starting())
@@ -256,10 +256,9 @@ func serve(
 // in, which serve refuses to start with.
 var errNoSignIn = errors.New("the dashboard has no way to sign in: configure auth in the configuration file")
 
-// loadConfig reads the configuration file at path, none when path is "",
-// for serve: it is read once, and a change takes a restart.
-func loadConfig(path string) (*configfile.File, error) {
-	f, err := configfile.Load(path)
+// loadConfig validates policy from the same startup snapshot as the process settings.
+func loadConfig(cfg *config.Config) (*configfile.File, error) {
+	f, err := configfile.FromConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -384,6 +383,9 @@ const (
 // reads a runner's spec.
 func validate(command config.Command, cfg *config.Config) (runner.Spec, error) {
 	if command == config.CommandChatGPTLogin {
+		if cfg.ConfigFile == "" {
+			return runner.Spec{}, errors.New("config: KRITIKA_CONFIG_FILE is required for chatgpt login")
+		}
 		return runner.Spec{}, nil
 	}
 	if command == config.CommandServe {
@@ -480,7 +482,7 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 // rather than failing every Job.
 func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]any, logger *slog.Logger) (executor.Executor, error) {
 	if err := executor.CheckResources(resources); err != nil {
-		return nil, fmt.Errorf("runner.resources: %w", err)
+		return nil, fmt.Errorf("runner.resources: KRITIKA_RUNNER_RESOURCES: %w", err)
 	}
 	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
