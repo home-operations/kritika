@@ -225,8 +225,9 @@ type Defaults struct {
 // add up by id. The keys are the ones a .kritika.yaml takes too, at the
 // same level, with the admin's own beside them.
 type Overrides struct {
-	// Enabled is where a repository starts, on or off, until an admin turns
-	// it on or off in the dashboard. A repository entry may not set it.
+	// Enabled is the default for existing or explicitly configured repositories
+	// without a dashboard choice. New forge discoveries wait for UI enablement.
+	// A repository entry may not set it.
 	Enabled    *bool          `yaml:"enabled,omitempty"`
 	Review     ReviewSpec     `yaml:"review,omitempty"`
 	Confidence ConfidenceSpec `yaml:"confidence,omitempty"`
@@ -476,8 +477,8 @@ type Connection struct {
 func (i *Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 
 // Repository carries per-repository overrides, the configuration's
-// owner/name entry for it. Everything a connection grants access to is
-// watched whether or not it has one.
+// owner/name entry for it. Other repositories the connection reaches are
+// discovered but wait for dashboard enablement.
 type Repository struct {
 	// Name is the repository's name under its account, without the owner.
 	Name string `yaml:"-"`
@@ -491,8 +492,8 @@ type Repository struct {
 
 // RepoTraits is what kritika knows of a repository beyond its name: what the
 // forge says of it, that an archived repository is read-only and a fork a
-// copy of another one, and whether an admin turned it on or off from the
-// dashboard, nil until one does.
+// copy of another one, and its dashboard enablement. Newly discovered
+// repositories start turned off; nil uses the configuration's default.
 type RepoTraits struct {
 	Archived, Fork bool
 	TurnedOn       *bool

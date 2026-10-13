@@ -95,8 +95,9 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 
 // Runs reports whether repository fullName of account a, known as t, is
 // reviewed, polled and indexed. An archived repository never is: it is
-// read-only until unarchived. One an admin turned on or off runs as they
-// chose. A fork does not otherwise, since an account can reach many forks
+// read-only until unarchived. A newly discovered repository stays off until
+// enabled in the dashboard, whose choice takes precedence. A fork does not
+// otherwise run, since an account can reach many forks
 // it never meant kritika to spend on. Any other repository runs as its
 // settings say.
 func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {

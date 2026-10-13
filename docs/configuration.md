@@ -273,7 +273,7 @@ describes, and these, which are the admin's alone:
 | `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. The summary of the last one says so, and `@<app slug> review` and `resume` still work ([commands](reviews.md#commands)) |
 | `agent`                   | the bounds of a review's tool loop ([the agent](#the-agent))                                                                                                                                                                                                                        |
 | `limits`                  | at the root alone: every account's limits ([`accounts`](#accounts))                                                                                                                                                                                                                 |
-| `enabled`                 | at the root and `owner/*` only: where repositories start ([which repositories run](#which-repositories-run)). A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off                                                                      |
+| `enabled`                 | at the root and `owner/*` only: the default for existing or explicitly listed repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
 
 ### Precedence
 
@@ -526,20 +526,30 @@ configuration is applied and again on every poll, and "Resync from GitHub"
 on the Repositories page does the same at once. Each also disables the
 repositories the App no longer reaches, such as one deleted, renamed or
 transferred on GitHub, unless the configuration lists them; a listing that
-fails or comes back empty disables nothing. Whether one runs is decided in
-this order:
+fails or comes back empty disables nothing. Newly discovered repositories
+start **off**, even when the root or `owner/*` sets `enabled: true`. Turn
+them on from the Repositories page to begin polling, indexing and reviews.
+Resyncs and webhooks preserve that choice. Existing repositories keep their
+current state. Explicit configuration entries use its defaults unless an
+admin has made a choice in the UI, even if discovery registered the
+repository first. A rename webhook within the same account preserves
+enablement. A transfer to another account requires that account's admin to
+enable the repository. If a rename webhook is missed, a sync cannot link
+the old and new names, so the new name waits for enablement.
+Whether one runs is decided in this order:
 
 1. an archived repository never runs: unarchive it on GitHub, then
-   resync;
-2. one an admin turned on or off on the Repositories page runs as they
-   chose;
+   resync, then turn it on in the UI if it is off;
+2. a newly discovered repository stays off until an admin turns it on;
+   one an admin turned on or off on the Repositories page runs as they chose;
 3. a fork does not run, since an account can reach many forks it never
    meant to review;
 4. any other runs as `enabled` says, at the root or `owner/*`: on unless
    one sets `enabled: false`.
 
 An `owner/name` entry may not set `enabled`: the dashboard owns a
-repository's on or off, and the configuration only says where one starts.
+repository's on or off. The root and `owner/*` defaults apply only to
+existing or explicitly listed repositories without a dashboard choice.
 A repository that is off, that the App no longer reaches, or whose account
 no App serves is neither reviewed, polled nor indexed. Its index is
 dropped once it has been off for `KRITIKA_INDEX_GRACE`, counted from the

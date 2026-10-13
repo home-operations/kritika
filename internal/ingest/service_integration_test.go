@@ -32,6 +32,8 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML+`repositories:
   onedr0p/*: { trigger: { exclude: [{ name: drafts, expr: pr.draft }] } }
+  onedr0p/home-ops: {}
+  onedr0p/polled: {}
   onedr0p/settle: { trigger: { settle: 60s } }
   onedr0p/opened-only: { trigger: { include: [{ expr: 'pr.event == "opened"' }] } }
   onedr0p/labelled: { trigger: { exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }] } }
@@ -675,13 +677,18 @@ func TestDispatchInstallation(t *testing.T) {
 			t.Fatalf("Dispatch = %+v, %v; want recorded for added", out, err)
 		}
 		var newEnabled bool
-		var turnedOn *bool
-		_ = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			if err := tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/new-repo'`).Scan(&newEnabled); err != nil {
+		var newTurnedOn, turnedOn *bool
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `SELECT enabled, turned_on FROM repositories WHERE name = 'onedr0p/new-repo'`).Scan(&newEnabled, &newTurnedOn); err != nil {
 				return err
 			}
 			return tx.QueryRow(ctx, `SELECT turned_on FROM repositories WHERE name = 'onedr0p/disabled'`).Scan(&turnedOn)
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if newTurnedOn == nil || *newTurnedOn {
+			t.Fatal("new repository should wait for dashboard enablement")
+		}
 		if !newEnabled || turnedOn == nil || *turnedOn {
 			t.Fatalf("new=%v turned on=%v; the App reaching a repository an admin turned off must not turn it on", newEnabled, turnedOn)
 		}

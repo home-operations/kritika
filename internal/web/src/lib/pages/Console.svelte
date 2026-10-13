@@ -45,9 +45,9 @@
                   <th scope="col">Account</th>
                   <th scope="col">App</th>
                   <th scope="col">State</th>
-                  <th scope="col" class="num">Repos</th>
+                  <th scope="col" class="num wrap">Enabled repos</th>
                   <th scope="col" class="num">Reviews 7d</th>
-                  <th scope="col" class="num">Tokens (month)</th>
+                  <th scope="col" class="num wrap">Tokens (month)</th>
                   <th scope="col" class="num wrap">API spend (month)</th>
                 </tr>
               </thead>

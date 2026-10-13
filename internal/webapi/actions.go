@@ -153,8 +153,8 @@ func (s *Server) reindex(w http.ResponseWriter, r *http.Request, t *accountScope
 }
 
 // turnOn records an admin's choice to review a repository or not, which the
-// dashboard owns. It queues nothing: the repository runs, or stops, from
-// its next event on.
+// dashboard owns. The next poll catches up its open pull requests after
+// enablement, and the onboarding feeder can offer its first index.
 func (s *Server) turnOn(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	var req TurnOnRequest
 	if err := readBody(r, &req); err != nil {

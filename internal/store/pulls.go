@@ -245,11 +245,12 @@ func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, reposit
 type PollRepo struct {
 	Name, DefaultBranch, IndexedCommit string
 	Traits                             configfile.RepoTraits
+	TurnedAt                           *time.Time
 }
 
 // PollRepositories lists the account's enabled repositories, by name.
 func PollRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
-	rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork, r.turned_on
+	rows, err := tx.Query(ctx, `SELECT r.name, r.default_branch, coalesce(g.commit_sha, ''), r.archived, r.fork, r.turned_on, r.turned_at
 		FROM repositories r LEFT JOIN index_runs g ON g.id = r.active_index_run_id
 		WHERE r.enabled ORDER BY r.name`)
 	if err != nil {
@@ -257,7 +258,7 @@ func PollRepositories(ctx context.Context, tx pgx.Tx) ([]PollRepo, error) {
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (PollRepo, error) {
 		var r PollRepo
-		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn)
+		err := row.Scan(&r.Name, &r.DefaultBranch, &r.IndexedCommit, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn, &r.TurnedAt)
 		return r, err
 	})
 	if err != nil {

@@ -228,7 +228,7 @@ func (s *Store) OnboardCandidates(
 			SELECT r.id, r.account_id, r.name, r.archived, r.fork, r.turned_on, r.created_at,
 				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
 			FROM repositories r
-			WHERE r.enabled AND r.active_index_run_id IS NULL
+			WHERE r.enabled AND r.turned_on IS DISTINCT FROM false AND r.active_index_run_id IS NULL
 			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text)
 			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
 			                  AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)
