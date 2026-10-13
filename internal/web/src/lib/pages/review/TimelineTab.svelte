@@ -77,7 +77,7 @@
         </tbody>
       </table>
     </div>
-    <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+    <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
       <dt>Job</dt><dd class="mono">{r.jobName || '—'}</dd>
       <dt>Pod</dt><dd class="mono">{r.podName || '—'}</dd>
       <dt>Node</dt><dd class="mono">{r.nodeName || '—'}</dd>
@@ -88,7 +88,7 @@
     </dl>
   </section>
 {:else}
-  <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No runner was used for this review.</p>
+  <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No runner was used for this review.</p>
 {/if}
 
 {#if d.agentRun}
@@ -122,7 +122,7 @@
         </table>
       </div>
     {/if}
-    <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
+    <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">
       <dt>Model</dt><dd class="mono">{a.model}</dd>
       {#if a.carriedReviewId}
         <dt>Conversation</dt>

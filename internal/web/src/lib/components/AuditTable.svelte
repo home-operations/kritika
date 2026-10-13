@@ -5,7 +5,8 @@
   import StateView from './StateView.svelte';
   import LoadMore from './LoadMore.svelte';
   import Time from './Time.svelte';
-  import Collapsible from './Collapsible.svelte';
+  import RowToggle from './RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
 
   let { path, showAccount = false }: { path: string; showAccount?: boolean } = $props();
 
@@ -18,6 +19,8 @@
   });
 
   const hasDetail = (e: AuditEvent) => Object.keys(e.detail ?? {}).length > 0;
+  const tableId = $props.id();
+  let expanded = $state<Record<string, boolean>>({});
 </script>
 
 <StateView res={paged.first} retry={() => paged.load()} isEmpty={(p) => p.items.length === 0} empty="No audit events yet.">
@@ -30,25 +33,29 @@
           <th scope="col">Actor</th>
           <th scope="col">Action</th>
           <th scope="col">Target</th>
-          <th scope="col">Detail</th>
+          <th scope="col" class="relative"><span class="sr-only">Detail</span></th>
         </tr>
       </thead>
       <tbody>
         {#each paged.items as e (e.id)}
-          <tr>
+          {@const previewId = `${tableId}-${e.id}`}
+          <tr class:row-toggles={hasDetail(e)} class:row-expanded={expanded[e.id]} onclick={(ev) => { if (hasDetail(e) && rowToggles(ev)) expanded[e.id] = !expanded[e.id]; }}>
             <td><Time iso={e.at} /></td>
             {#if showAccount}<td class="mono">{e.account || '—'}</td>{/if}
             <td>{e.actor?.displayName ?? 'system'}</td>
             <td class="mono">{e.action}</td>
             <td class="mono">{e.target}</td>
-            <td>
-              {#if hasDetail(e)}
-                <Collapsible title="detail">
-                  <pre class="detail-json m-0 font-code text-ui-xs whitespace-pre-wrap [word-break:break-word]">{JSON.stringify(e.detail, null, 2)}</pre>
-                </Collapsible>
-              {:else}<span class="muted">—</span>{/if}
+            <td class="row-toggle-cell">
+              {#if hasDetail(e)}<RowToggle bind:open={expanded[e.id]} label={`Detail of ${e.action} on ${e.target}`} controls={previewId} />{/if}
             </td>
           </tr>
+          {#if expanded[e.id]}
+            <tr class="row-preview"><td colspan={5 + Number(showAccount)}>
+              <div class="row-preview-body" id={previewId} role="region" aria-label={`Detail of ${e.action} on ${e.target}`}>
+                <pre class="detail-json m-0 font-code text-ui-xs whitespace-pre-wrap [word-break:break-word]">{JSON.stringify(e.detail, null, 2)}</pre>
+              </div>
+            </td></tr>
+          {/if}
         {/each}
       </tbody>
     </table>

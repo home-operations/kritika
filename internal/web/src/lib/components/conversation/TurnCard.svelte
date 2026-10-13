@@ -13,8 +13,8 @@
   const u = $derived(turn.usage);
 </script>
 
-<article class="turn bg-panel border border-solid border-line rounded-lg flex flex-col gap-2 pb-2.5 min-w-0" class:turn-error={!!turn.error} aria-labelledby="turn-{turn.id}">
-  <header class="turn-head flex flex-wrap items-center gap-y-1.5 gap-x-2.5 py-[7px] px-3 border-b border-solid border-b-line bg-surface rounded-[var(--radius-lg)_var(--radius-lg)_0_0]">
+<article class="turn bg-panel border border-solid border-line rounded-lg flex flex-col gap-2 pb-3 min-w-0" class:turn-error={!!turn.error} aria-labelledby="turn-{turn.id}">
+  <header class="turn-head flex flex-wrap items-center gap-y-1.5 gap-x-2.5 py-2 px-4 border-b border-solid border-b-line bg-surface rounded-[var(--radius-lg)_var(--radius-lg)_0_0]">
     <svelte:element this={heading} id="turn-{turn.id}" class="turn-title m-0 text-ui-md">#{turn.index}</svelte:element>
     <span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">{turn.kind.replace('_', ' ')}{turn.kind === 'agent_step' ? ` ${turn.step}` : ''}</span>
     <span class="mono small text-ui-sm">{turn.model}</span>

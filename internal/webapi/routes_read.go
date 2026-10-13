@@ -31,6 +31,8 @@ func (s *Server) registerReads(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/accounts", s.handler(s.listAccounts))
 	mux.HandleFunc("GET /api/v1/pulls", s.handler(s.listInstancePulls))
 	mux.HandleFunc("GET /api/v1/queue", s.handler(s.listInstanceQueue))
+	mux.HandleFunc("GET /api/v1/analytics", s.handler(s.getInstanceAnalytics))
+	mux.HandleFunc("GET /api/v1/usage", s.handler(s.getInstanceUsage))
 	mux.HandleFunc("GET /api/v1/admin/accounts", s.admin(s.listAdminAccounts))
 	mux.HandleFunc("GET /api/v1/admin/instance", s.admin(s.listInstanceSettings))
 	mux.HandleFunc("GET /api/v1/accounts/{forge}/{name}", s.account(s.getAccount))

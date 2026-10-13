@@ -2,6 +2,7 @@
   import { queueFilter, type QueueFilter } from '../routes';
   import { replace } from '../router.svelte';
   import PageHeader from '../components/PageHeader.svelte';
+  import QueueHelp from '../components/QueueHelp.svelte';
   // The queue of every account the viewer can read, and the model slots
   // each account's running reviews hold, which is why a job of it waits.
   import { href } from '../router.svelte';
@@ -26,14 +27,15 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Queue" description="Jobs across all your accounts." />
+    <PageHeader title="Queue">{#snippet actions()}<QueueHelp />{/snippet}</PageHeader>
     <StateView {res} retry={() => res.load()}>
       {#snippet children(q)}
+        <JobTable {filter} onfilter={(f) => replace({ name: 'instanceQueue', filter: queueFilter({ ...f }) })} ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
         {#if q.slots.length}
           <section class="panel" aria-labelledby="iq-slots">
             <header class="panel-head">
               <h2 id="iq-slots">Model slots</h2>
-              <span class="small muted text-ui-sm">A review waits while every slot of its account's model is busy.</span>
+              <span class="small muted text-ui-sm">Reviews wait when all model slots are busy.</span>
             </header>
             <div class="table-wrap overflow-x-auto max-w-full">
               <table class="data">
@@ -56,7 +58,7 @@
             </div>
           </section>
         {/if}
-        <JobTable {filter} onfilter={(f) => replace({ name: 'instanceQueue', filter: queueFilter({ ...f }) })} ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
+
       {/snippet}
     </StateView>
   </div>

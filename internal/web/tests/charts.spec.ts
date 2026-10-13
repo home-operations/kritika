@@ -11,7 +11,8 @@ for (const width of [1280, 390]) {
     ];
     await g.mockApi(page, [[/\/analytics$/, { ...g.analytics, series }], ...g.defaultApi()]);
     await page.goto(`/#/a/${g.SLUG}/analytics`);
-    const panel = page.getByRole('region', { name: 'Findings by severity' });
+    await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
+    const panel = page.getByRole('region', { name: 'Review trends' });
     const chart = panel.getByRole('img');
     const columns = chart.locator('.chart-col');
     await expect(columns).toHaveCount(3);
@@ -72,7 +73,8 @@ test('sparse stacks share a baseline and only separate visible neighbors', async
   const series = values.map((findings, i) => ({ ...g.analytics.series[0]!, key: `2026-09-0${i + 1}`, findings }));
   await g.mockApi(page, [[/\/analytics$/, { ...g.analytics, series }], ...g.defaultApi()]);
   await page.goto(`/#/a/${g.SLUG}/analytics`);
-  const columns = page.getByRole('region', { name: 'Findings by severity' }).locator('.chart-col');
+  await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
+  const columns = page.getByRole('region', { name: 'Review trends' }).locator('.chart-col');
   await expect(columns).toHaveCount(4);
   const reference = (await columns.first().boundingBox())!;
   for (const column of await columns.all()) {

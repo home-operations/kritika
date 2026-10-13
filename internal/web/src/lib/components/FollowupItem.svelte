@@ -8,6 +8,8 @@
   import Pill from './Pill.svelte';
   import Time from './Time.svelte';
   import FollowupTranscript from './FollowupTranscript.svelte';
+  import RowToggle from './RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
 
   let { slug, f, showPull = false }: { slug: string; f: Followup; showPull?: boolean } = $props();
   let open = $state(false);
@@ -19,7 +21,10 @@
   const answered = $derived((f.inline && f.status !== 'limited' ? threadUrl : commentUrl)(f.pullUrl, f.replyCommentId));
 </script>
 
-<li class="followup border-b border-solid border-b-line py-2 px-3 flex flex-col gap-1">
+<!-- The chevron is the keyboard's toggle; the card's whitespace is the pointer's, as in the tables. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<li class="followup row-toggles border-b border-solid border-b-line py-3 px-4 flex flex-col gap-1 cursor-pointer" onclick={(e) => { if (rowToggles(e) && !(e.target as Element).closest('.followup-transcript')) open = !open; }}>
   <div class="followup-head flex flex-wrap items-center gap-y-1.5 gap-x-2.5">
     <Pill tone={followupTone[f.status]} label={f.status} />
     <span><strong>{f.author}</strong> asked</span>
@@ -30,9 +35,7 @@
     {#if f.model}<span class="mono small muted text-ui-sm">{f.model}</span>{/if}
     <Time iso={f.createdAt} />
     <span class="spacer flex-auto"></span>
-    <button class="btn btn-small" aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
-      {open ? 'Hide transcript' : 'Transcript'}
-    </button>
+    <RowToggle bind:open label={`Transcript of ${f.author}'s question`} controls={id} />
   </div>
   {#if f.reason}<p class="small muted followup-reason text-ui-sm">{f.reason}</p>{/if}
   <p class="small followup-links text-ui-sm flex flex-wrap gap-y-1 gap-x-3.5 m-0">
@@ -44,6 +47,6 @@
     {/if}
   </p>
   {#if open}
-    <div {id} class="followup-transcript mt-1.5"><FollowupTranscript {slug} commentId={f.commentId} /></div>
+    <div {id} class="followup-transcript mt-1.5" role="region" aria-label={`Transcript of ${f.author}'s question`}><FollowupTranscript {slug} commentId={f.commentId} /></div>
   {/if}
 </li>

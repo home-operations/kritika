@@ -52,12 +52,14 @@
 /* Light and dark share semantic utilities; changing the root class swaps their tokens. */
 :root,
 .light {
+  color-scheme: light;
   --bg: #f5f6f8;
   --panel: #ffffff;
   --panel-alt: #f0f2f5;
   --border: #dce0e6;
   --text: #1b2130;
   --muted: #555c6a;
+  --select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23555c6a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
   --accent: #2447b8;
   --on-accent: #ffffff;
   --mark: #f5df4d;
@@ -80,12 +82,14 @@
   --chart-sev-p2: #a5acb8;
 }
 .dark {
+  color-scheme: dark;
   --bg: #131922;
   --panel: #1a202b;
   --panel-alt: #212835;
   --border: #2f3846;
   --text: #e4e7ec;
   --muted: #9aa2af;
+  --select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa2af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
   --accent: #8fa6ff;
   --on-accent: #131922;
   --mark: #6b5a10;
@@ -115,6 +119,73 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+/* The live dot breathes a ring while the stream is up and blinks while it
+   reconnects; neither moves for a reader who asked for less motion. */
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+/* A review pass over the name: a cursor sweeps left to right and each
+   letter it reaches flashes the accent and lifts, then settles. */
+@keyframes review-sweep {
+  0% {
+    left: 0;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% - 2px);
+    opacity: 0;
+  }
+}
+/* While the name takes its pass, the glass peeks and the lens rereads. */
+@keyframes logo-peek {
+  0% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-12deg) translateY(-1px);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes line-read {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+@keyframes letter-review {
+  0% {
+    transform: translateY(0);
+    color: var(--text);
+  }
+  25% {
+    transform: translateY(-3px);
+    color: var(--accent);
+  }
+  100% {
+    transform: translateY(0);
+    color: var(--text);
+  }
+}
+@keyframes live-blink {
+  50% {
+    opacity: 0.25;
   }
 }
 :root {
@@ -150,8 +221,93 @@
 }
 /* Shared component defaults yield to explicit utility overrides. */
 @layer components {
+  input[type="checkbox"] {
+    @apply appearance-none inline-grid place-content-center shrink-0 size-[18px] m-0 p-0 align-middle rounded-sm border border-solid border-muted bg-panel text-on-accent cursor-pointer;
+    transition: background-color 120ms, border-color 120ms;
+  }
+  input[type="checkbox"]::before {
+    content: "";
+    @apply w-[5px] h-[9px] border-r-2 border-b-2 border-solid border-current rotate-45 -translate-y-px invisible;
+  }
+  input[type="checkbox"]:checked {
+    @apply bg-accent border-accent;
+  }
+  input[type="checkbox"]:checked::before {
+    @apply visible;
+  }
+  input[type="checkbox"]:enabled:hover {
+    @apply border-accent;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  input[type="checkbox"]:focus-visible {
+    @apply [outline:2px_solid_var(--accent)] outline-offset-2;
+  }
+  input[type="checkbox"]:disabled {
+    @apply opacity-60 cursor-default;
+  }
+  @media (forced-colors: active) {
+    input[type="checkbox"] {
+      @apply appearance-auto;
+    }
+    input[type="checkbox"]::before {
+      @apply hidden;
+    }
+  }
+
   .btn {
     @apply border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5;
+  }
+  /* Every text field and select looks the same wherever it sits. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    @apply border border-solid border-line rounded-md bg-panel text-ink font-ui text-ui-md py-1.5 px-2.5 min-w-0;
+  }
+  /* The arrow is drawn here so it keeps the same 10px from the edge the
+     text keeps; the native one sits flush against the border. */
+  select {
+    @apply appearance-none pr-8 cursor-pointer bg-no-repeat;
+    background-image: var(--select-arrow);
+    background-position: right 10px center;
+    background-size: 12px 12px;
+  }
+  option {
+    @apply bg-panel text-ink;
+  }
+  /* Where the browser lets a select's list be styled, it looks like the
+     app's own menus; elsewhere the native list keeps the theme's colours. */
+  @supports selector(::picker(select)) {
+    select,
+    select::picker(select) {
+      appearance: base-select;
+    }
+    select::picker-icon {
+      @apply hidden;
+    }
+    select::picker(select) {
+      @apply mt-1 p-1 bg-panel text-ink border border-solid border-line rounded-lg shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)];
+    }
+    option {
+      @apply flex items-center gap-2 py-1.5 px-2.5 rounded-sm text-ui-md cursor-pointer;
+    }
+    option:hover,
+    option:focus-visible {
+      @apply bg-surface [outline:none];
+    }
+    option:checked {
+      @apply font-semibold;
+    }
+    option::checkmark {
+      @apply text-accent;
+    }
+  }
+  @media (forced-colors: active) {
+    select {
+      @apply appearance-auto pr-2.5 bg-none;
+    }
+  }
+  input::placeholder {
+    @apply text-muted opacity-100;
   }
 
   .btn-primary {
@@ -176,6 +332,16 @@
 
   .panel-head {
     @apply flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3;
+  }
+  button,
+  [role="button"],
+  summary,
+  .btn,
+  a.skip-link,
+  a.badge,
+  a.sev-chip,
+  a.pill {
+    @apply no-underline;
   }
   .btn:hover {
     @apply border-accent;
@@ -233,7 +399,7 @@
     @apply text-ink no-underline;
   }
   .section-tab.active {
-    @apply text-ink font-semibold [border-bottom-color:var(--edge)] shadow-[inset_2px_0_var(--accent)];
+    @apply text-ink font-semibold;
     background: color-mix(in srgb, var(--accent) 8%, var(--panel));
   }
   .section-label::after,
@@ -248,9 +414,6 @@
   }
   .account-button > span {
     @apply overflow-hidden text-ellipsis whitespace-nowrap;
-  }
-  .account-button:hover {
-    @apply bg-panel;
   }
   .account-button .icon {
     @apply text-muted;
@@ -271,6 +434,39 @@
     --live: var(--warn);
     @apply text-warning;
   }
+  .wordmark {
+    @apply relative;
+  }
+  .wordmark::after {
+    content: "";
+    @apply absolute top-[0.12em] bottom-[0.12em] left-0 w-0.5 rounded-[1px] bg-accent opacity-0 pointer-events-none;
+  }
+  .wordmark.playing::after {
+    animation: review-sweep 440ms linear both;
+  }
+  .wordmark.playing .letter {
+    animation: letter-review 480ms cubic-bezier(0.33, 1, 0.68, 1) both;
+    animation-delay: calc(var(--i) * 55ms);
+  }
+  .logo {
+    @apply origin-[42%_42%];
+  }
+  .logo .line {
+    @apply origin-left;
+  }
+  .brand:has(.wordmark.playing) .logo {
+    animation: logo-peek 560ms cubic-bezier(0.33, 1, 0.68, 1) both;
+  }
+  .brand:has(.wordmark.playing) .logo .line {
+    animation: line-read 260ms ease-out both;
+    animation-delay: calc(90ms + var(--i) * 80ms);
+  }
+  .live-dot {
+    animation: live-pulse 2.4s ease-out infinite;
+  }
+  .live-down .live-dot {
+    animation: live-blink 1s ease-in-out infinite;
+  }
   .signin-card h1 {
     @apply mt-1 mx-0 mb-0 text-[length:24px] font-extrabold tracking-[-0.01em];
   }
@@ -283,6 +479,13 @@
     .spinner {
       @apply [animation-duration:2.4s];
     }
+    .live-dot,
+    .wordmark .letter,
+    .wordmark::after,
+    .logo,
+    .logo .line {
+      @apply [animation:none]!;
+    }
   }
   @media (max-width: 640px) {
     .btn-icon {
@@ -293,12 +496,6 @@
     .keys-button {
       @apply hidden;
     }
-  }
-  .subnav-group:first-child {
-    @apply mt-0;
-  }
-  .subnav-part:hover {
-    @apply text-ink bg-panel no-underline;
   }
   .page-head h1 {
     @apply m-0 text-[length:clamp(24px,_2vw,_28px)] font-bold tracking-[-0.025em] [word-break:break-word];
@@ -403,16 +600,17 @@
   .panel > .phase-bar,
   .panel > .plain-list,
   .panel > .deflist {
-    @apply my-2.5 mx-3;
+    @apply my-3 mx-4;
   }
   .panel-head h2 {
     @apply m-0 text-[length:16px] font-[650];
   }
-  a.tile {
-    @apply text-inherit no-underline;
+  /* A section inside a collapsible: a heading row without a second border. */
+  .subpanel-head {
+    @apply flex items-center justify-between flex-wrap gap-3 py-2 px-4;
   }
-  a.tile:hover {
-    @apply bg-surface;
+  .subpanel-head h3 {
+    @apply m-0 text-ui-md font-[650];
   }
   .meter {
     @apply h-1.5 rounded-[3px] bg-surface overflow-hidden;
@@ -437,7 +635,16 @@
   }
   table.data th,
   table.data td {
-    @apply text-left py-1.5 px-2.5 border-b border-solid border-b-line [vertical-align:middle] whitespace-nowrap;
+    @apply text-left py-2.5 px-3 border-b border-solid border-b-line [vertical-align:middle] whitespace-nowrap;
+  }
+  /* The first and last columns meet the card's 16px gutter. */
+  table.data th:first-child,
+  table.data td:first-child {
+    @apply pl-4;
+  }
+  table.data th:last-child,
+  table.data td:last-child {
+    @apply pr-4;
   }
   table.data td.error-cell {
     @apply whitespace-normal;
@@ -455,8 +662,14 @@
   table.data .num {
     @apply text-right tabular-nums;
   }
-  table.data tbody tr:hover {
+  :where(table.data, table.md-table) > tbody > tr {
+    @apply bg-panel;
+  }
+  :where(table.data, table.md-table) > tbody > tr:nth-child(even of :not(.row-preview)) {
     @apply bg-surface;
+  }
+  :where(table.data, table.md-table) > tbody > tr:not(.row-preview):hover {
+    background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   }
   .table-card table.data tbody tr:last-child td {
     @apply border-b-0;
@@ -486,15 +699,10 @@
     @apply shadow-[inset_3px_0_0_var(--edge)];
   }
   table.data td.pull-main {
-    @apply w-full max-w-0 min-w-60 pt-2 pb-2;
+    @apply w-full max-w-0 min-w-60;
   }
   .lifecycle {
     @apply inline-flex text-[var(--tone)];
-  }
-  @media (pointer: coarse) {
-    .key-hints {
-      @apply hidden;
-    }
   }
   table.data td.finding-main {
     @apply w-full max-w-0 min-w-65 pt-2 pb-2;
@@ -536,12 +744,8 @@
     @apply [outline:2px_solid_var(--accent)] [outline-offset:2px];
   }
   .search-box input,
-  .select select,
   .zone-picker input {
-    @apply w-full border border-solid border-line rounded-md bg-panel text-ink py-1.5 px-2.5 [font:inherit];
-  }
-  .search-box input::placeholder {
-    @apply text-muted opacity-100;
+    @apply w-full;
   }
   .select select {
     @apply w-auto max-w-55 cursor-pointer;
@@ -600,7 +804,7 @@
     @apply inline-flex items-center gap-1.5;
   }
   .finding {
-    @apply bg-panel border border-solid border-line rounded-lg py-4.5 px-5 flex flex-col gap-3 font-ui whitespace-normal;
+    @apply bg-panel border border-solid border-line rounded-lg p-4 flex flex-col gap-3 font-ui whitespace-normal;
   }
   .finding:focus {
     @apply [outline:2px_solid_var(--accent)] [outline-offset:2px];
@@ -667,7 +871,7 @@
     @apply font-code text-ui-sm bg-surface rounded-[3px] py-0 px-1;
   }
   .code-block pre {
-    @apply m-0 py-2 px-2.5 text-ui-sm leading-[1.5] whitespace-pre-wrap [word-break:break-word] overflow-x-auto;
+    @apply m-0 py-2.5 px-3 text-ui-sm leading-[1.5] whitespace-pre-wrap [word-break:break-word] overflow-x-auto;
   }
   .code-block.plain {
     @apply bg-transparent border-0 relative;
@@ -691,11 +895,11 @@
   .tone-danger-edge {
     border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
   }
-  .collapsible-head:hover {
+  .collapsible-row:hover {
     @apply bg-surface;
   }
   .turn > :not(.turn-head) {
-    @apply my-0 mx-3;
+    @apply my-0 mx-4;
   }
   .turn-error {
     @apply shadow-[inset_3px_0_0_var(--danger)];
@@ -766,22 +970,28 @@
   .chart-tooltip {
     @apply z-[var(--z-tip)];
   }
-  .stats.stats-4 {
-    @apply grid-cols-4;
+  /* A group of stats is one bordered panel; the 1px gap over the border
+     colour draws a hairline between tiles however the grid wraps. */
+  .stats {
+    @apply grid gap-px bg-line border border-solid border-line rounded-lg overflow-hidden min-w-0;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
   .stats.stats-3 {
-    @apply grid-cols-3;
+    @apply grid-cols-3 max-[800px]:grid-cols-1;
   }
-  @media (max-width: 900px) {
-    .stats.stats-4 {
-      @apply grid-cols-2;
-    }
+  /* Four tiles: 4, 2 or 1 columns by the container's width, so no row is
+     left short with blank cells. */
+  .stats.stats-4 {
+    @apply grid-cols-4 @max-[760px]:grid-cols-2 @max-[420px]:grid-cols-1;
   }
-  @media (max-width: 480px) {
-    .stats.stats-4,
-    .stats.stats-3 {
-      @apply grid-cols-1;
-    }
+  .stat {
+    @apply flex flex-col gap-1 min-w-0 py-3 px-4 bg-panel text-inherit no-underline;
+  }
+  a.stat:hover {
+    @apply bg-surface no-underline;
+  }
+  .stat-hint {
+    @apply text-ui-md;
   }
   .delta {
     @apply py-[1px] px-1.5 rounded-sm text-ui-xs font-[650] tabular-nums text-[var(--tone)];
@@ -803,12 +1013,6 @@
     @apply bg-accent;
   }
   @media (max-width: 640px) {
-    .subnav {
-      @apply flex-none flex-row items-center overflow-x-auto py-1.5 px-2.5 border-r-0 border-b border-solid border-b-line;
-    }
-    .subnav-group {
-      @apply my-0 mx-1.5;
-    }
     .row {
       @apply flex-wrap;
     }
@@ -847,11 +1051,6 @@
   .field > span:first-child {
     @apply text-muted;
   }
-  .field input,
-  .field select,
-  .field textarea {
-    @apply border border-solid border-line rounded-md bg-panel text-ink py-1.5 px-2 text-ui-md min-w-0;
-  }
   .field textarea {
     @apply font-code text-ui-sm resize-y;
   }
@@ -860,28 +1059,11 @@
   .field textarea:disabled {
     @apply opacity-65;
   }
-  .field input:focus-visible,
-  .field select:focus-visible,
-  .field textarea:focus-visible {
-    @apply [outline:2px_solid_var(--accent)] [outline-offset:-2px];
-  }
   .invalid input,
   .invalid select,
   .invalid textarea,
   [aria-invalid="true"] {
     @apply border-danger!;
-  }
-  table.audit .collapsible {
-    @apply border-0 bg-transparent bg-none;
-  }
-  table.audit .collapsible-head {
-    @apply w-auto p-0 gap-1;
-  }
-  table.audit .collapsible-head:hover {
-    @apply bg-transparent bg-none underline;
-  }
-  table.audit .collapsible-body {
-    @apply pt-1.5 px-0 pb-0.5 border-t-0;
   }
   .checklist li {
     @apply flex items-start gap-2;
@@ -889,27 +1071,23 @@
   .checklist li.done .check-mark {
     @apply text-success;
   }
-  .topbar .actions {
-    @apply mt-auto pt-7 flex-wrap gap-2;
-  }
   .topbar .live {
     @apply w-full py-2 px-1;
   }
   .topbar .live .sr-only {
     @apply static w-auto h-auto [clip:auto] [clip-path:none];
   }
-  .actions > button:has(.search-label) {
-    @apply w-full justify-start;
+  .workspace-bar .actions {
+    @apply ml-auto;
+  }
+  .workspace-bar .actions > button:has(.search-label) {
+    @apply w-60 justify-start;
   }
   .actions kbd {
     @apply ml-auto;
   }
   .skip-link:focus {
     @apply top-3;
-  }
-  .attention-list > .panel-head,
-  .running-list > .panel-head {
-    @apply pt-3 px-0 pb-4.5 bg-transparent bg-none;
   }
   .attention-item:hover {
     @apply bg-surface no-underline;
@@ -923,31 +1101,33 @@
   .attention-item .mono {
     @apply block mt-[5px] wrap-anywhere;
   }
-  .overview-totals .tile {
-    @apply bg-transparent bg-none border-0 shadow-none p-3;
+  .overview-attention > .attention-item {
+    @apply grid grid-cols-[140px_minmax(0,_1fr)_auto] items-center gap-4 py-3 px-4 border-t border-solid border-line text-ink;
   }
-  .overview-totals .tile-value {
-    @apply text-[length:23px];
+  .overview-attention > .panel-head + .attention-item {
+    @apply border-t-0;
+  }
+  @media (max-width: 800px) {
+    .overview-attention > .attention-item {
+      @apply grid-cols-[minmax(0,_1fr)] gap-1.5;
+    }
   }
   table.pull-table td {
-    @apply pt-[15px] pb-[15px];
+    @apply py-3;
   }
   .pull-table td.num {
     @apply text-muted text-ui-sm;
   }
   .finding,
   .panel-body > .md,
-  .review-conclusion > .md {
+  .review-conclusion .collapsible-body > .md {
     @apply text-[length:15px] leading-[1.65];
-  }
-  .review-conclusion h2 {
-    @apply text-[length:18px] mt-0 mx-0 mb-2.5;
   }
   .merge-impact > strong {
     @apply block mb-1.5;
   }
   .finding-nav h2 {
-    @apply text-[length:16px] py-4.5 px-4 m-0 border-b border-solid border-b-line;
+    @apply text-[length:16px] py-3 px-4 m-0 border-b border-solid border-b-line;
   }
   .finding-jump:hover,
   .file-jump:hover {
@@ -992,32 +1172,27 @@
     .brand {
       @apply m-0;
     }
+    .brand .logo {
+      @apply w-[22px] h-[22px];
+    }
     .wordmark {
       @apply hidden;
     }
     .account-button {
-      @apply w-auto max-w-50 m-0;
+      @apply max-w-50;
     }
     .topbar .actions {
-      @apply mt-0 mr-0 mb-0 ml-auto p-0 gap-1 flex-nowrap;
-    }
-    .actions > button:has(.search-label) {
-      @apply w-auto;
+      @apply ml-auto gap-1 flex-nowrap;
     }
     .search-label {
       @apply hidden;
     }
-    .topbar .live {
+    .topbar .live,
+    .topbar .topbar-about {
       @apply hidden;
     }
     .topbar .live-down {
       @apply flex w-full py-2 px-3;
-    }
-    .overview-work {
-      @apply grid-cols-1;
-    }
-    .running-list {
-      @apply border-l-0 pl-0;
     }
     .review-workspace {
       @apply grid-cols-1;
@@ -1033,6 +1208,18 @@
     }
     .pull-table thead {
       @apply hidden;
+    }
+    .pull-table thead:has(.pick) {
+      @apply block;
+    }
+    .pull-table thead th:not(.pick) {
+      @apply hidden;
+    }
+    table.pull-table thead th.pick {
+      @apply block w-auto p-0 border-0 bg-transparent;
+    }
+    table.pull-table thead th.pick .pick-label {
+      @apply static w-auto h-auto m-0 overflow-visible whitespace-normal [clip:auto] [clip-path:none] text-ui-sm;
     }
     .pull-table,
     .pull-table tbody {
@@ -1092,24 +1279,11 @@
   table.account-breakdown th {
     @apply pl-2 pr-2;
   }
-  .account-breakdown td:not(.name-fill):not(.name-clip) {
-    @apply whitespace-normal;
-  }
-  .topbar .subnav {
-    @apply flex-none py-3 px-0 border-0 overflow-visible;
-  }
-  .topbar .subnav-group {
-    @apply hidden;
-  }
   .review-tab[hidden] {
     @apply hidden;
   }
-  .file-filters input[type="search"],
-  .queue-search input {
-    @apply min-w-0 w-full py-2 px-2.5 border border-solid border-line rounded-md bg-panel text-ink;
-  }
-  .file-filters input::placeholder {
-    @apply text-muted;
+  .file-filters input[type="search"] {
+    @apply w-full;
   }
   .file-filters .toggle {
     @apply flex items-center gap-2;
@@ -1119,12 +1293,6 @@
   }
   .mobile-nav-panel .workspace-heading {
     @apply block;
-  }
-  .mobile-nav-panel .section-tab.active {
-    @apply shadow-[inset_2px_0_var(--accent)];
-  }
-  .mobile-nav-panel .subnav {
-    @apply flex-col overflow-visible p-0 border-0;
   }
   @media (max-width: 800px) {
     .desktop-navigation {
@@ -1141,10 +1309,14 @@
     }
   }
   .drill-link:hover {
-    @apply underline;
+    @apply text-ink;
   }
   .queue-actions:empty {
     @apply hidden;
+  }
+  .page:has(.queue-table) {
+    /* Polling must not anchor the viewport to a replaced row. */
+    overflow-anchor: none;
   }
   .queue-table td {
     @apply [vertical-align:top];
@@ -1171,21 +1343,46 @@
     .queue-table td::before {
       @apply [content:attr(data-label)] block text-[length:11px] text-muted mb-1;
     }
-    .queue-search,
-    .queue-search input {
-      @apply w-full;
-    }
-    .queue-search {
+  }
+  @media (max-width: 600px) {
+    .panel-head {
       @apply flex-wrap;
     }
-  }
-  @media (min-width: 801px) {
-    .queue-error:has(details[open]) {
-      @apply min-w-65;
+    .panel-head .segmented {
+      @apply flex-nowrap;
     }
-  }
-  .panel:has(#an-operations) > .toolbar {
-    @apply py-0 px-4;
+    .finding-table,
+    .finding-table tbody {
+      @apply block;
+    }
+    .finding-table thead {
+      @apply sr-only;
+    }
+    .finding-table tr {
+      @apply grid grid-cols-2 gap-x-3 p-3 border-b border-solid border-b-line;
+    }
+    .finding-table tr:last-child {
+      @apply border-b-0;
+    }
+    table.data.finding-table td {
+      @apply block min-w-0 max-w-none w-auto border-0 px-0 whitespace-normal text-left;
+    }
+    .finding-table .finding-main,
+    .finding-table .finding-pull {
+      @apply col-span-2;
+    }
+    .finding-table .finding-sub {
+      @apply max-w-none wrap-anywhere;
+    }
+    .review-navigation {
+      @apply flex-wrap overflow-visible;
+    }
+    .run-details-picker {
+      @apply w-full pl-0 py-2;
+    }
+    .run-details-picker select {
+      @apply w-full;
+    }
   }
   .page-title-row h1 {
     @apply flex-1 min-w-50;
@@ -1208,51 +1405,102 @@
   .help-popover p:last-child {
     @apply mb-0;
   }
-  .filter-select select {
-    @apply pt-1.5 pr-7 pb-1.5 pl-2.5 bg-panel border border-solid border-line rounded-md text-ink;
-  }
-  .queue-caption .btn {
-    @apply py-[3px] px-2;
-  }
   .usage-drilldown .btn {
     @apply py-[3px] px-2 bg-transparent border-transparent text-accent;
   }
-  .limits-strip > div {
-    @apply flex flex-col gap-1;
+  .row-toggle {
+    @apply w-9 h-9 p-0 justify-center;
   }
-  .limits-strip strong {
-    @apply text-ui-sm tabular-nums;
+  table.data .row-toggle-cell {
+    @apply w-12 text-right align-middle;
   }
-  .limits-strip .meter {
-    @apply mt-1;
+  table.data tr.row-toggles {
+    @apply cursor-pointer;
   }
-  .job-details summary {
-    @apply cursor-pointer text-muted text-ui-sm;
+  /* Only some audit rows have detail; the toggle must not make theirs taller. */
+  table.audit .row-toggle-cell {
+    @apply py-0;
   }
-  .job-details[open] summary {
-    @apply mb-3;
+  table.audit .row-toggle {
+    @apply h-7;
   }
-  .job-details dl {
-    @apply grid grid-cols-[auto_1fr] gap-y-1.5 gap-x-3.5 mt-0 mx-0 mb-3 text-ui-sm;
+  table.data .row-expanded > td {
+    @apply bg-surface border-b-transparent;
   }
-  .job-details dt {
+  /* A dotted line parts an expanded row from its detail. */
+  table.data .row-preview > td {
+    @apply p-0 whitespace-normal border-t border-dotted border-t-line;
+  }
+  /* Every table's expanded row shares one compact body of one height; a
+     body with more to say grows, a short one does not shrink. */
+  .row-preview-body {
+    @apply py-3 px-4 min-h-40 bg-surface border-l-2 border-solid border-accent text-ui-sm leading-[1.45] wrap-anywhere;
+  }
+  .row-preview-body > .md,
+  .row-preview-body p {
+    @apply m-0;
+  }
+  .row-preview-grid {
+    @apply grid gap-x-6 gap-y-2;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  }
+  .preview-heading {
+    @apply mt-0 mb-1 text-ui-xs font-semibold uppercase tracking-[0.04em] text-muted;
+  }
+  .preview-summary .md {
+    @apply line-clamp-2;
+  }
+  .preview-summary .md > :first-child {
+    @apply mt-0;
+  }
+  .preview-summary .md > :last-child {
+    @apply mb-0;
+  }
+  .preview-findings {
+    @apply list-none m-0 p-0 grid gap-1;
+  }
+  .preview-findings li {
+    @apply flex items-start gap-2;
+  }
+  .preview-facts {
+    @apply grid grid-cols-[auto_1fr] gap-y-0.5 gap-x-3.5 m-0 text-ui-sm;
+  }
+  /* Many short facts read in two columns where there is room. */
+  .preview-facts-wide {
+    @apply min-[700px]:grid-cols-[auto_max-content_auto_max-content] justify-start gap-x-5;
+  }
+  .preview-actions {
+    @apply mt-2;
+  }
+  .preview-facts dt {
     @apply text-muted;
   }
-  .job-details dd {
-    @apply m-0 whitespace-normal;
+  .preview-facts dd {
+    @apply m-0 whitespace-normal min-w-0;
   }
-  .job-details .error-text {
-    @apply whitespace-pre-wrap;
+  @media (max-width: 800px) {
+    table.pull-table tr.row-preview,
+    table.queue-table tr.row-preview {
+      @apply block p-0;
+    }
+    table.pull-table .row-preview > td,
+    table.queue-table .row-preview > td {
+      @apply w-full p-0;
+    }
+    table.queue-table .row-preview > td::before,
+    table.queue-table .row-toggle-cell::before {
+      @apply hidden;
+    }
+    table.pull-table .row-toggle-cell {
+      @apply ml-auto;
+    }
   }
   @media (min-width: 801px) {
     .queue-table td {
-      @apply pt-3.5 pb-3.5;
+      @apply py-3;
     }
   }
   @media (max-width: 600px) {
-    .limits-strip {
-      @apply grid-cols-[1fr] gap-3;
-    }
     .job-error-summary {
       @apply max-w-full whitespace-normal;
     }
@@ -1272,10 +1520,6 @@
   .skeleton-row:last-child {
     @apply border-b-0;
   }
-  .overview-totals .tile,
-  .account-activity .tile {
-    @apply min-h-32;
-  }
   .workspace-actions > *,
   .run-picker select {
     @apply max-w-full min-w-0;
@@ -1283,20 +1527,20 @@
   .run-picker select {
     @apply w-72.5;
   }
-  .review-signals .meta-line {
-    @apply m-0;
+  .run-details-picker.active select {
+    @apply border-accent;
+  }
+  table.review-findings .finding-summary-cell {
+    @apply w-full max-w-0 whitespace-normal wrap-anywhere min-w-40;
+  }
+  .review-findings .row-preview .finding {
+    @apply border-0 bg-transparent shadow-none p-0 gap-2;
   }
   .review-workspace.code-focused {
     @apply grid-cols-1;
   }
   .finding-nav[hidden] {
     @apply hidden;
-  }
-  .modal.dialog-side {
-    @apply [inset:0_0_0_auto] [transform:none] w-[min(680px,_100vw)] max-w-[100vw] h-dvh max-h-dvh rounded-[0];
-  }
-  .finding-inspector .finding-controls {
-    @apply flex-wrap;
   }
   @media (max-width: 800px) {
     .run-picker {
@@ -1305,12 +1549,12 @@
     .run-picker select {
       @apply flex-1;
     }
-    .review-signals .meta-line {
-      @apply items-start;
-    }
+  }
+  .modal.dialog-side {
+    @apply [inset:0_0_0_auto] [transform:none] w-[min(680px,_100vw)] max-w-[100vw] h-dvh max-h-dvh rounded-[0];
+  }
+  .finding-inspector .finding-controls {
+    @apply flex-wrap;
   }
 
-  .stat-help {
-    @apply underline decoration-dotted [text-underline-offset:3px];
-  }
 }

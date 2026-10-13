@@ -88,7 +88,7 @@
       <TokenSearch
         id="rule-search"
         label="Search rules"
-        placeholder="Search, or filter by repo:, kind: or source:"
+        placeholder="Search rules or add filters…"
         {specs}
         bind:text
         ready={!!res.data}
@@ -99,12 +99,12 @@
       {res}
       retry={() => res.load()}
       isEmpty={(d) => d.length === 0}
-      empty="No rules yet: write them, or name files for them, under rules, and name context files under context, in the configuration or a repository's .kritika.yaml."
+      empty="No rules yet. Add rules in your configuration or .kritika.yaml."
     >
       {#snippet children(rules)}
         {@const rows = shown(rules)}
         {#if rows.length === 0}
-          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No rule matches.</p>
+          <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No rule matches.</p>
         {:else}
           <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
             <table class="data rule-table">

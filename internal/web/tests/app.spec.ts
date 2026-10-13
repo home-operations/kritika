@@ -138,7 +138,7 @@ test.describe('signed-in shell', () => {
 
     // Instance destinations never lead into an account.
     const instance = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
-    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Instance settings']);
+    await expect(instance).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs', 'Settings']);
     await expect(instance.first()).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('.topbar').getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
     for (const href of await instance.evaluateAll((els) => els.map((e) => e.getAttribute('href')))) expect(href).not.toContain('/a/');
@@ -168,7 +168,7 @@ test.describe('signed-in shell', () => {
     const nav = page.getByRole('navigation', { name: 'Sections' });
     await expect(nav.locator('[aria-current="page"]')).toHaveText('Repositories');
     await expect(nav.getByRole('link', { name: 'Audit log' })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: 'Instance settings' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(0);
   });
 
   test('admin settings stay distinct from account operations', async ({ page, signIn }) => {
@@ -177,18 +177,19 @@ test.describe('signed-in shell', () => {
     await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Audit log' })).toBeVisible();
     await page.goto('/#/admin');
     await expect(page.locator('.account-button')).toHaveText('All accounts');
-    await expect(page.locator('.sections .section-tab.active')).toHaveText('Instance settings');
-    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Accounts', exact: true })).toBeVisible();
+    await expect(page.locator('.sections .section-tab.active')).toHaveText('Settings');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
   });
 
   test('global pull and queue navigation stays consistent as accounts are added', async ({ page, signIn }) => {
     const tabs = page.locator('.topbar').getByRole('navigation', { name: 'Instance' }).getByRole('link');
     await signIn(DEFAULT_ME);
     await page.goto('/');
-    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue']);
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs']);
     await signIn({ ...DEFAULT_ME, accounts: ['github/acme', 'github/globex'] });
     await page.reload();
-    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue']);
+    await expect(tabs).toHaveText(['Overview', 'Pull requests', 'Queue', 'Analytics', 'Usage & costs']);
     await expect(tabs.nth(2)).toHaveAttribute('href', '#/queue');
   });
 
@@ -242,7 +243,8 @@ test.describe('theme toggle', () => {
     await signIn();
     await page.route('**/api/v1/me/settings', (r) => r.fulfill({ status: 204 }));
     await page.goto('/');
-    const button = page.getByRole('button', { name: 'Toggle theme', exact: true });
+    await page.locator('.user-button').click();
+    const button = page.getByRole('button', { name: /^Theme: / });
     const currentClass = () => page.evaluate(() => document.documentElement.className);
     const stored = () => page.evaluate(() => localStorage.getItem('kritika-theme'));
 
@@ -363,4 +365,49 @@ test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn
   await page.waitForTimeout(500);
   await expect(page).toHaveURL(/#\/signin$/);
   await expect(page.locator('.account-button')).toHaveCount(0);
+});
+
+test('the wordmark takes a review pass on load and on hover, then rests, and holds still under reduced motion', async ({ page, signIn }) => {
+  await signIn();
+  await page.goto('/');
+  const mark = page.locator('.brand .wordmark');
+  await expect(mark).toHaveText('kritika');
+  await expect(mark).toHaveClass(/playing/);
+  await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
+  const last = mark.locator('.letter').last();
+  await page.locator('.brand').hover();
+  await expect(mark).toHaveClass(/playing/);
+  expect(await last.evaluate((el) => getComputedStyle(el).animationName)).toBe('letter-review');
+  expect(await mark.evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe('review-sweep');
+  expect(await page.locator('.brand .logo').evaluate((el) => getComputedStyle(el).animationName)).toBe('logo-peek');
+  await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
+  await expect(mark).toHaveText('kritika');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.reload();
+  await expect(mark).toHaveText('kritika');
+  await page.waitForTimeout(400);
+  await expect(mark).not.toHaveClass(/playing/);
+  await page.locator('.brand').hover();
+  await page.waitForTimeout(200);
+  await expect(mark).not.toHaveClass(/playing/);
+});
+
+test('the wordmark stays idle on phones and recovers when hidden mid-animation', async ({ page, signIn }) => {
+  await signIn();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const mark = page.locator('.brand .wordmark');
+  await expect(mark).toBeHidden();
+  await page.waitForTimeout(400);
+  await expect(mark).not.toHaveClass(/playing/);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator('.brand').hover();
+  await expect(mark).toHaveClass(/playing/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(mark).not.toHaveClass(/playing/);
+  await page.mouse.move(380, 800);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator('.brand').hover();
+  await expect(mark).toHaveClass(/playing/);
+  await expect(mark).not.toHaveClass(/playing/);
 });

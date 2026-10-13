@@ -61,6 +61,8 @@
     if (me) {
       entries.push({ label: 'Pull requests', hint: 'all accounts', words: true, route: { name: 'instancePulls' }, icon: mdiSourcePull });
       entries.push({ label: 'Queue', hint: 'instance', words: true, route: { name: 'instanceQueue' }, icon: mdiTrayFull, keywords: 'jobs slots all accounts' });
+      entries.push({ label: 'Analytics', hint: 'all accounts', words: true, route: { name: 'instanceAnalytics' }, icon: mdiChartBoxOutline, keywords: 'reviews dashboard' });
+      entries.push({ label: 'Usage & costs', hint: 'all accounts', words: true, route: { name: 'instanceUsage' }, icon: mdiCurrencyUsd, keywords: 'usage cost tokens spend' });
     }
     if (me?.admin) {
       entries.push({ label: 'Instance settings', hint: 'instance', words: true, route: { name: 'console' }, icon: mdiConsoleLine, keywords: 'admin console settings configuration' });

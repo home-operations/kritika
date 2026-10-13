@@ -59,13 +59,17 @@ export interface InstanceTab {
   label: string;
   route: Route;
   admin?: boolean;
+  // group is the sidebar heading it sits under, shared with NAV_GROUPS.
+  group: string;
 }
 
 export const INSTANCE_TABS: readonly InstanceTab[] = [
-  { label: 'Overview', route: { name: 'overview' } },
-  { label: 'Pull requests', route: { name: 'instancePulls' } },
-  { label: 'Queue', route: { name: 'instanceQueue' } },
-  { label: 'Instance settings', route: { name: 'console' }, admin: true },
+  { label: 'Overview', route: { name: 'overview' }, group: 'Operations' },
+  { label: 'Pull requests', route: { name: 'instancePulls' }, group: 'Operations' },
+  { label: 'Queue', route: { name: 'instanceQueue' }, group: 'Operations' },
+  { label: 'Analytics', route: { name: 'instanceAnalytics' }, group: 'Insights' },
+  { label: 'Usage & costs', route: { name: 'instanceUsage' }, group: 'Insights' },
+  { label: 'Settings', route: { name: 'console' }, admin: true, group: 'Configuration' },
 ];
 
 // scopeOf is the account a route is in the scope of, undefined for one in
@@ -107,6 +111,13 @@ export function pageIn(r: Route, slug: string): Route {
     case 'instanceQueue':
     case 'queue':
       return { name: 'queue', slug, ...(r.filter ? { filter: r.filter } : {}) };
+    case 'instanceAnalytics':
+      return { name: 'analytics', slug, ...(r.filter ? { filter: r.filter } : {}) };
+    case 'instanceUsage': {
+      // By account is the instance's grouping; the period, metric and other groupings travel.
+      const filter = usageFilter({ days: r.filter?.days, metric: r.filter?.metric, group: r.filter?.group });
+      return { name: 'usage', slug, ...(filter ? { filter } : {}) };
+    }
     default:
       return { name: 'account', slug };
   }
@@ -118,5 +129,7 @@ export function pageOfInstance(r: Route): Route {
   if (r.name === 'queue') return { name: 'instanceQueue', ...(r.filter ? { filter: r.filter } : {}) };
   if (r.name === 'pulls') return { name: 'instancePulls', ...(r.filter ? { filter: r.filter } : {}) };
   if (r.name === 'pull' || r.name === 'review') return { name: 'instancePulls' };
+  if (r.name === 'analytics') return { name: 'instanceAnalytics', ...(r.filter ? { filter: r.filter } : {}) };
+  if (r.name === 'usage') return { name: 'instanceUsage', ...(r.filter ? { filter: r.filter } : {}) };
   return { name: 'overview' };
 }

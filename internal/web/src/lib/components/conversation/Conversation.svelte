@@ -81,7 +81,7 @@
     <span class="small muted text-ui-sm">{shown.length} of {transcript.turns.length} turns</span>
   </div>
   {#if shown.length === 0}
-    <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No turn matches “{q}”.</p>
+    <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No turn matches “{q}”.</p>
   {/if}
   {#each groups as [part, turns] (part)}
     {#if split}<h3 class="part-head mt-2 mx-0 mb-0 text-ui-md font-[650]">{part ? `Part ${part}` : 'After the parts'}</h3>{/if}

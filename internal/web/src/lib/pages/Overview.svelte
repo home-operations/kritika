@@ -9,12 +9,11 @@
   import type { AccountSummary, InstanceQueue } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
+  import StatTile from '../components/StatTile.svelte';
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
-  import { pullRoute } from '../links';
-  import Time from '../components/Time.svelte';
   import { unsignedWebhooks } from '../setup';
-  import { overdue, waiting } from '../queue';
+  import { attention as jobNeedsAttention, overdue, waiting } from '../queue';
   import WebhookState from '../components/WebhookState.svelte';
 
   const res = Resource.json<AccountSummary[]>(() => '/api/v1/accounts');
@@ -35,6 +34,8 @@
 
   const operationalWants = WANTS.filter((w) => w.key !== 'p0');
   const connectionIssue = (a: AccountSummary) => unsignedWebhooks(a) || !a.lastWebhookAt;
+  const fullSlots = $derived(queue.data?.slots.filter((s) => s.slots > 0 && s.held >= s.slots) ?? []);
+  const queueIssues = $derived(queue.data?.jobs.filter(jobNeedsAttention) ?? []);
   function work(q: InstanceQueue) {
     const capped = q.slots.filter((s) => s.slots > 0);
     return {
@@ -48,10 +49,8 @@
   function totals(list: AccountSummary[]) {
     const sum = (f: (t: AccountSummary) => number) => list.reduce((n, t) => n + f(t), 0);
     return {
-      repositories: sum((t) => t.repositories),
       reviews7d: sum((t) => t.reviews7d),
       reviewsToday: sum((t) => t.usage.reviewsToday),
-      tokens: sum((t) => t.usage.tokens),
       costUsd: sum((t) => t.usage.costUsd),
       unpricedCalls: sum((t) => t.usage.unpricedCalls ?? 0),
       unpricedReviews: sum((t) => t.usage.unpricedReviews ?? 0),
@@ -67,114 +66,65 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Operations overview" description="Service health, running work and usage across your accounts.">
-      {#snippet actions()}<a class="btn" href={href({ name: 'instancePulls' })}>View pull requests →</a><a class="btn" href={href({ name: 'instanceQueue' })}>Open queue →</a>{/snippet}
-    </PageHeader>
+    <PageHeader title="Operations overview" />
     <StateView {res} layout="overview" retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}
-        <section class="tiles overview-totals grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-0 border-t border-solid border-t-line pt-3 mt-0" aria-label="Across all accounts">
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">Review alerts</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(all.wants.reduce((n, w) => n + w.n, 0))}</span>
-            <span class="small muted text-ui-sm">{all.wants.map((w) => `${wholeNumber(w.n)} ${w.label}`).join(' · ') || 'no review failures, caps or pauses'}</span>
-          </div>
+        <section class="stats stats-3" aria-label="Across all accounts">
           {#if queue.data}
             {@const w = work(queue.data)}
-            <a class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1" href={href({ name: 'instanceQueue' })}>
-              <span class="tile-label text-ui-sm text-muted">Running now</span>
-              <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(w.running)}</span>
-              <span class="small muted text-ui-sm">{wholeNumber(w.waiting)} waiting{w.slots ? ` · ${wholeNumber(w.held)} of ${wholeNumber(w.slots)} model slots busy` : ''}</span>
-            </a>
+            <StatTile label="Running now" value={wholeNumber(w.running)} href={href({ name: 'instanceQueue' })} sub={`${wholeNumber(w.waiting)} waiting${w.slots ? ` · ${wholeNumber(w.held)} of ${wholeNumber(w.slots)} model slots busy` : ''}`} />
           {:else}
-            <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1" aria-busy={!queue.error}>
-              <span class="tile-label text-ui-sm text-muted">Running now</span>
-              {#if queue.error}<span class="small muted text-ui-sm">Unavailable</span><button class="btn btn-small" onclick={() => void queue.load()}>Retry queue</button>
-              {:else}<span class="skeleton-value block bg-line rounded-[4px] w-14 h-9" aria-label="Loading running work"></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span>{/if}
-            </div>
+            <StatTile label="Running now" pending={!queue.error}>
+              {#if queue.error}<button class="btn btn-small self-start" onclick={() => void queue.load()}>Retry queue</button>{/if}
+            </StatTile>
           {/if}
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">Enabled repositories</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(all.repositories)}</span>
-          </div>
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">Reviews, last 7 days</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(all.reviews7d)}</span>
-            <span class="small muted text-ui-sm">{wholeNumber(all.reviewsToday)} today</span>
-          </div>
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">API spend this month</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums">{costTotal(all.costUsd, all.unpricedCalls)}</span>
-            <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
-            <span class="small muted text-ui-sm"
-              >{!all.reviews
-                ? 'no review completed this month'
-                : !all.pricedReviews
-                  ? `${wholeNumber(all.reviews)} reviews this month, all with unpriced calls`
-                  : `${usd(all.reviewCostUsd / all.pricedReviews)} per review, mean of ${wholeNumber(all.pricedReviews)}${reviewsLeftOut(all.unpricedReviews)}`}</span
-            >
-          </div>
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">Tokens this month</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums" title={wholeNumber(all.tokens)}>{tokens(all.tokens)}</span>
-          </div>
+          <StatTile label="Reviews today" value={wholeNumber(all.reviewsToday)} sub={`${wholeNumber(all.reviews7d)} in the last 7 days`} />
+          <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
+          <StatTile
+            label="API spend this month"
+            value={costTotal(all.costUsd, all.unpricedCalls)}
+            sub={!all.reviews
+              ? 'no review completed this month'
+              : !all.pricedReviews
+                ? `${wholeNumber(all.reviews)} reviews this month, all with unpriced calls`
+                : `${usd(all.reviewCostUsd / all.pricedReviews)} per review, mean of ${wholeNumber(all.pricedReviews)}${reviewsLeftOut(all.unpricedReviews)}`}
+          />
         </section>
 
-        <div class="overview-work grid grid-cols-[minmax(0,_1fr)_minmax(220px,_28%)] gap-7">
-          <section class="attention-list overview-attention min-w-0 max-h-95 overflow-y-auto" aria-labelledby="overview-attention">
-            <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
-            {#each list as account (account.slug)}
-              {#each operationalWants.filter((w) => account.attention[w.key] > 0) as w (w.key)}
-                <a class="attention-item grid grid-cols-[80px_minmax(0,_1fr)_auto] gap-4 items-center py-5.5 px-0 border-t border-solid border-t-line text-ink" href={href({ name: 'pulls', slug: account.slug, filter: w.filter })}><Pill tone={w.tone} label={`${account.attention[w.key]} ${w.label}`} /><span><strong>{account.slug}</strong><span class="small muted text-ui-sm">View pull requests →</span></span></a>
-              {/each}
-              {#if connectionIssue(account)}
-                <a class="attention-item grid grid-cols-[80px_minmax(0,_1fr)_auto] gap-4 items-center py-5.5 px-0 border-t border-solid border-t-line text-ink" href={href({ name: 'account', slug: account.slug })}>
-                  <Pill tone="warn" label="Connection" />
-                  <span><strong>{unsignedWebhooks(account) ? 'Unsigned webhooks refused' : 'No webhooks received'}</strong><span class="mono small muted text-ui-sm">{account.slug}</span></span>
-                  <span class="attention-action text-accent text-ui-sm">Check connection →</span>
-                </a>
-              {/if}
-              {#each nearCaps(account.usage) as cap (cap)}
-                <a class="attention-item grid grid-cols-[80px_minmax(0,_1fr)_auto] gap-4 items-center py-5.5 px-0 border-t border-solid border-t-line text-ink" href={href({ name: 'usage', slug: account.slug })}>
-                  <Pill tone="warn" label="Near limit" />
-                  <span><strong>{cap}</strong><span class="mono small muted text-ui-sm">{account.slug}</span></span>
-                  <span class="attention-action text-accent text-ui-sm">View usage →</span>
-                </a>
-              {/each}
+        <section class="panel overview-attention min-w-0" aria-labelledby="overview-attention">
+          <header class="panel-head"><h2 id="overview-attention">Needs attention</h2></header>
+          {#each list as account (account.slug)}
+            {#each operationalWants.filter((w) => account.attention[w.key] > 0) as w (w.key)}
+              <a class="attention-item" href={href({ name: 'pulls', slug: account.slug, filter: w.filter })}><Pill tone={w.tone} label={`${account.attention[w.key]} ${w.label}`} /><strong>{account.slug}</strong><span class="attention-action text-accent text-ui-sm">View pull requests →</span></a>
             {/each}
-            {#if !all.wants.length && !list.some((a) => nearCaps(a.usage).length || connectionIssue(a))}
-              <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">All clear. No failed or capped reviews, paused pull requests, connection issues or approaching usage limits.</p>
+            {#if connectionIssue(account)}
+              <a class="attention-item" href={href({ name: 'account', slug: account.slug })}>
+                <Pill tone="warn" label="Connection" />
+                <span><strong>{unsignedWebhooks(account) ? 'Unsigned webhooks refused' : 'No webhooks received'}</strong><span class="mono small muted text-ui-sm">{account.slug}</span></span>
+                <span class="attention-action text-accent text-ui-sm">Check connection →</span>
+              </a>
             {/if}
-          </section>
-          <section class="running-list min-w-0 pl-6 border-l border-solid border-l-line" aria-labelledby="overview-running">
-            <header class="panel-head"><h2 id="overview-running">Running work</h2></header>
-            <StateView res={queue} retry={() => queue.load()}>
-              {#snippet children(q)}
-                {@const pressure = work(q)}
-                <p class="panel-body small text-ui-sm py-2.5 px-3">{pressure.running} running · {pressure.waiting} waiting{pressure.slots ? ` · ${pressure.held} of ${pressure.slots} model slots busy` : ''}</p>
-                {#each q.slots.filter((s) => s.slots > 0 && s.held >= s.slots) as slot (`${slot.account}/${slot.model}`)}
-                  <a class="attention-item grid grid-cols-[80px_minmax(0,_1fr)_auto] gap-4 items-center py-5.5 px-0 border-t border-solid border-t-line text-ink" href={href({ name: 'queue', slug: slot.account })}><Pill tone="warn" label="At capacity" /><span>{slot.account}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span></a>
-                {/each}
-                {#each q.jobs.filter((j) => j.recentFailure).slice(0, 5) as job (job.id)}
-                  <a class="attention-item grid grid-cols-[80px_minmax(0,_1fr)_auto] gap-4 items-center py-5.5 px-0 border-t border-solid border-t-line text-ink" href={href({ name: 'queue', slug: job.account })}><Pill tone="danger" label="Failed job" /><span>{job.args.repository || job.account}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">{job.kind} #{job.id} · inspect error and recovery options</span></span></a>
-                {/each}
-                {#each q.jobs.filter((j) => j.state === 'running').slice(0, 5) as job (job.id)}
-                  <div class="running-item flex flex-col items-start gap-2.5 py-5 px-0 border-t border-solid border-t-line wrap-anywhere">
-                    <Pill tone={overdue(job) ? 'warn' : 'accent'} label={overdue(job) ? 'Heartbeat overdue' : job.kind} />
-                    {#if job.args.repository && job.args.number}
-                      <a class="mono" href={href(pullRoute(job.account, job.args))}>{job.args.repository}#{job.args.number}</a>
-                    {:else}<a href={href({ name: 'queue', slug: job.account })}>{job.kind} job {job.id}</a>{/if}
-                    <span class="small muted text-ui-sm">{job.account} · started <Time iso={job.attemptedAt} /></span>
-                  </div>
-                {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Nothing running right now.</p>{/each}
-                <a class="running-queue inline-block pt-4" href={href({ name: 'instanceQueue' })}>Open queue →</a>
-              {/snippet}
-            </StateView>
-          </section>
-        </div>
-
-
-
+            {#each nearCaps(account.usage) as cap (cap)}
+              <a class="attention-item" href={href({ name: 'usage', slug: account.slug })}>
+                <Pill tone="warn" label="Near limit" />
+                <span><strong>{cap}</strong><span class="mono small muted text-ui-sm">{account.slug}</span></span>
+                <span class="attention-action text-accent text-ui-sm">View usage →</span>
+              </a>
+            {/each}
+          {/each}
+          {#each fullSlots as slot (`${slot.account}/${slot.model}`)}
+            <a class="attention-item" href={href({ name: 'queue', slug: slot.account })}><Pill tone="warn" label="At capacity" /><span><strong>{slot.account}</strong><span class="small muted text-ui-sm wrap-anywhere">{slot.model}: {slot.held} of {slot.slots} slots busy</span></span><span class="attention-action text-accent text-ui-sm">Open queue →</span></a>
+          {/each}
+          {#each queueIssues.slice(0, 5) as job (job.id)}
+            <a class="attention-item" href={href({ name: 'queue', slug: job.account, filter: { state: 'attention' } })}><Pill tone={job.recentFailure ? 'danger' : 'warn'} label={overdue(job) ? 'Heartbeat overdue' : job.recentFailure ? 'Failed job' : 'Retrying'} /><span><strong>{job.args.repository || job.account}</strong><span class="small muted text-ui-sm">{job.kind} #{job.id}</span></span><span class="attention-action text-accent text-ui-sm">Inspect job →</span></a>
+          {/each}
+          {#if queue.error}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-danger" role="alert">Queue alerts unavailable.{#if queue.data}<button class="btn btn-small" onclick={() => void queue.load()}>Retry queue alerts</button>{/if}</p>
+          {:else if !queue.data}<p class="state-msg m-0 py-3 px-4 text-muted" role="status">Checking queue…</p>
+          {:else if !all.wants.length && !list.some((a) => nearCaps(a.usage).length || connectionIssue(a)) && !fullSlots.length && !queueIssues.length}
+            <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">All clear. No issues need attention.</p>
+          {/if}
+        </section>
         <section class="panel" aria-labelledby="account-breakdown">
           <header class="panel-head"><h2 id="account-breakdown">By account</h2></header>
           <div class="table-wrap overflow-x-auto max-w-full">
@@ -182,21 +132,19 @@
               <thead>
                 <tr>
                   <th scope="col">Account</th>
-                  <th scope="col">Connection</th>
-                  <th scope="col" class="num">Enabled repos</th>
-                  <th scope="col" class="num">Reviews 7d</th>
+                  <th scope="col" class="num" title="Repositories with reviews turned on">Repos</th>
+                  <th scope="col" class="num" title="Reviews completed in the last 7 days">7 days</th>
                   <th scope="col" title="Reviews done today, against the account's daily cap where it has one">Today</th>
-                  <th scope="col" title="Open pull requests whose last review failed, hit a limit or found a P0, or whose automatic reviews are paused; and a cap that is close">Needs attention</th>
+                  <th scope="col" title="Open pull requests whose last review failed, hit a limit or found a P0, or whose automatic reviews are paused; and a cap that is close">Attention</th>
                   <th scope="col" title="Whether GitHub's webhooks reach kritika, and when it last polled instead">Webhooks</th>
-                  <th scope="col" class="num wrap">API spend</th>
-                  <th scope="col">Tokens this month</th>
+                  <th scope="col" class="num" title="API spend this month, subscription fees excluded">Spend</th>
+                  <th scope="col" title="Tokens this month, against the account's cap where it has one">Tokens</th>
                 </tr>
               </thead>
               <tbody>
                 {#each list as t (t.slug)}
                   <tr>
                     <td class="mono name-fill" title={t.slug}><a href={href({ name: 'account', slug: t.slug })}>{t.slug}</a></td>
-                    <td class="mono small name-clip text-ui-sm" title={t.connection}>{t.connection}</td>
                     <td class="num">{wholeNumber(t.repositories)}</td>
                     <td class="num">{wholeNumber(t.reviews7d)}</td>
                     <td>

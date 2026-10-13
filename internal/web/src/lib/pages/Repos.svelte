@@ -16,6 +16,9 @@
   import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
   import LoadMore from '../components/LoadMore.svelte';
   import RepoTraits from '../components/RepoTraits.svelte';
+  import RowToggle from '../components/RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
+  import RepoPreview from '../components/RepoPreview.svelte';
   import Dialog from '../components/Dialog.svelte';
   import Icon from '../Icon.svelte';
   import { mdiCheck, mdiProgressClock, mdiAlertCircleOutline, mdiSwapHorizontal } from '../icons';
@@ -24,6 +27,8 @@
   import { repoFilter, type RepoFilter } from '../routes';
 
   let { slug, filter }: { slug: string; filter?: RepoFilter } = $props();
+  const tableId = $props.id();
+  let expanded = $state<Record<string, boolean>>({});
   const search = $derived(filter?.q ?? '');
   function setFilter(patch: RepoFilter): void {
     replace({ name: 'repos', slug, filter: repoFilter({ ...filter, ...patch }) });
@@ -165,14 +170,14 @@
     {#if kind === 'forks'}
       <p class="small muted text-ui-sm">A fork is only reviewed and indexed once turned on here.</p>
     {:else if kind === 'archived'}
-      <p class="small muted text-ui-sm">An archived repository is never reviewed or indexed. Unarchive it on GitHub, resync, then turn it on if it is off.</p>
+      <p class="small muted text-ui-sm">Archived repositories are inactive. Unarchive on GitHub, resync, then turn it on if it is off.</p>
     {:else}
       <p class="small muted text-ui-sm">Newly discovered repositories start off. Turn on the repositories you want reviewed and indexed.</p>
     {/if}
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {@const rows = visible()}
       {#if rows.length === 0}
-        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+        <div class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">
           <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
           <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
         </div>
@@ -196,13 +201,15 @@
                 <th scope="col">Repository</th>
                 <th scope="col">Enabled</th>
                 <th scope="col">Index</th>
-                <th scope="col">Indexed commit</th>
                 <th scope="col">Last review</th>
+                <th scope="col" class="relative"><span class="sr-only">Preview</span></th>
               </tr>
             </thead>
             <tbody>
-              {#each rows as repo (repo.id)}
-                <tr>
+              {#each rows as repo, i (repo.id)}
+                {@const key = `${slug}:${repo.id}`}
+                {@const previewId = `${tableId}-${i}`}
+                <tr class="row-toggles" class:row-expanded={expanded[key]} onclick={(e) => { if (rowToggles(e)) expanded[key] = !expanded[key]; }}>
                   {#if manage}
                     <td>
                       {#if !repo.archived}
@@ -242,16 +249,19 @@
                       <Time iso={repo.index.lastRunAt} />
                     {:else}<span class="muted">never</span>{/if}
                   </td>
-                  <td class="small text-ui-sm">
-                    {#if repo.index.activeCommit}<span class="mono">{repo.index.activeCommit.slice(0, 7)}</span>{:else}<span class="muted">—</span>{/if}
-                  </td>
                   <td>
                     {#if repo.lastReview}
                       <a href={href({ name: 'review', slug, id: repo.lastReview.id })}><ReviewStatusTile status={repo.lastReview.status} /></a>
                       <Time iso={repo.lastReview.createdAt} />
                     {:else}<span class="muted">—</span>{/if}
                   </td>
+                  <td class="row-toggle-cell"><RowToggle bind:open={expanded[key]} label={`Preview ${repo.fullName}`} controls={previewId} /></td>
                 </tr>
+                {#if expanded[key]}
+                  <tr class="row-preview"><td colspan={5 + Number(manage)}>
+                    <div class="row-preview-body" id={previewId} role="region" aria-label={`Preview of ${repo.fullName}`}><RepoPreview {slug} {repo} /></div>
+                  </td></tr>
+                {/if}
               {/each}
             </tbody>
           </table>

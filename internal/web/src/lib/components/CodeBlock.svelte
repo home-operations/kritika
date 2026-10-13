@@ -37,7 +37,7 @@
 
 <div class="code-block border border-solid border-line rounded-md bg-surface min-w-0 flex flex-col" class:plain>
   {#if label || copy}
-    <div class="code-head flex items-center gap-2 pt-[3px] pr-1.5 pb-[3px] pl-2.5 border-b border-solid border-b-line">
+    <div class="code-head flex items-center gap-2 py-1 pr-1.5 pl-3 border-b border-solid border-b-line">
       {#if label}<span class="code-label mono text-ui-xs text-muted">{label}</span>{/if}
       <span class="spacer flex-auto"></span>
       {#if copy}<Copy {text} />{/if}

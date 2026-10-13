@@ -30,15 +30,15 @@ test('the audit log pages and expands detail', async ({ page }) => {
   const rows = page.locator('table.audit tbody > tr');
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(g.auditEvent.action);
-  await rows.first().getByRole('button', { name: 'detail' }).click();
-  await expect(rows.first().locator('.detail-json')).toContainText('jobId');
+  await rows.first().getByRole('button', { name: /^Detail of/ }).click();
+  await expect(page.locator('table.audit .row-preview .detail-json')).toContainText('jobId');
   await page.getByRole('button', { name: 'Load more' }).click();
-  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasNot: page.locator('.detail-json') })).toHaveCount(2);
   expect(seen.some((u) => u.pathname.endsWith('/audit') && u.searchParams.get('cursor') === 'c1')).toBe(true);
   await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 });
 
-test('an audit row with detail is as tall as one without, until the detail is opened', async ({ page }) => {
+test('an audit row with detail is as tall as one without, and opens its detail beneath', async ({ page }) => {
   const plain: T.AuditEvent = { ...g.auditEvent, id: '6', action: 'review.rerun', target: 'rev-1', detail: {} };
   await setup(page, adminMe, [[new RegExp(`${API}/audit$`), g.pageOf([g.auditEvent, plain])]]);
   await page.goto(`/${ADMIN}/audit`);
@@ -46,9 +46,12 @@ test('an audit row with detail is as tall as one without, until the detail is op
   await expect(rows).toHaveCount(2);
   const height = async (i: number) => (await rows.nth(i).boundingBox())!.height;
   expect(await height(0)).toBe(await height(1));
-  await rows.first().getByRole('button', { name: 'detail' }).click();
-  await expect(rows.first().locator('.detail-json')).toBeVisible();
-  expect(await height(0)).toBeGreaterThan(await height(1));
+  await expect(rows.nth(1).getByRole('button')).toHaveCount(0);
+  await rows.first().getByRole('button', { name: /^Detail of/ }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(1)).toHaveClass(/row-preview/);
+  await expect(rows.nth(1).locator('.detail-json')).toBeVisible();
+  expect(await height(0)).toBe(await height(2));
 });
 
 test.describe('actions', () => {
@@ -63,7 +66,7 @@ test.describe('actions', () => {
     await expect(page.getByRole('group', { name: 'Selected pull requests' })).toHaveCount(0);
     await page.getByRole('checkbox', { name: `Select ${g.pull.repository}#7` }).check();
     // Space picks the row the keyboard is on.
-    await page.locator('.key-hints').click();
+    await page.locator('main h1').click();
     await page.keyboard.press('j');
     await page.keyboard.press('j');
     await page.keyboard.press(' ');
@@ -91,7 +94,6 @@ test.describe('actions', () => {
     await page.goto(`/#/a/${S}/pulls`);
     await expect(page.locator('.pull-rows .pull-row')).toHaveCount(1);
     await expect(page.getByRole('checkbox')).toHaveCount(0);
-    await expect(page.locator('.key-hints')).not.toContainText('select');
   });
 
   test('re-run and cancel on a review, re-run on a pull, reindex on a repository', async ({ page }) => {
@@ -177,7 +179,7 @@ test.describe('actions', () => {
   test('offer no reindex of a repository that is off', async ({ page }) => {
     await setup(page, adminMe, [[new RegExp(`${API}/repos/alpha/one$`), { ...g.repoDetail, enabled: false }]]);
     await page.goto(`/#/a/${S}/repos/alpha/one`);
-    await expect(page.locator('#repo-settings')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Repository settings', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reindex' })).toHaveCount(0);
   });
 
@@ -187,7 +189,7 @@ test.describe('actions', () => {
     await expect(page.locator('.page-head h1')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Re-run' })).toHaveCount(0);
     await page.goto(`/#/a/${S}/repos/alpha/one`);
-    await expect(page.locator('#repo-settings')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Repository settings', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reindex' })).toHaveCount(0);
   });
 });
@@ -210,7 +212,7 @@ test.describe('configuration page', () => {
       /An embedder is set \(optional\) Set embedding/,
     ]);
     await expect(panel.locator('li.done')).toHaveCount(0);
-    await expect(page.locator('input, select, textarea').and(page.locator('main *'))).toHaveCount(0);
+    await expect(panel.locator('input, select, textarea')).toHaveCount(0);
   });
 
   test('guides an installed account with no enabled repositories to enable one', async ({ page }) => {
@@ -230,7 +232,8 @@ test.describe('configuration page', () => {
     ]);
     await page.goto('/#/admin');
     const panel = page.locator('#op-setup').locator('../..');
-    await expect(panel).toContainText('3 of 4 done');
+    await expect(panel).toContainText('Complete · 3 of 4 done');
+    await panel.getByRole('button', { name: 'Steps', exact: true }).click();
     await expect(panel.locator('li.done')).toHaveCount(3);
     await expect(panel.getByRole('listitem').last()).toContainText('Set embedding');
   });
@@ -294,7 +297,13 @@ test.describe('configuration page', () => {
     const row = panel.getByRole('row').filter({ hasText: g.instanceSetting.key });
     await expect(row).toContainText(g.instanceSetting.value);
     await expect(row).toContainText('config file');
-    await expect(panel.locator('input, select, textarea')).toHaveCount(0);
+    await expect(row.locator('input, select, textarea, button')).toHaveCount(0);
+    await panel.getByRole('searchbox', { name: 'Search configuration' }).fill('no matching setting');
+    await expect(row).toHaveCount(0);
+    await expect(panel).toContainText('No settings match these filters.');
+    await panel.getByRole('button', { name: 'Clear filters' }).click();
+    await panel.getByRole('combobox', { name: 'Configuration section' }).selectOption(g.instanceSetting.section);
+    await expect(row).toBeVisible();
   });
 
   test('lists an account no connection serves without a link, and why', async ({ page }) => {
@@ -330,6 +339,7 @@ test.describe('settings search', () => {
   test("a repository's settings filter to what matches", async ({ page }) => {
     await setup(page, adminMe);
     await page.goto(`/#/a/${S}/repos/alpha/one`);
+    await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
     const settings = page.locator('#repo-settings').locator('../..');
     await expect(settings.getByText('Review model')).toBeVisible();
     await settings.getByLabel('Filter settings').fill('settle');

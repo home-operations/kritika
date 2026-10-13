@@ -99,14 +99,14 @@ test('reporting period follows sidebar navigation and account switching', async 
   await expect(page.getByRole('radio', { name: '90 days', exact: true })).toBeChecked();
 });
 
-test('usage puts the selected chart before monthly limits and help is keyboard accessible', async ({ page }) => {
+test('usage puts the monthly limits beside the selection and help is keyboard accessible', async ({ page }) => {
   await mock(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${account}/usage?group=repo`);
   const chart = page.getByRole('region', { name: 'API spend by repository' });
-  const limits = page.getByRole('region', { name: 'This month' });
-  expect((await chart.boundingBox())!.y).toBeLessThan(450);
-  expect((await limits.boundingBox())!.y).toBeGreaterThan((await chart.boundingBox())!.y);
+  const totals = page.getByRole('region', { name: 'Totals' });
+  await expect(totals.locator('.stat')).toHaveText([/API spend in selection/, /API spend this month/, /Tokens this month/, /Reviews today/]);
+  expect((await chart.boundingBox())!.y).toBeGreaterThan((await totals.boundingBox())!.y);
   const help = page.getByRole('button', { name: 'About usage' });
   await help.focus();
   await page.keyboard.press('Enter');
@@ -122,7 +122,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await mock(page);
     await page.goto(`${account}/usage?group=repo&days=7`);
-    await expect(page.getByRole('region', { name: 'Selected usage' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Totals' })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`usage-${theme}.png`) });
     await page.goto(`${account}/queue`);
@@ -132,7 +132,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByText('Last output: waiting for a model slot.', { exact: true })).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`queue-${theme}.png`) });
     await page.getByLabel('Details for job #103').click();
-    await expect(page.locator('.job-details[open]')).toContainText('Last output: waiting for a model slot.');
+    await expect(page.getByRole('region', { name: 'Job #103 details' })).toContainText('Last output: waiting for a model slot.');
     await page.screenshot({ path: testInfo.outputPath(`queue-details-${theme}.png`) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: 'Open navigation' }).click();

@@ -24,7 +24,7 @@
 
   let { route }: { route: Route } = $props();
 
-  const LIST_PAGES: readonly Route['name'][] = ['overview', 'account', 'analytics', 'instancePulls', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage'];
+  const LIST_PAGES: readonly Route['name'][] = ['overview', 'account', 'analytics', 'instanceAnalytics', 'instancePulls', 'repos', 'queue', 'instanceQueue', 'pulls', 'findings', 'followups', 'usage', 'instanceUsage'];
 
   function keyOf(r: Route): string {
     if (r.name === 'pull') return JSON.stringify({ n: r.name, s: r.slug, owner: r.owner, repo: r.repo, number: r.number });
@@ -48,6 +48,10 @@
     <Preferences />
   {:else if route.name === 'instancePulls'}
     <Pulls filter={route.filter} />
+  {:else if route.name === 'instanceAnalytics'}
+    <Analytics filter={route.filter} />
+  {:else if route.name === 'instanceUsage'}
+    <Usage filter={route.filter} />
   {:else if route.name === 'account'}
     <AccountOverview slug={route.slug} />
   {:else if route.name === 'analytics'}

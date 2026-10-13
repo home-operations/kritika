@@ -4,6 +4,7 @@
 // a real page -- this file calls them directly and needs no browser.
 import { test, expect } from '@playwright/test';
 import { href, parse, type Route } from '../src/lib/routes';
+import { change } from '../src/lib/format';
 import { INSTANCE_TABS, pageIn, pageOfInstance, scopeOf, sectionOf, SECTIONS, NAV_GROUPS } from '../src/lib/sections';
 
 const ROUTES: Route[] = [
@@ -12,6 +13,8 @@ const ROUTES: Route[] = [
   { name: 'console' },
   { name: 'instanceQueue' },
   { name: 'instancePulls', filter: { state: 'all', outcome: 'failed', q: 'a b&c' } },
+  { name: 'instanceAnalytics', filter: { days: '7' } },
+  { name: 'instanceUsage', filter: { group: 'account', metric: 'tokens' } },
   { name: 'analytics', slug: 'github/acme', filter: { days: '7' } },
   { name: 'preferences' },
   { name: 'account', slug: 'github/acme' },
@@ -50,6 +53,8 @@ test.describe('routes: parse(href(r)) === r', () => {
 });
 
 const MALFORMED: [string, Route][] = [
+  ['#/a/github/acme/usage?group=account', { name: 'usage', slug: 'github/acme' }],
+  ['#/a/github/acme/usage?group=account&metric=tokens', { name: 'usage', slug: 'github/acme', filter: { metric: 'tokens' } }],
   ['', { name: 'overview' }],
   ['#/', { name: 'overview' }],
   ['#/nonsense', { name: 'overview' }],
@@ -123,6 +128,8 @@ test('switching account keeps the page, and a record gives way to its list', () 
     [{ name: 'repo', slug: a, owner: 'acme', repo: 'one' }, { name: 'repos', slug: b }],
     [{ name: 'admin', slug: a, section: 'audit' }, { name: 'admin', slug: b, section: 'audit' }],
     [{ name: 'instanceQueue' }, { name: 'queue', slug: b }],
+    [{ name: 'instanceAnalytics', filter: { days: '7' } }, { name: 'analytics', slug: b, filter: { days: '7' } }],
+    [{ name: 'instanceUsage', filter: { days: '90', group: 'account', repo: 'acme/one' } }, { name: 'usage', slug: b, filter: { days: '90' } }],
     [{ name: 'overview' }, { name: 'account', slug: b }],
     [{ name: 'console' }, { name: 'account', slug: b }],
   ];
@@ -133,6 +140,8 @@ test('widening scope preserves pull and queue filters', () => {
   const slug = 'github/acme';
   expect(pageOfInstance({ name: 'queue', slug, filter: { state: 'waiting' } })).toEqual({ name: 'instanceQueue', filter: { state: 'waiting' } });
   expect(pageOfInstance({ name: 'pulls', slug, filter: { outcome: 'failed' } })).toEqual({ name: 'instancePulls', filter: { outcome: 'failed' } });
+  expect(pageOfInstance({ name: 'analytics', slug, filter: { days: '7' } })).toEqual({ name: 'instanceAnalytics', filter: { days: '7' } });
+  expect(pageOfInstance({ name: 'usage', slug, filter: { group: 'model', metric: 'tokens' } })).toEqual({ name: 'instanceUsage', filter: { group: 'model', metric: 'tokens' } });
   expect(pageOfInstance({ name: 'console' })).toEqual({ name: 'console' });
 });
 
@@ -147,4 +156,11 @@ test('repository filters stay with their account while portable pull filters tra
 
 test('dated account bookmarks retain their analytics destination', () => {
   expect(parse('#/a/github/acme?days=90')).toEqual({ name: 'analytics', slug: 'github/acme', filter: { days: '90' } });
+});
+
+test('a change in points keeps a zero baseline, a relative one does not', () => {
+  expect(change(20, 0, true)).toEqual({ text: '+20 pts', dir: 1 });
+  expect(change(20, 0)).toBeUndefined();
+  expect(change(0, 0, true)).toBeUndefined();
+  expect(change(5, 10)).toEqual({ text: '-50%', dir: -1 });
 });

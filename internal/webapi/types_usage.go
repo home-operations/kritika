@@ -10,7 +10,10 @@ import (
 
 // UsagePoint is one key of a usage series.
 type UsagePoint struct {
-	Key              string  `json:"key"`
+	Key string `json:"key"`
+	// Account is set in the instance's series for keys of one account:
+	// a review run, or the account itself when grouped by account.
+	Account          string  `json:"account,omitzero"`
 	InputTokens      int64   `json:"inputTokens"`
 	CacheReadTokens  int64   `json:"cacheReadTokens"`
 	CacheWriteTokens int64   `json:"cacheWriteTokens"`

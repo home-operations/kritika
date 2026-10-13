@@ -171,7 +171,7 @@
       <TokenSearch
         id="finding-search"
         label="Search findings"
-        placeholder="Search, or filter by repo:, severity:, category:, status: or rule:"
+        placeholder="Search findings or add filters…"
         {specs}
         bind:text
         bind:input={searchEl}
@@ -186,12 +186,12 @@
     </div>
     <StateView {res} retry={() => paged.load()}>
       {#if paged.items.length === 0 && filter}
-        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+        <div class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">
           <span>No findings match these filters.</span>
           <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
         </div>
       {:else if paged.items.length === 0}
-        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No findings yet: they appear here as reviews report them.</p>
+        <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No findings yet: they appear here as reviews report them.</p>
       {:else}
         <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
           <table class="data finding-table">
@@ -251,7 +251,6 @@
         <LoadMore {paged} />
       {/if}
     </StateView>
-    <p class="muted small key-hints text-ui-sm m-0"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>
 </main>
 

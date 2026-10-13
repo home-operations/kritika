@@ -41,15 +41,13 @@ test.describe('overview', () => {
     await page.goto('/#/');
     await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(2);
     const tiles = page.getByRole('region', { name: 'Across all accounts' });
-    await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
-    await expect(tiles.locator('.tile').filter({ hasText: 'Repositories' })).toContainText(String(2 * g.accountSummary.repositories));
-    const spend = tiles.locator('.tile').filter({ hasText: 'API spend this month' });
-    await expect(spend.locator('.tile-value')).toHaveText('$3.00');
+    await expect(tiles.locator('.stat').filter({ hasText: 'Reviews today' })).toContainText(String(2 * g.accountSummary.usage.reviewsToday));
+    const spend = tiles.locator('.stat').filter({ hasText: 'API spend this month' });
+    await expect(spend.locator('.stat-value')).toHaveText('$3.00');
     // The per-review figure is a mean over both accounts' reviews, not a sum of their medians.
     await expect(spend).toContainText('$0.10 per review, mean of 24');
-    const wants = tiles.locator('.tile').filter({ hasText: 'Review alerts' });
-    await expect(wants.locator('.tile-value')).toHaveText('2');
-    await expect(wants).toContainText('2 failed');
+    const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+    await expect(attention.getByRole('link', { name: /1 failed/ })).toHaveCount(2);
   });
 
   test('a tile says what runs and waits now and how busy the model slots are, and opens the queue', async ({ page }) => {
@@ -58,7 +56,7 @@ test.describe('overview', () => {
     await g.mockApi(page, [[/\/api\/v1\/queue$/, q], ...g.defaultApi()]);
     await page.goto('/#/');
     const tile = page.getByRole('link', { name: /Running now/ });
-    await expect(tile.locator('.tile-value')).toHaveText('1');
+    await expect(tile.locator('.stat-value')).toHaveText('1');
     await expect(tile).toContainText('2 waiting · 2 of 2 model slots busy');
     await expect(tile).toHaveAttribute('href', '#/queue');
 
@@ -71,8 +69,9 @@ test.describe('overview', () => {
     await page.route('**/api/v1/queue', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify(g.golden('error')) }));
     await page.goto('/#/');
     await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.tile')).toHaveCount(6);
+    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.stat')).toHaveCount(3);
     await expect(page.getByRole('button', { name: 'Retry queue' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Needs attention', exact: true })).toContainText('Queue alerts unavailable');
   });
 
   test("each account's row says how many of today's reviews are done, against its cap where it has one", async ({ page }) => {
@@ -81,20 +80,35 @@ test.describe('overview', () => {
     const full = { ...a, slug: 'github/full', usage: { ...a.usage, reviewsToday: 48, reviewsPerDay: 50 } };
     await g.mockApi(page, [[/\/api\/v1\/accounts$/, [a, free, full]], ...g.defaultApi()]);
     await page.goto('/#/');
-    const today = (slug: string) => page.getByRole('row').filter({ hasText: slug }).getByRole('cell').nth(4);
-    await expect(page.locator('.account-breakdown').getByRole('columnheader').nth(4)).toHaveText('Today');
+    const today = (slug: string) => page.getByRole('row').filter({ hasText: slug }).getByRole('cell').nth(3);
+    await expect(page.locator('.account-breakdown').getByRole('columnheader').nth(3)).toHaveText('Today');
     await expect(today(a.slug)).toContainText(`${a.usage.reviewsToday} of ${a.usage.reviewsPerDay}`);
     await expect(today('github/free')).toHaveText('7');
     await expect(today('github/free').getByRole('meter')).toHaveCount(0);
     await expect(today('github/full').getByRole('meter')).toHaveClass(/tone-danger/);
   });
 
-  test('the attention tile says so when nothing wants a look', async ({ page }) => {
-    await g.mockApi(page, [[/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, p0: 0, paused: 0 } }]], ...g.defaultApi()]);
+  test('the attention list says so when no review or queue issue needs a look', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/queue$/, { jobs: [], slots: [] }], [/\/api\/v1\/accounts$/, [{ ...g.accountSummary, attention: { failed: 0, capped: 0, p0: 0, paused: 0 } }]], ...g.defaultApi()]);
     await page.goto('/#/');
-    const wants = page.getByRole('region', { name: 'Across all accounts' }).locator('.tile').filter({ hasText: 'Review alerts' });
-    await expect(wants.locator('.tile-value')).toHaveText('0');
-    await expect(wants).toContainText('no review failures, caps or pauses');
+    await expect(page.getByRole('region', { name: 'Needs attention', exact: true })).toContainText('All clear. No issues need attention.');
+  });
+
+  test('queue failures and full capacity share the attention list', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [{ ...g.instanceQueue.jobs[0]!, state: 'discarded', recentFailure: true }] }], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+    await expect(attention.getByRole('link', { name: /At capacity/ })).toHaveAttribute('href', `#/a/${g.SLUG}/queue`);
+    await expect(attention.getByRole('link', { name: /Failed job/ })).toHaveAttribute('href', `#/a/${g.SLUG}/queue?state=attention`);
+    await expect(attention).not.toContainText('All clear');
+  });
+
+  test('a job waiting to retry is an alert here as it is on the account overview and the queue', async ({ page }) => {
+    await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [{ ...g.instanceQueue.jobs[0]!, kind: 'index', state: 'retryable', recentFailure: false }], slots: [] }], ...g.defaultApi()]);
+    await page.goto('/#/');
+    const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+    await expect(attention.getByRole('link', { name: /Retrying/ })).toHaveAttribute('href', `#/a/${g.SLUG}/queue?state=attention`);
+    await expect(attention).not.toContainText('All clear');
   });
 });
 
@@ -111,6 +125,7 @@ test('a count of a thousand or more groups its digits, in every table', async ({
   await page.goto('/#/admin');
   await expect(page.getByRole('row').filter({ hasText: g.adminAccount.slug }).first().locator('td.num')).toContainText(['1,240', '10,432']);
   await page.goto(`/${T}/repos/alpha/one`);
+  await page.getByRole('button', { name: 'Index runs', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Index runs' }).locator('td.num')).toHaveText('123,456');
   await expect(page.getByRole('region', { name: 'Pull requests' }).locator('td.num')).toContainText(['1,500', '$1,234.50']);
   await page.goto(`/${T}/rules`);
@@ -132,7 +147,7 @@ test('a long account or App name is cut short, whole in its title, before a tabl
     await page.goto(`/${h}`);
     const row = page.getByRole('row').filter({ hasText: 'an-organization' });
     await expect(row.locator('td.name-fill')).toHaveAttribute('title', slug);
-    await expect(row.locator('td.name-clip')).toHaveAttribute('title', connection);
+    if (h === '#/admin') await expect(row.locator('td.name-clip')).toHaveAttribute('title', connection);
     expect(await row.locator('xpath=ancestor::div[contains(@class,"table-wrap")]').evaluate((el) => el.scrollWidth - el.clientWidth), h).toBe(0);
   }
   await page.goto('/#/');
@@ -147,21 +162,21 @@ test('analytics shows the totals against the window before, the charts and the r
   const stat = (label: string) => stats.locator('.stat').filter({ has: page.getByText(label, { exact: true }) });
   const c = g.analytics.current;
   await expect(stat('Reviews').locator('.stat-value')).toHaveText(String(c.reviews));
-  await expect(stat('Reviews').locator('.delta')).toHaveText('new');
-  await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed`);
-  await expect(stat('Findings').locator('.stat-sub')).toHaveText(`${c.findings.p0} P0`);
+  await expect(stat('Reviews').locator('.delta')).toHaveCount(0);
+  await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed · on ${c.pullRequests} pull requests`);
   // 2 of 6 findings, where the window before had none to compare.
   await expect(stat('Addressed').locator('.stat-value')).toHaveText('33%');
-  await expect(stat('Addressed').locator('.stat-sub')).toHaveText('2 of 6');
+  await expect(stat('Addressed').locator('.stat-sub')).toHaveText(`2 of 6 findings · ${c.findings.p0} P0`);
   await expect(stat('Addressed').locator('.delta')).toHaveCount(0);
   await expect(stat('Median review').locator('.stat-value')).toHaveText('1m 30s');
   await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h');
   await expect(stat('Reactions').locator('.stat-value')).toHaveText(`${c.reactionsUp} up`);
   await expect(stat('Reactions').locator('.stat-sub')).toHaveText(`${c.reactionsDown} down`);
-  await expect(stat('API spend').locator('.delta')).toHaveText('new');
-  await expect(stat('API spend').locator('.delta')).toHaveClass(/tone-danger/);
+  await expect(stat('API spend').locator('.delta')).toHaveCount(0);
+  await expect(stat('API spend').locator('.stat-sub')).toHaveText(/tokens$/);
   await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
-  const findings = page.getByRole('region', { name: 'Findings by severity' });
+  await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
+  const findings = page.getByRole('region', { name: 'Review trends' });
   await expect(findings.getByRole('list', { name: /legend/ }).getByRole('listitem')).toHaveText(['P0', 'P1', 'P2']);
   await findings.getByRole('radio', { name: 'Table' }).click();
   await expect(findings.locator('tbody tr')).toHaveText([/Sep 1, 2026\s*1\s*2\s*3\s*6/]);
@@ -183,10 +198,11 @@ test('tables over time read newest first', async ({ page }) => {
     ...g.defaultApi(),
   ]);
   await page.goto(`/${T}/analytics`);
-  const reviews = page.getByRole('region', { name: 'Reviews', exact: true });
+  const reviews = page.getByRole('region', { name: 'Review trends', exact: true });
   await reviews.getByRole('radio', { name: 'Table' }).click();
   await expect(reviews.locator('tbody tr')).toHaveText([/Sep 2, 2026\s*7/, /Sep 1, 2026\s*5/]);
-  const findings = page.getByRole('region', { name: 'Findings by severity' });
+  await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
+  const findings = page.getByRole('region', { name: 'Review trends' });
   await findings.getByRole('radio', { name: 'Table' }).click();
   await expect(findings.locator('tbody tr').first()).toHaveText(/Sep 2, 2026\s*4\s*0\s*0\s*4/);
 
@@ -243,16 +259,15 @@ test('the spend page says what a review costs this month, median and mean, or th
   const a = g.accountSummary;
   await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/usage`);
-  await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
-  await page.getByRole('button', { name: 'About usage' }).click();
-  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('$0.08 per review (median) · $0.10 mean of 12');
+  const spend = page.getByRole('region', { name: 'Totals' }).locator('.stat').filter({ hasText: 'API spend this month' });
+  await expect(spend).toContainText('$1.50');
+  await expect(spend).toContainText('$0.08 per review (median) · $0.10 mean of 12');
 
   const idle = { ...a, usage: { ...a.usage, reviews: 0, reviewCostUsd: 0, medianReviewCostUsd: null } };
   await g.mockApi(page, [[/\/api\/v1\/accounts$/, [idle]], ...g.defaultApi()]);
   await page.goto('about:blank');
   await page.goto(`/${T}/usage`);
-  await page.getByRole('button', { name: 'About usage' }).click();
-  await expect(page.getByRole('dialog', { name: 'About usage' })).toContainText('no review completed this month');
+  await expect(page.locator('.stat').filter({ hasText: 'API spend this month' })).toContainText('no review completed this month');
 });
 
 test("a chart's axis has room for its longest label", async ({ page }) => {
@@ -265,60 +280,58 @@ test("a chart's axis has room for its longest label", async ({ page }) => {
   for (const t of await ticks.all()) expect((await t.boundingBox())!.x).toBeGreaterThanOrEqual(svg.x);
 });
 
-test('analytics says what needs attention now, each kind linking to its pull requests', async ({ page }) => {
-  const attention = page.getByRole('region', { name: 'Needs attention' });
-  await page.goto(`/${T}/analytics`);
-  await expect(page.getByRole('region', { name: 'Most reviewed repositories' })).toBeVisible();
-  await expect(attention).toHaveCount(0);
-
+test('account overview links review alerts and capacity warnings to their next action', async ({ page }) => {
   const detail = g.golden<AccountDetail>('account_detail');
   const seen = await g.mockApi(page, [
     [/\/attention$/, g.attention],
     [new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, usage: { ...detail.usage, tokens: 950_000, tokensPerMonth: 1_000_000, reviewsToday: 2, reviewsPerDay: 50 } }],
     ...g.defaultApi(),
   ]);
-  await page.reload();
-  await expect(attention.getByRole('listitem')).toHaveText([
-    /2 open pull requests whose last review failed/,
-    /1 open pull request whose last review hit a limit/,
-    /3 open pull requests whose last review found a P0/,
-    /1 open pull request whose automatic reviews are paused/,
-    /95% of the month's tokens are spent/,
-  ]);
+  await page.goto(`/${T}`);
+  const attention = page.getByRole('region', { name: 'Needs attention' });
   await expect(attention.getByRole('link', { name: /tokens are spent/ })).toHaveAttribute('href', `${T}/usage`);
-  await expect(attention.getByRole('link', { name: /hit a limit/ })).toHaveAttribute('href', `${T}/pulls?outcome=capped`);
-  await attention.getByRole('link', { name: /a P0/ }).click();
-  await expect(page).toHaveURL(new RegExp(`${T}/pulls\\?is=p0$`));
+  await expect(attention.getByRole('link', { name: /capped/ })).toHaveAttribute('href', `${T}/pulls?outcome=capped`);
+  await attention.getByRole('link', { name: /P0/ }).click();
   await expect(page.getByRole('combobox', { name: 'Search pull requests' })).toHaveValue('is:p0');
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/pulls') && u.searchParams.get('is') === 'p0')).toBe(true);
 });
 
-test('analytics says when no webhook has reached the connection', async ({ page }) => {
+test('account overview explains missing webhooks and the last poll', async ({ page }) => {
   const detail = g.golden<AccountDetail>('account_detail');
-  const panel = page.getByRole('region', { name: 'Connection', exact: true });
-  await page.goto(`/${T}/analytics`);
-  await expect(page.getByRole('region', { name: 'Totals' })).toBeVisible();
+  const panel = page.getByRole('dialog', { name: 'Connection details', exact: true });
+  await g.mockApi(page, [
+    [/\/attention$/, { failed: 0, capped: 0, p0: 0, paused: 0 }],
+    [/\/accounts\/github\/alpha\/queue$/, []],
+    [new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastWebhookAt: null } }],
+    ...g.defaultApi(),
+  ]);
+  await page.goto(`/${T}`);
+  const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+  await expect(attention).toContainText('No webhooks received');
+  await expect(attention).not.toContainText('All clear');
   await expect(panel).toHaveCount(0);
-
-  await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
-  await page.reload();
+  await page.getByRole('button', { name: 'Connection details', exact: true }).click();
   await expect(panel.getByRole('note')).toContainText(`GitHub App's webhook at ${g.meta.webUrl}${detail.connection.hookPath}`);
-  await expect(panel.locator(`.last-poll time[datetime="${detail.lastPolledAt}"]`)).toBeVisible();
+  await expect(panel.locator(`time[datetime="${detail.lastPolledAt}"]`)).toBeVisible();
 
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, lastPolledAt: null, connection: { ...detail.connection, lastWebhookAt: null } }], ...g.defaultApi()]);
   await page.reload();
-  await expect(panel.locator('.last-poll')).toHaveText('Not polled yet.');
+  await page.getByRole('button', { name: 'Connection details', exact: true }).click();
+  await expect(panel).toContainText('not polled yet');
 });
 
-test("analytics says when the connection's webhooks arrive unsigned", async ({ page }) => {
+test("account overview explains unsigned webhooks", async ({ page }) => {
   const detail = g.golden<AccountDetail>('account_detail');
   const later = new Date(Date.parse(detail.connection.lastWebhookAt!) + 60_000).toISOString();
   await g.mockApi(page, [
     [new RegExp(`/api/v1/accounts/${g.SLUG}$`), { ...detail, connection: { ...detail.connection, lastUnsignedWebhookAt: later } }],
     ...g.defaultApi(),
   ]);
-  await page.goto(`/${T}/analytics`);
-  const note = page.getByRole('region', { name: 'Connection', exact: true }).getByRole('note');
+  await page.goto(`/${T}`);
+  const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+  await expect(attention).toContainText('Unsigned webhooks refused');
+  await attention.getByRole('button', { name: 'Fix connection', exact: true }).click();
+  const note = page.getByRole('dialog', { name: 'Fix connection', exact: true }).getByRole('note');
   await expect(note).toContainText('with no signature');
   await expect(note).toContainText("Set the GitHub App's webhook secret");
 });
@@ -336,7 +349,9 @@ test('repositories filter and repository detail', async ({ page }) => {
   await page.getByPlaceholder('Filter by name').fill('alpha');
   await page.getByRole('link', { name: 'alpha/one' }).click();
   await expect(page).toHaveURL(new RegExp(`${T}/repos/alpha/one$`));
+  await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
   await expect(page.locator('.deflist').first()).toContainText(g.repoDetail.settings.ignore[0]!);
+  await page.getByRole('button', { name: 'Index runs', exact: true }).click();
   await expect(page.locator('#repo-index').locator('../..')).toContainText(String(g.repoDetail.indexRuns[0]!.chunkCount));
   await expect(page.getByRole('region', { name: 'Pull requests' }).getByRole('link', { name: 'See all' })).toHaveAttribute('href', `${T}/pulls?state=all&repo=alpha%2Fone`);
   await expect(page.locator('#repo-pulls').locator('../..')).toContainText(g.pull.title);
@@ -347,6 +362,7 @@ test("a repository's limits group their digits", async ({ page }) => {
   const detail = { ...g.repoDetail, settings: { ...s, limits: { ...s.limits, tokensPerMonth: 2_500_000 } } };
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/repos/alpha/one$`), detail], ...g.defaultApi()]);
   await page.goto(`/${T}/repos/alpha/one`);
+  await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
   const value = (label: string) => page.locator('dt').filter({ hasText: label }).locator('+ dd');
   await expect(value('Max tokens')).toContainText('4,000,000');
   await expect(value('Tokens / month')).toContainText('2,500,000');
@@ -370,9 +386,8 @@ test("a repository's row sits on one line: the status with its time, the name wi
   for (const sel of ['time', 'td.mono a', '.toggle > span:last-child']) expect(Math.abs((await middle(sel)) - word)).toBeLessThanOrEqual(1);
 
   const dashes = page.getByRole('row', { name: /alpha\/bare/ }).getByText('—', { exact: true });
-  await expect(dashes).toHaveCount(2);
-  const fonts = await dashes.evaluateAll((els) => els.map((el) => getComputedStyle(el).fontFamily));
-  expect(fonts[0]).toBe(fonts[1]);
+  await expect(dashes).toHaveCount(1);
+  await expect(dashes).not.toHaveClass(/mono/);
 });
 
 test('repositories say which are forks or archived', async ({ page }) => {
@@ -385,6 +400,7 @@ test('repositories say which are forks or archived', async ({ page }) => {
 
 test('repository settings say where each comes from and what .kritika.yaml chose', async ({ page }) => {
   await page.goto(`/${T}/repos/alpha/one`);
+  await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
   const settings = page.locator('#repo-settings').locator('../..');
   const rc = g.repoDetail.repoConfig!;
   // The golden file chose another review model; the admin's is shown beside it.
@@ -433,7 +449,7 @@ test.describe('pulls list', () => {
     await page.keyboard.press('?');
     await expect(page.locator('.help-card')).toHaveCount(0);
 
-    await page.locator('.key-hints').click();
+    await page.locator('main h1').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
     await page.keyboard.press('Enter');
@@ -501,16 +517,23 @@ test.describe('pulls list', () => {
     await page.goto(`/${T}/pulls`);
     await page.getByRole('combobox', { name: 'Search pull requests' }).fill('repo:nope/nope status:great');
     await expect(page.getByRole('note')).toHaveText('Not filtering by status:great: nothing by that name.');
-    await page.waitForTimeout(400);
-    expect(seen.some((u) => u.searchParams.get('repo') === 'nope/nope')).toBe(true);
+    await expect.poll(() => seen.some((u) => u.searchParams.get('repo') === 'nope/nope')).toBe(true);
     expect(seen.some((u) => u.searchParams.has('outcome'))).toBe(false);
     await expect(page).toHaveURL(/repo=nope%2Fnope$/);
   });
 
-  test('a click anywhere on a row opens its pull request', async ({ page }) => {
+  test('a click anywhere on a row opens and closes its preview; the title opens the pull request', async ({ page }) => {
     await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/pulls`);
-    await page.locator('.pull-rows .pull-row').first().getByText('ada', { exact: false }).click();
+    const row = page.locator('.pull-rows .pull-row').first();
+    await row.getByText('ada', { exact: false }).click();
+    await expect(page.getByRole('region', { name: 'Preview of alpha/one#7', exact: true })).toBeVisible();
+    // The space to the right of the title is the row's, not the link's.
+    const cell = (await row.locator('td.pull-main').boundingBox())!;
+    await row.locator('td.pull-main').click({ position: { x: cell.width - 8, y: 12 } });
+    await expect(page.getByRole('region', { name: 'Preview of alpha/one#7', exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`${T}/pulls$`));
+    await row.getByRole('link', { name: 'Add widgets' }).click();
     await expect(page).toHaveURL(new RegExp(`${T}/pulls/alpha/one/7$`));
   });
 
@@ -565,7 +588,8 @@ test.describe('pulls list', () => {
     const none = { ...g.pull, number: 12, url: g.pull.url.replace(/\d+$/, '12'), lastReview: null, reviewCount: 0, costUsd: 0 };
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/pulls$`), g.pageOf([g.pull, none])], ...g.defaultApi()]);
     await page.goto(`/${T}/pulls`);
-    await expect(page.getByRole('columnheader')).toContainText(['Pull request', 'Findings', 'Last review', 'Reviews', 'API spend', 'Updated']);
+    await expect(page.getByRole('columnheader')).toContainText(['Pull request', 'Findings', 'Last review', 'Reviews', 'API spend']);
+    await expect(page.getByRole('columnheader', { name: 'Updated', exact: true })).toHaveCount(0);
     const rows = page.locator('.pull-rows .pull-row');
     await expect(rows.nth(0).locator('td.num')).toContainText([String(g.pull.reviewCount), '$0.84']);
     await expect(rows.nth(1).locator('td.num')).toContainText(['0', '$0']);
@@ -580,7 +604,7 @@ test.describe('pulls list', () => {
     await expect(rows.nth(0).locator('.badge')).toHaveText('paused');
     await expect(rows.nth(1).locator('.badge')).toHaveCount(0);
     await page.goto(`/${T}/pulls/alpha/one/7`);
-    await expect(page.locator('.paused-notice')).toContainText('Automatic reviews of this pull request are paused');
+    await expect(page.locator('.paused-notice')).toContainText('Automatic reviews are paused');
   });
 
   test('a row marks a pull request that is merged, closed or a draft, and its page says which', async ({ page }) => {
@@ -619,7 +643,7 @@ test.describe('pulls list', () => {
     await page.goto(`/${T}/pulls`);
     const rows = page.locator('.pull-rows .pull-row');
     await expect(rows).toHaveCount(1);
-    await page.locator('.key-hints').click();
+    await page.locator('main h1').click();
     await page.keyboard.press('j');
     await expect(rows.first()).toHaveClass(/selected/);
 
@@ -810,7 +834,7 @@ test.describe('rules', () => {
   test('says how to add a rule when there is none', async ({ page }) => {
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/rules$`), []], ...g.defaultApi()]);
     await page.goto(`/${T}/rules`);
-    await expect(page.locator('.state-msg')).toContainText('write them, or name files for them, under rules, and name context files under context');
+    await expect(page.locator('.state-msg')).toContainText('Add rules in your configuration or .kritika.yaml.');
   });
 });
 
@@ -825,16 +849,22 @@ test('pull workspace leads with the latest review and keeps skipped attempts in 
   await page.goto(`/${T}/pulls/alpha/one/7`);
   await expect(page.locator('h1')).toContainText(g.pullDetail.pull.title);
   const p = g.pullDetail.pull;
-  await expect(page.locator('.pr-workspace-head')).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
-  const latest = page.getByRole('region', { name: 'Take', exact: true });
+  await page.getByRole('button', { name: 'Pull request details', exact: true }).click();
+  const details = page.getByRole('dialog', { name: 'Pull request details' });
+  await expect(details).toContainText(`${p.author} wants to merge ${p.headRef} into ${p.baseRef}`);
+  await expect(details).not.toContainText('last synchronized');
+  await page.keyboard.press('Escape');
+  const latest = page.getByRole('region', { name: 'Review summary', exact: true });
   await expect(latest).toContainText(g.reviewDetail.summary!.take);
   const c = golden.confidence!;
-  await expect(latest.locator('.confidence-line')).toHaveText(`Confidence ${c.score}/5, below the ${c.threshold} this repository asks for\u00a0· ${c.risk} risk: ${c.reason} See up/stream#12.`);
-  await expect(latest.locator('.confidence-line').getByRole('link', { name: 'up/stream#12' })).toHaveAttribute('href', 'https://redirect.github.com/up/stream/issues/12');
-  await expect(latest.locator('.confidence-line')).toHaveAttribute('title', `scored by ${c.model}`);
+  await latest.getByRole('button', { name: /^Confidence/ }).click();
+  await expect(page.getByRole('dialog', { name: /^Confidence/ }).locator('.confidence-line')).toHaveText(`Confidence ${c.score}/5, below the ${c.threshold} this repository asks for\u00a0· ${c.risk} risk: ${c.reason} See up/stream#12.`);
+  await expect(page.getByRole('dialog', { name: /^Confidence/ }).locator('.confidence-line').getByRole('link', { name: 'up/stream#12' })).toHaveAttribute('href', 'https://redirect.github.com/up/stream/issues/12');
+  await expect(page.getByRole('dialog', { name: /^Confidence/ }).locator('.confidence-line')).toHaveAttribute('title', `scored by ${c.model}`);
+  await page.keyboard.press('Escape');
   const f = g.reviewDetail.findings[0]!;
+  await page.getByRole('button', { name: `Details for ${f.title}`, exact: true }).click();
   await expect(page.locator('.finding').getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute('href', `${p.url}#discussion_r${f.forgeCommentId}`);
-  await expect(page.locator('.pr-workspace-head')).toContainText('last synchronized');
   await expect(page.locator('.pr-workspace-head')).toContainText('Latest attempt skipped: excluded by a trigger condition');
   await page.getByRole('navigation', { name: 'Review sections' }).getByRole('link', { name: 'Activity', exact: true }).click();
   await expect(page.locator('.timeline-item')).toHaveCount(2);
@@ -855,7 +885,8 @@ test.describe('review', () => {
     await expect(impact).toBeVisible();
     await expect(impact).toContainText('migrations/002.sql');
     await expect(impact).toContainText('reverting the binary does not restore its data');
-    await expect(page.locator('.finding')).toHaveCount(g.reviewDetail.findings.length);
+    await expect(page.locator('.review-findings [data-finding]')).toHaveCount(g.reviewDetail.findings.length);
+    await expect(page.locator('.finding')).toHaveCount(0);
   });
 
   test('merge impact preserves fenced commands', async ({ page }) => {
@@ -885,7 +916,12 @@ test.describe('review', () => {
     await page.goto(`/${T}/reviews/rev-1`);
     await expect(page.locator('#sum-take').locator('../..')).toContainText(g.reviewDetail.summary!.take);
     const f = g.reviewDetail.findings[0]!;
-    await expect(page.locator(`#sev-${f.severity}`)).toBeVisible();
+    await expect(page.locator('.review-findings .sev')).toHaveText(f.severity);
+    const toggle = page.getByRole('button', { name: `Details for ${f.title}`, exact: true });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('.finding')).toContainText(f.title);
     await expect(page.locator('.finding')).toContainText(`${f.path}:${f.line}-${f.endLine}`);
     await expect(page.locator('.finding .code-block')).toContainText(f.replacement);
@@ -896,25 +932,27 @@ test.describe('review', () => {
       `${g.reviewDetail.review.pull.url}#discussion_r${f.forgeCommentId}`,
     );
     const r = g.reviewDetail.review;
-    await page.getByRole('link', { name: 'Run details', exact: true }).click();
+    await page.getByRole('button', { name: /^Confidence/ }).click();
+    await expect(page.getByRole('dialog', { name: /^Confidence/ }).locator('.confidence-line')).toContainText(`${r.confidence!.risk} risk: ${r.confidence!.reason}`);
+    await page.keyboard.press('Escape');
+    await page.getByRole('combobox', { name: 'Run details' }).selectOption('timeline');
     const fact = (name: string) => page.locator('.run-details .facts > div').filter({ has: page.getByRole('term').getByText(name, { exact: true }) }).getByRole('definition');
     await expect(fact('Scope')).toHaveText(new RegExp(`^${r.scope}\\s\\(${r.scopeReason}\\)$`));
     await expect(fact('Risk')).toHaveText(r.confidence!.risk);
     await expect(fact('Confidence')).toHaveText(new RegExp(`^${r.confidence!.score}/5\\s\\(below ${r.confidence!.threshold}\\)$`));
     await expect(fact('Model')).toHaveText(r.model);
-    await expect(page.locator('.tab-panel .confidence-line')).toContainText(`${r.confidence!.risk} risk: ${r.confidence!.reason}`);
 
     for (const [tab, text] of [
       ['Timeline', g.reviewDetail.runnerRun!.podName],
       ['Raw', '.kritika.yaml'],
       ['Usage', 'Total'],
     ] as const) {
-      await page.locator('.tabs').getByRole('link', { name: tab, exact: true }).click();
+      await page.getByRole('combobox', { name: 'Run details' }).selectOption(tab.toLowerCase());
       await expect(page).toHaveURL(new RegExp(`/reviews/rev-1/${tab.toLowerCase()}$`));
       await expect(page.locator('.tab-panel')).toContainText(text);
     }
-    await expect(page.getByRole('navigation', { name: 'Run sections' }).locator('.tab.active')).toHaveText('Usage');
-    await page.locator('.tabs').getByRole('link', { name: 'Timeline', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Run details' })).toHaveValue('usage');
+    await page.getByRole('combobox', { name: 'Run details' }).selectOption('timeline');
     const a = g.reviewDetail.agentRun!;
     const skills = page.locator('.deflist').filter({ hasText: 'Skills' }).getByRole('definition').filter({ hasText: a.skillsOffered[0]! });
     await expect(skills).toHaveText(`${a.skillsOffered.join(', ')} (read ${a.skillsOpened.join(', ')})`);
@@ -937,11 +975,15 @@ test.describe('review', () => {
     ];
     await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, findings }], ...g.defaultApi()]);
     await page.goto(`/${T}/reviews/rev-1`);
+    await expect(page.locator('.review-findings [data-finding]')).toHaveCount(3);
+    for (const row of await page.locator('.review-findings [data-finding]').all()) await row.getByRole('button').click();
     await expect(page.locator('#finding-f-a .pill')).toHaveText('addressed');
     await expect(page.locator('#finding-f-d .pill')).toHaveText('dismissed');
     await expect(page.locator('#finding-f-d')).toContainText('Dismissed: house style');
     await expect(page.locator('#finding-f-o .pill')).toHaveCount(0);
     await page.goto(`/${T}/pulls/alpha/one/7`);
+    await expect(page.locator('.review-findings [data-finding]')).toHaveCount(3);
+    for (const row of await page.locator('.review-findings [data-finding]').all()) await row.getByRole('button').click();
     await expect(page.locator('#finding-f-a .pill')).toHaveText('addressed');
     await expect(page.locator('#finding-f-d')).toContainText('Dismissed: house style');
     await expect(page.locator('#finding-f-o')).toContainText(f.title);
@@ -958,7 +1000,8 @@ test.describe('review', () => {
 
   test('the summary lists the rules the review checked, and how many findings cite each', async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1`);
-    const rules = page.getByRole('region', { name: 'Rules checked' });
+    await page.getByRole('button', { name: /^Rules checked/ }).click();
+    const rules = page.getByRole('region', { name: 'Rules checked', exact: true }).first();
     await expect(rules.getByRole('listitem')).toHaveText([/wrap-errors\s*1 finding/, /no-tokens\s*no finding/]);
     await expect(rules.getByRole('link', { name: 'wrap-errors' })).toHaveAttribute('href', `${T}/findings?rule=wrap-errors`);
     const pack = { ...g.reviewDetail.contextPack!, ruleIds: [] };
@@ -984,6 +1027,7 @@ test.describe('review', () => {
     // A finding's replacement takes its language from the finding's file.
     await page.goto(`/${T}/reviews/rev-1`);
     const f = g.reviewDetail.findings[0]!;
+    await page.getByRole('button', { name: `Details for ${f.title}`, exact: true }).click();
     const replacement = page.locator(`#finding-${f.id} pre`).first();
     await expect(replacement).toHaveAttribute('data-lang', 'go');
     await expect(replacement).toHaveText(f.replacement);
@@ -1014,6 +1058,7 @@ test.describe('review', () => {
     ].join('\n');
     await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, findings: [{ ...f, explanation }] }], ...g.defaultApi()]);
     await page.goto(`/${T}/reviews/rev-1`);
+    await page.getByRole('button', { name: `Details for ${f.title}`, exact: true }).click();
     const md = page.locator(`#finding-${f.id} .md`).first();
     await expect(md.locator('em')).toHaveText('never');
     await expect(md.locator('ul > li')).toHaveText(['it is read on line 3', 'docs say it may be nil']);
@@ -1154,8 +1199,13 @@ test('pull detail says what its unfinished review job waits on, and nothing of o
   await page.goto(`/${T}/pulls/alpha/one/7`);
   const j = g.job;
   const notice = page.locator('.job-notice');
-  await expect(notice).toContainText(`A review is waiting to run again: attempt ${j.attempt} of ${j.maxAttempts} failed, the next was due`);
-  await expect(notice).toContainText(`GitHub did not answer. ${j.lastError}`);
+  await expect(notice).toContainText('A review is waiting to run again. GitHub did not answer.');
+  await expect(notice).not.toContainText(j.lastError);
+  await notice.getByRole('button', { name: 'Queue details' }).click();
+  const details = page.getByRole('dialog', { name: 'Queue details' });
+  await expect(details).toContainText(`Attempt ${j.attempt} of ${j.maxAttempts} failed, the next was due`);
+  await expect(details).toContainText(j.lastError);
+  await page.keyboard.press('Escape');
   await expect(notice.getByRole('link', { name: 'Open the queue' })).toHaveAttribute('href', `#/a/${g.SLUG}/queue`);
 
   const pull = /\/pulls\/alpha\/one\/7$/;
@@ -1180,7 +1230,8 @@ test('a time still to come says how far off it is', async ({ page }) => {
   await page.goto(`/${T}/queue`);
   await expect(page.locator(`tbody td[data-label="Activity"] time[datetime="${due}"]`)).toHaveText('in 10m');
   await page.goto(`/${T}/pulls/alpha/one/7`);
-  await expect(page.locator('.job-notice')).toContainText('failed, the next is due in 10m.');
+  await page.getByRole('button', { name: 'Queue details' }).click();
+  await expect(page.getByRole('dialog', { name: 'Queue details' })).toContainText('failed, the next is due in 10m.');
 });
 
 test("a run's phases say the second each began and ended, not only how long ago", async ({ page }) => {
@@ -1234,15 +1285,16 @@ test("a job's error keeps a readable width however wide the columns beside it, a
   await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [long, fine] }], ...g.defaultApi()]);
   await page.setViewportSize({ width: 900, height: 800 });
   await page.goto('/#/queue');
-  const cell = (id: number) => page.getByRole('row').filter({ has: page.getByRole('cell', { name: new RegExp(`^#${id} ·`) }) }).locator('.queue-error');
-  await cell(43).locator('summary').click();
-  expect((await cell(43).boundingBox())!.width).toBeGreaterThanOrEqual(260);
+  await page.getByRole('button', { name: 'Details for job #43' }).click();
+  const details = page.getByRole('region', { name: 'Job #43 details' });
+  expect((await details.locator('.error-text').boundingBox())!.width).toBeGreaterThanOrEqual(260);
+  await expect(details).toContainText(long.lastError);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
 
   await g.mockApi(page, [[/\/api\/v1\/queue$/, { ...g.instanceQueue, jobs: [fine] }], ...g.defaultApi()]);
   await page.reload();
-  await expect(cell(44).locator('.error-text')).toHaveCount(0);
-  await expect(cell(44).locator('details')).not.toHaveAttribute('open', '');
+  await expect(page.getByRole('button', { name: 'Details for job #44' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.row-preview')).toHaveCount(0);
 });
 
 test("the palette finds every account's recent pull requests, the current account's first, and the instance's queue", async ({ page }) => {
@@ -1268,14 +1320,14 @@ test("the palette finds every account's recent pull requests, the current accoun
 });
 
 test.describe('your settings', () => {
-  const updated = g.pullDetail.pull.updatedAt;
-  const hover = (page: import('@playwright/test').Page) => page.locator(`.meta-line time[datetime="${updated}"]`);
+  const started = g.reviewDetail.review.createdAt;
+  const hover = (page: import('@playwright/test').Page) => page.getByRole('dialog', { name: 'Pull request details' }).locator(`time[datetime="${started}"]`).first();
 
   test('a time zone and a clock are saved as chosen, and every time follows them', async ({ page }) => {
     const sent = await g.mockWrites(page, [['PUT', /\/api\/v1\/me\/settings$/, { status: 204 }]]);
     await page.goto('/#/');
     await page.locator('.user-button').click();
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.locator('.user-panel').getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/settings$/);
     await expect(page.locator('.page-head h1')).toHaveText('Your settings');
 
@@ -1291,13 +1343,15 @@ test.describe('your settings', () => {
     // In-app navigation: no reload, so the choice just made is what applies.
     await page.locator('.brand').click();
     await page.evaluate((h) => (location.hash = h), `${T}/pulls/alpha/one/7`);
-    await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 21:01:30 GMT+9');
+    await page.getByRole('button', { name: 'Pull request details', exact: true }).click();
+    await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 21:00:00 GMT+9');
   });
 
   test('settings kept with the user apply from the first page', async ({ page }) => {
     await g.mockApi(page, [[/\/api\/v1\/me$/, { ...g.me, settings: { timeZone: 'UTC', clock: '12', theme: '' } }], ...g.defaultApi()]);
     await page.goto(`/${T}/pulls/alpha/one/7`);
-    await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 12:01:30 PM UTC');
+    await page.getByRole('button', { name: 'Pull request details', exact: true }).click();
+    await expect(hover(page)).toHaveAttribute('title', 'Sep 1, 2026, 12:00:00 PM UTC');
     await page.goto('/#/settings');
     await expect(page.getByLabel('Time zone')).toHaveValue('UTC');
     await expect(page.getByRole('radio', { name: '12-hour', exact: true })).toBeChecked();
@@ -1326,11 +1380,13 @@ test.describe('your settings', () => {
     await expect(page.locator('html')).toHaveClass(/dark/);
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'dark' });
 
-    // The top bar's button steps dark to auto, which is the browser's own.
-    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    // The user menu's button steps dark to auto, which is the browser's own.
+    await page.locator('.user-button').click();
+    const button = page.getByRole('button', { name: /^Theme: / });
+    await button.click();
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: '' });
     await expect(themes.getByRole('radio', { name: 'Auto' })).toBeChecked();
-    await page.getByRole('button', { name: 'Toggle theme' }).click();
+    await button.click();
     await expect.poll(() => sent.at(-1)?.body).toEqual({ timeZone: '', clock: '', theme: 'light' });
     await expect(themes.getByRole('radio', { name: 'Light' })).toBeChecked();
 
@@ -1348,19 +1404,19 @@ test('the top bar fits a phone: the logo keeps its size and the user menu stays 
   await page.goto(`/${T}/pulls`);
   const user = (await page.locator('.user-button').boundingBox())!;
   expect(user.x + user.width).toBeLessThanOrEqual(390);
-  expect((await page.locator('.brand img').boundingBox())!.width).toBe(22);
+  expect((await page.locator('.brand .logo').boundingBox())!.width).toBe(22);
 });
 
-test("this month's tiles fill their grid at every width, with no cell left empty", async ({ page }) => {
+test("the usage tiles fill their grid at every width, with no cell left empty", async ({ page }) => {
   for (const [width, columns] of [
-    [1280, 3],
-    [600, 1],
+    [1280, 4],
+    [600, 2],
     [390, 1],
   ] as const) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(`/${T}/usage`);
-    const tiles = page.getByRole('region', { name: 'This month' });
-    await expect(tiles.locator(':scope > div')).toHaveCount(3);
+    const tiles = page.getByRole('region', { name: 'Totals' });
+    await expect(tiles.locator(':scope > div')).toHaveCount(4);
     expect(await tiles.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
   }
 });
@@ -1377,17 +1433,17 @@ test('your settings fit a phone: no control runs past the screen', async ({ page
 test('queue, usage, follow-ups and admin console pages render their fixtures', async ({ page }) => {
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(`/${T}/queue`);
-  await page.locator('.queue-error summary').click();
+  await page.getByRole('button', { name: `Details for job #${g.job.id}` }).click();
   await expect(page.locator('.queue-table')).toContainText('GitHub did not answer.');
-  await expect(page.locator('.queue-error .error-text')).toBeVisible();
-  await expect(page.locator('.queue-error')).toContainText(g.job.lastError);
-  await expect(page.locator('tbody tr')).toContainText(`${g.job.attempt}/${g.job.maxAttempts}`);
+  await expect(page.locator('.row-preview .error-text')).toBeVisible();
+  await expect(page.locator('.row-preview')).toContainText(g.job.lastError);
+  await expect(page.locator('.row-preview')).toContainText(`${g.job.attempt}/${g.job.maxAttempts}`);
 
   await page.goto(`/${T}/usage`);
   await expect(page.locator('tbody tr')).toContainText('Sep 1, 2026');
   await expect(page.getByRole('img', { name: /API spend by day/ })).toBeVisible();
   await expect(page.getByRole('meter', { name: 'Monthly tokens used' })).toHaveAttribute('aria-valuemax', String(g.accountSummary.usage.tokensPerMonth));
-  await expect(page.getByRole('region', { name: 'This month' })).toContainText('$1.50');
+  await expect(page.getByRole('region', { name: 'Totals' })).toContainText('$1.50');
   await page.getByRole('radio', { name: '7 days' }).click();
   await page.getByRole('combobox', { name: 'Group by' }).selectOption('model');
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/usage') && u.searchParams.get('group') === 'model')).toBe(true);
@@ -1477,10 +1533,10 @@ test('a stream from a server running another build reloads the page instead of r
   expect(loads()).toBe(2);
 });
 
-test('the user menu shows the version the server reports', async ({ page }) => {
+test('the sidebar shows the version the server reports, beside a link to the project', async ({ page }) => {
   await page.goto(`/${T}/analytics`);
-  await page.locator('.user-button').click();
-  await expect(page.locator('.user-panel .user-version')).toHaveText(`kritika ${g.meta.version}`);
+  await expect(page.locator('.topbar .app-version')).toHaveText(`kritika ${g.meta.version}`);
+  await expect(page.locator('.topbar').getByRole('link', { name: 'kritika on GitHub' })).toHaveAttribute('href', 'https://github.com/home-operations/kritika');
 });
 
 test('each page names itself in the browser tab', async ({ page }) => {
@@ -1550,7 +1606,7 @@ test('a tab stays where it is whichever tab is the current one', async ({ page }
   await expect(page.locator('.tab.active')).toContainText('Overview');
   const tabs = await lefts('[aria-label="Review sections"] .tab');
   await page.goto(`/${T}/reviews/rev-1/conversation`);
-  await expect(page.getByRole('navigation', { name: 'Run sections' }).locator('.tab.active')).toHaveText('Conversation');
+  await expect(page.getByRole('combobox', { name: 'Run details' })).toHaveValue('conversation');
   expect(await lefts('[aria-label="Review sections"] .tab')).toEqual(tabs);
 });
 

@@ -160,12 +160,12 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Pull requests" {slug} description={slug ? undefined : "Review activity across all your accounts. Choose an account to narrow this list."} />
+    <PageHeader title="Pull requests" {slug} />
     <div class="toolbar flex flex-wrap items-center gap-2" role="search">
       <TokenSearch
         id="pull-search"
         label="Search pull requests"
-        placeholder="Search, or filter by repo:, author:, status: or is:"
+        placeholder="Search pull requests or add filters…"
         {specs}
         bind:text
         bind:input={searchEl}
@@ -182,21 +182,17 @@
     </div>
     <StateView {res} retry={() => paged.load()}>
       {#if items.length === 0 && filter}
-        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+        <div class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">
           <span>No pull requests match these filters.</span>
           <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
         </div>
       {:else if items.length === 0}
-        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
+        <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
       {:else}
         <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
         <LoadMore {paged} />
       {/if}
     </StateView>
-    <p class="muted small key-hints text-ui-sm m-0">
-      <!-- eslint-disable-next-line svelte/no-useless-mustaches -- Preserve the separator at the conditional boundary. -->
-      <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if slug && isAdmin()}{' '}· <kbd>space</kbd> select{/if}
-    </p>
   </div>
 </main>
 

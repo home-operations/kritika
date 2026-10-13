@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import { pullRoute } from '../../links';
-  import { href } from '../../router.svelte';
+  import { href, navigate } from '../../router.svelte';
   import type { ReviewTab, Route } from '../../routes';
   import type { PullDetail, ReviewDetail } from '../../types';
   import { revealInNav } from '../../focus';
@@ -17,6 +17,7 @@
   import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
   import FollowupItem from '../../components/FollowupItem.svelte';
   import Time from '../../components/Time.svelte';
+  import Collapsible from '../../components/Collapsible.svelte';
 
   let { slug, d, pull, base, version, tab, finding, page, to }: {
     slug: string; d: ReviewDetail; pull?: PullDetail; base: string; version: number;
@@ -50,7 +51,7 @@
   };
 </script>
 
-<nav class="tabs flex gap-0.5 shadow-[inset_0_-1px_0_var(--border)] overflow-x-auto" aria-label="Review sections">
+<nav class="tabs review-navigation flex gap-0.5 shadow-[inset_0_-1px_0_var(--border)] overflow-x-auto" aria-label="Review sections">
   {#each primary as t (t)}
     <a class="tab py-[7px] px-3 text-muted border-b-2 border-solid border-b-transparent inline-flex gap-1.5 items-center whitespace-nowrap" class:active={t === tab} aria-current={t === tab ? 'page' : undefined}
       href={href(to(t, t === 'diff' ? selectedFinding || undefined : undefined))} {@attach t === tab && revealInNav}>
@@ -58,25 +59,27 @@
       {#if t === 'diff' && d.findings.length}<span class="tab-count text-ui-xs bg-panel border border-solid border-line rounded-sm py-0 px-1.5 font-semibold" aria-hidden="true">{d.findings.length}</span>{/if}
     </a>
   {/each}
-  <a class="tab run-details-tab py-[7px] px-3 text-muted border-b-2 border-solid border-b-transparent inline-flex gap-1.5 items-center whitespace-nowrap ml-auto" class:active={inRun} aria-current={inRun ? 'page' : undefined} href={href(to('timeline'))} {@attach inRun && revealInNav}><span class="tab-label inline-flex flex-col" data-label="Run details">Run details</span></a>
+  <label class="run-details-picker ml-auto flex items-center py-1 pl-2" class:active={inRun}>
+    <span class="sr-only">Run details</span>
+    <select aria-label="Run details" value={inRun ? tab : ''} onchange={(e) => navigate(to(e.currentTarget.value as ReviewTab))}>
+      <option value="" disabled>Run details</option>
+      {#each diagnostics as t (t)}<option value={t}>{labels[t]}</option>{/each}
+    </select>
+  </label>
 </nav>
 
 {#if inRun}
   <section class="run-details grid gap-4" aria-label="Run details">
     <ReviewMeta r={d.review} scopeReason={d.review.scopeReason} />
-    <nav class="tabs flex gap-0.5 shadow-[inset_0_-1px_0_var(--border)] overflow-x-auto" aria-label="Run sections">
-      {#each diagnostics as t (t)}
-        <a class="tab py-[7px] px-3 text-muted border-b-2 border-solid border-b-transparent inline-flex gap-1.5 items-center whitespace-nowrap" class:active={t === tab} aria-current={t === tab ? 'page' : undefined} href={href(to(t))} {@attach t === tab && revealInNav}><span class="tab-label inline-flex flex-col" data-label={labels[t]}>{labels[t]}</span></a>
-      {/each}
-    </nav>
   </section>
 {/if}
 
 {#if tab === 'diff' && d.summary}
-  <section class="review-conclusion p-5 bg-panel border border-solid border-line rounded-lg" aria-label="Review summary">
-    <h2>{d.summary.headline || 'Review summary'}</h2>
-    <Markdown text={d.summary.take} />
-    {#if d.summary.impact?.length}<div class="merge-impact mt-4 py-3 px-3.5 bg-highlight rounded-sm"><strong>Merge impact</strong><ReviewImpact notes={d.summary.impact} /></div>{/if}
+  <section class="review-conclusion" aria-label="Review summary">
+    <Collapsible title={d.summary.headline || 'Review summary'}>
+      <Markdown text={d.summary.take} />
+      {#if d.summary.impact?.length}<div class="merge-impact mt-4 py-3 px-3.5 bg-highlight rounded-sm"><strong>Merge impact</strong><ReviewImpact notes={d.summary.impact} /></div>{/if}
+    </Collapsible>
   </section>
 {/if}
 
@@ -94,7 +97,7 @@
             <ol class="timeline list-none m-0 p-0">
               {#each pull.reviews as r (r.id)}
                 <li class="timeline-item border-b border-solid border-b-line">
-                  <a class="timeline-link flex flex-col gap-1 py-2 px-3 text-ink" href={href({ ...pullRoute(slug, d.review.pull), run: r.id })}>
+                  <a class="timeline-link flex flex-col gap-1 py-3 px-4 text-ink" href={href({ ...pullRoute(slug, d.review.pull), run: r.id })}>
                     <span class="timeline-top flex items-center gap-2"><ReviewStatusTile status={r.status} /><Time iso={r.createdAt} /></span>
                     <ReviewMeta {r} />
                     {#if r.error}<span class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{r.error}</span>{/if}
@@ -107,9 +110,9 @@
             <header class="panel-head"><h2 id="pull-followups">Follow-ups</h2></header>
             {#if pull.followups.length}
               <ul class="followups list-none m-0 p-0">{#each pull.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul>
-            {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No follow-up questions.</p>{/if}
+            {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No follow-up questions.</p>{/if}
           </section>
-        {:else}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Pull request activity is unavailable until its details load.</p>{/if}
+        {:else}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">Pull request activity is unavailable until its details load.</p>{/if}
       {:else if view === 'conversation'}
         <ConversationTab active={tab === view} {base} {version} {slug} />
       {:else if view === 'timeline'}

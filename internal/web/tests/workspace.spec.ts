@@ -97,13 +97,13 @@ test("overview attention links retain account scope and expose near limits", asy
   const seen = await mockWorkspace(page);
   await page.goto("/");
   const attention = page.getByRole("region", { name: "Needs attention", exact: true });
-  await expect(attention.getByRole("link")).toHaveCount(3);
+  await expect(attention.getByRole("link")).toHaveCount(4);
   expect(seen.some((url) => url.pathname.endsWith('/pulls'))).toBe(false);
   await expect(attention.getByRole("link").first()).toHaveAttribute(
     "href",
     `#/a/${g.SLUG}/pulls?outcome=failed`,
   );
-  await expect(attention.getByRole("link").last()).toHaveAttribute("href", `#/a/${g.SLUG}/usage`);
+  await expect(attention.getByRole("link", { name: /Near limit/ })).toHaveAttribute("href", `#/a/${g.SLUG}/usage`);
   await expect(attention).toContainText("46 of today's 50 reviews");
   await attention.getByRole("link").first().click();
   await expect(page).toHaveURL(/pulls\?outcome=failed$/);
@@ -137,7 +137,7 @@ test("findings open collapsed files, support keyboard navigation, and survive a 
 test("summary links open the matching finding in code and work after reload", async ({ page }) => {
   await mockWorkspace(page);
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1`);
-  await page.getByRole("link", { name: "Inspect internal/worker/retry.go:2 in code" }).click();
+  await page.getByRole("link", { name: "Include the job ID in retry logs: Inspect internal/worker/retry.go:2 in code" }).click();
   await expect(page).toHaveURL(/\/diff\?finding=logging$/);
   await expect(page.locator("#diff-finding-logging")).toBeFocused();
   await page.reload();
@@ -208,7 +208,7 @@ for (const theme of ["light", "dark"] as const) {
     await mockWorkspace(page);
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Needs attention", exact: true })).toBeVisible();
-    await expect(page.locator(".overview-attention .attention-item")).toHaveCount(3);
+    await expect(page.locator(".overview-attention .attention-item")).toHaveCount(4);
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: testInfo.outputPath(`overview-${theme}.png`) });
     await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
@@ -347,7 +347,7 @@ for (const theme of ["light", "dark"] as const) {
     for (const route of ["/", `/#/a/${g.SLUG}/reviews/rev-1/diff`]) {
       await page.goto(route);
       await expect(page.locator(".page-head h1")).toBeVisible();
-      if (route === "/") await expect(page.locator(".overview-attention .attention-item")).toHaveCount(3);
+      if (route === "/") await expect(page.locator(".overview-attention .attention-item")).toHaveCount(4);
       else await expect(page.locator("table.diff")).toHaveCount(2);
       const failures = await page.locator(".page-head h1, .overview-attention .pill, .overview-attention strong, .overview-attention .muted, .finding-jump strong, .finding-jump .muted, .finding-jump .sev, .finding-controls .btn, .file-filters label, .section-tab.active").evaluateAll((elements) => {
         const canvas = document.createElement("canvas");
@@ -397,7 +397,7 @@ test("summary links can revisit a finding after selecting a different one", asyn
   await page.getByRole("button", { name: "Next finding" }).click();
   await expect(page).toHaveURL(/finding=logging$/);
   await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
-  await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
+  await page.getByRole("link", { name: "Drain queued jobs before exiting: Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await expect(page).toHaveURL(/finding=shutdown$/);
 });
@@ -443,7 +443,7 @@ test("explicit summary links refocus the already-selected finding after scrollin
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.locator("main").evaluate((el) => { el.scrollTop = 0; });
   await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
-  await page.getByRole("link", { name: "Inspect internal/worker/worker.go:4 in code" }).click();
+  await page.getByRole("link", { name: "Drain queued jobs before exiting: Inspect internal/worker/worker.go:4 in code" }).click();
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.getByRole("navigation", { name: "Review sections" }).getByRole("link", { name: "Overview", exact: true }).click();
   await page.getByRole("link", { name: "Findings & code", exact: true }).click();
@@ -468,7 +468,7 @@ for (const width of [390, 768, 1536]) {
     await mockWorkspace(page);
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/#/a/${g.SLUG}/pulls`);
-    const all = page.getByRole("checkbox", { name: "Select every pull request shown" });
+    const all = page.locator("thead").getByRole("checkbox", { name: "Select every pull request shown" });
     await all.check();
     await expect(page.getByRole("group", { name: "Selected pull requests" })).toContainText("3 selected");
     await all.uncheck();
@@ -482,7 +482,7 @@ test("sidebar tab order and current-page markers match visible navigation", asyn
   const nav = page.locator(".desktop-navigation nav.sections");
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   await expect(nav.getByRole("link", { name: "Reviews", exact: true })).toHaveCount(0);
-  await page.locator(".account-button").focus();
+  await page.locator(".brand").focus();
   await page.keyboard.press("Tab");
   await expect(nav.getByRole("link", { name: "Overview", exact: false })).toBeFocused();
   await nav.getByRole("link", { name: "Findings", exact: true }).click();
@@ -497,6 +497,7 @@ test("summary and code use the same list formatting for multiline merge impact",
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1`);
   const summary = await page.locator('[aria-labelledby="sum-impact"] .md').innerHTML();
   await page.getByRole("link", { name: "Findings & code", exact: true }).click();
+  await page.getByRole("region", { name: "Review summary" }).getByRole("button").click();
   await expect(page.locator(".merge-impact .md")).toHaveJSProperty("innerHTML", summary);
 });
 

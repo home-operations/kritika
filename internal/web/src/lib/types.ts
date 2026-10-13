@@ -71,7 +71,8 @@ export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
 export type Forge = 'github';
-export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role' | 'review';
+// account groups the instance's usage by account; an account's own has no such group.
+export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role' | 'review' | 'account';
 export type JobState =
   | 'available'
   | 'scheduled'
@@ -528,6 +529,8 @@ export interface AnalyticsPoint {
 
 export interface RepoActivity {
   repository: string;
+  // account is set in the instance's list.
+  account?: string;
   reviews: number;
   findings: SeverityCounts;
   addressed: number;
@@ -809,6 +812,9 @@ export interface Transcript {
 
 export interface UsagePoint {
   key: string;
+  // account is set in the instance's series for a review run's key, and
+  // for an account's row when grouped by account.
+  account?: string;
   inputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;

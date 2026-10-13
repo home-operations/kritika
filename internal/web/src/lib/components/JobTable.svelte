@@ -10,10 +10,13 @@
   import Time from './Time.svelte';
   import Segmented from './Segmented.svelte';
   import ActionDialog from './ActionDialog.svelte';
-  import HelpPopover from './HelpPopover.svelte';
+  import RowToggle from './RowToggle.svelte';
+  import { rowToggles } from '../rowclick';
   import type { ComponentProps } from 'svelte';
 
   let { jobs, account, several = false, ondone, filter, onfilter }: { jobs: J[]; account: (j: J) => string; several?: boolean; ondone?: () => void; filter?: QueueFilter; onfilter: (filter: QueueFilter) => void } = $props();
+  const tableId = $props.id();
+  let expanded = $state<Record<string, boolean>>({});
   const queueState = $derived(filter?.state ?? 'all');
   const search = $derived(filter?.q ?? '');
   type Action = Omit<ComponentProps<typeof ActionDialog>, 'open' | 'ondone'>;
@@ -38,22 +41,26 @@
   ] as const);
 </script>
 
-<div class="toolbar queue-toolbar flex flex-wrap items-center gap-2">
+<div class="toolbar flex flex-wrap items-center gap-2" role="search">
+  <label class="search-box [flex:1_1_240px] min-w-0 flex">
+    <span class="sr-only">Search jobs</span>
+    <input type="search" aria-label="Search jobs" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Search by repository, account or job" />
+  </label>
   <Segmented label="Queue state" options={filters} value={queueState} onchange={(v) => onfilter({ ...filter, state: v === 'all' ? undefined : v })} />
-  <label class="queue-search flex items-center gap-2 text-[length:12px] whitespace-nowrap">Search jobs <input type="search" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Repository, account or job" /></label>
 </div>
-<div class="queue-caption flex items-center justify-between gap-3"><span class="small muted text-ui-sm">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
 <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
   <table class="data queue-table">
     <thead>
       <tr>
         {#if several}<th scope="col">Account</th>{/if}
-        <th scope="col">Job / target</th><th scope="col">Status</th><th scope="col">Activity</th><th scope="col">Actions / details</th>
+        <th scope="col">Job / target</th><th scope="col">Status</th><th scope="col">Activity</th>{#if isAdmin()}<th scope="col">Actions</th>{/if}<th scope="col" class="relative"><span class="sr-only">Details</span></th>
       </tr>
     </thead>
     <tbody>
-      {#each visible as j (j.id)}
-        <tr>
+      {#each visible as j, i (`${account(j)}:${j.id}`)}
+        {@const key = `${account(j)}:${j.id}`}
+        {@const previewId = `${tableId}-${i}`}
+        <tr class="row-toggles" class:row-expanded={expanded[key]} onclick={(e) => { if (rowToggles(e)) expanded[key] = !expanded[key]; }}>
           {#if several}<td data-label="Account" class="mono small text-ui-sm"><a href={href({ name: 'queue', slug: account(j) })}>{account(j)}</a></td>{/if}
           <td data-label="Job / target"><strong>#{j.id} · {j.kind}</strong>
             {#if j.kind === 'thread' && j.args.resolved !== undefined}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">{j.args.resolved ? 'Resolve thread' : 'Restore thread'}</span>{/if}
@@ -72,31 +79,42 @@
             {:else if j.attemptedAt}Last attempt <Time iso={j.attemptedAt} />
             {:else}Created <Time iso={j.createdAt} />{/if}
           </td>
-          <td data-label="Actions / details" class="queue-error max-w-90 wrap-anywhere">
-            {#if isAdmin()}
-              {@const action = actionFor(j)}
+          {#if isAdmin()}
+            {@const action = actionFor(j)}
+            <td data-label="Actions">
               <div class="queue-actions flex items-center flex-wrap gap-2.5 mt-0 mx-0 mb-2">
                 {#if action}<button class="btn" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
               </div>
-            {/if}
-            <details class="job-details">
-              <summary aria-label={`Details for job #${j.id}`}>Details</summary>
-              <dl><dt>Attempt</dt><dd>{j.attempt}/{j.maxAttempts}</dd><dt>Created</dt><dd><Time iso={j.createdAt} /></dd>
-                {#if j.attemptedAt}<dt>Last attempt</dt><dd><Time iso={j.attemptedAt} /></dd>{/if}
-                {#if j.heartbeatAt}<dt>Heartbeat</dt><dd><Time iso={j.heartbeatAt} /></dd>{/if}
-                <dt>Scheduled</dt><dd><Time iso={j.scheduledAt} /></dd>
-                {#if j.args.trigger}<dt>Trigger</dt><dd>{j.args.trigger}</dd>{/if}
-                {#if j.args.head}<dt>Commit</dt><dd><span class="mono" title={j.args.head}>{shortSha(j.args.head)}</span></dd>{/if}
-                {#if j.args.commentId}<dt>Comment</dt><dd>{j.args.commentId}</dd>{/if}
-              </dl>
-              {#if j.lastError}<p class="small muted text-ui-sm">Last attempt error</p><p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{j.lastError}</p>{/if}
-            </details>
-          </td>
+            </td>
+          {/if}
+          <td class="row-toggle-cell"><RowToggle bind:open={expanded[key]} label={`Details for job #${j.id}`} controls={previewId} /></td>
         </tr>
+        {#if expanded[key]}
+          <tr class="row-preview"><td colspan={4 + Number(several) + Number(isAdmin())}>
+            <div class="row-preview-body" id={previewId} role="region" aria-label={`Job #${j.id} details`}>
+              <div class="row-preview-grid">
+                <div>
+                  <h2 class="preview-heading">Job details</h2>
+                  <dl class="preview-facts preview-facts-wide"><dt>Attempt</dt><dd>{j.attempt}/{j.maxAttempts}</dd><dt>Created</dt><dd><Time iso={j.createdAt} /></dd>
+                    {#if j.attemptedAt}<dt>Last attempt</dt><dd><Time iso={j.attemptedAt} /></dd>{/if}
+                    {#if j.heartbeatAt}<dt>Heartbeat</dt><dd><Time iso={j.heartbeatAt} /></dd>{/if}
+                    <dt>Scheduled</dt><dd><Time iso={j.scheduledAt} /></dd>
+                    {#if j.args.trigger}<dt>Trigger</dt><dd>{j.args.trigger}</dd>{/if}
+                    {#if j.args.head}<dt>Commit</dt><dd><span class="mono" title={j.args.head}>{shortSha(j.args.head)}</span></dd>{/if}
+                    {#if j.args.commentId}<dt>Comment</dt><dd>{j.args.commentId}</dd>{/if}
+                  </dl>
+                </div>
+                {#if j.lastError}
+                  <div class="min-w-0"><h2 class="preview-heading">Last attempt error</h2><p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{j.lastError}</p></div>
+                {/if}
+              </div>
+            </div>
+          </td></tr>
+        {/if}
       {/each}
     </tbody>
   </table>
-  {#if !visible.length}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
+  {#if !visible.length}<p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
 </div>
 
 {#if selected}<ActionDialog {...selected} bind:open={actionOpen} {ondone} />{/if}

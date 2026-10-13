@@ -52,10 +52,13 @@ type AnalyticsPoint struct {
 
 // RepoActivity is what one repository's reviews came to over the window.
 type RepoActivity struct {
-	Repository string         `json:"repository"`
-	Reviews    int            `json:"reviews"`
-	Findings   SeverityCounts `json:"findings"`
-	Addressed  int            `json:"addressed"`
+	Repository string `json:"repository"`
+	// Account is set in the instance's list, where a row may be any
+	// readable account's.
+	Account   string         `json:"account,omitzero"`
+	Reviews   int            `json:"reviews"`
+	Findings  SeverityCounts `json:"findings"`
+	Addressed int            `json:"addressed"`
 }
 
 // Analytics is the account's reviews in [From, To), against the window of

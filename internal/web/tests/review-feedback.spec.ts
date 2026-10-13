@@ -98,7 +98,8 @@ test('review navigation links to its repository, PR and prior run', async ({ pag
   await page.goto(`${account}/reviews/rev-1`);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'alpha/one' })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
   await expect(page.getByRole('link', { name: 'alpha/one#7', exact: true })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7`);
-  await expect(page.getByRole('link', { name: 'the review before' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/older`);
+  await page.getByRole('button', { name: 'Pull request details', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Pull request details' }).getByRole('link', { name: 'the review before' })).toHaveAttribute('href', `#/a/${g.SLUG}/reviews/older`);
 });
 
 test('an incomplete run with one open finding uses a singular count', async ({ page }) => {
@@ -185,7 +186,7 @@ test('activity selects a run within the PR workspace without refetching pull det
   await expect(history).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7?run=rev-1`);
   const before = reads;
   await history.click();
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toBeVisible();
   expect(reads).toBe(before);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Review history' })).toBeVisible();

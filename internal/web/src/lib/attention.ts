@@ -1,5 +1,4 @@
-// What wants a look in an account, as its Analytics page and the
-// instance's Overview both say it. Rune-free so tests can import it.
+// Shared review alerts for the account and instance overviews.
 import type { Attention, MonthUsage } from './types';
 import type { PullFilter } from './routes';
 import { wholeNumber, type Tone } from './format';

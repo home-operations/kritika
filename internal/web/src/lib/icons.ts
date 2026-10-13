@@ -9,6 +9,7 @@ export {
   mdiWhiteBalanceSunny,
   mdiChevronDown,
   mdiMagnify,
+  mdiHelpCircleOutline,
   mdiAccountOutline,
   mdiSourcePull,
   mdiTrayFull,
@@ -45,4 +46,5 @@ export {
   mdiFileDocumentOutline,
   mdiThumbUpOutline,
   mdiThumbDownOutline,
+  mdiTextBoxOutline,
 } from '@mdi/js';
