@@ -365,7 +365,7 @@ test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn
   await expect(page.locator('.account-button')).toHaveCount(0);
 });
 
-test('the wordmark ripples its letters on hover, then rests, and holds still under reduced motion', async ({ page, signIn }) => {
+test('the wordmark takes a review pass on hover, then rests, and holds still under reduced motion', async ({ page, signIn }) => {
   await signIn();
   await page.goto('/');
   const mark = page.locator('.brand .wordmark');
@@ -373,7 +373,8 @@ test('the wordmark ripples its letters on hover, then rests, and holds still und
   const last = mark.locator('.letter').last();
   await page.locator('.brand').hover();
   await expect(mark).toHaveClass(/playing/);
-  expect(await last.evaluate((el) => getComputedStyle(el).animationName)).toBe('letter-wave');
+  expect(await last.evaluate((el) => getComputedStyle(el).animationName)).toBe('letter-review');
+  expect(await mark.evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe('review-sweep');
   await expect(mark).not.toHaveClass(/playing/, { timeout: 3000 });
   await expect(mark).toHaveText('kritika');
   await page.emulateMedia({ reducedMotion: 'reduce' });

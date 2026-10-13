@@ -134,15 +134,33 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
-@keyframes letter-wave {
+/* A review pass over the name: a cursor sweeps left to right and each
+   letter it reaches flashes the accent and lifts, then settles. */
+@keyframes review-sweep {
+  0% {
+    left: 0;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% - 2px);
+    opacity: 0;
+  }
+}
+@keyframes letter-review {
   0% {
     transform: translateY(0);
+    color: var(--text);
   }
-  35% {
-    transform: translateY(-4px);
+  25% {
+    transform: translateY(-3px);
+    color: var(--accent);
   }
   100% {
     transform: translateY(0);
+    color: var(--text);
   }
 }
 @keyframes live-blink {
@@ -396,9 +414,19 @@
     --live: var(--warn);
     @apply text-warning;
   }
+  .wordmark {
+    @apply relative;
+  }
+  .wordmark::after {
+    content: "";
+    @apply absolute top-[0.12em] bottom-[0.12em] left-0 w-0.5 rounded-[1px] bg-accent opacity-0 pointer-events-none;
+  }
+  .wordmark.playing::after {
+    animation: review-sweep 440ms linear both;
+  }
   .wordmark.playing .letter {
-    animation: letter-wave 520ms cubic-bezier(0.33, 1, 0.68, 1) both;
-    animation-delay: calc(var(--i) * 45ms);
+    animation: letter-review 480ms cubic-bezier(0.33, 1, 0.68, 1) both;
+    animation-delay: calc(var(--i) * 55ms);
   }
   .live-dot {
     animation: live-pulse 2.4s ease-out infinite;
@@ -419,7 +447,8 @@
       @apply [animation-duration:2.4s];
     }
     .live-dot,
-    .wordmark .letter {
+    .wordmark .letter,
+    .wordmark::after {
       @apply [animation:none]!;
     }
   }

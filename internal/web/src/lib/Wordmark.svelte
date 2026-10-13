@@ -1,8 +1,8 @@
 <script lang="ts">
-  // The name, whose letters can ripple: each lifts and settles in turn.
-  // A run always plays to its end, so leaving the brand mid-way never
-  // snaps the letters back. Nothing moves for a reader who asked the
-  // system for less motion.
+  // The name, which can take a review pass: a cursor sweeps across it and
+  // each letter it reaches flashes and lifts, then settles. A run always
+  // plays to its end, so leaving the brand mid-way never snaps the letters
+  // back. Nothing moves for a reader who asked the system for less motion.
   let { text = 'kritika' }: { text?: string } = $props();
   let playing = $state(false);
   const letters = $derived([...text]);
