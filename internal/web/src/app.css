@@ -1084,7 +1084,7 @@
     @apply text-success;
   }
   .topbar .live {
-    @apply mt-auto w-full py-2 px-1;
+    @apply w-full py-2 px-1;
   }
   .topbar .live .sr-only {
     @apply static w-auto h-auto [clip:auto] [clip-path:none];
@@ -1199,7 +1199,8 @@
     .search-label {
       @apply hidden;
     }
-    .topbar .live {
+    .topbar .live,
+    .topbar .topbar-about {
       @apply hidden;
     }
     .topbar .live-down {

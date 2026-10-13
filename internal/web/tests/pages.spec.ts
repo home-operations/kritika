@@ -1533,10 +1533,10 @@ test('a stream from a server running another build reloads the page instead of r
   expect(loads()).toBe(2);
 });
 
-test('the user menu shows the version the server reports', async ({ page }) => {
+test('the sidebar shows the version the server reports, beside a link to the project', async ({ page }) => {
   await page.goto(`/${T}/analytics`);
-  await page.locator('.user-button').click();
-  await expect(page.locator('.user-panel .user-version')).toHaveText(`kritika ${g.meta.version}`);
+  await expect(page.locator('.topbar .app-version')).toHaveText(`kritika ${g.meta.version}`);
+  await expect(page.locator('.topbar').getByRole('link', { name: 'kritika on GitHub' })).toHaveAttribute('href', 'https://github.com/home-operations/kritika');
 });
 
 test('each page names itself in the browser tab', async ({ page }) => {

@@ -25,6 +25,7 @@
     mdiScaleBalance,
     mdiCogOutline,
     mdiTextBoxOutline,
+    githubIcon,
     mdiSourceRepository,
     mdiCurrencyUsd,
     mdiBugOutline,
@@ -238,9 +239,6 @@
           <button class="btn" onclick={signOut}>
             <Icon path={mdiLogout} size={14} /> Sign out
           </button>
-          {#if session.meta?.version}
-            <p class="user-version mono m-0 text-muted overflow-hidden text-ellipsis whitespace-nowrap pt-2 border-t border-solid border-t-line text-ui-xs" title="kritika {session.meta.version}">kritika {session.meta.version}</p>
-          {/if}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
@@ -343,7 +341,15 @@
           </Dialog.Root>
         </div>
       {/if}
-      {#if me}{@render live()}{/if}
+      {#if me}
+        <div class="topbar-foot mt-auto flex flex-col">
+          {@render live()}
+          <p class="topbar-about m-0 py-1 px-1 flex items-center gap-2 text-ui-xs text-muted">
+            {#if session.meta?.version}<span class="app-version mono overflow-hidden text-ellipsis whitespace-nowrap" title="kritika {session.meta.version}">kritika {session.meta.version}</span>{/if}
+            <a class="ml-auto inline-flex text-muted" href="https://github.com/home-operations/kritika" target="_blank" rel="noopener noreferrer" aria-label="kritika on GitHub"><Icon path={githubIcon} size={15} /></a>
+          </p>
+        </div>
+      {/if}
     </header>
 
     <div class="main-col flex-auto min-w-0 min-h-0 flex flex-col">
