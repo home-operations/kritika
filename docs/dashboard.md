@@ -29,7 +29,7 @@ All accounts has these destinations:
 
 | Tab | What it shows |
 | --- | --- |
-| Overview | Review alerts, running work, usage totals and a comparison of accounts. Alerts link to the relevant filtered list. |
+| Overview | A compact summary of running work and usage, one list of review and queue alerts, then a comparison of accounts. Alerts link to the relevant filtered list. |
 | Pull requests | A paginated, searchable list across readable accounts, with an Account column and the same filters as an account's list. |
 | Queue | Jobs across readable accounts and the model slots they hold. |
 | Instance settings | For an admin, the [configuration page](#configuration-page). |
@@ -39,7 +39,7 @@ within that account; use the scope switcher to return to All accounts.
 
 | Tab | What it shows |
 | --- | --- |
-| Overview | Review alerts, running and waiting work, usage, connection health and repositories. |
+| Overview | A compact summary of running work, daily reviews and usage, one attention list, and repositories. Connection details open on demand; connection problems remain in the attention list. |
 | Pull requests | The account's [pull requests](#pull-requests) and reviews. |
 | Queue | The account's running, waiting and finished jobs. |
 | Repositories | Connected [repositories](#repositories) and their status. |
@@ -66,7 +66,7 @@ read, and each section of the Configuration page.
 
 ### Analytics
 
-The account's reviews over the last 7, 30 or 90 days, against the same
+The account's reviews over the last 24 hours, 7, 30 or 90 days, against the same
 span before, by day or week:
 
 - pull requests reviewed, reviews, findings and the share addressed;
@@ -77,8 +77,10 @@ span before, by day or week:
 - failure rate, calculated as failed / (completed + failed), excluding
   canceled, capped, skipped and in-progress reviews.
 
-Operational metrics lead the page, with chart and table views for failure
-rate, median duration, tokens and API spend. Buckets without completed
+Reviews, median review time, API spend and failure rate lead the page.
+Choose a metric in **Review trends** to see reviews, findings by severity,
+failure rate, duration, tokens or API spend as a chart or table.
+**More metrics** expands the remaining totals. Buckets without completed
 reviews have no median; buckets without completed or failed reviews have
 no failure rate. Both are omitted from their respective charts.
 
@@ -98,7 +100,8 @@ period of equal length; named groups also show each row's spend change,
 including groups with no usage in the current period. Comparisons are
 withheld when either period contains unpriced calls. Filters stay in the
 URL for reloads, sharing and browser Back. API spend excludes subscription
-fees; cache detail is limited by transcript retention.
+fees. **Show cache details** reveals the cache columns; cache detail is
+limited by transcript retention.
 
 ### Queue
 
@@ -108,7 +111,8 @@ retryable and discarded jobs and running jobs with no worker heartbeat
 for over three minutes. An overdue heartbeat is a warning to investigate;
 the worker may recover or the leader may rescue it. The view shows the
 last heartbeat, attempt or completion time and refreshes every 15 seconds.
-Each account supplies up to 500 active and 50 finished jobs.
+Each account supplies up to 500 active and 50 finished jobs. A row's
+chevron expands its attempts, timing and full error beneath the row.
 
 Admins can cancel an active review, re-run a discarded or canceled review
 at the pull request's current head, or reindex after a failed index job.
@@ -121,7 +125,19 @@ without a manual replay control.
 GitHub remains the place to discuss findings and approve pull requests.
 Pull and review pages have prominent GitHub links, and posted findings
 link directly to their threads. The internal code view and run details
-remain available for investigation.
+remain available for investigation. **Overview**, **Findings & code** and
+**Activity** are the primary sections. The **Run details** selector opens
+the timeline, conversation, usage or raw data. **Pull request details**
+shows branches, commit IDs and labels.
+
+The review overview combines the summary and merge impact, followed by compact
+finding rows. Expand a row for the explanation and suggested fix, or select its
+title to inspect the code. Confidence explanations, positive notes and checked
+rules open on demand. Incomplete reviews and pending retries remain visible.
+
+Use a row's chevron to preview its latest review and up to three findings
+without leaving the list. The title still opens the pull request. Previews
+load when opened and follow live review updates.
 
 Each row counts the reviews that completed and what every review of it
 cost. An admin can pick open pull requests, by checkbox or with Space on
@@ -186,13 +202,16 @@ instance runs:
 
 - the Setup checklist;
 - the accounts the GitHub Apps serve;
-- each instance setting with its source;
 - the Apps, with the accounts each is installed on;
+- searchable instance settings with their sources and a section filter;
 - the admin audit log.
 
 Its one change is uninstalling an App from an account its entry does not
 list. The navigation beside the page lists its sections while it is open.
-A repository's page filters its effective settings.
+A repository row's chevron previews its effective review settings and code
+index. The repository page leads with pull requests. Expand **Repository settings**
+to search its effective settings, or **Index runs** to inspect indexing
+history. A failed latest index run opens its details automatically.
 
 ## Repositories
 

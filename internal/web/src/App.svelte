@@ -210,7 +210,7 @@
     <header class="topbar flex flex-col bg-canvas border-b-line flex-none w-57 pt-5 px-3 pb-3 border-b-0 border-r border-solid border-r-line overflow-y-auto">
       <a class="skip-link fixed left-3 top-[-100px] z-[var(--z-modal)] p-3 bg-panel" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
       <div class="topbar-row items-center gap-3.5 py-2 px-3.5 contents">
-        <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/">
+        <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home">
           <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
           <span class="wordmark marked py-0 px-[0.2em] rounded-[0.15em_0.35em_0.2em_0.4em_/_0.4em_0.2em_0.35em_0.15em] [background:linear-gradient(transparent_38%,_var(--mark)_38%,_var(--mark)_94%,_transparent_94%)] [box-decoration-break:clone] font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
         </a>
@@ -290,7 +290,7 @@
           <Dialog.Root bind:open={navOpen}>
             <Dialog.Trigger class="btn mobile-nav-trigger" aria-label="Open navigation">
               <Icon path={mdiViewGridOutline} size={16} />
-              Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : 'All accounts'}</span>
+              Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : instanceTabs.find((t) => t.route.name === router.route.name)?.label ?? (router.route.name === 'preferences' ? 'Your settings' : 'All accounts')}</span>
               <Icon path={mdiChevronDown} size={14} />
             </Dialog.Trigger>
             <Dialog.Portal>

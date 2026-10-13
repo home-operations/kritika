@@ -13,7 +13,7 @@ test("ChatGPT controls are hidden when no plan provider is configured", async ({
   await page.goto(`/${account}/usage`);
   await expect(page.getByRole("heading", { name: "API spend by day" })).toBeVisible();
   await expect(page.getByRole("region", { name: "ChatGPT allowances" })).toHaveCount(0);
-  await expect(page.getByRole("radiogroup", { name: "Billing", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Billing", exact: true })).toHaveCount(0);
   expect(seen.some((u) => u.pathname.endsWith("/chatgpt/allowances"))).toBe(false);
 });
 
@@ -109,7 +109,7 @@ test("ChatGPT filtering supports hour and week and counts cached input once", as
     ...g.defaultApi(),
   ]);
   await page.goto(`/${account}/usage`);
-  await page.getByRole("radio", { name: "ChatGPT plan", exact: true }).click();
+  await page.getByRole("combobox", { name: "Billing", exact: true }).selectOption("chatgpt");
   const summary = page.getByRole("region", { name: "Selected usage" });
   await expect(summary).toBeVisible();
   await summary.getByRole("button", { name: /^About Tokens in selection:/ }).focus();

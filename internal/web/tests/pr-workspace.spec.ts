@@ -11,7 +11,7 @@ test('PR workspace keeps latest review, code, activity and diagnostics under one
   await page.goto(pullURL);
   await expect(page.locator('h1')).toHaveText(g.pullDetail.pull.title);
   const nav = page.getByRole('navigation', { name: 'Review sections' });
-  await expect(nav.getByRole('link')).toHaveText(['Overview', /Findings & code/, 'Activity', 'Run details']);
+  await expect(nav.getByRole('link')).toHaveText(['Overview', /Findings & code/, 'Activity']);
   await expect(page.getByLabel('Review run')).toHaveValue('');
   await expect(page.getByRole('navigation', { name: 'Run sections' })).toHaveCount(0);
   await nav.getByRole('link', { name: 'Findings & code', exact: true }).click();
@@ -23,8 +23,9 @@ test('PR workspace keeps latest review, code, activity and diagnostics under one
   await nav.getByRole('link', { name: 'Activity', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Review history' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Follow-ups' })).toBeVisible();
-  await nav.getByRole('link', { name: 'Run details', exact: true }).click();
-  await expect(page.getByRole('navigation', { name: 'Run sections' }).getByRole('link')).toHaveText(['Timeline', 'Conversation', 'Usage', 'Raw']);
+  await nav.getByRole('combobox', { name: 'Run details' }).selectOption('timeline');
+  await expect(page.getByRole('navigation', { name: 'Run sections' })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Run details' })).toHaveValue('timeline');
   await expect(page.locator('h1')).toHaveText(g.pullDetail.pull.title);
 });
 
@@ -39,7 +40,7 @@ test('history selection is linkable and browser Back restores the latest run', a
   await page.getByLabel('Review run').selectOption('old');
   await expect(page).toHaveURL(/run=old&tab=summary$/);
   await expect(page.locator('.newer-notice')).toContainText('Historical review');
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText('Older review conclusion');
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toContainText('Older review conclusion');
   await page.reload();
   await expect(page.getByLabel('Review run')).toHaveValue('old');
   await page.goBack();
@@ -69,7 +70,7 @@ for (const status of ['running', 'failed', 'capped', 'completed'] satisfies Revi
     if (status === 'failed') {
       await expect(page.getByRole('note').filter({ hasText: 'Execution problem' })).toContainText('Provider unavailable');
       await page.getByRole('link', { name: 'Inspect run details' }).click();
-      await expect(page.getByRole('navigation', { name: 'Run sections' })).toBeVisible();
+      await expect(page.getByRole('combobox', { name: 'Run details' })).toHaveValue('timeline');
     }
   });
 }

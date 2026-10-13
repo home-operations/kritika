@@ -21,7 +21,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('chart and table views', async ({ page }) => {
       await page.goto(`/#/a/${g.SLUG}/analytics`);
-      const trends = page.getByRole('region', { name: 'Reviews', exact: true });
+      const trends = page.getByRole('region', { name: 'Review trends', exact: true });
       await expect(trends.getByRole('img')).toBeVisible();
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
       await trends.getByRole('radio', { name: 'Table', exact: true }).click();

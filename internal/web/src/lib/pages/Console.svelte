@@ -1,9 +1,6 @@
 <script lang="ts">
+  import HelpPopover from '../components/HelpPopover.svelte';
   import PageHeader from '../components/PageHeader.svelte';
-  // The instance's configuration for an admin, read-only: what setup still
-  // lacks, the accounts its connections serve, each setting with where it
-  // comes from, the connections and their installations, and the admin
-  // audit log.
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { tokens, costTotal, wholeNumber } from '../format';
@@ -22,6 +19,12 @@
   $effect(() => {
     void instance.load();
   });
+  let search = $state('');
+  let section = $state('');
+  const sections = $derived([...new Set(instance.data?.map((row) => row.section) ?? [])]);
+  const filtered = $derived((instance.data ?? []).filter((row) =>
+    (!section || row.section === section) &&
+    [row.key, row.value, row.section, sourceLabel[row.source] ?? row.source].some((value) => value.toLowerCase().includes(search.trim().toLowerCase()))));
   const sourceLabel: Record<string, string> = { env: 'environment', file: 'config file', default: 'default' };
 </script>
 
@@ -32,8 +35,7 @@
     <PageHeader title="Instance settings" description="Manage connections and inspect instance configuration." />
     {#if res.data}<Checklist accounts={res.data} />{/if}
     <section class="panel" aria-labelledby="op-accounts">
-      <header class="panel-head"><h2 id="op-accounts">Accounts</h2></header>
-      <p class="muted small panel-body text-ui-sm py-2.5 px-3">Every account a GitHub App serves, and entries of the configuration no App serves.</p>
+      <header class="panel-head"><h2 id="op-accounts">Accounts</h2><HelpPopover label="About accounts"><p>Accounts served by a GitHub App, including configured accounts that are not yet connected.</p></HelpPopover></header>
       <StateView {res} retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="No accounts yet: declare a GitHub App under apps in the configuration file.">
         {#snippet children(list)}
           <div class="table-wrap overflow-x-auto max-w-full">
@@ -77,36 +79,40 @@
       </StateView>
     </section>
 
+    <ConnectionsSection />
+
     <section class="panel" aria-labelledby="op-instance">
-      <header class="panel-head"><h2 id="op-instance">Instance settings</h2></header>
-      <p class="muted small panel-body text-ui-sm py-2.5 px-3">
-        The environment is this web process's; sign-in, the GitHub Apps and the instance settings are the configuration
-        file's, or its environment's where a variable sets them.
-      </p>
+      <header class="panel-head"><h2 id="op-instance">Instance configuration</h2><HelpPopover label="About instance configuration"><p>Read-only values from this process's environment and configuration file. Source shows where each value is set.</p></HelpPopover></header>
       <StateView res={instance} retry={() => instance.load()} isEmpty={(d) => d.length === 0} empty="No instance settings.">
-        {#snippet children(rows)}
-          <div class="table-wrap overflow-x-auto max-w-full">
-            <table class="data">
-              <thead>
-                <tr><th scope="col">Section</th><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Source</th></tr>
-              </thead>
-              <tbody>
-                {#each rows as row (`${row.section}:${row.key}`)}
-                  <tr>
-                    <td>{row.section}</td>
-                    <td class="mono">{row.key}</td>
-                    <td class="mono">{row.value}</td>
-                    <td>{sourceLabel[row.source] ?? row.source}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/snippet}
+        <div class="toolbar flex flex-wrap items-center gap-2 p-3">
+          <input type="search" aria-label="Search configuration" placeholder="Search configuration" bind:value={search} />
+          <select aria-label="Configuration section" bind:value={section}>
+            <option value="">All sections</option>
+            {#each sections as name (name)}<option value={name}>{name}</option>{/each}
+          </select>
+          {#if search || section}<button class="btn btn-quiet" onclick={() => { search = ''; section = ''; }}>Clear filters</button>{/if}
+        </div>
+        <div class="table-wrap overflow-x-auto max-w-full">
+          <table class="data">
+            <thead>
+              <tr><th scope="col">Section</th><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Source</th></tr>
+            </thead>
+            <tbody>
+              {#each filtered as row (`${row.section}:${row.key}`)}
+                <tr>
+                  <td>{row.section}</td>
+                  <td class="mono">{row.key}</td>
+                  <td class="mono">{row.value}</td>
+                  <td>{sourceLabel[row.source] ?? row.source}</td>
+                </tr>
+              {:else}
+                <tr><td colspan="4" class="muted">No settings match these filters.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
       </StateView>
     </section>
-
-    <ConnectionsSection />
 
     <section class="panel" aria-labelledby="op-audit">
       <header class="panel-head"><h2 id="op-audit">Admin audit log</h2></header>

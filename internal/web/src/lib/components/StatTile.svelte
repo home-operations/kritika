@@ -32,7 +32,7 @@
 </script>
 
 {#snippet content()}
-  <span class="stat-label text-ui-sm text-muted" class:stat-help={!!define}>{label}</span>
+  <span class="stat-label text-ui-sm text-muted">{label}</span>
   <span class="stat-line flex flex-wrap items-baseline gap-2">
     <span class="stat-value text-[length:26px] font-bold tracking-[-0.01em]">{value}</span>
     {#if delta}<span class="delta tone-{tone}" title="Against the window before">{delta.text}</span>{/if}

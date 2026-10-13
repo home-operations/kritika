@@ -171,7 +171,7 @@
       <TokenSearch
         id="finding-search"
         label="Search findings"
-        placeholder="Search, or filter by repo:, severity:, category:, status: or rule:"
+        placeholder="Search findings or add filters…"
         {specs}
         bind:text
         bind:input={searchEl}

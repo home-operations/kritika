@@ -52,7 +52,8 @@ test('queue filters distinguish failures, automatic retries and overdue workers'
   await expect(rows).toHaveCount(3);
   await expect(rows.first()).toContainText('Heartbeat overdue');
   await expect(rows.nth(1)).toContainText('Retries automatically');
-  await expect(rows.nth(1).getByRole('button')).toHaveCount(0);
+  await expect(rows.nth(1).locator('.queue-actions button')).toHaveCount(0);
+  await expect(rows.nth(1).getByRole('button', { name: 'Details for job #103' })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search jobs' }).fill('104');
   await expect(rows).toHaveCount(1);
   await expect(rows.first().getByRole('button', { name: 'Re-run' })).toBeVisible();
@@ -83,8 +84,8 @@ test('queue members can inspect errors but cannot mutate jobs', async ({ page })
   await page.route('**/api/v1/me', (r) => r.fulfill({ json: { ...g.me, admin: false } }));
   await page.goto(`${account}/queue`);
   await expect(page.locator('.queue-actions')).toHaveCount(0);
-  await page.getByText('Details', { exact: true }).nth(3).click();
-  await expect(page.locator('details[open] .error-text')).toHaveText('Runner exited before publishing its result');
+  await page.getByRole('button', { name: /^Details for job/ }).nth(3).click();
+  await expect(page.locator('.row-preview .error-text')).toHaveText('Runner exited before publishing its result');
 });
 
 test('spending drilldown keeps its period and carries repository and model filters', async ({ page }) => {
@@ -165,12 +166,13 @@ test('operational trends compare rates and omit buckets without outcomes', async
   const rate = page.getByRole('region', { name: 'Operational metrics' }).locator('.stat').filter({ has: page.getByText('Failure rate', { exact: true }) });
   await expect(rate).toContainText('20.0%');
   await expect(rate.locator('.delta')).toContainText('10');
-  const trends = page.getByRole('region', { name: 'Operational trends' });
+  const trends = page.getByRole('region', { name: 'Review trends' });
+  await trends.getByRole('combobox', { name: 'Trend metric' }).selectOption('failed');
   await trends.getByRole('radio', { name: 'Table', exact: true }).click();
   await expect(trends.locator('tbody tr')).toHaveCount(14);
-  await trends.getByRole('radio', { name: 'Duration', exact: true }).click();
+  await trends.getByRole('combobox', { name: 'Trend metric' }).selectOption('duration');
   await expect(trends.locator('tbody tr')).toHaveCount(14);
-  await trends.getByRole('radio', { name: 'Tokens', exact: true }).click();
+  await trends.getByRole('combobox', { name: 'Trend metric' }).selectOption('tokens');
   await expect(trends.locator('tbody tr')).toHaveCount(15);
 });
 
@@ -179,6 +181,7 @@ test('review handoff links to GitHub and preserves the internal investigation ta
   await page.goto(`${account}/reviews/rev-1`);
   await expect(page.getByRole('link', { name: 'Review on GitHub' })).toHaveAttribute('href', g.reviewDetail.review.pull.url);
   await expect(page.getByRole('link', { name: 'Findings & code' })).toBeVisible();
+  await page.getByRole('button', { name: /^Details for / }).first().click();
   await expect(page.getByRole('link', { name: /Thread on GitHub/ }).first()).toHaveAttribute('href', /#discussion_r/);
 });
 

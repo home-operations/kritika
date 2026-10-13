@@ -142,7 +142,7 @@ test('overview and account navigation expose consistent scope', async ({ page },
   await page.goto(`/#/a/${g.SLUG}`);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Account activity' })).toBeVisible();
-  await expect(page.locator('.account-activity .tile-value')).toHaveCount(4);
+  await expect(page.locator('.account-activity .tile-value')).toHaveCount(3);
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
   const nav = page.locator('.desktop-navigation');
   for (const link of await nav.getByRole('link').evaluateAll((links) => links.map((l) => l.getAttribute('href')))) expect(link).toContain(`/a/${g.SLUG}`);
@@ -154,7 +154,7 @@ test('overview and account navigation expose consistent scope', async ({ page },
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/#/a/${g.SLUG}`);
   await expect(page.getByRole('region', { name: 'Account activity' })).toBeVisible();
-  await expect(page.locator('.account-activity .tile-value')).toHaveCount(4);
+  await expect(page.locator('.account-activity .tile-value')).toHaveCount(3);
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
   await testInfo.attach('account-mobile', { body: await page.screenshot({ path: testInfo.outputPath('account-mobile.png') }), contentType: 'image/png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -167,12 +167,12 @@ test('a delayed queue reserves its overview tile', async ({ page }) => {
   await page.route('**/api/v1/queue', async (r) => { await gate; await r.fulfill({ json: g.instanceQueue }); });
   await page.goto('/#/');
   const tiles = page.getByRole('region', { name: 'Across all accounts' });
-  await expect(tiles.locator('.tile')).toHaveCount(6);
-  const repositories = tiles.locator('.tile').filter({ hasText: 'Repositories' });
-  const before = await repositories.boundingBox();
+  await expect(tiles.locator('.tile')).toHaveCount(3);
+  const reviews = tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' });
+  const before = await reviews.boundingBox();
   release();
   await expect(tiles.getByRole('link', { name: /Running now/ })).toBeVisible();
-  expect(await repositories.boundingBox()).toEqual(before);
+  expect(await reviews.boundingBox()).toEqual(before);
 });
 
 test('returning from a global pull restores the loaded list and scroll', async ({ page }) => {

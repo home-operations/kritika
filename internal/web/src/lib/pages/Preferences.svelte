@@ -34,7 +34,7 @@
 
 <main id="main-content" class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
-    <PageHeader title="Your settings" description="Display preferences, saved to your account across browsers." />
+    <PageHeader title="Your settings" description="Preferences save automatically." />
     {#if settings}
       <section class="panel" aria-labelledby="pref-time">
         <header class="panel-head">
@@ -48,7 +48,7 @@
             {#if settings.timeZone && !zoneKnown(settings.timeZone)}
               <span class="small muted text-ui-sm">This browser does not know {settings.timeZone}, and uses its own.</span>
             {/if}
-            <p class="small muted text-ui-sm">Charts and tables by day count each day in UTC, whatever the zone.</p>
+            <p class="small muted text-ui-sm">Daily charts and tables use UTC.</p>
           </dd>
           <dt>Clock</dt>
           <dd><Segmented label="Clock" options={CLOCKS} value={settings.clock} onchange={(clock) => saveSettings({ clock })} /></dd>
@@ -60,7 +60,7 @@
           <dt>Theme</dt>
           <dd>
             <Segmented label="Theme" options={THEMES} value={settings.theme} onchange={(theme) => saveSettings({ theme })} />
-            <p class="small muted text-ui-sm">Light or dark holds in every browser you sign in from. Left to the browser, each follows its own system.</p>
+            <p class="small muted text-ui-sm">Auto follows each device’s system theme.</p>
           </dd>
         </dl>
       </section>

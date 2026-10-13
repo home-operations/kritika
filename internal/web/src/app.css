@@ -150,6 +150,39 @@
 }
 /* Shared component defaults yield to explicit utility overrides. */
 @layer components {
+  input[type="checkbox"] {
+    @apply appearance-none inline-grid place-content-center shrink-0 size-[18px] m-0 p-0 align-middle rounded-sm border border-solid border-muted bg-panel text-on-accent cursor-pointer;
+    transition: background-color 120ms, border-color 120ms;
+  }
+  input[type="checkbox"]::before {
+    content: "";
+    @apply w-[5px] h-[9px] border-r-2 border-b-2 border-solid border-current rotate-45 -translate-y-px invisible;
+  }
+  input[type="checkbox"]:checked {
+    @apply bg-accent border-accent;
+  }
+  input[type="checkbox"]:checked::before {
+    @apply visible;
+  }
+  input[type="checkbox"]:enabled:hover {
+    @apply border-accent;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  input[type="checkbox"]:focus-visible {
+    @apply [outline:2px_solid_var(--accent)] outline-offset-2;
+  }
+  input[type="checkbox"]:disabled {
+    @apply opacity-60 cursor-default;
+  }
+  @media (forced-colors: active) {
+    input[type="checkbox"] {
+      @apply appearance-auto;
+    }
+    input[type="checkbox"]::before {
+      @apply hidden;
+    }
+  }
+
   .btn {
     @apply border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5;
   }
@@ -176,6 +209,16 @@
 
   .panel-head {
     @apply flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3;
+  }
+  button,
+  [role="button"],
+  summary,
+  .btn,
+  a.skip-link,
+  a.badge,
+  a.sev-chip,
+  a.pill {
+    @apply no-underline;
   }
   .btn:hover {
     @apply border-accent;
@@ -455,8 +498,14 @@
   table.data .num {
     @apply text-right tabular-nums;
   }
-  table.data tbody tr:hover {
+  :where(table.data, table.md-table) > tbody > tr {
+    @apply bg-panel;
+  }
+  :where(table.data, table.md-table) > tbody > tr:nth-child(even of :not(.row-preview)) {
     @apply bg-surface;
+  }
+  :where(table.data, table.md-table) > tbody > tr:not(.row-preview):hover {
+    background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   }
   .table-card table.data tbody tr:last-child td {
     @apply border-b-0;
@@ -878,7 +927,7 @@
     @apply w-auto p-0 gap-1;
   }
   table.audit .collapsible-head:hover {
-    @apply bg-transparent bg-none underline;
+    @apply bg-transparent bg-none text-accent;
   }
   table.audit .collapsible-body {
     @apply pt-1.5 px-0 pb-0.5 border-t-0;
@@ -907,10 +956,6 @@
   .skip-link:focus {
     @apply top-3;
   }
-  .attention-list > .panel-head,
-  .running-list > .panel-head {
-    @apply pt-3 px-0 pb-4.5 bg-transparent bg-none;
-  }
   .attention-item:hover {
     @apply bg-surface no-underline;
   }
@@ -923,11 +968,22 @@
   .attention-item .mono {
     @apply block mt-[5px] wrap-anywhere;
   }
-  .overview-totals .tile {
-    @apply bg-transparent bg-none border-0 shadow-none p-3;
+  .operations-summary .tile {
+    @apply bg-transparent border-0 rounded-none p-4;
   }
-  .overview-totals .tile-value {
-    @apply text-[length:23px];
+  .operations-summary .tile + .tile {
+    @apply border-l border-solid border-line max-[800px]:border-l-0 max-[800px]:border-t;
+  }
+  .overview-attention > .attention-item {
+    @apply grid grid-cols-[140px_minmax(0,_1fr)_auto] items-center gap-4 py-3 px-4 border-t border-solid border-line text-ink;
+  }
+  .overview-attention > .panel-head + .attention-item {
+    @apply border-t-0;
+  }
+  @media (max-width: 800px) {
+    .overview-attention > .attention-item {
+      @apply grid-cols-[minmax(0,_1fr)] gap-1.5;
+    }
   }
   table.pull-table td {
     @apply pt-[15px] pb-[15px];
@@ -937,11 +993,8 @@
   }
   .finding,
   .panel-body > .md,
-  .review-conclusion > .md {
+  .review-conclusion .collapsible-body > .md {
     @apply text-[length:15px] leading-[1.65];
-  }
-  .review-conclusion h2 {
-    @apply text-[length:18px] mt-0 mx-0 mb-2.5;
   }
   .merge-impact > strong {
     @apply block mb-1.5;
@@ -1013,12 +1066,6 @@
     .topbar .live-down {
       @apply flex w-full py-2 px-3;
     }
-    .overview-work {
-      @apply grid-cols-1;
-    }
-    .running-list {
-      @apply border-l-0 pl-0;
-    }
     .review-workspace {
       @apply grid-cols-1;
     }
@@ -1033,6 +1080,15 @@
     }
     .pull-table thead {
       @apply hidden;
+    }
+    .pull-table thead:has(.pick) {
+      @apply block;
+    }
+    .pull-table thead th:not(.pick) {
+      @apply hidden;
+    }
+    table.pull-table thead th.pick {
+      @apply w-auto p-0 border-0;
     }
     .pull-table,
     .pull-table tbody {
@@ -1141,10 +1197,14 @@
     }
   }
   .drill-link:hover {
-    @apply underline;
+    @apply text-ink;
   }
   .queue-actions:empty {
     @apply hidden;
+  }
+  .page:has(.queue-table) {
+    /* Polling must not anchor the viewport to a replaced row. */
+    overflow-anchor: none;
   }
   .queue-table td {
     @apply [vertical-align:top];
@@ -1179,13 +1239,45 @@
       @apply flex-wrap;
     }
   }
-  @media (min-width: 801px) {
-    .queue-error:has(details[open]) {
-      @apply min-w-65;
+  @media (max-width: 600px) {
+    .panel-head {
+      @apply flex-wrap;
     }
-  }
-  .panel:has(#an-operations) > .toolbar {
-    @apply py-0 px-4;
+    .panel-head .segmented {
+      @apply flex-nowrap;
+    }
+    .finding-table,
+    .finding-table tbody {
+      @apply block;
+    }
+    .finding-table thead {
+      @apply sr-only;
+    }
+    .finding-table tr {
+      @apply grid grid-cols-2 gap-x-3 p-3 border-b border-solid border-b-line;
+    }
+    .finding-table tr:last-child {
+      @apply border-b-0;
+    }
+    table.data.finding-table td {
+      @apply block min-w-0 max-w-none w-auto border-0 px-0 whitespace-normal text-left;
+    }
+    .finding-table .finding-main,
+    .finding-table .finding-pull {
+      @apply col-span-2;
+    }
+    .finding-table .finding-sub {
+      @apply max-w-none wrap-anywhere;
+    }
+    .review-navigation {
+      @apply flex-wrap overflow-visible;
+    }
+    .run-details-picker {
+      @apply w-full pl-0 py-2;
+    }
+    .run-details-picker select {
+      @apply w-full;
+    }
   }
   .page-title-row h1 {
     @apply flex-1 min-w-50;
@@ -1226,23 +1318,68 @@
   .limits-strip .meter {
     @apply mt-1;
   }
-  .job-details summary {
-    @apply cursor-pointer text-muted text-ui-sm;
+  .row-toggle {
+    @apply w-9 h-9 p-0 justify-center;
   }
-  .job-details[open] summary {
-    @apply mb-3;
+  table.data .row-toggle-cell {
+    @apply w-12 text-right align-middle;
   }
-  .job-details dl {
-    @apply grid grid-cols-[auto_1fr] gap-y-1.5 gap-x-3.5 mt-0 mx-0 mb-3 text-ui-sm;
+  table.data .row-expanded > td {
+    @apply bg-surface border-b-transparent;
   }
-  .job-details dt {
+  table.data .row-preview > td {
+    @apply p-0 whitespace-normal;
+  }
+  .row-preview-body {
+    @apply p-4 bg-surface border-l-2 border-solid border-accent text-ui-sm wrap-anywhere;
+  }
+  .row-preview-grid {
+    @apply grid gap-5;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  }
+  .preview-heading {
+    @apply mt-0 mb-2 text-ui-sm font-semibold;
+  }
+  .preview-summary .md {
+    @apply line-clamp-3;
+  }
+  .preview-summary .md > :first-child {
+    @apply mt-0;
+  }
+  .preview-summary .md > :last-child {
+    @apply mb-0;
+  }
+  .preview-findings {
+    @apply list-none m-0 p-0 grid gap-2;
+  }
+  .preview-findings li {
+    @apply flex items-start gap-2;
+  }
+  .preview-facts {
+    @apply grid grid-cols-[auto_1fr] gap-y-1.5 gap-x-3.5 m-0 text-ui-sm;
+  }
+  .preview-facts dt {
     @apply text-muted;
   }
-  .job-details dd {
-    @apply m-0 whitespace-normal;
+  .preview-facts dd {
+    @apply m-0 whitespace-normal min-w-0;
   }
-  .job-details .error-text {
-    @apply whitespace-pre-wrap;
+  @media (max-width: 800px) {
+    table.pull-table tr.row-preview,
+    table.queue-table tr.row-preview {
+      @apply block p-0;
+    }
+    table.pull-table .row-preview > td,
+    table.queue-table .row-preview > td {
+      @apply w-full p-0;
+    }
+    table.queue-table .row-preview > td::before,
+    table.queue-table .row-toggle-cell::before {
+      @apply hidden;
+    }
+    table.pull-table .row-toggle-cell {
+      @apply ml-auto;
+    }
   }
   @media (min-width: 801px) {
     .queue-table td {
@@ -1272,10 +1409,6 @@
   .skeleton-row:last-child {
     @apply border-b-0;
   }
-  .overview-totals .tile,
-  .account-activity .tile {
-    @apply min-h-32;
-  }
   .workspace-actions > *,
   .run-picker select {
     @apply max-w-full min-w-0;
@@ -1283,8 +1416,11 @@
   .run-picker select {
     @apply w-72.5;
   }
-  .review-signals .meta-line {
-    @apply m-0;
+  table.review-findings .finding-summary-cell {
+    @apply w-full max-w-0 whitespace-normal wrap-anywhere min-w-40;
+  }
+  .review-findings .row-preview .finding {
+    @apply border-0 bg-transparent shadow-none p-0;
   }
   .review-workspace.code-focused {
     @apply grid-cols-1;
@@ -1305,12 +1441,6 @@
     .run-picker select {
       @apply flex-1;
     }
-    .review-signals .meta-line {
-      @apply items-start;
-    }
   }
 
-  .stat-help {
-    @apply underline decoration-dotted [text-underline-offset:3px];
-  }
 }

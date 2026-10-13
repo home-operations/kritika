@@ -177,7 +177,7 @@ test.describe('actions', () => {
   test('offer no reindex of a repository that is off', async ({ page }) => {
     await setup(page, adminMe, [[new RegExp(`${API}/repos/alpha/one$`), { ...g.repoDetail, enabled: false }]]);
     await page.goto(`/#/a/${S}/repos/alpha/one`);
-    await expect(page.locator('#repo-settings')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Repository settings', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reindex' })).toHaveCount(0);
   });
 
@@ -187,7 +187,7 @@ test.describe('actions', () => {
     await expect(page.locator('.page-head h1')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Re-run' })).toHaveCount(0);
     await page.goto(`/#/a/${S}/repos/alpha/one`);
-    await expect(page.locator('#repo-settings')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Repository settings', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reindex' })).toHaveCount(0);
   });
 });
@@ -210,7 +210,7 @@ test.describe('configuration page', () => {
       /An embedder is set \(optional\) Set embedding/,
     ]);
     await expect(panel.locator('li.done')).toHaveCount(0);
-    await expect(page.locator('input, select, textarea').and(page.locator('main *'))).toHaveCount(0);
+    await expect(panel.locator('input, select, textarea')).toHaveCount(0);
   });
 
   test('marks each step done as the configuration covers it', async ({ page }) => {
@@ -284,7 +284,13 @@ test.describe('configuration page', () => {
     const row = panel.getByRole('row').filter({ hasText: g.instanceSetting.key });
     await expect(row).toContainText(g.instanceSetting.value);
     await expect(row).toContainText('config file');
-    await expect(panel.locator('input, select, textarea')).toHaveCount(0);
+    await expect(row.locator('input, select, textarea, button')).toHaveCount(0);
+    await panel.getByRole('searchbox', { name: 'Search configuration' }).fill('no matching setting');
+    await expect(row).toHaveCount(0);
+    await expect(panel).toContainText('No settings match these filters.');
+    await panel.getByRole('button', { name: 'Clear filters' }).click();
+    await panel.getByRole('combobox', { name: 'Configuration section' }).selectOption(g.instanceSetting.section);
+    await expect(row).toBeVisible();
   });
 
   test('lists an account no connection serves without a link, and why', async ({ page }) => {
@@ -320,6 +326,7 @@ test.describe('settings search', () => {
   test("a repository's settings filter to what matches", async ({ page }) => {
     await setup(page, adminMe);
     await page.goto(`/#/a/${S}/repos/alpha/one`);
+    await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
     const settings = page.locator('#repo-settings').locator('../..');
     await expect(settings.getByText('Review model')).toBeVisible();
     await settings.getByLabel('Filter settings').fill('settle');

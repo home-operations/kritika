@@ -41,8 +41,8 @@ function gate() {
 test('retryable jobs need attention even without recent-failure or overdue flags', async ({ page }) => {
   await page.route('**/accounts/github/alpha/queue', (route) => json(route, [{ ...g.job, state: 'retryable', recentFailure: false, heartbeatOverdue: false }]));
   await page.goto(account);
-  await expect(page.getByRole('link', { name: /Inspect failed, retrying or overdue work/ })).toBeVisible();
-  await expect(page.getByText('All clear. No review alerts or queue issues.')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Failed, retrying or overdue work/ })).toBeVisible();
+  await expect(page.getByText('All clear. No issues need attention.')).toHaveCount(0);
 });
 
 for (const failed of ['queue', 'attention', 'account']) {
@@ -57,18 +57,20 @@ for (const failed of ['queue', 'attention', 'account']) {
     await expect(page.getByRole('alert')).toContainText(`${failed} unavailable`);
     await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
     const tiles = page.getByRole('region', { name: 'Account activity' });
-    await expect(tiles.locator('.tile')).toHaveCount(4);
+    await expect(tiles.locator('.tile')).toHaveCount(3);
     if (failed !== 'account') {
-      await expect(page.getByRole('region', { name: 'Connection', exact: true })).toContainText(detail.connection.name);
+      await page.getByRole('button', { name: 'Connection details', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Connection details', exact: true })).toContainText(detail.connection.name);
+      await page.keyboard.press('Escape');
       await expect(tiles.locator('.tile').filter({ hasText: 'Reviews today' }).locator('.tile-value')).toHaveText(String(detail.usage.reviewsToday));
     }
     if (failed !== 'queue') await expect(tiles.locator('.tile').filter({ hasText: 'Running now' }).locator('.tile-value')).toHaveText(/\d+/);
-    await expect(page.getByText('All clear. No review alerts or queue issues.')).toHaveCount(0);
+    await expect(page.getByText('All clear. No issues need attention.')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath(`account-${failed}-unavailable.png`) });
     fail = false;
     await page.getByRole('alert').getByRole('button', { name: /Retry/ }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
-    await expect(tiles.locator('.tile-value')).toHaveCount(4);
+    await expect(tiles.locator('.tile-value')).toHaveCount(3);
   });
 }
 
@@ -77,7 +79,7 @@ test('account overview polls only jobs and refreshes only data affected by live 
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(account);
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
-  await expect(page.locator('.account-activity .tile-value')).toHaveCount(4);
+  await expect(page.locator('.account-activity .tile-value')).toHaveCount(3);
   const calls = () => seen.filter((u) => u.pathname.startsWith('/api/v1/accounts/')).map((u) => u.pathname.replace('/api/v1/accounts/github/alpha', '')).sort();
   seen.length = 0;
   await page.clock.runFor(15_001);
@@ -342,7 +344,8 @@ for (const tab of ['timeline', 'raw', 'usage']) {
   test(`the active ${tab} review tab is visible on a phone when deep-linked`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${account}/reviews/rev-1/${tab}`);
-    const active = page.getByRole('navigation', { name: 'Review sections' }).locator('[aria-current="page"]');
+    const active = page.getByRole('combobox', { name: 'Run details' });
+    await expect(active).toHaveValue(tab);
     await expect(active).toBeInViewport();
     const box = (await active.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -522,7 +525,8 @@ test('a landscape review reveals its tab horizontally without scrolling past its
   await page.goto(account + '/reviews/rev-1/usage');
   await expect(page.locator('main h1')).toBeInViewport();
   expect(await page.locator('main').evaluate((el) => el.scrollTop)).toBe(0);
-  const active = page.getByRole('navigation', { name: 'Review sections' }).locator('[aria-current="page"]');
+  const active = page.getByRole('combobox', { name: 'Run details' });
+  await expect(active).toHaveValue('usage');
   const box = (await active.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(640);
@@ -560,18 +564,18 @@ test('hidden review tabs defer live refetches until they become visible', async 
   await page.route('**/reviews/rev-1/raw', (route) => { rawCalls++; return json(route, g.reviewRaw); });
   await page.goto(`${account}/reviews/rev-1/conversation`);
   await expect(page.locator('.conversation-top')).toBeVisible();
-  await page.getByRole('link', { name: 'Raw', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Run details' }).selectOption('raw');
   await expect(page.getByRole('heading', { name: 'Submitted result' })).toBeVisible();
   await page.getByRole('navigation', { name: 'Review sections' }).getByRole('link', { name: 'Overview' }).click();
   await emit(page, 'model_call');
   await expect.poll(() => reviewCalls).toBe(2);
   expect(transcriptCalls).toBe(1);
   expect(rawCalls).toBe(1);
-  await page.getByRole('link', { name: 'Run details', exact: true }).click();
-  await page.getByRole('link', { name: 'Conversation', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Run details' }).selectOption('timeline');
+  await page.getByRole('combobox', { name: 'Run details' }).selectOption('conversation');
   await expect.poll(() => transcriptCalls).toBe(2);
   expect(rawCalls).toBe(1);
-  await page.getByRole('link', { name: 'Raw', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Run details' }).selectOption('raw');
   await expect.poll(() => rawCalls).toBe(2);
 });
 
@@ -599,7 +603,7 @@ test('the overview summarizes many accounts without fetching individual pull lis
   await page.route('**/pulls?*', (route) => { calls.push(route.request().url()); return json(route, g.pageOf([g.pull])); });
   await page.goto('/');
   const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
-  await expect(attention.getByRole('link')).toHaveCount(75);
+  await expect(attention.getByRole('link')).toHaveCount(76);
   await attention.getByRole('link').last().scrollIntoViewIfNeeded();
   expect(calls).toEqual([]);
   accounts[0]!.attention.failed = 2;
@@ -618,21 +622,21 @@ test('the PR workspace offers newer runs without replacing the displayed review'
   await page.route('**/pulls/alpha/one/7', (route) => json(route, { ...g.pullDetail, reviews }));
   await page.route('**/reviews/rev-2', (route) => json(route, { ...g.reviewDetail, review: second, summary: { ...g.reviewDetail.summary!, take: 'Second review conclusion' } }));
   await page.goto(`${account}/pulls/alpha/one/7`);
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toContainText(g.reviewDetail.summary!.take);
   reviews = [second, g.reviewDetail.review];
   await emit(page, 'review', second.id);
   await expect(page.locator('.newer-notice')).toContainText('newer review is available');
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toContainText(g.reviewDetail.summary!.take);
   await page.getByRole('link', { name: 'Open its latest review' }).click();
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText('Second review conclusion');
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toContainText('Second review conclusion');
   await expect(page.getByLabel('Review run')).toHaveValue('');
   await page.getByLabel('Review run').selectOption('rev-1');
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toContainText(g.reviewDetail.summary!.take);
   reviews = [third, second, g.reviewDetail.review];
   await emit(page, 'review', third.id);
   await expect(page.getByLabel('Review run').locator('option[value="rev-3"]')).toHaveCount(1);
   await expect(page.getByLabel('Review run')).toHaveValue('rev-1');
-  await expect(page.getByRole('region', { name: 'Take', exact: true })).toContainText(g.reviewDetail.summary!.take);
+  await expect(page.getByRole('region', { name: 'Review summary', exact: true })).toContainText(g.reviewDetail.summary!.take);
   await expect(page.locator('.newer-notice')).toContainText('Historical review');
 });
 
@@ -834,3 +838,29 @@ for (const [tab, endpoint, reviewId] of [['diff', 'diff', 'rev-1'], ['diff', 'di
     expect(reads()).toBe(1);
   });
 }
+
+
+test('an expanded pull preview follows live updates and a newer review without closing', async ({ page }) => {
+  let pull = g.pull;
+  let detail = g.reviewDetail;
+  await g.mockApi(page, [
+    [/\/pulls$/, () => g.pageOf([pull])],
+    [/\/reviews\/rev-[12]$/, () => detail],
+    ...g.defaultApi(),
+  ]);
+  await page.goto(`${account}/pulls`);
+  const toggle = page.getByRole('button', { name: 'Preview alpha/one#7', exact: true });
+  await toggle.click();
+  const preview = page.getByRole('region', { name: 'Preview of alpha/one#7' });
+  await expect(preview).toContainText(g.reviewDetail.summary!.take);
+  detail = { ...detail, summary: { ...detail.summary!, headline: 'Updated review summary' } };
+  await emit(page, 'review');
+  await expect(preview).toContainText('Updated review summary');
+  pull = { ...pull, lastReview: { ...pull.lastReview!, id: 'rev-2' } };
+  detail = { ...detail, review: { ...detail.review, id: 'rev-2' }, summary: { ...detail.summary!, headline: 'Newer review summary' } };
+  await emit(page, 'review', 'rev-2');
+  await expect(preview).toContainText('Newer review summary');
+  await expect(preview).not.toContainText('Updated review summary');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(preview.getByRole('link', { name: 'Open full review' })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7?run=rev-2`);
+});

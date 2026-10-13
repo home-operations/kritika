@@ -41,6 +41,8 @@
     { value: 'tokens', label: 'Tokens' },
   ] as const;
 
+  let cacheDetails = $state(false);
+
   const BILLING = [{ value: 'all', label: 'All usage' }, { value: 'chatgpt', label: 'ChatGPT plan' }] as const;
 
   const days = $derived(filter?.days ?? '30');
@@ -170,10 +172,14 @@
       </label>
       <Segmented label="Chart metric" options={METRICS} value={metric} onchange={(metric) => setFilter({ metric })} />
       {#if chatgptEnabled}
-        <Segmented label="Billing" options={BILLING} value={billing} onchange={(billing) => setFilter({ billing, metric: billing === 'chatgpt' ? 'tokens' : metric })} />
+        <label class="filter-select flex items-center gap-2 text-muted text-ui-sm">Billing
+          <select aria-label="Billing" value={billing} onchange={(e) => { const billing = e.currentTarget.value as 'all' | 'chatgpt'; setFilter({ billing, metric: billing === 'chatgpt' ? 'tokens' : metric }); }}>
+            {#each BILLING as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
+          </select>
+        </label>
       {/if}
     </div>
-    <nav class="usage-drilldown flex items-center flex-wrap my-4 mx-0 text-ui-sm gap-2" aria-label="Spending drilldown">
+    <nav class="usage-drilldown flex items-center flex-wrap text-ui-sm gap-2" aria-label="Spending drilldown">
       <button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined, group: 'repo' })}>All repositories</button>
       {#if repository !== undefined}<span>→</span><button class="btn" onclick={() => setFilter({ model: undefined, group: 'model' })}>{repository || 'Unattributed repository'}</button>{/if}
       {#if model !== undefined}<span>→</span><span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">{model || 'Unattributed model'}</span>{/if}
@@ -202,13 +208,16 @@
             whole={metric !== 'cost'}
           />
         </section>
-        {@render limits()}
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <h2 class="m-0 text-ui-md font-semibold">Usage breakdown</h2>
+          <label class="flex items-center gap-2 text-ui-sm text-muted"><input type="checkbox" bind:checked={cacheDetails} /> Show cache details</label>
+        </div>
         <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
           <table class="data">
             <thead>
               <tr>
                 <th scope="col">{groupLabel(s.group)}</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Input</th>
-                <th scope="col" class="num">Cache read</th><th scope="col" class="num">Cache write</th><th scope="col" class="num">Output</th>
+                {#if cacheDetails}<th scope="col" class="num">Cache read</th><th scope="col" class="num">Cache write</th>{/if}<th scope="col" class="num">Output</th>
                 <th scope="col">Billing</th><th scope="col" class="num">API spend</th>
                 {#if !timed(s.group) && s.group !== 'review'}<th scope="col" class="num" title={`${metric === 'cost' ? 'API spend' : 'Tokens'} compared with the preceding period of equal length`}>Change</th>{/if}
               </tr>
@@ -229,8 +238,10 @@
                   </td>
                   <td class="num">{wholeNumber(r.calls)}</td>
                   <td class="num" title={wholeNumber(r.inputTokens)}>{tokens(r.inputTokens)}</td>
-                  <td class="num" title={wholeNumber(r.cacheReadTokens)}>{tokens(r.cacheReadTokens)}</td>
-                  <td class="num" title={wholeNumber(r.cacheWriteTokens)}>{tokens(r.cacheWriteTokens)}</td>
+                  {#if cacheDetails}
+                    <td class="num" title={wholeNumber(r.cacheReadTokens)}>{tokens(r.cacheReadTokens)}</td>
+                    <td class="num" title={wholeNumber(r.cacheWriteTokens)}>{tokens(r.cacheWriteTokens)}</td>
+                  {/if}
                   <td class="num" title={wholeNumber(r.outputTokens)}>{tokens(r.outputTokens)}</td>
                   <td>
                     {#if r.planCalls === r.calls && r.calls > 0}ChatGPT plan
@@ -247,8 +258,10 @@
                 <th scope="row">Total API spend</th>
                 <td class="num">{wholeNumber(t.calls)}</td>
                 <td class="num" title={wholeNumber(t.inputTokens)}>{tokens(t.inputTokens)}</td>
-                <td class="num" title={wholeNumber(t.cacheReadTokens)}>{tokens(t.cacheReadTokens)}</td>
-                <td class="num" title={wholeNumber(t.cacheWriteTokens)}>{tokens(t.cacheWriteTokens)}</td>
+                {#if cacheDetails}
+                  <td class="num" title={wholeNumber(t.cacheReadTokens)}>{tokens(t.cacheReadTokens)}</td>
+                  <td class="num" title={wholeNumber(t.cacheWriteTokens)}>{tokens(t.cacheWriteTokens)}</td>
+                {/if}
                 <td class="num" title={wholeNumber(t.outputTokens)}>{tokens(t.outputTokens)}</td>
                 <td></td>
                 <td class="num">{costTotal(t.costUsd, t.unpricedCalls)}</td>
@@ -257,6 +270,7 @@
             </tfoot>
           </table>
         </div>
+        {@render limits()}
       {/snippet}
     </StateView>
     {#if !res.data || (!res.data.rows.length && !res.data.previous.length)}{@render limits()}{/if}

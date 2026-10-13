@@ -132,7 +132,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByText('Last output: waiting for a model slot.', { exact: true })).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`queue-${theme}.png`) });
     await page.getByLabel('Details for job #103').click();
-    await expect(page.locator('.job-details[open]')).toContainText('Last output: waiting for a model slot.');
+    await expect(page.getByRole('region', { name: 'Job #103 details' })).toContainText('Last output: waiting for a model slot.');
     await page.screenshot({ path: testInfo.outputPath(`queue-details-${theme}.png`) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: 'Open navigation' }).click();

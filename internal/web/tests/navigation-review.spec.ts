@@ -144,6 +144,7 @@ test('reporting navigation keeps the period and 24-hour analytics explains parti
   await expect(page).toHaveURL(/\?days=90$/);
   await page.getByRole('radio', { name: '24 hours' }).click();
   await expect(page.getByText('Last 24 hours, split by date.', { exact: false })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('failed');
   await expect(page.getByRole('img', { name: /^Failure rate per partial day/ })).toBeVisible();
 });
 

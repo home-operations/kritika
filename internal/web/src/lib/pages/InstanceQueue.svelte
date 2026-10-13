@@ -29,11 +29,12 @@
     <PageHeader title="Queue" description="Jobs across all your accounts." />
     <StateView {res} retry={() => res.load()}>
       {#snippet children(q)}
+        <JobTable {filter} onfilter={(f) => replace({ name: 'instanceQueue', filter: queueFilter({ ...f }) })} ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
         {#if q.slots.length}
           <section class="panel" aria-labelledby="iq-slots">
             <header class="panel-head">
               <h2 id="iq-slots">Model slots</h2>
-              <span class="small muted text-ui-sm">A review waits while every slot of its account's model is busy.</span>
+              <span class="small muted text-ui-sm">Reviews wait when all model slots are busy.</span>
             </header>
             <div class="table-wrap overflow-x-auto max-w-full">
               <table class="data">
@@ -56,7 +57,7 @@
             </div>
           </section>
         {/if}
-        <JobTable {filter} onfilter={(f) => replace({ name: 'instanceQueue', filter: queueFilter({ ...f }) })} ondone={() => void res.load()} jobs={q.jobs} account={(j) => j.account} several />
+
       {/snippet}
     </StateView>
   </div>
