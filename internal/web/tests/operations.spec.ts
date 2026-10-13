@@ -147,7 +147,7 @@ test('spending changes retain disappeared groups and suppress unpriced compariso
   const rows = page.locator('tbody tr');
   await expect(rows).toHaveCount(3);
   await expect(rows.filter({ hasText: 'alpha/old' })).toContainText('-100%');
-  await expect(rows.filter({ hasText: 'alpha/new' })).toContainText('new');
+  await expect(rows.filter({ hasText: 'alpha/new' })).toContainText('—');
   await expect(rows.filter({ hasText: 'alpha/unpriced' })).toContainText('Incomplete');
   await expect(page.getByRole('region', { name: 'Selected usage' }).locator('.stat').first().locator('.delta')).toHaveCount(0);
 });

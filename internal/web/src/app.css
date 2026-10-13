@@ -451,12 +451,6 @@
   .panel-head h2 {
     @apply m-0 text-[length:16px] font-[650];
   }
-  a.tile {
-    @apply text-inherit no-underline;
-  }
-  a.tile:hover {
-    @apply bg-surface;
-  }
   .meter {
     @apply h-1.5 rounded-[3px] bg-surface overflow-hidden;
   }
@@ -815,22 +809,23 @@
   .chart-tooltip {
     @apply z-[var(--z-tip)];
   }
-  .stats.stats-4 {
-    @apply grid-cols-4;
+  /* A group of stats is one bordered panel; the 1px gap over the border
+     colour draws a hairline between tiles however the grid wraps. */
+  .stats {
+    @apply grid gap-px bg-line border border-solid border-line rounded-lg overflow-hidden min-w-0;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
   .stats.stats-3 {
-    @apply grid-cols-3;
+    @apply grid-cols-3 max-[800px]:grid-cols-1;
   }
-  @media (max-width: 900px) {
-    .stats.stats-4 {
-      @apply grid-cols-2;
-    }
+  .stat {
+    @apply flex flex-col gap-1 min-w-0 py-3 px-4 bg-panel text-inherit no-underline;
   }
-  @media (max-width: 480px) {
-    .stats.stats-4,
-    .stats.stats-3 {
-      @apply grid-cols-1;
-    }
+  a.stat:hover {
+    @apply bg-surface no-underline;
+  }
+  .stat-hint {
+    @apply text-ui-md;
   }
   .delta {
     @apply py-[1px] px-1.5 rounded-sm text-ui-xs font-[650] tabular-nums text-[var(--tone)];
@@ -967,12 +962,6 @@
   }
   .attention-item .mono {
     @apply block mt-[5px] wrap-anywhere;
-  }
-  .operations-summary .tile {
-    @apply bg-transparent border-0 rounded-none p-4;
-  }
-  .operations-summary .tile + .tile {
-    @apply border-l border-solid border-line max-[800px]:border-l-0 max-[800px]:border-t;
   }
   .overview-attention > .attention-item {
     @apply grid grid-cols-[140px_minmax(0,_1fr)_auto] items-center gap-4 py-3 px-4 border-t border-solid border-line text-ink;
@@ -1309,15 +1298,6 @@
   .usage-drilldown .btn {
     @apply py-[3px] px-2 bg-transparent border-transparent text-accent;
   }
-  .limits-strip > div {
-    @apply flex flex-col gap-1;
-  }
-  .limits-strip strong {
-    @apply text-ui-sm tabular-nums;
-  }
-  .limits-strip .meter {
-    @apply mt-1;
-  }
   .row-toggle {
     @apply w-9 h-9 p-0 justify-center;
   }
@@ -1387,9 +1367,6 @@
     }
   }
   @media (max-width: 600px) {
-    .limits-strip {
-      @apply grid-cols-[1fr] gap-3;
-    }
     .job-error-summary {
       @apply max-w-full whitespace-normal;
     }

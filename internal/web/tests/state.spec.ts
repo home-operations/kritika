@@ -57,20 +57,20 @@ for (const failed of ['queue', 'attention', 'account']) {
     await expect(page.getByRole('alert')).toContainText(`${failed} unavailable`);
     await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
     const tiles = page.getByRole('region', { name: 'Account activity' });
-    await expect(tiles.locator('.tile')).toHaveCount(3);
+    await expect(tiles.locator('.stat')).toHaveCount(3);
     if (failed !== 'account') {
       await page.getByRole('button', { name: 'Connection details', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Connection details', exact: true })).toContainText(detail.connection.name);
       await page.keyboard.press('Escape');
-      await expect(tiles.locator('.tile').filter({ hasText: 'Reviews today' }).locator('.tile-value')).toHaveText(String(detail.usage.reviewsToday));
+      await expect(tiles.locator('.stat').filter({ hasText: 'Reviews today' }).locator('.stat-value')).toHaveText(String(detail.usage.reviewsToday));
     }
-    if (failed !== 'queue') await expect(tiles.locator('.tile').filter({ hasText: 'Running now' }).locator('.tile-value')).toHaveText(/\d+/);
+    if (failed !== 'queue') await expect(tiles.locator('.stat').filter({ hasText: 'Running now' }).locator('.stat-value')).toHaveText(/\d+/);
     await expect(page.getByText('All clear. No issues need attention.')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath(`account-${failed}-unavailable.png`) });
     fail = false;
     await page.getByRole('alert').getByRole('button', { name: /Retry/ }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
-    await expect(tiles.locator('.tile-value')).toHaveCount(3);
+    await expect(tiles.locator('.stat-value')).toHaveCount(3);
   });
 }
 
@@ -79,7 +79,7 @@ test('account overview polls only jobs and refreshes only data affected by live 
   const seen = await g.mockApi(page, g.defaultApi());
   await page.goto(account);
   await expect(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name: 'alpha/one', exact: true })).toBeVisible();
-  await expect(page.locator('.account-activity .tile-value')).toHaveCount(3);
+  await expect(page.locator('.account-activity .stat-value')).toHaveCount(3);
   const calls = () => seen.filter((u) => u.pathname.startsWith('/api/v1/accounts/')).map((u) => u.pathname.replace('/api/v1/accounts/github/alpha', '')).sort();
   seen.length = 0;
   await page.clock.runFor(15_001);

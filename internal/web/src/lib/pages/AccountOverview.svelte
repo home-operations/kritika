@@ -6,14 +6,14 @@
   import { hookURL } from '../session.svelte';
   import { unsignedWebhooks } from '../setup';
   import { attention as jobNeedsAttention, waiting } from '../queue';
-  import { costTotal, tokens } from '../format';
-  import type { Route } from '../routes';
+  import { costTotal, tokens, wholeNumber } from '../format';
   import type { AccountDetail, Attention, Job, Page, Repository } from '../types';
   import PageHeader from '../components/PageHeader.svelte';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import WebhookState from '../components/WebhookState.svelte';
   import HelpPopover from '../components/HelpPopover.svelte';
+  import StatTile from '../components/StatTile.svelte';
 
   let { slug }: { slug: string } = $props();
   const base = $derived(accountApi(slug));
@@ -42,10 +42,10 @@
     <PageHeader title="Overview" {slug} description="Review health, active work and repositories for this account.">
       {#snippet actions()}<HelpPopover label="Connection details">{@render connectionDetails()}</HelpPopover><a class="btn" href={href({ name: 'pulls', slug })}>View pull requests →</a><a class="btn" href={href({ name: 'queue', slug })}>Open queue →</a>{/snippet}
     </PageHeader>
-    <section class="tiles operations-summary account-activity panel grid grid-cols-3 max-[800px]:grid-cols-1" aria-label="Account activity">
-      {@render metric('Running now', queue.data?.filter((j) => j.state === 'running').length, { name: 'queue', slug }, queue.data ? `${queue.data.filter(waiting).length} waiting` : '', !queue.error)}
-      {@render metric('Reviews today', account.data?.usage.reviewsToday, { name: 'analytics', slug, filter: { days: '1' } }, account.data?.usage.reviewsPerDay ? `Daily limit: ${account.data.usage.reviewsPerDay}` : 'View analytics →', !account.error)}
-      {@render metric('API spend this month', account.data ? costTotal(account.data.usage.costUsd, account.data.usage.unpricedCalls) : undefined, { name: 'usage', slug }, account.data ? `${tokens(account.data.usage.tokens)} tokens` : '', !account.error)}
+    <section class="stats stats-3 account-activity" aria-label="Account activity">
+      <StatTile label="Running now" value={queue.data ? wholeNumber(queue.data.filter((j) => j.state === 'running').length) : undefined} pending={!queue.error} href={href({ name: 'queue', slug })} sub={queue.data ? `${queue.data.filter(waiting).length} waiting` : ''} />
+      <StatTile label="Reviews today" value={account.data ? wholeNumber(account.data.usage.reviewsToday) : undefined} pending={!account.error} href={href({ name: 'analytics', slug, filter: { days: '1' } })} sub={account.data?.usage.reviewsPerDay ? `Daily limit: ${account.data.usage.reviewsPerDay}` : 'View analytics →'} />
+      <StatTile label="API spend this month" value={account.data ? costTotal(account.data.usage.costUsd, account.data.usage.unpricedCalls) : undefined} pending={!account.error} href={href({ name: 'usage', slug })} sub={account.data ? `${tokens(account.data.usage.tokens)} tokens` : ''} />
     </section>
     <section class="panel overview-attention min-w-0" aria-labelledby="account-attention">
       <header class="panel-head"><h2 id="account-attention">Needs attention</h2></header>
@@ -97,13 +97,4 @@
     {/if}
     {#if connectionIssue}<p class="muted">Polling keeps pull requests in sync; mentions need working webhooks.</p>{/if}
   {:else}<p class="muted">{account.error ? 'Connection details unavailable.' : 'Loading connection…'}</p>{/if}
-{/snippet}
-
-{#snippet metric(label: string, value: string | number | undefined, route: Route, detail: string, pending: boolean)}
-  <a class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1" href={href(route)} aria-busy={value === undefined && pending}>
-    <span class="tile-label text-ui-sm text-muted">{label}</span>
-    {#if value !== undefined}<span class="tile-value text-[length:24px] font-bold tabular-nums">{value}</span><span class="small muted text-ui-sm">{detail}</span>
-    {:else if pending}<span class="skeleton-value block bg-line rounded-[4px] w-14 h-9" aria-label={`Loading ${label.toLowerCase()}`}></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span>
-    {:else}<span class="small muted text-ui-sm">Unavailable</span>{/if}
-  </a>
 {/snippet}

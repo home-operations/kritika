@@ -51,12 +51,12 @@
               <p class="small muted text-ui-sm">Allowance data unavailable. OpenAI has not supplied quota data for this connection.</p>
             {:else}
               {#each p.allowances as a (a.limitId)}
-                <div class="stats stats-3 grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label={a.limitId === 'codex' ? `${p.provider} allowances` : `${p.provider} ${a.limitId} allowances`}>
+                <div class="stats" aria-label={a.limitId === 'codex' ? `${p.provider} allowances` : `${p.provider} ${a.limitId} allowances`}>
                   {#each [a.primary, a.secondary].filter((w): w is ChatGPTAllowanceWindow => w !== null) as w, i (i)}
                     {@const reset = resetTime(w)}
-                    <div class="stat flex flex-col gap-1 min-w-0 pt-1 px-0 pb-4 border-b border-solid border-b-line bg-transparent">
+                    <div class="stat">
                       <span class="stat-label text-ui-sm text-muted">{windowName(w)}</span>
-                      <span class="stat-value text-[length:26px] font-bold tracking-[-0.01em]">{remaining(w)}% remaining</span>
+                      <span class="stat-value text-[length:24px] font-bold tracking-[-0.01em] tabular-nums">{remaining(w)}% remaining</span>
                       <Meter value={Math.min(100, w.usedPercent)} max={100} label={`${windowName(w)} used`} />
                       <span class="stat-sub text-ui-sm text-muted">
                         {#if expired(w)}Reset time passed; awaiting updated usage

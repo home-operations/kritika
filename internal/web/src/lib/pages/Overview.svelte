@@ -9,6 +9,7 @@
   import type { AccountSummary, InstanceQueue } from '../types';
   import { WANTS, nearCaps } from '../attention';
   import StateView from '../components/StateView.svelte';
+  import StatTile from '../components/StatTile.svelte';
   import Meter from '../components/Meter.svelte';
   import Pill from '../components/Pill.svelte';
   import { unsignedWebhooks } from '../setup';
@@ -71,38 +72,26 @@
     <StateView {res} layout="overview" retry={() => res.load()} isEmpty={(d) => d.length === 0} empty="You are not a member of any account yet.">
       {#snippet children(list)}
         {@const all = totals(list)}
-        <section class="tiles operations-summary panel grid grid-cols-3 max-[800px]:grid-cols-1" aria-label="Across all accounts">
+        <section class="stats stats-3" aria-label="Across all accounts">
           {#if queue.data}
             {@const w = work(queue.data)}
-            <a class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1" href={href({ name: 'instanceQueue' })}>
-              <span class="tile-label text-ui-sm text-muted">Running now</span>
-              <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(w.running)}</span>
-              <span class="small muted text-ui-sm">{wholeNumber(w.waiting)} waiting{w.slots ? ` · ${wholeNumber(w.held)} of ${wholeNumber(w.slots)} model slots busy` : ''}</span>
-            </a>
+            <StatTile label="Running now" value={wholeNumber(w.running)} href={href({ name: 'instanceQueue' })} sub={`${wholeNumber(w.waiting)} waiting${w.slots ? ` · ${wholeNumber(w.held)} of ${wholeNumber(w.slots)} model slots busy` : ''}`} />
           {:else}
-            <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1" aria-busy={!queue.error}>
-              <span class="tile-label text-ui-sm text-muted">Running now</span>
-              {#if queue.error}<span class="small muted text-ui-sm">Unavailable</span><button class="btn btn-small" onclick={() => void queue.load()}>Retry queue</button>
-              {:else}<span class="skeleton-value block bg-line rounded-[4px] w-14 h-9" aria-label="Loading running work"></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span>{/if}
-            </div>
+            <StatTile label="Running now" pending={!queue.error}>
+              {#if queue.error}<button class="btn btn-small self-start" onclick={() => void queue.load()}>Retry queue</button>{/if}
+            </StatTile>
           {/if}
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">Reviews, last 7 days</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(all.reviews7d)}</span>
-            <span class="small muted text-ui-sm">{wholeNumber(all.reviewsToday)} today</span>
-          </div>
-          <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">API spend this month</span>
-            <span class="tile-value text-[length:24px] font-bold tabular-nums">{costTotal(all.costUsd, all.unpricedCalls)}</span>
-            <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
-            <span class="small muted text-ui-sm"
-              >{!all.reviews
-                ? 'no review completed this month'
-                : !all.pricedReviews
-                  ? `${wholeNumber(all.reviews)} reviews this month, all with unpriced calls`
-                  : `${usd(all.reviewCostUsd / all.pricedReviews)} per review, mean of ${wholeNumber(all.pricedReviews)}${reviewsLeftOut(all.unpricedReviews)}`}</span
-            >
-          </div>
+          <StatTile label="Reviews, last 7 days" value={wholeNumber(all.reviews7d)} sub={`${wholeNumber(all.reviewsToday)} today`} />
+          <!-- The mean, not a median: each account reports its own reviews and a median does not add up. -->
+          <StatTile
+            label="API spend this month"
+            value={costTotal(all.costUsd, all.unpricedCalls)}
+            sub={!all.reviews
+              ? 'no review completed this month'
+              : !all.pricedReviews
+                ? `${wholeNumber(all.reviews)} reviews this month, all with unpriced calls`
+                : `${usd(all.reviewCostUsd / all.pricedReviews)} per review, mean of ${wholeNumber(all.pricedReviews)}${reviewsLeftOut(all.unpricedReviews)}`}
+          />
         </section>
 
         <section class="panel overview-attention min-w-0" aria-labelledby="overview-attention">

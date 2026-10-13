@@ -111,7 +111,7 @@
         {@const c = d.current}
         {@const p = d.previous}
         <div class="analytics flex flex-col gap-3.5 [transition:opacity_0.15s]" class:stale={res.loading}>
-          <section class="stats grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label="Operational metrics">
+          <section class="stats" aria-label="Operational metrics">
             <StatTile
               label="Reviews"
               value={wholeNumber(c.reviews)}
@@ -168,7 +168,7 @@
           </section>
 
           <Collapsible title="More metrics">
-            <section class="stats stats-related grid gap-5 bg-transparent border-0 rounded-[0] overflow-hidden grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))]" aria-label="Totals">
+            <section class="stats" aria-label="Totals">
               <StatTile label="Tokens" value={tokens(c.tokens)} now={c.tokens} before={p.tokens} define="Input (including cached input) plus output tokens" />
               <StatTile
                 label="Pull requests reviewed"

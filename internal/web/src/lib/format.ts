@@ -170,16 +170,16 @@ export function pretty(v: unknown): string {
 }
 
 // change is how now differs from before, for a delta chip: a signed
-// percentage, or with points the difference of two percentages; "new" when
-// before was zero, and nothing when neither has a value.
+// percentage, or with points the difference of two percentages; nothing
+// when either has no value, or before was zero and there is nothing to
+// compare with.
 export function change(now: number | null, before: number | null, points = false): { text: string; dir: -1 | 0 | 1 } | undefined {
-  if (now === null || before === null || (now === 0 && before === 0)) return undefined;
+  if (now === null || before === null || before === 0) return undefined;
   const dir = now > before ? 1 : now < before ? -1 : 0;
   if (points) {
     const d = Math.round(now - before);
     return { text: `${d > 0 ? '+' : ''}${d} pts`, dir };
   }
-  if (before === 0) return { text: 'new', dir };
   const d = Math.round(((now - before) / Math.abs(before)) * 100);
   return { text: `${d > 0 ? '+' : ''}${d}%`, dir };
 }

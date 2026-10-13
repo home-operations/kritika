@@ -41,7 +41,7 @@
 {:else}
   <div class="loading-placeholder w-full" class:loading-overview={layout !== 'table'} role="status" aria-label="Loading content" aria-busy="true">
     <span class="sr-only">Loading…</span>
-    {#if layout === 'overview'}<div class="tiles operations-summary panel grid grid-cols-3 max-[800px]:grid-cols-1" aria-hidden="true">{#each [1, 2, 3] as tile (tile)}<div class="tile skeleton-tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-4"><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span><span class="skeleton-value block bg-line rounded-[4px] w-14 h-9"></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span></div>{/each}</div>{/if}
+    {#if layout === 'overview'}<div class="stats stats-3" aria-hidden="true">{#each [1, 2, 3] as tile (tile)}<div class="stat skeleton-tile gap-4"><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span><span class="skeleton-value block bg-line rounded-[4px] w-14 h-9"></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span></div>{/each}</div>{/if}
     <div class="skeleton-table border border-solid border-line rounded-md overflow-hidden" aria-hidden="true">{#each [1, 2, 3, 4, 5] as row (row)}<div class="skeleton-row grid grid-cols-[3fr_1fr_1fr] gap-6 py-6 px-4 border-b border-solid border-b-line"><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span><span class="skeleton-line block bg-line rounded-[4px] h-3 w-[70%]"></span></div>{/each}</div>
   </div>
 {/if}

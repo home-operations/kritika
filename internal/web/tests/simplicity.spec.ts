@@ -92,7 +92,7 @@ for (const [name, path] of [
     await expect(page.locator('main h1')).toBeVisible();
     await expect(page.locator('main .state-msg[aria-live]')).toHaveCount(0);
     if (name === 'analytics') await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
-    const controls = page.locator('button, [role="button"], summary, a.btn, a.badge, a.sev-chip, a.pill, a.section-tab, a.tab, a.tile');
+    const controls = page.locator('button, [role="button"], summary, a.btn, a.badge, a.sev-chip, a.pill, a.section-tab, a.tab, a.stat');
     let checked = 0;
     for (const control of await controls.all()) {
       if (!(await control.isVisible()) || !(await control.isEnabled())) continue;

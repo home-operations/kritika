@@ -41,9 +41,9 @@ test.describe('overview', () => {
     await page.goto('/#/');
     await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(2);
     const tiles = page.getByRole('region', { name: 'Across all accounts' });
-    await expect(tiles.locator('.tile').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
-    const spend = tiles.locator('.tile').filter({ hasText: 'API spend this month' });
-    await expect(spend.locator('.tile-value')).toHaveText('$3.00');
+    await expect(tiles.locator('.stat').filter({ hasText: 'Reviews, last 7 days' })).toContainText(String(2 * g.accountSummary.reviews7d));
+    const spend = tiles.locator('.stat').filter({ hasText: 'API spend this month' });
+    await expect(spend.locator('.stat-value')).toHaveText('$3.00');
     // The per-review figure is a mean over both accounts' reviews, not a sum of their medians.
     await expect(spend).toContainText('$0.10 per review, mean of 24');
     const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
@@ -56,7 +56,7 @@ test.describe('overview', () => {
     await g.mockApi(page, [[/\/api\/v1\/queue$/, q], ...g.defaultApi()]);
     await page.goto('/#/');
     const tile = page.getByRole('link', { name: /Running now/ });
-    await expect(tile.locator('.tile-value')).toHaveText('1');
+    await expect(tile.locator('.stat-value')).toHaveText('1');
     await expect(tile).toContainText('2 waiting · 2 of 2 model slots busy');
     await expect(tile).toHaveAttribute('href', '#/queue');
 
@@ -69,7 +69,7 @@ test.describe('overview', () => {
     await page.route('**/api/v1/queue', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify(g.golden('error')) }));
     await page.goto('/#/');
     await expect(page.locator('table.account-breakdown tbody tr')).toHaveCount(1);
-    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.tile')).toHaveCount(3);
+    await expect(page.getByRole('region', { name: 'Across all accounts' }).locator('.stat')).toHaveCount(3);
     await expect(page.getByRole('button', { name: 'Retry queue' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Needs attention', exact: true })).toContainText('Queue alerts unavailable');
   });
@@ -154,7 +154,7 @@ test('analytics shows the totals against the window before, the charts and the r
   const stat = (label: string) => stats.locator('.stat').filter({ has: page.getByText(label, { exact: true }) });
   const c = g.analytics.current;
   await expect(stat('Reviews').locator('.stat-value')).toHaveText(String(c.reviews));
-  await expect(stat('Reviews').locator('.delta')).toHaveText('new');
+  await expect(stat('Reviews').locator('.delta')).toHaveCount(0);
   await expect(stat('Reviews').locator('.stat-sub')).toHaveText(`${c.failed} failed`);
   await page.getByRole('button', { name: 'More metrics', exact: true }).click();
   await expect(stat('Findings').locator('.stat-sub')).toHaveText(`${c.findings.p0} P0`);
@@ -166,8 +166,7 @@ test('analytics shows the totals against the window before, the charts and the r
   await expect(stat('Time to merge').locator('.stat-value')).toHaveText('36h');
   await expect(stat('Reactions').locator('.stat-value')).toHaveText(`${c.reactionsUp} up`);
   await expect(stat('Reactions').locator('.stat-sub')).toHaveText(`${c.reactionsDown} down`);
-  await expect(stat('API spend').locator('.delta')).toHaveText('new');
-  await expect(stat('API spend').locator('.delta')).toHaveClass(/tone-danger/);
+  await expect(stat('API spend').locator('.delta')).toHaveCount(0);
   await expect(page.getByRole('img', { name: /^Completed reviews per day/ })).toBeVisible();
   await page.getByRole('combobox', { name: 'Trend metric' }).selectOption('findings');
   const findings = page.getByRole('region', { name: 'Review trends' });
