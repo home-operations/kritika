@@ -35,11 +35,11 @@
   const highlighted = $derived(language ? tokens.value : undefined);
 </script>
 
-<div class="code-block" class:plain>
+<div class="code-block border border-solid border-line rounded-md bg-surface min-w-0 flex flex-col" class:plain>
   {#if label || copy}
-    <div class="code-head">
-      {#if label}<span class="code-label mono">{label}</span>{/if}
-      <span class="spacer"></span>
+    <div class="code-head flex items-center gap-2 pt-[3px] pr-1.5 pb-[3px] pl-2.5 border-b border-solid border-b-line">
+      {#if label}<span class="code-label mono text-ui-xs text-muted">{label}</span>{/if}
+      <span class="spacer flex-auto"></span>
       {#if copy}<Copy {text} />{/if}
     </div>
   {/if}
@@ -49,7 +49,7 @@
     <pre class:mono={!plain}>{shown}</pre>
   {/if}
   {#if lines.length > maxLines}
-    <button class="btn btn-small code-more" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
+    <button class="btn btn-small code-more border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs self-start mt-0 mx-2.5 mb-2" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
       {expanded ? 'Show less' : `Show all ${lines.length} lines`}
     </button>
   {/if}

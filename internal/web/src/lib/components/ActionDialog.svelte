@@ -41,11 +41,11 @@
   <p>{body}</p>
   {#snippet footer()}
     {#if danger}
-      <AlertDialog.Cancel class="btn">Keep as is</AlertDialog.Cancel>
-      <AlertDialog.Action class="btn btn-primary btn-danger" onclick={run} disabled={busy}>{busy ? 'Working…' : label}</AlertDialog.Action>
+      <AlertDialog.Cancel class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5">Keep as is</AlertDialog.Cancel>
+      <AlertDialog.Action class="btn btn-primary btn-danger border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" onclick={run} disabled={busy}>{busy ? 'Working…' : label}</AlertDialog.Action>
     {:else}
-      <button class="btn" onclick={() => (open = false)}>Keep as is</button>
-      <button class="btn btn-primary" onclick={run} disabled={busy}>{busy ? 'Working…' : label}</button>
+      <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => (open = false)}>Keep as is</button>
+      <button class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" onclick={run} disabled={busy}>{busy ? 'Working…' : label}</button>
     {/if}
   {/snippet}
 </Dialog>

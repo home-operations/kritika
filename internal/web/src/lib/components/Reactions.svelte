@@ -7,7 +7,7 @@
 </script>
 
 {#if up || down}
-  <span class="reactions" title="Reactions to its comment on GitHub">
+  <span class="reactions inline-flex gap-2 ml-2 text-ui-sm text-muted tabular-nums" title="Reactions to its comment on GitHub">
     {#if up}<span><Icon path={mdiThumbUpOutline} size={12} label="thumbs up" />{up}</span>{/if}
     {#if down}<span><Icon path={mdiThumbDownOutline} size={12} label="thumbs down" />{down}</span>{/if}
   </span>

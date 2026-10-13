@@ -21,8 +21,8 @@
 
 <svelte:head><title>Queue · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Queue" {slug} />
     <StateView {res} retry={() => res.load()}>
       {#snippet children(jobs)}

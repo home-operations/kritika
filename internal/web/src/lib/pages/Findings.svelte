@@ -165,10 +165,10 @@
 
 <svelte:head><title>Findings · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Findings" {slug} />
-    <div class="toolbar" role="search">
+    <div class="toolbar flex flex-wrap items-center gap-2" role="search">
       <TokenSearch
         id="finding-search"
         label="Search findings"
@@ -188,14 +188,14 @@
     <StateView {res} retry={() => paged.load()}>
       {#snippet children()}
         {#if paged.items.length === 0 && filter}
-          <div class="state-msg">
+          <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
             <span>No findings match these filters.</span>
-            <button class="btn btn-small" onclick={clearFilters}>Clear filters</button>
+            <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
           </div>
         {:else if paged.items.length === 0}
-          <p class="state-msg">No findings yet: they appear here as reviews report them.</p>
+          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No findings yet: they appear here as reviews report them.</p>
         {:else}
-          <div class="table-wrap table-card">
+          <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
             <table class="data finding-table">
               <thead>
                 <tr>
@@ -209,12 +209,12 @@
               <tbody>
                 {#each paged.items as f, i (f.id)}
                   <!-- The title opens the inspector; the row is a larger pointer target. -->
-                  <tr class="finding-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
+                  <tr class="finding-row cursor-pointer" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
                     <td class="finding-main">
-                      <a class="finding-link" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
-                      <span class="finding-sub">{f.explanation}</span>
+                      <a class="finding-link block overflow-hidden text-ellipsis text-ink text-ui-md [font-weight:550]" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
+                      <span class="finding-sub block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">{f.explanation}</span>
                       {#if f.rules.length}
-                        <span class="finding-rules">
+                        <span class="finding-rules flex flex-wrap gap-1 mt-1">
                           {#each f.rules as id (id)}
                             <a class="mono" href={href({ name: 'findings', slug, filter: { rule: id } })} title="Findings that cite the rule {id}">{id}</a>
                           {/each}
@@ -223,11 +223,11 @@
                     </td>
                     <td>
                       <span class="sev sev-{f.severity}">{f.severity}</span>
-                      {#if f.category}<a class="badge" href={href({ name: 'findings', slug, filter: { category: f.category } })} title="Findings of this kind">{f.category}</a>{/if}
+                      {#if f.category}<a class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" href={href({ name: 'findings', slug, filter: { category: f.category } })} title="Findings of this kind">{f.category}</a>{/if}
                     </td>
                     <td class="finding-pull">
                       <a class="mono" href={href(pullRoute(slug, f.pull))} title={f.pull.title}>{f.pull.repository}#{f.pull.number}</a>
-                      <span class="finding-sub mono">
+                      <span class="finding-sub mono block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">
                         {f.path}:{f.line}
                         {#if threadUrl(f.pull.url, f.forgeCommentId)}
                           <a class="external" href={threadUrl(f.pull.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer" title="The finding's thread on GitHub">
@@ -238,11 +238,11 @@
                     </td>
                     <td>
                       <span class="status tone-{statusTone[f.status]}">
-                        <span class="status-tile"><Icon path={statusIcon[f.status]} size={12} /></span>
+                        <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={statusIcon[f.status]} size={12} /></span>
                         <span class="status-word">{f.status}</span>
                       </span>
                       <Reactions up={f.reactionsUp} down={f.reactionsDown} />
-                      {#if f.dismissReason}<span class="finding-sub finding-dismissed" title="The reason it was dismissed with">{f.dismissReason}</span>{/if}
+                      {#if f.dismissReason}<span class="finding-sub finding-dismissed block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted max-w-55" title="The reason it was dismissed with">{f.dismissReason}</span>{/if}
                     </td>
                     <td class="num"><Time iso={f.firstSeenAt} /></td>
                   </tr>
@@ -254,29 +254,29 @@
         {/if}
       {/snippet}
     </StateView>
-    <p class="muted small key-hints"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
+    <p class="muted small key-hints text-ui-sm m-0"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>
 </main>
 
 
 <Dialog open={!!inspected} title="Finding details" side onclose={() => (inspectedId = '')} returnFocus=".finding-row.selected .finding-link">
   {#if inspected}
-    <div class="finding-inspector" bind:this={inspector} role="group" aria-label="Finding inspection">
-      <div class="finding-controls" role="group" aria-label="Browse findings">
-        <button class="btn" disabled={paged.loadingMore || inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
-        <span class="small muted" aria-live="polite">{inspectedIndex + 1} of {paged.items.length} loaded</span>
-        <button class="btn" disabled={paged.loadingMore || (inspectedIndex >= paged.items.length - 1 && !paged.cursor)} onclick={() => void step(1)}>Next →</button>
-        <button class="btn" onclick={() => (inspectedId = '')}>Close</button>
+    <div class="finding-inspector flex flex-col gap-4 min-w-0 wrap-anywhere" bind:this={inspector} role="group" aria-label="Finding inspection">
+      <div class="finding-controls flex items-center flex-wrap gap-y-2 gap-x-4" role="group" aria-label="Browse findings">
+        <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={paged.loadingMore || inspectedIndex <= 0} onclick={() => void step(-1)}>← Previous</button>
+        <span class="small muted text-ui-sm" aria-live="polite">{inspectedIndex + 1} of {paged.items.length} loaded</span>
+        <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={paged.loadingMore || (inspectedIndex >= paged.items.length - 1 && !paged.cursor)} onclick={() => void step(1)}>Next →</button>
+        <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => (inspectedId = '')}>Close</button>
       </div>
-      {#if paged.moreError}<p class="error-text" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn" onclick={() => void step(1)}>Retry</button></p>{/if}
+      {#if paged.moreError}<p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => void step(1)}>Retry</button></p>{/if}
       <p><a class="mono" href={href(pullRoute(slug, inspected.pull))}>{inspected.pull.repository}#{inspected.pull.number}</a> · {inspected.pull.title}</p>
       {#key inspected.id}<FindingCard f={inspected} pullUrl={inspected.pull.url} />{/key}
-      <div class="workspace-actions">
-        <a class="btn btn-primary" href={href({ ...reviewOf(inspected), tab: 'diff' })}>Inspect in code →</a>
-        <a class="btn" href={href(reviewOf(inspected))}>Open review</a>
+      <div class="workspace-actions flex items-center flex-wrap gap-2.5">
+        <a class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" href={href({ ...reviewOf(inspected), tab: 'diff' })}>Inspect in code →</a>
+        <a class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" href={href(reviewOf(inspected))}>Open review</a>
       </div>
-      <p class="small muted">First found <Time iso={inspected.firstSeenAt} /> · Last seen <Time iso={inspected.lastSeenAt} /></p>
-      <p class="small muted"><kbd>j</kbd>/<kbd>k</kbd> browse · <kbd>Esc</kbd> return to findings</p>
+      <p class="small muted text-ui-sm">First found <Time iso={inspected.firstSeenAt} /> · Last seen <Time iso={inspected.lastSeenAt} /></p>
+      <p class="small muted text-ui-sm"><kbd>j</kbd>/<kbd>k</kbd> browse · <kbd>Esc</kbd> return to findings</p>
     </div>
   {/if}
 </Dialog>

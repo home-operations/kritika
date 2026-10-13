@@ -9,9 +9,9 @@
 </script>
 
 {#if iso && full}
-  <time class="reltime" datetime={iso}>{stamp(iso)}</time>
+  <time class="reltime text-muted text-ui-sm whitespace-nowrap" datetime={iso}>{stamp(iso)}</time>
 {:else if iso}
-  <time class="reltime" datetime={iso} title={stamp(iso)}>{ago(iso)}</time>
+  <time class="reltime text-muted text-ui-sm whitespace-nowrap" datetime={iso} title={stamp(iso)}>{ago(iso)}</time>
 {:else}
   <span class="muted">—</span>
 {/if}

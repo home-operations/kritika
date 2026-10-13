@@ -71,7 +71,7 @@
 </script>
 
 {#if view === 'table'}
-  <div class="table-wrap chart-table">
+  <div class="table-wrap chart-table max-w-full max-h-70 overflow-auto">
     <table class="data">
       <thead>
         <tr>
@@ -94,11 +94,11 @@
   </div>
 {:else}
   {#if series.length > 1}
-    <ul class="chart-legend" aria-label="{label} legend">
-      {#each series as s (s.label)}<li><span class="chart-swatch" style:background={s.color}></span>{s.label}</li>{/each}
+    <ul class="chart-legend flex flex-wrap gap-y-1 gap-x-3.5 mt-2.5 mx-3 mb-0 p-0 list-none text-ui-sm text-muted" aria-label="{label} legend">
+      {#each series as s (s.label)}<li><span class="chart-swatch w-2.5 h-2.5 rounded-[2px]" style:background={s.color}></span>{s.label}</li>{/each}
     </ul>
   {/if}
-  <div class="column-chart">
+  <div class="column-chart relative pt-2 px-3 pb-2.5">
     <div bind:clientWidth={width}>
       {#if width > 0}
         <ChartCore
@@ -116,7 +116,7 @@
         >
           {#snippet children({ context })}
             <Svg
-              class="chart"
+              class="chart block font-ui"
               role="img"
               aria-label="{label}. Arrow keys read one column at a time."
               tabindex={0}
@@ -128,10 +128,10 @@
               <Axis aria-hidden="true" placement="left" {ticks} {format} tickMarks={false} grid={{ class: 'chart-grid' }} classes={{ tickLabel: 'chart-tick' }} />
               <Axis aria-hidden="true" placement="bottom" ticks={rows.filter((_, i) => i % every === 0).map((r) => r.key)} format={(key) => rows.find((r) => r.key === key)?.label ?? ''} tickMarks={false} classes={{ tickLabel: 'chart-tick' }} />
               {#if active >= 0}
-                <rect class="chart-hover" x={band * active} y={0} width={band} height={context.height} />
+                <rect class="chart-hover fill-[color-mix(in_srgb,_var(--text)_5%,_transparent)]" x={band * active} y={0} width={band} height={context.height} />
               {/if}
               {#each rows as r, i (r.key)}
-                <g class="chart-col" class:dim={active >= 0 && active !== i}>
+                <g class="chart-col [transition:opacity_0.1s]" class:dim={active >= 0 && active !== i}>
                   {#each series as s, j (s.label)}
                     {#if r.values[j]! > 0}
                       <Bar
@@ -149,11 +149,11 @@
               {/each}
             </Svg>
             {#if activeRow}
-              <Tooltip.Root data={activeRow} x="data" y={pad.top} xOffset={12} portal={false} variant="none" motion="none" fadeDuration={0} class="chart-tip" classes={{ root: 'chart-tooltip' }}>
-                <p class="chart-tip-head">{activeRow.title}</p>
+              <Tooltip.Root data={activeRow} x="data" y={pad.top} xOffset={12} portal={false} variant="none" motion="none" fadeDuration={0} class="chart-tip min-w-30 py-2 px-2.5 pointer-events-none bg-panel border border-solid border-line rounded-lg shadow-[0_6px_18px_color-mix(in_srgb,_var(--text)_12%,_transparent)] text-ui-sm" classes={{ root: 'chart-tooltip' }}>
+                <p class="chart-tip-head mt-0 mx-0 mb-1 text-muted text-ui-xs">{activeRow.title}</p>
                 {#each [...series.keys()].reverse() as j (j)}
-                  <p class="chart-tip-row">
-                    <span class="chart-key" style:background={series[j]!.color}></span>
+                  <p class="chart-tip-row flex items-center gap-1.5 m-0 whitespace-nowrap">
+                    <span class="chart-key w-2.5 h-0.5 rounded-[1px]" style:background={series[j]!.color}></span>
                     <strong>{format(activeRow.values[j]!)}</strong>
                     <span class="muted">{series[j]!.label}</span>
                   </p>

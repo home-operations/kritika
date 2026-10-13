@@ -38,12 +38,12 @@
   ] as const);
 </script>
 
-<div class="toolbar queue-toolbar">
+<div class="toolbar queue-toolbar flex flex-wrap items-center gap-2">
   <Segmented label="Queue state" options={filters} value={queueState} onchange={(v) => onfilter({ ...filter, state: v === 'all' ? undefined : v })} />
-  <label class="queue-search">Search jobs <input type="search" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Repository, account or job" /></label>
+  <label class="queue-search flex items-center gap-2 text-[length:12px] whitespace-nowrap">Search jobs <input type="search" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Repository, account or job" /></label>
 </div>
-<div class="table-caption"><span class="small muted">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
-<div class="table-wrap table-card">
+<div class="table-caption flex items-center justify-between gap-3"><span class="small muted text-ui-sm">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
+<div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
   <table class="data queue-table">
     <thead>
       <tr>
@@ -54,29 +54,29 @@
     <tbody>
       {#each visible as j (j.id)}
         <tr>
-          {#if several}<td data-label="Account" class="mono small"><a href={href({ name: 'queue', slug: account(j) })}>{account(j)}</a></td>{/if}
+          {#if several}<td data-label="Account" class="mono small text-ui-sm"><a href={href({ name: 'queue', slug: account(j) })}>{account(j)}</a></td>{/if}
           <td data-label="Job / target"><strong>#{j.id} · {j.kind}</strong>
-            {#if j.kind === 'thread' && j.args.resolved !== undefined}<span class="queue-detail">{j.args.resolved ? 'Resolve thread' : 'Restore thread'}</span>{/if}
-            <span class="queue-detail">{#if j.args.repository && j.args.number}<a class="mono" href={href(pullRoute(account(j), j.args))}>{j.args.repository}#{j.args.number}</a>
+            {#if j.kind === 'thread' && j.args.resolved !== undefined}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">{j.args.resolved ? 'Resolve thread' : 'Restore thread'}</span>{/if}
+            <span class="queue-detail block text-muted text-[length:12px] mt-1.5">{#if j.args.repository && j.args.number}<a class="mono" href={href(pullRoute(account(j), j.args))}>{j.args.repository}#{j.args.number}</a>
             {:else}{j.args.repository || 'Unattributed job'}{/if}</span>
           </td>
           <td data-label="Status"><Pill tone={overdue(j) ? 'warn' : jobTone[j.state]} label={overdue(j) ? 'Heartbeat overdue' : j.state} />
-            {#if j.lastError && (j.state === 'discarded' || j.state === 'retryable' || overdue(j))}<span class="queue-detail job-error-summary">{j.cause ? jobCauseText[j.cause] : j.lastError.split('\n')[0]}</span>{/if}
-            {#if j.state === 'retryable'}<span class="queue-detail">Retries automatically</span>
-            {:else if waiting(j) || overdue(j)}<span class="queue-detail">{waitingReason(j)}</span>{/if}
+            {#if j.lastError && (j.state === 'discarded' || j.state === 'retryable' || overdue(j))}<span class="queue-detail job-error-summary block text-[length:12px] mt-1.5 max-w-75 overflow-hidden whitespace-nowrap text-ellipsis text-danger">{j.cause ? jobCauseText[j.cause] : j.lastError.split('\n')[0]}</span>{/if}
+            {#if j.state === 'retryable'}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">Retries automatically</span>
+            {:else if waiting(j) || overdue(j)}<span class="queue-detail block text-muted text-[length:12px] mt-1.5">{waitingReason(j)}</span>{/if}
           </td>
-          <td data-label="Activity" class="small">
+          <td data-label="Activity" class="small text-ui-sm">
             {#if j.finalizedAt}Finished <Time iso={j.finalizedAt} />
             {:else if waiting(j)}Scheduled <Time iso={j.scheduledAt} />
             {:else if j.state === 'running' && j.heartbeatAt}Heartbeat <Time iso={j.heartbeatAt} />
             {:else if j.attemptedAt}Last attempt <Time iso={j.attemptedAt} />
             {:else}Created <Time iso={j.createdAt} />{/if}
           </td>
-          <td data-label="Actions / details" class="queue-error">
+          <td data-label="Actions / details" class="queue-error max-w-90 wrap-anywhere">
             {#if isAdmin()}
               {@const action = actionFor(j)}
-              <div class="queue-actions">
-                {#if action}<button class="btn" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
+              <div class="queue-actions flex items-center flex-wrap gap-2.5 mt-0 mx-0 mb-2">
+                {#if action}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" class:btn-danger={action.danger} onclick={() => { selected = action; actionOpen = true; }}>{action.label}</button>{/if}
               </div>
             {/if}
             <details class="job-details">
@@ -89,14 +89,14 @@
                 {#if j.args.head}<dt>Commit</dt><dd><span class="mono" title={j.args.head}>{shortSha(j.args.head)}</span></dd>{/if}
                 {#if j.args.commentId}<dt>Comment</dt><dd>{j.args.commentId}</dd>{/if}
               </dl>
-              {#if j.lastError}<p class="small muted">Last attempt error</p><p class="error-text">{j.lastError}</p>{/if}
+              {#if j.lastError}<p class="small muted text-ui-sm">Last attempt error</p><p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{j.lastError}</p>{/if}
             </details>
           </td>
         </tr>
       {/each}
     </tbody>
   </table>
-  {#if !visible.length}<p class="state-msg">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
+  {#if !visible.length}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{jobs.length ? 'No jobs match these filters.' : 'The queue is empty.'}</p>{/if}
 </div>
 
 {#if selected}<ActionDialog {...selected} bind:open={actionOpen} {ondone} />{/if}

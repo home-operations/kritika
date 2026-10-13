@@ -22,7 +22,7 @@
 
 <StateView res={paged.first} retry={() => paged.load()} isEmpty={(p) => p.items.length === 0} empty="No audit events yet.">
   {#snippet children()}
-    <div class="table-wrap">
+    <div class="table-wrap overflow-x-auto max-w-full">
       <table class="data audit">
         <thead>
           <tr>
@@ -45,7 +45,7 @@
               <td>
                 {#if hasDetail(e)}
                   <Collapsible title="detail">
-                    <pre class="detail-json">{JSON.stringify(e.detail, null, 2)}</pre>
+                    <pre class="detail-json m-0 font-code text-ui-xs whitespace-pre-wrap [word-break:break-word]">{JSON.stringify(e.detail, null, 2)}</pre>
                   </Collapsible>
                 {:else}<span class="muted">—</span>{/if}
               </td>

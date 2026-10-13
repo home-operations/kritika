@@ -33,40 +33,40 @@
 
 <svelte:head><title>Your settings · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Your settings" description="Display preferences, saved to your account across browsers." />
     {#if settings}
-      <section class="panel" aria-labelledby="pref-time">
-        <header class="panel-head">
+      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="pref-time">
+        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
           <h2 id="pref-time">Dates and times</h2>
-          <span class="small muted">Now: {now}</span>
+          <span class="small muted text-ui-sm">Now: {now}</span>
         </header>
-        <dl class="deflist prefs">
+        <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
           <dt><label for="pref-zone">Time zone</label></dt>
           <dd>
             <TimeZonePicker value={settings.timeZone} {zones} onchange={(timeZone) => saveSettings({ timeZone })} />
             {#if settings.timeZone && !zoneKnown(settings.timeZone)}
-              <span class="small muted">This browser does not know {settings.timeZone}, and uses its own.</span>
+              <span class="small muted text-ui-sm">This browser does not know {settings.timeZone}, and uses its own.</span>
             {/if}
-            <p class="small muted">Charts and tables by day count each day in UTC, whatever the zone.</p>
+            <p class="small muted text-ui-sm">Charts and tables by day count each day in UTC, whatever the zone.</p>
           </dd>
           <dt>Clock</dt>
           <dd><Segmented label="Clock" options={CLOCKS} value={settings.clock} onchange={(clock) => saveSettings({ clock })} /></dd>
         </dl>
       </section>
-      <section class="panel" aria-labelledby="pref-look">
-        <header class="panel-head"><h2 id="pref-look">Appearance</h2></header>
-        <dl class="deflist prefs">
+      <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="pref-look">
+        <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="pref-look">Appearance</h2></header>
+        <dl class="deflist prefs grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
           <dt>Theme</dt>
           <dd>
             <Segmented label="Theme" options={THEMES} value={settings.theme} onchange={(theme) => saveSettings({ theme })} />
-            <p class="small muted">Light or dark holds in every browser you sign in from. Left to the browser, each follows its own system.</p>
+            <p class="small muted text-ui-sm">Light or dark holds in every browser you sign in from. Left to the browser, each follows its own system.</p>
           </dd>
         </dl>
       </section>
     {:else}
-      <p class="state-msg" aria-live="polite"><Spinner size={16} /> Loading…</p>
+      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" aria-live="polite"><Spinner size={16} /> Loading…</p>
     {/if}
   </div>
 </main>

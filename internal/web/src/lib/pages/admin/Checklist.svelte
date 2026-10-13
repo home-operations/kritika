@@ -19,18 +19,18 @@
 </script>
 
 {#if items.length}
-  <section class="panel" aria-labelledby="op-setup">
-    <header class="panel-head">
+  <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="op-setup">
+    <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3">
       <h2 id="op-setup">Setup</h2>
-      <span class="small muted">{items.filter((i) => i.done).length} of {items.length} done</span>
+      <span class="small muted text-ui-sm">{items.filter((i) => i.done).length} of {items.length} done</span>
     </header>
-    <ul class="checklist">
+    <ul class="checklist flex flex-col gap-2 m-0 py-2.5 px-3 list-none text-ui-md">
       {#each items as item (item.label)}
         <li class:done={item.done}>
-          <span class="check-mark"><Icon path={item.done ? mdiCheck : mdiCircleOutline} size={14} label={item.done ? 'done' : 'to do'} /></span>
-          <span class="check-text">
-            <span>{item.label}{#if item.optional}{' '}<span class="small muted">(optional)</span>{/if}</span>
-            {#if !item.done}<span class="small muted">{item.how}</span>{/if}
+          <span class="check-mark inline-flex flex-none mt-0.5 text-muted"><Icon path={item.done ? mdiCheck : mdiCircleOutline} size={14} label={item.done ? 'done' : 'to do'} /></span>
+          <span class="check-text flex flex-col gap-0.5">
+            <span>{item.label}{#if item.optional}{' '}<span class="small muted text-ui-sm">(optional)</span>{/if}</span>
+            {#if !item.done}<span class="small muted text-ui-sm">{item.how}</span>{/if}
           </span>
         </li>
       {/each}

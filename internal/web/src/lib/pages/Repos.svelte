@@ -136,11 +136,11 @@
 
 <svelte:head><title>Repositories · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
-    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
-    <div class="toolbar">
-      <label class="search-box">
+<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
+    <PageHeader title="Repositories" {slug}>{#snippet actions()}{#if isAdmin()}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" disabled={busy} onclick={resync}>Resync from GitHub</button>{/if}{/snippet}</PageHeader>
+    <div class="toolbar flex flex-wrap items-center gap-2">
+      <label class="search-box [flex:1_1_240px] min-w-0 flex">
         <span class="sr-only">Filter repositories</span>
         <input type="search" placeholder="Filter by name" bind:value={() => search, (q) => setFilter({ q })} bind:this={filterEl} />
       </label>
@@ -153,30 +153,30 @@
         </select>
       </label>
       {#if manage && selected.length}
-        <div class="bulk-actions" role="group" aria-label="Selected repositories">
-          <span class="small">{selected.length} selected</span>
-          <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, true)}>Turn on</button>
-          <button class="btn btn-small" disabled={busy} onclick={() => setEnabled(selected, false)}>Turn off</button>
-          <button class="btn btn-small" disabled={busy} onclick={() => (confirmReindex = true)}>Reindex…</button>
-          <button class="btn btn-small" disabled={busy} onclick={() => (selected = [])}>Clear</button>
+        <div class="bulk-actions flex flex-wrap items-center gap-1.5" role="group" aria-label="Selected repositories">
+          <span class="small text-ui-sm">{selected.length} selected</span>
+          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => setEnabled(selected, true)}>Turn on</button>
+          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => setEnabled(selected, false)}>Turn off</button>
+          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => (confirmReindex = true)}>Reindex…</button>
+          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" disabled={busy} onclick={() => (selected = [])}>Clear</button>
         </div>
       {/if}
     </div>
     {#if kind === 'forks'}
-      <p class="small muted">A fork is only reviewed and indexed once turned on here.</p>
+      <p class="small muted text-ui-sm">A fork is only reviewed and indexed once turned on here.</p>
     {:else if kind === 'archived'}
-      <p class="small muted">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
+      <p class="small muted text-ui-sm">An archived repository is never reviewed or indexed. Unarchive it on GitHub, then resync, to turn it on.</p>
     {/if}
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} {empty}>
       {#snippet children()}
         {@const rows = visible()}
         {#if rows.length === 0}
-          <div class="state-msg">
+          <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
             <span>{paged.cursor ? `Nothing loaded yet matches “${search}”: load more to look further.` : `Nothing matches “${search}”.`}</span>
-            <button class="btn btn-small" onclick={clearFilter}>Clear filter</button>
+            <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilter}>Clear filter</button>
           </div>
         {:else}
-          <div class="table-wrap table-card">
+          <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
             <table class="data repo-table">
               <thead>
                 <tr>
@@ -217,15 +217,15 @@
                     <td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a> <RepoTraits r={repo} /></td>
                     <td>
                       {#if manage}
-                        <span class="toggle" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
+                        <span class="toggle inline-flex items-center gap-1.5 [vertical-align:middle]" title={repo.archived ? 'Archived on GitHub: unarchive it there first' : undefined}>
                           <Switch.Root
-                            class="switch"
+                            class="switch relative flex-none w-7.5 h-4.5 p-0 border-0 rounded-[999px] [background:color-mix(in_srgb,_var(--muted)_70%,_var(--panel))] cursor-pointer [transition:background_0.15s]"
                             aria-label={`Review and index ${repo.fullName}`}
                             checked={isOn(repo)}
                             disabled={busy || repo.archived}
                             onCheckedChange={(on) => setEnabled([repo.fullName], on)}
                           >
-                            <Switch.Thumb class="switch-thumb" />
+                            <Switch.Thumb class="switch-thumb absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-[50%] bg-panel shadow-[0_1px_2px_color-mix(in_srgb,_var(--text)_30%,_transparent)] [transition:transform_0.15s]" />
                           </Switch.Root>
                           <span>{isOn(repo) ? 'On' : 'Off'}</span>
                         </span>
@@ -235,13 +235,13 @@
                       {#if repo.index.lastRunStatus}
                         {@const st = repo.index.lastRunStatus}
                         <span class="status tone-{indexTone[st]}">
-                          <span class="status-tile"><Icon path={indexIcon[st]} size={12} /></span>
+                          <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={indexIcon[st]} size={12} /></span>
                           <span class="status-word">{st}</span>
                         </span>
                         <Time iso={repo.index.lastRunAt} />
                       {:else}<span class="muted">never</span>{/if}
                     </td>
-                    <td class="small">
+                    <td class="small text-ui-sm">
                       {#if repo.index.activeCommit}<span class="mono">{repo.index.activeCommit.slice(0, 7)}</span>{:else}<span class="muted">—</span>{/if}
                     </td>
                     <td>
@@ -268,7 +268,7 @@
     {#if selectedOff}{plural(selectedOff)} that {selectedOff === 1 ? 'is' : 'are'} off {selectedOff === 1 ? 'is' : 'are'} skipped.{/if}
   </p>
   {#snippet footer()}
-    <button class="btn" onclick={() => (confirmReindex = false)}>Cancel</button>
-    <button class="btn btn-primary" disabled={busy || selected.length === selectedOff} onclick={reindex}>{busy ? 'Queuing…' : 'Reindex'}</button>
+    <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => (confirmReindex = false)}>Cancel</button>
+    <button class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" disabled={busy || selected.length === selectedOff} onclick={reindex}>{busy ? 'Queuing…' : 'Reindex'}</button>
   {/snippet}
 </Dialog>

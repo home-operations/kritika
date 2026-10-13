@@ -64,40 +64,40 @@
 
 <svelte:head><title>Sign in · kritika</title></svelte:head>
 
-<div class="signin">
-  <div class="signin-card">
+<div class="signin flex items-center justify-center min-h-dvh bg-canvas">
+  <div class="signin-card flex flex-col items-center gap-1.5 w-[min(320px,_90vw)] py-8 px-7 bg-panel border border-solid border-line rounded-[10px] text-center">
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
-    <h1><span class="marked">kritika</span></h1>
-    <p class="signin-sub">Sign in to continue</p>
+    <h1><span class="marked py-0 px-[0.2em] rounded-[0.15em_0.35em_0.2em_0.4em_/_0.4em_0.2em_0.35em_0.15em] [background:linear-gradient(transparent_38%,_var(--mark)_38%,_var(--mark)_94%,_transparent_94%)] [box-decoration-break:clone]">kritika</span></h1>
+    <p class="signin-sub mt-0 mx-0 mb-3 text-muted text-ui-md">Sign in to continue</p>
 
     {#if loading}
-      <p class="signin-empty">Loading sign-in options…</p>
+      <p class="signin-empty m-0 text-muted text-ui-md">Loading sign-in options…</p>
     {:else if error}
-      <p class="signin-error">{error}</p>
+      <p class="signin-error m-0 text-ui-md text-danger">{error}</p>
     {:else if providers.length === 0}
-      <p class="signin-empty">No sign-in providers configured.</p>
+      <p class="signin-empty m-0 text-muted text-ui-md">No sign-in providers configured.</p>
     {:else}
       {#if local}
-        <form class="signin-local" aria-label="{local.displayName} sign-in" onsubmit={signIn}>
-          <label class="field">
+        <form class="signin-local flex flex-col gap-2.5 w-full text-left" aria-label="{local.displayName} sign-in" onsubmit={signIn}>
+          <label class="field flex flex-col gap-1 text-ui-sm min-w-0">
             <span>Username</span>
             <input autocomplete="username" required bind:value={user} />
           </label>
-          <label class="field">
+          <label class="field flex flex-col gap-1 text-ui-sm min-w-0">
             <span>Password</span>
             <input type="password" autocomplete="current-password" required bind:value={password} />
           </label>
-          <div aria-live="assertive">{#if localError}<p class="signin-error" role="alert">{localError}</p>{/if}</div>
-          <button class="btn btn-primary signin-provider" type="submit" disabled={signingIn}>
+          <div aria-live="assertive">{#if localError}<p class="signin-error m-0 text-ui-md text-danger" role="alert">{localError}</p>{/if}</div>
+          <button class="btn btn-primary signin-provider border border-solid rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 justify-center py-2 px-3 bg-accent border-accent text-on-accent" type="submit" disabled={signingIn}>
             {signingIn ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
       {/if}
       {#if redirects.length > 0}
-        {#if local}<p class="signin-or">or</p>{/if}
-        <div class="signin-providers">
+        {#if local}<p class="signin-or my-1.5 mx-0 text-muted text-ui-sm">or</p>{/if}
+        <div class="signin-providers flex flex-col gap-2 w-full">
           {#each redirects as p (p.name)}
-            <a class="btn signin-provider" href={loginHref(p)}>
+            <a class="btn signin-provider border border-solid border-line bg-surface text-ink rounded-md text-ui-md cursor-pointer inline-flex items-center gap-1.5 justify-center py-2 px-3" href={loginHref(p)}>
               <Icon path={iconFor(p.type)} size={16} />
               {p.displayName}
             </a>

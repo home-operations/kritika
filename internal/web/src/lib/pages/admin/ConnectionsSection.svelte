@@ -53,11 +53,11 @@
   }
 </script>
 
-<section class="panel" aria-labelledby="op-connections">
-  <header class="panel-head"><h2 id="op-connections">GitHub Apps</h2></header>
+<section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="op-connections">
+  <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="op-connections">GitHub Apps</h2></header>
   <StateView res={conns} retry={() => conns.load()} isEmpty={(d) => d.length === 0} empty="No GitHub Apps yet.">
     {#snippet children(list)}
-      <div class="table-wrap">
+      <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data">
           <thead>
             <tr>
@@ -71,12 +71,12 @@
             {#each list as c (c.name)}
               <tr>
                 <td class="mono">{c.name}</td>
-                <td class="mono small">{c.accounts.join(', ')}</td>
+                <td class="mono small text-ui-sm">{c.accounts.join(', ')}</td>
                 <td>
                   <WebhookState of={c} />
                 </td>
                 <td>
-                  <button class="btn btn-small" aria-pressed={selected === c.name} onclick={() => show(c.name)}>Installations</button>
+                  <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" aria-pressed={selected === c.name} onclick={() => show(c.name)}>Installations</button>
                 </td>
               </tr>
             {/each}
@@ -87,10 +87,10 @@
   </StateView>
 
   {#if selected}
-    <h3 class="small">GitHub installations of <span class="mono">{selected}</span></h3>
+    <h3 class="small text-ui-sm">GitHub installations of <span class="mono">{selected}</span></h3>
     <StateView res={installs} retry={() => installs.load()} isEmpty={(d) => d.length === 0} empty="The App is not installed anywhere yet.">
       {#snippet children(list)}
-        <div class="table-wrap">
+        <div class="table-wrap overflow-x-auto max-w-full">
           <table class="data" aria-label={`Installations of ${selected}`}>
             <thead>
               <tr>
@@ -106,7 +106,7 @@
                   <td>
                     {#if inst.url}<a class="mono" href={inst.url} target="_blank" rel="noopener noreferrer">{inst.account}</a>
                     {:else}<span class="mono">{inst.account}</span>{/if}
-                    <span class="small muted">{inst.accountType === 'Organization' ? 'organization' : 'user'}</span>
+                    <span class="small muted text-ui-sm">{inst.accountType === 'Organization' ? 'organization' : 'user'}</span>
                   </td>
                   <td>{inst.allRepositories ? 'all' : 'selected'}</td>
                   <td>
@@ -115,7 +115,7 @@
                   </td>
                   <td>
                     {#if !inst.served}
-                      <button class="btn btn-small btn-danger" onclick={() => ask(inst)}>Uninstall from {inst.account}</button>
+                      <button class="btn btn-small btn-danger border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={() => ask(inst)}>Uninstall from {inst.account}</button>
                     {/if}
                   </td>
                 </tr>
@@ -134,7 +134,7 @@
     not serve that account, so nothing it reviews changes.
   </p>
   {#snippet footer()}
-    <AlertDialog.Cancel class="btn">Keep it</AlertDialog.Cancel>
-    <AlertDialog.Action class="btn btn-primary btn-danger" onclick={uninstall} disabled={busy}>{busy ? 'Working…' : 'Uninstall'}</AlertDialog.Action>
+    <AlertDialog.Cancel class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5">Keep it</AlertDialog.Cancel>
+    <AlertDialog.Action class="btn btn-primary btn-danger border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" onclick={uninstall} disabled={busy}>{busy ? 'Working…' : 'Uninstall'}</AlertDialog.Action>
   {/snippet}
 </Dialog>

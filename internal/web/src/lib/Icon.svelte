@@ -10,7 +10,7 @@
 </script>
 
 <svg
-  class="icon"
+  class="icon [vertical-align:-0.15em] flex-none"
   width={size}
   height={size}
   viewBox="0 0 24 24"

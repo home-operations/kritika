@@ -37,7 +37,7 @@
 </script>
 
 {#if onpick}
-  <label class="pull-select-all">
+  <label class="pull-select-all flex items-center gap-2 text-ui-sm">
     <input
       type="checkbox"
       aria-label="Select every pull request shown"
@@ -48,7 +48,7 @@
     Select every pull request shown
   </label>
 {/if}
-<div class="table-wrap table-card">
+<div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
   <table class="data pull-table">
     <thead>
       <tr>
@@ -70,7 +70,7 @@
       {#each items as p, i (`${accountOf(p)}:${pullKey(p)}`)}
         {@const life = lifecycle(p)}
         <!-- The title is the row's link; the click is a larger target for a pointer. -->
-        <tr class="pull-row" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, p)}>
+        <tr class="pull-row cursor-pointer" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, p)}>
           {#if onpick}
             <td class="pick">
               {#if p.state === 'open'}
@@ -87,14 +87,14 @@
               {/if}
             </td>
           {/if}
-          {#if !slug}<td data-label="Account" class="mono small"><a href={href(pageIn(router.route, accountOf(p)))}>{accountOf(p)}</a></td>{/if}
+          {#if !slug}<td data-label="Account" class="mono small text-ui-sm"><a href={href(pageIn(router.route, accountOf(p)))}>{accountOf(p)}</a></td>{/if}
           <td class="pull-main">
-            <a class="pull-title" href={href(pullRoute(accountOf(p), p))} aria-current={i === selected ? 'true' : undefined}>
+            <a class="pull-title flex items-center gap-1.5 min-w-0 text-ink [font-weight:550] text-[length:15px] leading-[1.5]" href={href(pullRoute(accountOf(p), p))} aria-current={i === selected ? 'true' : undefined}>
               <!-- A row marks what is no longer simply open, and only a merge in colour: a list of red marks would shout. -->
               {#if life.state !== 'open'}<span class="lifecycle tone-{life.state === 'merged' ? life.tone : 'muted'}" title={life.label}><Icon path={life.icon} size={13} label={life.label} /></span>{/if}
-              <span class="pull-text">{p.title}</span>
+              <span class="pull-text min-w-0 overflow-hidden text-ellipsis">{p.title}</span>
             </a>
-            <span class="pull-sub"><span class="mono">{p.repository}</span> · #{p.number} · {p.author}</span>
+            <span class="pull-sub block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted"><span class="mono">{p.repository}</span> · #{p.number} · {p.author}</span>
           </td>
           <td>
             {#if p.lastReview}
@@ -105,10 +105,10 @@
             {#if p.lastReview}
               <ReviewStatusTile status={p.lastReview.status} title="Last review" />
             {:else}
-              <span class="small muted">not reviewed</span>
+              <span class="small muted text-ui-sm">not reviewed</span>
             {/if}
             {#if p.paused && p.state === 'open'}
-              <span class="badge" title="Automatic reviews are paused: a push is not reviewed until someone asks for a review or resumes them">paused</span>
+              <span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Automatic reviews are paused: a push is not reviewed until someone asks for a review or resumes them">paused</span>
             {/if}
           </td>
           <td class="num" data-label="Reviews">{wholeNumber(p.reviewCount)}</td>

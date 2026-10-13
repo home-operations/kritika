@@ -116,23 +116,23 @@
 
 <svelte:head><title>{title} · kritika</title></svelte:head>
 
-<main class="page review-page" bind:this={page}>
-  <div class="page-inner">
-    <div class="page-head pr-workspace-head">
+<main class="page review-page flex-auto min-w-0 min-h-0 overflow-auto relative" bind:this={page}>
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
+    <div class="page-head pr-workspace-head flex flex-col gap-2 pb-4 border-b border-solid border-b-line">
       <PageHeader title={ref?.title ?? (owner && repo ? `${owner}/${repo}#${number}` : 'Pull request')} {slug} parents={[{ label: 'Pull requests', route: { name: 'pulls', slug } }, ...(ref ? [{ label: ref.repository, route: repoRoute(slug, ref.repository) }] : [])]} />
-      {#if ref}<p class="mono small muted"><a href={href(pullRoute(slug, ref))} onclick={openLatest}>{ref.repository}#{ref.number}</a></p>{/if}
+      {#if ref}<p class="mono small muted text-ui-sm"><a href={href(pullRoute(slug, ref))} onclick={openLatest}>{ref.repository}#{ref.number}</a></p>{/if}
       {#if p}
         {@const life = lifecycle(p)}
-        <p class="meta-line">
+        <p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm">
           <span class="lifecycle-badge tone-{life.tone}"><Icon path={life.icon} size={13} /> {life.label}</span>
           <span><strong>{p.author}</strong> wants to merge <span class="mono">{p.headRef}</span> into <span class="mono">{p.baseRef}</span></span>
           <span>current head <span class="mono" title={p.headSha}>{shortSha(p.headSha)}</span>, last synchronized <Time iso={p.updatedAt} /></span>
-          {#each p.labels as label (label.name)}<span class="label-chip" style:--label={labelColor(label.color)}>{label.name}</span>{/each}
+          {#each p.labels as label (label.name)}<span class="label-chip text-ui-xs py-0 px-[7px] rounded-[999px] border border-solid border-[color-mix(in_srgb,_var(--label,_var(--border))_60%,_var(--border))] text-ink" style:--label={labelColor(label.color)}>{label.name}</span>{/each}
         </p>
       {/if}
-      <div class="workspace-actions">
+      <div class="workspace-actions flex items-center flex-wrap gap-2.5">
         {#if ref}
-          <label class="run-picker">Review run
+          <label class="run-picker flex items-center flex-wrap gap-2.5 text-ui-sm">Review run
             <select aria-label="Review run" value={historical || id ? selectedId : run ?? ''} onchange={(e) => selectRun(e.currentTarget.value)}>
               <option value="">Latest review{latest ? ` · ${latest.status}` : ''}</option>
               {#if r && !pull.data?.reviews.some((review) => review.id === r.id)}<option value={r.id}>{r.status} · {stamp(r.createdAt)}</option>{/if}
@@ -141,7 +141,7 @@
               {/each}
             </select>
           </label>
-          {#if forgeUrl}<a class="btn btn-primary" href={forgeUrl} target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a>{/if}
+          {#if forgeUrl}<a class="btn btn-primary border border-solid rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5 bg-accent border-accent text-on-accent" href={forgeUrl} target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a>{/if}
           {#if isAdmin()}
             <ActionButton label="Re-run" title="Re-run the review?" body={rerunBody(`${ref.repository}#${ref.number}`, pullState === 'open', merged)} path={rerunPath(slug, ref)} done="Re-run queued" ondone={refresh} />
             {#if r && isActive(r.status) && !r.cancelRequestedAt}
@@ -151,9 +151,9 @@
         {/if}
       </div>
       {#if r}
-        <div class="review-signals">
-          <p class="meta-line"><strong>Execution</strong><ReviewStatusTile status={r.status} /><span>started <Time iso={r.createdAt} /></span><span>reviewed commit <span class="mono" title={r.headSha}>{shortSha(r.headSha)}</span></span></p>
-          <p class="meta-line" aria-label="Review outcome"><strong>Findings</strong>
+        <div class="review-signals grid gap-2 py-3 px-0">
+          <p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm"><strong>Execution</strong><ReviewStatusTile status={r.status} /><span>started <Time iso={r.createdAt} /></span><span>reviewed commit <span class="mono" title={r.headSha}>{shortSha(r.headSha)}</span></span></p>
+          <p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm" aria-label="Review outcome"><strong>Findings</strong>
             {#if r.status === 'completed'}<span>{openFindings} open · {res.data!.findings.length} reported</span>
             {:else if isActive(r.status)}<span>Review in progress. Findings are not final.</span>
             {:else if r.status === 'skipped'}<span>No review performed. {skippedReason(r)}</span>
@@ -161,34 +161,34 @@
           </p>
         </div>
         {#if historical && ref}
-          <p class="notice newer-notice" role="note">Historical review. A newer review is available. <a href={href(pullRoute(slug, ref))} onclick={openLatest}>Open its latest review</a></p>
+          <p class="notice newer-notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Historical review. A newer review is available. <a href={href(pullRoute(slug, ref))} onclick={openLatest}>Open its latest review</a></p>
         {:else if p && r.headSha !== p.headSha}
-          <p class="notice" role="note">The current head has not been reviewed by this run.</p>
+          <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">The current head has not been reviewed by this run.</p>
         {/if}
-        {#if r.priorReviewId}<p class="small muted">Continues <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a>.</p>{/if}
-        {#if r.error && r.status !== 'skipped'}<p class="notice error-text" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
-        {#if r.cancelRequestedAt}<p class="small muted">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
+        {#if r.priorReviewId}<p class="small muted text-ui-sm">Continues <a href={href({ name: 'review', slug, id: r.priorReviewId })}>the review before</a>.</p>{/if}
+        {#if r.error && r.status !== 'skipped'}<p class="notice error-text text-danger whitespace-pre-wrap [word-break:break-word] m-0 border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Execution problem: {r.error} <a href={href(to('timeline'))}>Inspect run details</a></p>{/if}
+        {#if r.cancelRequestedAt}<p class="small muted text-ui-sm">cancel requested <Time iso={r.cancelRequestedAt} /></p>{/if}
       {/if}
       {#if pullState === 'closed'}<NoMoreReviews {merged} />{/if}
       {#if p?.paused && p.state === 'open'}
-        <p class="notice paused-notice" role="note">Automatic reviews of this pull request are paused: a push is recorded, not reviewed. A comment asking the bot to <span class="mono">review</span> still reviews it, and one asking it to <span class="mono">resume</span> turns them back on.</p>
+        <p class="notice paused-notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Automatic reviews of this pull request are paused: a push is recorded, not reviewed. A comment asking the bot to <span class="mono">review</span> still reviews it, and one asking it to <span class="mono">resume</span> turns them back on.</p>
       {/if}
       {#if r && latest && latestAttempt?.status === 'skipped' && r.id === latest.id && r.id !== latestAttempt.id}
-        <p class="notice" role="note">Latest attempt skipped: {skippedReason(latestAttempt)} Showing the last review.</p>
+        <p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Latest attempt skipped: {skippedReason(latestAttempt)} Showing the last review.</p>
       {/if}
       {#if job && (job.state !== 'running' || job.lastError || historical)}
-        <p class="notice job-notice" role="note">
+        <p class="notice job-notice m-0 border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">
           {#if job.state === 'running'}A review is running, attempt {job.attempt} of {job.maxAttempts}.
           {:else if job.lastError}A review is waiting to run again: attempt {job.attempt} of {job.maxAttempts} failed, the next {Date.parse(job.scheduledAt) > clock.now ? 'is' : 'was'} due <Time iso={job.scheduledAt} />.
           {:else}A review is queued.{/if}
-          {#if job.lastError}<span class="error-text">{#if job.cause}<strong>{jobCauseText[job.cause]}</strong>{' '}{/if}{job.lastError}</span>{/if}
+          {#if job.lastError}<span class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{#if job.cause}<strong>{jobCauseText[job.cause]}</strong>{' '}{/if}{job.lastError}</span>{/if}
           <a href={href({ name: 'queue', slug })}>Open the queue</a>
         </p>
       {/if}
     </div>
 
     {#if pull.error}
-      <div class="state-msg state-error" role="alert"><span>Pull request details: {errorMessage(pull.error)}</span><button class="btn" onclick={() => void pull.load()}>Retry pull request</button></div>
+      <div class="state-msg state-error flex items-center gap-2 m-0 p-3 text-danger border border-solid border-[color-mix(in_srgb,_var(--danger)_35%,_var(--border))] [background:color-mix(in_srgb,_var(--danger)_6%,_transparent)] rounded-md" role="alert"><span>Pull request details: {errorMessage(pull.error)}</span><button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => void pull.load()}>Retry pull request</button></div>
     {/if}
     {#if selectedId}
       <StateView {res} retry={() => res.load()}>
@@ -197,9 +197,9 @@
         {/snippet}
       </StateView>
     {:else if pull.data}
-      <p class="state-msg">Not reviewed yet.</p>
-      {#if latestAttempt?.status === 'skipped'}<p class="notice">Latest attempt skipped: {skippedReason(latestAttempt)}</p>{/if}
-      {#if pull.data.followups.length}<section class="panel" aria-label="Follow-ups"><header class="panel-head"><h2>Follow-ups</h2></header><ul class="followups">{#each pull.data.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul></section>{/if}
-    {:else if !pull.error}<p class="state-msg" role="status">Loading pull request…</p>{/if}
+      <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Not reviewed yet.</p>
+      {#if latestAttempt?.status === 'skipped'}<p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md">Latest attempt skipped: {skippedReason(latestAttempt)}</p>{/if}
+      {#if pull.data.followups.length}<section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-label="Follow-ups"><header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2>Follow-ups</h2></header><ul class="followups list-none m-0 p-0">{#each pull.data.followups as f (f.id)}<FollowupItem {slug} {f} />{/each}</ul></section>{/if}
+    {:else if !pull.error}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted" role="status">Loading pull request…</p>{/if}
   </div>
 </main>

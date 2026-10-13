@@ -65,7 +65,7 @@
   allowDeselect={false}
   loop
 >
-  <div class="search-box search-combo">
+  <div class="search-box search-combo relative [flex:1_1_240px] min-w-0 flex">
     <label class="sr-only" for={id}>{label}</label>
     <Combobox.Input
       {id}
@@ -101,7 +101,7 @@
         />
       {/snippet}
     </Combobox.Input>
-    <Combobox.ContentStatic class="suggest" id="{id}-suggest" aria-label="Suggestions" preventScroll={false}>
+    <Combobox.ContentStatic class="suggest absolute top-[calc(100%_+_4px)] left-0 right-0 z-[var(--z-popup)] m-0 py-1 px-0 list-none bg-panel border border-solid border-line rounded-lg shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_12%,_transparent)]" id="{id}-suggest" aria-label="Suggestions" preventScroll={false}>
       {#each suggestions as s (s.label)}
         <Combobox.Item
           id={optionId(s.label)}
@@ -109,7 +109,7 @@
           label={complete(text, s)}
         >
           <span class="mono">{s.label}</span>
-          {#if s.hint}<span class="muted small">{s.hint}</span>{/if}
+          {#if s.hint}<span class="muted small text-ui-sm">{s.hint}</span>{/if}
         </Combobox.Item>
       {/each}
     </Combobox.ContentStatic>
@@ -117,5 +117,5 @@
 </Combobox.Root>
 
 {#if unknown.length}
-  <p class="small muted token-note" role="note">Not filtering by {unknown.join(', ')}: nothing by that name.</p>
+  <p class="small muted token-note text-ui-sm [flex-basis:100%] [order:1] m-0" role="note">Not filtering by {unknown.join(', ')}: nothing by that name.</p>
 {/if}

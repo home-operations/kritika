@@ -20,7 +20,7 @@
   } = $props();
 </script>
 
-<RadioGroup.Root class="segmented" orientation="horizontal" aria-label={label} data-path={path} {value} {disabled} onValueChange={(v) => onchange(v as V)}>
+<RadioGroup.Root class="segmented inline-flex flex-wrap max-w-full gap-0.5 p-0.5 border border-solid border-line rounded-md bg-surface" orientation="horizontal" aria-label={label} data-path={path} {value} {disabled} onValueChange={(v) => onchange(v as V)}>
   {#each options as o (o.value)}
     <RadioGroup.Item value={o.value}>{o.label}</RadioGroup.Item>
   {/each}

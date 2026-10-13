@@ -56,19 +56,19 @@
 
 <Modal.Root bind:open onOpenChange={(now) => !now && onclose?.()}>
   <Modal.Portal>
-    <Modal.Overlay class="overlay" />
+    <Modal.Overlay class="overlay fixed [inset:0] z-[var(--z-overlay)] [background:color-mix(in_srgb,_var(--bg)_60%,_transparent)]" />
     <Modal.Content bind:ref={content} class={['modal modal-centered dialog', wide && 'dialog-wide', side && 'dialog-side']} onOpenAutoFocus={opening} onCloseAutoFocus={closing}>
       <Modal.Title>
-        {#snippet child({ props })}<h2 {...props} class="dialog-title">{title}</h2>{/snippet}
+        {#snippet child({ props })}<h2 {...props} class="dialog-title mt-0 mx-0 mb-3 text-[length:15px] font-semibold">{title}</h2>{/snippet}
       </Modal.Title>
       {#if alert}
         <AlertDialog.Description>
-          {#snippet child({ props })}<div {...props} class="dialog-body">{@render children()}</div>{/snippet}
+          {#snippet child({ props })}<div {...props} class="dialog-body flex flex-col gap-2.5 text-ui-md">{@render children()}</div>{/snippet}
         </AlertDialog.Description>
       {:else}
-        <div class="dialog-body">{@render children()}</div>
+        <div class="dialog-body flex flex-col gap-2.5 text-ui-md">{@render children()}</div>
       {/if}
-      {#if footer}<div class="dialog-actions">{@render footer()}</div>{/if}
+      {#if footer}<div class="dialog-actions flex justify-end gap-2 mt-4">{@render footer()}</div>{/if}
     </Modal.Content>
   </Modal.Portal>
 </Modal.Root>

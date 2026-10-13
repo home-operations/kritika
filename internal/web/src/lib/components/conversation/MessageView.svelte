@@ -11,7 +11,7 @@
 </script>
 
 <div class="message role-{m.role}">
-  <span class="role-label">{m.role}</span>
+  <span class="role-label text-ui-xs font-[650] text-muted">{m.role}</span>
   {#if m.text}<CodeBlock text={m.text} plain copy={false} />{/if}
   {#each m.toolCalls as c, i (i)}<ToolCallView call={c} />{/each}
   {#each m.toolResults as r, i (i)}
@@ -21,15 +21,15 @@
       open={r.isError}
     >
       {#snippet meta()}
-        <span class="small muted">{bytes(new TextEncoder().encode(r.content).length)}</span>
-        {#if r.isError}<span class="badge badge-danger">error</span>{/if}
+        <span class="small muted text-ui-sm">{bytes(new TextEncoder().encode(r.content).length)}</span>
+        {#if r.isError}<span class="badge badge-danger inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid py-0 px-[7px] whitespace-nowrap rounded-[3px] font-medium text-danger border-[color-mix(in_srgb,_var(--danger)_45%,_var(--border))]">error</span>{/if}
         {#if r.truncatedBytes > 0}
-          <span class="badge badge-warn" title="The tool output was cut before it reached the model">truncated {bytes(r.truncatedBytes)}</span>
+          <span class="badge badge-warn inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid py-0 px-[7px] whitespace-nowrap rounded-[3px] font-medium text-warning border-[color-mix(in_srgb,_var(--warn)_45%,_var(--border))] bg-warning-surface" title="The tool output was cut before it reached the model">truncated {bytes(r.truncatedBytes)}</span>
         {/if}
       {/snippet}
       <CodeBlock text={r.content} />
       {#if r.truncatedBytes > 0}
-        <p class="small muted truncation-note">… {bytes(r.truncatedBytes)} more were cut before the model saw this result.</p>
+        <p class="small muted truncation-note text-ui-sm m-0">… {bytes(r.truncatedBytes)} more were cut before the model saw this result.</p>
       {/if}
     </Collapsible>
   {/each}

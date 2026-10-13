@@ -7,7 +7,7 @@
   let { r, scopeReason = '' }: { r: Review; scopeReason?: string } = $props();
 </script>
 
-<dl class="facts">
+<dl class="facts flex flex-wrap gap-y-1 gap-x-4 m-0 text-ui-sm">
   <div><dt>Trigger</dt><dd>{r.trigger}</dd></div>
   <div><dt>Scope</dt><dd>{r.scope}{#if scopeReason}&nbsp;<span class="muted">({scopeReason})</span>{/if}</dd></div>
   {#if r.model}<div><dt>Model</dt><dd class="mono">{r.model}</dd></div>{/if}
@@ -25,7 +25,7 @@
     <dt>API spend</dt>
     <dd>
       {callCost(r.costUsd, !!r.planCalls && r.planCalls === r.calls, !!r.unpricedCalls)}
-      {#if r.planCalls}<span class="badge">ChatGPT plan</span>{/if}
+      {#if r.planCalls}<span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">ChatGPT plan</span>{/if}
     </dd>
   </div>
   <div>

@@ -58,33 +58,33 @@
   });
 </script>
 
-<div class="conversation">
-  <div class="conversation-top">
+<div class="conversation flex flex-col gap-2.5">
+  <div class="conversation-top flex flex-col">
     {#if transcript.system}
       <Collapsible title="System prompt">
-        {#snippet meta()}<span class="small muted">{lines(transcript.system)}</span>{/snippet}
+        {#snippet meta()}<span class="small muted text-ui-sm">{lines(transcript.system)}</span>{/snippet}
         <CodeBlock text={transcript.system} plain />
       </Collapsible>
     {/if}
     {#if transcript.tools.length}
       <Collapsible title="Tools ({transcript.tools.length})">
-        {#snippet meta()}<span class="small muted mono">{transcript.tools.map((t) => t.name).join(', ')}</span>{/snippet}
+        {#snippet meta()}<span class="small muted mono text-ui-sm">{transcript.tools.map((t) => t.name).join(', ')}</span>{/snippet}
         <ToolDefs tools={transcript.tools} />
       </Collapsible>
     {/if}
   </div>
-  <div class="toolbar" role="search">
-    <label class="search-box">
+  <div class="toolbar flex flex-wrap items-center gap-2" role="search">
+    <label class="search-box [flex:1_1_240px] min-w-0 flex">
       <span class="sr-only">Filter turns</span>
       <input type="search" placeholder="Filter turns by text" bind:value={q} />
     </label>
-    <span class="small muted">{shown.length} of {transcript.turns.length} turns</span>
+    <span class="small muted text-ui-sm">{shown.length} of {transcript.turns.length} turns</span>
   </div>
   {#if shown.length === 0}
-    <p class="state-msg">No turn matches “{q}”.</p>
+    <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No turn matches “{q}”.</p>
   {/if}
   {#each groups as [part, turns] (part)}
-    {#if split}<h3 class="part-head">{part ? `Part ${part}` : 'After the parts'}</h3>{/if}
+    {#if split}<h3 class="part-head mt-2 mx-0 mb-0 text-ui-md font-[650]">{part ? `Part ${part}` : 'After the parts'}</h3>{/if}
     {#each turns as t (t.id)}<TurnCard turn={t} {toolNames} heading={split ? 'h4' : 'h3'} />{/each}
   {/each}
 </div>

@@ -158,33 +158,33 @@
 
 <Dialog.Root open={palette.open} onOpenChange={(now) => !now && closeOverlays()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="overlay" />
-    <Dialog.Content class="modal palette" aria-label="Go to">
+    <Dialog.Overlay class="overlay fixed [inset:0] z-[var(--z-overlay)] [background:color-mix(in_srgb,_var(--bg)_60%,_transparent)]" />
+    <Dialog.Content class="modal palette top-[12vh] left-0 right-0 my-0 mx-auto w-[min(640px,_92vw)] max-h-[70vh] flex flex-col rounded-[10px] shadow-[0_16px_48px_color-mix(in_srgb,_var(--text)_25%,_transparent)] overflow-hidden" aria-label="Go to">
       <!-- The rows are already the ones that match, so Bits UI's own filter is off; it keeps the cursor and the arrow keys. -->
-      <Command.Root class="palette-command" shouldFilter={false} loop label="Go to">
-        <div class="palette-input">
+      <Command.Root class="palette-command flex flex-col min-h-0" shouldFilter={false} loop label="Go to">
+        <div class="palette-input flex items-center gap-2.5 py-[11px] px-3.5 border-b border-solid border-b-line text-muted">
           <Icon path={mdiMagnify} size={16} />
           <Command.Input bind:value={q} placeholder="Go to…" aria-label="Go to" aria-controls="palette-results" />
-          <span class="palette-esc"><kbd>Esc</kbd></span>
+          <span class="palette-esc flex-none"><kbd>Esc</kbd></span>
         </div>
 
-        <Command.List id="palette-results" class="palette-body" tabindex={0}>
+        <Command.List id="palette-results" class="palette-body overflow-y-auto pt-1 px-0 pb-1.5" tabindex={0}>
           {#each rows as row (`${row.label}\u0000${href(row.route)}`)}
-            <Command.Item class="palette-row" value={`${row.label}\u0000${href(row.route)}`} onSelect={() => commit(row)}>
+            <Command.Item class="palette-row flex items-center gap-2.5 w-full py-[7px] px-3.5 border-0 bg-transparent text-inherit text-left cursor-pointer" value={`${row.label}\u0000${href(row.route)}`} onSelect={() => commit(row)}>
               <Icon path={row.icon} size={14} />
-              <span class="row-main">
-                <span class="row-title">{row.label}</span>
-                {#if row.hint}<span class="row-sub" class:mono={!row.words}>{row.hint}</span>{/if}
+              <span class="row-main flex-auto min-w-0 flex flex-col">
+                <span class="row-title font-medium overflow-hidden text-ellipsis whitespace-nowrap">{row.label}</span>
+                {#if row.hint}<span class="row-sub inline-flex items-center gap-1 text-muted text-ui-sm" class:mono={!row.words}>{row.hint}</span>{/if}
               </span>
             </Command.Item>
           {/each}
           {#if q.trim() && !rows.length}
-            <p class="palette-empty">Nothing matches “{q}”.</p>
+            <p class="palette-empty m-0 py-4 px-3.5 text-muted">Nothing matches “{q}”.</p>
           {/if}
         </Command.List>
       </Command.Root>
 
-      <div class="palette-footer">
+      <div class="palette-footer flex items-center gap-3.5 py-[7px] px-3.5 border-t border-solid border-t-line text-muted text-ui-xs">
         <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
         <span><kbd>⏎</kbd> open</span>
       </div>

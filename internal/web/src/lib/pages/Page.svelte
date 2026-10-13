@@ -36,7 +36,7 @@
 </script>
 
 <!-- data-route exposes the parsed route to the router tests. -->
-<div class="route-host" data-route={JSON.stringify(route)} {@attach rememberScroll(LIST_PAGES.includes(route.name) ? key : '', router.entry, router.traversal)}>
+<div class="route-host contents" data-route={JSON.stringify(route)} {@attach rememberScroll(LIST_PAGES.includes(route.name) ? key : '', router.entry, router.traversal)}>
 {#key key}
   {#if route.name === 'overview'}
     <Overview />

@@ -143,8 +143,8 @@
 
 <svelte:head><title>Usage & costs · {slug} · kritika</title></svelte:head>
 
-<main class="page">
-  <div class="page-inner">
+<main class="page flex-auto min-w-0 min-h-0 overflow-auto relative">
+  <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Usage & costs" {slug}>
       {#snippet actions()}<HelpPopover label="About usage">
         <p>Changes compare the selection with the preceding period of equal length. API spend excludes subscription fees. Cache detail is available only while transcripts are retained.</p>
@@ -154,16 +154,16 @@
     </PageHeader>
     {#snippet limits()}
       {#if month}
-        <section class="limits-strip" aria-label="This month">
-          <div><span class="small muted">API spend this month</span><strong>{costTotal(month.costUsd, month.unpricedCalls)}</strong></div>
-          <div><span class="small muted">Tokens this month</span><strong title={wholeNumber(month.tokens)}>{tokens(month.tokens)} <span class="small muted">{month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}</span></strong><Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" /></div>
-          <div><span class="small muted">Reviews today</span><strong>{wholeNumber(month.reviewsToday)} <span class="small muted">{month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}</span></strong><Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" /></div>
+        <section class="limits-strip grid grid-cols-[repeat(3,_minmax(0,_1fr))] gap-6 py-3.5 px-4 bg-surface rounded-md" aria-label="This month">
+          <div><span class="small muted text-ui-sm">API spend this month</span><strong>{costTotal(month.costUsd, month.unpricedCalls)}</strong></div>
+          <div><span class="small muted text-ui-sm">Tokens this month</span><strong title={wholeNumber(month.tokens)}>{tokens(month.tokens)} <span class="small muted text-ui-sm">{month.tokensPerMonth ? `of ${tokens(month.tokensPerMonth)} cap` : 'no cap'}</span></strong><Meter value={month.tokens} max={month.tokensPerMonth} label="Monthly tokens used" /></div>
+          <div><span class="small muted text-ui-sm">Reviews today</span><strong>{wholeNumber(month.reviewsToday)} <span class="small muted text-ui-sm">{month.reviewsPerDay ? `of ${month.reviewsPerDay} daily cap` : 'no cap'}</span></strong><Meter value={month.reviewsToday} max={month.reviewsPerDay} label="Reviews today" /></div>
         </section>
       {/if}
     {/snippet}
-    <div class="toolbar">
+    <div class="toolbar flex flex-wrap items-center gap-2">
       <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => setFilter({ days })} />
-      <label class="filter-select">Group by
+      <label class="filter-select flex items-center gap-2 text-muted text-ui-sm">Group by
         <select aria-label="Group by" value={group} onchange={(e) => { const group = e.currentTarget.value as UsageGroup; setFilter({ group, days: group === 'hour' ? '1' : days }); }}>
           {#each GROUPS as option}<option value={option.value}>{option.label}</option>{/each}
         </select>
@@ -173,27 +173,27 @@
         <Segmented label="Billing" options={BILLING} value={billing} onchange={(billing) => setFilter({ billing, metric: billing === 'chatgpt' ? 'tokens' : metric })} />
       {/if}
     </div>
-    <nav class="usage-drilldown" aria-label="Spending drilldown">
-      <button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined, group: 'repo' })}>All repositories</button>
-      {#if repository !== undefined}<span>→</span><button class="btn" onclick={() => setFilter({ model: undefined, group: 'model' })}>{repository || 'Unattributed repository'}</button>{/if}
-      {#if model !== undefined}<span>→</span><span class="badge mono">{model || 'Unattributed model'}</span>{/if}
-      {#if repository !== undefined || model !== undefined}<button class="btn" onclick={() => setFilter({ repo: undefined, model: undefined })}>Clear filters</button>{/if}
+    <nav class="usage-drilldown flex items-center flex-wrap my-4 mx-0 text-ui-sm gap-2" aria-label="Spending drilldown">
+      <button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => setFilter({ repo: undefined, model: undefined, group: 'repo' })}>All repositories</button>
+      {#if repository !== undefined}<span>→</span><button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => setFilter({ model: undefined, group: 'model' })}>{repository || 'Unattributed repository'}</button>{/if}
+      {#if model !== undefined}<span>→</span><span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium">{model || 'Unattributed model'}</span>{/if}
+      {#if repository !== undefined || model !== undefined}<button class="btn border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5" onclick={() => setFilter({ repo: undefined, model: undefined })}>Clear filters</button>{/if}
     </nav>
     <StateView {res} retry={() => res.load()} isEmpty={(s) => s.rows.length === 0 && s.previous.length === 0} empty="No model usage in this range.">
       {#snippet children(s)}
         {@const t = sum(s.rows)}
         {@const before = sum(s.previous)}
         {@const previous = new Map(s.previous.map((r) => [r.key, r]))}
-        {#if t.unpricedCalls}<p class="small muted">API spend is incomplete: {wholeNumber(t.unpricedCalls)} unpriced calls. Charts show priced spend only.</p>{/if}
-        {#if chatgptEnabled && billing === 'chatgpt'}<p class="small muted" role="note">ChatGPT plan usage is included in the subscription. Allowance consumption is reported separately by OpenAI.</p>{/if}
-        <section class="stats stats-3" aria-label="Selected usage">
+        {#if t.unpricedCalls}<p class="small muted text-ui-sm">API spend is incomplete: {wholeNumber(t.unpricedCalls)} unpriced calls. Charts show priced spend only.</p>{/if}
+        {#if chatgptEnabled && billing === 'chatgpt'}<p class="small muted text-ui-sm" role="note">ChatGPT plan usage is included in the subscription. Allowance consumption is reported separately by OpenAI.</p>{/if}
+        <section class="stats stats-3 grid grid-cols-[repeat(auto-fit,_minmax(160px,_1fr))] gap-5 bg-transparent border-0 rounded-[0] overflow-hidden" aria-label="Selected usage">
           <StatTile label="API spend in selection" value={costTotal(t.costUsd, t.unpricedCalls)} now={t.costUsd} before={t.unpricedCalls || before.unpricedCalls ? undefined : before.costUsd} sub={`Last ${periodLabel} vs preceding period`} />
           <StatTile label="Tokens in selection" value={tokens(total(t))} now={total(t)} before={total(before)} define={wholeNumber(total(t))} />
           <StatTile label="Calls in selection" value={wholeNumber(t.calls)} now={t.calls} before={before.calls} />
         </section>
 
-        <section class="panel" aria-labelledby="usage-chart">
-          <header class="panel-head"><h2 id="usage-chart">{metric === 'cost' ? 'API spend' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
+        <section class="panel bg-panel border border-solid border-line rounded-lg min-w-0" aria-labelledby="usage-chart">
+          <header class="panel-head flex items-center justify-between border-b border-solid border-b-line py-3 px-4 gap-3"><h2 id="usage-chart">{metric === 'cost' ? 'API spend' : 'Tokens'} by {groupLabel(s.group).toLowerCase()}</h2></header>
           <ColumnChart
             label="{metric === 'cost' ? 'API spend' : 'Tokens'} by {s.group}, last {periodLabel}"
             series={[{ label: metric === 'cost' ? 'API spend' : 'Tokens', color: 'var(--chart-ink)' }]}
@@ -203,7 +203,7 @@
           />
         </section>
         {@render limits()}
-        <div class="table-wrap table-card">
+        <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
           <table class="data">
             <thead>
               <tr>
@@ -218,9 +218,9 @@
               {#each tableRows(s) as r (r.key)}
                 {@const prior = previous.get(r.key)}
                 <tr>
-                  <td class:mono={s.group === 'model' || s.group === 'repo'} class="small">
+                  <td class:mono={s.group === 'model' || s.group === 'repo'} class="small text-ui-sm">
                     {#if s.group === 'repo' || s.group === 'model'}
-                      <button class="drill-link" onclick={() => drill(r.key, s.group)}>{keyLabel(r.key, s.group)} →</button>
+                      <button class="drill-link border-0 bg-transparent text-accent text-left cursor-pointer py-1.5 px-0 wrap-anywhere" onclick={() => drill(r.key, s.group)}>{keyLabel(r.key, s.group)} →</button>
                     {:else if s.group === 'review' && r.key === '__other__'}<span>Other reviews</span>
                     {:else if s.group === 'review' && r.key}
                       <a href={href({ name: 'review', slug, id: r.key, tab: 'usage' })}>Review {r.key.slice(0, 8)} →</a>
