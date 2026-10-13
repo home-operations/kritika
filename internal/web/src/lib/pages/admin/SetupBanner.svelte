@@ -7,7 +7,7 @@
   import { notReviewing } from '../../setup';
   import type { SetupStatus } from '../../types';
 
-  const status = new Resource(() => getJSON<SetupStatus>('/api/v1/admin/setup'));
+  const status = new Resource((signal) => getJSON<SetupStatus>('/api/v1/admin/setup', signal), () => '/api/v1/admin/setup');
   $effect(() => {
     void status.load();
   });

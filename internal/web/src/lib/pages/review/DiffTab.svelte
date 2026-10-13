@@ -23,7 +23,7 @@
     base: string; d: ReviewDetail; version: number; finding?: string;
     active?: boolean; selected?: string; inspection: number;
   } = $props();
-  const res = new Resource(() => getJSON<ReviewDiff>(`${base}/diff`));
+  const res = new Resource((signal) => getJSON<ReviewDiff>(`${base}/diff`, signal), () => `${base}/diff`);
   let delta = $state(false);
   let navigatorShown = $state(true);
   $effect(() => {

@@ -18,14 +18,8 @@
   const fullName = $derived(`${owner}/${repo}`);
   const account = $derived(`${accountApi(slug)}`);
 
-  const res = new Resource(() =>
-    getJSON<RepoDetail>(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`),
-  );
-  const pulls = new Resource(() =>
-    getJSON<Page<Pull>>(
-      `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`,
-    ),
-  );
+  const res = new Resource((signal) => getJSON<RepoDetail>(`${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, signal), () => `${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+  const pulls = new Resource((signal) => getJSON<Page<Pull>>(`${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`, signal), () => `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`);
 
   $effect(() => {
     void res.load();

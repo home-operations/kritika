@@ -9,7 +9,7 @@
   import Time from './Time.svelte';
 
   let { slug }: { slug: string } = $props();
-  const res = new Resource(() => getJSON<ChatGPTProviderUsage[]>(`${accountApi(slug)}/chatgpt/allowances`));
+  const res = new Resource((signal) => getJSON<ChatGPTProviderUsage[]>(`${accountApi(slug)}/chatgpt/allowances`, signal), () => `${accountApi(slug)}/chatgpt/allowances`);
   $effect(() => { void res.load(); });
   $effect(() => live((e) => e.account === slug && e.kind === 'model_call', () => void res.load(), 2000));
 

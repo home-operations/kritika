@@ -20,7 +20,7 @@
 
   let { slug }: { slug: string } = $props();
 
-  const res = new Resource(() => getJSON<Rule[]>(`${accountApi(slug)}/rules`));
+  const res = new Resource((signal) => getJSON<Rule[]>(`${accountApi(slug)}/rules`, signal), () => `${accountApi(slug)}/rules`);
   $effect(() => {
     void res.load();
   });

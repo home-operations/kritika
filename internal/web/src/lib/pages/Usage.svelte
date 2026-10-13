@@ -56,19 +56,19 @@
 
   // The 24-hour period is the last 24 hours, not a whole day: a date would
   // start it at midnight UTC.
-  const res = new Resource(() => {
+  const res = new Resource((signal) => {
     const now = Date.now();
     const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
     const p = new URLSearchParams({ group, from, billing: chatgptEnabled ? billing : 'all' });
     if (group === 'review') p.set('metric', metric);
     if (repository !== undefined) p.set('repo', repository);
     if (model !== undefined) p.set('model', model);
-    return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`);
-  }, () => JSON.stringify([group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
+    return getJSON<UsageSeries>(`${accountApi(slug)}/usage?${p}`, signal);
+  }, () => JSON.stringify([accountApi(slug), 'usage', group, days, chatgptEnabled ? billing : 'all', repository, model, group === 'review' ? metric : null]));
   // The month so far against the account's caps.
-  const summary = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
+  const summary = new Resource((signal) => getJSON<AccountSummary[]>('/api/v1/accounts', signal), () => '/api/v1/accounts');
   const account = $derived(summary.data?.find((t) => t.slug === slug));
-  const detail = new Resource(() => getJSON<AccountDetail>(accountApi(slug)));
+  const detail = new Resource((signal) => getJSON<AccountDetail>(accountApi(slug), signal), () => accountApi(slug));
   const month = $derived(detail.data?.usage ?? account?.usage);
 
   // The median and the mean are of the reviews whose cost is known.

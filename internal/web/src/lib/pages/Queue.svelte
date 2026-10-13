@@ -10,7 +10,7 @@
   import PageHeader from '../components/PageHeader.svelte';
 
   let { slug, filter }: { slug: string; filter?: QueueFilter } = $props();
-  const res = new Resource(() => getJSON<Job[]>(`${accountApi(slug)}/queue`));
+  const res = new Resource((signal) => getJSON<Job[]>(`${accountApi(slug)}/queue`, signal), () => `${accountApi(slug)}/queue`);
 
   $effect(() => {
     void res.load();

@@ -7,7 +7,7 @@
   import Conversation from '../../components/conversation/Conversation.svelte';
 
   let { active, base, version, slug }: { active: boolean; base: string; version: number; slug: string } = $props();
-  const res = new Resource(() => getJSON<Transcript>(`${base}/transcript`));
+  const res = new Resource((signal) => getJSON<Transcript>(`${base}/transcript`, signal), () => `${base}/transcript`);
   $effect(() => {
     void version;
     if (active) void res.load();

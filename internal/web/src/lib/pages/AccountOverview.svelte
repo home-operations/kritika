@@ -16,10 +16,10 @@
 
   let { slug }: { slug: string } = $props();
   const base = $derived(accountApi(slug));
-  const account = new Resource(() => getJSON<AccountDetail>(base));
-  const attention = new Resource(() => getJSON<Attention>(`${base}/attention`));
-  const queue = new Resource(() => getJSON<Job[]>(`${base}/queue`));
-  const repos = new Resource(() => getJSON<Page<Repository>>(`${base}/repos?limit=5`));
+  const account = new Resource((signal) => getJSON<AccountDetail>(base, signal), () => base);
+  const attention = new Resource((signal) => getJSON<Attention>(`${base}/attention`, signal), () => `${base}/attention`);
+  const queue = new Resource((signal) => getJSON<Job[]>(`${base}/queue`, signal), () => `${base}/queue`);
+  const repos = new Resource((signal) => getJSON<Page<Repository>>(`${base}/repos?limit=5`, signal), () => `${base}/repos?limit=5`);
   $effect(() => { void account.load(); void attention.load(); void queue.load(); void repos.load(); });
   $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void account.load()));
   $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void attention.load()));

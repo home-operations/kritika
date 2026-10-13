@@ -8,9 +8,7 @@
   import Conversation from './conversation/Conversation.svelte';
 
   let { slug, commentId }: { slug: string; commentId: number } = $props();
-  const res = new Resource(() =>
-    getJSON<Transcript>(`${accountApi(slug)}/followups/${commentId}/transcript`),
-  );
+  const res = new Resource((signal) => getJSON<Transcript>(`${accountApi(slug)}/followups/${commentId}/transcript`, signal), () => `${accountApi(slug)}/followups/${commentId}/transcript`);
   $effect(() => {
     void res.load();
   });

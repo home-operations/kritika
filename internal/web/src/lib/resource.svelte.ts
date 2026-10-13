@@ -1,52 +1,83 @@
-// Resource is one fetched value plus its loading/error state, so every page
-// renders the same loading, error and loaded states. A load that finishes
-// after a newer one started is dropped, so a slow response can't overwrite
-// a fresher one.
-import { untrack } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
+import { QueryObserver, type QueryObserverResult } from '@tanstack/svelte-query';
+import { queryClient, STALE_TIME } from './query';
+import { session } from './session.svelte';
 import { router } from './router.svelte';
 import { ApiError, getJSON } from './api.svelte';
 import { subscribe } from './events.svelte';
 import { loadedSize, rememberSize } from './viewstate';
 import type { EventKind, LiveEvent, Page } from './types';
 
+let nextSnapshot = 0;
+
 export class Resource<T> {
-  data = $state<T | undefined>(undefined);
+  #data = $state<T | undefined>(undefined);
   error = $state<Error | undefined>(undefined);
   loading = $state(false);
-  #seq = 0;
-  readonly #fetcher: () => Promise<T>;
-  readonly #key?: () => string;
+  #observer?: QueryObserver<T>;
+  #disposed = false;
+  #unsubscribe?: () => void;
   #loadedKey?: string;
+  readonly #snapshot = ++nextSnapshot;
+  readonly #fetcher: (signal: AbortSignal) => Promise<T>;
+  readonly #key?: () => string;
 
-  constructor(fetcher: () => Promise<T>, key?: () => string) {
+  constructor(fetcher: (signal: AbortSignal) => Promise<T>, key?: () => string) {
     this.#fetcher = fetcher;
     this.#key = key;
+    onDestroy(() => {
+      this.#disposed = true;
+      this.#unsubscribe?.();
+    });
   }
 
-  invalidate(): void {
-    this.#seq++;
+  get data(): T | undefined { return this.#data; }
+
+  set data(data: T | undefined) {
+    this.#data = data;
+    if (this.#observer && data !== undefined) queryClient.setQueryData(this.#observer.getCurrentQuery().queryKey, data);
+  }
+
+  invalidate(clear = false): void {
+    if (!this.#observer) return;
+    const filters = { queryKey: this.#observer.getCurrentQuery().queryKey, exact: true };
+    if (clear) queryClient.removeQueries(filters);
+    else void queryClient.cancelQueries(filters);
   }
 
   async load(): Promise<void> {
-    const seq = ++this.#seq;
+    if (this.#disposed || !session.me) return;
     const key = this.#key?.();
-    if (key !== this.#loadedKey) {
-      this.data = undefined;
-      this.error = undefined;
+    await untrack(async () => {
+      const changed = !this.#observer || key !== this.#loadedKey;
       this.#loadedKey = key;
-    }
-    this.loading = true;
-    try {
-      const data = await this.#fetcher();
-      if (seq !== this.#seq) return;
-      this.data = data;
-      this.error = undefined;
-    } catch (err) {
-      if (seq !== this.#seq) return;
-      this.error = err instanceof Error ? err : new Error(String(err));
-    } finally {
-      if (seq === this.#seq) this.loading = false;
-    }
+      const options = {
+        queryKey: this.#key ? ['api', key] : ['snapshot', this.#snapshot],
+        queryFn: ({ signal }: { signal: AbortSignal }) => this.#fetcher(signal),
+        // Pages decide when hidden tabs and coordinated list snapshots load.
+        enabled: false,
+        ...(this.#key ? {} : { gcTime: 0 }),
+      };
+      if (!this.#observer) {
+        this.#observer = new QueryObserver<T>(queryClient, options);
+        this.#unsubscribe = this.#observer.subscribe((result) => this.#apply(result));
+      } else {
+        this.#observer.setOptions(options);
+      }
+      if (changed) {
+        this.data = undefined;
+        this.#apply(this.#observer.getCurrentResult());
+        // History restoration must settle against fresh data before restoring scroll.
+        if (!router.traversal && !this.#observer.getCurrentQuery().isStaleByTime(STALE_TIME)) return;
+      }
+      await this.#observer.refetch();
+    });
+  }
+
+  #apply(result: QueryObserverResult<T>): void {
+    if (result.data !== undefined || !result.isError) this.#data = result.data;
+    this.error = result.error ?? undefined;
+    this.loading = result.isFetching;
   }
 }
 
@@ -137,17 +168,17 @@ export class Paged<T> {
   constructor(url: (cursor?: string) => string, key: (t: T) => string) {
     this.#url = url;
     this.#key = key;
-    this.first = new Resource(async () => {
+    this.first = new Resource(async (signal) => {
       const gen = this.#gen;
       const revision = this.#revision;
       const target = this.#loaded;
       const progressive = untrack(() => this.first.data === undefined);
-      let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined));
+      let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined), signal);
       const items = [...page.items];
       while (items.length < target && page.nextCursor) {
         if (gen !== this.#gen || revision !== this.#revision) return page;
         if (progressive) this.first.data = { items: this.#unique(items), nextCursor: page.nextCursor };
-        page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length));
+        page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length), signal);
         items.push(...page.items);
       }
       const unique = this.#unique(items);
@@ -206,7 +237,7 @@ export class Paged<T> {
       this.#base = base;
       this.#gen++;
       this.#revision++;
-      this.first.invalidate();
+      this.first.invalidate(true);
       this.#loaded = untrack(() => router.traversal) ? loadedSize(entry, base) : 0;
       this.#more = undefined;
       this.#afterMore = undefined;

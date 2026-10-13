@@ -13,14 +13,14 @@
   import Dialog from '../../components/Dialog.svelte';
   import { AlertDialog } from 'bits-ui';
 
-  const conns = new Resource(() => getJSON<Connection[]>('/api/v1/admin/connections'));
+  const conns = new Resource((signal) => getJSON<Connection[]>('/api/v1/admin/connections', signal), () => '/api/v1/admin/connections');
   $effect(() => {
     void conns.load();
   });
 
   let selected = $state('');
   const installationsPath = $derived(`/api/v1/admin/connections/${encodeURIComponent(selected)}/installations`);
-  const installs = new Resource(() => getJSON<AppInstallation[]>(installationsPath));
+  const installs = new Resource((signal) => getJSON<AppInstallation[]>(installationsPath, signal), () => installationsPath);
 
   function show(name: string): void {
     selected = name;

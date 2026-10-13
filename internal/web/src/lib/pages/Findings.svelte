@@ -49,7 +49,7 @@
   }
   const paged = new Paged<AccountFinding>(query, (f) => f.id);
   const res = paged.first;
-  const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
+  const repos = new Resource((signal) => getJSON<Page<Repository>>(`${account}/repos?limit=100`, signal), () => `${account}/repos?limit=100`);
   $effect(() => {
     void paged.load();
   });

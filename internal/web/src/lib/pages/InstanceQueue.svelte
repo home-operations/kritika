@@ -14,7 +14,7 @@
 
   let { filter }: { filter?: QueueFilter } = $props();
 
-  const res = new Resource(() => getJSON<InstanceQueue>('/api/v1/queue'));
+  const res = new Resource((signal) => getJSON<InstanceQueue>('/api/v1/queue', signal), () => '/api/v1/queue');
 
   $effect(() => {
     void res.load();

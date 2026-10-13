@@ -18,7 +18,7 @@
   import { overdue, waiting } from '../queue';
   import WebhookState from '../components/WebhookState.svelte';
 
-  const res = new Resource(() => getJSON<AccountSummary[]>('/api/v1/accounts'));
+  const res = new Resource((signal) => getJSON<AccountSummary[]>('/api/v1/accounts', signal), () => '/api/v1/accounts');
 
   $effect(() => {
     void res.load();
@@ -27,7 +27,7 @@
 
   // The queue is its own fetch: the page stands without it, and only the
   // one tile waits on it.
-  const queue = new Resource(() => getJSON<InstanceQueue>('/api/v1/queue'));
+  const queue = new Resource((signal) => getJSON<InstanceQueue>('/api/v1/queue', signal), () => '/api/v1/queue');
   $effect(() => {
     void queue.load();
   });

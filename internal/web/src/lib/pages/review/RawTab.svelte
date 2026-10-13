@@ -8,7 +8,7 @@
   import Collapsible from '../../components/Collapsible.svelte';
 
   let { active, base, d, version }: { active: boolean; base: string; d: ReviewDetail; version: number } = $props();
-  const res = new Resource(() => getJSON<ReviewRaw>(`${base}/raw`));
+  const res = new Resource((signal) => getJSON<ReviewRaw>(`${base}/raw`, signal), () => `${base}/raw`);
   $effect(() => {
     void version;
     if (active) void res.load();

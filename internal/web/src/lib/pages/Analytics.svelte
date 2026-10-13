@@ -39,14 +39,14 @@
   const group = $derived(days === '90' ? 'week' : 'day');
   const bucketLabel = $derived(days === '1' ? 'partial day' : group);
 
-  const res = new Resource(() => {
+  const res = new Resource((signal) => {
     const now = Date.now();
     const from = days === '1' ? new Date(now - 86_400_000).toISOString() : daysAgo(Number(days), now);
     const p = new URLSearchParams({ from, group });
-    return getJSON<Analytics>(`${base}/analytics?${p}`);
-  });
-  const detail = new Resource(() => getJSON<AccountDetail>(base));
-  const attention = new Resource(() => getJSON<Attention>(`${base}/attention`));
+    return getJSON<Analytics>(`${base}/analytics?${p}`, signal);
+  }, () => JSON.stringify([base, 'analytics', days, group]));
+  const detail = new Resource((signal) => getJSON<AccountDetail>(base, signal), () => base);
+  const attention = new Resource((signal) => getJSON<Attention>(`${base}/attention`, signal), () => `${base}/attention`);
   $effect(() => {
     void res.load();
   });

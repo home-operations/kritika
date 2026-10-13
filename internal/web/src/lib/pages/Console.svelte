@@ -15,8 +15,8 @@
   import Checklist from './admin/Checklist.svelte';
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
 
-  const res = new Resource(() => getJSON<AdminAccount[]>('/api/v1/admin/accounts'));
-  const instance = new Resource(() => getJSON<InstanceSetting[]>('/api/v1/admin/instance'));
+  const res = new Resource((signal) => getJSON<AdminAccount[]>('/api/v1/admin/accounts', signal), () => '/api/v1/admin/accounts');
+  const instance = new Resource((signal) => getJSON<InstanceSetting[]>('/api/v1/admin/instance', signal), () => '/api/v1/admin/instance');
   $effect(() => {
     void res.load();
   });

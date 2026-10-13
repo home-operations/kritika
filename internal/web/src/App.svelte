@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { QueryClientProvider } from '@tanstack/svelte-query';
+  import { queryClient } from './lib/query';
   import { Dialog, Popover, Tooltip as BitsTooltip } from 'bits-ui';
   import Tooltip from './lib/components/Tooltip.svelte';
   import { basePath } from './lib/base';
@@ -101,6 +103,7 @@
     }
     closeEvents();
     session.me = undefined;
+    queryClient.clear();
     navigate({ name: 'signin' });
   }
 
@@ -188,6 +191,7 @@
   {#if me && router.route.name === 'console'}<SettingsNav />{/if}
 {/snippet}
 
+<QueryClientProvider client={queryClient}>
 <BitsTooltip.Provider delayDuration={300}>
 {#if checkingSession || (me && router.route.name === 'signin') || (!me && sessionError && router.route.name !== 'signin')}
   <main class="session-screen min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center text-muted" aria-busy={checkingSession}>
@@ -349,3 +353,4 @@
   </div>
 {/if}
 </BitsTooltip.Provider>
+</QueryClientProvider>
