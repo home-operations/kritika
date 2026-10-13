@@ -14,12 +14,19 @@ import (
 // analyticsRepos is how many repositories the analytics list.
 const analyticsRepos = 5
 
-func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+// analyticsQuery reads ?group=, ?from= and ?to=: by day over the last 30
+// days unless given.
+func (s *Server) analyticsQuery(r *http.Request) (store.AnalyticsGroup, time.Time, time.Time, error) {
 	group := store.AnalyticsGroup(cmp.Or(r.URL.Query().Get("group"), string(store.AnalyticsByDay)))
 	if !group.Valid() {
-		return errBadRequest(CodeBadRequest, "group must be day, week or month")
+		return "", time.Time{}, time.Time{}, errBadRequest(CodeBadRequest, "group must be day, week or month")
 	}
 	from, to, err := s.window(r)
+	return group, from, to, err
+}
+
+func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	group, from, to, err := s.analyticsQuery(r)
 	if err != nil {
 		return err
 	}
@@ -30,27 +37,30 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 		if err != nil {
 			return err
 		}
-		out.Current, out.Previous = analyticsTotals(data.Current), analyticsTotals(data.Previous)
-		series, repos := data.Series, data.Repositories
-		out.Series = make([]AnalyticsPoint, len(series))
-		for i, p := range series {
-			out.Series[i] = AnalyticsPoint{
-				Key: p.Key, Reviews: p.Reviews, Failed: p.Failed, Tokens: p.Tokens, MedianReviewMs: p.MedianReviewMs,
-				Findings: severityCounts(p.Findings), CostUSD: p.CostUSD,
-			}
-		}
-		out.Repositories = make([]RepoActivity, len(repos))
-		for i, a := range repos {
-			out.Repositories[i] = RepoActivity{
-				Repository: a.Repository, Reviews: a.Reviews, Findings: severityCounts(a.Findings), Addressed: a.Addressed,
-			}
-		}
+		out.Current, out.Previous, out.Series, out.Repositories = analytics(data)
 		return nil
 	}); err != nil {
 		return err
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+func analytics(data store.Analytics) (current, previous AnalyticsTotals, series []AnalyticsPoint, repos []RepoActivity) {
+	series = make([]AnalyticsPoint, len(data.Series))
+	for i, p := range data.Series {
+		series[i] = AnalyticsPoint{
+			Key: p.Key, Reviews: p.Reviews, Failed: p.Failed, Tokens: p.Tokens, MedianReviewMs: p.MedianReviewMs,
+			Findings: severityCounts(p.Findings), CostUSD: p.CostUSD,
+		}
+	}
+	repos = make([]RepoActivity, len(data.Repositories))
+	for i, a := range data.Repositories {
+		repos[i] = RepoActivity{
+			Repository: a.Repository, Reviews: a.Reviews, Findings: severityCounts(a.Findings), Addressed: a.Addressed,
+		}
+	}
+	return analyticsTotals(data.Current), analyticsTotals(data.Previous), series, repos
 }
 
 func analyticsTotals(t store.AnalyticsTotals) AnalyticsTotals {

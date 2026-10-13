@@ -275,6 +275,7 @@ func (e *apiEnv) getBody(who, path string) (int, []byte) {
 func TestWebAPI(t *testing.T) {
 	e := newAPIEnv(t)
 	t.Run("global pulls enforce scope and pagination", func(t *testing.T) { testInstancePulls(t, e) })
+	t.Run("global analytics and usage add up readable accounts", func(t *testing.T) { testInstanceSeries(t, e) })
 	t.Run("read endpoints scope to the account", func(t *testing.T) { testReadEndpointsScopeToAccount(t, e) })
 	t.Run("account B's ids under account A", func(t *testing.T) { testCrossAccountIDs(t, e) })
 	t.Run("me and account lists", func(t *testing.T) { testMeAndAccountLists(t, e) })

@@ -43,21 +43,32 @@ func (s *Server) usageQuery(r *http.Request) (store.UsageGroup, time.Time, time.
 	return group, from, to, err
 }
 
-func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+// usageBilling reads ?billing=: whether only ChatGPT plan usage is wanted.
+func usageBilling(r *http.Request) (chatgptOnly bool, err error) {
 	billing := r.URL.Query().Get("billing")
 	if billing != "" && billing != "all" && billing != "chatgpt" {
-		return errBadRequest(CodeBadRequest, "billing must be all or chatgpt")
+		return false, errBadRequest(CodeBadRequest, "billing must be all or chatgpt")
+	}
+	return billing == "chatgpt", nil
+}
+
+func usageFilter(r *http.Request) store.UsageFilter {
+	return store.UsageFilter{
+		Repository: queryString(r, "repo"), Model: queryString(r, "model"), OrderByTokens: r.URL.Query().Get("metric") == "tokens",
+	}
+}
+
+func (s *Server) getUsage(w http.ResponseWriter, r *http.Request, t *accountScope) error {
+	chatgptOnly, err := usageBilling(r)
+	if err != nil {
+		return err
 	}
 	group, from, to, err := s.usageQuery(r)
 	if err != nil {
 		return err
 	}
 	ctx := r.Context()
-	chatgptOnly := billing == "chatgpt"
-
-	filter := store.UsageFilter{
-		Repository: queryString(r, "repo"), Model: queryString(r, "model"), OrderByTokens: r.URL.Query().Get("metric") == "tokens",
-	}
+	filter := usageFilter(r)
 	out := UsageSeries{Group: group, From: from, To: to}
 	if err := s.read(ctx, t, func(tx pgx.Tx) error {
 		rows, err := store.UsageSeries(ctx, tx, group, from, to, chatgptOnly, filter)
