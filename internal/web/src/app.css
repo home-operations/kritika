@@ -52,12 +52,14 @@
 /* Light and dark share semantic utilities; changing the root class swaps their tokens. */
 :root,
 .light {
+  color-scheme: light;
   --bg: #f5f6f8;
   --panel: #ffffff;
   --panel-alt: #f0f2f5;
   --border: #dce0e6;
   --text: #1b2130;
   --muted: #555c6a;
+  --select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23555c6a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
   --accent: #2447b8;
   --on-accent: #ffffff;
   --mark: #f5df4d;
@@ -80,12 +82,14 @@
   --chart-sev-p2: #a5acb8;
 }
 .dark {
+  color-scheme: dark;
   --bg: #131922;
   --panel: #1a202b;
   --panel-alt: #212835;
   --border: #2f3846;
   --text: #e4e7ec;
   --muted: #9aa2af;
+  --select-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa2af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
   --accent: #8fa6ff;
   --on-accent: #131922;
   --mark: #6b5a10;
@@ -192,8 +196,48 @@
   textarea {
     @apply border border-solid border-line rounded-md bg-panel text-ink font-ui text-ui-md py-1.5 px-2.5 min-w-0;
   }
+  /* The arrow is drawn here so it keeps the same 10px from the edge the
+     text keeps; the native one sits flush against the border. */
   select {
-    @apply pr-7 cursor-pointer;
+    @apply appearance-none pr-8 cursor-pointer bg-no-repeat;
+    background-image: var(--select-arrow);
+    background-position: right 10px center;
+    background-size: 12px 12px;
+  }
+  option {
+    @apply bg-panel text-ink;
+  }
+  /* Where the browser lets a select's list be styled, it looks like the
+     app's own menus; elsewhere the native list keeps the theme's colours. */
+  @supports selector(::picker(select)) {
+    select,
+    select::picker(select) {
+      appearance: base-select;
+    }
+    select::picker-icon {
+      @apply hidden;
+    }
+    select::picker(select) {
+      @apply mt-1 p-1 bg-panel text-ink border border-solid border-line rounded-lg shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)];
+    }
+    option {
+      @apply flex items-center gap-2 py-1.5 px-2.5 rounded-sm text-ui-md cursor-pointer;
+    }
+    option:hover,
+    option:focus-visible {
+      @apply bg-surface [outline:none];
+    }
+    option:checked {
+      @apply font-semibold;
+    }
+    option::checkmark {
+      @apply text-accent;
+    }
+  }
+  @media (forced-colors: active) {
+    select {
+      @apply appearance-auto pr-2.5 bg-none;
+    }
   }
   input::placeholder {
     @apply text-muted opacity-100;
