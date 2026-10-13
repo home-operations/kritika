@@ -15,7 +15,7 @@ import (
 // Auth configures how people sign in to the dashboard and what each may do:
 // a local admin, an OIDC issuer and GitHub, each optional, and each
 // provider's role mapping. Every key also has a KRITIKA_AUTH_* environment
-// variable, which wins over the file (see overlayEnv).
+// variable for deployments that omit that setting from the file.
 type Auth struct {
 	// SessionTTL is how long a dashboard session lasts; zero means
 	// DefaultSessionTTL.

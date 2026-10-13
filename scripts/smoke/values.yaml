@@ -15,10 +15,9 @@ config:
   webUrl: http://kritika.kritika.svc:8080
   # The app below is not a real GitHub App, so the backstop poll stays off.
   pollInterval: 0s
-  authAdminPassword:
-    valueFrom:
-      secretKeyRef: { name: kritika-smoke-auth, key: password }
-configFile:
+  auth:
+    admin:
+      password: { env: ADMIN_PASSWORD }
   apps:
     github:
       accounts: [home-operations]
@@ -26,6 +25,9 @@ configFile:
       privateKey: { env: GITHUB_APP_PRIVATE_KEY }
       webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
 env:
+  ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-smoke-auth, key: password }
   GITHUB_APP_PRIVATE_KEY:
     valueFrom:
       secretKeyRef: { name: kritika-smoke-bot, key: private-key.pem }

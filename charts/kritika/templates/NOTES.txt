@@ -1,16 +1,18 @@
 kritika {{ .Chart.AppVersion }} is installed as {{ include "kritika.fullname" . }}, {{ .Values.replicas }} replica(s) of kritika serve.
 
-Open {{ tpl .Values.config.webUrl . }} to sign in. The GitHub Apps, model providers
-and review settings come from the configuration file (configFile), how kritika
-runs from the keys of config (see docs/configuration.md); the dashboard turns
-each repository on or off.
+{{- if .Values.existingConfigMap }}
+Application settings are read from {{ include "kritika.configMapName" . }}/config.yaml.
+Open the webUrl configured in that file to sign in.
+{{- else }}
+Open {{ .Values.config.webUrl }} to sign in.
+GitHub delivers each app's webhook to {{ .Values.config.webUrl | trimSuffix "/" }}/hooks/<app name>.
+{{- end }}
+Application settings come from config; runner Jobs and deployment settings come from the chart's other values.
 
-GitHub delivers each app's webhook to {{ tpl .Values.config.webUrl . | trimSuffix "/" }}/hooks/<app name>,
-which kritika serves beside the dashboard:
-{{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the chart's
-{{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} routes to it; its host must be that URL's.
-{{- else }} route that URL to
-{{ include "kritika.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}.
+{{- if or .Values.ingress.enabled .Values.httpRoute.enabled }}
+The chart's {{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} must route the configured webUrl's host.
+{{- else }}
+Route the configured webUrl to {{ include "kritika.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}.
 {{- end }}
 
 Runner Jobs appear in this namespace as kritika-run-*; every run is also recorded

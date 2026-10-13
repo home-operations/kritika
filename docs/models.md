@@ -343,9 +343,9 @@ One provider and the embedder can come from the environment instead:
 | `KRITIKA_EMBEDDING_MODEL`    | `embedding.model`                                               |
 | `KRITIKA_EMBEDDING_DIMS`     | `embedding.dims`                                                |
 
-The environment declares at most one provider, which replaces the file's
-of the same name whole or is added to the file's. The embedding variables
-set the file's embedder key by key. The review and confidence models have
+The environment declares at most one provider. Declaring the same provider
+in both the file and environment is an error. Embedding variables may supply
+keys omitted from the file; supplying the same key in both is an error. The review and confidence models have
 variables of their own
 ([environment variables](configuration.md#environment-variables)).
 

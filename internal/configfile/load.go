@@ -19,6 +19,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v4"
 
+	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
@@ -40,6 +41,7 @@ var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 // fileDoc is the configuration file's schema: sign-in and the whole
 // configuration.
 type fileDoc struct {
+	Settings  config.Settings       `yaml:",inline"`
 	Auth      Auth                  `yaml:"auth,omitempty"`
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
@@ -112,7 +114,11 @@ func configHash(raw []byte, environ, secretEnv []string) string {
 
 // Parse is Load for bytes already in hand; nil or blank bytes are no file.
 func Parse(raw []byte) (*File, error) {
-	var doc fileDoc
+	settings, err := config.LoadSettings(raw)
+	if err != nil {
+		return nil, err
+	}
+	doc := fileDoc{Settings: settings}
 	if len(bytes.TrimSpace(raw)) > 0 {
 		dec := yaml.NewDecoder(bytes.NewReader(raw))
 		dec.KnownFields(true)
@@ -128,6 +134,9 @@ func Parse(raw []byte) (*File, error) {
 		doc.Apps = map[string]Connection{}
 	}
 	environ := os.Environ()
+	if err := checkOverlaySources(raw, environ); err != nil {
+		return nil, err
+	}
 	if err := doc.Auth.overlayEnv(environ); err != nil {
 		return nil, err
 	}
@@ -146,8 +155,7 @@ func Parse(raw []byte) (*File, error) {
 	if err := overlayEmbeddingEnv(&doc.Embedding, environ, envKeys); err != nil {
 		return nil, err
 	}
-	run, err := loadRun()
-	if err != nil {
+	if err := validateRun(doc.Settings); err != nil {
 		return nil, err
 	}
 	accounts, err := accountsOf(doc.Accounts, doc.Repositories)
@@ -156,7 +164,7 @@ func Parse(raw []byte) (*File, error) {
 	}
 	f := &File{
 		Auth: doc.Auth, Connections: connectionsOf(doc.Apps), Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
-		Embedding: doc.Embedding, Run: run, envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
+		Embedding: doc.Embedding, Run: doc.Settings, envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
 	}
 	s := &secrets{}
 	if err := f.Auth.resolve(s); err != nil {

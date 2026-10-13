@@ -121,7 +121,11 @@ func TestAuthEnv(t *testing.T) {
 	} {
 		t.Setenv(k, v)
 	}
-	f, err := loadBytes(t, []byte(authMinimal+minimal))
+	f, err := loadBytes(t, []byte(`auth:
+  oidc:
+    clientId: kritika
+    clientSecret: { env: TEST_WEBHOOK_SECRET }
+`+minimal))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

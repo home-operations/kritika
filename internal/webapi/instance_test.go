@@ -23,6 +23,7 @@ apps:
 	env := []config.EnvVar{
 		{Name: "KRITIKA_ADDR", Value: ":9090", Set: true},
 		{Name: "KRITIKA_METRICS_ADDR", Value: ":8081"},
+		{Name: "KRITIKA_LOG_LEVEL", Value: "debug", File: true},
 		{Name: "KRITIKA_GATEWAY_URL", Value: "https://user:pass@gw.example", Set: true},
 		{Name: "KRITIKA_DATABASE_URL", Value: "set", Secret: true, Set: true},
 	}
@@ -33,6 +34,7 @@ apps:
 	for key, want := range map[string]InstanceSetting{
 		"environment KRITIKA_ADDR":         {"environment", "KRITIKA_ADDR", ":9090", configfile.SourceEnv},
 		"environment KRITIKA_METRICS_ADDR": {"environment", "KRITIKA_METRICS_ADDR", ":8081", configfile.SourceDefault},
+		"environment KRITIKA_LOG_LEVEL":    {"environment", "KRITIKA_LOG_LEVEL", "debug", configfile.SourceFile},
 		"environment KRITIKA_GATEWAY_URL": {
 			"environment", "KRITIKA_GATEWAY_URL", "https://gw.example (credentials hidden)", configfile.SourceEnv,
 		},

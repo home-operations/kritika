@@ -438,6 +438,8 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		source := configfile.SourceDefault
 		if e.Set {
 			source = configfile.SourceEnv
+		} else if e.File {
+			source = configfile.SourceFile
 		}
 		add("environment", e.Name, withoutCredentials(e.Value), source)
 	}

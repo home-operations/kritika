@@ -201,14 +201,10 @@ func TestConnectionEnv(t *testing.T) {
 			t.Fatal("ConnectionFromEnv")
 		}
 	})
-	t.Run("replaces the file's of its name", func(t *testing.T) {
+	t.Run("rejects the same app in both sources", func(t *testing.T) {
 		env(t, "acme-bot")
-		f, err := Parse(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(f.Connections) != 1 || f.Connections[0].Serves("acme") || !f.Connections[0].Serves("org-1") {
-			t.Fatalf("connections = %+v", f.Connections)
+		if _, err := Parse(file); err == nil || !strings.Contains(err.Error(), "apps.acme-bot conflicts") {
+			t.Fatalf("Parse = %v", err)
 		}
 	})
 	t.Run("a secret from a file", func(t *testing.T) {

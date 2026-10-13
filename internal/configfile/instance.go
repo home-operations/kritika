@@ -14,7 +14,7 @@ import (
 // The environment may set some of the file's keys: one model provider, the
 // review and fallback models and their effort, the confidence model, its
 // fallback, effort, threshold and risk, and settle every account and
-// repository inherits, and the embedder. Each wins over the file's.
+// repository inherits, and the embedder. Parse rejects overlapping file settings.
 
 // Environment variable prefixes of the keys the environment may set.
 const (

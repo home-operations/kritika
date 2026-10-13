@@ -23,6 +23,66 @@ tests:
   - it: renders nothing when an existing ConfigMap is named
     set:
       existingConfigMap: my-config
+      config: null
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: preserves explicit zero and false values and does not evaluate templates
+    set:
+      config.pollInterval: 0s
+      config.review.approve: false
+      config.confidence.threshold: 0
+      config.comments.summary: "{{ .Release.Name }}"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "pollInterval: 0s"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "approve: false"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "threshold: 0"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '\{\{ .Release.Name \}\}'
+
+  - it: derives the runner configuration from runner values
+    set:
+      runner.runtimeClass: gvisor
+      runner.deadline: 20m
+      runner.image.repository: registry.example/tools
+      runner.image.tag: custom
+      runner.resources: { limits: { memory: 1Gi } }
+      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "runtimeClass: gvisor"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "deadline: 20m"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "image: registry.example/tools:custom"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "memory: 1Gi"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "image: registry.example/helm:3"
+
+  - it: refuses runner configuration duplicated in application config
+    set:
+      config.runner.runtimeClass: gvisor
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.runner: the chart derives this setting from its deployment values"
+
+  - it: explains how to migrate configFile
+    set:
+      configFile: { review: { approve: true } }
+    asserts:
+      - failedTemplate:
+          errorPattern: configFile has moved to config

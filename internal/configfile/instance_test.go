@@ -78,7 +78,10 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 	t.Setenv("KRITIKA_REVIEW_WORKERS", "4")
 	t.Setenv("KRITIKA_EMBEDDING_MODEL", "openrouter/e-env")
 	t.Setenv("KRITIKA_EMBEDDING_DIMS", "32")
-	f, err := Parse([]byte(fileWithDefaults))
+	doc := strings.Replace(fileWithDefaults, "providers:\n  openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }\n", "", 1)
+	doc = strings.Replace(doc, "model: openrouter/big, ", "", 1)
+	doc = strings.Replace(doc, "embedding: { model: openrouter/e1, dims: 8 }\n", "", 1)
+	f, err := Parse([]byte(doc))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -112,11 +115,11 @@ func TestInstanceDefaultsEnv(t *testing.T) {
 		{"an unknown embedding key", "KRITIKA_EMBEDDING_URL", "x", "KRITIKA_EMBEDDING_URL names no embedding setting"},
 		{"dims that are not a number", "KRITIKA_EMBEDDING_DIMS", "many", "KRITIKA_EMBEDDING_DIMS must be a whole number"},
 		{"a key from a file", "KRITIKA_PROVIDERS_API_KEY_FILE", "/nope", "KRITIKA_PROVIDERS_API_KEY_FILE names no provider setting"},
-		{"a name that is no type, without one", "KRITIKA_PROVIDERS_NAME", "router", "providers.router.type must be"},
+		{"a name that is no type, without one", "KRITIKA_PROVIDERS_NAME", "router", "embedding.model references provider"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.key, tt.value)
-			if _, err := Parse([]byte(fileWithDefaults)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Parse = %v; want it to mention %q", err, tt.want)
 			}
 		})
@@ -141,7 +144,7 @@ func TestProviderRetries(t *testing.T) {
 	}
 	t.Setenv("KRITIKA_PROVIDERS_RETRIES", "3")
 	t.Setenv("KRITIKA_PROVIDERS_API_KEY", "sk-env")
-	f, err = Parse([]byte(fileWithDefaults))
+	f, err = Parse([]byte(strings.Replace(fileWithDefaults, "providers:\n  openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }\n", "", 1)))
 	if err != nil {
 		t.Fatalf("Parse with the environment's retries: %v", err)
 	}
@@ -177,7 +180,7 @@ func TestFileReviewDefaults(t *testing.T) {
 		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
 	}
 	t.Setenv("KRITIKA_TRIGGER_LIMIT", "3")
-	f, err := Parse(withDefaults(", diagram: true, effort: xhigh", ""))
+	f, err := Parse(withDefaults(", diagram: true", ""))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

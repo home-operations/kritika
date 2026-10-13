@@ -93,7 +93,7 @@ sets up the database and its three roles. In short, it needs:
 - the one public URL under `config.webUrl`, which the dashboard and
   GitHub's webhooks share;
 - a way to sign in under `auth`;
-- the configuration file under `configFile`.
+- the configuration file under `config`.
 
 It runs as one Deployment of `kritika serve`, one replica by default,
 which creates a runner Job for each review, follow-up and index run; the

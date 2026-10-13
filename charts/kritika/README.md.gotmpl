@@ -32,20 +32,28 @@ where `my-values.yaml` sets:
 ```yaml
 config:
   webUrl: https://kritika.example.com
-  authAdminPassword:
-    valueFrom:
-      secretKeyRef: { name: kritika-admin, key: password }
-  providersApiKey:
-    valueFrom:
-      secretKeyRef: { name: kritika-openrouter, key: api-key }
-  reviewModel: openrouter/vendor/large-model
-configFile:
+  auth:
+    admin:
+      password: { env: ADMIN_PASSWORD }
+  providers:
+    openrouter:
+      type: openrouter
+      apiKey: { env: OPENROUTER_API_KEY }
+  review:
+    model: openrouter/vendor/large-model
   apps:
     github:
       accounts: [org-1]
       clientId: Iv1.example
       privateKey: { env: GITHUB_APP_PRIVATE_KEY }
       webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+env:
+  ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-admin, key: password }
+  OPENROUTER_API_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-openrouter, key: api-key }
 # A Secret with the keys GITHUB_APP_PRIVATE_KEY and GITHUB_APP_WEBHOOK_SECRET.
 envFrom:
   - secretRef:
@@ -56,35 +64,31 @@ ingress:
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
 ```
 
-`config` is every `KRITIKA_*` variable the chart does not derive from its
-other values, keyed by its name without the prefix in camelCase
-(`pollInterval` is `KRITIKA_POLL_INTERVAL`): `webUrl`, the one public URL,
-with the dashboard at it and the webhook listener under it at `/hooks`;
-logging, the workers, polling, retention and runner Jobs' deadline and
-RuntimeClass; and the variables that stand in for the configuration file's
-sections, sign-in, one app, one provider, the review, confidence and
-trigger settings and the embedder (see
-[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
-A key left empty sets nothing and kritika's default applies; a secret
-takes a `valueFrom` map, like the admin password above, which is the way
-into a fresh instance. The chart's Ingress or HTTPRoute must route
-`webUrl`'s host.
+`config` is the application's YAML configuration: `webUrl`, logging, workers,
+polling, retention, `auth`, `apps`, `providers`, review policy and account settings.
+It has the same structure as the configuration file and is not evaluated with
+`tpl`. Omitted values use application defaults; zero and false are preserved.
+The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
-`configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
-`apps`, model `providers`, the `embedding`, `egress`, the settings every
-repository gets (`review`, `confidence`, `trigger`, `comments`, `agent`),
-`repositories` entries keyed `owner/*` or `owner/name`, and `accounts`,
-with the `config` variables winning over it.
+- Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
+- Runner Jobs are configured under `runner`, including `runtimeClass` and
+  `deadline`. The chart derives application settings from runner, database
+  and service values and rejects duplicates under `config`.
+- A checksum of the rendered file rolls pods when configuration changes.
+- `existingConfigMap` supplies an external `config.yaml` instead of `config`;
+  setting both is an error. Put `webUrl` in that file and omit chart-owned
+  deployment settings. The chart supplies those through environment variables.
+  External ConfigMap and Secret changes need a restart or Reloader.
+- Legacy environment settings remain available, but a file setting and its
+  environment variable cannot both be set.
 
-- kritika reads it at startup: the pods carry its checksum, so a change
-  rolls them, and a pod whose file doesn't load never becomes ready while
-  the ones before it keep serving.
-- Secrets never go in it: it names environment variables, which `env` and
-  `envFrom` set from existing Secrets, the way any Kubernetes container's
-  environment is set.
-- The chart refuses a `KRITIKA_*` variable under `env`, naming its
-  `config` key, and a `config` key for a variable it derives from its
-  other values, such as the addresses or the database.
+**Migration:** move `configFile` into `config`, flat policy keys such as
+`config.reviewModel` into `config.review.model`, and password `valueFrom`
+entries into `env` with references in the file. Move
+`config.runnerRuntimeClass` and `config.runnerDeadline` into
+`runner.runtimeClass` and `runner.deadline`. See the
+[configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)
+for the complete migration and external ConfigMap rules.
 
 The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
@@ -133,7 +137,7 @@ chart confines them:
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - `runner.tools` adds programs a review's `agent.commands` may run, from
-  their own images; `config.runnerRuntimeClass` puts runner Jobs under a
+  their own images; `runner.runtimeClass` puts runner Jobs under a
   sandboxed runtime such as gVisor; `runner.resources` keeps a runaway run
   in its own cgroup.
 
@@ -144,7 +148,7 @@ gateway, runner tools and the sandbox in full.
 
 The chart runs one Deployment of `kritika serve`, one replica by default.
 Its rolling update surges a new pod and takes the old one down only once the
-new one is ready, so a rollout, such as the one a changed `configFile`
+new one is ready, so a rollout, such as the one a changed `config`
 starts, keeps one serving on its own: a pod is ready only once its database
 answers and it serves webhooks. Every replica serves webhooks and
 the dashboard and works jobs, and one holds the leader lock at a time, so
