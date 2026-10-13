@@ -1,6 +1,5 @@
 // What an instance still lacks before it reviews, from its setup status and
-// the accounts its connections serve. Everything it names is set in the
-// configuration file. Rune-free so tests can import it.
+// the accounts its connections serve. Rune-free so tests can import it.
 import type { AdminAccount, Connection, SetupStatus } from './types';
 
 export interface ChecklistItem {
@@ -20,9 +19,9 @@ export function checklist(s: SetupStatus, accounts: AdminAccount[]): ChecklistIt
       how: 'Declare the App under apps in the configuration file, its private key and webhook secret referenced from a Secret.',
     },
     {
-      label: 'The App reaches a repository',
+      label: 'A repository is enabled',
       done: accounts.some((a) => a.live && a.repositories > 0),
-      how: 'Install the App on GitHub on an account its entry under apps lists.',
+      how: 'Install the App on GitHub on a configured account, then turn on a repository on its Repositories page.',
     },
     {
       label: 'A review model is set',

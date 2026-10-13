@@ -89,8 +89,9 @@ func (p *Poller) Run(ctx context.Context) {
 
 // SyncRepositories registers the repositories each running connection's
 // App reaches on the accounts it serves, as a webhook from each would, so
-// they are known, polled and indexed without one: an App installed before
-// kritika started sends no installation event. The forge-reported
+// they appear in the dashboard without one: an App installed before
+// kritika started sends no installation event. New repositories wait for an
+// admin to turn them on before polling or indexing. The forge-reported
 // repositories an account's listing no longer has are disabled, in case
 // the webhook that said so was missed. A connection whose listing fails,
 // or takes longer than reachTimeout, is logged and left for the next poll,
@@ -173,9 +174,15 @@ func (p *Poller) PollAll(ctx context.Context) {
 // the poll state is then left where it was, so the next poll covers the
 // skipped repository's window too, and the error names each one.
 func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *configfile.Account, in *configfile.Connection) (int, error) {
+	// Capture the boundary before reading enablement, on the same clock as
+	// turned_at, so a concurrent enablement is caught by the next poll.
+	started, err := p.Store.Now(ctx)
+	if err != nil {
+		return 0, err
+	}
 	var repos []store.PollRepo
 	var state store.PollState
-	err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+	err = p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var err error
 		if repos, err = store.PollRepositories(ctx, tx); err != nil {
 			return err
@@ -191,7 +198,6 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		since = *state.Polled
 	}
 	checkTips := state.Delivered == nil || state.Delivered.Before(time.Now().Add(-file.PollLookback()))
-	started := time.Now()
 	handled := 0
 	runs := map[string]bool{}
 	var skipped []error
@@ -229,12 +235,15 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		if err := p.closeMissed(ctx, file, account, in, client, r, prs); err != nil {
 			skipped = append(skipped, fmt.Errorf("%s: %w", repo, err))
 		}
+		// Enabling a repository also picks up open pulls from while it was
+		// off, even when the account's poll cursor has passed their updates.
+		catchUp := r.TurnedAt != nil && (state.Polled == nil || !r.TurnedAt.Before(*state.Polled))
 		for _, pr := range prs {
-			if pr.UpdatedAt.Before(since) {
+			if !catchUp && pr.UpdatedAt.Before(since) {
 				continue
 			}
 			action := ingest.ActionPoll
-			if state.Polled == nil && !pr.UpdatedAt.After(state.Known) {
+			if !catchUp && state.Polled == nil && !pr.UpdatedAt.After(state.Known) {
 				action = ingest.ActionBaseline
 			}
 			ev := webhook.Event{

@@ -438,10 +438,33 @@ func TestSyncRepositories(t *testing.T) {
 	if !strings.Contains(logs.String(), "repositories registered") || !strings.Contains(logs.String(), "added=2") {
 		t.Fatalf("logs = %s", logs.String())
 	}
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		for _, name := range []string{"onedr0p/synced", "onedr0p/synced-fork"} {
+			r, err := store.FindRepo(ctx, tx, name)
+			if err != nil {
+				return err
+			}
+			if file.Runs(account, name, r.RepoTraits) {
+				t.Errorf("newly discovered %s should wait for dashboard enablement", name)
+			}
+		}
+		return store.TurnOn(ctx, tx, configfile.RepositoryID(account.ID(), "onedr0p/synced"), true)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	logs.Reset()
 	p.SyncRepositories(ctx)
 	if got := rows(); got != want || strings.Contains(logs.String(), "repositories registered") {
 		t.Fatalf("a second sync: repositories %q, logs %s; want nothing new", got, logs.String())
+	}
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		r, err := store.FindRepo(ctx, tx, "onedr0p/synced")
+		if err == nil && !file.Runs(account, r.FullName, r.RepoTraits) {
+			t.Error("resync should preserve dashboard enablement")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	homeOps := func() bool {
@@ -675,6 +698,9 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = name IN ('onedr0p/home-ops', 'onedr0p/flaky')`); err != nil {
+			return err
+		}
+		if err := store.TurnOn(ctx, tx, configfile.RepositoryID(account.ID(), "onedr0p/flaky"), true); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number = 9`)

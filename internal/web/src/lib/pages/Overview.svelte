@@ -94,7 +94,7 @@
             </div>
           {/if}
           <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
-            <span class="tile-label text-ui-sm text-muted">Repositories</span>
+            <span class="tile-label text-ui-sm text-muted">Enabled repositories</span>
             <span class="tile-value text-[length:24px] font-bold tabular-nums">{wholeNumber(all.repositories)}</span>
           </div>
           <div class="tile bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1">
@@ -183,7 +183,7 @@
                 <tr>
                   <th scope="col">Account</th>
                   <th scope="col">Connection</th>
-                  <th scope="col" class="num">Repos</th>
+                  <th scope="col" class="num">Enabled repos</th>
                   <th scope="col" class="num">Reviews 7d</th>
                   <th scope="col" title="Reviews done today, against the account's daily cap where it has one">Today</th>
                   <th scope="col" title="Open pull requests whose last review failed, hit a limit or found a P0, or whose automatic reviews are paused; and a cap that is close">Needs attention</th>

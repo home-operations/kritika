@@ -168,8 +168,8 @@ type Repository struct {
 	DefaultBranch string `json:"defaultBranch"`
 	Archived      bool   `json:"archived"`
 	Fork          bool   `json:"fork"`
-	// TurnedOn is the choice an admin made in the dashboard, null while
-	// the configuration decides whether the repository runs.
+	// TurnedOn starts false for discovered repositories, then follows the
+	// admin's choice; null lets the configuration decide whether it runs.
 	TurnedOn   *bool      `json:"turnedOn"`
 	Index      IndexState `json:"index"`
 	LastReview *ReviewRef `json:"lastReview"`

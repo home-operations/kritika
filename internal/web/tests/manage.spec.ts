@@ -205,12 +205,22 @@ test.describe('configuration page', () => {
     await expect(panel).toContainText('0 of 4 done');
     await expect(panel.getByRole('listitem')).toHaveText([
       /A GitHub App is connected Declare the App under apps/,
-      /The App reaches a repository Install the App/,
+      /A repository is enabled Install the App.*then turn on a repository/,
       /A review model is set Set review.model/,
       /An embedder is set \(optional\) Set embedding/,
     ]);
     await expect(panel.locator('li.done')).toHaveCount(0);
     await expect(page.locator('input, select, textarea').and(page.locator('main *'))).toHaveCount(0);
+  });
+
+  test('guides an installed account with no enabled repositories to enable one', async ({ page }) => {
+    await setup(page, adminMe, [
+      [/\/api\/v1\/admin\/accounts$/, [{ ...g.adminAccount, live: true, repositories: 0 }]],
+    ]);
+    await page.goto('/#/admin');
+    const step = page.locator('#op-setup').locator('../..').getByRole('listitem').filter({ hasText: 'A repository is enabled' });
+    await expect(step).not.toHaveClass(/done/);
+    await expect(step).toContainText('turn on a repository on its Repositories page');
   });
 
   test('marks each step done as the configuration covers it', async ({ page }) => {

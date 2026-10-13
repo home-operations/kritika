@@ -422,8 +422,8 @@ func loadBytes(t *testing.T, raw []byte) (*File, error) {
 }
 
 // TestEnabledDefault checks enabled resolves like the other overrides: the
-// defaults and an account set where a repository starts, entry or not,
-// until an admin turns it on or off.
+// defaults and an account set the fallback for a repository without a
+// dashboard choice.
 func TestEnabledDefault(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")

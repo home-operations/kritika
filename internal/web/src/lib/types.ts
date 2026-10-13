@@ -210,8 +210,8 @@ export interface Repository {
   defaultBranch: string;
   archived: boolean;
   fork: boolean;
-  // turnedOn is the choice an admin made in the dashboard, null while the
-  // configuration decides.
+  // turnedOn starts false for discovered repositories, then follows the
+  // admin's choice; null lets the configuration decide.
   turnedOn: boolean | null;
   index: IndexState;
   lastReview: ReviewRef | null;

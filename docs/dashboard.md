@@ -174,8 +174,9 @@ whose Setup checklist names each step still missing and what to set for
 it:
 
 1. **A GitHub App is connected:** declared under `apps`.
-2. **The App reaches a repository:** installed on an account its entry
-   under `apps` lists.
+2. **A repository is enabled:** install the App on an account its entry
+   under `apps` lists, then turn on a repository on that account's
+   Repositories page. Newly discovered repositories start off.
 3. **A review model is set:** `review.model`.
 4. **An embedder is set:** `embedding`, which is optional.
 
@@ -199,13 +200,18 @@ A repository's page filters its effective settings.
 An admin switches repositories on and off on an account's Repositories
 page, one at a time or a selection together, and reindexes a selection
 from there too. A switch is the dashboard's own choice, kept per
-repository and audited: the configuration only says where a repository
-starts ([which repositories run](configuration.md#which-repositories-run)).
+repository and audited. Newly discovered repositories wait for enablement;
+the configuration's defaults apply to existing or explicitly listed
+repositories without a dashboard choice
+([which repositories run](configuration.md#which-repositories-run)).
 
 The page lists the repositories that can run, with any fork turned on; its
 Type filter lists the forks, or the archived repositories, instead.
 "Resync from GitHub" lists the repositories the App reaches again, such as
 right after unarchiving one, and disables the ones it no longer reaches.
+After unarchiving and resyncing, turn the repository on if it is still off.
+Enabling a repository lets the next poll pick up its existing open pull
+requests, including ones opened while it was off.
 An account's repository count is of the ones that run.
 
 ## Actions
