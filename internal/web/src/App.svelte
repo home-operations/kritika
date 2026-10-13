@@ -38,6 +38,7 @@
   import type { Route } from './lib/routes';
   import { focusWhenShown, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
+  import Wordmark from './lib/Wordmark.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
   import Page from './lib/pages/Page.svelte';
@@ -149,6 +150,7 @@
   let scopeOpen = $state(false);
   let userOpen = $state(false);
   let navOpen = $state(false);
+  let wordmark = $state<Wordmark>();
 
   // On a phone the actions sit in the header row; on a desktop in a bar
   // over the page, beside the sidebar. One copy of each, placed by width.
@@ -305,9 +307,9 @@
     <header class="topbar flex flex-col bg-canvas border-b-line flex-none w-57 pt-5 px-3 pb-3 border-b-0 border-r border-solid border-r-line overflow-y-auto">
       <a class="skip-link fixed left-3 top-[-100px] z-[var(--z-modal)] p-3 bg-panel" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
       <div class="topbar-row items-center gap-3.5 py-2 px-3.5 contents">
-        <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home">
+        <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home" onmouseenter={() => wordmark?.scramble()}>
           <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
-          <span class="wordmark font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
+          <Wordmark bind:this={wordmark} />
         </a>
 
         {#if narrow}{@render scope()}{/if}

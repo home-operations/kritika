@@ -364,3 +364,20 @@ test('a 401 from a page while signed in stays on sign-in', async ({ page, signIn
   await expect(page).toHaveURL(/#\/signin$/);
   await expect(page.locator('.account-button')).toHaveCount(0);
 });
+
+test('the wordmark scrambles on hover and settles back, and holds still under reduced motion', async ({ page, signIn }) => {
+  await signIn();
+  await page.goto('/');
+  const mark = page.locator('.brand .wordmark');
+  await expect(mark).toHaveText('kritika');
+  const width = (await mark.boundingBox())!.width;
+  await page.locator('.brand').hover();
+  await expect.poll(() => mark.innerText()).not.toBe('kritika');
+  await expect(mark).toHaveText('kritika', { timeout: 3000 });
+  expect((await mark.boundingBox())!.width).toBe(width);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.mouse.move(0, 0);
+  await page.locator('.brand').hover();
+  await page.waitForTimeout(200);
+  await expect(mark).toHaveText('kritika');
+});
