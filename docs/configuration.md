@@ -526,13 +526,18 @@ configuration is applied and again on every poll, and "Resync from GitHub"
 on the Repositories page does the same at once. Each also disables the
 repositories the App no longer reaches, such as one deleted, renamed or
 transferred on GitHub, unless the configuration lists them; a listing that
-fails or comes back empty disables nothing. Whether one runs is decided in
-this order:
+fails or comes back empty disables nothing. Newly discovered repositories
+start **off**, even when the root or `owner/*` sets `enabled: true`. Turn
+them on from the Repositories page to begin polling, indexing and reviews.
+Resyncs and webhooks preserve that choice. Existing repositories keep their
+current state. Repositories first registered from an explicit configuration
+entry use its defaults until an admin changes their state in the UI.
+Whether one runs is decided in this order:
 
 1. an archived repository never runs: unarchive it on GitHub, then
    resync;
-2. one an admin turned on or off on the Repositories page runs as they
-   chose;
+2. a newly discovered repository stays off until an admin turns it on;
+   one an admin turned on or off on the Repositories page runs as they chose;
 3. a fork does not run, since an account can reach many forks it never
    meant to review;
 4. any other runs as `enabled` says, at the root or `owner/*`: on unless

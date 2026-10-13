@@ -496,8 +496,11 @@ func (s *Service) runs(ctx context.Context, req Request) (bool, error) {
 	repo := req.Event.Repository
 	t := repo.RepoTraits
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
-		var err error
-		t.TurnedOn, err = store.TurnedOn(ctx, tx, repoID(req, repo.FullName))
+		id, err := ensureRepository(ctx, tx, req, repo)
+		if err != nil {
+			return err
+		}
+		t.TurnedOn, err = store.TurnedOn(ctx, tx, id)
 		return err
 	})
 	if err != nil {

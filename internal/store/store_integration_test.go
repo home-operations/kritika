@@ -398,7 +398,12 @@ func TestRepositoryTraits(t *testing.T) {
 		{"named again without traits", nil, configfile.RepoTraits{Archived: true, Fork: true}},
 		{"reported unarchived", &configfile.RepoTraits{Fork: true}, configfile.RepoTraits{Fork: true}},
 	} {
-		if got := report(step.report); got != step.want {
+		got := report(step.report)
+		if got.TurnedOn == nil || *got.TurnedOn {
+			t.Fatalf("%s: discovered repository should stay turned off", step.name)
+		}
+		got.TurnedOn = nil
+		if got != step.want {
 			t.Fatalf("%s: traits %+v, want %+v", step.name, got, step.want)
 		}
 	}

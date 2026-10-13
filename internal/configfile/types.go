@@ -491,8 +491,8 @@ type Repository struct {
 
 // RepoTraits is what kritika knows of a repository beyond its name: what the
 // forge says of it, that an archived repository is read-only and a fork a
-// copy of another one, and whether an admin turned it on or off from the
-// dashboard, nil until one does.
+// copy of another one, and its dashboard enablement. Newly discovered
+// repositories start turned off; nil uses the configuration's default.
 type RepoTraits struct {
 	Archived, Fork bool
 	TurnedOn       *bool

@@ -204,6 +204,33 @@ func TestActionsJobs(t *testing.T) {
 	t.Run("cancel of a review whose job already ended is 409", func(t *testing.T) { testCancelEndedJob(t, e) })
 	t.Run("reindex enqueues a full index job, then dedupes", func(t *testing.T) { testReindexJob(t, e) })
 	t.Run("a repository is turned off and on, audited", func(t *testing.T) { testTurnOn(t, e) })
+	t.Run("a discovered repository is enabled through the UI", func(t *testing.T) { testEnableDiscovered(t, e) })
+}
+
+func testEnableDiscovered(t *testing.T, e *actionsEnv) {
+	ctx := t.Context()
+	reached := []store.ReachedRepository{{FullName: "aj/discovered", DefaultBranch: "main"}}
+	const path = "/api/v1/accounts/github/aj/repos/aj/discovered"
+	for _, on := range []bool{false, true, false} {
+		if _, _, err := e.st.RegisterRepositories(ctx, e.accountID, reached, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+		status, body := e.send(http.MethodGet, path, "")
+		e.expect(status, body, http.StatusOK, "")
+		var r Repository
+		if err := json.Unmarshal(body, &r); err != nil {
+			t.Fatal(err)
+		}
+		if r.Enabled != on || r.TurnedOn == nil || *r.TurnedOn != on {
+			t.Fatalf("repository after discovery: enabled %v, turned on %v; want %v", r.Enabled, r.TurnedOn, on)
+		}
+		next := `{"on":true}`
+		if on {
+			next = `{"on":false}`
+		}
+		status, body = e.send(http.MethodPut, path+"/turned-on", next)
+		e.expect(status, body, http.StatusNoContent, "")
+	}
 }
 
 func testTurnOn(t *testing.T, e *actionsEnv) {

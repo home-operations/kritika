@@ -6,12 +6,15 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
 
@@ -31,6 +34,11 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	a := &file.Accounts[0]
+	const discovered = "onedr0p/onboard-discovered"
+	if _, _, err := st.RegisterRepositories(ctx, a.ID(), []store.ReachedRepository{{FullName: discovered}}, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	// The suites share one database: count from what is already there,
@@ -109,5 +117,28 @@ func TestOnboarderKeepsToItsWindow(t *testing.T) {
 	}
 	if jobs, _ := queued(); jobs != 3 {
 		t.Fatalf("with repositories off: queued %d jobs, want still 3", jobs)
+	}
+	var n int
+	if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job
+		WHERE id > $1 AND kind = 'index' AND args->>'repository_id' = $2`, lastJob, configfile.RepositoryID(a.ID(), discovered)).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("discovered repository got %d onboarding jobs before enablement", n)
+	}
+	if err := st.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
+		return store.TurnOn(ctx, tx, configfile.RepositoryID(a.ID(), discovered), true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Offer(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job
+		WHERE id > $1 AND kind = 'index' AND args->>'repository_id' = $2`, lastJob, configfile.RepositoryID(a.ID(), discovered)).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("newly enabled repository got %d onboarding jobs, want 1", n)
 	}
 }

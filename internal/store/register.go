@@ -63,9 +63,11 @@ func (s *Store) RegisterRepositories(
 
 // EnsureRepository records repository r of account accountID as the forge
 // names it, spelling included, and returns its id and whether it is new. A
-// row the forge manages is enabled, since the forge just named it; one the
-// spec lists keeps its enabled flag. A DefaultBranch of "" leaves the known
-// one, and so does a nil Traits the known traits. A row enabled again loses
+// row the forge manages is reachable (enabled), since the forge just named
+// it, but starts turned off until an admin enables it in the dashboard.
+// Existing rows keep their turned_on choice. A row the spec lists keeps its
+// enabled flag. A DefaultBranch of "" leaves the known one, and so does a
+// nil Traits the known traits. A row enabled again loses
 // the time the index sweep found it stopped: it may run, and stop again,
 // before the next sweep sees it. updated_at is the time of the write, not
 // of the transaction's start, for RegisterRepositories to leave a row
@@ -77,8 +79,8 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 	}
 	// xmax is 0 only on a row the statement inserted, not one it updated.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, archived, fork, updated_at)
-		VALUES ($1, $2, $3, $4, 'forge', true, coalesce($5, false), coalesce($6, false), clock_timestamp())
+		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, turned_on, archived, fork, updated_at)
+		VALUES ($1, $2, $3, $4, 'forge', true, false, coalesce($5, false), coalesce($6, false), clock_timestamp())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
@@ -96,8 +98,9 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 	return id, isNew, nil
 }
 
-// TurnedOn is the choice an admin made for the repository with id, nil
-// when none was or the repository is not known yet.
+// TurnedOn is the repository's dashboard enablement: false for a newly
+// discovered repository, then the admin's choice. It is nil for repositories
+// using the configuration's default or not known yet.
 func TurnedOn(ctx context.Context, tx pgx.Tx, id string) (*bool, error) {
 	var on *bool
 	err := tx.QueryRow(ctx, `SELECT turned_on FROM repositories WHERE id = $1`, id).Scan(&on)

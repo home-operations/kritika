@@ -89,8 +89,9 @@ func (p *Poller) Run(ctx context.Context) {
 
 // SyncRepositories registers the repositories each running connection's
 // App reaches on the accounts it serves, as a webhook from each would, so
-// they are known, polled and indexed without one: an App installed before
-// kritika started sends no installation event. The forge-reported
+// they appear in the dashboard without one: an App installed before
+// kritika started sends no installation event. New repositories wait for an
+// admin to turn them on before polling or indexing. The forge-reported
 // repositories an account's listing no longer has are disabled, in case
 // the webhook that said so was missed. A connection whose listing fails,
 // or takes longer than reachTimeout, is logged and left for the next poll,
