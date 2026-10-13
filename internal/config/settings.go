@@ -9,7 +9,7 @@ import (
 )
 
 // Settings holds non-secret application settings from the configuration file.
-// Environment variables remain available for deployments migrating to a file.
+// Operational settings can also be supplied through environment variables.
 type Settings struct {
 	// Addr is the listen address of serve's one public listener: the
 	// webhooks, /hooks/{connection}, and the dashboard. Port 8080 matches

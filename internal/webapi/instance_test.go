@@ -53,14 +53,13 @@ apps:
 }
 
 // TestInstanceSettingsFileLayer: the providers, default models and
-// embedder the file and the environment set are listed with their source,
+// embedder the file sets are listed with their source,
 // and without their keys.
 func TestInstanceSettingsFileLayer(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-secret")
-	t.Setenv("KRITIKA_REVIEW_MODEL", "gw/big")
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritika:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
-review: { fallback: gw/small }
+review: { model: gw/big, fallback: gw/small }
 trigger: { settle: 45s }
 embedding: { model: gw/e1, dims: 8 }
 `))
@@ -73,7 +72,7 @@ embedding: { model: gw/e1, dims: 8 }
 	}
 	for key, want := range map[string]InstanceSetting{
 		"providers gw":    {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
-		"review model":    {"review", "model", "gw/big", configfile.SourceEnv},
+		"review model":    {"review", "model", "gw/big", configfile.SourceFile},
 		"review fallback": {"review", "fallback", "gw/small", configfile.SourceFile},
 		"trigger settle":  {"trigger", "settle", "45s", configfile.SourceFile},
 		"embedding gw/e1": {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},

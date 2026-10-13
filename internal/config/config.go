@@ -67,10 +67,8 @@ const (
 type Config struct {
 	Settings
 
-	// ConfigFile is the path of the optional application configuration file.
-	// serve loads it at startup,
-	// and a change takes a restart. Empty means no file, and the
-	// environment alone declares them.
+	// ConfigFile is the application configuration path, required by serve.
+	// Changes take effect after a restart.
 	ConfigFile string `env:"KRITIKA_CONFIG_FILE"`
 
 	// DatabaseURL is the DSN every process connects with for request and
@@ -108,6 +106,9 @@ type Config struct {
 // ValidateServe checks what serve needs beyond the common set.
 func (c *Config) ValidateServe() error {
 	var errs []error
+	if c.ConfigFile == "" {
+		errs = append(errs, errors.New("config: KRITIKA_CONFIG_FILE is required to serve"))
+	}
 	if c.Executor == ExecutorKubernetes && c.RunnerImage == "" {
 		errs = append(errs, errors.New("config: KRITIKA_RUNNER_IMAGE is required with the kubernetes executor"))
 	}

@@ -97,9 +97,6 @@ spec:
             {{- fail (printf "env.%s: the chart sets this variable from its other values" $name) }}
             {{- end }}
             {{- end }}
-            {{- if hasPrefix "KRITIKA_" $name }}
-            {{- fail (printf "env.%s: use the application config or chart deployment values instead" $name) }}
-            {{- end }}
             - name: {{ $name }}
               {{- if kindIs "map" $value }}
               {{- tpl (toYaml $value) $ | nindent 14 }}

@@ -16,7 +16,7 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// LoadSettings reads defaults and legacy environment settings, then the file.
+// LoadSettings reads defaults and operational environment settings, then the file.
 // The complete document is checked for unknown fields by configfile.Parse.
 func LoadSettings(raw []byte) (Settings, error) {
 	s, err := env.ParseAs[Settings]()

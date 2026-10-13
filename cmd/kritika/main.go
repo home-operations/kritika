@@ -254,7 +254,7 @@ func serve(
 
 // errNoSignIn is a configuration that leaves the dashboard no way to sign
 // in, which serve refuses to start with.
-var errNoSignIn = errors.New("the dashboard has no way to sign in: set KRITIKA_AUTH_ADMIN_PASSWORD, or auth in the configuration file")
+var errNoSignIn = errors.New("the dashboard has no way to sign in: configure auth in the configuration file")
 
 // loadConfig reads the configuration file at path, none when path is "",
 // for serve: it is read once, and a change takes a restart.
@@ -480,7 +480,7 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 // rather than failing every Job.
 func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]any, logger *slog.Logger) (executor.Executor, error) {
 	if err := executor.CheckResources(resources); err != nil {
-		return nil, fmt.Errorf("KRITIKA_RUNNER_RESOURCES: %w", err)
+		return nil, fmt.Errorf("runner.resources: %w", err)
 	}
 	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})

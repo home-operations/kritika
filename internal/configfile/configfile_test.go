@@ -163,25 +163,27 @@ func TestConnectionCredentials(t *testing.T) {
 }
 
 func TestConfigHashLeavesSecretValuesOut(t *testing.T) {
-	raw := []byte("auth: {}\n")
-	secrets := []string{"KRITIKA_AUTH_ADMIN_PASSWORD"}
-	base := configHash(raw, []string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=30s", "HOME=/x"}, secrets)
-	for name, tt := range map[string]struct {
-		environ []string
-		secrets []string
-		same    bool
-	}{
-		"another password":        {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=other", "KRITIKA_TRIGGER_SETTLE=30s"}, secrets, true},
-		"a variable not overlaid": {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=30s", "USER=y"}, secrets, true},
-		"another overlay value":   {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=90s"}, secrets, false},
-		"another secret named":    {[]string{"KRITIKA_AUTH_ADMIN_PASSWORD=hunter2", "KRITIKA_TRIGGER_SETTLE=30s"}, []string{"KRITIKA_AUTH_ADMIN_PASSWORD", "OIDC_SECRET"}, false},
-	} {
-		if got := configHash(raw, tt.environ, tt.secrets) == base; got != tt.same {
-			t.Errorf("%s: hash unchanged = %v, want %v", name, got, tt.same)
-		}
+	t.Setenv("PASSWORD", "first")
+	raw := []byte("auth: {admin: {password: {env: PASSWORD}}}\n")
+	first, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(base, "hunter2") {
-		t.Fatal("the hash is hex")
+	t.Setenv("PASSWORD", "second")
+	second, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Hash() != second.Hash() {
+		t.Fatal("secret value changed the hash")
+	}
+	t.Setenv("OTHER_PASSWORD", "second")
+	other, err := Parse([]byte(strings.ReplaceAll(string(raw), "PASSWORD", "OTHER_PASSWORD")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Hash() == other.Hash() {
+		t.Fatal("secret reference did not change the hash")
 	}
 }
 
@@ -193,11 +195,10 @@ func TestHashAndConnectionLookup(t *testing.T) {
 	if len(f.Hash()) != 64 {
 		t.Fatalf("hash = %q", f.Hash())
 	}
-	// The environment overlay is part of the configuration, so a replica
-	// with another one does not hash alike.
+	// Only the file and explicit secret references affect the hash.
 	t.Setenv("KRITIKA_TRIGGER_SETTLE", "90s")
-	if g, err := load(t, fixture(t)); err != nil || g.Hash() == f.Hash() {
-		t.Fatalf("hash unchanged by an overlay variable: %v", err)
+	if g, err := load(t, fixture(t)); err != nil || g.Hash() != f.Hash() {
+		t.Fatalf("hash changed by an unused variable: %v", err)
 	}
 	ho, ok := f.Account(ForgeGitHub, "Home-Operations")
 	if !ok || ho.Name != "home-operations" || ho.ID() != AccountID(ForgeGitHub, "home-operations") || ho.Slug() != "github/home-operations" {
@@ -682,7 +683,7 @@ func TestParseRejects(t *testing.T) {
 		{"a defaults wrapper", "defaults: { enabled: false }\n" + minimal, "field defaults not found"},
 		{"a models block at the root", "models: { review: p/m }\n" + minimal, "field models not found"},
 		{"a flat settle on an entry", acme("  acme/x: { settle: 1m }\n"), "field settle not found"},
-		{"a file key that moved to the environment", "polling: { interval: 5m }\n" + minimal, "field polling not found"},
+		{"an unknown polling section", "polling: { interval: 5m }\n" + minimal, "field polling not found"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

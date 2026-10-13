@@ -1,5 +1,5 @@
 // Package configfile loads application policy and runtime settings from YAML.
-// Legacy environment variables may supply settings omitted from the file.
+// Operational settings support environment variables; policy and app declarations use the file.
 //
 // The file is loaded whole: the document is decoded with unknown keys
 // rejected, every secret reference resolved, every filter compiled and
@@ -204,7 +204,7 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
-// DefaultRunnerDeadline bounds a runner Job when KRITIKA_RUNNER_DEADLINE
+// DefaultRunnerDeadline bounds a runner Job when runner.deadline
 // sets none.
 const DefaultRunnerDeadline = 15 * time.Minute
 
@@ -677,8 +677,7 @@ type Egress struct {
 	credentials map[string]Secret
 }
 
-// File is the running configuration, as the configuration file and its
-// environment set it.
+// File is the running configuration from the file and operational environment settings.
 type File struct {
 	Auth        Auth
 	Connections []Connection
@@ -696,13 +695,6 @@ type File struct {
 	hash string
 	// unserved are the account entries no connection serves.
 	unserved []Account
-	// envConnection names the connection the environment declared, "" for
-	// none.
-	envConnection string
-	// envProvider names the provider the environment declared, "" for none,
-	// and envKeys holds the instance defaults it set, by dotted path.
-	envProvider string
-	envKeys     map[string]bool
 	// secretEnv are the variables f's secrets came from, sorted.
 	secretEnv []string
 }

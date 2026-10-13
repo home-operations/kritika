@@ -150,9 +150,6 @@ func (f *File) Sources(a *Account, fullName string) map[string]Source {
 				out[p.Key] = sc.source
 			}
 		}
-		if out[p.Key] == SourceDefaults && f.envKeys[p.Key] {
-			out[p.Key] = SourceEnv
-		}
 	}
 	return out
 }

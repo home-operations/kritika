@@ -39,17 +39,14 @@ func TestChatGPTProviders(t *testing.T) {
 			}
 		})
 	}
-	t.Run("environment can declare a disconnected provider", func(t *testing.T) {
-		t.Setenv("KRITIKA_PROVIDERS_NAME", "plan")
-		t.Setenv("KRITIKA_PROVIDERS_TYPE", "chatgpt")
-		t.Setenv("KRITIKA_REVIEW_MODEL", "plan/gpt-x")
-		f, err := Parse([]byte(minimal))
+	t.Run("file can declare a disconnected provider", func(t *testing.T) {
+		f, err := Parse([]byte(minimal + "providers: {plan: {type: chatgpt}}\nreview: {model: plan/gpt-x}\n"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		p, ok := f.Provider(nil, "plan")
 		if !ok || p.Type != ProviderChatGPT || p.ChatGPTSessionKey() != "plan" {
-			t.Fatalf("environment provider = %+v, %v", p, ok)
+			t.Fatalf("file provider = %+v, %v", p, ok)
 		}
 	})
 }

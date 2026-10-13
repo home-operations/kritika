@@ -91,7 +91,7 @@ func TestTools(t *testing.T) {
 	refused := map[string]string{
 		`{"name": "Helm", "image": "x"}`:                                 "must be lowercase",
 		`{"name": "helm", "image": "x"}, {"name": "helm", "image": "y"}`: `"helm" is listed twice`,
-		`{"name": "helm"}`: "KRITIKA_RUNNER_TOOLS[0].image is required",
+		`{"name": "helm"}`: "runner.tools[0].image is required",
 		`{"name": "helm", "image": "x", "path": "usr/bin"}`:                                     "must be a clean absolute path",
 		`{"name": "helm", "image": "x", "path": "/usr/../etc"}`:                                 "must be a clean absolute path",
 		`{"name": "helm", "image": "x", "commands": ["bin/helm"]}`:                              "must be a bare command name",

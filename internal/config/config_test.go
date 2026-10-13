@@ -145,11 +145,12 @@ func TestCommandValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = cfg.ValidateServe()
-	for _, want := range []string{"KRITIKA_RUNNER_IMAGE", "KRITIKA_WEB_URL", "KRITIKA_GATEWAY_URL"} {
+	for _, want := range []string{"KRITIKA_CONFIG_FILE", "KRITIKA_RUNNER_IMAGE", "KRITIKA_WEB_URL", "KRITIKA_GATEWAY_URL"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("serve without a runner image, a web URL or the gateway = %v, want %s named", err, want)
 		}
 	}
+	cfg.ConfigFile = "/etc/kritika/config.yaml"
 	cfg.RunnerImage, cfg.WebURL, cfg.GatewayURL = "img", "https://dash.example.com", "http://kritika-gateway:8082"
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatal(err)

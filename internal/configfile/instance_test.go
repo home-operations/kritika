@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -66,68 +65,7 @@ func TestFileInstanceDefaults(t *testing.T) {
 	}
 }
 
-// TestInstanceDefaultsEnv: the environment declares one provider, the
-// default models and the embedder, reported as the environment's, over
-// the file's, and refuses a variable naming no key.
-func TestInstanceDefaultsEnv(t *testing.T) {
-	setInstanceEnv(t)
-	t.Setenv("KRITIKA_PROVIDERS_API_KEY", "sk-env")
-	t.Setenv("KRITIKA_REVIEW_MODEL", "openrouter/env-model")
-	// How many review jobs a replica runs shares the prefix and is no
-	// setting of the file.
-	t.Setenv("KRITIKA_REVIEW_WORKERS", "4")
-	t.Setenv("KRITIKA_EMBEDDING_MODEL", "openrouter/e-env")
-	t.Setenv("KRITIKA_EMBEDDING_DIMS", "32")
-	doc := strings.Replace(fileWithDefaults, "providers:\n  openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }\n", "", 1)
-	doc = strings.Replace(doc, "model: openrouter/big, ", "", 1)
-	doc = strings.Replace(doc, "embedding: { model: openrouter/e1, dims: 8 }\n", "", 1)
-	f, err := Parse([]byte(doc))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	a := &f.Accounts[0]
-	if p, _ := f.Provider(a, "openrouter"); p.APIKeyValue().Value() != "sk-env" || p.Type != ProviderOpenRouter || p.Retries != 0 {
-		t.Fatalf("provider = %+v; want the environment's, typed after its default name", p)
-	}
-	if s := f.Settings(a, "acme/x"); s.Models.Review != "openrouter/env-model" || s.Models.Fallback != "openrouter/small" {
-		t.Fatalf("models = %+v; want the environment's review model over the file's fallback", s.Models)
-	}
-	if src := f.Sources(a, "acme/x"); src["review.model"] != SourceEnv || src["review.fallback"] != SourceDefaults {
-		t.Fatalf("sources = %v", src)
-	}
-	// The environment sets the embedder key by key over the file's, on the
-	// environment's key.
-	if e := f.Embedding; e.Model != "e-env" || e.Dims != 32 || e.APIKeyValue().Value() != "sk-env" {
-		t.Fatalf("embedding = %+v", e)
-	}
-	layer := f.FileLayer()
-	if layer.Providers["openrouter"].Source != SourceEnv || layer.Review.Source != SourceEnv || layer.Embedding.Source != SourceEnv {
-		t.Fatalf("file layer = %+v; want the environment's values as its", layer)
-	}
-
-	for _, tt := range []struct{ name, key, value, want string }{
-		{"an unknown provider key", "KRITIKA_PROVIDERS_MODEL", "x", "KRITIKA_PROVIDERS_MODEL names no provider setting"},
-		{"retries that are not a number", "KRITIKA_PROVIDERS_RETRIES", "some", "KRITIKA_PROVIDERS_RETRIES must be a whole number"},
-		{"retries past the bound", "KRITIKA_PROVIDERS_RETRIES", "6", "providers.openrouter.retries must be between 0 and 5"},
-		{"an unknown trigger key", "KRITIKA_TRIGGER_FILTER", "true", "KRITIKA_TRIGGER_FILTER names no setting"},
-		{"a trigger key the environment does not set", "KRITIKA_TRIGGER_FORKS", "true", "KRITIKA_TRIGGER_FORKS names no setting"},
-		{"a settle that is not a duration", "KRITIKA_TRIGGER_SETTLE", "soon", "KRITIKA_TRIGGER_SETTLE"},
-		{"an unknown embedding key", "KRITIKA_EMBEDDING_URL", "x", "KRITIKA_EMBEDDING_URL names no embedding setting"},
-		{"dims that are not a number", "KRITIKA_EMBEDDING_DIMS", "many", "KRITIKA_EMBEDDING_DIMS must be a whole number"},
-		{"a key from a file", "KRITIKA_PROVIDERS_API_KEY_FILE", "/nope", "KRITIKA_PROVIDERS_API_KEY_FILE names no provider setting"},
-		{"a name that is no type, without one", "KRITIKA_PROVIDERS_NAME", "router", "embedding.model references provider"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.key, tt.value)
-			if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("Parse = %v; want it to mention %q", err, tt.want)
-			}
-		})
-	}
-}
-
-// TestProviderRetries: a provider's retries come from the file or the
-// environment, within the bound.
+// TestProviderRetries checks the file's retry bounds.
 func TestProviderRetries(t *testing.T) {
 	setInstanceEnv(t)
 	withRetries := strings.Replace(fileWithDefaults, "apiKey: { env: TEST_PROVIDER_KEY } }", "apiKey: { env: TEST_PROVIDER_KEY }, retries: 2 }", 1)
@@ -142,15 +80,6 @@ func TestProviderRetries(t *testing.T) {
 		!strings.Contains(err.Error(), "providers.openrouter.retries must be between 0 and 5") {
 		t.Fatalf("Parse with negative retries = %v", err)
 	}
-	t.Setenv("KRITIKA_PROVIDERS_RETRIES", "3")
-	t.Setenv("KRITIKA_PROVIDERS_API_KEY", "sk-env")
-	f, err = Parse([]byte(strings.Replace(fileWithDefaults, "providers:\n  openrouter: { type: openrouter, apiKey: { env: TEST_PROVIDER_KEY } }\n", "", 1)))
-	if err != nil {
-		t.Fatalf("Parse with the environment's retries: %v", err)
-	}
-	if p, _ := f.Provider(&f.Accounts[0], "openrouter"); p.Retries != 3 {
-		t.Fatalf("retries = %d, want the environment's 3", p.Retries)
-	}
 }
 
 // TestFileDefaultModelNeedsAProvider: a default model naming a provider
@@ -163,87 +92,26 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 	}
 }
 
-// TestFileReviewDefaults: the file and the environment set the defaults'
-// diagram, approve, limit and settle, which accounts inherit with the
-// defaults' or the environment's source. mode is no longer a setting in
-// either.
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
-	t.Setenv("KRITIKA_TRIGGER_SETTLE", "45s")
-	t.Setenv("KRITIKA_REVIEW_APPROVE", "true")
-	t.Setenv("KRITIKA_REVIEW_FIXES", "true")
-	t.Setenv("KRITIKA_REVIEW_COST", "true")
-	t.Setenv("KRITIKA_REVIEW_EFFORT", "low")
-	t.Setenv("KRITIKA_REVIEW_INCREMENTAL", "7")
-	models := "review: { model: openrouter/big, fallback: openrouter/small"
-	withDefaults := func(reviewKeys, rootKeys string) []byte {
-		return []byte(strings.Replace(fileWithDefaults, models+" }\n", models+reviewKeys+" }\n"+rootKeys, 1))
-	}
-	t.Setenv("KRITIKA_TRIGGER_LIMIT", "3")
-	f, err := Parse(withDefaults(", diagram: true", ""))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
+	doc := strings.Replace(fileWithDefaults, "review: { model: openrouter/big, fallback: openrouter/small }",
+		"review: {model: openrouter/big, fallback: openrouter/small, effort: low, approve: true, fixes: true, cost: true, incremental: 7, diagram: true}", 1)
+	f := mustLoad(t, doc+"trigger: {settle: 45s, limit: 3}\n")
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
 	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
 		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost {
-		t.Fatalf("settings = %+v; want the file's and the environment's, the environment's effort over the file's", s)
+		t.Fatalf("settings = %+v", s)
 	}
-	src := f.Sources(a, "acme/x")
-	for key, want := range map[string]Source{
-		"trigger.limit": SourceEnv, "trigger.settle": SourceEnv,
-		"review.approve": SourceEnv, "review.fixes": SourceEnv, "review.incremental": SourceEnv,
-		"review.diagram": SourceDefaults, "review.cost": SourceEnv, "review.effort": SourceEnv,
-	} {
-		if src[key] != want {
-			t.Errorf("source of %s = %s, want %s", key, src[key], want)
-		}
-	}
-	want := []FileDefault{
-		{"review.effort", FileValue{Value: "low", Source: SourceEnv}},
-		{"review.approve", FileValue{Value: "true", Source: SourceEnv}},
-		{"review.fixes", FileValue{Value: "true", Source: SourceEnv}},
-		{"review.incremental", FileValue{Value: "7", Source: SourceEnv}},
-		{"review.diagram", FileValue{Value: "true", Source: SourceFile}},
-		{"review.cost", FileValue{Value: "true", Source: SourceEnv}},
-		{"trigger.settle", FileValue{Value: "45s", Source: SourceEnv}},
-		{"trigger.limit", FileValue{Value: "3", Source: SourceEnv}},
-	}
-	if got := f.FileLayer().Defaults; !slices.Equal(got, want) {
-		t.Fatalf("file layer defaults = %+v, want %+v", got, want)
-	}
-	if _, err := Parse(withDefaults("", "mode: agentic\n")); err == nil || !strings.Contains(err.Error(), "mode") {
-		t.Fatalf("mode = %v, want it refused as an unknown key", err)
-	}
-	t.Setenv("KRITIKA_REVIEW_MODE", "agentic")
-	if _, err := Parse(withDefaults("", "")); err == nil || !strings.Contains(err.Error(), "KRITIKA_REVIEW_MODE names no setting") {
-		t.Fatalf("KRITIKA_REVIEW_MODE = %v, want it refused", err)
-	}
-	if err := os.Unsetenv("KRITIKA_REVIEW_MODE"); err != nil {
-		t.Fatal(err)
-	}
-	for _, tt := range []struct{ env, value, want string }{
-		{"KRITIKA_REVIEW_APPROVE", "yes please", "KRITIKA_REVIEW_APPROVE must be true or false"},
-		{"KRITIKA_REVIEW_FIXES", "1.5", "KRITIKA_REVIEW_FIXES must be true or false"},
-		{"KRITIKA_REVIEW_DIAGRAM", "sure", "KRITIKA_REVIEW_DIAGRAM must be true or false"},
-		{"KRITIKA_REVIEW_COST", "sure", "KRITIKA_REVIEW_COST must be true or false"},
-		{"KRITIKA_REVIEW_EFFORT", "turbo", `review.effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`},
-		{"KRITIKA_REVIEW_INCREMENTAL", "many", "KRITIKA_REVIEW_INCREMENTAL must be a whole number"},
-		{"KRITIKA_TRIGGER_LIMIT", "-1", "trigger.limit must not be negative"},
-	} {
-		t.Setenv(tt.env, tt.value)
-		if _, err := Parse(withDefaults("", "")); err == nil || !strings.Contains(err.Error(), tt.want) {
-			t.Fatalf("%s=%s: err = %v, want it to mention %q", tt.env, tt.value, err, tt.want)
-		}
-		if err := os.Unsetenv(tt.env); err != nil {
-			t.Fatal(err)
+	for _, d := range f.FileLayer().Defaults {
+		if d.Source != SourceFile || f.Sources(a, "acme/x")[d.Key] != SourceDefaults {
+			t.Fatalf("source = %+v", d)
 		}
 	}
 }
 
 // TestConfidenceSettings: the confidence model and threshold resolve scope
-// by scope like any setting, from the file or the environment, and are held
+// by scope like any setting, from the file, and are held
 // to a declared provider and the score's scale.
 func TestConfidenceSettings(t *testing.T) {
 	setInstanceEnv(t)
@@ -254,7 +122,7 @@ func TestConfidenceSettings(t *testing.T) {
 	if c := f.Settings(&f.Accounts[0], "acme/x").Confidence; c != (Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
 		t.Fatalf("confidence = %+v; want no model, the provider's effort, the default threshold and the lowest risk", c)
 	}
-	for _, tt := range []struct{ name, doc, env, want string }{
+	for _, tt := range []struct{ name, doc, want string }{
 		{name: "a threshold off the scale", doc: "confidence: { threshold: 6 }\n", want: "configfile: confidence.threshold must be between 0 and 5, got 6"},
 		{name: "a negative threshold on an entry", doc: "repositories:\n  acme/x: { confidence: { threshold: -1 } }\n",
 			want: "repositories.acme/x.confidence.threshold must be between 0 and 5"},
@@ -262,33 +130,22 @@ func TestConfidenceSettings(t *testing.T) {
 			want: `configfile: confidence.model references provider "nowhere"`},
 		{name: "a fallback of no declared provider", doc: "confidence: { model: openrouter/judge, fallback: nowhere/judge }\n",
 			want: `configfile: confidence.fallback references provider "nowhere"`},
-		{name: "a fallback in the environment that names no model", env: "FALLBACK=openrouter", want: `confidence.fallback must be "<provider>/<model>"`},
 		{name: "a risk that is no level", doc: "confidence: { risk: none }\n",
 			want: `configfile: confidence.risk must be low, medium, high or critical, got "none"`},
-		{name: "a risk in the environment that is no level", env: "RISK=severe", want: "confidence.risk must be low, medium, high or critical"},
 		{name: "an effort that is no level", doc: "confidence: { effort: turbo }\n",
 			want: `configfile: confidence.effort must be none, minimal, low, medium, high, xhigh or max, got "turbo"`},
-		{name: "an effort in the environment that is no level", env: "EFFORT=turbo", want: "confidence.effort must be none, minimal, low, medium, high, xhigh or max"},
-		{name: "a threshold in the environment that is no number", env: "THRESHOLD=high", want: "KRITIKA_CONFIDENCE_THRESHOLD must be a whole number"},
-		{name: "a gate in the environment that is no boolean", env: "GATE=maybe", want: "KRITIKA_CONFIDENCE_GATE must be true or false"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if name, value, ok := strings.Cut(tt.env, "="); ok {
-				t.Setenv("KRITIKA_CONFIDENCE_"+name, value)
-			}
 			if _, err := Parse([]byte(fileWithDefaults + tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tt.want)
 			}
 		})
 	}
-	doc := fileWithDefaults + `confidence: { model: openrouter/judge, effort: low, risk: medium, instructions: "Image bumps are low." }
+	doc := fileWithDefaults + `confidence: { model: openrouter/judge, fallback: openrouter/judge-small, threshold: 4, gate: true, effort: low, risk: medium, instructions: "Image bumps are low." }
 repositories:
   acme/x: { confidence: { threshold: 3, gate: false, risk: high, fallback: "" } }
   acme/y: { confidence: { model: "", effort: "", instructions: "" } }
 `
-	t.Setenv("KRITIKA_CONFIDENCE_FALLBACK", "openrouter/judge-small")
-	t.Setenv("KRITIKA_CONFIDENCE_THRESHOLD", "4")
-	t.Setenv("KRITIKA_CONFIDENCE_GATE", "true")
 	if f, err = Parse([]byte(doc)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -296,7 +153,7 @@ repositories:
 	for repo, want := range map[string]Confidence{
 		"acme/z": {Model: "openrouter/judge", Fallback: "openrouter/judge-small", Effort: model.EffortLow, Threshold: 4, Gate: true, Risk: review.RiskMedium,
 			Instructions: "Image bumps are low."},
-		// A fallback written empty drops the environment's.
+		// A fallback written empty drops the root's.
 		"acme/x": {Model: "openrouter/judge", Effort: model.EffortLow, Threshold: 3, Gate: false, Risk: review.RiskHigh, Instructions: "Image bumps are low."},
 		// An effort written empty leaves it to the provider.
 		"acme/y": {Fallback: "openrouter/judge-small", Threshold: 4, Gate: true, Risk: review.RiskMedium},
@@ -305,8 +162,8 @@ repositories:
 			t.Errorf("confidence of %s = %+v, want %+v", repo, got, want)
 		}
 	}
-	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceEnv ||
-		src["confidence.threshold"] != SourceEnv || src["confidence.gate"] != SourceEnv {
+	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceDefaults ||
+		src["confidence.threshold"] != SourceDefaults || src["confidence.gate"] != SourceDefaults {
 		t.Fatalf("sources = %v", src)
 	}
 	defaults := f.FileLayer().Defaults
@@ -314,8 +171,8 @@ repositories:
 	for _, d := range defaults {
 		layer = append(layer, d.Key+"="+d.Value+" ("+string(d.Source)+")")
 	}
-	if want := []string{"confidence.model=openrouter/judge (file)", "confidence.fallback=openrouter/judge-small (env)", "confidence.effort=low (file)",
-		"confidence.threshold=4 (env)", "confidence.gate=true (env)", "confidence.risk=medium (file)"}; !slices.Equal(layer, want) {
+	if want := []string{"confidence.model=openrouter/judge (file)", "confidence.fallback=openrouter/judge-small (file)", "confidence.effort=low (file)",
+		"confidence.threshold=4 (file)", "confidence.gate=true (file)", "confidence.risk=medium (file)"}; !slices.Equal(layer, want) {
 		t.Fatalf("file layer = %v, want %v", layer, want)
 	}
 }

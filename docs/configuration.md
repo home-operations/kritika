@@ -2,8 +2,9 @@
 
 The YAML configuration file is the primary interface for application settings:
 sign-in, GitHub Apps, providers, review policy, logging, workers, polling and
-retention. `KRITIKA_CONFIG_FILE` names the file. Helm's `config` uses exactly
-that document structure and renders it into a ConfigMap.
+retention. `KRITIKA_CONFIG_FILE` names the file and is required by `serve`.
+Helm's `config` uses exactly that document structure and renders it into a
+ConfigMap.
 
 - **Secrets** are references such as `{ env: ADMIN_PASSWORD }`, never literal
   values in the file. Helm's `env` and `envFrom` supply those variables from
@@ -21,15 +22,18 @@ that document structure and renders it into a ConfigMap.
   settings through environment variables. Omit chart-owned keys from that file:
   `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
   `databaseRunnerRole`, `executor`, and `runner`.
-- **Legacy environment settings** remain supported for migration, including
-  env-only startup. A setting cannot appear in both the file and the environment,
-  even with the same value. An app or provider of the same name cannot be
-  declared in both sources. Conflicts fail startup with the relevant names.
-  A file key left out uses its environment value, when supported, or the
-  application's default. Explicit `false` and `0` remain explicit values.
+- **Operational settings** support either file or environment: logging, listen
+  addresses, workers, polling, retention, database role names, executor and
+  runner settings. A setting cannot appear in both sources, even with the same
+  value. Conflicts fail startup with the relevant names. Omitted settings use
+  application defaults; explicit `false` and `0` remain explicit values.
+- **Application declarations and policy** use the file: `auth`, `apps`,
+  `providers`, `embedding`, review policy, account and repository settings.
+  Environment variables only supply values explicitly referenced by these
+  sections. There are no implicit env declarations or policy overrides.
 - **Startup** reads and validates the document at startup; changes require
   a restart. Unknown keys and invalid values fail startup. Runtime validation
-  reports all failing bounds together, with file paths and legacy environment
+  reports all failing bounds together, with file paths and environment
   variable names. Durations use strings such as `10m` or `0s`.
   The chart rolls pods
   when its rendered configuration changes. External ConfigMap and Secret changes
@@ -38,6 +42,25 @@ that document structure and renders it into a ConfigMap.
 The dashboard controls whether each repository is enabled. A repository's own
 [`.kritika.yaml`](repository-config.md) narrows the configured policy.
 CEL expression keys end in `Expr`, or use `expr` within a condition.
+
+## Environment-only inputs
+
+These inputs have no configuration-file equivalent:
+
+| Variable | Purpose |
+| --- | --- |
+| `KRITIKA_CONFIG_FILE` | Configuration file path, required by `serve` |
+| `KRITIKA_DATABASE_URL` | Application DSN for `serve`; runner DSN for `run` |
+| `KRITIKA_DATABASE_OWNER_URL` | Owner DSN for migrations and leader work |
+| `KRITIKA_RUNNER_DATABASE_URL` | Runner DSN for the local executor |
+| `KRITIKA_RUN_SPEC_FILE` | Per-run job document path |
+| `KRITIKA_GIT_TOKEN` | Per-run Git credential |
+| `KRITIKA_GATEWAY_TOKEN` | Per-run model gateway credential |
+| `KRITIKA_DATABASE_TOKEN` | Per-run database credential |
+
+The service supplies per-run inputs to runner Jobs. Secret references such as
+`{ env: OPENROUTER_API_KEY }` can use any environment variable name; the file
+defines how that value is used.
 
 ## Migrating Helm values
 
@@ -49,9 +72,11 @@ Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.
 Move `config.runnerRuntimeClass` to `runner.runtimeClass` and
 `config.runnerDeadline` to `runner.deadline`. Runtime keys such as
 `config.logLevel`, `config.reviewWorkers` and `config.pollInterval` keep their names.
-Remove corresponding `KRITIKA_*` settings from `envFrom` sources as you move
-those settings into the file. Use separate secret variable names such as
-`ADMIN_PASSWORD` and `OPENROUTER_API_KEY` for file references.
+Move automatic auth, app, provider and policy env configuration into the file;
+those env names no longer configure the application implicitly. Existing secret
+variable names can still be used in explicit `{ env: NAME }` references.
+Operational env settings remain supported. Remove their corresponding variables
+from `env` or `envFrom` when moving them into the file, to avoid duplicates.
 
 Example Helm values:
 
@@ -84,25 +109,26 @@ env:
 
 ## `auth`
 
-`auth` sets how people sign in and what each may do. Its variables are
-keys of the chart's `config`, the secrets among them from existing Secrets.
+`auth` sets how people sign in and what each may do. In Helm these keys
+belong under `config.auth`; secret references read variables supplied from
+existing Kubernetes Secrets.
 
-| Key                      | Environment variable                        |
-| ------------------------ | ------------------------------------------- |
-| `sessionTTL`             | `KRITIKA_AUTH_SESSION_TTL`                  |
-| `admin.user`             | `KRITIKA_AUTH_ADMIN_USER`                   |
-| `admin.password`         | `KRITIKA_AUTH_ADMIN_PASSWORD`               |
-| `oidc.name`              | `KRITIKA_AUTH_OIDC_NAME`                    |
-| `oidc.issuer`            | `KRITIKA_AUTH_OIDC_ISSUER`                  |
-| `oidc.clientId`          | `KRITIKA_AUTH_OIDC_CLIENT_ID`               |
-| `oidc.clientSecret`      | `KRITIKA_AUTH_OIDC_CLIENT_SECRET`           |
-| `oidc.scopes`            | `KRITIKA_AUTH_OIDC_SCOPES`, comma-separated |
-| `oidc.rolesClaim`        | `KRITIKA_AUTH_OIDC_ROLES_CLAIM`             |
-| `oidc.roleMappingExpr`   | `KRITIKA_AUTH_OIDC_ROLE_MAPPING_EXPR`       |
-| `oidc.defaultRole`       | `KRITIKA_AUTH_OIDC_DEFAULT_ROLE`            |
-| `github.clientId`        | `KRITIKA_AUTH_GITHUB_CLIENT_ID`             |
-| `github.clientSecret`    | `KRITIKA_AUTH_GITHUB_CLIENT_SECRET`         |
-| `github.roleMappingExpr` | `KRITIKA_AUTH_GITHUB_ROLE_MAPPING_EXPR`     |
+| Key | Purpose |
+| --- | --- |
+| `sessionTTL` | Dashboard session lifetime. |
+| `admin.user` | Local administrator username. |
+| `admin.password` | Environment reference for the administrator password. |
+| `oidc.name` | Sign-in button label. |
+| `oidc.issuer` | OpenID Connect issuer URL. |
+| `oidc.clientId` | Client ID, inline or an environment reference. |
+| `oidc.clientSecret` | Environment reference for the client secret. |
+| `oidc.scopes` | Requested scopes as a YAML list. |
+| `oidc.rolesClaim` | Claim containing the user's roles. |
+| `oidc.roleMappingExpr` | Expression mapping identity claims to a dashboard role. |
+| `oidc.defaultRole` | Role when no mapping applies. |
+| `github.clientId` | Client ID, inline or an environment reference. |
+| `github.clientSecret` | Environment reference for the client secret. |
+| `github.roleMappingExpr` | Expression mapping GitHub identity to a dashboard role. |
 
 ```yaml
 auth:
@@ -209,19 +235,6 @@ apps:
 | `clientId`      | the App's client ID, inline or, like the secrets, as a reference                                               |
 | `privateKey`    | the App's private key                                                                                          |
 | `webhookSecret` | the same value as the App's webhook secret                                                                     |
-
-The same app can come from the environment instead:
-
-| Variable                      | Key                          |
-| ----------------------------- | ---------------------------- |
-| `KRITIKA_APPS_NAME`           | the key, `github` unless set |
-| `KRITIKA_APPS_ACCOUNTS`       | `accounts`, comma-separated  |
-| `KRITIKA_APPS_CLIENT_ID`      | `clientId`                   |
-| `KRITIKA_APPS_PRIVATE_KEY`    | `privateKey`                 |
-| `KRITIKA_APPS_WEBHOOK_SECRET` | `webhookSecret`              |
-
-The environment declares at most one app. It can add a differently named app;
-declaring the same app in the file and environment is an error.
 
 ## `providers` and `embedding`
 
@@ -534,32 +547,13 @@ a new title.
   [Runner tools](security.md#runner-tools) says what bounds a command and
   a fetch.
 
-### Environment variables
+### Configuration sources
 
-For migration, some root settings can still come from the environment; the provider's
-and the embedder's variables are on [Models](models.md#from-the-environment):
-
-| Variable                       | Key                                                            |
-| ------------------------------ | -------------------------------------------------------------- |
-| `KRITIKA_REVIEW_MODEL`         | `review.model`                                                 |
-| `KRITIKA_REVIEW_FALLBACK`      | `review.fallback`                                              |
-| `KRITIKA_REVIEW_EFFORT`        | `review.effort`, a level or empty ([effort](models.md#effort)) |
-| `KRITIKA_REVIEW_APPROVE`       | `review.approve`, `true` or `false`                            |
-| `KRITIKA_REVIEW_FIXES`         | `review.fixes`, `true` or `false`                              |
-| `KRITIKA_REVIEW_INCREMENTAL`   | `review.incremental`, a whole number of files                  |
-| `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                            |
-| `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                               |
-| `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                             |
-| `KRITIKA_CONFIDENCE_FALLBACK`  | `confidence.fallback`                                          |
-| `KRITIKA_CONFIDENCE_EFFORT`    | `confidence.effort`, a level or empty                          |
-| `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5             |
-| `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                           |
-| `KRITIKA_CONFIDENCE_RISK`      | `confidence.risk`, `low`, `medium`, `high` or `critical`       |
-| `KRITIKA_TRIGGER_SETTLE`       | `trigger.settle`, a duration such as `30s`                     |
-| `KRITIKA_TRIGGER_LIMIT`        | `trigger.limit`, a whole number of reviews                     |
-
-The Configuration page lists what the file and the environment set under
-"Instance settings", with where each comes from.
+App and provider declarations, authentication settings, review policy, and
+embedding settings come from the file. For these sections, environment variables
+supply values only where the file explicitly references them, such as
+`auth.admin.password: { env: ADMIN_PASSWORD }` or
+`providers.openrouter.apiKey: { env: OPENROUTER_API_KEY }`.
 
 ### Which repositories run
 
@@ -648,9 +642,9 @@ egress:
 
 The following keys live at the file's root unless they start with `runner.`.
 Under Helm, root keys go under `config`, while runner settings go under the
-chart's top-level `runner`. Legacy environment names are listed for migration.
+chart's top-level `runner`. Operational environment variables remain supported.
 
-| File key | Legacy variable                           | What                                                                                                                                                                                                                             |
+| File key | Environment variable                           | What                                                                                                                                                                                                                             |
 | --- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pollInterval` | `KRITIKA_POLL_INTERVAL`            | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set                                                                                                    |
 | `pollLookback` | `KRITIKA_POLL_LOOKBACK`            | how far back a first or long-idle poll looks; 24h unless set                                                                                                                                                                     |
@@ -668,8 +662,8 @@ chart's top-level `runner`. Legacy environment names are listed for migration.
 | `runner.deadline` | `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline, at most 2h; 15m unless set                                                                                                                                                                              |
 | `runner.runtimeClass` | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                                                                                                                   |
 | `runner.imagePullPolicy` | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it                                                                                                    |
-| `runner.resources` | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as YAML; the chart's `runner.resources` renders it                                                                                                                                                     |
-| `runner.tools` | `KRITIKA_RUNNER_TOOLS`             | command-line tools a runner pod mounts from an image for the agent's run tool, as a YAML list: each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides; the chart's `runner.tools` renders it |
+| `runner.resources` | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON in env or a YAML mapping in the file; the chart's `runner.resources` renders it                                                                                                                                                     |
+| `runner.tools` | `KRITIKA_RUNNER_TOOLS`             | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON in env or a YAML list in the file: each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides; the chart's `runner.tools` renders it |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

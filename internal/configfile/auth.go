@@ -14,8 +14,8 @@ import (
 
 // Auth configures how people sign in to the dashboard and what each may do:
 // a local admin, an OIDC issuer and GitHub, each optional, and each
-// provider's role mapping. Every key also has a KRITIKA_AUTH_* environment
-// variable for deployments that omit that setting from the file.
+// provider's role mapping. Secret values use explicit environment
+// references.
 type Auth struct {
 	// SessionTTL is how long a dashboard session lasts; zero means
 	// DefaultSessionTTL.
@@ -28,10 +28,6 @@ type Auth struct {
 	// GitHub signs in through a GitHub OAuth App, or a GitHub App's own
 	// client, on github.com.
 	GitHub *SignIn `yaml:"github,omitempty"`
-
-	// fromEnv holds the keys an environment variable set, by their dotted
-	// path under auth.
-	fromEnv map[string]bool
 }
 
 // LocalAdmin is the username and password that sign in as an admin, for a
@@ -168,10 +164,6 @@ func (a *Auth) Configured() bool {
 	return local || len(a.SignIns()) > 0
 }
 
-// FromEnv reports whether an environment variable set the auth key at the
-// dotted path, such as "oidc.issuer".
-func (a *Auth) FromEnv(path string) bool { return a.fromEnv[path] }
-
 func (a *Auth) resolve(sec *secrets) error {
 	if !a.Admin.Password.empty() {
 		v, err := sec.read(a.Admin.Password)
@@ -260,88 +252,4 @@ func (s *SignIn) validate(where string) error {
 		return fmt.Errorf("configfile: %s.clientSecret resolved to an empty value", where)
 	}
 	return nil
-}
-
-// authEnvPrefix starts every environment variable that sets an auth key.
-const authEnvPrefix = "KRITIKA_AUTH_"
-
-// overlayEnv sets every auth key a KRITIKA_AUTH_* variable in environ names,
-// over what the file says; a secret's variable carries the value itself. A
-// variable that names no key is an error, so a typo is refused rather than
-// ignored.
-func (a *Auth) overlayEnv(environ []string) error {
-	for _, kv := range environ {
-		name, value, _ := strings.Cut(kv, "=")
-		key, ok := strings.CutPrefix(name, authEnvPrefix)
-		if !ok {
-			continue
-		}
-		var path string
-		switch key {
-		case "SESSION_TTL":
-			d, err := time.ParseDuration(value)
-			if err != nil {
-				return fmt.Errorf("configfile: %s: %w", name, err)
-			}
-			a.SessionTTL, path = d, "sessionTTL"
-		case "ADMIN_USER":
-			a.Admin.User, path = value, "admin.user"
-		case "ADMIN_PASSWORD":
-			a.Admin.Password, path = SecretRef{Env: name}, "admin.password"
-		case "OIDC_NAME":
-			a.oidc().Name, path = value, "oidc.name"
-		case "OIDC_ISSUER":
-			a.oidc().Issuer, path = value, "oidc.issuer"
-		case "OIDC_CLIENT_ID":
-			a.oidc().ClientID, path = value, "oidc.clientId"
-		case "OIDC_CLIENT_SECRET":
-			a.oidc().ClientSecret, path = SecretRef{Env: name}, "oidc.clientSecret"
-		case "OIDC_SCOPES":
-			a.oidc().Scopes, path = envList(value), "oidc.scopes"
-		case "OIDC_ROLES_CLAIM":
-			a.oidc().RolesClaim, path = value, "oidc.rolesClaim"
-		case "OIDC_ROLE_MAPPING_EXPR":
-			a.oidc().RoleMappingExpr, path = value, "oidc.roleMappingExpr"
-		case "OIDC_DEFAULT_ROLE":
-			a.oidc().DefaultRole, path = value, "oidc.defaultRole"
-		case "GITHUB_CLIENT_ID":
-			a.github().ClientID, path = value, "github.clientId"
-		case "GITHUB_CLIENT_SECRET":
-			a.github().ClientSecret, path = SecretRef{Env: name}, "github.clientSecret"
-		case "GITHUB_ROLE_MAPPING_EXPR":
-			a.github().RoleMappingExpr, path = value, "github.roleMappingExpr"
-		default:
-			return fmt.Errorf("configfile: environment variable %s names no auth setting", name)
-		}
-		if a.fromEnv == nil {
-			a.fromEnv = map[string]bool{}
-		}
-		a.fromEnv[path] = true
-	}
-	return nil
-}
-
-func (a *Auth) oidc() *SignIn {
-	if a.OIDC == nil {
-		a.OIDC = &SignIn{}
-	}
-	return a.OIDC
-}
-
-func (a *Auth) github() *SignIn {
-	if a.GitHub == nil {
-		a.GitHub = &SignIn{}
-	}
-	return a.GitHub
-}
-
-// envList splits a comma-separated variable, dropping blanks.
-func envList(v string) []string {
-	var out []string
-	for s := range strings.SplitSeq(v, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }

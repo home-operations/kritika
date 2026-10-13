@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -44,22 +43,35 @@ runner:
 	}
 }
 
-func TestConflictingSources(t *testing.T) {
-	for _, tt := range []struct{ name, value, doc, path string }{
-		{"KRITIKA_AUTH_ADMIN_PASSWORD", "secret", "auth: {admin: {password: {env: PASSWORD}}}", "auth.admin.password"},
-		{"KRITIKA_AUTH_SESSION_TTL", "1h", "auth: {sessionTTL: 2h}", "auth.sessionTTL"},
-		{"KRITIKA_REVIEW_APPROVE", "true", "review: {approve: false}", "review.approve"},
-		{"KRITIKA_CONFIDENCE_THRESHOLD", "3", "confidence: {threshold: 0}", "confidence.threshold"},
-		{"KRITIKA_EMBEDDING_DIMS", "16", "embedding: {dims: 8}", "embedding.dims"},
-		{"KRITIKA_PROVIDERS_API_KEY", "secret", "providers: {openrouter: {type: openrouter}}", "providers.openrouter"},
-		{"KRITIKA_APPS_CLIENT_ID", "id", "apps: {github: {clientId: other}}", "apps.github"},
+func TestEnvironmentDoesNotDeclarePolicy(t *testing.T) {
+	setInstanceEnv(t)
+	for name, value := range map[string]string{
+		"KRITIKA_AUTH_ADMIN_PASSWORD": "secret", "KRITIKA_AUTH_SESSION_TTL": "1h",
+		"KRITIKA_APPS_NAME": "other", "KRITIKA_PROVIDERS_TYPE": "anthropic",
+		"KRITIKA_REVIEW_APPROVE": "true", "KRITIKA_REVIEW_MODEL": "unknown/model",
+		"KRITIKA_CONFIDENCE_THRESHOLD": "0", "KRITIKA_TRIGGER_LIMIT": "5", "KRITIKA_EMBEDDING_DIMS": "16",
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(tt.name, tt.value)
-			_, err := Parse([]byte(tt.doc))
-			if err == nil || !strings.Contains(err.Error(), tt.path+" conflicts with "+tt.name) {
-				t.Fatalf("Parse = %v", err)
-			}
-		})
+		t.Setenv(name, value)
+	}
+	empty := mustLoad(t, "")
+	if empty.Auth.Configured() || len(empty.Connections) != 0 || len(empty.Providers) != 0 || empty.Embedding != nil || empty.Defaults.Review.Model != nil {
+		t.Fatal("environment declared application configuration")
+	}
+	t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
+	f := mustLoad(t, fileWithDefaults)
+	if f.Run.ReviewWorkers != 5 {
+		t.Fatal("operational environment setting not applied")
+	}
+	if f.Auth.Configured() || len(f.Connections) != 1 || len(f.Providers) != 1 || f.Embedding.Dims != 8 || f.Defaults.Review.Approve != nil || f.Defaults.Trigger.Limit != nil {
+		t.Fatal("environment changed file settings")
+	}
+	if f.FileLayer().Review.Value != "openrouter/big" {
+		t.Fatal("environment changed model")
+	}
+	// A variable is still available when explicitly referenced by the file.
+	f = mustLoad(t, fileWithDefaults+"auth: {admin: {password: {env: KRITIKA_AUTH_ADMIN_PASSWORD}}}\n")
+	_, password, ok := f.Auth.AdminUser()
+	if !ok || password.Value() != "secret" {
+		t.Fatal("explicit secret reference not resolved")
 	}
 }

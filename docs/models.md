@@ -329,25 +329,9 @@ ChatGPT, with an API-key provider so it can take over when the plan is
 exhausted or unavailable. Paid fallback calls still incur API charges.
 For sustained team workloads, consider an API-key provider as the primary.
 
-### From the environment
-
-One provider and the embedder can come from the environment instead:
-
-| Variable                     | Key                                                             |
-| ---------------------------- | --------------------------------------------------------------- |
-| `KRITIKA_PROVIDERS_NAME`     | the provider's name, `openrouter` unless set                    |
-| `KRITIKA_PROVIDERS_TYPE`     | `type`, which defaults to the name when that is a provider type |
-| `KRITIKA_PROVIDERS_BASE_URL` | `baseUrl`                                                       |
-| `KRITIKA_PROVIDERS_API_KEY`  | `apiKey`                                                        |
-| `KRITIKA_PROVIDERS_RETRIES`  | `retries`                                                       |
-| `KRITIKA_EMBEDDING_MODEL`    | `embedding.model`                                               |
-| `KRITIKA_EMBEDDING_DIMS`     | `embedding.dims`                                                |
-
-The environment declares at most one provider. Declaring the same provider
-in both the file and environment is an error. Embedding variables may supply
-keys omitted from the file; supplying the same key in both is an error. The review and confidence models have
-variables of their own
-([environment variables](configuration.md#environment-variables)).
+Providers and embedding settings are declared in the configuration file.
+API keys use environment references such as `{ env: OPENROUTER_API_KEY }`.
+Setting an environment variable alone does not declare a provider or embedder.
 
 ## Retries
 
@@ -444,9 +428,8 @@ Each provider type gets the level in its own form:
 | `chatgpt`           | `reasoning.effort`     | the model must support the chosen level                                                            |
 | `anthropic`          | `output_config.effort` | the Messages API runs from `low` to `max`, so `none` and `minimal` go out as `low`; unset as above  |
 
-The environment sets both (`KRITIKA_REVIEW_EFFORT`, `KRITIKA_CONFIDENCE_EFFORT`,
-[environment variables](configuration.md#environment-variables)), as do
-the chart's `reviewEffort` and `confidenceEffort`. The dashboard's
+Both are set in the configuration file. In Helm, use
+`config.review.effort` and `config.confidence.effort`. The dashboard's
 repository page shows each repository's effective levels beside its
 models.
 

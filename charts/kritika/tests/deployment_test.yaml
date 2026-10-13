@@ -57,18 +57,31 @@ tests:
   - it: refuses an env key the chart sets from its other values
     set:
       env:
-        KRITIKA_GATEWAY_URL: http://elsewhere.example.com
+        KRITIKA_DATABASE_URL: postgres://elsewhere.example.com/kritika
     asserts:
       - failedTemplate:
-          errorPattern: env.KRITIKA_GATEWAY_URL
+          errorPattern: env.KRITIKA_DATABASE_URL
 
-  - it: refuses application settings under env
+  - it: accepts operational env settings and explicitly referenced secrets
     set:
+      config.auth.admin.password: { env: KRITIKA_AUTH_ADMIN_PASSWORD }
       env:
-        KRITIKA_AUTH_OIDC_ISSUER: https://sso.example.com
+        KRITIKA_LOG_LEVEL: debug
+        KRITIKA_AUTH_ADMIN_PASSWORD:
+          valueFrom:
+            secretKeyRef: { name: kritika-auth, key: password }
     asserts:
-      - failedTemplate:
-          errorPattern: "env.KRITIKA_AUTH_OIDC_ISSUER: use the application config or chart deployment values instead"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_LOG_LEVEL
+            value: debug
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_AUTH_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef: { name: kritika-auth, key: password }
 
   - it: refuses a config key for a variable the chart derives from its other values
     set:

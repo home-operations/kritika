@@ -235,7 +235,7 @@
       "type": "object"
     },
     "env": {
-      "description": "Extra environment variables, keyed by name. Use valueFrom.secretKeyRef to supply the variables referenced by config. KRITIKA_* settings belong in config or the chart's deployment values. Rendered through tpl.",
+      "description": "Operational settings and referenced secrets, keyed by environment variable name. Use valueFrom.secretKeyRef for credentials. Do not duplicate file settings or chart-managed variables. Rendered through tpl.",
       "required": [],
       "title": "env",
       "type": "object"

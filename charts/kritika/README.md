@@ -62,7 +62,7 @@ ingress:
 `config` is the application's YAML configuration: `webUrl`, logging, workers,
 polling, retention, `auth`, `apps`, `providers`, review policy and account settings.
 It has the same structure as the configuration file and is not evaluated with
-`tpl`. Omitted values use application defaults; zero and false are preserved.
+`tpl`. Omitted values use operational env settings or application defaults; zero and false are preserved.
 The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
 - Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
@@ -74,14 +74,22 @@ The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
   setting both is an error. Put `webUrl` in that file and omit chart-owned
   deployment settings. The chart supplies those through environment variables.
   External ConfigMap and Secret changes need a restart or Reloader.
-- Legacy environment settings remain available, but a file setting and its
-  environment variable cannot both be set.
+- Operational settings such as logging, worker counts and polling support
+  `env` and `envFrom`, but a file setting and its environment variable cannot
+  both be set. Chart-managed environment variables are reserved.
+- Auth, apps, providers, embedding and review policy are declared in the file.
+  Their environment values must be explicitly referenced with `{ env: NAME }`;
+  automatic env declarations and policy overrides are not supported.
+- The config path, database DSNs and per-run credentials/spec path are env-only.
+  The chart supplies the config path and database DSNs from its deployment values.
 
 **Migration:** move `configFile` into `config`, flat policy keys such as
 `config.reviewModel` into `config.review.model`, and password `valueFrom`
 entries into `env` with references in the file. Move
 `config.runnerRuntimeClass` and `config.runnerDeadline` into
-`runner.runtimeClass` and `runner.deadline`. See the
+`runner.runtimeClass` and `runner.deadline`. Move automatic auth, app, provider
+and policy env configuration into the file, keeping secret values in env with
+explicit file references. See the
 [configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)
 for the complete migration and external ConfigMap rules.
 
@@ -186,7 +194,7 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.key | string | `"uri"` | Key in that Secret. |
 | database.runner.role | string | `"kritika_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
-| env | object | `{}` | Extra environment variables, keyed by name. Use valueFrom.secretKeyRef to supply the variables referenced by config. KRITIKA_* settings belong in config or the chart's deployment values. Rendered through tpl. |
+| env | object | `{}` | Operational settings and referenced secrets, keyed by environment variable name. Use valueFrom.secretKeyRef for credentials. Do not duplicate file settings or chart-managed variables. Rendered through tpl. |
 | envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application settings must not also be set in the file. |
 | existingConfigMap | string | `""` | Existing ConfigMap containing config.yaml instead of inline config. Put webUrl in that file. Changes require a restart, for example through a Reloader annotation. |
 | fullnameOverride | string | `""` | Override the full release name. |
