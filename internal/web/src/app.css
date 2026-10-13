@@ -190,7 +190,8 @@
     @apply fixed z-[var(--z-modal)] bg-panel text-ink border border-solid border-line rounded-lg shadow-[0_8px_24px_color-mix(in_srgb,_var(--text)_15%,_transparent)];
   }
   .btn-danger {
-    @apply text-danger border-[color-mix(in_srgb,_var(--danger)_45%,_var(--border))];
+    @apply text-danger;
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
   }
   .btn-primary.btn-danger {
     @apply bg-danger border-danger text-on-accent;
@@ -202,7 +203,7 @@
 /* Contextual and state selectors share utility precedence, including library markup. */
 @layer utilities {
   .modal-centered {
-    @apply [inset:0] m-auto h-[fit-content];
+    @apply inset-0 m-auto h-fit;
   }
   .help-card:focus {
     @apply [outline:none];
@@ -232,7 +233,8 @@
     @apply text-ink no-underline;
   }
   .section-tab.active {
-    @apply text-ink font-semibold [border-bottom-color:var(--edge)];
+    @apply text-ink font-semibold [border-bottom-color:var(--edge)] shadow-[inset_2px_0_var(--accent)];
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel));
   }
   .section-label::after,
   .tab-label::after {
@@ -283,17 +285,8 @@
     }
   }
   @media (max-width: 640px) {
-    .wordmark {
-      @apply hidden;
-    }
     .btn-icon {
       @apply min-w-10 min-h-10 justify-center;
-    }
-    .topbar-row {
-      @apply gap-2 py-1.5 px-2.5;
-    }
-    .account-button {
-      @apply max-w-35;
     }
   }
   @media (pointer: coarse) {
@@ -308,7 +301,7 @@
     @apply text-ink bg-panel no-underline;
   }
   .page-head h1 {
-    @apply m-0 text-[length:21px] font-bold tracking-[-0.01em] [word-break:break-word];
+    @apply m-0 text-[length:clamp(24px,_2vw,_28px)] font-bold tracking-[-0.025em] [word-break:break-word];
   }
   .page-head p {
     @apply m-0;
@@ -337,7 +330,8 @@
     @apply inline-flex items-center gap-[3px] whitespace-nowrap;
   }
   .lifecycle-badge {
-    @apply inline-flex items-center gap-1 py-[1px] px-2 rounded-sm font-semibold text-[var(--tone)] [background:color-mix(in_srgb,_var(--tone)_12%,_transparent)];
+    @apply inline-flex items-center gap-1 py-[1px] px-2 rounded-sm font-semibold text-[var(--tone)];
+    background: color-mix(in srgb, var(--tone) 12%, transparent);
   }
   .pill,
   .sev {
@@ -362,7 +356,9 @@
     --tone: var(--muted);
   }
   .pill {
-    @apply text-[var(--tone,_var(--muted))] border-[color-mix(in_srgb,_var(--tone,_var(--muted))_40%,_var(--border))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_8%,_transparent)];
+    @apply text-[var(--tone,_var(--muted))];
+    border-color: color-mix(in srgb, var(--tone, var(--muted)) 40%, var(--border));
+    background: color-mix(in srgb, var(--tone, var(--muted)) 8%, transparent);
   }
   .sev-p0 {
     --sev: var(--danger);
@@ -374,10 +370,14 @@
     --sev: var(--accent);
   }
   .sev {
-    @apply text-[var(--sev)] border-[color-mix(in_srgb,_var(--sev)_45%,_var(--border))] [background:color-mix(in_srgb,_var(--sev)_8%,_transparent)];
+    @apply text-[var(--sev)];
+    border-color: color-mix(in srgb, var(--sev) 45%, var(--border));
+    background: color-mix(in srgb, var(--sev) 8%, transparent);
   }
   .sev-chip {
-    @apply inline-flex items-center justify-center min-w-5 h-5 py-0 px-[5px] rounded-sm text-ui-xs font-[650] tabular-nums text-[var(--sev)] border border-solid border-[color-mix(in_srgb,_var(--sev)_40%,_var(--border))] [background:color-mix(in_srgb,_var(--sev)_10%,_transparent)];
+    @apply inline-flex items-center justify-center gap-1 min-w-5 h-5 py-0 px-[5px] rounded-sm text-ui-xs font-[650] tabular-nums text-[var(--sev)] border border-solid;
+    border-color: color-mix(in srgb, var(--sev) 40%, var(--border));
+    background: color-mix(in srgb, var(--sev) 10%, transparent);
   }
   .status {
     @apply inline-flex items-center [vertical-align:middle] gap-1.5 text-ui-sm text-ink whitespace-nowrap;
@@ -406,7 +406,7 @@
     @apply my-2.5 mx-3;
   }
   .panel-head h2 {
-    @apply m-0 text-ui-md font-[650];
+    @apply m-0 text-[length:16px] font-[650];
   }
   a.tile {
     @apply text-inherit no-underline;
@@ -600,7 +600,7 @@
     @apply inline-flex items-center gap-1.5;
   }
   .finding {
-    @apply bg-panel border border-solid border-line rounded-lg py-2.5 px-3 flex flex-col gap-1.5 font-ui whitespace-normal;
+    @apply bg-panel border border-solid border-line rounded-lg py-4.5 px-5 flex flex-col gap-3 font-ui whitespace-normal;
   }
   .finding:focus {
     @apply [outline:2px_solid_var(--accent)] [outline-offset:2px];
@@ -689,7 +689,7 @@
     @apply mt-1.5;
   }
   .tone-danger-edge {
-    @apply border-[color-mix(in_srgb,_var(--danger)_45%,_var(--border))];
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
   }
   .collapsible-head:hover {
     @apply bg-surface;
@@ -707,7 +707,7 @@
     @apply [border-left-color:var(--accent)];
   }
   .diff-file-head button {
-    @apply w-full flex items-center gap-2.5 py-[7px] px-3 border-0 bg-transparent bg-none text-ink text-ui-sm cursor-pointer text-left;
+    @apply w-full flex flex-wrap items-center gap-2.5 p-3.5 border-0 bg-transparent bg-none text-ink text-ui-sm cursor-pointer text-left;
   }
   table.diff {
     @apply w-full border-collapse font-code text-ui-sm leading-[1.5];
@@ -767,24 +767,25 @@
     @apply z-[var(--z-tip)];
   }
   .stats.stats-4 {
-    @apply grid-cols-[repeat(4,_minmax(0,_1fr))];
+    @apply grid-cols-4;
   }
   .stats.stats-3 {
-    @apply grid-cols-[repeat(3,_minmax(0,_1fr))];
+    @apply grid-cols-3;
   }
   @media (max-width: 900px) {
     .stats.stats-4 {
-      @apply grid-cols-[repeat(2,_minmax(0,_1fr))];
+      @apply grid-cols-2;
     }
   }
   @media (max-width: 480px) {
     .stats.stats-4,
     .stats.stats-3 {
-      @apply grid-cols-[minmax(0,_1fr)];
+      @apply grid-cols-1;
     }
   }
   .delta {
-    @apply py-[1px] px-1.5 rounded-sm text-ui-xs font-[650] tabular-nums text-[var(--tone)] [background:color-mix(in_srgb,_var(--tone)_12%,_transparent)];
+    @apply py-[1px] px-1.5 rounded-sm text-ui-xs font-[650] tabular-nums text-[var(--tone)];
+    background: color-mix(in srgb, var(--tone) 12%, transparent);
   }
   .analytics.stale {
     @apply opacity-60;
@@ -802,9 +803,6 @@
     @apply bg-accent;
   }
   @media (max-width: 640px) {
-    .page-inner {
-      @apply pt-3 px-3 pb-8;
-    }
     .subnav {
       @apply flex-none flex-row items-center overflow-x-auto py-1.5 px-2.5 border-r-0 border-b border-solid border-b-line;
     }
@@ -831,7 +829,8 @@
     @apply m-0;
   }
   .toast {
-    @apply flex items-center justify-between gap-2.5 py-2 px-3 rounded-md border border-solid border-[color-mix(in_srgb,_var(--tone,_var(--border))_45%,_var(--border))] bg-panel text-ui-md shadow-[0_4px_12px_color-mix(in_srgb,_var(--text)_12%,_transparent)];
+    @apply flex items-center justify-between gap-2.5 py-2 px-3 rounded-md border border-solid bg-panel text-ui-md shadow-[0_4px_12px_color-mix(in_srgb,_var(--text)_12%,_transparent)];
+    border-color: color-mix(in srgb, var(--tone, var(--border)) 45%, var(--border));
   }
   .form {
     @apply flex flex-col gap-3.5;
@@ -890,12 +889,6 @@
   .checklist li.done .check-mark {
     @apply text-success;
   }
-  .account-button > span {
-    @apply overflow-hidden text-ellipsis;
-  }
-  .section-tab.active {
-    @apply [background:color-mix(in_srgb,_var(--accent)_8%,_var(--panel))] shadow-[inset_2px_0_var(--accent)];
-  }
   .topbar .actions {
     @apply mt-auto pt-7 flex-wrap gap-2;
   }
@@ -913,12 +906,6 @@
   }
   .skip-link:focus {
     @apply top-3;
-  }
-  .page-head h1 {
-    @apply text-[length:clamp(24px,_2vw,_28px)] tracking-[-0.025em];
-  }
-  .panel-head h2 {
-    @apply text-[length:16px];
   }
   .attention-list > .panel-head,
   .running-list > .panel-head {
@@ -953,9 +940,6 @@
   .review-conclusion > .md {
     @apply text-[length:15px] leading-[1.65];
   }
-  .finding {
-    @apply py-4.5 px-5 gap-3;
-  }
   .review-conclusion h2 {
     @apply text-[length:18px] mt-0 mx-0 mb-2.5;
   }
@@ -971,9 +955,6 @@
   }
   .finding-jump.active {
     @apply bg-highlight shadow-[inset_3px_0_var(--edge)];
-  }
-  .diff-file-head button {
-    @apply p-3.5 flex-wrap;
   }
   .diff-file:focus-visible {
     @apply [outline:2px_solid_var(--accent)] [outline-offset:2px];
@@ -1033,13 +1014,13 @@
       @apply flex w-full py-2 px-3;
     }
     .overview-work {
-      @apply grid-cols-[minmax(0,_1fr)];
+      @apply grid-cols-1;
     }
     .running-list {
       @apply border-l-0 pl-0;
     }
     .review-workspace {
-      @apply grid-cols-[minmax(0,_1fr)];
+      @apply grid-cols-1;
     }
     .finding-nav {
       @apply static max-h-none;
@@ -1119,9 +1100,6 @@
   }
   .topbar .subnav-group {
     @apply hidden;
-  }
-  .sev-chip {
-    @apply gap-1;
   }
   .review-tab[hidden] {
     @apply hidden;
@@ -1221,9 +1199,6 @@
   .crumbs a {
     @apply text-muted;
   }
-  .section-tab.active {
-    @apply text-ink;
-  }
   .help-popover h2 {
     @apply mt-0 mx-0 mb-2 text-ui-sm;
   }
@@ -1312,7 +1287,7 @@
     @apply m-0;
   }
   .review-workspace.code-focused {
-    @apply grid-cols-[minmax(0,_1fr)];
+    @apply grid-cols-1;
   }
   .finding-nav[hidden] {
     @apply hidden;
