@@ -11,7 +11,6 @@
   import TimeZonePicker from '../components/TimeZonePicker.svelte';
   import Spinner from '../Spinner.svelte';
 
-  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const settings = $derived(session.me?.settings);
   // A zone chosen in another browser may be one this one does not list.
   const zones = $derived([...new Set([...(settings?.timeZone ? [settings.timeZone] : []), ...Intl.supportedValuesOf('timeZone')])].sort());

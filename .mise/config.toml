@@ -215,6 +215,11 @@ description = "Install the dashboard UI's npm dependencies from its lockfile"
 dir = "internal/web"
 run = "npm ci"
 
+[tasks.ui-lint]
+description = "Lint the dashboard UI (ESLint)"
+dir = "internal/web"
+run = "npm run lint"
+
 [tasks.ui-typecheck]
 description = "Type-check the dashboard UI (svelte-check)"
 dir = "internal/web"

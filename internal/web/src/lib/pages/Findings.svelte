@@ -186,73 +186,71 @@
       />
     </div>
     <StateView {res} retry={() => paged.load()}>
-      {#snippet children()}
-        {#if paged.items.length === 0 && filter}
-          <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
-            <span>No findings match these filters.</span>
-            <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
-          </div>
-        {:else if paged.items.length === 0}
-          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No findings yet: they appear here as reviews report them.</p>
-        {:else}
-          <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
-            <table class="data finding-table">
-              <thead>
-                <tr>
-                  <th scope="col">Finding</th>
-                  <th scope="col">Severity · kind</th>
-                  <th scope="col">Pull request</th>
-                  <th scope="col" title="Addressed once a later review of the pull request no longer reports it; dismissed when a maintainer replied so in its thread">Status</th>
-                  <th scope="col" class="num">Found</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each paged.items as f, i (f.id)}
-                  <!-- The title opens the inspector; the row is a larger pointer target. -->
-                  <tr class="finding-row cursor-pointer" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
-                    <td class="finding-main">
-                      <a class="finding-link block overflow-hidden text-ellipsis text-ink text-ui-md [font-weight:550]" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
-                      <span class="finding-sub block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">{f.explanation}</span>
-                      {#if f.rules.length}
-                        <span class="finding-rules flex flex-wrap gap-1 mt-1">
-                          {#each f.rules as id (id)}
-                            <a class="mono" href={href({ name: 'findings', slug, filter: { rule: id } })} title="Findings that cite the rule {id}">{id}</a>
-                          {/each}
-                        </span>
+      {#if paged.items.length === 0 && filter}
+        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+          <span>No findings match these filters.</span>
+          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
+        </div>
+      {:else if paged.items.length === 0}
+        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No findings yet: they appear here as reviews report them.</p>
+      {:else}
+        <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
+          <table class="data finding-table">
+            <thead>
+              <tr>
+                <th scope="col">Finding</th>
+                <th scope="col">Severity · kind</th>
+                <th scope="col">Pull request</th>
+                <th scope="col" title="Addressed once a later review of the pull request no longer reports it; dismissed when a maintainer replied so in its thread">Status</th>
+                <th scope="col" class="num">Found</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each paged.items as f, i (f.id)}
+                <!-- The title opens the inspector; the row is a larger pointer target. -->
+                <tr class="finding-row cursor-pointer" class:selected={i === selected} data-index={i} onclick={(e) => onRowClick(e, f)}>
+                  <td class="finding-main">
+                    <a class="finding-link block overflow-hidden text-ellipsis text-ink text-ui-md [font-weight:550]" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
+                    <span class="finding-sub block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">{f.explanation}</span>
+                    {#if f.rules.length}
+                      <span class="finding-rules flex flex-wrap gap-1 mt-1">
+                        {#each f.rules as id (id)}
+                          <a class="mono" href={href({ name: 'findings', slug, filter: { rule: id } })} title="Findings that cite the rule {id}">{id}</a>
+                        {/each}
+                      </span>
+                    {/if}
+                  </td>
+                  <td>
+                    <span class="sev sev-{f.severity}">{f.severity}</span>
+                    {#if f.category}<a class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" href={href({ name: 'findings', slug, filter: { category: f.category } })} title="Findings of this kind">{f.category}</a>{/if}
+                  </td>
+                  <td class="finding-pull">
+                    <a class="mono" href={href(pullRoute(slug, f.pull))} title={f.pull.title}>{f.pull.repository}#{f.pull.number}</a>
+                    <span class="finding-sub mono block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">
+                      {f.path}:{f.line}
+                      {#if threadUrl(f.pull.url, f.forgeCommentId)}
+                        <a class="external" href={threadUrl(f.pull.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer" title="The finding's thread on GitHub">
+                          <Icon path={mdiOpenInNew} size={11} label="Thread on GitHub" />
+                        </a>
                       {/if}
-                    </td>
-                    <td>
-                      <span class="sev sev-{f.severity}">{f.severity}</span>
-                      {#if f.category}<a class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" href={href({ name: 'findings', slug, filter: { category: f.category } })} title="Findings of this kind">{f.category}</a>{/if}
-                    </td>
-                    <td class="finding-pull">
-                      <a class="mono" href={href(pullRoute(slug, f.pull))} title={f.pull.title}>{f.pull.repository}#{f.pull.number}</a>
-                      <span class="finding-sub mono block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">
-                        {f.path}:{f.line}
-                        {#if threadUrl(f.pull.url, f.forgeCommentId)}
-                          <a class="external" href={threadUrl(f.pull.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer" title="The finding's thread on GitHub">
-                            <Icon path={mdiOpenInNew} size={11} label="Thread on GitHub" />
-                          </a>
-                        {/if}
-                      </span>
-                    </td>
-                    <td>
-                      <span class="status tone-{statusTone[f.status]}">
-                        <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={statusIcon[f.status]} size={12} /></span>
-                        <span class="status-word">{f.status}</span>
-                      </span>
-                      <Reactions up={f.reactionsUp} down={f.reactionsDown} />
-                      {#if f.dismissReason}<span class="finding-sub finding-dismissed block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted max-w-55" title="The reason it was dismissed with">{f.dismissReason}</span>{/if}
-                    </td>
-                    <td class="num"><Time iso={f.firstSeenAt} /></td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-          <LoadMore {paged} />
-        {/if}
-      {/snippet}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="status tone-{statusTone[f.status]}">
+                      <span class="status-tile inline-flex items-center justify-center w-4.5 h-4.5 rounded-sm text-[var(--tone,_var(--muted))] [background:color-mix(in_srgb,_var(--tone,_var(--muted))_14%,_transparent)]"><Icon path={statusIcon[f.status]} size={12} /></span>
+                      <span class="status-word">{f.status}</span>
+                    </span>
+                    <Reactions up={f.reactionsUp} down={f.reactionsDown} />
+                    {#if f.dismissReason}<span class="finding-sub finding-dismissed block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted max-w-55" title="The reason it was dismissed with">{f.dismissReason}</span>{/if}
+                  </td>
+                  <td class="num"><Time iso={f.firstSeenAt} /></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <LoadMore {paged} />
+      {/if}
     </StateView>
     <p class="muted small key-hints text-ui-sm m-0"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search</p>
   </div>

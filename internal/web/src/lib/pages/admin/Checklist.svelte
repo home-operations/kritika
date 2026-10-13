@@ -29,6 +29,7 @@
         <li class:done={item.done}>
           <span class="check-mark inline-flex flex-none mt-0.5 text-muted"><Icon path={item.done ? mdiCheck : mdiCircleOutline} size={14} label={item.done ? 'done' : 'to do'} /></span>
           <span class="check-text flex flex-col gap-0.5">
+            <!-- eslint-disable-next-line svelte/no-useless-mustaches -- Preserve the separator at the conditional boundary. -->
             <span>{item.label}{#if item.optional}{' '}<span class="small muted text-ui-sm">(optional)</span>{/if}</span>
             {#if !item.done}<span class="small muted text-ui-sm">{item.how}</span>{/if}
           </span>

@@ -89,8 +89,8 @@ function blocks(tokens: Token[]): Block[] {
     switch (t.type) {
       case 'space':
       case 'def':
-      // A task item's box is its item's checked.
       case 'checkbox':
+        // A task item's box is its item's checked.
         break;
       case 'code':
         out.push({ kind: 'code', lang: (t as Tokens.Code).lang ?? '', text: (t as Tokens.Code).text });

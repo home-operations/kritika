@@ -181,21 +181,20 @@
       {/if}
     </div>
     <StateView {res} retry={() => paged.load()}>
-      {#snippet children()}
-        {#if items.length === 0 && filter}
-          <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
-            <span>No pull requests match these filters.</span>
-            <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
-          </div>
-        {:else if items.length === 0}
-          <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
-        {:else}
-          <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
-          <LoadMore {paged} />
-        {/if}
-      {/snippet}
+      {#if items.length === 0 && filter}
+        <div class="state-msg flex items-center gap-2 m-0 p-3 text-muted">
+          <span>No pull requests match these filters.</span>
+          <button class="btn btn-small border border-solid border-line bg-surface text-ink rounded-md cursor-pointer inline-flex items-center gap-1.5 py-0.5 px-2 text-ui-xs" onclick={clearFilters}>Clear filters</button>
+        </div>
+      {:else if items.length === 0}
+        <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{prState === 'all' ? 'No pull requests.' : `No ${prState} pull requests.`}</p>
+      {:else}
+        <PullTable {slug} {items} {selected} {picked} {keyOf} onpick={slug && isAdmin() ? pick : undefined} />
+        <LoadMore {paged} />
+      {/if}
     </StateView>
     <p class="muted small key-hints text-ui-sm m-0">
+      <!-- eslint-disable-next-line svelte/no-useless-mustaches -- Preserve the separator at the conditional boundary. -->
       <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>⏎</kbd> open · <kbd>/</kbd> search{#if slug && isAdmin()}{' '}· <kbd>space</kbd> select{/if}
     </p>
   </div>

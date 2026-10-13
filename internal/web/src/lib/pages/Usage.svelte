@@ -165,7 +165,7 @@
       <Segmented label="Period" options={PERIODS} value={days} onchange={(days) => setFilter({ days })} />
       <label class="filter-select flex items-center gap-2 text-muted text-ui-sm">Group by
         <select aria-label="Group by" value={group} onchange={(e) => { const group = e.currentTarget.value as UsageGroup; setFilter({ group, days: group === 'hour' ? '1' : days }); }}>
-          {#each GROUPS as option}<option value={option.value}>{option.label}</option>{/each}
+          {#each GROUPS as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
         </select>
       </label>
       <Segmented label="Chart metric" options={METRICS} value={metric} onchange={(metric) => setFilter({ metric })} />

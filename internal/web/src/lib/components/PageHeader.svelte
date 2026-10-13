@@ -19,7 +19,7 @@
   <nav class="crumbs text-ui-sm text-muted" aria-label="Breadcrumb">
     {#if slug}<a class="mono" href={href({ name: 'account', slug })}>{slug}</a>
     {:else}<span>All accounts</span>{/if}
-    {#each parents as parent}<span aria-hidden="true">/</span><a href={href(parent.route)}>{parent.label}</a>{/each}
+    {#each parents as parent (href(parent.route))}<span aria-hidden="true">/</span><a href={href(parent.route)}>{parent.label}</a>{/each}
   </nav>
   <div class="page-title-row flex items-center justify-between flex-wrap gap-3"><h1>{title}</h1>{#if actions}<div class="page-actions">{@render actions()}</div>{/if}</div>
   {#if description}<p class="muted page-description text-ui-sm">{description}</p>{/if}

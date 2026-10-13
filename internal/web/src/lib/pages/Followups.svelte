@@ -27,12 +27,10 @@
   <div class="page-inner w-full my-0 mx-auto flex flex-col max-w-350 pt-6 px-7 pb-10 gap-5">
     <PageHeader title="Follow-ups" {slug} />
     <StateView {res} retry={() => paged.load()} isEmpty={(d) => d.items.length === 0} empty="No follow-up questions yet.">
-      {#snippet children()}
-        <ul class="followups list-none m-0 p-0">
-          {#each paged.items as f (f.id)}<FollowupItem {slug} {f} showPull />{/each}
-        </ul>
-        <LoadMore {paged} />
-      {/snippet}
+      <ul class="followups list-none m-0 p-0">
+        {#each paged.items as f (f.id)}<FollowupItem {slug} {f} showPull />{/each}
+      </ul>
+      <LoadMore {paged} />
     </StateView>
   </div>
 </main>

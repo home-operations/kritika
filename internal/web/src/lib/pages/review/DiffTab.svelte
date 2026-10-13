@@ -63,6 +63,7 @@
   let query = $state('');
   let onlyFindings = $state(false);
   let search = $state<HTMLInputElement>();
+  // eslint-disable-next-line svelte/prefer-writable-derived -- Per-file bindings mutate array entries and need a deep state proxy.
   let open = $state<boolean[]>([]);
   $effect.pre(() => { open = files.map((f) => total <= TOTAL_LINES && f.lines.length <= FILE_LINES); });
   const visibleFiles = $derived(files.map((file, i) => ({ file, i })).filter(({ file, i }) => file.path.toLowerCase().includes(query.trim().toLowerCase()) && (!onlyFindings || findingsByFile.has(i))));

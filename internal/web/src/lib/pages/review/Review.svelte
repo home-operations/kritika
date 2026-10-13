@@ -181,6 +181,7 @@
           {#if job.state === 'running'}A review is running, attempt {job.attempt} of {job.maxAttempts}.
           {:else if job.lastError}A review is waiting to run again: attempt {job.attempt} of {job.maxAttempts} failed, the next {Date.parse(job.scheduledAt) > clock.now ? 'is' : 'was'} due <Time iso={job.scheduledAt} />.
           {:else}A review is queued.{/if}
+          <!-- eslint-disable-next-line svelte/no-useless-mustaches -- Preserve the separator at the conditional boundary. -->
           {#if job.lastError}<span class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0">{#if job.cause}<strong>{jobCauseText[job.cause]}</strong>{' '}{/if}{job.lastError}</span>{/if}
           <a href={href({ name: 'queue', slug })}>Open the queue</a>
         </p>
