@@ -67,7 +67,7 @@
 <div class="signin flex items-center justify-center min-h-dvh bg-canvas">
   <div class="signin-card flex flex-col items-center gap-1.5 w-[min(320px,_90vw)] py-8 px-7 bg-panel border border-solid border-line rounded-[10px] text-center">
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
-    <h1><span class="marked py-0 px-[0.2em] rounded-[0.15em_0.35em_0.2em_0.4em_/_0.4em_0.2em_0.35em_0.15em] [background:linear-gradient(transparent_38%,_var(--mark)_38%,_var(--mark)_94%,_transparent_94%)] [box-decoration-break:clone]">kritika</span></h1>
+    <h1>kritika</h1>
     <p class="signin-sub mt-0 mx-0 mb-3 text-muted text-ui-md">Sign in to continue</p>
 
     {#if loading}

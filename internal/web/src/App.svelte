@@ -291,7 +291,7 @@
 {#if checkingSession || (me && router.route.name === 'signin') || (!me && sessionError && router.route.name !== 'signin')}
   <main class="session-screen min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center text-muted" aria-busy={checkingSession}>
     <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
-    <span class="wordmark marked py-0 px-[0.2em] rounded-[0.15em_0.35em_0.2em_0.4em_/_0.4em_0.2em_0.35em_0.15em] [background:linear-gradient(transparent_38%,_var(--mark)_38%,_var(--mark)_94%,_transparent_94%)] [box-decoration-break:clone] font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
+    <span class="wordmark font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
     {#if sessionError}
       <h1>Unable to load your session</h1>
       <p role="alert">{sessionError}</p>
@@ -307,7 +307,7 @@
       <div class="topbar-row items-center gap-3.5 py-2 px-3.5 contents">
         <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home">
           <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
-          <span class="wordmark marked py-0 px-[0.2em] rounded-[0.15em_0.35em_0.2em_0.4em_/_0.4em_0.2em_0.35em_0.15em] [background:linear-gradient(transparent_38%,_var(--mark)_38%,_var(--mark)_94%,_transparent_94%)] [box-decoration-break:clone] font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
+          <span class="wordmark font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
         </a>
 
         {#if narrow}{@render scope()}{/if}
