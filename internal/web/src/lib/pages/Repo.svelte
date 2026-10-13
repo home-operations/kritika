@@ -178,14 +178,14 @@
         {@const why = d.archived ? 'archived on GitHub' : d.fork && !d.enabled ? 'a fork not turned on' : d.managedBy === 'file' ? 'listed in the configuration file' : 'reported by the forge'}
         {@const rows = shown(d, settingRows)}
         {@const agent = shown(d, agentRows)}
-        <p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm"><span>Reviews {enabled === 'yes' ? 'enabled' : 'disabled'}</span><span>Default branch <span class="mono">{d.defaultBranch}</span></span></p>
         {#if rc?.ignored}<p class="notice border border-solid border-line bg-surface rounded-md py-2 px-3 text-ui-md" role="note">Repository configuration ignored: {rc.ignored}</p>{/if}
         <Collapsible title="Repository settings">
-          <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-3.5">
-            <section class="panel" aria-labelledby="repo-settings">
-              <header class="panel-head">
-                <h2 id="repo-settings">Effective settings</h2>
-                <input class="settings-filter max-w-50" type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} />
+          {#snippet meta()}<span class="text-ui-sm text-muted">Reviews {enabled === 'yes' ? 'enabled' : 'disabled'} · default branch <span class="mono">{d.defaultBranch}</span></span>{/snippet}
+          <div class="grid-2 grid grid-cols-[repeat(auto-fit,_minmax(320px,_1fr))] gap-x-6 gap-y-3">
+            <section class="min-w-0" aria-labelledby="repo-settings">
+              <header class="subpanel-head">
+                <h3 id="repo-settings">Effective settings</h3>
+                <label class="search-box max-w-50 flex"><span class="sr-only">Filter settings</span><input type="search" aria-label="Filter settings" placeholder="Filter settings" bind:value={settingFilter} /></label>
               </header>
               <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
                 {#if matches('Enabled', 'enabled', enabled)}
@@ -198,8 +198,8 @@
               </dl>
               {#if rows.length === 0 && agent.length === 0}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No setting matches “{settingFilter.trim()}”.</p>{/if}
             </section>
-            <section class="panel" aria-labelledby="repo-agent">
-              <header class="panel-head"><h2 id="repo-agent">Agent limits</h2></header>
+            <section class="min-w-0" aria-labelledby="repo-agent">
+              <header class="subpanel-head"><h3 id="repo-agent">Agent limits</h3></header>
               <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-2.5 mx-3 text-ui-sm">
                 {#each agent as r (r.label)}
                   {@render setting(d, r)}
@@ -208,8 +208,8 @@
             </section>
           </div>
 
-          <section class="panel" aria-labelledby="repo-file">
-            <header class="panel-head"><h2 id="repo-file" class="mono">.kritika.yaml</h2></header>
+          <section class="min-w-0 border-t border-solid border-t-line" aria-labelledby="repo-file">
+            <header class="subpanel-head"><h3 id="repo-file" class="mono">.kritika.yaml</h3></header>
             {#if !rc}
               <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">No review has read it yet.</p>
             {:else}
@@ -242,8 +242,8 @@
         </Collapsible>
 
         <Collapsible title="Index runs" open={d.indexRuns[0]?.status === 'failed'}>
-          <section class="panel" aria-labelledby="repo-index">
-            <header class="panel-head"><h2 id="repo-index">Index runs</h2></header>
+          {#snippet meta()}{#if d.indexRuns[0]}<span class="text-ui-sm text-muted">latest {d.indexRuns[0].status} <Time iso={d.indexRuns[0].createdAt} /></span>{/if}{/snippet}
+          <section id="repo-index" class="min-w-0" aria-label="Index runs">
             {#if d.indexRuns.length === 0}
               <p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">Never indexed.</p>
             {:else}

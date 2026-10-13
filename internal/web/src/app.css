@@ -451,6 +451,13 @@
   .panel-head h2 {
     @apply m-0 text-[length:16px] font-[650];
   }
+  /* A section inside a collapsible: a heading row without a second border. */
+  .subpanel-head {
+    @apply flex items-center justify-between flex-wrap gap-3 py-1.5 px-3;
+  }
+  .subpanel-head h3 {
+    @apply m-0 text-ui-md font-[650];
+  }
   .meter {
     @apply h-1.5 rounded-[3px] bg-surface overflow-hidden;
   }
@@ -1292,6 +1299,13 @@
   }
   table.data .row-toggle-cell {
     @apply w-12 text-right align-middle;
+  }
+  /* Only some audit rows have detail; the toggle must not make theirs taller. */
+  table.audit .row-toggle-cell {
+    @apply py-0;
+  }
+  table.audit .row-toggle {
+    @apply h-7;
   }
   table.data .row-expanded > td {
     @apply bg-surface border-b-transparent;

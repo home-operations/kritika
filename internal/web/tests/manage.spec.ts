@@ -30,15 +30,15 @@ test('the audit log pages and expands detail', async ({ page }) => {
   const rows = page.locator('table.audit tbody > tr');
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(g.auditEvent.action);
-  await rows.first().getByRole('button', { name: 'detail' }).click();
-  await expect(rows.first().locator('.detail-json')).toContainText('jobId');
+  await rows.first().getByRole('button', { name: /^Detail of/ }).click();
+  await expect(page.locator('table.audit .row-preview .detail-json')).toContainText('jobId');
   await page.getByRole('button', { name: 'Load more' }).click();
-  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasNot: page.locator('.detail-json') })).toHaveCount(2);
   expect(seen.some((u) => u.pathname.endsWith('/audit') && u.searchParams.get('cursor') === 'c1')).toBe(true);
   await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 });
 
-test('an audit row with detail is as tall as one without, until the detail is opened', async ({ page }) => {
+test('an audit row with detail is as tall as one without, and opens its detail beneath', async ({ page }) => {
   const plain: T.AuditEvent = { ...g.auditEvent, id: '6', action: 'review.rerun', target: 'rev-1', detail: {} };
   await setup(page, adminMe, [[new RegExp(`${API}/audit$`), g.pageOf([g.auditEvent, plain])]]);
   await page.goto(`/${ADMIN}/audit`);
@@ -46,9 +46,12 @@ test('an audit row with detail is as tall as one without, until the detail is op
   await expect(rows).toHaveCount(2);
   const height = async (i: number) => (await rows.nth(i).boundingBox())!.height;
   expect(await height(0)).toBe(await height(1));
-  await rows.first().getByRole('button', { name: 'detail' }).click();
-  await expect(rows.first().locator('.detail-json')).toBeVisible();
-  expect(await height(0)).toBeGreaterThan(await height(1));
+  await expect(rows.nth(1).getByRole('button')).toHaveCount(0);
+  await rows.first().getByRole('button', { name: /^Detail of/ }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(1)).toHaveClass(/row-preview/);
+  await expect(rows.nth(1).locator('.detail-json')).toBeVisible();
+  expect(await height(0)).toBe(await height(2));
 });
 
 test.describe('actions', () => {
