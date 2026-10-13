@@ -4,7 +4,6 @@
   import { queryClient } from './lib/query';
   import { Dialog, Popover, Tooltip as BitsTooltip } from 'bits-ui';
   import Tooltip from './lib/components/Tooltip.svelte';
-  import { basePath } from './lib/base';
   import { router, initRouter, href, navigate, parse, replace } from './lib/router.svelte';
   import { getJSON, sendJSON, ApiError, signinState } from './lib/api.svelte';
   import { initEvents, closeEvents, stream } from './lib/events.svelte';
