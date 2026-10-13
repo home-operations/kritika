@@ -242,7 +242,7 @@ sources = [
   "tests/golden.ts",
   "tests/mock-server.ts",
 ]
-run = ["npm run build", "node tests/mock-server.ts"]
+run = ["npx vite build --outDir dist-mock", "node tests/mock-server.ts"]
 
 [tasks.ui-test]
 description = "Run the dashboard UI's Playwright end-to-end tests"
