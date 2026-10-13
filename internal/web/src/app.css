@@ -134,6 +134,17 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
+@keyframes letter-wave {
+  0% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-4px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
 @keyframes live-blink {
   50% {
     opacity: 0.25;
@@ -385,6 +396,10 @@
     --live: var(--warn);
     @apply text-warning;
   }
+  .wordmark.playing .letter {
+    animation: letter-wave 520ms cubic-bezier(0.33, 1, 0.68, 1) both;
+    animation-delay: calc(var(--i) * 45ms);
+  }
   .live-dot {
     animation: live-pulse 2.4s ease-out infinite;
   }
@@ -403,7 +418,8 @@
     .spinner {
       @apply [animation-duration:2.4s];
     }
-    .live-dot {
+    .live-dot,
+    .wordmark .letter {
       @apply [animation:none]!;
     }
   }

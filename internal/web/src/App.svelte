@@ -307,7 +307,7 @@
     <header class="topbar flex flex-col bg-canvas border-b-line flex-none w-57 pt-5 px-3 pb-3 border-b-0 border-r border-solid border-r-line overflow-y-auto">
       <a class="skip-link fixed left-3 top-[-100px] z-[var(--z-modal)] p-3 bg-panel" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
       <div class="topbar-row items-center gap-3.5 py-2 px-3.5 contents">
-        <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home" onmouseenter={() => wordmark?.scramble()}>
+        <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home" onmouseenter={() => wordmark?.play()}>
           <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
           <Wordmark bind:this={wordmark} />
         </a>

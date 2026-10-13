@@ -1,39 +1,20 @@
 <script lang="ts">
-  // The name, which can scramble: its letters run through random glyphs
-  // and settle back into place left to right. The width is held while it
-  // runs so the layout around it does not move. Nothing runs for a reader
-  // who asked the system for less motion.
+  // The name, whose letters can ripple: each lifts and settles in turn.
+  // A run always plays to its end, so leaving the brand mid-way never
+  // snaps the letters back. Nothing moves for a reader who asked the
+  // system for less motion.
   let { text = 'kritika' }: { text?: string } = $props();
-  // scrambled is the text while it runs; otherwise the name shows as given.
-  let scrambled = $state<string>();
-  let el = $state<HTMLSpanElement>();
-  let width = $state<number>();
-  let frame: number | undefined;
-  const GLYPHS = 'abcdefghijklmnopqrstuvwxyz';
-  const DURATION = 700;
-  const FRAME = 45;
+  let playing = $state(false);
+  const letters = $derived([...text]);
 
-  export function scramble(): void {
-    if (frame !== undefined || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    width = el?.offsetWidth;
-    const start = performance.now();
-    let last = 0;
-    const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / DURATION);
-      if (now - last >= FRAME) {
-        last = now;
-        scrambled = [...text].map((ch, i) => (t >= (i + 1) / text.length ? ch : GLYPHS[Math.floor(Math.random() * GLYPHS.length)])).join('');
-      }
-      if (t < 1) {
-        frame = requestAnimationFrame(tick);
-      } else {
-        scrambled = undefined;
-        width = undefined;
-        frame = undefined;
-      }
-    };
-    frame = requestAnimationFrame(tick);
+  export function play(): void {
+    if (playing || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    playing = true;
   }
 </script>
 
-<span bind:this={el} class="wordmark inline-block whitespace-nowrap font-extrabold tracking-[-0.01em] text-[length:25px]" style:width={width === undefined ? undefined : `${width}px`} aria-hidden="true">{scrambled ?? text}</span>
+<span class="wordmark inline-block whitespace-nowrap font-extrabold tracking-[-0.01em] text-[length:25px]" class:playing aria-hidden="true">
+  {#each letters as ch, i (i)}
+    <span class="letter inline-block" style:--i={i} onanimationend={() => { if (i === letters.length - 1) playing = false; }}>{ch}</span>
+  {/each}
+</span>
