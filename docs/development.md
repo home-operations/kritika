@@ -9,6 +9,7 @@ mise run test               # unit tests; mise run test -- ./internal/worker/ ru
 mise run test-integration   # Postgres suites against a throwaway VectorChord container
 mise run lint
 mise run smoke              # kritika serve in a kind cluster with CloudNativePG (needs docker, kind, kubectl, helm, openssl)
+mise run ui-mock            # the dashboard at http://localhost:5544/ on mocked data; mise watch ui-mock -r rebuilds on change
 ```
 
 `mise run smoke` is what CI's Serve Smoke job runs: it builds the image,
