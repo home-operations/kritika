@@ -10,7 +10,6 @@
   import Time from './Time.svelte';
   import Segmented from './Segmented.svelte';
   import ActionDialog from './ActionDialog.svelte';
-  import HelpPopover from './HelpPopover.svelte';
   import RowToggle from './RowToggle.svelte';
   import type { ComponentProps } from 'svelte';
 
@@ -41,11 +40,13 @@
   ] as const);
 </script>
 
-<div class="toolbar queue-toolbar flex flex-wrap items-center gap-2">
+<div class="toolbar flex flex-wrap items-center gap-2" role="search">
+  <label class="search-box [flex:1_1_240px] min-w-0 flex">
+    <span class="sr-only">Search jobs</span>
+    <input type="search" aria-label="Search jobs" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Search by repository, account or job" />
+  </label>
   <Segmented label="Queue state" options={filters} value={queueState} onchange={(v) => onfilter({ ...filter, state: v === 'all' ? undefined : v })} />
-  <label class="queue-search flex items-center gap-2 text-[length:12px] whitespace-nowrap">Search jobs <input type="search" bind:value={() => search, (q) => onfilter({ ...filter, q })} placeholder="Repository, account or job" /></label>
 </div>
-<div class="queue-caption flex items-center justify-between gap-3"><span class="small muted text-ui-sm">Showing {visible.length} of {jobs.length} loaded jobs</span><HelpPopover label="About the queue"><p>Up to 500 active and 50 finished jobs per account, prioritizing recent failures. Refreshes every 15 seconds.</p><p>Failed-job alerts cover the last 24 hours and clear when a replacement is queued, running or completed. An overdue heartbeat is a signal to investigate while the worker recovers.</p></HelpPopover></div>
 <div class="table-wrap table-card overflow-x-auto max-w-full bg-panel border border-solid border-line rounded-lg">
   <table class="data queue-table">
     <thead>

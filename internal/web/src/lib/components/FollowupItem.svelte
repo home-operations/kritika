@@ -8,6 +8,7 @@
   import Pill from './Pill.svelte';
   import Time from './Time.svelte';
   import FollowupTranscript from './FollowupTranscript.svelte';
+  import RowToggle from './RowToggle.svelte';
 
   let { slug, f, showPull = false }: { slug: string; f: Followup; showPull?: boolean } = $props();
   let open = $state(false);
@@ -30,9 +31,7 @@
     {#if f.model}<span class="mono small muted text-ui-sm">{f.model}</span>{/if}
     <Time iso={f.createdAt} />
     <span class="spacer flex-auto"></span>
-    <button class="btn btn-small" aria-expanded={open} aria-controls={open ? id : undefined} onclick={() => (open = !open)}>
-      {open ? 'Hide transcript' : 'Transcript'}
-    </button>
+    <RowToggle bind:open label={`Transcript of ${f.author}'s question`} controls={id} />
   </div>
   {#if f.reason}<p class="small muted followup-reason text-ui-sm">{f.reason}</p>{/if}
   <p class="small followup-links text-ui-sm flex flex-wrap gap-y-1 gap-x-3.5 m-0">
@@ -44,6 +43,6 @@
     {/if}
   </p>
   {#if open}
-    <div {id} class="followup-transcript mt-1.5"><FollowupTranscript {slug} commentId={f.commentId} /></div>
+    <div {id} class="followup-transcript mt-1.5" role="region" aria-label={`Transcript of ${f.author}'s question`}><FollowupTranscript {slug} commentId={f.commentId} /></div>
   {/if}
 </li>
