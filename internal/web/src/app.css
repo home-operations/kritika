@@ -1164,6 +1164,9 @@
     .brand {
       @apply m-0;
     }
+    .brand .logo {
+      @apply w-[22px] h-[22px];
+    }
     .wordmark {
       @apply hidden;
     }

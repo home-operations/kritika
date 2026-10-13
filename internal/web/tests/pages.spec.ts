@@ -1396,7 +1396,7 @@ test('the top bar fits a phone: the logo keeps its size and the user menu stays 
   await page.goto(`/${T}/pulls`);
   const user = (await page.locator('.user-button').boundingBox())!;
   expect(user.x + user.width).toBeLessThanOrEqual(390);
-  expect((await page.locator('.brand img').boundingBox())!.width).toBe(22);
+  expect((await page.locator('.brand .logo').boundingBox())!.width).toBe(22);
 });
 
 test("this month's tiles fill their grid at every width, with no cell left empty", async ({ page }) => {

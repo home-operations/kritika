@@ -1,14 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <path
-    fill="#2447b8"
-    d="M16 3C8.82 3 3 8.15 3 14.5c0 3.6 1.86 6.82 4.77 8.94-.18 1.6-.9 3.13-2.02 4.3a.75.75 0 0 0 .58 1.26c2.5-.12 4.78-1.02 6.6-2.44 1 .19 2.03.29 3.07.29 7.18 0 13-5.15 13-11.5S23.18 3 16 3Z"
-  />
-  <path
-    fill="none"
-    stroke="#f5df4d"
-    stroke-width="2.6"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    d="m10.8 15 3.2 3.2 7.2-7.2"
-  />
+  <!-- The logo's magnifying glass with just enough in the lens to read at 16px. -->
+  <circle cx="13.5" cy="13.5" r="9.5" fill="#ffffff" stroke="#2447b8" stroke-width="3" />
+  <rect x="8.5" y="9.5" width="8" height="2.2" rx="1.1" fill="#1b2130" />
+  <rect x="8.5" y="13.5" width="10" height="2.2" rx="1.1" fill="#f5df4d" />
+  <rect x="8.5" y="17.5" width="6" height="2.2" rx="1.1" fill="#1b2130" />
+  <path d="M21 21l7.5 7.5" stroke="#2447b8" stroke-width="4" stroke-linecap="round" />
 </svg>

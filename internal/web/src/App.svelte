@@ -39,6 +39,7 @@
   import { focusWhenShown, revealInNav } from './lib/focus';
   import Icon from './lib/Icon.svelte';
   import Wordmark from './lib/Wordmark.svelte';
+  import Logo from './lib/Logo.svelte';
   import Palette from './lib/Palette.svelte';
   import SignIn from './lib/SignIn.svelte';
   import Page from './lib/pages/Page.svelte';
@@ -292,7 +293,7 @@
 <BitsTooltip.Provider delayDuration={300}>
 {#if checkingSession || (me && router.route.name === 'signin') || (!me && sessionError && router.route.name !== 'signin')}
   <main class="session-screen min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center text-muted" aria-busy={checkingSession}>
-    <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
+    <Logo size={40} />
     <span class="wordmark font-extrabold tracking-[-0.01em] text-[length:25px]">kritika</span>
     {#if sessionError}
       <h1>Unable to load your session</h1>
@@ -308,7 +309,7 @@
       <a class="skip-link fixed left-3 top-[-100px] z-[var(--z-modal)] p-3 bg-panel" href="#main-content" onclick={(e) => { e.preventDefault(); focusWhenShown('main', true); }}>Skip to content</a>
       <div class="topbar-row items-center gap-3.5 py-2 px-3.5 contents">
         <a class="brand flex flex-none items-center gap-2 text-inherit no-underline mt-0 mx-3 mb-4" href="#/" aria-label="kritika home" onmouseenter={() => wordmark?.play()}>
-          <img src="{basePath}/favicon.svg" width="22" height="22" alt="" />
+          <Logo />
           <Wordmark bind:this={wordmark} />
         </a>
 

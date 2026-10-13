@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Logo from './Logo.svelte';
   import { basePath } from './base';
   import { getJSON, sendJSON, signinState, ApiError } from './api.svelte';
   import { session } from './session.svelte';
@@ -66,7 +67,7 @@
 
 <div class="signin flex items-center justify-center min-h-dvh bg-canvas">
   <div class="signin-card flex flex-col items-center gap-1.5 w-[min(320px,_90vw)] py-8 px-7 bg-panel border border-solid border-line rounded-[10px] text-center">
-    <img src="{basePath}/favicon.svg" width="40" height="40" alt="" />
+    <Logo size={40} />
     <h1>kritika</h1>
     <p class="signin-sub mt-0 mx-0 mb-3 text-muted text-ui-md">Sign in to continue</p>
 
