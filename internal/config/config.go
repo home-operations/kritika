@@ -103,33 +103,6 @@ type Config struct {
 	webURL        *url.URL
 }
 
-// ValidateServe checks what serve needs beyond the common set.
-func (c *Config) ValidateServe() error {
-	var errs []error
-	if c.ConfigFile == "" {
-		errs = append(errs, errors.New("config: KRITIKA_CONFIG_FILE is required to serve"))
-	}
-	if c.Executor == ExecutorKubernetes && c.RunnerImage == "" {
-		errs = append(errs, errors.New("config: KRITIKA_RUNNER_IMAGE is required with the kubernetes executor"))
-	}
-	switch c.RunnerImagePullPolicy {
-	case "", "Always", "IfNotPresent", "Never":
-	default:
-		errs = append(errs, fmt.Errorf("config: KRITIKA_RUNNER_IMAGE_PULL_POLICY %q is not Always, IfNotPresent or Never",
-			c.RunnerImagePullPolicy))
-	}
-	if c.Executor == ExecutorLocal && c.RunnerDatabaseURL == "" {
-		errs = append(errs, errors.New("config: KRITIKA_RUNNER_DATABASE_URL is required with the local executor"))
-	}
-	if c.WebURL == "" {
-		errs = append(errs, errors.New("config: KRITIKA_WEB_URL is required to serve"))
-	}
-	if c.GatewayURL == "" {
-		errs = append(errs, errors.New("config: KRITIKA_GATEWAY_URL is required to serve: every review reaches its model through the gateway"))
-	}
-	return errors.Join(errs...)
-}
-
 // ValidateRunner checks what a runner pod needs. The job document itself is
 // decoded and validated by the runner package.
 func (c *Config) ValidateRunner() error {
@@ -198,13 +171,8 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if _, err := c.Level(); err != nil {
+	if err := c.Validate(); err != nil {
 		return err
-	}
-	switch strings.ToLower(c.LogFormat) {
-	case "json", "text":
-	default:
-		return fmt.Errorf("config: KRITIKA_LOG_FORMAT must be json or text, got %q", c.LogFormat)
 	}
 	if c.GatewayURL != "" {
 		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
@@ -214,7 +182,7 @@ func (c *Config) validate() error {
 	if err := c.parseWebURL(); err != nil {
 		return err
 	}
-	return c.Validate()
+	return nil
 }
 
 // Level returns the slog level named by LogLevel.

@@ -134,13 +134,17 @@ The application file, with deployment settings derived from chart values.
 {{- if and .Values.existingConfigMap .Values.config -}}
 {{- fail "config and existingConfigMap are mutually exclusive" -}}
 {{- end -}}
+{{- $config := tpl (toYaml (.Values.config | default dict)) . | fromYaml -}}
+{{- if hasKey $config "Error" -}}
+{{- fail (printf "config must render valid YAML: %s" (get $config "Error")) -}}
+{{- end -}}
 {{- $runtime := include "kritika.runtimeConfig" . | fromYaml -}}
-{{- range $key, $_ := .Values.config -}}
+{{- range $key, $_ := $config -}}
 {{- if hasKey $runtime $key -}}
 {{- fail (printf "config.%s: the chart derives this setting from its deployment values" $key) -}}
 {{- end -}}
 {{- end -}}
-{{- toYaml (mergeOverwrite (deepCopy (.Values.config | default dict)) $runtime) -}}
+{{- toYaml (mergeOverwrite $config $runtime) -}}
 {{- end -}}
 
 {{- define "kritika.runtimeConfig" -}}

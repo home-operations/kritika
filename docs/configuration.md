@@ -43,6 +43,20 @@ The dashboard controls whether each repository is enabled. A repository's own
 [`.kritika.yaml`](repository-config.md) narrows the configured policy.
 CEL expression keys end in `Expr`, or use `expr` within a condition.
 
+## Helm templates
+
+Helm renders inline `config` through `tpl` with the release context. For example:
+
+```yaml
+config:
+  webUrl: "https://{{ .Release.Name }}.turbo.ac"
+```
+
+Templates can access `.Release`, `.Values` and other Helm context. This also
+applies to strings in prompts and rules. To preserve a literal expression, use
+`{{ "{{ .Example }}" }}`. External ConfigMaps and files loaded directly by the
+application are not processed by Helm.
+
 ## Environment-only inputs
 
 These inputs have no configuration-file equivalent:

@@ -66,8 +66,8 @@ ingress:
 
 `config` is the application's YAML configuration: `webUrl`, logging, workers,
 polling, retention, `auth`, `apps`, `providers`, review policy and account settings.
-It has the same structure as the configuration file and is not evaluated with
-`tpl`. Omitted values use operational env settings or application defaults; zero and false are preserved.
+It has the same structure as the configuration file and is evaluated with
+`tpl`, so `webUrl: "https://{{ "{{ .Release.Name }}" }}.example.com"` uses the release name. Omitted values use operational env settings or application defaults; zero and false are preserved.
 The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
 - Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.

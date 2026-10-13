@@ -9,7 +9,7 @@
     },
     "config": {
       "additionalProperties": false,
-      "description": "Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Not evaluated with tpl. Mutually exclusive with existingConfigMap.",
+      "description": "Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap.",
       "properties": {
         "accounts": {
           "required": [],
@@ -376,7 +376,7 @@
       "type": "object"
     },
     "image": {
-      "description": "Default values for kritika.\n\nMost string, list and map values below are rendered through Helm's `tpl`, so\nthey may carry template expressions that resolve at install time, e.g.\n  ingress.hosts[0].host: kritika.{{ .Values.global.domain }}\nPlain numbers and booleans, and `config`, are passed through as they are.",
+      "description": "Default values for kritika.\n\nMost string, list and map values below are rendered through Helm's `tpl`, so\nthey may carry template expressions that resolve at install time, e.g.\n  ingress.hosts[0].host: kritika.{{ .Values.global.domain }}\nPlain numbers and booleans are passed through as they are.",
       "properties": {
         "digest": {
           "default": "",

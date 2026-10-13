@@ -23,7 +23,8 @@ func TestHelmConfiguration(t *testing.T) {
 		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.33.0",
 		"--set", "runner.runtimeClass=gvisor", "--set", "runner.deadline=20m",
 		"--set", "runner.tools[0].name=helm", "--set", "runner.tools[0].image=example.com/helm:test",
-		"--set", "config.pollInterval=0s")
+		"--set", "config.pollInterval=0s",
+		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com")
 	rendered, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, rendered)

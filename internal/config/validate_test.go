@@ -11,6 +11,10 @@ import (
 
 func TestSettingsValidation(t *testing.T) {
 	for _, tt := range []struct{ name, doc, want string }{
+		{"invalid log level", "logLevel: loud", "logLevel: KRITIKA_LOG_LEVEL must be debug, info, warn or error"},
+		{"invalid log format", "logFormat: xml", "logFormat: KRITIKA_LOG_FORMAT must be json or text"},
+		{"case insensitive logging", "logLevel: DEBUG\nlogFormat: TEXT", ""},
+		{"warning alias", "logLevel: warning", ""},
 		{"zero workers", "reviewWorkers: 0", "reviewWorkers: KRITIKA_REVIEW_WORKERS must be positive"},
 		{"zero gateway lifetime", "gatewayTokenTtl: 0s", "gatewayTokenTtl: KRITIKA_GATEWAY_TOKEN_TTL must be positive"},
 		{"zero runner lifetime", "runner: {ttl: 0s}", "runner.ttl: KRITIKA_RUNNER_TTL must be positive"},
@@ -38,11 +42,11 @@ func TestSettingsValidation(t *testing.T) {
 }
 
 func TestSettingsValidationCollectsErrors(t *testing.T) {
-	_, err := LoadSettings([]byte("reviewWorkers: 0\nindexWorkers: -1\nrunner: {ttl: 0s}"))
+	_, err := LoadSettings([]byte("reviewWorkers: 0\nindexWorkers: -1\nrunner: {ttl: 0s}\nlogLevel: loud\nlogFormat: xml"))
 	if err == nil {
 		t.Fatal("invalid settings accepted")
 	}
-	for _, path := range []string{"reviewWorkers", "indexWorkers", "runner.ttl"} {
+	for _, path := range []string{"reviewWorkers", "indexWorkers", "runner.ttl", "logLevel", "logFormat"} {
 		if !strings.Contains(err.Error(), path) {
 			t.Errorf("missing %s in %v", path, err)
 		}

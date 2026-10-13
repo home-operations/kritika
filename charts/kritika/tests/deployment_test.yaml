@@ -295,6 +295,13 @@ tests:
       - failedTemplate:
           errorPattern: config.webUrl is required
 
+  - it: validates the rendered web URL
+    set:
+      config.webUrl: '{{ printf "https://%s.turbo.ac" .Release.Name }}'
+    asserts:
+      - isKind:
+          of: Deployment
+
   - it: fails when config.webUrl is not an http(s) URL
     set:
       config.webUrl: ftp://dash.example.com

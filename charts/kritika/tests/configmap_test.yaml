@@ -4,7 +4,7 @@ templates:
 values:
   - ../ci/lint-values.yaml
 tests:
-  - it: renders the configuration file verbatim
+  - it: renders the application configuration
     asserts:
       - hasDocuments:
           count: 1
@@ -28,12 +28,12 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: preserves explicit zero and false values and does not evaluate templates
+  - it: preserves explicit zero and false values and escaped template expressions
     set:
       config.pollInterval: 0s
       config.review.approve: false
       config.confidence.threshold: 0
-      config.comments.summary: "{{ .Release.Name }}"
+      config.comments.summary: '{{ "{{ .Release.Name }}" }}'
     asserts:
       - matchRegex:
           path: data["config.yaml"]
@@ -47,6 +47,18 @@ tests:
       - matchRegex:
           path: data["config.yaml"]
           pattern: '\{\{ .Release.Name \}\}'
+
+  - it: evaluates application config with the release and values context
+    set:
+      config.webUrl: "https://{{ .Release.Name }}.turbo.ac"
+      config.apps.github.clientId: "{{ .Release.Namespace }}-{{ .Values.service.port }}"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "webUrl: https://RELEASE-NAME.turbo.ac"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "clientId: NAMESPACE-8080"
 
   - it: derives the runner configuration from runner values
     set:

@@ -61,8 +61,8 @@ ingress:
 
 `config` is the application's YAML configuration: `webUrl`, logging, workers,
 polling, retention, `auth`, `apps`, `providers`, review policy and account settings.
-It has the same structure as the configuration file and is not evaluated with
-`tpl`. Omitted values use operational env settings or application defaults; zero and false are preserved.
+It has the same structure as the configuration file and is evaluated with
+`tpl`, so `webUrl: "https://{{ .Release.Name }}.example.com"` uses the release name. Omitted values use operational env settings or application defaults; zero and false are preserved.
 The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
 - Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
@@ -184,7 +184,7 @@ Kubernetes: `>=1.25.0-0`
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
-| config | object | `{}` | Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Not evaluated with tpl. Mutually exclusive with existingConfigMap. |
+| config | object | `{}` | Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritika_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |

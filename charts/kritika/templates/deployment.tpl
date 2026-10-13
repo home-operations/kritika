@@ -9,7 +9,7 @@
 {{- end -}}
 {{- $configuration := include "kritika.configuration" . -}}
 {{- if not .Values.existingConfigMap -}}
-{{- $webURL := get (.Values.config | default dict) "webUrl" | default "" | toString -}}
+{{- $webURL := get ($configuration | fromYaml) "webUrl" | default "" | toString -}}
 {{- if not $webURL -}}
 {{- fail "config.webUrl is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}
 {{- end -}}

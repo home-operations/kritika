@@ -167,6 +167,10 @@ func TestCommandValidation(t *testing.T) {
 	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIKA_RUNNER_DATABASE_URL") {
 		t.Fatalf("local executor without a runner DSN = %v", err)
 	}
+	cfg.RunnerDatabaseURL = "postgres://runner@db/kritika"
+	if err := cfg.ValidateServe(); err != nil {
+		t.Fatalf("local executor with a runner DSN: %v", err)
+	}
 	if err := cfg.ValidateRunner(); err == nil {
 		t.Fatal("run without its inputs must fail")
 	}
