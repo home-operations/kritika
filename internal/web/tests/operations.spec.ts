@@ -292,10 +292,10 @@ test('background usage refresh leaves drilldown available and cannot overwrite a
   await page.evaluate(() => window.dispatchEvent(new Event('refresh-usage')));
   await expect.poll(() => pending).toBe(true);
   await expect(drill).toBeEnabled();
+  const cancelled = page.waitForEvent('requestfailed', (request) => request.url().includes('/usage?') && new URL(request.url()).searchParams.get('group') === 'repo');
   await drill.click();
   await expect(page.getByRole('heading', { name: 'API spend by model' })).toBeVisible();
-  const refreshed = page.waitForResponse((r) => r.url().includes('/usage?') && new URL(r.url()).searchParams.get('group') === 'repo');
+  await cancelled;
   release();
-  await refreshed;
   await expect(page.getByRole('button', { name: 'acme/large →' })).toBeVisible();
 });

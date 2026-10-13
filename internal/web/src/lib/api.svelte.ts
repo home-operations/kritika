@@ -7,6 +7,7 @@
 import { basePath } from './base';
 import { parse, replace } from './router.svelte';
 import { session } from './session.svelte';
+import { invalidateApi, queryClient } from './query';
 import type { ErrorBody } from './types';
 
 export class ApiError extends Error {
@@ -45,6 +46,7 @@ async function toApiError(res: Response): Promise<ApiError> {
 // signed-in user off the sign-in page, straight back into the 401.
 export function toSignIn(): void {
   session.me = undefined;
+  queryClient.clear();
   if (parse(location.hash).name === 'signin') return;
   signinState.returnTo = location.hash || '#/';
   replace({ name: 'signin' });
@@ -87,5 +89,8 @@ export async function sendJSON<T>(method: WriteMethod, path: string, body?: unkn
     credentials: 'same-origin',
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return handle<T>(res);
+  const data = await handle<T>(res);
+  // Page callbacks coordinate list snapshots and refresh the affected views.
+  if (path.startsWith('/api/')) invalidateApi(path);
+  return data;
 }

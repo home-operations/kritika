@@ -1,60 +1,104 @@
-// Resource is one fetched value plus its loading/error state, so every page
-// renders the same loading, error and loaded states. A load that finishes
-// after a newer one started is dropped, so a slow response can't overwrite
-// a fresher one.
-import { untrack } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
+import { QueryObserver, type QueryObserverResult } from '@tanstack/svelte-query';
+import { apiQuery, queryClient } from './query';
+import { session } from './session.svelte';
 import { router } from './router.svelte';
 import { ApiError, getJSON } from './api.svelte';
-import { subscribe } from './events.svelte';
+import { EVENT_KINDS, subscribe } from './events.svelte';
 import { loadedSize, rememberSize } from './viewstate';
 import type { EventKind, LiveEvent, Page } from './types';
 
+let nextSnapshot = 0;
+
 export class Resource<T> {
-  data = $state<T | undefined>(undefined);
+  #data = $state.raw<T | undefined>(undefined);
   error = $state<Error | undefined>(undefined);
   loading = $state(false);
-  #seq = 0;
-  readonly #fetcher: () => Promise<T>;
-  readonly #key?: () => string;
+  #observer?: QueryObserver<T>;
+  #disposed = false;
+  #unsubscribe?: () => void;
   #loadedKey?: string;
+  readonly #snapshot = ++nextSnapshot;
+  readonly #fetcher?: (signal: AbortSignal) => Promise<T>;
+  readonly #key?: () => string;
 
-  constructor(fetcher: () => Promise<T>, key?: () => string) {
+  constructor(fetcher: ((signal: AbortSignal) => Promise<T>) | undefined, key?: () => string) {
     this.#fetcher = fetcher;
     this.#key = key;
+    onDestroy(() => {
+      this.#disposed = true;
+      this.#unsubscribe?.();
+    });
   }
 
-  invalidate(): void {
-    this.#seq++;
+  static json<T>(path: () => string): Resource<T> {
+    return new Resource<T>(undefined, path);
+  }
+
+  get data(): T | undefined { return this.#data; }
+
+  set data(data: T | undefined) {
+    if (this.#disposed) return;
+    this.#data = data;
+    if (this.#observer && data !== undefined) queryClient.setQueryData(this.#observer.getCurrentQuery().queryKey, data);
+  }
+
+  cancel(): void {
+    void this.#observer?.getCurrentQuery().cancel({ revert: true });
+  }
+
+  reset(): void {
+    if (this.#observer) queryClient.removeQueries({ queryKey: this.#observer.getCurrentQuery().queryKey, exact: true });
   }
 
   async load(): Promise<void> {
-    const seq = ++this.#seq;
+    if (this.#disposed || !session.me) return;
     const key = this.#key?.();
-    if (key !== this.#loadedKey) {
-      this.data = undefined;
-      this.error = undefined;
+    await untrack(async () => {
+      const changed = !this.#observer || key !== this.#loadedKey;
       this.#loadedKey = key;
-    }
-    this.loading = true;
-    try {
-      const data = await this.#fetcher();
-      if (seq !== this.#seq) return;
-      this.data = data;
-      this.error = undefined;
-    } catch (err) {
-      if (seq !== this.#seq) return;
-      this.error = err instanceof Error ? err : new Error(String(err));
-    } finally {
-      if (seq === this.#seq) this.loading = false;
-    }
+      const options = {
+        ...(this.#fetcher ? {
+          queryKey: ['snapshot', this.#snapshot, key],
+          queryFn: ({ signal }: { signal: AbortSignal }) => this.#fetcher!(signal),
+          // Custom fetchers can close over page state; release them on unmount.
+          gcTime: 0,
+        } : apiQuery<T>(key!)),
+        // Pages decide when hidden tabs and coordinated list snapshots load.
+        enabled: false,
+      };
+      if (!this.#observer) {
+        this.#observer = new QueryObserver<T>(queryClient, options);
+        this.#unsubscribe = this.#observer.subscribe((result) => this.#apply(result));
+      } else {
+        this.#observer.setOptions(options);
+      }
+      if (changed) {
+        this.data = undefined;
+        this.#apply(this.#observer.getCurrentResult());
+        // History restoration must settle against fresh data before restoring scroll.
+        if (!router.traversal) {
+          await queryClient.prefetchQuery<T>(options);
+          return;
+        }
+      }
+      // A same-page refresh must supersede even an unfinished initial read.
+      // A new observer still joins the shared request for its cache key.
+      if (!changed) this.cancel();
+      await this.#observer.refetch();
+    });
+  }
+
+  #apply(result: QueryObserverResult<T>): void {
+    if (result.data !== undefined || !result.isError) this.#data = result.data;
+    this.error = result.error ?? undefined;
+    this.loading = result.isFetching;
   }
 }
 
 export function errorMessage(err: Error): string {
   return err instanceof ApiError ? `${err.message} (${err.status})` : err.message;
 }
-
-const KINDS: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'followup', 'model_call'];
 
 // What a debounced refetch was woken by: the event kinds seen since the last
 // refetch, plus 'resync' when the server asked for everything.
@@ -104,7 +148,7 @@ export function live(
     else clearTimeout(timer);
     timer = setTimeout(run, Math.min(delayMs, Math.max(0, since + maxWaitMs - now)));
   };
-  const offs = KINDS.map((k) =>
+  const offs = EVENT_KINDS.map((k) =>
     subscribe(k, (d) => {
       if (isLiveEvent(d) && match(d)) fire(k);
     }),
@@ -131,23 +175,28 @@ export class Paged<T> {
   #afterMore: Promise<void> | undefined;
   #refresh: Promise<void> | undefined;
   #refreshAgain = false;
+  #moreController?: AbortController;
   readonly #url: (cursor?: string) => string;
   readonly #key: (t: T) => string;
 
   constructor(url: (cursor?: string) => string, key: (t: T) => string) {
     this.#url = url;
     this.#key = key;
-    this.first = new Resource(async () => {
+    onDestroy(() => {
+      this.#gen++;
+      this.#moreController?.abort();
+    });
+    this.first = new Resource(async (signal) => {
       const gen = this.#gen;
       const revision = this.#revision;
       const target = this.#loaded;
       const progressive = untrack(() => this.first.data === undefined);
-      let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined));
+      let page = await getJSON<Page<T>>(this.#pageURL(undefined, target || undefined), signal);
       const items = [...page.items];
       while (items.length < target && page.nextCursor) {
         if (gen !== this.#gen || revision !== this.#revision) return page;
         if (progressive) this.first.data = { items: this.#unique(items), nextCursor: page.nextCursor };
-        page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length));
+        page = await getJSON<Page<T>>(this.#pageURL(page.nextCursor, target - items.length), signal);
         items.push(...page.items);
       }
       const unique = this.#unique(items);
@@ -205,8 +254,9 @@ export class Paged<T> {
       this.#entry = entry;
       this.#base = base;
       this.#gen++;
+      this.#moreController?.abort();
       this.#revision++;
-      this.first.invalidate();
+      this.first.reset();
       this.#loaded = untrack(() => router.traversal) ? loadedSize(entry, base) : 0;
       this.#more = undefined;
       this.#afterMore = undefined;
@@ -218,7 +268,7 @@ export class Paged<T> {
       this.loadingMore = false;
     } else if (!background && this.#refresh) {
       this.#revision++;
-      this.first.invalidate();
+      this.first.cancel();
     }
     if (this.#more) {
       if (!this.#afterMore) {
@@ -262,7 +312,8 @@ export class Paged<T> {
     try {
       if (this.#refresh) await this.#refresh;
       if (gen !== this.#gen || !this.cursor) return;
-      const p = await getJSON<Page<T>>(this.#url(this.cursor));
+      this.#moreController = new AbortController();
+      const p = await getJSON<Page<T>>(this.#url(this.cursor), this.#moreController.signal);
       if (gen !== this.#gen) return;
       this.first.data = { items: this.#unique([...this.items, ...p.items]), nextCursor: p.nextCursor };
       this.#loaded = this.items.length;
@@ -271,6 +322,7 @@ export class Paged<T> {
       if (gen === this.#gen) this.moreError = err instanceof Error ? err : new Error(String(err));
     } finally {
       if (gen === this.#gen) {
+        this.#moreController = undefined;
         this.loadingMore = false;
         this.#more = undefined;
         if (this.#refreshAgain && !this.#afterMore) void this.refresh();

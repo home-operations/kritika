@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { getJSON } from '../../api.svelte';
   import { href } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
   import type { Transcript } from '../../types';
@@ -7,7 +6,7 @@
   import Conversation from '../../components/conversation/Conversation.svelte';
 
   let { active, base, version, slug }: { active: boolean; base: string; version: number; slug: string } = $props();
-  const res = new Resource(() => getJSON<Transcript>(`${base}/transcript`));
+  const res = Resource.json<Transcript>(() => `${base}/transcript`);
   $effect(() => {
     void version;
     if (active) void res.load();

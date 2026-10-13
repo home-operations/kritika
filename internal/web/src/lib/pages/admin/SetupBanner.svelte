@@ -1,13 +1,12 @@
 <script lang="ts">
   // Tells an admin, on every page, while the instance cannot review, and
   // points at the Configuration page.
-  import { getJSON } from '../../api.svelte';
   import { href } from '../../router.svelte';
   import { Resource } from '../../resource.svelte';
   import { notReviewing } from '../../setup';
   import type { SetupStatus } from '../../types';
 
-  const status = new Resource(() => getJSON<SetupStatus>('/api/v1/admin/setup'));
+  const status = Resource.json<SetupStatus>(() => '/api/v1/admin/setup');
   $effect(() => {
     void status.load();
   });

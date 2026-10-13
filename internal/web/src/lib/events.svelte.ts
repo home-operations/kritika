@@ -5,11 +5,14 @@
 // tab in lockstep a couple seconds later.
 import { toSignIn } from './api.svelte';
 import { basePath } from './base';
-import type { Resync } from './types';
+import { invalidateApi } from './query';
+import { accountApi } from './links';
+import type { EventKind, LiveEvent, Resync } from './types';
 
 type Listener = (data: unknown) => void;
 
-const listeners = new Map<string, Set<Listener>>();
+export const EVENT_KINDS: readonly EventKind[] = ['review', 'runner_run', 'index_run', 'followup', 'model_call'];
+const listeners = new Map<string, Set<Listener>>(EVENT_KINDS.map((kind) => [kind, new Set()]));
 let source: EventSource | null = null;
 let attempt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -56,6 +59,9 @@ function parseData(e: MessageEvent<string>): unknown {
 
 function dispatch(kind: string, e: MessageEvent<string>): void {
   const data = parseData(e);
+  if (typeof data === 'object' && data !== null && 'account' in data && typeof data.account === 'string') {
+    invalidateApi(accountApi(data.account), data as LiveEvent);
+  }
   for (const fn of listeners.get(kind) ?? []) fn(data);
 }
 
@@ -122,6 +128,7 @@ function connect(): void {
       location.reload();
       return;
     }
+    invalidateApi();
     for (const fn of listeners.get('resync') ?? []) fn(data);
   });
   // EventSource retries on its own after 'error', but only at a fixed

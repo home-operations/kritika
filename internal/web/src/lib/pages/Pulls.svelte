@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { getJSON, sendJSON } from '../api.svelte';
+  import { sendJSON } from '../api.svelte';
   import { isAdmin } from '../session.svelte';
   import { sendEach, toastTally } from '../manage';
   import { navigate, replace } from '../router.svelte';
@@ -53,7 +53,7 @@
 
   const paged = new Paged<ScopedPull>(query, keyOf);
   const res = paged.first;
-  const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
+  const repos = Resource.json<Page<Repository>>(() => `${account}/repos?limit=100`);
   const repoNames = $derived((repos.data?.items ?? []).map((r) => r.fullName));
 
   $effect(() => {

@@ -4,7 +4,6 @@
   import PageHeader from '../components/PageHeader.svelte';
   // The queue of every account the viewer can read, and the model slots
   // each account's running reviews hold, which is why a job of it waits.
-  import { getJSON } from '../api.svelte';
   import { href } from '../router.svelte';
   import { Resource, live, pollJobs } from '../resource.svelte';
   import type { InstanceQueue } from '../types';
@@ -14,7 +13,7 @@
 
   let { filter }: { filter?: QueueFilter } = $props();
 
-  const res = new Resource(() => getJSON<InstanceQueue>('/api/v1/queue'));
+  const res = Resource.json<InstanceQueue>(() => '/api/v1/queue');
 
   $effect(() => {
     void res.load();

@@ -11,7 +11,8 @@
   import { palette, closeOverlays } from './keyboard.svelte';
   import Icon from './Icon.svelte';
   import type { Me, Page, Pull } from './types';
-  import { getJSON } from './api.svelte';
+  import { apiQuery } from './query';
+  import { createQueries } from '@tanstack/svelte-query';
   import { pullRoute, accountApi } from './links';
   import { CONSOLE_SECTIONS } from './settingsindex';
   import { focusWhenShown } from './focus';
@@ -101,36 +102,29 @@
     return entries;
   }
 
-  // The recently updated pulls of every account the viewer can read,
-  // fetched each time the palette opens so they are jump targets too: the
-  // current account's lead, then the rest, the latest first.
-  let recent = $state<{ slug: string; pull: Pull }[]>([]);
+  const current = $derived(currentSlug(router.route));
+  const slugs = $derived(me ? [...new Set([...(current ? [current] : []), ...me.accounts])] : []);
+  const recentQueries = createQueries(() => ({
+    queries: slugs.map((slug) => {
+      const path = `${accountApi(slug)}/pulls?state=all&limit=20`;
+      return {
+        ...apiQuery<Page<Pull>>(path),
+        enabled: palette.open,
+      };
+    }),
+  }));
+  const recent = $derived(recentQueries.flatMap((query, i) =>
+    (query.data?.items ?? []).map((pull) => ({ slug: slugs[i], pull })),
+  ).sort((a, b) => Number(b.slug === current) - Number(a.slug === current) || Date.parse(b.pull.updatedAt) - Date.parse(a.pull.updatedAt)));
 
-  let recentSeq = 0;
-
-  async function loadRecent(slugs: string[], current: string | undefined): Promise<void> {
-    const seq = ++recentSeq;
-    const pages = await Promise.all(
-      slugs.map(async (slug) => {
-        try {
-          const p = await getJSON<Page<Pull>>(`${accountApi(slug)}/pulls?state=all&limit=20`);
-          return p.items.map((pull) => ({ slug, pull }));
-        } catch (err) {
-          console.error('palette recent pulls:', err);
-          return [];
-        }
-      }),
-    );
-    if (seq !== recentSeq) return;
-    recent = pages
-      .flat()
-      .sort((a, b) => Number(b.slug === current) - Number(a.slug === current) || Date.parse(b.pull.updatedAt) - Date.parse(a.pull.updatedAt));
-  }
-
+  const loggedErrors = new WeakSet<Error>();
   $effect(() => {
-    const current = currentSlug(router.route);
-    const slugs = [...new Set([...(current ? [current] : []), ...(me?.accounts ?? [])])];
-    if (palette.open && slugs.length) void loadRecent(slugs, current);
+    for (const query of recentQueries) {
+      if (query.error && !loggedErrors.has(query.error)) {
+        loggedErrors.add(query.error);
+        console.error('palette recent pulls:', query.error);
+      }
+    }
   });
 
   let q = $state('');

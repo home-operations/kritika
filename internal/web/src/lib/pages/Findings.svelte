@@ -3,7 +3,6 @@
   // its reviews repeated it, and whether a later review found it addressed
   // or a maintainer dismissed it.
   import { tick, untrack } from 'svelte';
-  import { getJSON } from '../api.svelte';
   import { href, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
   import { Paged, Resource, errorMessage, live } from '../resource.svelte';
@@ -49,7 +48,7 @@
   }
   const paged = new Paged<AccountFinding>(query, (f) => f.id);
   const res = paged.first;
-  const repos = new Resource(() => getJSON<Page<Repository>>(`${account}/repos?limit=100`));
+  const repos = Resource.json<Page<Repository>>(() => `${account}/repos?limit=100`);
   $effect(() => {
     void paged.load();
   });

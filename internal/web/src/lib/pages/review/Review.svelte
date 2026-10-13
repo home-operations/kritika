@@ -27,14 +27,14 @@
   } = $props();
   let page = $state<HTMLElement>();
   const account = $derived(accountApi(slug));
-  const res: Resource<ReviewDetail> = new Resource(async () => {
-    const detail = await getJSON<ReviewDetail>(base);
+  const res: Resource<ReviewDetail> = new Resource(async (signal) => {
+    const detail = await getJSON<ReviewDetail>(base, signal);
     if (!id && (detail.review.pull.repository.toLowerCase() !== `${owner}/${repo}`.toLowerCase() || detail.review.pull.number !== number)) {
       throw new Error('This review belongs to a different pull request. Select another run.');
     }
     return detail;
-  }, () => base);
-  const pull = new Resource(() => getJSON<PullDetail>(pullPath!), () => pullPath ?? '');
+  }, () => requestKey);
+  const pull = Resource.json<PullDetail>(() => pullPath ?? '');
   const pullPath = $derived(owner && repo && number !== undefined
     ? `${account}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`
     : res.data ? `${account}/pulls/${res.data.review.pull.repository.split('/').map(encodeURIComponent).join('/')}/${res.data.review.pull.number}` : undefined);
@@ -46,6 +46,7 @@
     if (!id && !run && latest) untrack(() => { initialRun ??= latest.id; });
   });
   const base = $derived(`${account}/reviews/${encodeURIComponent(selectedId ?? '')}`);
+  const requestKey = $derived(JSON.stringify([base, id, owner, repo, number]));
   let version = $state(0);
   let activityDirty = $state(false);
 
