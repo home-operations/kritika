@@ -28,7 +28,10 @@ that document structure and renders it into a ConfigMap.
   A file key left out uses its environment value, when supported, or the
   application's default. Explicit `false` and `0` remain explicit values.
 - **Startup** reads and validates the document at startup; changes require
-  a restart. Unknown keys and invalid values fail startup. The chart rolls pods
+  a restart. Unknown keys and invalid values fail startup. Runtime validation
+  reports all failing bounds together, with file paths and legacy environment
+  variable names. Durations use strings such as `10m` or `0s`.
+  The chart rolls pods
   when its rendered configuration changes. External ConfigMap and Secret changes
   require a restart or a controller such as Reloader.
 

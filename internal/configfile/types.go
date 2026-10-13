@@ -380,10 +380,6 @@ const DefaultSimilarFloor = 0.5
 // Floor returns SimilarFloor, DefaultSimilarFloor when unset.
 func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimilarFloor) }
 
-// minRetention is the shortest transcript or diff retention that may be
-// set.
-const minRetention = 24 * time.Hour
-
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and
 // generated trees otherwise dominate both, and lockfiles have nothing a

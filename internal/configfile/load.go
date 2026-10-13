@@ -118,7 +118,7 @@ func Parse(raw []byte) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc := fileDoc{Settings: settings}
+	var doc fileDoc
 	if len(bytes.TrimSpace(raw)) > 0 {
 		dec := yaml.NewDecoder(bytes.NewReader(raw))
 		dec.KnownFields(true)
@@ -130,6 +130,7 @@ func Parse(raw []byte) (*File, error) {
 			return nil, errors.New("configfile: parse: the file must hold one document")
 		}
 	}
+	doc.Settings = settings
 	if doc.Apps == nil {
 		doc.Apps = map[string]Connection{}
 	}
@@ -155,7 +156,7 @@ func Parse(raw []byte) (*File, error) {
 	if err := overlayEmbeddingEnv(&doc.Embedding, environ, envKeys); err != nil {
 		return nil, err
 	}
-	if err := validateRun(doc.Settings); err != nil {
+	if err := validateTools(doc.Settings.Tools); err != nil {
 		return nil, err
 	}
 	accounts, err := accountsOf(doc.Accounts, doc.Repositories)

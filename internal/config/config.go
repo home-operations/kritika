@@ -210,35 +210,10 @@ func (c *Config) validate() error {
 			return fmt.Errorf("config: KRITIKA_GATEWAY_URL: %w", err)
 		}
 	}
-	if c.GatewayTokenTTL <= 0 {
-		return fmt.Errorf("config: KRITIKA_GATEWAY_TOKEN_TTL must be positive, got %s", c.GatewayTokenTTL)
-	}
 	if err := c.parseWebURL(); err != nil {
 		return err
 	}
-	if c.DatabaseAppRole == "" || c.DatabaseRunnerRole == "" || c.DatabaseAppRole == c.DatabaseRunnerRole {
-		return errors.New("config: KRITIKA_DATABASE_APP_ROLE and KRITIKA_DATABASE_RUNNER_ROLE must be set and distinct")
-	}
-	if c.LeaderRetryInterval <= 0 {
-		return fmt.Errorf("config: KRITIKA_LEADER_RETRY_INTERVAL must be positive, got %s", c.LeaderRetryInterval)
-	}
-	switch c.Executor {
-	case ExecutorKubernetes, ExecutorLocal:
-	default:
-		return fmt.Errorf("config: KRITIKA_EXECUTOR must be kubernetes or local, got %q", c.Executor)
-	}
-	return c.validateWork()
-}
-
-// validateWork checks the settings that size the queues and the runners.
-func (c *Config) validateWork() error {
-	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.ThreadWorkers <= 0 {
-		return errors.New("config: KRITIKA_REVIEW_WORKERS, KRITIKA_INDEX_WORKERS and KRITIKA_THREAD_WORKERS must be positive")
-	}
-	if c.RunnerTTL <= 0 {
-		return errors.New("config: KRITIKA_RUNNER_TTL must be positive")
-	}
-	return nil
+	return c.Validate()
 }
 
 // Level returns the slog level named by LogLevel.
