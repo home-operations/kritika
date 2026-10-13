@@ -9,6 +9,7 @@ export {
   mdiWhiteBalanceSunny,
   mdiChevronDown,
   mdiMagnify,
+  mdiHelpCircleOutline,
   mdiAccountOutline,
   mdiSourcePull,
   mdiTrayFull,

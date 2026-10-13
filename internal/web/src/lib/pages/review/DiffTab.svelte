@@ -137,18 +137,18 @@
     {#if !x.diff && !x.deltaDiff}<p class="state-msg flex items-center gap-2 m-0 p-3 text-muted">{x.pending ? 'Preparing the diff…' : x.swept ? 'The diff was not kept past the retention window.' : 'No diff recorded for this review.'}</p>{/if}
     <div class="toolbar flex flex-wrap items-center gap-2">
       <button class="btn" aria-expanded={navigatorShown} aria-controls="review-navigator" onclick={() => (navigatorShown = !navigatorShown)}>{navigatorShown ? 'Hide navigator' : 'Show navigator'}</button>
-      {#if files.length}<span class="small muted text-ui-sm">{visibleFiles.length} of {files.length} files</span>{/if}
+      {#if files.length}<span class="small muted text-ui-sm">{visibleFiles.length} of {files.length} {files.length === 1 ? 'file' : 'files'}</span>{/if}
       {#if x.deltaDiff}
         <div class="view-toggle inline-flex border border-solid border-line rounded-md overflow-hidden" role="group" aria-label="Diff scope">
           <button class:active={!delta} aria-pressed={!delta} onclick={() => (delta = false)}>Full</button>
           <button class:active={delta} aria-pressed={delta} onclick={() => (delta = true)}>Since last review</button>
         </div>
       {/if}
-    </div>
-    <div class="finding-controls flex items-center flex-wrap gap-y-2 gap-x-4" role="group" aria-label="Finding navigation">
-      <button class="btn" disabled={selectedIndex <= 0} onclick={() => step(-1)}>← Previous finding</button>
-      <span class="small muted text-ui-sm" aria-live="polite">{selectedIndex < 0 ? `${findings.length} findings` : `Finding ${selectedIndex + 1} of ${findings.length}`}</span>
-      <button class="btn" disabled={!findings.length || selectedIndex === findings.length - 1} onclick={() => step(1)}>Next finding →</button>
+      <div class="finding-controls ml-auto flex items-center flex-wrap gap-y-2 gap-x-3" role="group" aria-label="Finding navigation">
+        <button class="btn" disabled={selectedIndex <= 0} onclick={() => step(-1)}>← Previous finding</button>
+        <span class="small muted text-ui-sm" aria-live="polite">{selectedIndex < 0 ? `${findings.length} ${findings.length === 1 ? 'finding' : 'findings'}` : `Finding ${selectedIndex + 1} of ${findings.length}`}</span>
+        <button class="btn" disabled={!findings.length || selectedIndex === findings.length - 1} onclick={() => step(1)}>Next finding →</button>
+      </div>
     </div>
     <div class="review-workspace grid grid-cols-[minmax(220px,_27%)_minmax(0,_1fr)] gap-5 items-start" class:code-focused={!navigatorShown}>
       <nav id="review-navigator" class="finding-nav sticky top-4 max-h-[75vh] overflow-y-auto bg-panel border border-solid border-line rounded-lg" aria-label="Findings and files" hidden={!navigatorShown}>

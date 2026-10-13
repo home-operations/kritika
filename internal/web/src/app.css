@@ -186,6 +186,18 @@
   .btn {
     @apply border border-solid border-line bg-surface text-ink rounded-md py-1.5 px-3 text-ui-md cursor-pointer inline-flex items-center gap-1.5;
   }
+  /* Every text field and select looks the same wherever it sits. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    @apply border border-solid border-line rounded-md bg-panel text-ink font-ui text-ui-md py-1.5 px-2.5 min-w-0;
+  }
+  select {
+    @apply pr-7 cursor-pointer;
+  }
+  input::placeholder {
+    @apply text-muted opacity-100;
+  }
 
   .btn-primary {
     @apply bg-accent border-accent text-on-accent;
@@ -342,6 +354,9 @@
   }
   .subnav-part:hover {
     @apply text-ink bg-panel no-underline;
+  }
+  .topbar .subnav-part {
+    @apply pl-[33px] py-1;
   }
   .page-head h1 {
     @apply m-0 text-[length:clamp(24px,_2vw,_28px)] font-bold tracking-[-0.025em] [word-break:break-word];
@@ -586,12 +601,8 @@
     @apply [outline:2px_solid_var(--accent)] [outline-offset:2px];
   }
   .search-box input,
-  .select select,
   .zone-picker input {
-    @apply w-full border border-solid border-line rounded-md bg-panel text-ink py-1.5 px-2.5 [font:inherit];
-  }
-  .search-box input::placeholder {
-    @apply text-muted opacity-100;
+    @apply w-full;
   }
   .select select {
     @apply w-auto max-w-55 cursor-pointer;
@@ -898,11 +909,6 @@
   .field > span:first-child {
     @apply text-muted;
   }
-  .field input,
-  .field select,
-  .field textarea {
-    @apply border border-solid border-line rounded-md bg-panel text-ink py-1.5 px-2 text-ui-md min-w-0;
-  }
   .field textarea {
     @apply font-code text-ui-sm resize-y;
   }
@@ -910,11 +916,6 @@
   .field select:disabled,
   .field textarea:disabled {
     @apply opacity-65;
-  }
-  .field input:focus-visible,
-  .field select:focus-visible,
-  .field textarea:focus-visible {
-    @apply [outline:2px_solid_var(--accent)] [outline-offset:-2px];
   }
   .invalid input,
   .invalid select,
@@ -1084,7 +1085,7 @@
       @apply hidden;
     }
     table.pull-table thead th.pick {
-      @apply w-auto p-0 border-0;
+      @apply block w-auto py-2.5 px-4 border-0 border-b border-solid border-b-line;
     }
     .pull-table,
     .pull-table tbody {
@@ -1144,9 +1145,6 @@
   table.account-breakdown th {
     @apply pl-2 pr-2;
   }
-  .account-breakdown td:not(.name-fill):not(.name-clip) {
-    @apply whitespace-normal;
-  }
   .topbar .subnav {
     @apply flex-none py-3 px-0 border-0 overflow-visible;
   }
@@ -1157,10 +1155,7 @@
     @apply hidden;
   }
   .file-filters input[type="search"] {
-    @apply min-w-0 w-full py-2 px-2.5 border border-solid border-line rounded-md bg-panel text-ink;
-  }
-  .file-filters input::placeholder {
-    @apply text-muted;
+    @apply w-full;
   }
   .file-filters .toggle {
     @apply flex items-center gap-2;
@@ -1288,9 +1283,6 @@
   .help-popover p:last-child {
     @apply mb-0;
   }
-  .filter-select select {
-    @apply pt-1.5 pr-7 pb-1.5 pl-2.5 bg-panel border border-solid border-line rounded-md text-ink;
-  }
   .usage-drilldown .btn {
     @apply py-[3px] px-2 bg-transparent border-transparent text-accent;
   }
@@ -1396,6 +1388,9 @@
   .run-picker select {
     @apply w-72.5;
   }
+  .run-details-picker.active select {
+    @apply border-accent;
+  }
   table.review-findings .finding-summary-cell {
     @apply w-full max-w-0 whitespace-normal wrap-anywhere min-w-40;
   }
@@ -1408,12 +1403,6 @@
   .finding-nav[hidden] {
     @apply hidden;
   }
-  .modal.dialog-side {
-    @apply [inset:0_0_0_auto] [transform:none] w-[min(680px,_100vw)] max-w-[100vw] h-dvh max-h-dvh rounded-[0];
-  }
-  .finding-inspector .finding-controls {
-    @apply flex-wrap;
-  }
   @media (max-width: 800px) {
     .run-picker {
       @apply w-full;
@@ -1421,6 +1410,12 @@
     .run-picker select {
       @apply flex-1;
     }
+  }
+  .modal.dialog-side {
+    @apply [inset:0_0_0_auto] [transform:none] w-[min(680px,_100vw)] max-w-[100vw] h-dvh max-h-dvh rounded-[0];
+  }
+  .finding-inspector .finding-controls {
+    @apply flex-wrap;
   }
 
 }

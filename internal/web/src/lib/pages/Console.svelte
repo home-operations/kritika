@@ -90,7 +90,7 @@
             <option value="">All sections</option>
             {#each sections as name (name)}<option value={name}>{name}</option>{/each}
           </select>
-          {#if search || section}<button class="btn btn-quiet" onclick={() => { search = ''; section = ''; }}>Clear filters</button>{/if}
+          {#if search || section}<button class="btn" onclick={() => { search = ''; section = ''; }}>Clear filters</button>{/if}
         </div>
         <div class="table-wrap overflow-x-auto max-w-full">
           <table class="data">

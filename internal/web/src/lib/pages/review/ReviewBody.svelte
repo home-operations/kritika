@@ -59,7 +59,7 @@
       {#if t === 'diff' && d.findings.length}<span class="tab-count text-ui-xs bg-panel border border-solid border-line rounded-sm py-0 px-1.5 font-semibold" aria-hidden="true">{d.findings.length}</span>{/if}
     </a>
   {/each}
-  <label class="run-details-picker ml-auto flex items-center py-1 pl-2">
+  <label class="run-details-picker ml-auto flex items-center py-1 pl-2" class:active={inRun}>
     <span class="sr-only">Run details</span>
     <select aria-label="Run details" value={inRun ? tab : ''} onchange={(e) => navigate(to(e.currentTarget.value as ReviewTab))}>
       <option value="" disabled>Run details</option>

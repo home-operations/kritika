@@ -78,7 +78,7 @@
       <StateView res={repos} retry={() => repos.load()} isEmpty={(p) => p.items.length === 0} empty="No repositories connected yet.">
         {#snippet children(p)}
           <div class="table-wrap overflow-x-auto max-w-full"><table class="data"><thead><tr><th scope="col">Repository</th><th scope="col">Reviews</th><th scope="col">Index</th></tr></thead>
-            <tbody>{#each p.items as repo (repo.id)}<tr><td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a></td><td>{repo.enabled ? 'Enabled' : 'Disabled'}</td><td>{repo.index.lastRunStatus || 'Not indexed'}</td></tr>{/each}</tbody>
+            <tbody>{#each p.items as repo (repo.id)}<tr><td class="mono"><a href={href(repoRoute(slug, repo.fullName))}>{repo.fullName}</a></td><td>{repo.enabled ? 'enabled' : 'disabled'}</td><td>{repo.index.lastRunStatus || 'not indexed'}</td></tr>{/each}</tbody>
           </table></div>
         {/snippet}
       </StateView>
