@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.67](https://github.com/home-operations/kritika/compare/0.0.66...0.0.67) (2026-10-13)
+
+
+### Bug Fixes
+
+* **repositories:** require UI enablement for discovered repositories ([#930](https://github.com/home-operations/kritika/issues/930)) ([0f426f6](https://github.com/home-operations/kritika/commit/0f426f6382e3e4bed6758d0c12d671011859a362))
+
+
+### Code Refactoring
+
+* **web:** simplify Tailwind styles ([#928](https://github.com/home-operations/kritika/issues/928)) ([af166a4](https://github.com/home-operations/kritika/commit/af166a4588ff98a3e5b6f43477ffe083fe2a336d))
+* **web:** simplify the dashboard and unify its look ([#931](https://github.com/home-operations/kritika/issues/931)) ([ba88fa7](https://github.com/home-operations/kritika/commit/ba88fa787eda8f33d502e1248814b6e02ba6ee7a))
+
 ## [0.0.66](https://github.com/home-operations/kritika/compare/0.0.65...0.0.66) (2026-10-13)
 
 
