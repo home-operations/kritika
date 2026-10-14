@@ -13,7 +13,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/go-sprout/sprout v1.1.2
-	github.com/go-viper/mapstructure/v2 v2.4.0
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-github/v92 v92.0.0
 	github.com/google/uuid v1.6.0
