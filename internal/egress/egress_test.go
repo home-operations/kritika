@@ -163,6 +163,10 @@ func TestUpgradeReturnsRedirectsUnfollowed(t *testing.T) {
 
 func TestRefusals(t *testing.T) {
 	proxy, outcomes, _ := newProxy(t, Rules{Allow: hosts("api.github.com", "*.example"), Deny: hosts("evil.example")})
+	var refused []string
+	proxy.Config.Handler.(*Proxy).Refused = func(_ context.Context, kind, host, reason string) {
+		refused = append(refused, kind+" "+host+": "+reason)
+	}
 	for _, u := range []string{"http://evil.example/", "http://api.github.com:8443/x"} {
 		resp, err := viaProxy(proxy).Get(u)
 		if err != nil {
@@ -181,6 +185,12 @@ func TestRefusals(t *testing.T) {
 	}
 	if outcomes["http/refused"] != 2 || outcomes["connect/refused"] != 2 {
 		t.Fatalf("outcomes = %v", outcomes)
+	}
+	// The hook sees the destination as asked for, port included.
+	want := []string{"http evil.example: host denied", "http api.github.com:8443: only port 80 is served",
+		"connect evil.example:443: host denied", "connect api.github.com:8443: only port 443 is served"}
+	if !slices.Equal(refused, want) {
+		t.Fatalf("refused = %q, want %q", refused, want)
 	}
 }
 

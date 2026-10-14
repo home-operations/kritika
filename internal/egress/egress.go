@@ -49,6 +49,10 @@ type Proxy struct {
 	// Observe, if set, is called once per request with its kind (connect,
 	// http) and outcome.
 	Observe func(kind, outcome string)
+	// Refused, if set, is called once per refused request, before the
+	// refusal is answered, with the request's context, its kind, the
+	// destination as the client asked for it, host:port, and the reason.
+	Refused func(ctx context.Context, kind, host, reason string)
 	Logger  *slog.Logger
 
 	transportOnce sync.Once
@@ -116,9 +120,12 @@ func (p *Proxy) dialContext(ctx context.Context, network, addr string) (net.Conn
 }
 
 // refuse answers a request the rules refuse.
-func (p *Proxy) refuse(w http.ResponseWriter, kind, host, reason string) {
+func (p *Proxy) refuse(ctx context.Context, w http.ResponseWriter, kind, host, reason string) {
 	p.observe(kind, OutcomeRefused)
 	p.Logger.Warn("egress refused", "kind", kind, "host", host, "reason", reason)
+	if p.Refused != nil {
+		p.Refused(ctx, kind, host, reason)
+	}
 	http.Error(w, "egress: destination refused: "+reason, http.StatusForbidden)
 }
 
@@ -149,16 +156,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 	host, port, err := net.SplitHostPort(r.Host)
 	if err != nil || port != "443" {
-		p.refuse(w, "connect", r.Host, "only port 443 is served")
+		p.refuse(r.Context(), w, "connect", r.Host, "only port 443 is served")
 		return
 	}
 	if reason := p.Rules().refuses(host); reason != "" {
-		p.refuse(w, "connect", r.Host, reason)
+		p.refuse(r.Context(), w, "connect", r.Host, reason)
 		return
 	}
 	upstream, err := p.dialContext(r.Context(), "tcp", net.JoinHostPort(host, port))
 	if refused, ok := errors.AsType[*refusal](err); ok {
-		p.refuse(w, "connect", r.Host, refused.reason)
+		p.refuse(r.Context(), w, "connect", r.Host, refused.reason)
 		return
 	}
 	if err != nil {
@@ -242,11 +249,11 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	host := r.URL.Hostname()
 	rules := p.Rules()
 	if r.URL.Port() != "" && r.URL.Port() != "80" {
-		p.refuse(w, "http", r.URL.Host, "only port 80 is served")
+		p.refuse(r.Context(), w, "http", r.URL.Host, "only port 80 is served")
 		return
 	}
 	if reason := rules.refuses(host); reason != "" {
-		p.refuse(w, "http", r.URL.Host, reason)
+		p.refuse(r.Context(), w, "http", r.URL.Host, reason)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
@@ -291,7 +298,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			if refused, ok := errors.AsType[*refusal](err); ok {
-				p.refuse(w, "http", r.URL.Host, refused.reason)
+				p.refuse(r.Context(), w, "http", r.URL.Host, refused.reason)
 				return
 			}
 			p.observe("http", OutcomeError)

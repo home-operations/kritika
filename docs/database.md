@@ -237,10 +237,10 @@ application pool's if jobs wait on the pool, which
 `postgresql.parameters` for more replicas. CNPG's `cnpg_backends_total`
 metric shows what each `application_name` holds.
 
-The leader's hourly retention sweeps of transcripts, stored diffs and
-agent conversations work in batches, each its own statement, so a backlog
-larger than one statement could clear is worked off over the sweep rather
-than rolled back.
+The leader's hourly retention sweeps of transcripts, egress refusals,
+stored diffs and agent conversations work in batches, each its own
+statement, so a backlog larger than one statement could clear is worked
+off over the sweep rather than rolled back.
 
 Prometheus scrapes CNPG's metrics through a `PodMonitor`. CNPG deprecates the
 Cluster's `monitoring.enablePodMonitor` in favor of one you create

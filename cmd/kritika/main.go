@@ -306,13 +306,8 @@ func startWorker(
 	// current configuration names, and the model and similar-code endpoints
 	// a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
-	gw := &gateway.Server{
-		Store: st, Current: current, Logger: gatewayLogger, Metrics: m,
-		Proxy: &egress.Proxy{
-			Rules: current.Get().EgressRules, Observe: m.Egress, Logger: gatewayLogger,
-		},
-		Steppers: steppers, Embedders: embedders,
-	}
+	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
+	gw.Proxy = &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
 	g.Go(func() error {
 		return server.Serve(server.Lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
 	})

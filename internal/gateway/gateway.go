@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/textcut"
 )
 
 // ModelName is the name a runner calls its run's model by; the gateway maps
@@ -79,7 +81,7 @@ func detach(ctx context.Context) (context.Context, context.CancelFunc) {
 func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodConnect || r.URL.IsAbs():
-		if g.admitProxy(w, r) {
+		if r, ok := g.admitProxy(w, r); ok {
 			g.Proxy.ServeHTTP(w, r)
 		}
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
@@ -93,33 +95,86 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// grantKey keys the grant of the run token that admitted a proxy request
+// in the request's context, for Refused.
+type grantKey struct{}
+
 // admitProxy authenticates a proxy request by the run token a runner is
 // handed as the password of its proxy URL, which git, gh and curl send as
-// Proxy-Authorization, or refuses the request and reports false. Only a
-// live run reaches the outside through the gateway, and the credentials
-// it adds, so the port is no relay for whatever else can reach it.
-func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) bool {
+// Proxy-Authorization, and returns the request with its run's grant in
+// the context, or refuses the request and reports false. Only a live run
+// reaches the outside through the gateway, and the credentials it adds,
+// so the port is no relay for whatever else can reach it.
+func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	kind := "http"
 	if r.Method == http.MethodConnect {
 		kind = "connect"
 	}
 	token := proxyToken(r.Header.Get("Proxy-Authorization"))
 	r.Header.Del("Proxy-Authorization")
-	_, err := g.Store.LookupGatewayToken(r.Context(), token)
+	grant, err := g.Store.LookupGatewayToken(r.Context(), token)
 	switch {
 	case errors.Is(err, store.ErrGatewayToken):
 		g.Metrics.Egress(kind, egress.OutcomeRefused)
 		g.Logger.Warn("gateway: proxy request refused: no valid run token", "kind", kind, "host", r.URL.Host)
 		w.Header().Set("Proxy-Authenticate", `Basic realm="kritika"`)
 		http.Error(w, "egress: a run token is required", http.StatusProxyAuthRequired)
-		return false
+		return r, false
 	case err != nil:
 		g.Metrics.Egress(kind, egress.OutcomeError)
 		g.Logger.Error("gateway: token lookup failed", "error", err)
 		http.Error(w, "egress: the run token could not be checked", http.StatusInternalServerError)
-		return false
+		return r, false
 	}
-	return true
+	return r.WithContext(context.WithValue(r.Context(), grantKey{}, grant)), true
+}
+
+// What Refused keeps of a refused destination: the host alone, within
+// what a name may be, and how long its write may take, bounded so a
+// looping agent's refusals are answered at the pace of the database and
+// no slower.
+const (
+	refusedHostBytes    = 253
+	refusedWriteTimeout = 5 * time.Second
+)
+
+// Refused records a refused proxy request against the run whose token
+// admitted it, for the dashboard: the proxy's Refused hook. The host is
+// kept as the agent asked for it, lowercased and without its port, and
+// never an address the name resolved to, so a private address stays out
+// of the dashboard. A record that fails is logged; the refusal is
+// answered either way.
+func (g *Server) Refused(ctx context.Context, kind, host, reason string) {
+	grant, ok := ctx.Value(grantKey{}).(store.GatewayGrant)
+	if !ok {
+		return
+	}
+	host = refusedHost(host)
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refusedWriteTimeout)
+	defer cancel()
+	err := g.Store.WithAccount(wctx, grant.AccountID, func(tx pgx.Tx) error {
+		_, err := store.RecordEgressRefusal(wctx, tx, store.EgressRefusal{
+			RunID: grant.RunID, AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, Kind: kind, Host: host, Reason: reason,
+		})
+		return err
+	})
+	if err != nil {
+		g.Logger.Warn("gateway: egress refusal not recorded", "run", grant.RunID, "host", host, "error", err)
+	}
+}
+
+// refusedHost is a refused destination as the dashboard shows it: the
+// host of a host:port, lowercase, without a trailing dot, valid UTF-8
+// without NUL, cut to refusedHostBytes. The destination is the client's
+// to choose, so none of this is assumed of it.
+func refusedHost(dest string) string {
+	host := dest
+	if h, _, err := net.SplitHostPort(dest); err == nil {
+		host = h
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	host = strings.ReplaceAll(strings.ToValidUTF8(host, "\ufffd"), "\x00", "")
+	return textcut.Prefix(host, refusedHostBytes)
 }
 
 // proxyToken is the password of a Proxy-Authorization header's Basic

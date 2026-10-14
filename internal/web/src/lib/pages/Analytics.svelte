@@ -6,7 +6,7 @@
   import { accountApi, repoRoute } from '../links';
   import { day } from '../dates';
   import { daysAgo, duration, costTotal, wholeNumber, tokens, usd, CATEGORIES } from '../format';
-  import type { Analytics, AnalyticsPoint } from '../types';
+  import type { Analytics, AnalyticsPoint, EgressRefusal } from '../types';
   import StateView from '../components/StateView.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import HelpPopover from '../components/HelpPopover.svelte';
@@ -85,6 +85,26 @@
       case 'tokens': return [point.tokens];
       case 'cost': return [point.costUsd];
     }
+  }
+
+  // The refused hosts of one repository, or of all, added up per host with
+  // the reasons each was refused for, the most refused first.
+  let refusedRepo = $state('');
+  const refusedRepos = (rows: EgressRefusal[]) => [...new Set(rows.map((r) => r.repository).filter(Boolean))].sort();
+  function refusedHosts(rows: EgressRefusal[]) {
+    const hosts = new Map<string, { host: string; count: number; runs: number; reasons: Map<string, number> }>();
+    for (const r of rows) {
+      if (refusedRepo && r.repository !== refusedRepo) continue;
+      const h = hosts.get(r.host) ?? { host: r.host, count: 0, runs: 0, reasons: new Map() };
+      h.count += r.count;
+      h.runs += r.runs;
+      for (const [reason, count] of Object.entries(r.reasons)) h.reasons.set(reason, (h.reasons.get(reason) ?? 0) + count);
+      hosts.set(r.host, h);
+    }
+    return [...hosts.values()].sort((a, b) => b.count - a.count || a.host.localeCompare(b.host)).map((h) => ({
+      ...h,
+      reasons: [...h.reasons].sort((a, b) => b[1] - a[1]).map(([reason, count]) => `${reason} ${wholeNumber(count)}`).join(' · '),
+    }));
   }
 
   function formatValue(value: number): string {
@@ -229,6 +249,52 @@
                   </tbody>
                 </table>
               </div>
+            {/if}
+          </section>
+
+          <section class="panel" aria-labelledby="an-refused">
+            <header class="panel-head">
+              <h2 id="an-refused">Refused hosts</h2>
+              {#if refusedRepos(d.refusals).length > 0}
+                <label class="filter-select flex items-center gap-2 text-muted text-ui-sm">Repository
+                  <select aria-label="Refused hosts repository" bind:value={refusedRepo}>
+                    <option value="">All repositories</option>
+                    {#each refusedRepos(d.refusals) as repo (repo)}<option value={repo}>{repo}</option>{/each}
+                  </select>
+                </label>
+              {/if}
+            </header>
+            {#if d.refusals.length === 0}
+              <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No refused requests in this period.</p>
+            {:else}
+              {@const hosts = refusedHosts(d.refusals)}
+              {@const most = hosts[0]?.count ?? 0}
+              <div class="table-wrap overflow-x-auto max-w-full">
+                <table class="data refused-hosts">
+                  <thead>
+                    <tr>
+                      <th scope="col">Host</th>
+                      <th scope="col" class="num">Refusals</th>
+                      <th scope="col" class="num">Runs</th>
+                      <th scope="col">Reasons</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each hosts as h (h.host)}
+                      <tr>
+                        <td class="mono name-fill" title={h.host}>{h.host}</td>
+                        <td class="num">
+                          {wholeNumber(h.count)}
+                          <span class="meter block min-w-20 mt-1" role="meter" aria-label="Share of the most refused host" aria-valuemin="0" aria-valuemax={most} aria-valuenow={h.count}><span class="meter-fill block h-full bg-[var(--chart-ink)]" style:width="{most ? (h.count / most) * 100 : 0}%"></span></span>
+                        </td>
+                        <td class="num">{wholeNumber(h.runs)}</td>
+                        <td class="small text-ui-sm">{h.reasons}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              <p class="panel-foot small muted m-0 py-2.5 px-4 border-t border-solid border-t-line text-ui-sm">Hosts the gateway refused a run's commands and fetches, as the agent asked for them. A host a review needs goes in the configuration's egress.allow.</p>
             {/if}
           </section>
         </div>

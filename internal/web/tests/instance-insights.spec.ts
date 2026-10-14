@@ -12,6 +12,7 @@ test('all-accounts analytics adds the accounts up, without medians, and names ea
   await expect(repos.getByRole('columnheader')).toHaveText(['Repository', 'Account', 'Reviews', 'Findings', 'Addressed']);
   await expect(repos.getByRole('link', { name: g.SLUG, exact: true })).toHaveAttribute('href', `#/a/${g.SLUG}`);
   await expect(repos.getByRole('link', { name: 'alpha/one', exact: true })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
+  await expect(page.getByRole('region', { name: 'Refused hosts' }).locator('tbody tr')).toHaveCount(2);
   await page.getByRole('radio', { name: '7 days' }).click();
   await expect(page).toHaveURL(/#\/analytics\?days=7$/);
   expect(seen.some((u) => u.pathname === '/api/v1/analytics')).toBe(true);

@@ -32,7 +32,7 @@ All accounts has these destinations:
 | Overview | A compact summary of running work and usage, one list of review and queue alerts, then a comparison of accounts. Alerts link to the relevant filtered list. |
 | Pull requests | A paginated, searchable list across readable accounts, with an Account column and the same filters as an account's list. |
 | Queue | Jobs across readable accounts and the model slots they hold. |
-| Analytics | The [analytics](#analytics) of every readable account added up: no medians, since each account's is its own, and an Account column on the repositories. |
+| Analytics | The [analytics](#analytics) of every readable account added up: no medians, since each account's is its own, an Account column on the repositories, and the refused hosts of every account together. |
 | Usage & costs | The spend of every readable account added up, with a By account grouping whose rows open each account's own page; the month tiles carry no caps. |
 | Settings | For an admin, the [configuration page](#configuration-page). |
 
@@ -76,6 +76,7 @@ span before, by day or week:
 - the 👍 and 👎 on kritika's inline comments, which the poller reads for a
   week after a pull request's latest review, so they need polling on;
 - tokens, API spend, and the most reviewed repositories;
+- the hosts the egress gateway refused the account's runs;
 - failure rate, calculated as failed / (completed + failed), excluding
   canceled, capped, skipped and in-progress reviews.
 
@@ -85,6 +86,17 @@ metric in **Review trends** to see reviews, findings by severity, failure
 rate, duration, tokens or API spend as a chart or table. Buckets without completed reviews have no median;
 buckets without completed or failed reviews have no failure rate. Both are
 omitted from their respective charts.
+
+**Refused hosts** lists the hosts the gateway refused a run's commands and
+fetches in the period, the most refused first, each with how many runs
+asked for it and the reasons it was refused
+([security](security.md#the-egress-gateway)); a Repository filter narrows
+it to one repository's runs. A host is shown as the agent asked for it,
+as text, never as a link, since the content under review steers what an
+agent asks for. The list is what to add to the configuration's
+`egress.allow`, and a host that should stay refused is one to leave
+there. Refusals are kept as long as transcripts
+([`transcriptRetention`](configuration.md#how-kritika-runs)).
 
 Its **Findings** list has each finding once per pull request, however many
 reviews repeated it: addressed once a later review of the pull request, at

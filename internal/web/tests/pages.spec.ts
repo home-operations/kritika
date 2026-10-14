@@ -181,6 +181,16 @@ test('analytics shows the totals against the window before, the charts and the r
   await findings.getByRole('radio', { name: 'Table' }).click();
   await expect(findings.locator('tbody tr')).toHaveText([/Sep 1, 2026\s*1\s*2\s*3\s*6/]);
   await expect(page.getByRole('region', { name: 'Most reviewed repositories' }).locator('tbody tr')).toContainText(g.analytics.repositories[0]!.repository);
+  // Refused hosts add up across repositories and reasons, the most refused
+  // first, and narrow to one repository.
+  const refused = page.getByRole('region', { name: 'Refused hosts' });
+  await expect(refused.getByRole('columnheader')).toHaveText(['Host', 'Refusals', 'Runs', 'Reasons']);
+  await expect(refused.locator('tbody tr')).toHaveText([/registry\.example\.com\s*14\s*4\s*host not allowed 10 · host denied 4/, /docs\.example\.com\s*4\s*4\s*host not allowed 4/]);
+  await expect(refused.locator('td.name-fill').first()).toHaveAttribute('title', 'registry.example.com');
+  await expect(refused.getByRole('meter').first()).toHaveAttribute('aria-valuenow', '14');
+  await expect(refused.getByRole('link')).toHaveCount(0);
+  await refused.getByRole('combobox', { name: 'Refused hosts repository' }).selectOption('alpha/two');
+  await expect(refused.locator('tbody tr')).toHaveText([/registry\.example\.com\s*2\s*1\s*host denied 2/]);
 
   await page.getByRole('radio', { name: '90 days' }).click();
   await expect.poll(() => seen.some((u) => u.pathname.endsWith('/analytics') && u.searchParams.get('group') === 'week')).toBe(true);

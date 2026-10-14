@@ -11,8 +11,13 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// analyticsRepos is how many repositories the analytics list.
-const analyticsRepos = 5
+// analyticsRepos is how many repositories the analytics list, and
+// analyticsRefusals how many refused hosts, each with a row per
+// repository.
+const (
+	analyticsRepos    = 5
+	analyticsRefusals = 50
+)
 
 // analyticsQuery reads ?group=, ?from= and ?to=: by day over the last 30
 // days unless given.
@@ -38,6 +43,11 @@ func (s *Server) getAnalytics(w http.ResponseWriter, r *http.Request, t *account
 			return err
 		}
 		out.Current, out.Previous, out.Series, out.Repositories = analytics(data)
+		refusals, err := store.ReadEgressRefusals(ctx, tx, from, to, analyticsRefusals)
+		if err != nil {
+			return err
+		}
+		out.Refusals = egressRefusals(refusals)
 		return nil
 	}); err != nil {
 		return err
@@ -61,6 +71,14 @@ func analytics(data store.Analytics) (current, previous AnalyticsTotals, series 
 		}
 	}
 	return analyticsTotals(data.Current), analyticsTotals(data.Previous), series, repos
+}
+
+func egressRefusals(rows []store.EgressRefusalRow) []EgressRefusal {
+	out := make([]EgressRefusal, len(rows))
+	for i, r := range rows {
+		out[i] = EgressRefusal{Repository: r.Repository, Host: r.Host, Count: r.Count, Runs: r.Runs, Reasons: r.Reasons, LastSeenAt: r.LastSeenAt}
+	}
+	return out
 }
 
 func analyticsTotals(t store.AnalyticsTotals) AnalyticsTotals {

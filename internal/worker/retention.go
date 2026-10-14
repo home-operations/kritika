@@ -10,8 +10,9 @@ import (
 )
 
 // retentionSweepInterval is how often the leader deletes model-call
-// transcripts, review diffs, agent conversations, stopped repositories'
-// indexes and dashboard sessions past their retention window.
+// transcripts, egress refusals, review diffs, agent conversations, stopped
+// repositories' indexes and dashboard sessions past their retention
+// window.
 const retentionSweepInterval = time.Hour
 
 // conversationRetention is how long an agent's conversation is kept for a
@@ -29,10 +30,12 @@ type retentionStore interface {
 		ctx context.Context, grace time.Duration, runs func(accountID, fullName string, t configfile.RepoTraits) bool,
 	) (int64, error)
 	SweepConversations(ctx context.Context, olderThan time.Duration) (int64, error)
+	SweepEgressRefusals(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
-// Retention deletes what is kept only so long: model-call transcripts
-// older than the current configuration's retention window, review diffs
+// Retention deletes what is kept only so long: model-call transcripts and
+// egress refusals older than the current configuration's transcript
+// retention window, review diffs
 // past theirs, the indexes of repositories it has not run for longer than
 // its index grace and agent conversations older than conversationRetention
 // (owner pool, bypassing row-level security), and expired dashboard
@@ -77,6 +80,8 @@ func (r *Retention) Run(ctx context.Context) {
 		report("stopped repositories' indexes", "repositories", n, err)
 		n, err = r.Store.SweepConversations(ctx, conversationRetention)
 		report("agent conversations", "rows", n, err)
+		n, err = r.Store.SweepEgressRefusals(ctx, r.Current.Get().TranscriptRetention())
+		report("egress refusals", "rows", n, err)
 		select {
 		case <-ctx.Done():
 			return

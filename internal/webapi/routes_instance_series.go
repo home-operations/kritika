@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"cmp"
+	"maps"
 	"net/http"
 	"slices"
 
@@ -28,13 +29,17 @@ func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	ctx := r.Context()
-	out := Analytics{Group: group, From: from, To: to, Series: []AnalyticsPoint{}, Repositories: []RepoActivity{}}
+	out := Analytics{Group: group, From: from, To: to, Series: []AnalyticsPoint{}, Repositories: []RepoActivity{}, Refusals: []EgressRefusal{}}
 	out.Current.Categories, out.Previous.Categories = categoryCounts(nil), categoryCounts(nil)
 	for _, t := range readable(s.current.Get(), auth.PrincipalFrom(ctx)) {
 		var data store.Analytics
+		var refusals []store.EgressRefusalRow
 		if err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 			var err error
-			data, err = store.ReadAnalytics(ctx, tx, group, from, to, analyticsRepos)
+			if data, err = store.ReadAnalytics(ctx, tx, group, from, to, analyticsRepos); err != nil {
+				return err
+			}
+			refusals, err = store.ReadEgressRefusals(ctx, tx, from, to, analyticsRefusals)
 			return err
 		}); err != nil {
 			return err
@@ -43,16 +48,41 @@ func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) er
 		for i := range repos {
 			repos[i].Account = t.Slug()
 		}
+		refused := egressRefusals(refusals)
+		for i := range refused {
+			refused[i].Account = t.Slug()
+		}
 		out.Current, out.Previous = addTotals(out.Current, current), addTotals(out.Previous, previous)
 		out.Series = addSeries(out.Series, series)
 		out.Repositories = append(out.Repositories, repos...)
+		out.Refusals = append(out.Refusals, refused...)
 	}
 	slices.SortStableFunc(out.Repositories, func(a, b RepoActivity) int {
 		return cmp.Or(cmp.Compare(b.Reviews, a.Reviews), cmp.Compare(a.Repository, b.Repository))
 	})
 	out.Repositories = out.Repositories[:min(len(out.Repositories), analyticsRepos)]
+	out.Refusals = topRefusedHosts(out.Refusals, analyticsRefusals)
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// topRefusedHosts keeps every row of the limit most refused hosts, counted
+// over every account, the most refused first, as one account's list is
+// read.
+func topRefusedHosts(rows []EgressRefusal, limit int) []EgressRefusal {
+	totals := map[string]int64{}
+	for _, r := range rows {
+		totals[r.Host] += r.Count
+	}
+	hosts := slices.SortedFunc(maps.Keys(totals), func(a, b string) int {
+		return cmp.Or(cmp.Compare(totals[b], totals[a]), cmp.Compare(a, b))
+	})
+	kept := hosts[:min(len(hosts), limit)]
+	rows = slices.DeleteFunc(slices.Clone(rows), func(r EgressRefusal) bool { return !slices.Contains(kept, r.Host) })
+	slices.SortStableFunc(rows, func(a, b EgressRefusal) int {
+		return cmp.Or(cmp.Compare(totals[b.Host], totals[a.Host]), cmp.Compare(a.Host, b.Host), cmp.Compare(a.Repository, b.Repository))
+	})
+	return rows
 }
 
 func addTotals(a, b AnalyticsTotals) AnalyticsTotals {
