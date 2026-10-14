@@ -160,6 +160,12 @@ func (rt *RunTool) Def() model.ToolDef {
 			"`gh release view <tag> -R <owner>/<repo>` for a release's notes or `gh pr view <number> -R <owner>/<repo>` " +
 			"for an upstream pull request."
 	}
+	if slices.Contains(rt.names, "crane") {
+		desc += " Use crane, not curl, for a container image: `crane ls <registry>/<repo>` lists its tags, " +
+			"`crane digest <image>:<tag>` resolves a tag, `crane manifest <image>` shows the manifest and " +
+			"`crane config <image>` the config with its labels, such as the source repository and revision an " +
+			"image was built from. It reads registries anonymously."
+	}
 	if slices.Contains(rt.names, "curl") {
 		if rt.cfg.Proxied {
 			desc += " The network is reached through a gateway that allows only some hosts. Give curl http:// URLs: " +
@@ -393,8 +399,43 @@ func refusedArgs(command string, args []string) string {
 				return "-K is not offered: it reads options from a file"
 			}
 		}
+	case "crane":
+		return refusedCraneArgs(args)
 	}
 	return ""
+}
+
+// refusedCraneArgs is refusedArgs for crane, whose command is its first
+// positional argument, with the flags before it read as gh's: "crane
+// --username u auth login r" logs in.
+func refusedCraneArgs(args []string) string {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			if a == "auth" {
+				return "crane auth is not offered: it prints and stores credentials"
+			}
+			break
+		}
+		if craneFlagTakesValue(a) {
+			i++
+		}
+	}
+	return ""
+}
+
+// craneFlagTakesValue is ghFlagTakesValue for crane, whose root command
+// has the boolean flags --insecure, --verbose and
+// --allow-nondistributable-artifacts beside --help.
+func craneFlagTakesValue(a string) bool {
+	switch {
+	case a == "-h" || a == "--help" || a == "-v" || a == "--verbose" || a == "--insecure" ||
+		a == "--allow-nondistributable-artifacts" || a == "--" || strings.Contains(a, "="):
+		return false
+	case strings.HasPrefix(a, "--"):
+		return true
+	}
+	return len(a) == 2
 }
 
 // recordRead keeps as sources what a command that succeeded read: the

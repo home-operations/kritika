@@ -984,7 +984,7 @@
           "type": "string"
         },
         "image": {
-          "description": "Image for runner Jobs: the release's `-tools` image, which adds curl, fd,\ngh, jq, rg and yq for a review's or follow-up's `agent.commands`.",
+          "description": "Image for runner Jobs: the release's `-tools` image, which adds crane,\ncurl, fd, gh, jq, rg and yq for a review's or follow-up's `agent.commands`.",
           "properties": {
             "digest": {
               "default": "",

@@ -151,8 +151,8 @@ runner:
   runtimeClass: ""
   # -- Maximum duration of a runner Job; omitted uses the application's default of 15m.
   deadline: ""
-  # Image for runner Jobs: the release's `-tools` image, which adds curl, fd,
-  # gh, jq, rg and yq for a review's or follow-up's `agent.commands`.
+  # Image for runner Jobs: the release's `-tools` image, which adds crane,
+  # curl, fd, gh, jq, rg and yq for a review's or follow-up's `agent.commands`.
   image:
     # -- Runner image repository.
     repository: ghcr.io/home-operations/kritika
