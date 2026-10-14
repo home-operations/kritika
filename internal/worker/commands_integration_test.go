@@ -66,10 +66,14 @@ func TestReviewRequestLifecycle(t *testing.T) {
 		pollErr            bool
 		cancelAfterEnqueue bool
 		refused            bool
+		missingEyes        bool
+		ambiguousCommit    bool
 		mark               string
 	}{
 		{name: "initial polling error", status: store.ReviewCompleted, pollErr: true, mark: forge.ReactionDone},
 		{name: "canceled after enqueue", status: store.ReviewCompleted, cancelAfterEnqueue: true, mark: forge.ReactionDone},
+		{name: "missing eyes after acknowledgment", missingEyes: true, status: store.ReviewCompleted, mark: forge.ReactionDone},
+		{name: "ambiguous commit", ambiguousCommit: true, status: store.ReviewCompleted, mark: forge.ReactionDone},
 		{name: "completed", status: store.ReviewCompleted, mark: forge.ReactionDone},
 		{name: "failed", status: store.ReviewFailed, mark: forge.ReactionFailed},
 		{name: "none ended", mark: forge.ReactionFailed},
@@ -141,6 +145,7 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			}); err != nil || status != string(store.FollowupAnswered) || reason != reviewRequested {
 				t.Fatalf("pending request = %s (%s), %v; want answered (%s)", status, reason, err, reviewRequested)
 			}
+			checkReviewRequestRecovery(ctx, t, w, job, lf, prID, tt.ambiguousCommit, tt.missingEyes)
 			// Finish the original review during the retry's backoff, and repair
 			// the unreadable job so the database failure is transient.
 			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -179,6 +184,28 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			}
 			checkReviewRequestRedelivery(ctx, t, w, queue, svc, ingest.Request{File: file, Account: account}, job, lf, tt.mark)
 		})
+	}
+}
+
+func checkReviewRequestRecovery(ctx context.Context, t *testing.T, w *FollowUp, job *river.Job[jobs.FollowUpArgs],
+	lf *reviewRequestForge, prID string, ambiguousCommit, missingEyes bool,
+) {
+	t.Helper()
+	if ambiguousCommit {
+		if err := w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
+			return store.RecordFollowup(ctx, tx, store.FollowupResult{AccountID: job.Args.AccountID, PullRequestID: prID,
+				CommentID: job.Args.CommentID, Status: store.FollowupFailed, Reason: "commit response lost"})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if missingEyes {
+		delete(lf.reactions, job.Args.CommentID)
+		job.Attempt++
+		_, snoozed := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job))
+		if !snoozed || lf.reactions[job.Args.CommentID] != forge.ReactionEyes {
+			t.Fatalf("pending retry: snoozed=%v, reaction=%q", snoozed, lf.reactions[job.Args.CommentID])
+		}
 	}
 }
 

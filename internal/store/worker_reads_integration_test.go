@@ -211,24 +211,34 @@ func checkFollowupStoreContracts(t *testing.T, s *Store, ctx context.Context, ac
 			t.Fatalf("follow-up = %+v", state)
 		}
 		inline := r
+		inline.CommentID = 4
 		inline.Inline, inline.Status, inline.Reason, inline.ReplyCommentID = true, FollowupIgnored, "inline", 84
 		must(t, RecordFollowup(ctx, tx, inline))
 		inline.ReplyCommentID = 0
 		must(t, RecordFollowup(ctx, tx, inline))
 		for _, tt := range []struct {
-			inline bool
-			status FollowupStatus
-			reply  int64
+			inline    bool
+			commentID int64
+			status    FollowupStatus
+			reply     int64
 		}{
-			{false, FollowupAnswered, 42},
-			{true, FollowupIgnored, 84},
+			{false, 1, FollowupAnswered, 42},
+			{true, 4, FollowupIgnored, 84},
 		} {
-			state, err := FindFollowup(ctx, tx, prID, 1, tt.inline)
+			state, err := FindFollowup(ctx, tx, prID, tt.commentID, tt.inline)
 			must(t, err)
 			if state.Status != tt.status || state.ReplyCommentID == nil || *state.ReplyCommentID != tt.reply {
 				t.Fatalf("inline=%v: follow-up = %+v", tt.inline, state)
 			}
 		}
+		_, err = FindFollowup(ctx, tx, prID, 1, true)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("other comment namespace = %v, want not found", err)
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO followups (account_id, pull_request_id, comment_id, author, status)
+			VALUES ($1, $2, 4, '', 'ignored') ON CONFLICT (pull_request_id, comment_id)
+			DO UPDATE SET reason = 'legacy writer'`, account, prID)
+		must(t, err)
 		r.CommentID, r.Status, r.Reason = 2, FollowupLimited, "limited"
 		must(t, RecordFollowup(ctx, tx, r))
 		r.CommentID, r.Status = 3, FollowupAnswered
@@ -243,6 +253,40 @@ func checkFollowupStoreContracts(t *testing.T, s *Store, ctx context.Context, ac
 		}
 		return nil
 	}))
+	for i, tt := range []struct {
+		name   string
+		status FollowupStatus
+		reply  int64
+		want   FollowupStatus
+	}{
+		{"acknowledged", FollowupAnswered, 0, FollowupAnswered},
+		{"limited", FollowupLimited, 0, FollowupLimited},
+		{"reply recorded", FollowupIgnored, 42, FollowupIgnored},
+		{"retryable", FollowupFailed, 0, FollowupFailed},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := FollowupResult{AccountID: account, PullRequestID: prID, CommentID: int64(100 + i), Status: tt.status, ReplyCommentID: tt.reply, Reason: "durable"}
+			must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				return RecordFollowup(ctx, tx, r)
+			}))
+			r.Status, r.Reason, r.ReplyCommentID = FollowupFailed, "commit response lost", 0
+			must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				return RecordFollowup(ctx, tx, r)
+			}))
+			must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				state, err := FindFollowup(ctx, tx, prID, r.CommentID, false)
+				must(t, err)
+				wantReason := "durable"
+				if tt.want == FollowupFailed {
+					wantReason = r.Reason
+				}
+				if state.Status != tt.want || state.Reason != wantReason {
+					t.Fatalf("after failed attempt = %+v; want %s (%s)", state, tt.want, wantReason)
+				}
+				return nil
+			}))
+		})
+	}
 	must(t, s.WithAccount(ctx, other, func(tx pgx.Tx) error {
 		_, err := FindFollowup(ctx, tx, prID, 1, false)
 		if !errors.Is(err, ErrNotFound) {

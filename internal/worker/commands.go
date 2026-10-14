@@ -216,9 +216,6 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 		return store.FollowupFailed, fmt.Errorf("worker: queue the requested review: %w", err)
 	}
 	f.logger.Info("review requested", "already_queued", already)
-	if _, err := f.client.React(ctx, f.owner, f.repo, f.comment, forge.ReactionEyes); err != nil {
-		f.logger.Info("not marked as being worked on", "error", err)
-	}
 	return store.FollowupAnswered, f.awaitReview(ctx)
 }
 
@@ -250,6 +247,9 @@ func (f *followUp) awaitingReview(ctx context.Context) (bool, error) {
 // River's jobs count as left: a review row whose job died running holds
 // no wait.
 func (f *followUp) awaitReview(ctx context.Context) error {
+	if _, err := f.client.React(ctx, f.owner, f.repo, f.comment, forge.ReactionEyes); err != nil {
+		f.logger.Info("not marked as being worked on", "error", err)
+	}
 	var queued bool
 	var status store.ReviewStatus
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {

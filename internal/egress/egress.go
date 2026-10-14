@@ -19,9 +19,12 @@ import (
 	"net/http/httputil"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http/httpguts"
 )
 
 // Outcomes a request ends with, for metrics.
@@ -251,23 +254,41 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		Transport: p.httpTransport(),
 		ErrorLog:  slog.NewLogLogger(p.Logger.Handler(), slog.LevelWarn),
 		Rewrite: func(req *httputil.ProxyRequest) {
+			// This forward proxy does not interpret query parameters.
+			req.Out.URL.RawQuery = req.In.URL.RawQuery
 			req.Out.URL.Scheme, req.Out.URL.Host = "https", host
 			if strings.Contains(host, ":") {
 				req.Out.URL.Host = "[" + host + "]"
 			}
 			req.Out.URL.User = nil
 			req.Out.Host = req.Out.URL.Host
+			// HTTP forwarding cannot open an authenticated protocol tunnel.
+			req.Out.Header.Del("Connection")
+			req.Out.Header.Del("Upgrade")
+			for _, header := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+				if !httpguts.HeaderValuesContainsToken(req.In.Header.Values("Connection"), header) {
+					if values, ok := req.In.Header[header]; ok {
+						req.Out.Header[header] = slices.Clone(values)
+					}
+				}
+			}
+			if _, ok := req.Out.Header["User-Agent"]; !ok {
+				req.Out.Header.Set("User-Agent", "kritika")
+			}
 			req.Out.Header.Del("Authorization")
 			if cred, ok := rules.Credentials[strings.ToLower(host)]; ok {
 				req.Out.Header.Set("Authorization", cred)
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			if resp.StatusCode == http.StatusSwitchingProtocols {
+				return errors.New("egress: protocol upgrades are not supported")
+			}
 			p.observe("http", OutcomeAllowed)
 			p.Logger.Debug("egress request", "host", host, "method", r.Method, "path", r.URL.Path, "status", resp.StatusCode)
 			return nil
 		},
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			if refused, ok := errors.AsType[*refusal](err); ok {
 				p.refuse(w, "http", r.URL.Host, refused.reason)
 				return

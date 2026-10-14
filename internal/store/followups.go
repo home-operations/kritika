@@ -55,12 +55,16 @@ type FollowupResult struct {
 
 // RecordFollowup keeps an existing reply when an update has no new reply ID.
 // The original creation time remains the basis for the hourly limit.
+// A failed attempt cannot overwrite an acknowledgment whose commit succeeded
+// even if its caller received an error from Commit.
 func RecordFollowup(ctx context.Context, tx pgx.Tx, r FollowupResult) error {
 	_, err := tx.Exec(ctx, `INSERT INTO followups
 		(account_id, pull_request_id, comment_id, author, inline, path, line, status, reason, reply_comment_id, model)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), nullif($10::bigint, 0), $11)
 		ON CONFLICT (pull_request_id, comment_id, inline) DO UPDATE SET status = excluded.status, reason = excluded.reason,
-			reply_comment_id = coalesce(excluded.reply_comment_id, followups.reply_comment_id), model = excluded.model`,
+			reply_comment_id = coalesce(excluded.reply_comment_id, followups.reply_comment_id), model = excluded.model
+		WHERE excluded.status <> 'failed' OR
+			(followups.status NOT IN ('answered', 'limited') AND followups.reply_comment_id IS NULL)`,
 		r.AccountID, r.PullRequestID, r.CommentID, r.Author, r.Inline, r.Path, r.Line,
 		r.Status, r.Reason, r.ReplyCommentID, r.Model)
 	if err != nil {
