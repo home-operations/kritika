@@ -48,7 +48,7 @@ func newForgeProvider(
 	return &forgeProvider{
 		signIn: s,
 		conf: &oauth2.Config{
-			ClientID:     s.ClientID,
+			ClientID:     s.ClientIDValue(),
 			ClientSecret: s.ClientSecretValue().Value(),
 			Endpoint:     oauth2.Endpoint{AuthURL: web + "/login/oauth/authorize", TokenURL: web + "/login/oauth/access_token"},
 			RedirectURL:  redirect,

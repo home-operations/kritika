@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,8 @@ func oidcAuth(issuer string) string {
 }
 
 func TestForgeProviderURLs(t *testing.T) {
-	s, _ := testFile(t, githubAuth("cid")).Auth.SignInByType(configfile.SignInGitHub)
+	t.Setenv("TEST_AUTH_CLIENT_ID", "cid")
+	s, _ := testFile(t, githubAuth("{ env: TEST_AUTH_CLIENT_ID }")).Auth.SignInByType(configfile.SignInGitHub)
 	p, err := buildProvider(t.Context(), s, "https://kritika.example.com/auth/callback/github", http.DefaultClient, nil)
 	if err != nil {
 		t.Fatalf("buildProvider: %v", err)
@@ -55,6 +57,34 @@ func TestForgeProviderURLs(t *testing.T) {
 	}
 	if q.Get("code_challenge") == "" || q.Has("code_verifier") || q.Has("nonce") {
 		t.Fatalf("PKCE parameters wrong in %s", u)
+	}
+}
+
+func TestOIDCProviderClientIDFromEnv(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		issuer := "https://" + r.Host
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]string{
+			"issuer": issuer, "authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token",
+			"jwks_uri": issuer + "/jwks",
+		}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_AUTH_CLIENT_ID", "oidc-client")
+	doc := strings.Replace(oidcAuth(srv.URL), "clientId: c", "clientId: { env: TEST_AUTH_CLIENT_ID }", 1)
+	s, _ := testFile(t, doc).Auth.SignInByType(configfile.SignInOIDC)
+	p, err := buildProvider(t.Context(), s, "https://kritika.example.com/auth/callback/oidc", srv.Client(), nil)
+	if err != nil {
+		t.Fatalf("buildProvider: %v", err)
+	}
+	u, err := url.Parse(p.AuthCodeURL("state", "nonce", "verifier"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u.Query().Get("client_id"); got != "oidc-client" {
+		t.Fatalf("client_id = %q, want oidc-client", got)
 	}
 }
 
@@ -95,6 +125,29 @@ func TestProvidersCacheRebuildsOnChange(t *testing.T) {
 		if _, _, err := ps.get(t.Context(), auth, name); !errors.Is(err, ErrUnknownProvider) {
 			t.Fatalf("get(%s) = %v, want ErrUnknownProvider", name, err)
 		}
+	}
+}
+
+func TestSignInsKeyClientIDFromEnv(t *testing.T) {
+	for _, tt := range []struct {
+		name, doc string
+	}{
+		{"github", githubAuth("c")},
+		{"oidc", oidcAuth("https://id.example.com")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			inline := signInsKey(testFile(t, tt.doc).Auth.SignIns())
+			doc := strings.Replace(tt.doc, "clientId: c", "clientId: { env: TEST_AUTH_CLIENT_ID }", 1)
+			t.Setenv("TEST_AUTH_CLIENT_ID", "c")
+			resolved := signInsKey(testFile(t, doc).Auth.SignIns())
+			if resolved != inline {
+				t.Fatal("the same client ID produced different provider keys")
+			}
+			t.Setenv("TEST_AUTH_CLIENT_ID", "another-client")
+			if rotated := signInsKey(testFile(t, doc).Auth.SignIns()); rotated == resolved {
+				t.Fatal("a changed client ID did not change the provider key")
+			}
+		})
 	}
 }
 
