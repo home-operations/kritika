@@ -15,6 +15,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -134,5 +135,87 @@ repositories:
 	})
 	if reached != 2 {
 		t.Fatalf("the proxy served %d requests, want the two with the run token", reached)
+	}
+}
+
+// TestProxyRecordsRefusals sends a request the rules refuse through the
+// gateway with a run token: the refusal is recorded against the run, with
+// the host alone, for the account's analytics.
+func TestProxyRecordsRefusals(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_SECRET", "test-key")
+	file := configfiletest.Load(t, `providers:
+  test:
+    type: openai
+    baseUrl: http://unused.invalid/v1
+    apiKey: { env: TEST_SECRET }
+review: { model: test/reviewer }
+apps:
+  test:
+    accounts: [proxy-refused]
+    clientId: Iv1.test
+    privateKey: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_SECRET }
+repositories:
+  proxy-refused/repo: {}
+`)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "proxy-refused")
+	var runID string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		runID, err = store.InsertRunnerRun(ctx, tx, account.ID(), store.RunnerKindIndex, "", 0)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var repoID string
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 AND name = 'proxy-refused/repo'`, account.ID()).Scan(&repoID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token, err := st.MintGatewayToken(ctx, store.GatewayGrant{RunID: runID, AccountID: account.ID(), RepositoryID: repoID}, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw := &Server{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler)}
+	gw.Proxy = &egress.Proxy{Rules: file.EgressRules, Refused: gw.Refused, Logger: gw.Logger}
+	srv := httptest.NewServer(gw)
+	defer srv.Close()
+	pu, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pu.User = url.UserPassword("", token)
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
+	for range 2 {
+		resp, err := client.Get("http://Registry.Example.COM:80/v2/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", resp.StatusCode)
+		}
+	}
+	if _, err := client.Get("https://docs.example.com/"); err == nil || !strings.Contains(err.Error(), "Forbidden") {
+		t.Fatalf("CONNECT err = %v, want a Forbidden from the proxy", err)
+	}
+	var rows []store.EgressRefusalRow
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		var err error
+		rows, err = store.ReadEgressRefusals(ctx, tx, time.Now().Add(-time.Hour), time.Now().Add(time.Hour), 10)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].Host != "registry.example.com" || rows[0].Count != 2 || rows[0].Runs != 1 ||
+		rows[0].Repository != "proxy-refused/repo" || rows[0].Reason != "host not allowed" ||
+		rows[1].Host != "docs.example.com" || rows[1].Count != 1 {
+		t.Fatalf("refusals = %+v", rows)
 	}
 }

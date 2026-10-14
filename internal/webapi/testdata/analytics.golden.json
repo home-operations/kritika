@@ -78,5 +78,31 @@
       },
       "addressed": 2
     }
+  ],
+  "refusals": [
+    {
+      "repository": "alpha/one",
+      "host": "registry.example.com",
+      "reason": "host not allowed",
+      "count": 12,
+      "runs": 3,
+      "lastSeenAt": "2026-09-01T12:01:30Z"
+    },
+    {
+      "repository": "alpha/one",
+      "host": "docs.example.com",
+      "reason": "host not allowed",
+      "count": 4,
+      "runs": 4,
+      "lastSeenAt": "2026-09-01T12:01:30Z"
+    },
+    {
+      "repository": "alpha/two",
+      "host": "registry.example.com",
+      "reason": "host denied",
+      "count": 2,
+      "runs": 1,
+      "lastSeenAt": "2026-09-01T12:00:00Z"
+    }
   ]
 }

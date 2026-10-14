@@ -106,7 +106,14 @@ reached at its public address alone. A destination given as an address,
 `https://10.10.0.5/`, is reached only when an `allow` address covers it,
 public or not.
 
-The refusal a runner's command sees says why:
+The refusal a runner's command sees says why, and the gateway records it
+against the run, as the host the agent asked for and the reason, never an
+address the name resolved to, so a private address stays out of the
+dashboard. The **Refused hosts** panel of the
+[analytics](dashboard.md#analytics) lists them, so what to add to `allow`
+comes from real refusals. A run has at most 100 such rows, one per host
+and reason, so a looping agent cannot fill the table, and the leader
+deletes them with the run's transcripts.
 
 | Refusal                                               | Why                                                         |
 | ----------------------------------------------------- | ----------------------------------------------------------- |

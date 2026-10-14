@@ -244,6 +244,11 @@ var goldens = map[string]any{
 		Repositories: []RepoActivity{
 			{Repository: "alpha/one", Reviews: 5, Findings: SeverityCounts{P0: 1, P1: 2, P2: 3}, Addressed: 2},
 		},
+		Refusals: []EgressRefusal{
+			{Repository: "alpha/one", Host: "registry.example.com", Reason: "host not allowed", Count: 12, Runs: 3, LastSeenAt: t1},
+			{Repository: "alpha/one", Host: "docs.example.com", Reason: "host not allowed", Count: 4, Runs: 4, LastSeenAt: t1},
+			{Repository: "alpha/two", Host: "registry.example.com", Reason: "host denied", Count: 2, Runs: 1, LastSeenAt: t0},
+		},
 	},
 	"rule": Rule{
 		Kind: RuleWritten, ID: "wrap-errors", Text: "Wrap an error with the package name before returning it.", Paths: []string{"**/*.go"},

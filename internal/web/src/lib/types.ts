@@ -537,6 +537,21 @@ export interface RepoActivity {
   addressed: number;
 }
 
+// EgressRefusal is how often the gateway refused one host for one reason,
+// to the runs of one repository. The host is what the agent asked for,
+// text steered by the content under review: never a link.
+export interface EgressRefusal {
+  // repository is "" for runs without one.
+  repository: string;
+  // account is set in the instance's list.
+  account?: string;
+  host: string;
+  reason: string;
+  count: number;
+  runs: number;
+  lastSeenAt: string;
+}
+
 export interface Analytics {
   group: AnalyticsGroup;
   from: string;
@@ -545,6 +560,7 @@ export interface Analytics {
   previous: AnalyticsTotals;
   series: AnalyticsPoint[];
   repositories: RepoActivity[];
+  refusals: EgressRefusal[];
 }
 
 export type RuleKind = 'rule' | 'context';
