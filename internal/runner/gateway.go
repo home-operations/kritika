@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -25,8 +26,8 @@ var gatewayPoll = 2 * time.Second
 // the gateway is up and the Service routes to it. Without a proxy there is
 // nothing to wait for.
 func waitForGateway(ctx context.Context, logger *slog.Logger) error {
-	url := proxyURL()
-	if url == "" {
+	addr := proxyAddress(proxyURL())
+	if addr == "" {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, gatewayWait)
@@ -36,30 +37,41 @@ func waitForGateway(ctx context.Context, logger *slog.Logger) error {
 	client := &http.Client{Timeout: gatewayPoll, Transport: &http.Transport{}}
 	start := time.Now()
 	for attempt := 1; ; attempt++ {
-		err := probeGateway(ctx, client, url)
+		err := probeGateway(ctx, client, addr)
 		if err == nil {
 			if attempt > 1 {
-				logger.Info("gateway reachable", "url", url, "attempts", attempt, "waited", time.Since(start).Round(time.Millisecond))
+				logger.Info("gateway reachable", "url", addr, "attempts", attempt, "waited", time.Since(start).Round(time.Millisecond))
 			}
 			return nil
 		}
 		if ctx.Err() != nil {
-			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", url, gatewayWait, err)
+			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", addr, gatewayWait, err)
 		}
 		if attempt == 1 {
-			logger.Info("waiting for the gateway", "url", url, "error", err)
+			logger.Info("waiting for the gateway", "url", addr, "error", err)
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", url, gatewayWait, err)
+			return fmt.Errorf("runner: the gateway at %s did not answer within %s: %w", addr, gatewayWait, err)
 		case <-time.After(gatewayPoll):
 		}
 	}
 }
 
+// proxyAddress is the proxy URL raw without the run token it carries as
+// its password: what the probe is sent to and what the log shows.
+func proxyAddress(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	u.User = nil
+	return u.String()
+}
+
 // probeGateway makes one request to the gateway itself, not through it.
-func probeGateway(ctx context.Context, client *http.Client, url string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func probeGateway(ctx context.Context, client *http.Client, addr string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr, nil)
 	if err != nil {
 		return err
 	}

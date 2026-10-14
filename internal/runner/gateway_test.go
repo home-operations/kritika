@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"net"
@@ -75,6 +76,42 @@ func TestWaitForGateway(t *testing.T) {
 		err = waitForGateway(ctx, logger)
 		if err == nil || !strings.Contains(err.Error(), "did not answer within") {
 			t.Fatalf("waitForGateway = %v, want the gateway's absence", err)
+		}
+	})
+
+	t.Run("the run token stays out of the probe", func(t *testing.T) {
+		var auth, proxyAuth string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			auth, proxyAuth = r.Header.Get("Authorization"), r.Header.Get("Proxy-Authorization")
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+		t.Setenv("HTTPS_PROXY", strings.Replace(srv.URL, "://", "://:krk_secret@", 1))
+		if err := waitForGateway(t.Context(), logger); err != nil {
+			t.Fatalf("waitForGateway = %v", err)
+		}
+		if auth != "" || proxyAuth != "" {
+			t.Fatalf("the probe sent Authorization %q and Proxy-Authorization %q; want neither", auth, proxyAuth)
+		}
+	})
+
+	t.Run("the run token stays out of the log and the error", func(t *testing.T) {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := l.Addr().String()
+		_ = l.Close()
+		t.Setenv("HTTPS_PROXY", "http://:krk_secret@"+addr)
+		var log bytes.Buffer
+		ctx, cancel := context.WithTimeout(t.Context(), 3*gatewayPoll)
+		defer cancel()
+		err = waitForGateway(ctx, slog.New(slog.NewTextHandler(&log, nil)))
+		if err == nil || !strings.Contains(err.Error(), "http://"+addr) || strings.Contains(err.Error(), "krk_secret") {
+			t.Fatalf("waitForGateway = %v, want the gateway's address without its token", err)
+		}
+		if !strings.Contains(log.String(), "http://"+addr) || strings.Contains(log.String(), "krk_secret") {
+			t.Fatalf("log = %s, want the gateway's address without its token", log.String())
 		}
 	})
 }

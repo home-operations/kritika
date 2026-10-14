@@ -5,7 +5,8 @@
 // endpoints; a plain http:// request to an allowed host is upgraded to
 // HTTPS here, with a configured credential added, so a runner can use an
 // API at a connection's rate limit without holding a token. Every other
-// destination is refused by hostname.
+// destination is refused by hostname. The gateway admits a request to the
+// proxy by the runner's run token first; the proxy trusts what reaches it.
 package egress
 
 import (
@@ -316,13 +317,13 @@ func (p *Proxy) httpTransport() http.RoundTripper {
 }
 
 // ProxyURL checks a gateway URL a runner will be handed: http, a host, no
-// path.
+// path and no credentials, since the run token becomes its password.
 func ProxyURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("egress: gateway url: %w", err)
 	}
-	if u.Scheme != "http" || u.Host == "" || (u.Path != "" && u.Path != "/") {
+	if u.Scheme != "http" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
 		return nil, errors.New("egress: gateway url must be http://host:port")
 	}
 	return u, nil

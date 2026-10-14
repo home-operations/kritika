@@ -325,7 +325,7 @@ func startWorker(
 	})
 	river.AddWorker(workers, &worker.Thread{Base: base})
 	river.AddWorker(workers, &worker.Index{
-		Base: base, Executor: exec, Embedders: embedders,
+		Base: base, Executor: exec, Embedders: embedders, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})
 	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
 		Logger: logger,

@@ -29,7 +29,8 @@ type GatewayGrant struct {
 	// call; Fallback may be empty. Effort is how hard they reason, a
 	// model.Effort, or empty for the provider's default.
 	Model, Fallback, Effort string
-	// Budget is the tokens the run may spend, Spent what it has.
+	// Budget is the tokens the run may spend, Spent what it has. An index
+	// run's is 0: its token admits it to the egress proxy alone.
 	Budget, Spent int64
 	// Continues is the run whose kept conversation a review's run may
 	// carry on, "" for none, and Session the conversation its steps are

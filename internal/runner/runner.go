@@ -177,7 +177,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 			tools.skills = &skillTool{base: baseTree, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: skillNames(in.loaded)}
 		}
 		var cleanup func()
-		tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets.GitToken,
+		tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
 		if split == nil {

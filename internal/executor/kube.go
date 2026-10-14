@@ -49,8 +49,10 @@ type Kube struct {
 	// DatabaseRole is the database role the runner login must inherit.
 	DatabaseRole string
 	// GatewayURL is the egress gateway the pod is handed as its HTTPS_PROXY
-	// and HTTP_PROXY: with the runner network policy allowing nothing else,
-	// every byte the runner sends out passes the gateway's host allowlist.
+	// and HTTP_PROXY, with its run token as the password the gateway admits
+	// a proxy request by: with the runner network policy allowing nothing
+	// else, every byte the runner sends out passes the gateway's host
+	// allowlist.
 	// Every review needs it, so serve refuses to start without one; the
 	// check here only keeps a test's spec honest.
 	GatewayURL string
@@ -387,6 +389,14 @@ func gatewayHost(raw string) string {
 	return u.Hostname()
 }
 
+// proxyEnv is the gateway URL as the pod's proxy variables carry it, with
+// the run token as its password. The kubelet expands the reference from
+// the variable the Secret fills before it in the container's environment,
+// so the token travels in the Secret alone.
+func proxyEnv(gatewayURL string) string {
+	return strings.Replace(gatewayURL, "://", "://:$(KRITIKA_GATEWAY_TOKEN)@", 1)
+}
+
 // runnerLabels are shared by a run's Job, pod and Secret. The role label is what
 // a NetworkPolicy selects runner pods by. A label value may not hold a
 // slash, which an owner/repo name does.
@@ -401,18 +411,15 @@ func runnerLabels(spec Spec) map[string]string {
 }
 
 // secret builds the run's job-scoped Secret: the credentials and the
-// encoded job document. The gateway token is left out when the run has
-// none; the pod reads it as an optional key.
+// encoded job document.
 func (k *Kube) secret(spec Spec, runSpec []byte) *corev1.Secret {
-	data := map[string][]byte{secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyRunSpec: runSpec,
-		secretKeyDatabaseToken: []byte(spec.Secrets.DatabaseToken)}
-	if spec.Secrets.GatewayToken != "" {
-		data[secretKeyGatewayToken] = []byte(spec.Secrets.GatewayToken)
-	}
 	return &corev1.Secret{
 		Name: jobName(spec.Job.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec),
 		Type: corev1.SecretTypeOpaque,
-		Data: data,
+		Data: map[string][]byte{
+			secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyGatewayToken: []byte(spec.Secrets.GatewayToken),
+			secretKeyDatabaseToken: []byte(spec.Secrets.DatabaseToken), secretKeyRunSpec: runSpec,
+		},
 	}
 }
 
@@ -433,24 +440,25 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 		annotations["kritika.home-operations.com/"+key] = v
 	}
 	var backoff int32
-	secretRef := func(key string, optional bool) *corev1.EnvVarSource {
+	secretRef := func(key string) *corev1.EnvVarSource {
 		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-			Name: name, Key: key, Optional: new(optional)}}
+			Name: name, Key: key, Optional: new(false)}}
 	}
 	env := []corev1.EnvVar{
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
-		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken, false)},
-		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken, true)},
-		{Name: "KRITIKA_DATABASE_TOKEN", ValueFrom: secretRef(secretKeyDatabaseToken, false)},
+		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken)},
+		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken)},
+		{Name: "KRITIKA_DATABASE_TOKEN", ValueFrom: secretRef(secretKeyDatabaseToken)},
 		{Name: "KRITIKA_DATABASE_RUNNER_ROLE", Value: cmp.Or(k.DatabaseRole, "kritika_runner")},
 		{Name: "KRITIKA_LOG_FORMAT", Value: "json"},
 		{Name: "KRITIKA_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
 	}
 	if k.GatewayURL != "" {
+		proxy := proxyEnv(k.GatewayURL)
 		env = append(env,
-			corev1.EnvVar{Name: "HTTPS_PROXY", Value: k.GatewayURL},
-			corev1.EnvVar{Name: "HTTP_PROXY", Value: k.GatewayURL},
+			corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxy},
+			corev1.EnvVar{Name: "HTTP_PROXY", Value: proxy},
 			// Postgres is not HTTP, and the one Service the runner talks
 			// to is the gateway's model endpoint.
 			corev1.EnvVar{Name: "NO_PROXY", Value: noProxy + "," + gatewayHost(k.GatewayURL)},

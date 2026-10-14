@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -43,12 +44,22 @@ func (w *Index) stage(
 		return err
 	}
 	deadline, resources := w.Current.Get().RunnerFor()
+	// The run's token admits its git fetch to the egress proxy and, with
+	// no budget, nothing else. Minted last, so an error leaves none behind.
+	gatewayToken, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
+		RunID: spec.RunID, AccountID: account.ID(), RepositoryID: job.Args.RepositoryID,
+	}, time.Now().Add(deadline+w.GatewayTokenTTL))
+	if err != nil {
+		return err
+	}
+	defer w.revokeGatewayTokens(ctx, logger, spec.RunID)
 	sup := runSupervision(w.Store, account.ID(), spec.RunID, "", "", w.superviseEvery, logger)
 	started = true
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels:      runnerLabels(account.Key(), repository, jobs.QueueIndex, 0),
 		Annotations: runnerAnnotations(job.ID, spec.Head), Job: spec,
-		Secrets: runner.Secrets{GitToken: token, DatabaseToken: databaseToken}, Deadline: deadline, Resources: resources,
+		Secrets:  runner.Secrets{GitToken: token, GatewayToken: gatewayToken, DatabaseToken: databaseToken},
+		Deadline: deadline, Resources: resources,
 	})
 	// Runner accounting survives River cancellation, while sealing staging
 	// requires this attempt to still own the job.

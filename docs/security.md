@@ -23,7 +23,7 @@ run, and hands it a Secret of its own:
 | Credential                        | What it can do                                                                                                               |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | a GitHub token minted for the run | read the repository under review and public repositories; the git fetch and `gh` use it                                      |
-| a gateway token                   | reach the run's model through the gateway, until `config.gatewayTokenTtl` past the Job's deadline; revoked when the run ends |
+| a gateway token                   | reach the egress proxy and, for a review or follow-up, the run's model through the gateway, until `config.gatewayTokenTtl` past the Job's deadline; revoked when the run ends |
 | the runner role's database URI    | connect as the restricted runner role                                                                                          |
 
 Each run also receives a separate random database token. Row-level security
@@ -58,7 +58,10 @@ that a pull request must not rewrite in merge-base [rules](repository-config.md#
 ## The egress gateway
 
 The kritika serve pods serve a forward proxy on `service.gatewayPort`, and
-runner Jobs are handed it as `HTTPS_PROXY` and `HTTP_PROXY`. With
+runner Jobs are handed it as `HTTPS_PROXY` and `HTTP_PROXY`, with the run's
+gateway token as the proxy URL's password. The gateway admits a proxy
+request by that token alone, so nothing else that reaches the port can
+relay through it or use a credential it adds. With
 `networkPolicy.enabled`, a runner's git fetch and every command it runs go
 through the gateway, which allows a destination by name and by the address
 it resolves to. `github.com` and `api.github.com` are allowed once an app
@@ -167,7 +170,9 @@ What bounds a command:
 - **Refused arguments:** the run tool refuses the arguments that would
   print the token or run a program outside the list: `gh auth`, `alias`,
   `config` and `extension`, `fd -x` and `-X`, `rg --pre` and
-  `--hostname-bin`. It masks the token in a command's output and in the
+  `--hostname-bin`, and `curl --trace`, `--trace-ascii`, `--trace-config` and
+  `--config`/`-K`, which would print the proxy credential in pieces the
+  mask cannot match. It masks the token in a command's output and in the
   submitted review.
 - **A plain checkout:** the files are written without execute bits, so
   nothing in the pull request can be started, and an empty `.git` whose
