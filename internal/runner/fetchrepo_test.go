@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gittest"
 )
 
@@ -76,7 +77,7 @@ func servedRepoMirror(t *testing.T) (string, *fetchRepoTool, *git.Repository) {
 	}
 	srv := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(root), false)))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes)}, mirror
+	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes), fetchMax: configfile.DefaultFetches}, mirror
 }
 
 func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
@@ -131,7 +132,7 @@ func TestFetchRepoTool(t *testing.T) {
 		t.Fatalf("a failed fetch's directory was kept: %v", err)
 	}
 
-	tool.fetches = fetchMax
+	tool.fetches = tool.fetchMax
 	if _, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v1"})); err == nil ||
 		!strings.Contains(err.Error(), "made its 8 fetches") {
 		t.Fatalf("past the fetch count: err = %v", err)

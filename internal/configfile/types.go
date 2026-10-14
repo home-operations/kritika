@@ -494,6 +494,9 @@ type Agent struct {
 	Commands []string `yaml:"commands,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
 	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`
+	// Fetches bounds the repositories fetch_repo fetches for a review, a
+	// split one's parts between them.
+	Fetches *int `yaml:"fetches,omitempty"`
 }
 
 // AgentSettings are the resolved agent bounds.
@@ -506,6 +509,7 @@ type AgentSettings struct {
 	Timeout            time.Duration
 	Commands           []string
 	CommandTimeout     time.Duration
+	MaxFetches         int
 }
 
 // MarshalJSON is the API's form of the bounds: the durations in whole
@@ -524,10 +528,11 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 		TimeoutSeconds        int64    `json:"timeoutSeconds"`
 		Commands              []string `json:"commands"`
 		CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
+		MaxFetches            int      `json:"maxFetches"`
 	}{
 		MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens,
 		MaxPromptTokens: a.MaxPromptTokens, MaxParts: a.MaxParts, TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
-		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()),
+		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()), MaxFetches: a.MaxFetches,
 	})
 }
 
@@ -542,11 +547,17 @@ var DefaultAgent = AgentSettings{
 	MaxParts:           DefaultParts,
 	Timeout:            20 * time.Minute,
 	CommandTimeout:     30 * time.Second,
+	MaxFetches:         DefaultFetches,
 }
 
 // DefaultParts is the most parts a review is split into unless agent.parts
 // says otherwise: a 512 KiB diff at review.PartBytes a part.
 const DefaultParts = 8
+
+// DefaultFetches is the most repositories fetch_repo fetches for a review
+// unless agent.fetches says otherwise: the upstream of a dependency bump
+// takes one, a review of several a few more.
+const DefaultFetches = 8
 
 // MinPromptTokens is the least agent.prompt takes: the system prompt, with
 // its rules and skills, and the pull request's description are paid

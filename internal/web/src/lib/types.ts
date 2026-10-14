@@ -227,6 +227,7 @@ export interface AgentLimits {
   timeoutSeconds: number;
   commands: string[];
   commandTimeoutSeconds: number;
+  maxFetches: number;
 }
 
 export interface ContextFile {

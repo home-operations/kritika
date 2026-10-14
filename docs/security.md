@@ -214,9 +214,10 @@ repository and a ref, never git arguments.
   under one other name, `v1.2.3` or `chart-1.2.3` for `1.2.3`, that tag is
   fetched in its place and the answer says so; otherwise the error names
   the closest.
-- **Bounded:** 8 fetches and 8 tag listings a review, each taking at most
-  128 MiB from the server and two minutes, and 256 MiB of files written
-  across the fetches and the run tool's kept outputs, beside the checkout.
+- **Bounded:** [`agent.fetches`](configuration.md#the-agent) fetches, 8
+  unless set, and 8 tag listings a review, each taking at most 128 MiB
+  from the server and two minutes, and 256 MiB of files written across
+  the fetches and the run tool's kept outputs, beside the checkout.
   Symlinks, submodules and files over 1 MiB are left out, and the files
   are written without execute bits.
 - **Read in place:** `read_file` reads a fetched file, or a kept output,

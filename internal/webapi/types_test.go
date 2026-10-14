@@ -75,7 +75,7 @@ var goldenRepoSettings = RepoSettings{
 	},
 	Agent: configfile.AgentSettings{
 		MaxSteps: 60, MaxToolOutputBytes: 32768, MaxTokens: 4000000, MaxPromptTokens: 24000, MaxParts: 8, Timeout: 20 * time.Minute,
-		Commands: []string{"go"}, CommandTimeout: 30 * time.Second,
+		Commands: []string{"go"}, CommandTimeout: 30 * time.Second, MaxFetches: 8,
 	},
 	Limits: configfile.Limits{Concurrency: 2},
 	Skills: configfile.Skills{

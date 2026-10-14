@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/config"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // commandTool is the run tool for the commands p allows that this image
@@ -97,7 +98,7 @@ func commandTool(
 	// An operator who allows only rg or fd has not let the agent reach the
 	// network, so fetch_repo comes with a command that does.
 	if found["gh"] != "" || found["curl"] != "" {
-		fetch = &fetchRepoTool{dir: up, budget: budget, maxBytes: maxOutput}
+		fetch = &fetchRepoTool{dir: up, budget: budget, fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), maxBytes: maxOutput}
 	}
 	return run, fetch, cleanup
 }

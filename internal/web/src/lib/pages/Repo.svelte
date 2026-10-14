@@ -103,6 +103,7 @@
     { label: 'Timeout', key: 'agent.timeout', value: (s) => duration(s.agent.timeoutSeconds * 1000) },
     { label: 'Commands', key: 'agent.commands', value: (s) => list(s.agent.commands), mono: true },
     { label: 'Command timeout', key: 'agent.commandTimeout', value: (s) => duration(s.agent.commandTimeoutSeconds * 1000) },
+    { label: 'Max fetches', key: 'agent.fetches', value: (s) => wholeNumber(s.agent.maxFetches) },
   ];
   const sourceLabel: Record<ConfigSource, string> = {
     default: 'default',

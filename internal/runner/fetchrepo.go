@@ -23,7 +23,7 @@ import (
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
-// What fetch_repo may take: a run makes at most fetchMax fetches and writes
+// What fetch_repo may take: a run makes at most the spec's fetches and writes
 // at most fetchWriteBytes of their files, beside its checkout, a budget
 // the run tool's kept outputs share; one fetch takes at most
 // fetchWireBytes from the server and fetchTimeout of wall time, and keeps
@@ -33,7 +33,6 @@ import (
 // such an error at most closestMax, and a diff's answer names at most
 // changedShown of the paths it changes before the patches.
 const (
-	fetchMax        = 8
 	fetchWriteBytes = 256 << 20
 	fetchWireBytes  = 128 << 20
 	fetchTimeout    = 2 * time.Minute
@@ -86,6 +85,8 @@ type fetchRepoTool struct {
 	transport http.RoundTripper
 	// budget is what the review may still write beside the checkout.
 	budget *agent.WriteBudget
+	// fetchMax is how many fetches the review may make.
+	fetchMax int
 	// maxBytes is the loop's cap on a tool's answer, which a diff is cut to
 	// here so the note after the cut, naming the file that holds it whole,
 	// survives; zero leaves the cut to the loop.
@@ -101,7 +102,7 @@ func (t *fetchRepoTool) Def() model.ToolDef {
 		"branch or commit, and write its files to a directory read_file reads and the run tool's commands search. With from, it also " +
 		"returns the diff between the two, the paths it changes listed first. With tags instead of ref, it lists the repository's " +
 		fmt.Sprintf("tags, to find the tag of a version rather than guess its name. A review may fetch %d times and list tags %d times.",
-			fetchMax, listMax)
+			t.fetchMax, listMax)
 	if t.maxBytes > 0 {
 		desc += fmt.Sprintf(" A diff cut to %d KiB in the answer is whole in the file the answer names: read it with read_file in "+
 			"line ranges, or search it with the commands, rather than fetch again.", t.maxBytes>>10)
@@ -138,8 +139,8 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		return "", errors.New("agent: fetch_repo: give ref to fetch or tags to list tags, not both")
 	}
 	req := upstream.Request{URL: in.URL, Ref: in.Ref, From: in.From, Paths: in.Paths}
-	if t.fetches >= fetchMax {
-		return "", fmt.Errorf("agent: fetch_repo: this review has made its %d fetches", fetchMax)
+	if t.fetches >= t.fetchMax {
+		return "", fmt.Errorf("agent: fetch_repo: this review has made its %d fetches", t.fetchMax)
 	}
 	left := t.budget.Left()
 	if left <= 0 {

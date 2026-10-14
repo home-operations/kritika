@@ -337,7 +337,7 @@ func (w *Review) agentSpec(
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.parts, Parallel: size.slots,
 		TimeoutSeconds: int(settings.Agent.Timeout / time.Second), Commands: settings.Agent.Commands,
-		CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second),
+		CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second), Fetches: settings.Agent.MaxFetches,
 	}
 	return deadline, notes, nil
 }

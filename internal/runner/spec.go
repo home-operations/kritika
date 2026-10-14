@@ -23,7 +23,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 26
+const SpecVersion = 27
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -87,6 +87,9 @@ type AgentLimits struct {
 	// offers those it finds on its PATH, and no run tool without any.
 	Commands              []string `json:"commands,omitempty"`
 	CommandTimeoutSeconds int      `json:"commandTimeoutSeconds,omitempty"`
+	// Fetches bounds fetch_repo's fetches for the run, a split review's
+	// parts between them; zero takes configfile.DefaultFetches.
+	Fetches int `json:"fetches,omitempty"`
 }
 
 // Prompt is what a review run needs beyond the checkout to write its
