@@ -136,17 +136,18 @@ it, so it has no switch:
 
 A repository's `agent.commands` lets the model run allowlisted programs
 over a checkout of the head commit: to read a dependency bump's release
-notes and upstream pull requests with `gh`, fetch anything else with
-`curl`, search with `rg` and `fd`, or read JSON and YAML with `jq` and
-`yq`. Runner Jobs run on the release's `-tools` image, a distroless image
-with all six, pinned by digest like the chart's image. A command is
-offered only when the runner image has it on its `PATH`, so an image set
-in `runner.image` without them offers none.
+notes and upstream pull requests with `gh`, read a container image's tags,
+digest, manifest and labels from its registry with `crane`, fetch anything
+else with `curl`, search with `rg` and `fd`, or read JSON and YAML with
+`jq` and `yq`. Runner Jobs run on the release's `-tools` image, a
+distroless image with all seven, pinned by digest like the chart's image.
+A command is offered only when the runner image has it on its `PATH`, so
+an image set in `runner.image` without them offers none.
 
 `gh` signs in with the run's own GitHub token, and an app already allows
 `github.com` and `api.github.com` through the gateway. Every other host
-`curl` reaches must pass the gateway too, so add the release hosts and
-registries to `egress.allow`:
+`curl` or `crane` reaches must pass the gateway too, so add the release
+hosts and registries to `egress.allow`:
 
 ```yaml
 egress:
@@ -168,12 +169,12 @@ What bounds a command:
   progress meter, which would otherwise land in the result, and follows
   the redirects the gateway hands back.
 - **Refused arguments:** the run tool refuses the arguments that would
-  print the token or run a program outside the list: `gh auth`, `alias`,
-  `config` and `extension`, `fd -x` and `-X`, `rg --pre` and
-  `--hostname-bin`, and `curl --trace`, `--trace-ascii`, `--trace-config` and
-  `--config`/`-K`, which would print the proxy credential in pieces the
-  mask cannot match. It masks the token in a command's output and in the
-  submitted review.
+  print a credential or run a program outside the list: `gh auth`,
+  `alias`, `config` and `extension`, `crane auth`, `fd -x` and `-X`,
+  `rg --pre` and `--hostname-bin`, and `curl --trace`, `--trace-ascii`,
+  `--trace-config` and `--config`/`-K`, which would print the proxy
+  credential in pieces the mask cannot match. It masks the token in a
+  command's output and in the submitted review.
 - **A plain checkout:** the files are written without execute bits, so
   nothing in the pull request can be started, and an empty `.git` whose
   `origin` is the repository's clone URL, with no history, lets a tool

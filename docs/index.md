@@ -35,9 +35,9 @@ flowchart LR
   VectorChord index of the default branch, and the issues the description
   says the pull request closes, which the review judges the change against.
 - **An agent, not one prompt.** Each review is a bounded, read-only tool loop
-  over the head commit, optionally with allowlisted commands (`gh`, `curl`,
-  `fd`, `jq`, `rg`, `yq`) so it can read a dependency bump's release notes;
-  `agent.steps: 1` makes it one call.
+  over the head commit, optionally with allowlisted commands (`gh`, `crane`,
+  `curl`, `fd`, `jq`, `rg`, `yq`) so it can read a dependency bump's release
+  notes or an image's manifest; `agent.steps: 1` makes it one call.
 - **Fixes you can apply.** A finding offers its fix as a one-click suggestion,
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since

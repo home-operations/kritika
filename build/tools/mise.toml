@@ -7,9 +7,11 @@
 [tools]
 # Each entry exposes only the executable it is there for, filter_bins for a
 # release archive and symlink_bins for an aqua recipe, so the Dockerfile
-# copies every bin path as is. curl has no registry short name; the others
-# resolve to aqua packages.
+# copies every bin path as is. curl has no registry short name, and crane's
+# aqua recipe would expose gcrane beside it, so both come from their release
+# archives; the others resolve to aqua packages.
 "github:stunnel/static-curl" = { version = "8.22.0", matching = "glibc", filter_bins = "curl" }
+"github:google/go-containerregistry" = { version = "0.22.1", filter_bins = "crane" }
 fd = { version = "10.5.0", symlink_bins = true }
 gh = { version = "2.102.0", symlink_bins = true }
 jq = { version = "1.8.2", symlink_bins = true }

@@ -555,10 +555,12 @@ a new title.
   diff since the last review, when that is over 64 KiB. The token grant and
   the Job deadline are sized for the parts from the pull request's size as
   the forge reports it, the deadline for running them in the slots taken.
-- **Commands:** the runner's `-tools` image has `gh`, `curl`, `fd`, `jq`,
-  `rg` and `yq`. The agent is told to use `gh` for GitHub, which signs in
-  with a token minted for the run that can only read the repository under
-  review and public repositories. With `gh` or `curl` the agent can also
+- **Commands:** the runner's `-tools` image has `gh`, `crane`, `curl`,
+  `fd`, `jq`, `rg` and `yq`. The agent is told to use `gh` for GitHub,
+  which signs in with a token minted for the run that can only read the
+  repository under review and public repositories, and `crane` for a
+  container image's tags, digest, manifest and labels, read anonymously
+  from its registry. With `gh` or `curl` the agent can also
   fetch another repository's files, or list its tags, with `fetch_repo`,
   such as the upstream of a dependency on any host.
   [Runner tools](security.md#runner-tools) says what bounds a command and

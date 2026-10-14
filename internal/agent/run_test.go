@@ -316,6 +316,20 @@ func TestRefusedArgs(t *testing.T) {
 		{"curl", []string{"-K", "curlrc", "https://example.com/"}, true},
 		{"curl", []string{"-sKcurlrc", "https://example.com/"}, true},
 		{"jq", []string{"-x", "."}, false},
+		{"crane", []string{"ls", "ghcr.io/o/r"}, false},
+		{"crane", []string{"--platform", "linux/amd64", "config", "ghcr.io/o/r:v1"}, false},
+		{"crane", []string{"--platform=linux/amd64", "manifest", "ghcr.io/o/r:v1"}, false},
+		{"crane", []string{"manifest", "auth"}, false},
+		{"crane", []string{"auth", "token", "ghcr.io/o/r"}, true},
+		{"crane", []string{"-v", "auth", "get", "ghcr.io"}, true},
+		{"crane", []string{"--platform", "linux/amd64", "auth", "login", "ghcr.io"}, true},
+		{"crane", []string{"--insecure", "auth", "token", "ghcr.io/o/r"}, true},
+		{"crane", []string{"--username", "u", "auth", "login", "ghcr.io", "--password", "p"}, true},
+		{"crane", []string{"-u", "u", "-p", "p", "auth", "login", "ghcr.io"}, true},
+		{"crane", []string{"--mount", "x", "auth", "token", "ghcr.io/o/r"}, true},
+		{"crane", []string{"-vu", "u", "auth", "login", "ghcr.io"}, false},
+		{"crane", []string{"--platform", "auth", "token"}, false},
+		{"crane", []string{"--password-stdin", "auth", "login", "ghcr.io"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command+" "+strings.Join(tt.args, " "), func(t *testing.T) {
@@ -414,7 +428,13 @@ func TestRunToolDef(t *testing.T) {
 		t.Fatalf("description = %q", d)
 	}
 	if d := proxied.Def().Description; !strings.Contains(d, "rg searches file contents where the grep tool falls short") ||
-		strings.Contains(d, "fd finds") || strings.Contains(d, "jq reads") || strings.Contains(d, "yq does") {
+		strings.Contains(d, "fd finds") || strings.Contains(d, "jq reads") || strings.Contains(d, "yq does") ||
+		strings.Contains(d, "crane") {
+		t.Fatalf("description = %q", d)
+	}
+	withCrane := NewRunTool(RunConfig{Commands: map[string]string{"crane": "/bin/crane"}, Timeout: time.Second})
+	if d := withCrane.Def().Description; !strings.Contains(d, "Use crane, not curl, for a container image") ||
+		!strings.Contains(d, "`crane ls <registry>/<repo>` lists its tags") {
 		t.Fatalf("description = %q", d)
 	}
 	structured := NewRunTool(RunConfig{Commands: map[string]string{"jq": "/bin/jq", "yq": "/bin/yq"}, Timeout: time.Second})
