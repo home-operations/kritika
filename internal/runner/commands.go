@@ -111,8 +111,11 @@ func commandTool(
 // curl prints its progress meter to stderr, which the run tool keeps in
 // the result, and --silent would drop its warnings and errors with it.
 // The gateway hands redirects back to the client, so curl follows them
-// itself; it sends credentials only to the initial host.
-const curlrc = "no-progress-meter\nlocation\n"
+// itself; it sends credentials only to the initial host. A host the
+// gateway refuses answers a plain http:// request with a 403, which curl
+// would otherwise report as a success, exit code 0 and the refusal as the
+// body; failing on it keeps the body, which names the reason.
+const curlrc = "no-progress-meter\nlocation\nfail-with-body\n"
 
 // markRepository gives the checkout an empty .git whose origin is the
 // repository's clone URL: no history, but enough for a tool that locates a

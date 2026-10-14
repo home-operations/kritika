@@ -184,7 +184,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 	if err != nil || len(scratch) != 1 {
 		t.Fatalf("scratch = %v, %v", scratch, err)
 	}
-	if b, err := os.ReadFile(filepath.Join(scratch[0], "home", ".curlrc")); err != nil || string(b) != "no-progress-meter\nlocation\n" {
+	if b, err := os.ReadFile(filepath.Join(scratch[0], "home", ".curlrc")); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\n" {
 		t.Fatalf(".curlrc = %q, %v", b, err)
 	}
 }

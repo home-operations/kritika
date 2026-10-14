@@ -166,8 +166,10 @@ What bounds a command:
   to the command first, so it cannot read the runner's credentials from
   `/proc`. `HOME` is apart from the checkout, so a pull request cannot
   plant a `.curlrc`; the runner writes one that turns off `curl`'s
-  progress meter, which would otherwise land in the result, and follows
-  the redirects the gateway hands back.
+  progress meter, which would otherwise land in the result, follows the
+  redirects the gateway hands back, and fails on an HTTP error with its
+  body kept, so a host the gateway refuses is a failed command naming the
+  reason rather than a success whose output is the refusal.
 - **Refused arguments:** the run tool refuses the arguments that would
   print a credential or run a program outside the list: `gh auth`,
   `alias`, `config` and `extension`, `crane auth`, `fd -x` and `-X`,
