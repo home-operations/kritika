@@ -98,7 +98,7 @@
       const h = hosts.get(r.host) ?? { host: r.host, count: 0, runs: 0, reasons: new Map() };
       h.count += r.count;
       h.runs += r.runs;
-      h.reasons.set(r.reason, (h.reasons.get(r.reason) ?? 0) + r.count);
+      for (const [reason, count] of Object.entries(r.reasons)) h.reasons.set(reason, (h.reasons.get(reason) ?? 0) + count);
       hosts.set(r.host, h);
     }
     return [...hosts.values()].sort((a, b) => b.count - a.count || a.host.localeCompare(b.host)).map((h) => ({

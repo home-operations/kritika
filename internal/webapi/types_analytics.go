@@ -61,10 +61,11 @@ type RepoActivity struct {
 	Addressed int            `json:"addressed"`
 }
 
-// EgressRefusal is how often the gateway refused one host for one reason
-// over the window, to the runs of one repository. The host is what the
+// EgressRefusal is how often the gateway refused one host over the
+// window, to the runs of one repository, by reason. The host is what the
 // agent asked for, a name steered by the content under review: text, not
-// a link.
+// a link. A run belongs to one repository, so Runs add up across a
+// host's rows.
 type EgressRefusal struct {
 	// Repository is the full name, "" for runs without one.
 	Repository string `json:"repository"`
@@ -72,11 +73,12 @@ type EgressRefusal struct {
 	// readable account's.
 	Account string `json:"account,omitzero"`
 	Host    string `json:"host"`
-	Reason  string `json:"reason"`
-	// Count is the refusals and Runs the runs they came from.
-	Count      int64     `json:"count"`
-	Runs       int64     `json:"runs"`
-	LastSeenAt time.Time `json:"lastSeenAt"`
+	// Count is the refusals and Runs the distinct runs they came from.
+	Count int64 `json:"count"`
+	Runs  int64 `json:"runs"`
+	// Reasons counts the refusals by reason.
+	Reasons    map[string]int64 `json:"reasons"`
+	LastSeenAt time.Time        `json:"lastSeenAt"`
 }
 
 // Analytics is the account's reviews in [From, To), against the window of

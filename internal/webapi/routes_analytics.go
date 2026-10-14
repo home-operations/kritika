@@ -12,10 +12,11 @@ import (
 )
 
 // analyticsRepos is how many repositories the analytics list, and
-// analyticsRefusals how many refused hosts, per repository and reason.
+// analyticsRefusals how many refused hosts, each with a row per
+// repository.
 const (
 	analyticsRepos    = 5
-	analyticsRefusals = 100
+	analyticsRefusals = 50
 )
 
 // analyticsQuery reads ?group=, ?from= and ?to=: by day over the last 30
@@ -75,7 +76,7 @@ func analytics(data store.Analytics) (current, previous AnalyticsTotals, series 
 func egressRefusals(rows []store.EgressRefusalRow) []EgressRefusal {
 	out := make([]EgressRefusal, len(rows))
 	for i, r := range rows {
-		out[i] = EgressRefusal{Repository: r.Repository, Host: r.Host, Reason: r.Reason, Count: r.Count, Runs: r.Runs, LastSeenAt: r.LastSeenAt}
+		out[i] = EgressRefusal{Repository: r.Repository, Host: r.Host, Count: r.Count, Runs: r.Runs, Reasons: r.Reasons, LastSeenAt: r.LastSeenAt}
 	}
 	return out
 }

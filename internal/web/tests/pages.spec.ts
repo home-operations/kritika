@@ -185,7 +185,7 @@ test('analytics shows the totals against the window before, the charts and the r
   // first, and narrow to one repository.
   const refused = page.getByRole('region', { name: 'Refused hosts' });
   await expect(refused.getByRole('columnheader')).toHaveText(['Host', 'Refusals', 'Runs', 'Reasons']);
-  await expect(refused.locator('tbody tr')).toHaveText([/registry\.example\.com\s*14\s*4\s*host not allowed 12 · host denied 2/, /docs\.example\.com\s*4\s*4\s*host not allowed 4/]);
+  await expect(refused.locator('tbody tr')).toHaveText([/registry\.example\.com\s*14\s*4\s*host not allowed 10 · host denied 4/, /docs\.example\.com\s*4\s*4\s*host not allowed 4/]);
   await expect(refused.locator('td.name-fill').first()).toHaveAttribute('title', 'registry.example.com');
   await expect(refused.getByRole('meter').first()).toHaveAttribute('aria-valuenow', '14');
   await expect(refused.getByRole('link')).toHaveCount(0);

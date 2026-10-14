@@ -214,7 +214,7 @@ repositories:
 		t.Fatal(err)
 	}
 	if len(rows) != 2 || rows[0].Host != "registry.example.com" || rows[0].Count != 2 || rows[0].Runs != 1 ||
-		rows[0].Repository != "proxy-refused/repo" || rows[0].Reason != "host not allowed" ||
+		rows[0].Repository != "proxy-refused/repo" || rows[0].Reasons["host not allowed"] != 2 ||
 		rows[1].Host != "docs.example.com" || rows[1].Count != 1 {
 		t.Fatalf("refusals = %+v", rows)
 	}

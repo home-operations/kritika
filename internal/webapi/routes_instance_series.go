@@ -2,6 +2,7 @@ package webapi
 
 import (
 	"cmp"
+	"maps"
 	"net/http"
 	"slices"
 
@@ -60,13 +61,28 @@ func (s *Server) getInstanceAnalytics(w http.ResponseWriter, r *http.Request) er
 		return cmp.Or(cmp.Compare(b.Reviews, a.Reviews), cmp.Compare(a.Repository, b.Repository))
 	})
 	out.Repositories = out.Repositories[:min(len(out.Repositories), analyticsRepos)]
-	slices.SortStableFunc(out.Refusals, func(a, b EgressRefusal) int {
-		return cmp.Or(cmp.Compare(b.Count, a.Count), cmp.Compare(a.Host, b.Host), cmp.Compare(a.Reason, b.Reason),
-			cmp.Compare(a.Repository, b.Repository))
-	})
-	out.Refusals = out.Refusals[:min(len(out.Refusals), analyticsRefusals)]
+	out.Refusals = topRefusedHosts(out.Refusals, analyticsRefusals)
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// topRefusedHosts keeps every row of the limit most refused hosts, counted
+// over every account, the most refused first, as one account's list is
+// read.
+func topRefusedHosts(rows []EgressRefusal, limit int) []EgressRefusal {
+	totals := map[string]int64{}
+	for _, r := range rows {
+		totals[r.Host] += r.Count
+	}
+	hosts := slices.SortedFunc(maps.Keys(totals), func(a, b string) int {
+		return cmp.Or(cmp.Compare(totals[b], totals[a]), cmp.Compare(a, b))
+	})
+	kept := hosts[:min(len(hosts), limit)]
+	rows = slices.DeleteFunc(slices.Clone(rows), func(r EgressRefusal) bool { return !slices.Contains(kept, r.Host) })
+	slices.SortStableFunc(rows, func(a, b EgressRefusal) int {
+		return cmp.Or(cmp.Compare(totals[b.Host], totals[a.Host]), cmp.Compare(a.Host, b.Host), cmp.Compare(a.Repository, b.Repository))
+	})
+	return rows
 }
 
 func addTotals(a, b AnalyticsTotals) AnalyticsTotals {
