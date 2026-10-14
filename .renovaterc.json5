@@ -2,4 +2,8 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>home-operations/renovate-config"],
   postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
+  // npm 12's --package-lock-only refuses registry tarballs of packages with
+  // bundleDependencies (@tailwindcss/oxide-wasm32-wasi): npm/cli#9800.
+  // npm 11 is also what the pinned Node bundles for CI and the image.
+  constraints: { npm: "^11" },
 }
