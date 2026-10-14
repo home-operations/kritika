@@ -283,7 +283,7 @@ one. They come in five groups, with a few keys beside them:
 | `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`          | how a review is judged                     |
 | `trigger`    | `include`, `exclude`, `settle`, `limit`                                             | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`                                                      | what is posted                             |
-| `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`      | the bounds of a review's tool loop         |
+| `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`, `fetches` | the bounds of a review's tool loop   |
 | beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone   |                                            |
 
 `ignore` lists globs of the paths kritika never looks at: they are left out
@@ -507,6 +507,7 @@ a new title.
 | `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                          |
 | `commands`       | none                 | the programs its run tool may execute                                                        |
 | `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |
+| `fetches`        | 8                    | repositories `fetch_repo` may fetch for a review, a split one's parts between them           |
 
 - **Submitting:** the last step is told to submit, as is any step once the
   review has spent nine tenths of its `tokens`. A step told to submit that

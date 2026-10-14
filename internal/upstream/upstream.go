@@ -242,44 +242,69 @@ func (f *Fetcher) wire() (*cappedTransport, func()) {
 	return &cappedTransport{base: t, max: f.Limits.WireBytes}, t.CloseIdleConnections
 }
 
+// Refs is what a listing found: the repository's tags, in newerFirst
+// order, and which of the branches asked for by name it has.
+type Refs struct {
+	Tags     []string
+	Branches map[string]bool
+}
+
 // Tags lists the tags of the repository at rawURL, an https:// clone URL,
-// in newerFirst order. It asks the server for refs/tags/ only: GitHub
-// otherwise lists every pull request's refs too, which can outnumber the
-// tags many times over. A server too old to take the prefix lists every
-// ref, and the rest are dropped here.
+// in newerFirst order.
 func (f *Fetcher) Tags(ctx context.Context, rawURL string) ([]string, error) {
-	if err := checkURL(rawURL); err != nil {
+	refs, err := f.Refs(ctx, rawURL, nil)
+	if err != nil {
 		return nil, err
+	}
+	return refs.Tags, nil
+}
+
+// Refs lists the tags of the repository at rawURL, an https:// clone URL,
+// and whether it has each of branches, in one request. It asks the server
+// for refs/tags/ and those branches only: GitHub otherwise lists every
+// pull request's refs too, which can outnumber the tags many times over.
+// A server too old to take a prefix lists every ref, and the rest are
+// dropped here.
+func (f *Fetcher) Refs(ctx context.Context, rawURL string, branches []string) (Refs, error) {
+	out := Refs{Tags: []string{}, Branches: map[string]bool{}}
+	if err := checkURL(rawURL); err != nil {
+		return out, err
 	}
 	u, err := transport.ParseURL(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("upstream: url: %w", err)
+		return out, fmt.Errorf("upstream: url: %w", err)
 	}
 	wire, done := f.wire()
 	defer done()
 	cl := client.New(client.WithHTTPClient(&http.Client{Transport: wire}))
 	sess, err := cl.Handshake(ctx, &transport.Request{URL: u, Command: transport.UploadPackService, Protocol: protocol.V2})
 	if err != nil {
-		return nil, f.listErr(wire, err)
+		return out, f.listErr(wire, err)
 	}
 	defer func() { _ = sess.Close() }()
-	refs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{RefPrefixes: []string{"refs/tags/"}})
+	prefixes := []string{"refs/tags/"}
+	for _, b := range branches {
+		prefixes = append(prefixes, "refs/heads/"+b)
+	}
+	refs, err := sess.GetRemoteRefs(ctx, &transport.GetRemoteRefsOptions{RefPrefixes: prefixes})
 	switch {
 	// go-git takes a listing without refs for an empty repository, which is
-	// what the prefix leaves of one without tags.
+	// what the prefixes leave of one without tags.
 	case errors.Is(err, transport.ErrEmptyRemoteRepository) && !wire.over():
-		return []string{}, nil
+		return out, nil
 	case err != nil:
-		return nil, f.listErr(wire, err)
+		return out, f.listErr(wire, err)
 	}
-	tags := []string{}
 	for _, ref := range refs.References {
-		if name, ok := strings.CutPrefix(ref.Name().String(), "refs/tags/"); ok && !strings.HasSuffix(name, "^{}") {
-			tags = append(tags, name)
+		name := ref.Name().String()
+		if tag, ok := strings.CutPrefix(name, "refs/tags/"); ok && !strings.HasSuffix(tag, "^{}") {
+			out.Tags = append(out.Tags, tag)
+		} else if branch, ok := strings.CutPrefix(name, "refs/heads/"); ok && slices.Contains(branches, branch) {
+			out.Branches[branch] = true
 		}
 	}
-	slices.SortFunc(tags, newerFirst)
-	return tags, nil
+	slices.SortFunc(out.Tags, newerFirst)
+	return out, nil
 }
 
 func (f *Fetcher) listErr(wire *cappedTransport, err error) error {
@@ -323,13 +348,14 @@ func digitRun(s string) int {
 
 // fetchErr says why a fetch over wire failed. A ref the server lacks fails
 // as an empty repository when the server lists only the refs asked for, as
-// protocol v2 lets it.
+// protocol v2 lets it, which the error leaves out: it reads as a wrong
+// repository rather than a wrong ref.
 func (f *Fetcher) fetchErr(wire *cappedTransport, err error) error {
 	switch {
 	case wire.over():
 		return fmt.Errorf("%w: past %d MiB", ErrTooLarge, f.Limits.WireBytes>>20)
 	case errors.Is(err, git.ErrRemoteRefNotFound) || errors.Is(err, transport.ErrEmptyRemoteRepository):
-		return fmt.Errorf("%w (%w); give one the repository has, or a commit's full SHA", ErrNoRef, err)
+		return fmt.Errorf("%w; give one the repository has, or a commit's full SHA", ErrNoRef)
 	}
 	return fmt.Errorf("upstream: fetch: %w", err)
 }

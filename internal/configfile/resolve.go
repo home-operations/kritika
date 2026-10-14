@@ -287,5 +287,8 @@ func (a AgentSettings) overlay(o Agent) AgentSettings {
 	if o.CommandTimeout != nil {
 		a.CommandTimeout = *o.CommandTimeout
 	}
+	if o.Fetches != nil {
+		a.MaxFetches = *o.Fetches
+	}
 	return a
 }

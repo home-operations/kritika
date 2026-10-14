@@ -92,7 +92,7 @@ func TestCommandTool(t *testing.T) {
 			t.Fatalf("names = %v", run.Names())
 		}
 		def := run.Def()
-		if !strings.Contains(def.Description, "leaves out ignored paths") || !strings.Contains(def.Description, "after 5s") {
+		if !strings.Contains(def.Description, "leaves out ignored paths, lockfiles and vendored or generated trees among them, symlinks and files over 1 MiB; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.") || !strings.Contains(def.Description, "after 5s") {
 			t.Fatalf("description = %q", def.Description)
 		}
 		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))

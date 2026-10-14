@@ -33,9 +33,10 @@ var (
 
 // The keys validation names in its errors.
 const (
-	keySteps  = "agent.steps"
-	keyOutput = "agent.output"
-	keyParts  = "agent.parts"
+	keySteps   = "agent.steps"
+	keyOutput  = "agent.output"
+	keyParts   = "agent.parts"
+	keyFetches = "agent.fetches"
 )
 
 // Instance default keys reported by FileLayer.
@@ -94,6 +95,7 @@ var Policies = []Policy{
 	{Key: "agent.timeout", Scopes: everyScope},
 	{Key: "agent.commands", Scopes: everyScope},
 	{Key: "agent.commandTimeout", Scopes: everyScope},
+	{Key: keyFetches, Scopes: everyScope},
 	{Key: "limits", Scopes: accountScopes},
 }
 

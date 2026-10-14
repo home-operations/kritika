@@ -179,7 +179,9 @@ What bounds a command:
   nothing in the pull request can be started, and an empty `.git` whose
   `origin` is the repository's clone URL, with no history, lets a tool
   that locates a repository by its working tree, such as flate, find this
-  one.
+  one. Ignored paths, lockfiles and vendored trees among them, are left
+  out of it; the agent is told `read_file` and `read_diff` still read
+  them, so it need not reach for the forge's API for a lockfile.
 - **Bounded output:** a command's output is cut to the agent's `output`
   (32 KiB by default), keeping the end of its stderr past the cut. A cut
   output is kept whole, with the token masked, in a file beside the
@@ -210,10 +212,14 @@ repository and a ref, never git arguments.
 - **Tags by prefix:** a listing asks the server for `refs/tags/` only,
   through the same gateway and limits as a fetch, and writes nothing. A
   fetch that names a tag the repository lacks lists the tags as well,
-  counted among the listings, and its error names the closest.
-- **Bounded:** 8 fetches and 8 tag listings a review, each taking at most
-  128 MiB from the server and two minutes, and 256 MiB of files written
-  across the fetches and the run tool's kept outputs, beside the checkout.
+  counted among the listings: when the repository tags the version named
+  under one other name, `v1.2.3` or `chart-1.2.3` for `1.2.3`, that tag is
+  fetched in its place and the answer says so; otherwise the error names
+  the closest.
+- **Bounded:** [`agent.fetches`](configuration.md#the-agent) fetches, 8
+  unless set, and 8 tag listings a review, each taking at most 128 MiB
+  from the server and two minutes, and 256 MiB of files written across
+  the fetches and the run tool's kept outputs, beside the checkout.
   Symlinks, submodules and files over 1 MiB are left out, and the files
   are written without execute bits.
 - **Read in place:** `read_file` reads a fetched file, or a kept output,

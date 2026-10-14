@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
@@ -427,6 +428,9 @@ func TestTags(t *testing.T) {
 	if err := mirror.Storer.SetReference(plumbing.NewHashReference("refs/pull/1/head", plumbing.NewHash(src.v2))); err != nil {
 		t.Fatal(err)
 	}
+	if err := mirror.Storer.SetReference(plumbing.NewHashReference("refs/heads/release-2", plumbing.NewHash(src.v2))); err != nil {
+		t.Fatal(err)
+	}
 	for _, srv := range servers(t, src) {
 		t.Run(srv.name, func(t *testing.T) {
 			rec := &recorder{base: srv.transport}
@@ -436,6 +440,14 @@ func TestTags(t *testing.T) {
 			}
 			if srv.filters && !slices.ContainsFunc(rec.bodies, func(b string) bool { return strings.Contains(b, "ref-prefix refs/tags/") }) {
 				t.Fatalf("no request asked for refs/tags/ only: %q", rec.bodies)
+			}
+			rec = &recorder{base: srv.transport}
+			refs, err := (&Fetcher{Transport: rec, Limits: testLimits}).Refs(t.Context(), srv.url, []string{"release-2", "release"})
+			if err != nil || !slices.Equal(refs.Tags, tags) || !maps.Equal(refs.Branches, map[string]bool{"release-2": true}) {
+				t.Fatalf("refs = %+v, %v; want the tags and release-2 alone among the branches", refs, err)
+			}
+			if srv.filters && !slices.ContainsFunc(rec.bodies, func(b string) bool { return strings.Contains(b, "ref-prefix refs/heads/release-2") }) {
+				t.Fatalf("no request asked for refs/heads/release-2: %q", rec.bodies)
 			}
 		})
 	}
