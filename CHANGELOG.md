@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.69](https://github.com/home-operations/kritika/compare/0.0.68...0.0.69) (2026-10-14)
+
+
+### Bug Fixes
+
+* **auth:** resolve sign-in client IDs from environment ([#952](https://github.com/home-operations/kritika/issues/952)) ([0794fa8](https://github.com/home-operations/kritika/commit/0794fa830fc2c91afc12f7db81071df1dde496b2))
+
 ## [0.0.68](https://github.com/home-operations/kritika/compare/0.0.67...0.0.68) (2026-10-14)
 
 
