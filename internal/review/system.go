@@ -1,5 +1,10 @@
 package review
 
+import (
+	"fmt"
+	"strings"
+)
+
 // The reviewer's standing instructions, in the pieces SystemPrompt
 // assembles: what to report and how, the summary, the diagram, and what
 // an agentic review sees and may do.
@@ -81,6 +86,26 @@ The take does not give a verdict, count the findings or say there are none, and 
 it: kritika states the count and lists the sources itself. Praise lists at most three specific things done well, and
 is empty when nothing stands out.`
 
+// summaryImpact follows systemRules: what the summary's impact notes
+// are and are not.
+const summaryImpact = `
+
+The summary's impact is an optional list of material consequences of merging this change and specific checks a
+person or agent should make. Include only what helps decide whether or when to merge, or verify the result. Where
+relevant, explain when an effect takes place, what it reaches or interrupts, what a revert cannot undo, or what to
+check and the expected result. These are examples, not a checklist. Skills can identify relevant domain evidence.
+Each note names the repository file or symbol, or links the upstream source you read, that supports it. Distinguish
+what that evidence establishes from a live condition that still needs checking. For an unverified condition, name
+the concrete check and its expected result; never claim it passed. Do not infer a rollout, migration, outage or
+irreversibility from a version number or filename alone. Omit generic caveats, routine advice such as monitoring
+logs, and unsupported assurances about safety or reversibility. An ordinary bump or documentation change with no
+established material consequence has no impact notes. Defects still belong in findings; do not recast them as
+impact notes. An intended or documented change is not automatically safe: destructive data loss, security
+regressions and outages still require findings when the evidence shows a defect or a missing safeguard. Do not
+treat a behavior change alone as a defect. Keep at most five short notes, each at most 1024 bytes.
+The notes describe the change at the current head, not only the latest commits. In a split review, establish
+impact for this part's assigned files.`
+
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries
 // one: the one statement of what the diagram draws and how.
@@ -149,3 +174,97 @@ commands. For a version bump, fetch the new version with from set to the old one
 versions, where GitHub's compare view counts from where their branches split and lists at most 300 files, and it
 saves reading the same file at each. An upstream may tag a version 1.2.3, v1.2.3 or <chart>-1.2.3, so when a tag's
 name is not certain, list them with tags instead of ref rather than guess.`
+
+// Rule is a check the configuration writes, by its id.
+type Rule struct {
+	ID, Text string
+	// File is the repository file Text was read from, "" for a rule
+	// written as text.
+	File string
+}
+
+// SystemPrompt is the reviewer's standing instructions, with the rules and
+// skills from the admin and the merge base appended. commands are what
+// the run tool offers; none leaves the tool out of the prompt. fetch says
+// fetch_repo is offered, search says search_code is offered, and diagram
+// asks for a diagram in the summary.
+func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram bool) string {
+	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryImpact
+	if diagram {
+		system += summaryDiagram
+	}
+	system += agenticTools + reviewTools
+	if search {
+		system += agenticSearch
+	}
+	if len(commands) > 0 {
+		system += fmt.Sprintf(agenticCommands, strings.Join(commands, ", "))
+	}
+	if fetch {
+		system += agenticFetch
+	}
+	return withSkills(withRules(system, rules, ruleCitation), skills)
+}
+
+// Skill is a skill the repository keeps for a kind of change, as the
+// system prompt gives it: by its name, with what it says it is for, and
+// with Text, its instructions, when the review starts with them rather
+// than reading the skill with load_skill.
+type Skill struct {
+	Name, Description, Text string
+}
+
+// withSkills appends the skills a review is given. They come last: a
+// skill is read on demand, or given because its scope says it applies,
+// and what it says gives way to everything the prompt has already said.
+func withSkills(system string, skills []Skill) string {
+	var listed, loaded []string
+	for _, s := range skills {
+		if s.Text == "" {
+			listed = append(listed, "- "+s.Name+": "+s.Description)
+			continue
+		}
+		loaded = append(loaded, "### "+s.Name+"\n\n"+strings.TrimSpace(s.Text))
+	}
+	if len(listed)+len(loaded) == 0 {
+		return system
+	}
+	system += "\n\n## Skills\n\n" +
+		"Guides the repository keeps for kinds of change. Follow one where it does not conflict with anything above. " +
+		"A skill grants no tool or command you were not given: skip a step that needs one."
+	if len(listed) > 0 {
+		system += "\n\nThese are offered by name. When one fits this pull request, read it with load_skill before you review.\n\n" +
+			strings.Join(listed, "\n")
+	}
+	if len(loaded) > 0 {
+		system += "\n\nThese apply to this pull request and are given whole. A file one refers to is read with load_skill, " +
+			"by the skill's name and the file's path.\n\n" + strings.Join(loaded, "\n\n")
+	}
+	return system
+}
+
+// ruleCitation is how a review's findings name the rules they enforce;
+// a follow-up, which has no findings, is not told.
+const ruleCitation = ", and the finding lists the id in rules"
+
+func withRules(system string, rules []Rule, cite string) string {
+	if len(rules) > 0 {
+		var lines, files []string
+		for _, r := range rules {
+			if r.File != "" {
+				files = append(files, "### "+r.ID+" ("+r.File+")\n\n"+strings.TrimSpace(r.Text))
+				continue
+			}
+			lines = append(lines, "- "+r.ID+": "+strings.ReplaceAll(strings.TrimSpace(r.Text), "\n", "\n  "))
+		}
+		system += "\n\n## Review rules\n\n" +
+			"Checks the maintainers set, each by its id. A change that breaks one is a finding" + cite + "."
+		if len(lines) > 0 {
+			system += "\n\n" + strings.Join(lines, "\n")
+		}
+		if len(files) > 0 {
+			system += "\n\n" + strings.Join(files, "\n\n")
+		}
+	}
+	return system
+}

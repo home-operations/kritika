@@ -34,24 +34,6 @@ const describeImpact = "Up to five short notes on material merge consequences or
 	"Each names supporting repository evidence or an upstream source you read. Markdown allowed; prefer one short paragraph, " +
 	"at most 1024 bytes per note. Omit the field or use [] when there is nothing specific to report; never use a string."
 
-const summaryImpact = `
-
-The summary's impact is an optional list of material consequences of merging this change and specific checks a
-person or agent should make. Include only what helps decide whether or when to merge, or verify the result. Where
-relevant, explain when an effect takes place, what it reaches or interrupts, what a revert cannot undo, or what to
-check and the expected result. These are examples, not a checklist. Skills can identify relevant domain evidence.
-Each note names the repository file or symbol, or links the upstream source you read, that supports it. Distinguish
-what that evidence establishes from a live condition that still needs checking. For an unverified condition, name
-the concrete check and its expected result; never claim it passed. Do not infer a rollout, migration, outage or
-irreversibility from a version number or filename alone. Omit generic caveats, routine advice such as monitoring
-logs, and unsupported assurances about safety or reversibility. An ordinary bump or documentation change with no
-established material consequence has no impact notes. Defects still belong in findings; do not recast them as
-impact notes. An intended or documented change is not automatically safe: destructive data loss, security
-regressions and outages still require findings when the evidence shows a defect or a missing safeguard. Do not
-treat a behavior change alone as a defect. Keep at most five short notes, each at most 1024 bytes.
-The notes describe the change at the current head, not only the latest commits. In a split review, establish
-impact for this part's assigned files.`
-
 const reassessImpact = "Reassess the earlier merge impact against the current head: keep only consequences and " +
 	"checks still supported, update their evidence where needed, and omit notes that no longer apply."
 
