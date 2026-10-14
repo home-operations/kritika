@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.0.68](https://github.com/home-operations/kritika/compare/0.0.67...0.0.68) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** make YAML the primary configuration interface ([#932](https://github.com/home-operations/kritika/issues/932))
+
+### Features
+
+* **config:** make YAML the primary configuration interface ([#932](https://github.com/home-operations/kritika/issues/932)) ([efc6028](https://github.com/home-operations/kritika/commit/efc602893bc943e288e8d4efc9349e97722551aa))
+* **dashboard:** chart the hosts the gateway refused ([#951](https://github.com/home-operations/kritika/issues/951)) ([036f482](https://github.com/home-operations/kritika/commit/036f4828e528ef6954c352c68b12ffed9d3651c8))
+* **go:** update module github.com/go-viper/mapstructure/v2 (v2.4.0 → v2.5.0) ([#940](https://github.com/home-operations/kritika/issues/940)) ([9c9f647](https://github.com/home-operations/kritika/commit/9c9f64741e2c7dc39ef85ea5b7ee318ca0ee22b7))
+* **go:** update module github.com/odvcencio/gotreesitter (v0.55.1 → v0.56.0) ([#941](https://github.com/home-operations/kritika/issues/941)) ([daebbbb](https://github.com/home-operations/kritika/commit/daebbbb85f2a6501e211c334b7f0e45a5c3a0170))
+* **go:** update module github.com/openai/openai-go/v3 (v3.77.0 → v3.78.0) ([#942](https://github.com/home-operations/kritika/issues/942)) ([5f1605e](https://github.com/home-operations/kritika/commit/5f1605e9705415fc513903b9e152804e4c67981f))
+* **npm:** update dependency layerchart (2.7.0 → 2.8.0) ([#943](https://github.com/home-operations/kritika/issues/943)) ([e8c52ba](https://github.com/home-operations/kritika/commit/e8c52ba734a280dff59b7f238d690bbfd11e0071))
+* **review:** cut diffs, version tags and a fetch cap for fetch_repo ([#949](https://github.com/home-operations/kritika/issues/949)) ([dc8c830](https://github.com/home-operations/kritika/commit/dc8c8303eb8d360efc67c684231a16108ecf8152))
+* **review:** show the agent egress refusals and what its token reads ([#950](https://github.com/home-operations/kritika/issues/950)) ([26754af](https://github.com/home-operations/kritika/commit/26754af07f153117cac64e67e4580fa7fd06516a))
+* **runner:** add crane to the tools image ([#946](https://github.com/home-operations/kritika/issues/946)) ([3c4596f](https://github.com/home-operations/kritika/commit/3c4596f6e9169687637240d64dc13ae9cb22fd94))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.8 → 2026.10.9) ([#934](https://github.com/home-operations/kritika/issues/934)) ([d8c08be](https://github.com/home-operations/kritika/commit/d8c08bef42837d12ecd9643eb9360c1916c626fa))
+* **gateway:** admit a proxy request by its run token ([#945](https://github.com/home-operations/kritika/issues/945)) ([46a05bb](https://github.com/home-operations/kritika/commit/46a05bbfde65281c8cc698f4343486d4223bb8cf))
+* **npm:** update dependency marked (18.1.0 → 18.1.1) ([#937](https://github.com/home-operations/kritika/issues/937)) ([68aa6fa](https://github.com/home-operations/kritika/commit/68aa6fa35d178f2a71fad7f98887487db9c16ae8))
+* preserve review acknowledgments and HTTP forwarding ([#935](https://github.com/home-operations/kritika/issues/935)) ([d3645de](https://github.com/home-operations/kritika/commit/d3645def934bfe1ef0d23f06e4a29383fa453f77))
+
+
+### Code Refactoring
+
+* **review:** keep the system prompt in one file ([#944](https://github.com/home-operations/kritika/issues/944)) ([5211d1b](https://github.com/home-operations/kritika/commit/5211d1b1619320acf955e681daab1e7396e86924))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update github-actions ([#938](https://github.com/home-operations/kritika/issues/938)) ([b1df7b1](https://github.com/home-operations/kritika/commit/b1df7b196777c7862d1dfee72c739a4b871c788b))
+* **mise:** update mise tools ([#936](https://github.com/home-operations/kritika/issues/936)) ([bee3c85](https://github.com/home-operations/kritika/commit/bee3c85307a88d61d6de140999f8abb811929a8b))
+* **mise:** update tool oxfmt (0.72.0 → 0.73.0) ([#939](https://github.com/home-operations/kritika/issues/939)) ([d5dd675](https://github.com/home-operations/kritika/commit/d5dd6750eada796d735f6a0228c202e69ca0529e))
+* **renovate:** pin npm to 11 for lockfile updates ([2bfab4a](https://github.com/home-operations/kritika/commit/2bfab4a3054e839636691e9e6070459377ed0a35))
+
 ## [0.0.67](https://github.com/home-operations/kritika/compare/0.0.66...0.0.67) (2026-10-13)
 
 
