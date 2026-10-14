@@ -118,3 +118,19 @@ func (f *File) EgressRules() egress.Rules {
 	}
 	return egress.Rules{Allow: allow, Deny: f.Egress.deny, Credentials: creds}
 }
+
+// EgressHosts names the hosts the gateway lets a runner reach, for the
+// agent's tool descriptions: the allowed hosts, GitHub's among them, less
+// an exact host a deny entry refuses. A pattern stays as written, and
+// "*" says every host, since the agent is told what it may try, not
+// what the rules refuse.
+func (f *File) EgressHosts() []string {
+	rules := f.EgressRules()
+	var hosts []string
+	for _, h := range rules.Allow.Hosts {
+		if strings.HasPrefix(h, "*") || rules.Allows(h) {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}

@@ -91,6 +91,9 @@ type fetchRepoTool struct {
 	// here so the note after the cut, naming the file that holds it whole,
 	// survives; zero leaves the cut to the loop.
 	maxBytes int
+	// hosts name what the gateway lets a fetch reach, for the description;
+	// empty leaves them unnamed.
+	hosts []string
 
 	fetches  int
 	listings int
@@ -106,6 +109,9 @@ func (t *fetchRepoTool) Def() model.ToolDef {
 		` For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0", ` +
 		`"paths": ["deploy/charts"]} reads a chart's changes between two versions, and ` +
 		`{"url": "https://github.com/cert-manager/cert-manager", "tags": "1.17"} lists the tags with 1.17 in their names.`
+	if len(t.hosts) > 0 {
+		desc += " The fetch goes through the gateway, which allows only " + agent.AllowedHosts(t.hosts) + "."
+	}
 	if t.maxBytes > 0 {
 		desc += fmt.Sprintf(" A diff cut to %d KiB in the answer is whole in the file the answer names: read it with read_file in "+
 			"line ranges, or search it with the commands, rather than fetch again.", t.maxBytes>>10)

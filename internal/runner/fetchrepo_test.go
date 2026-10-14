@@ -290,9 +290,15 @@ func TestFetchRepoTags(t *testing.T) {
 		!strings.Contains(err.Error(), "give ref, such as v1.17.0 or HEAD, to fetch, or tags to list the repository's tags") {
 		t.Fatalf("neither ref nor tags: err = %v", err)
 	}
-	if d := tool.Def().Description; !strings.Contains(d, `For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0"`) {
+	if d := tool.Def().Description; !strings.Contains(d, `For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0"`) ||
+		strings.Contains(d, "gateway") {
 		t.Fatalf("description = %q", d)
 	}
+	tool.hosts = []string{"github.com", "api.github.com", "gitlab.com"}
+	if d := tool.Def().Description; !strings.Contains(d, "The fetch goes through the gateway, which allows only these hosts: github.com, api.github.com, gitlab.com.") {
+		t.Fatalf("description = %q", d)
+	}
+	tool.hosts = nil
 	if tool.fetches != 0 || tool.budget.Left() != fetchWriteBytes {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}

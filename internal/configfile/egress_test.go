@@ -77,6 +77,31 @@ func TestEgressRules(t *testing.T) {
 	}
 }
 
+func TestEgressHosts(t *testing.T) {
+	minimalEnv(t)
+	for _, tc := range []struct {
+		name, raw string
+		want      []string
+	}{
+		{name: "github alone", want: []string{GitHubHost, GitHubAPIHost}},
+		{name: "configured hosts, not addresses", raw: "egress:\n  allow: [ghcr.io, \"*.githubusercontent.com\", 10.0.0.0/8, github.com]\n",
+			want: []string{"ghcr.io", "*.githubusercontent.com", "github.com", GitHubAPIHost}},
+		{name: "a denied host is left out, a pattern kept", raw: "egress:\n  allow: [ghcr.io, quay.io, \"*.example.com\"]\n  deny: [quay.io, \"*.example.com\"]\n",
+			want: []string{"ghcr.io", "*.example.com", GitHubHost, GitHubAPIHost}},
+		{name: "every host", raw: "egress:\n  allow: [\"*\"]\n  deny: [\"*.pastebin.com\"]\n", want: []string{"*", GitHubHost, GitHubAPIHost}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := loadBytes(t, []byte(tc.raw+minimal))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := f.EgressHosts(); !slices.Equal(got, tc.want) {
+				t.Fatalf("EgressHosts() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEgressRejects(t *testing.T) {
 	minimalEnv(t)
 	t.Setenv("TEST_GH_TOKEN", "ghp_x")

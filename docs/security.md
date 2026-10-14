@@ -147,7 +147,9 @@ an image set in `runner.image` without them offers none.
 `gh` signs in with the run's own GitHub token, and an app already allows
 `github.com` and `api.github.com` through the gateway. Every other host
 `curl` or `crane` reaches must pass the gateway too, so add the release
-hosts and registries to `egress.allow`:
+hosts and registries to `egress.allow`; the run tool's and `fetch_repo`'s
+descriptions name the allowed hosts to the agent, so it does not spend
+calls on the rest:
 
 ```yaml
 egress:

@@ -46,8 +46,10 @@ type RunConfig struct {
 	// MaxOutputBytes caps the combined output kept of one command.
 	MaxOutputBytes int
 	// Proxied says the commands reach the network through the egress
-	// gateway, which fetches a plain http:// URL over HTTPS.
+	// gateway, which fetches a plain http:// URL over HTTPS. Hosts, when
+	// set, name what the gateway lets them reach, "*" for every host.
 	Proxied bool
+	Hosts   []string
 	// Note, when set, is appended to the tool's description.
 	Note string
 	// Mask, when set, is applied to a command's output before the model
@@ -169,8 +171,10 @@ func (rt *RunTool) Def() model.ToolDef {
 	}
 	if slices.Contains(rt.names, "curl") {
 		if rt.cfg.Proxied {
-			desc += " The network is reached through a gateway that allows only some hosts. Give curl http:// URLs: " +
-				"the gateway fetches them over HTTPS and authenticates to the hosts it holds a credential for."
+			desc += " The network is reached through a gateway that allows only " + AllowedHosts(rt.cfg.Hosts) + ": a request " +
+				"to any other host fails with a 403 naming the refusal, and another host of the same kind is refused too. " +
+				"Give curl http:// URLs: the gateway fetches them over HTTPS and authenticates to the hosts it holds a " +
+				"credential for."
 		} else {
 			desc += " Give curl https:// URLs."
 		}
@@ -184,6 +188,19 @@ func (rt *RunTool) Def() model.ToolDef {
 		desc += " " + rt.cfg.Note
 	}
 	return model.ToolDef{Name: "run", Description: desc, InputSchema: rt.schema}
+}
+
+// AllowedHosts words what the gateway allows for a tool's description:
+// the hosts it lists, "some hosts" when none are known, and every host
+// but a few when "*" is among them.
+func AllowedHosts(hosts []string) string {
+	switch {
+	case slices.Contains(hosts, "*"):
+		return "every host but a few"
+	case len(hosts) > 0:
+		return "these hosts: " + strings.Join(hosts, ", ")
+	}
+	return "some hosts"
 }
 
 func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, error) {

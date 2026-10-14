@@ -418,8 +418,23 @@ func TestRunToolDef(t *testing.T) {
 	if err := json.Unmarshal(def.InputSchema, &schema); err != nil || !slices.Equal(schema.Properties.Command.Enum, []string{"curl", "rg"}) {
 		t.Fatalf("schema = %s, err = %v", def.InputSchema, err)
 	}
+	if d := def.Description; !strings.Contains(d, "allows only some hosts: a request to any other host fails with a 403") {
+		t.Fatalf("description = %q", d)
+	}
+	for _, tc := range []struct {
+		hosts []string
+		want  string
+	}{
+		{[]string{"github.com", "api.github.com", "*.githubusercontent.com"}, "allows only these hosts: github.com, api.github.com, *.githubusercontent.com: a request"},
+		{[]string{"ghcr.io", "*"}, "allows only every host but a few: a request"},
+	} {
+		named := NewRunTool(RunConfig{Commands: map[string]string{"curl": "/bin/curl"}, Timeout: time.Second, Proxied: true, Hosts: tc.hosts})
+		if d := named.Def().Description; !strings.Contains(d, tc.want) {
+			t.Fatalf("hosts %v: description = %q", tc.hosts, d)
+		}
+	}
 	direct, _ := newTestRunTool(t, false)
-	if d := direct.Def().Description; !strings.Contains(d, "Give curl https:// URLs") {
+	if d := direct.Def().Description; !strings.Contains(d, "Give curl https:// URLs") || strings.Contains(d, "gateway") {
 		t.Fatalf("description = %q", d)
 	}
 	noCurl := NewRunTool(RunConfig{Commands: map[string]string{"fd": "/bin/fd"}, Timeout: time.Second, Note: "The checkout is partial."})

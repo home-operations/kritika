@@ -174,11 +174,16 @@ func TestCommandToolCurlrc(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
-	s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl"}, 5
+	s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = []string{"curl"}, 5, []string{"github.com", "ghcr.io"}
 	run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || fetch == nil {
 		t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
+	}
+	for _, d := range []string{run.Def().Description, fetch.Def().Description} {
+		if !strings.Contains(d, "allows only these hosts: github.com, ghcr.io") {
+			t.Fatalf("description = %q", d)
+		}
 	}
 	scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
 	if err != nil || len(scratch) != 1 {
