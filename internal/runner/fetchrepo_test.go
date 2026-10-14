@@ -291,7 +291,7 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("neither ref nor tags: err = %v", err)
 	}
 	if d := tool.Def().Description; !strings.Contains(d, `For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0"`) ||
-		strings.Contains(d, "gateway") {
+		!strings.Contains(d, "The fetch is anonymous: it reads a public repository, never a private one") || strings.Contains(d, "gateway") {
 		t.Fatalf("description = %q", d)
 	}
 	tool.hosts = []string{"github.com", "api.github.com", "gitlab.com"}

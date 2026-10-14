@@ -158,10 +158,11 @@ func (rt *RunTool) Def() model.ToolDef {
 		desc += " yq does the same for a YAML file (`yq '.spec.values.image' helmrelease.yaml`), and reads JSON too."
 	}
 	if slices.Contains(rt.names, "gh") {
-		desc += " Use gh, not curl, for anything on GitHub: it is signed in to read public repositories, such as " +
-			"`gh release view <tag> -R <owner>/<repo>` for a release's notes or `gh pr view <number> -R <owner>/<repo>` " +
-			"for an upstream pull request. The repository goes after -R, never as a second argument, and --json " +
-			"takes the fields to print, as in `gh release view v1.2.0 -R <owner>/<repo> --json tagName,body`."
+		desc += " Use gh, not curl, for anything on GitHub: it is signed in with a token that reads the repository under " +
+			"review and public repositories, such as `gh release view <tag> -R <owner>/<repo>` for a release's notes or " +
+			"`gh pr view <number> -R <owner>/<repo>` for an upstream pull request. Any other private repository is out " +
+			"of its reach, by the API or GraphQL alike. The repository goes after -R, never as a second argument, and " +
+			"--json takes the fields to print, as in `gh release view v1.2.0 -R <owner>/<repo> --json tagName,body`."
 	}
 	if slices.Contains(rt.names, "crane") {
 		desc += " Use crane, not curl, for a container image: `crane ls <registry>/<repo>` lists its tags, " +

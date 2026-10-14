@@ -397,7 +397,8 @@ func TestRunToolGH(t *testing.T) {
 	// A version bump's diff is fetch_repo's, which the review's prompt
 	// describes: the compare view counts from where the branches split.
 	if d := rt.Def().Description; !strings.Contains(d, "Use gh, not curl, for anything on GitHub") ||
-		!strings.Contains(d, "gh release view <tag>") || strings.Contains(d, "compare") {
+		!strings.Contains(d, "gh release view <tag>") || !strings.Contains(d, "reads the repository under review and public repositories") ||
+		strings.Contains(d, "compare") {
 		t.Fatalf("description = %q", d)
 	}
 }

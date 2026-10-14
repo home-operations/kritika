@@ -108,7 +108,8 @@ func (t *fetchRepoTool) Def() model.ToolDef {
 			t.fetchMax, listMax) +
 		` For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0", ` +
 		`"paths": ["deploy/charts"]} reads a chart's changes between two versions, and ` +
-		`{"url": "https://github.com/cert-manager/cert-manager", "tags": "1.17"} lists the tags with 1.17 in their names.`
+		`{"url": "https://github.com/cert-manager/cert-manager", "tags": "1.17"} lists the tags with 1.17 in their names.` +
+		" The fetch is anonymous: it reads a public repository, never a private one, the one under review included."
 	if len(t.hosts) > 0 {
 		desc += " The fetch goes through the gateway, which allows only " + agent.AllowedHosts(t.hosts) + "."
 	}

@@ -22,7 +22,7 @@ run, and hands it a Secret of its own:
 
 | Credential                        | What it can do                                                                                                               |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| a GitHub token minted for the run | read the repository under review and public repositories; the git fetch and `gh` use it                                      |
+| a GitHub token minted for the run | read the repository under review and public repositories; the git fetch and `gh` use it, `fetch_repo` does not               |
 | a gateway token                   | reach the egress proxy and, for a review or follow-up, the run's model through the gateway, until `config.gatewayTokenTtl` past the Job's deadline; revoked when the run ends |
 | the runner role's database URI    | connect as the restricted runner role                                                                                          |
 
@@ -144,12 +144,14 @@ distroless image with all seven, pinned by digest like the chart's image.
 A command is offered only when the runner image has it on its `PATH`, so
 an image set in `runner.image` without them offers none.
 
-`gh` signs in with the run's own GitHub token, and an app already allows
-`github.com` and `api.github.com` through the gateway. Every other host
-`curl` or `crane` reaches must pass the gateway too, so add the release
-hosts and registries to `egress.allow`; the run tool's and `fetch_repo`'s
-descriptions name the allowed hosts to the agent, so it does not spend
-calls on the rest:
+`gh` signs in with the run's own GitHub token, which reads the repository
+under review and public repositories and no other private one; the run
+tool's description says so, so the agent does not try another way in. An
+app already allows `github.com` and `api.github.com` through the gateway.
+Every other host `curl` or `crane` reaches must pass the gateway too, so
+add the release hosts and registries to `egress.allow`; the run tool's
+and `fetch_repo`'s descriptions name the allowed hosts to the agent, so it
+does not spend calls on the rest:
 
 ```yaml
 egress:
@@ -208,8 +210,10 @@ its name. kritika makes the fetch itself, with go-git: the model names a
 repository and a ref, never git arguments.
 
 - **Anonymous HTTPS:** an `https://` clone URL, fetched without a
-  credential through the gateway. `github.com` is already allowed; any
-  other host must be in `egress.allow`, as for `curl`.
+  credential through the gateway, so a private repository, the one under
+  review included, is not fetched; the tool's description says so.
+  `github.com` is already allowed; any other host must be in
+  `egress.allow`, as for `curl`.
 - **Only what is asked for:** depth one, without tags, and with paths only
   the files under them, from a server that can filter; one that cannot
   sends the whole tree, within the limit below.
