@@ -91,13 +91,16 @@ func TestParseGoDeclarations(t *testing.T) {
 	}
 	byName := map[string]Decl{}
 	for _, d := range f.Decls {
+		if _, dup := byName[d.Symbol]; dup {
+			t.Errorf("%s declared twice in %+v", d.Symbol, f.Decls)
+		}
 		byName[d.Symbol] = d
 	}
 	tests := []struct {
 		symbol, kind, scope string
 		start, end          int
 	}{
-		{"Widget", "type", "", 6, 8},
+		{"Widget", "struct", "", 6, 8},
 		{"Describe", "method", "Widget", 15, 17},
 		{"Build", "function", "", 19, 23},
 	}
