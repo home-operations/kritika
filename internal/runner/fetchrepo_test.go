@@ -358,8 +358,18 @@ func TestFetchRepoResolvesVersion(t *testing.T) {
 	if _, err := run(map[string]any{"ref": "main", "from": "1"}); err == nil || !strings.HasSuffix(err.Error(), ". Its newest tags: v2, v1, chart-2.") {
 		t.Fatalf("a branch the repository lacks beside a resolved from: err = %v", err)
 	}
-	if tool.fetches != 3 || tool.listings != 3 {
-		t.Fatalf("fetches = %d, listings = %d, want 3 and 3", tool.fetches, tool.listings)
+
+	// A branch with a version in its name is not a missing tag.
+	if err := mirror.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("release-2"), v2.Hash())); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run(map[string]any{"ref": "release-2", "from": "1", "paths": []string{"pkg"}})
+	if err != nil || !strings.HasPrefix(out, "The repository has no 1; its tag with that version, v1, stands in for it. Fetched "+url+" at release-2, commit ") ||
+		!strings.Contains(out, "under ../upstream/4-repo@release-2,") || !strings.Contains(out, "+func A() {}") {
+		t.Fatalf("a branch beside a resolved from: %q, %v", out, err)
+	}
+	if tool.fetches != 4 || tool.listings != 4 {
+		t.Fatalf("fetches = %d, listings = %d, want 4 and 4", tool.fetches, tool.listings)
 	}
 }
 

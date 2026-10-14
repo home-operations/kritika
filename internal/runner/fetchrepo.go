@@ -305,18 +305,31 @@ func (t *fetchRepoTool) fetch(ctx context.Context, f *upstream.Fetcher, req upst
 	hint := ""
 	if t.listings < listMax {
 		t.listings++
-		if tags, lerr := f.Tags(ctx, req.URL); lerr == nil && len(tags) > 0 {
-			if fixed, ok := resolveRefs(req, tags); ok {
+		if refs, lerr := f.Refs(ctx, req.URL, versioned(req)); lerr == nil && len(refs.Tags) > 0 {
+			if fixed, ok := resolveRefs(req, refs); ok {
 				res, rerr := t.fetchTo(ctx, f, fixed)
 				if rerr == nil || !errors.Is(rerr, upstream.ErrNoRef) {
 					return res, fixed, rerr
 				}
 				req, err = fixed, rerr
 			}
-			hint = closest(req, tags)
+			hint = closest(req, refs.Tags)
 		}
 	}
 	return nil, req, fmt.Errorf("%w.%s", err, hint)
+}
+
+// versioned are the refs of req a tag could stand in for, those with a
+// version in their names, which the listing asks the server for as
+// branches: one the repository has as a branch is not missing.
+func versioned(req upstream.Request) []string {
+	var out []string
+	for _, ref := range []string{req.Ref, req.From} {
+		if versionOf(ref) != "" {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // fetchTo is one fetch of req into the directory named for it, which a
@@ -332,17 +345,16 @@ func (t *fetchRepoTool) fetchTo(ctx context.Context, f *upstream.Fetcher, req up
 	return res, nil
 }
 
-// resolveRefs is req with each ref the repository lacks replaced by the
-// one tag with its version, and whether any was. A ref without a version,
-// a branch's name or HEAD, is kept as given: the tags cannot say whether
-// the repository has it.
-func resolveRefs(req upstream.Request, tags []string) (upstream.Request, bool) {
+// resolveRefs is req with each ref the repository has neither as a tag nor
+// as a branch replaced by the one tag with its version, and whether any
+// was. A ref without a version, a branch's name or HEAD, is kept as given.
+func resolveRefs(req upstream.Request, refs upstream.Refs) (upstream.Request, bool) {
 	changed := false
 	for _, ref := range []*string{&req.Ref, &req.From} {
-		if *ref == "" || slices.Contains(tags, *ref) {
+		if *ref == "" || slices.Contains(refs.Tags, *ref) || refs.Branches[*ref] {
 			continue
 		}
-		if tag := tagFor(*ref, tags); tag != "" {
+		if tag := tagFor(*ref, refs.Tags); tag != "" {
 			*ref, changed = tag, true
 		}
 	}
