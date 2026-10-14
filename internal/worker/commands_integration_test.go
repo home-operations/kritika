@@ -61,13 +61,19 @@ func TestReviewRequestLifecycle(t *testing.T) {
 	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	svc := ingest.NewService(st, queue)
 	tests := []struct {
-		name    string
-		status  store.ReviewStatus
-		pollErr bool
-		refused bool
-		mark    string
+		name               string
+		status             store.ReviewStatus
+		pollErr            bool
+		cancelAfterEnqueue bool
+		refused            bool
+		missingEyes        bool
+		ambiguousCommit    bool
+		mark               string
 	}{
 		{name: "initial polling error", status: store.ReviewCompleted, pollErr: true, mark: forge.ReactionDone},
+		{name: "canceled after enqueue", status: store.ReviewCompleted, cancelAfterEnqueue: true, mark: forge.ReactionDone},
+		{name: "missing eyes after acknowledgment", missingEyes: true, status: store.ReviewCompleted, mark: forge.ReactionDone},
+		{name: "ambiguous commit", ambiguousCommit: true, status: store.ReviewCompleted, mark: forge.ReactionDone},
 		{name: "completed", status: store.ReviewCompleted, mark: forge.ReactionDone},
 		{name: "failed", status: store.ReviewFailed, mark: forge.ReactionFailed},
 		{name: "none ended", mark: forge.ReactionFailed},
@@ -114,9 +120,18 @@ func TestReviewRequestLifecycle(t *testing.T) {
 					}
 				}
 			}
-			err = w.Work(ctx, job)
+			workCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if tt.cancelAfterEnqueue {
+				lf.onEyes = cancel
+			}
+			err = w.Work(workCtx, job)
 			_, snoozed := errors.AsType[*river.JobSnoozeError](err)
-			if tt.pollErr {
+			if tt.cancelAfterEnqueue {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("canceled request = %v, want context cancellation", err)
+				}
+			} else if tt.pollErr {
 				if err == nil || snoozed {
 					t.Fatalf("initial poll = %v, want a database error", err)
 				}
@@ -130,6 +145,7 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			}); err != nil || status != string(store.FollowupAnswered) || reason != reviewRequested {
 				t.Fatalf("pending request = %s (%s), %v; want answered (%s)", status, reason, err, reviewRequested)
 			}
+			checkReviewRequestRecovery(ctx, t, w, job, lf, prID, tt.ambiguousCommit, tt.missingEyes)
 			// Finish the original review during the retry's backoff, and repair
 			// the unreadable job so the database failure is transient.
 			if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -152,6 +168,11 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("resume polling: %v", err)
 			}
+			var queued int
+			if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job
+				WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&queued); err != nil || queued != 1 {
+				t.Fatalf("review jobs after retry = %d, %v; want 1", queued, err)
+			}
 			if got := lf.reactions[commentID]; got != tt.mark {
 				t.Fatalf("settled reaction = %q, want %q", got, tt.mark)
 			}
@@ -163,6 +184,28 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			}
 			checkReviewRequestRedelivery(ctx, t, w, queue, svc, ingest.Request{File: file, Account: account}, job, lf, tt.mark)
 		})
+	}
+}
+
+func checkReviewRequestRecovery(ctx context.Context, t *testing.T, w *FollowUp, job *river.Job[jobs.FollowUpArgs],
+	lf *reviewRequestForge, prID string, ambiguousCommit, missingEyes bool,
+) {
+	t.Helper()
+	if ambiguousCommit {
+		if err := w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
+			return store.RecordFollowup(ctx, tx, store.FollowupResult{AccountID: job.Args.AccountID, PullRequestID: prID,
+				CommentID: job.Args.CommentID, Status: store.FollowupFailed, Reason: "commit response lost"})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if missingEyes {
+		delete(lf.reactions, job.Args.CommentID)
+		job.Attempt++
+		_, snoozed := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job))
+		if !snoozed || lf.reactions[job.Args.CommentID] != forge.ReactionEyes {
+			t.Fatalf("pending retry: snoozed=%v, reaction=%q", snoozed, lf.reactions[job.Args.CommentID])
+		}
 	}
 }
 
