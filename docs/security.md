@@ -179,7 +179,9 @@ What bounds a command:
   nothing in the pull request can be started, and an empty `.git` whose
   `origin` is the repository's clone URL, with no history, lets a tool
   that locates a repository by its working tree, such as flate, find this
-  one.
+  one. Ignored paths, lockfiles and vendored trees among them, are left
+  out of it; the agent is told `read_file` and `read_diff` still read
+  them, so it need not reach for the forge's API for a lockfile.
 - **Bounded output:** a command's output is cut to the agent's `output`
   (32 KiB by default), keeping the end of its stderr past the cut. A cut
   output is kept whole, with the token masked, in a file beside the

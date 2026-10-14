@@ -77,7 +77,11 @@ func commandTool(
 	if err := markRepository(dir, p.CloneURL); err != nil {
 		logger.Warn("checkout not marked as a repository", "error", err)
 	}
-	note := fmt.Sprintf("The checkout leaves out ignored paths, symlinks and files over %d MiB.", agent.MaxBlobBytes>>20)
+	// Ignored paths are left out for the commands' sake, not the agent's: a
+	// lockfile the change touches is still the head's and the diff's.
+	note := fmt.Sprintf("The checkout leaves out ignored paths, lockfiles and vendored or generated trees among them, symlinks and "+
+		"files over %d MiB; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
+		agent.MaxBlobBytes>>20)
 	if stats.Truncated {
 		note += fmt.Sprintf(" It stopped at %d MiB, so the paths that sort last are missing.", agent.MaxCheckoutBytes>>20)
 	}
