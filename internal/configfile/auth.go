@@ -61,10 +61,10 @@ type SignIn struct {
 	// unset. A GitHub sign-in is labelled GitHub.
 	Name string `yaml:"name,omitempty"`
 	// Issuer is an OIDC sign-in's discovery issuer URL, https only.
-	Issuer       string    `yaml:"issuer,omitempty"`
-	ClientID     string    `yaml:"clientId"`
-	ClientSecret SecretRef `yaml:"clientSecret"`
-	Scopes       []string  `yaml:"scopes,omitempty"`
+	Issuer       string     `yaml:"issuer,omitempty"`
+	ClientID     ValueOrRef `yaml:"clientId"`
+	ClientSecret SecretRef  `yaml:"clientSecret"`
+	Scopes       []string   `yaml:"scopes,omitempty"`
 	// RolesClaim names the OIDC claim whose values, as a list or as the keys
 	// of a map, the role mapping sees as roles.
 	RolesClaim string `yaml:"rolesClaim,omitempty"`
@@ -76,6 +76,7 @@ type SignIn struct {
 	DefaultRole string `yaml:"defaultRole,omitempty"`
 
 	typ          SignInType
+	clientID     string
 	clientSecret Secret
 	mapping      *rolemap.Program
 }
@@ -99,6 +100,9 @@ func (s *SignIn) Label() string {
 	}
 	return cmp.Or(s.Name, DefaultOIDCName)
 }
+
+// ClientIDValue returns the client id, inline or resolved.
+func (s *SignIn) ClientIDValue() string { return s.clientID }
 
 // ClientSecretValue returns the resolved client secret.
 func (s *SignIn) ClientSecretValue() Secret { return s.clientSecret }
@@ -182,6 +186,11 @@ func (a *Auth) resolve(sec *secrets) error {
 		}
 		s.signIn.typ = s.typ
 		where := "auth." + string(s.typ)
+		clientID, err := s.signIn.ClientID.resolve(sec)
+		if err != nil {
+			return fmt.Errorf("configfile: %s.clientId: %w", where, err)
+		}
+		s.signIn.clientID = clientID
 		v, err := sec.read(s.signIn.ClientSecret)
 		if err != nil {
 			return fmt.Errorf("configfile: %s.clientSecret: %w", where, err)
@@ -245,7 +254,7 @@ func (s *SignIn) validate(where string) error {
 			}
 		}
 	}
-	if s.ClientID == "" {
+	if s.clientID == "" {
 		return fmt.Errorf("configfile: %s.clientId is required", where)
 	}
 	if s.clientSecret.Value() == "" {

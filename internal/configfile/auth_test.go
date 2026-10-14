@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +59,50 @@ func TestAuth(t *testing.T) {
 	}
 	if !a.Configured() || (&Auth{}).Configured() {
 		t.Fatal("Configured")
+	}
+}
+
+func TestAuthClientID(t *testing.T) {
+	authEnv(t)
+	t.Setenv("TEST_SIGN_IN_CLIENT_ID", "from-env\r\n")
+	t.Setenv("TEST_EMPTY", "")
+	for _, provider := range []struct {
+		typ    SignInType
+		inline string
+	}{{SignInOIDC, "kritika"}, {SignInGitHub, "Iv1.x"}} {
+		t.Run(string(provider.typ), func(t *testing.T) {
+			for _, tt := range []struct {
+				name, value, want, wantErr string
+			}{
+				{"inline", "inline-id", "inline-id", ""},
+				{"environment", "{ env: TEST_SIGN_IN_CLIENT_ID }", "from-env", ""},
+				{"unset environment", "{ env: TEST_NOPE }", "", "auth." + string(provider.typ) + ".clientId: environment variable TEST_NOPE is not set"},
+				{"empty environment", "{ env: TEST_EMPTY }", "", "auth." + string(provider.typ) + ".clientId is required"},
+				{"empty reference", "{}", "", "auth." + string(provider.typ) + ".clientId is required"},
+				{"unknown field", "{ env: TEST_SIGN_IN_CLIENT_ID, vault: x }", "", "field vault not found"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					doc := strings.Replace(authMinimal, "clientId: "+provider.inline, "clientId: "+tt.value, 1) + minimal
+					f, err := load(t, doc)
+					if tt.wantErr != "" {
+						if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+							t.Fatalf("error %v does not mention %q", err, tt.wantErr)
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					s, ok := f.Auth.SignInByType(provider.typ)
+					if !ok || s.ClientIDValue() != tt.want {
+						t.Fatalf("sign-in = %+v, want client ID %q", s, tt.want)
+					}
+					if got, want := slices.Contains(f.SecretEnv(), "TEST_SIGN_IN_CLIENT_ID"), tt.name == "environment"; got != want {
+						t.Fatalf("SecretEnv = %v, want client ID environment recorded: %v", f.SecretEnv(), want)
+					}
+				})
+			}
+		})
 	}
 }
 

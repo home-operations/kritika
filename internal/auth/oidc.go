@@ -52,7 +52,7 @@ func newOIDCProvider(
 	return &oidcProvider{
 		signIn: s,
 		conf: &oauth2.Config{
-			ClientID:     s.ClientID,
+			ClientID:     s.ClientIDValue(),
 			ClientSecret: s.ClientSecretValue().Value(),
 			Endpoint:     discovered.Endpoint(),
 			RedirectURL:  redirect,
@@ -60,7 +60,7 @@ func newOIDCProvider(
 		},
 		client:     client,
 		discovered: discovered,
-		verifier:   discovered.Verifier(&oidc.Config{ClientID: s.ClientID, Now: now}),
+		verifier:   discovered.Verifier(&oidc.Config{ClientID: s.ClientIDValue(), Now: now}),
 	}, nil
 }
 

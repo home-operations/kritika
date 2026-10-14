@@ -140,7 +140,7 @@ func requestEnded(ctx context.Context) bool {
 func signInsKey(signIns []*configfile.SignIn) [sha256.Size]byte {
 	h := sha256.New()
 	for _, s := range signIns {
-		fields := []string{string(s.Type()), s.Issuer, s.ClientID, s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
+		fields := []string{string(s.Type()), s.Issuer, s.ClientIDValue(), s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
 		for _, f := range fields {
 			h.Write([]byte(f))
 			h.Write([]byte{0})
