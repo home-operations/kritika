@@ -95,14 +95,16 @@ func commandTool(
 	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
-		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note, Logger: logger,
+		MaxOutputBytes: maxOutput, Proxied: proxied, Hosts: p.Agent.Hosts, Note: note, Logger: logger,
 		Mask: secrets.Mask,
 		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: budget},
 	})
 	// An operator who allows only rg or fd has not let the agent reach the
 	// network, so fetch_repo comes with a command that does.
 	if found["gh"] != "" || found["curl"] != "" {
-		fetch = &fetchRepoTool{dir: up, budget: budget, fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), maxBytes: maxOutput}
+		fetch = &fetchRepoTool{
+			dir: up, budget: budget, fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), maxBytes: maxOutput, hosts: p.Agent.Hosts,
+		}
 	}
 	return run, fetch, cleanup
 }
@@ -111,8 +113,11 @@ func commandTool(
 // curl prints its progress meter to stderr, which the run tool keeps in
 // the result, and --silent would drop its warnings and errors with it.
 // The gateway hands redirects back to the client, so curl follows them
-// itself; it sends credentials only to the initial host.
-const curlrc = "no-progress-meter\nlocation\n"
+// itself; it sends credentials only to the initial host. A host the
+// gateway refuses answers a plain http:// request with a 403, which curl
+// would otherwise report as a success, exit code 0 and the refusal as the
+// body; failing on it keeps the body, which names the reason.
+const curlrc = "no-progress-meter\nlocation\nfail-with-body\n"
 
 // markRepository gives the checkout an empty .git whose origin is the
 // repository's clone URL: no history, but enough for a tool that locates a

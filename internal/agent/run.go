@@ -46,8 +46,10 @@ type RunConfig struct {
 	// MaxOutputBytes caps the combined output kept of one command.
 	MaxOutputBytes int
 	// Proxied says the commands reach the network through the egress
-	// gateway, which fetches a plain http:// URL over HTTPS.
+	// gateway, which fetches a plain http:// URL over HTTPS. Hosts, when
+	// set, name what the gateway lets them reach, "*" for every host.
 	Proxied bool
+	Hosts   []string
 	// Note, when set, is appended to the tool's description.
 	Note string
 	// Mask, when set, is applied to a command's output before the model
@@ -156,10 +158,11 @@ func (rt *RunTool) Def() model.ToolDef {
 		desc += " yq does the same for a YAML file (`yq '.spec.values.image' helmrelease.yaml`), and reads JSON too."
 	}
 	if slices.Contains(rt.names, "gh") {
-		desc += " Use gh, not curl, for anything on GitHub: it is signed in to read public repositories, such as " +
-			"`gh release view <tag> -R <owner>/<repo>` for a release's notes or `gh pr view <number> -R <owner>/<repo>` " +
-			"for an upstream pull request. The repository goes after -R, never as a second argument, and --json " +
-			"takes the fields to print, as in `gh release view v1.2.0 -R <owner>/<repo> --json tagName,body`."
+		desc += " Use gh, not curl, for anything on GitHub: it is signed in with a token that reads the repository under " +
+			"review and public repositories, such as `gh release view <tag> -R <owner>/<repo>` for a release's notes or " +
+			"`gh pr view <number> -R <owner>/<repo>` for an upstream pull request. Any other private repository is out " +
+			"of its reach, by the API or GraphQL alike. The repository goes after -R, never as a second argument, and " +
+			"--json takes the fields to print, as in `gh release view v1.2.0 -R <owner>/<repo> --json tagName,body`."
 	}
 	if slices.Contains(rt.names, "crane") {
 		desc += " Use crane, not curl, for a container image: `crane ls <registry>/<repo>` lists its tags, " +
@@ -169,8 +172,10 @@ func (rt *RunTool) Def() model.ToolDef {
 	}
 	if slices.Contains(rt.names, "curl") {
 		if rt.cfg.Proxied {
-			desc += " The network is reached through a gateway that allows only some hosts. Give curl http:// URLs: " +
-				"the gateway fetches them over HTTPS and authenticates to the hosts it holds a credential for."
+			desc += " The network is reached through a gateway that allows only " + AllowedHosts(rt.cfg.Hosts) + ": a request " +
+				"to any other host fails with a 403 naming the refusal, and another host of the same kind is refused too. " +
+				"Give curl http:// URLs: the gateway fetches them over HTTPS and authenticates to the hosts it holds a " +
+				"credential for."
 		} else {
 			desc += " Give curl https:// URLs."
 		}
@@ -184,6 +189,19 @@ func (rt *RunTool) Def() model.ToolDef {
 		desc += " " + rt.cfg.Note
 	}
 	return model.ToolDef{Name: "run", Description: desc, InputSchema: rt.schema}
+}
+
+// AllowedHosts words what the gateway allows for a tool's description:
+// the hosts it lists, "some hosts" when none are known, and every host
+// but a few when "*" is among them.
+func AllowedHosts(hosts []string) string {
+	switch {
+	case slices.Contains(hosts, "*"):
+		return "every host but a few"
+	case len(hosts) > 0:
+		return "these hosts: " + strings.Join(hosts, ", ")
+	}
+	return "some hosts"
 }
 
 func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, error) {

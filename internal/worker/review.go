@@ -166,6 +166,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
+	spec.Agent.Hosts = file.EgressHosts()
 	b.notes = append(b.notes, promptNotes...)
 	tools := file.ToolsFor(settings.Agent.Commands)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
