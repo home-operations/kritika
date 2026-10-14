@@ -102,7 +102,10 @@ func (t *fetchRepoTool) Def() model.ToolDef {
 		"branch or commit, and write its files to a directory read_file reads and the run tool's commands search. With from, it also " +
 		"returns the diff between the two, the paths it changes listed first. With tags instead of ref, it lists the repository's " +
 		fmt.Sprintf("tags, to find the tag of a version rather than guess its name. A review may fetch %d times and list tags %d times.",
-			t.fetchMax, listMax)
+			t.fetchMax, listMax) +
+		` For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0", ` +
+		`"paths": ["deploy/charts"]} reads a chart's changes between two versions, and ` +
+		`{"url": "https://github.com/cert-manager/cert-manager", "tags": "1.17"} lists the tags with 1.17 in their names.`
 	if t.maxBytes > 0 {
 		desc += fmt.Sprintf(" A diff cut to %d KiB in the answer is whole in the file the answer names: read it with read_file in "+
 			"line ranges, or search it with the commands, rather than fetch again.", t.maxBytes>>10)
@@ -137,6 +140,8 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		return t.listTags(ctx, in.URL, *in.Tags)
 	case in.Tags != nil && *in.Tags != "":
 		return "", errors.New("agent: fetch_repo: give ref to fetch or tags to list tags, not both")
+	case in.Ref == "":
+		return "", errors.New("agent: fetch_repo: give ref, such as v1.17.0 or HEAD, to fetch, or tags to list the repository's tags")
 	}
 	req := upstream.Request{URL: in.URL, Ref: in.Ref, From: in.From, Paths: in.Paths}
 	if t.fetches >= t.fetchMax {

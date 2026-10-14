@@ -286,6 +286,13 @@ func TestFetchRepoTags(t *testing.T) {
 	if _, err := run(map[string]any{"tags": "", "from": "v1"}); err == nil || !strings.Contains(err.Error(), "give ref to fetch") {
 		t.Fatalf("tags with from and no ref: err = %v", err)
 	}
+	if _, err := run(map[string]any{"paths": []string{"pkg"}}); err == nil ||
+		!strings.Contains(err.Error(), "give ref, such as v1.17.0 or HEAD, to fetch, or tags to list the repository's tags") {
+		t.Fatalf("neither ref nor tags: err = %v", err)
+	}
+	if d := tool.Def().Description; !strings.Contains(d, `For example, {"url": "https://github.com/cert-manager/cert-manager", "ref": "v1.17.0", "from": "v1.16.0"`) {
+		t.Fatalf("description = %q", d)
+	}
 	if tool.fetches != 0 || tool.budget.Left() != fetchWriteBytes {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}
