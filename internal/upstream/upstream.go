@@ -323,13 +323,14 @@ func digitRun(s string) int {
 
 // fetchErr says why a fetch over wire failed. A ref the server lacks fails
 // as an empty repository when the server lists only the refs asked for, as
-// protocol v2 lets it.
+// protocol v2 lets it, which the error leaves out: it reads as a wrong
+// repository rather than a wrong ref.
 func (f *Fetcher) fetchErr(wire *cappedTransport, err error) error {
 	switch {
 	case wire.over():
 		return fmt.Errorf("%w: past %d MiB", ErrTooLarge, f.Limits.WireBytes>>20)
 	case errors.Is(err, git.ErrRemoteRefNotFound) || errors.Is(err, transport.ErrEmptyRemoteRepository):
-		return fmt.Errorf("%w (%w); give one the repository has, or a commit's full SHA", ErrNoRef, err)
+		return fmt.Errorf("%w; give one the repository has, or a commit's full SHA", ErrNoRef)
 	}
 	return fmt.Errorf("upstream: fetch: %w", err)
 }

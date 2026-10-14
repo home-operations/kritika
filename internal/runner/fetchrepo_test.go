@@ -27,6 +27,14 @@ import (
 // returns the clone URL and a fetch_repo tool that trusts the server.
 func servedRepo(t *testing.T) (string, *fetchRepoTool) {
 	t.Helper()
+	url, tool, _ := servedRepoMirror(t)
+	return url, tool
+}
+
+// servedRepoMirror is servedRepo with the bare repository served, for a
+// test that tags it further.
+func servedRepoMirror(t *testing.T) (string, *fetchRepoTool, *git.Repository) {
+	t.Helper()
 	work := t.TempDir()
 	r, err := git.PlainInit(work, false)
 	if err != nil {
@@ -62,12 +70,13 @@ func servedRepo(t *testing.T) (string, *fetchRepoTool) {
 	commit("v1", map[string]string{"README.md": "upstream\n", "pkg/a.go": "package pkg\n"})
 	commit("v2", map[string]string{"pkg/a.go": "package pkg\n\nfunc A() {}\n"})
 	root := t.TempDir()
-	if _, err := git.PlainClone(filepath.Join(root, "repo.git"), &git.CloneOptions{URL: work, Mirror: true}); err != nil {
+	mirror, err := git.PlainClone(filepath.Join(root, "repo.git"), &git.CloneOptions{URL: work, Mirror: true})
+	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewTLSServer(backend.New(transport.NewFilesystemLoader(osfs.New(root), false)))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes)}
+	return srv.URL + "/repo.git", &fetchRepoTool{dir: t.TempDir(), transport: srv.Client().Transport, budget: agent.NewWriteBudget(fetchWriteBytes)}, mirror
 }
 
 func fetchInput(t *testing.T, in map[string]any) json.RawMessage {
@@ -280,9 +289,9 @@ func TestFetchRepoTags(t *testing.T) {
 		t.Fatalf("a listing counted as a fetch: fetches = %d, budget left = %d", tool.fetches, tool.budget.Left())
 	}
 
-	_, err := run(map[string]any{"ref": "release-2", "paths": []string{"pkg"}})
-	if err == nil || !strings.Contains(err.Error(), "no such tag or branch") || !strings.HasSuffix(err.Error(), ". Tags with 2: v2.") {
-		t.Fatalf("a missing ref with a version: err = %v", err)
+	out, err := run(map[string]any{"ref": "release-2", "paths": []string{"pkg"}})
+	if err != nil || !strings.HasPrefix(out, "The repository has no release-2; its tag with that version, v2, stands in for it. Fetched "+url+" at v2, commit ") {
+		t.Fatalf("a missing ref with a version: %q, %v", out, err)
 	}
 	if _, err := run(map[string]any{"ref": "v1", "from": "nightly"}); err == nil || !strings.HasSuffix(err.Error(), ". Its newest tags: v2, v1.") {
 		t.Fatalf("a missing ref without one: err = %v", err)
@@ -298,6 +307,63 @@ func TestFetchRepoTags(t *testing.T) {
 	}
 	if _, err := run(map[string]any{"ref": "release-2"}); err == nil || !strings.HasSuffix(err.Error(), "a commit's full SHA.") {
 		t.Fatalf("a missing ref past the listing count names no tags: err = %v", err)
+	}
+}
+
+// TestFetchRepoResolvesVersion: a ref that names a version the repository
+// tags under another name is fetched as that tag, for one listing; a
+// version tagged twice is left to the agent, and a ref without a version
+// is taken as given.
+func TestFetchRepoResolvesVersion(t *testing.T) {
+	url, tool, mirror := servedRepoMirror(t)
+	run := func(in map[string]any) (string, error) {
+		t.Helper()
+		in["url"] = url
+		return tool.Run(t.Context(), fetchInput(t, in))
+	}
+
+	out, err := run(map[string]any{"ref": "2", "from": "release-1", "paths": []string{"pkg"}})
+	want := "The repository has no 2; its tag with that version, v2, stands in for it. " +
+		"The repository has no release-1; its tag with that version, v1, stands in for it. Fetched " + url + " at v2, commit "
+	if err != nil || !strings.HasPrefix(out, want) || !strings.Contains(out, "under ../upstream/1-repo@v2,") ||
+		!strings.Contains(out, "The diff from v1,") || !strings.Contains(out, "+func A() {}") {
+		t.Fatalf("both refs resolved: %q, %v", out, err)
+	}
+	if tool.fetches != 1 || tool.listings != 1 {
+		t.Fatalf("fetches = %d, listings = %d, want 1 and 1", tool.fetches, tool.listings)
+	}
+	if _, err := os.Stat(filepath.Join(tool.dir, "1-repo@2")); !os.IsNotExist(err) {
+		t.Fatalf("the failed fetch's directory was kept: %v", err)
+	}
+
+	v2, err := mirror.Reference(plumbing.NewTagReferenceName("v2"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mirror.Storer.SetReference(plumbing.NewHashReference(plumbing.NewTagReferenceName("chart-2"), v2.Hash())); err != nil {
+		t.Fatal(err)
+	}
+	_, err = run(map[string]any{"ref": "2"})
+	if err == nil || !strings.HasSuffix(err.Error(), "upstream: no such tag or branch; give one the repository has, or a commit's full SHA. Tags with 2: v2, chart-2.") {
+		t.Fatalf("a version tagged twice: err = %v", err)
+	}
+	if _, err := run(map[string]any{"ref": "main", "from": "1"}); err == nil || !strings.HasSuffix(err.Error(), ". Its newest tags: v2, v1, chart-2.") {
+		t.Fatalf("a branch the repository lacks beside a resolved from: err = %v", err)
+	}
+	if tool.fetches != 3 || tool.listings != 3 {
+		t.Fatalf("fetches = %d, listings = %d, want 3 and 3", tool.fetches, tool.listings)
+	}
+}
+
+func TestTagFor(t *testing.T) {
+	tags := []string{"v2.0.0", "chart-1.5.0", "v1.5.0", "v1.4.0", "v1.4.0-rc.1"}
+	for ref, want := range map[string]string{
+		"2.0.0": "v2.0.0", "release-2.0.0": "v2.0.0", "1.4.0": "v1.4.0", "1.4.0-rc.1": "v1.4.0-rc.1",
+		"1.5.0": "", "1.4": "", "main": "", "HEAD": "", "9.9.9": "",
+	} {
+		if got := tagFor(ref, tags); got != want {
+			t.Errorf("tagFor(%q) = %q, want %q", ref, got, want)
+		}
 	}
 }
 

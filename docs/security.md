@@ -210,7 +210,10 @@ repository and a ref, never git arguments.
 - **Tags by prefix:** a listing asks the server for `refs/tags/` only,
   through the same gateway and limits as a fetch, and writes nothing. A
   fetch that names a tag the repository lacks lists the tags as well,
-  counted among the listings, and its error names the closest.
+  counted among the listings: when the repository tags the version named
+  under one other name, `v1.2.3` or `chart-1.2.3` for `1.2.3`, that tag is
+  fetched in its place and the answer says so; otherwise the error names
+  the closest.
 - **Bounded:** 8 fetches and 8 tag listings a review, each taking at most
   128 MiB from the server and two minutes, and 256 MiB of files written
   across the fetches and the run tool's kept outputs, beside the checkout.

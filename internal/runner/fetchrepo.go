@@ -146,33 +146,30 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		return "", fmt.Errorf("agent: fetch_repo: this review has written its %d MiB of fetched files", fetchWriteBytes>>20)
 	}
 	t.fetches++
-	name := dirName(t.fetches, req.URL, req.Ref)
-	dest := filepath.Join(t.dir, name)
 	f := &upstream.Fetcher{Transport: t.transport, Limits: upstream.Limits{
 		WireBytes: fetchWireBytes, WriteBytes: left, BlobBytes: agent.MaxBlobBytes, DiffBytes: fetchDiffBytes,
 	}}
 	fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
-	res, err := f.Fetch(fctx, req, dest)
+	asked := req
+	res, req, err := t.fetch(fctx, f, req)
 	if err != nil {
-		// What a failed fetch wrote is not counted, so it is not kept.
-		_ = os.RemoveAll(dest)
 		if errors.Is(err, upstream.ErrTooLarge) {
 			if len(req.Paths) == 0 {
 				return "", fmt.Errorf("agent: fetch_repo: %w; give paths to fetch only the files under them", err)
 			}
 			return "", fmt.Errorf("agent: fetch_repo: %w; give fewer paths", err)
 		}
-		if errors.Is(err, upstream.ErrNoRef) {
-			hint := ""
-			if t.listings < listMax {
-				t.listings++
-				hint = closest(fctx, f, req)
-			}
-			return "", fmt.Errorf("agent: fetch_repo: %w.%s", err, hint)
-		}
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
+	return t.answer(asked, req, res)
+}
+
+// answer is the answer to a fetch of req, asked for as asked, that found
+// res: where the files are, what a ref stood in for, and the diff, cut to
+// the tool's cap after the paths it changes, with the file that holds it
+// whole named on both sides of the cut.
+func (t *fetchRepoTool) answer(asked, req upstream.Request, res *upstream.Result) (string, error) {
 	t.budget.Spend(res.Bytes)
 	page := "tree/" + req.Ref
 	if req.From != "" {
@@ -183,8 +180,14 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		t.record(req.URL, page)
 	}
 
+	name := dirName(t.fetches, req.URL, req.Ref)
 	rel := upstreamRel + "/" + name
 	var b strings.Builder
+	for _, r := range [][2]string{{asked.Ref, req.Ref}, {asked.From, req.From}} {
+		if r[0] != r[1] {
+			fmt.Fprintf(&b, "The repository has no %s; its tag with that version, %s, stands in for it. ", r[0], r[1])
+		}
+	}
 	fmt.Fprintf(&b, "Fetched %s at %s, commit %s. Its files are under %s, from the checkout the run tool's commands run in: "+
 		"%d files, %d KiB.", req.URL, req.Ref, res.Commit[:12], rel, res.Files, (res.Bytes+1023)>>10)
 	if res.Skipped > 0 {
@@ -282,15 +285,89 @@ func tagList(rawURL, match string, tags []string) string {
 	return b.String()
 }
 
-// closest names the tags of req's repository nearest the refs it named,
-// for the error of a fetch that named one the repository lacks: those with
-// the same version in them, or else the newest. It is "" when the tags
-// cannot be listed.
-func closest(ctx context.Context, f *upstream.Fetcher, req upstream.Request) string {
-	tags, err := f.Tags(ctx, req.URL)
-	if err != nil || len(tags) == 0 {
+// fetch fetches req to its directory under t.dir, as fetch n, and returns
+// the request as fetched. When a ref names a version the repository tags
+// under another name, v1.2.3 or chart-1.2.3 for 1.2.3, the fetch is made
+// again with the one tag with that version in its place; the tags are
+// listed once for that, counted among the listings, and name the closest
+// in the error when no tag stands in.
+func (t *fetchRepoTool) fetch(ctx context.Context, f *upstream.Fetcher, req upstream.Request) (*upstream.Result, upstream.Request, error) {
+	res, err := t.fetchTo(ctx, f, req)
+	if !errors.Is(err, upstream.ErrNoRef) {
+		return res, req, err
+	}
+	hint := ""
+	if t.listings < listMax {
+		t.listings++
+		if tags, lerr := f.Tags(ctx, req.URL); lerr == nil && len(tags) > 0 {
+			if fixed, ok := resolveRefs(req, tags); ok {
+				res, rerr := t.fetchTo(ctx, f, fixed)
+				if rerr == nil || !errors.Is(rerr, upstream.ErrNoRef) {
+					return res, fixed, rerr
+				}
+				req, err = fixed, rerr
+			}
+			hint = closest(req, tags)
+		}
+	}
+	return nil, req, fmt.Errorf("%w.%s", err, hint)
+}
+
+// fetchTo is one fetch of req into the directory named for it, which a
+// failed fetch leaves no trace of: what it wrote is not counted, so it is
+// not kept.
+func (t *fetchRepoTool) fetchTo(ctx context.Context, f *upstream.Fetcher, req upstream.Request) (*upstream.Result, error) {
+	dest := filepath.Join(t.dir, dirName(t.fetches, req.URL, req.Ref))
+	res, err := f.Fetch(ctx, req, dest)
+	if err != nil {
+		_ = os.RemoveAll(dest)
+		return nil, err
+	}
+	return res, nil
+}
+
+// resolveRefs is req with each ref the repository lacks replaced by the
+// one tag with its version, and whether any was. A ref without a version,
+// a branch's name or HEAD, is kept as given: the tags cannot say whether
+// the repository has it.
+func resolveRefs(req upstream.Request, tags []string) (upstream.Request, bool) {
+	changed := false
+	for _, ref := range []*string{&req.Ref, &req.From} {
+		if *ref == "" || slices.Contains(tags, *ref) {
+			continue
+		}
+		if tag := tagFor(*ref, tags); tag != "" {
+			*ref, changed = tag, true
+		}
+	}
+	return req, changed
+}
+
+// tagFor is the one tag of tags with ref's version in it, "" when ref has
+// no version or the tags have none or several with it: between v1.2.3 and
+// chart-1.2.3 for 1.2.3 is the agent's to choose.
+func tagFor(ref string, tags []string) string {
+	v := versionOf(ref)
+	if v == "" {
 		return ""
 	}
+	found := ""
+	for _, tag := range tags {
+		if versionOf(tag) != v {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = tag
+	}
+	return found
+}
+
+// closest names the tags of req's repository nearest the refs it named,
+// for the error of a fetch that named one the repository lacks: those with
+// the same version in them, or else the newest.
+func closest(req upstream.Request, tags []string) string {
 	var b strings.Builder
 	for _, ref := range []string{req.Ref, req.From} {
 		v := versionOf(ref)
