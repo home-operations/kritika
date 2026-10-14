@@ -106,12 +106,9 @@ func newProxy(t *testing.T, rules Rules) (*httptest.Server, map[string]int, *[]s
 		Rules: func() Rules { return rules }, Resolver: publicNames, Dial: dial, Logger: slog.Default(),
 		Observe: func(kind, outcome string) { outcomes[kind+"/"+outcome]++ },
 	}
-	// The upgrade client dials through the rules like the default one, but
+	// The upgrade transport dials through the rules like the default one, but
 	// trusts the test upstream's certificate.
-	p.Client = &http.Client{
-		Transport:     &http.Transport{DialContext: p.dialContext, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec // test upstream
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
+	p.Transport = &http.Transport{DialContext: p.dialContext, TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test upstream
 	srv := httptest.NewServer(p)
 	t.Cleanup(srv.Close)
 	return srv, outcomes, dialed

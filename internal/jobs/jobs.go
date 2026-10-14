@@ -115,11 +115,11 @@ func (ReviewArgs) InsertOpts() river.InsertOpts {
 
 // FollowUpArgs answers one comment that addressed the bot.
 type FollowUpArgs struct {
-	AccountID    string `json:"account_id"`
-	RepositoryID string `json:"repository_id"`
-	Number       int    `json:"number"`
+	AccountID    string `json:"account_id" river:"unique"`
+	RepositoryID string `json:"repository_id" river:"unique"`
+	Number       int    `json:"number" river:"unique"`
 	CommentID    int64  `json:"comment_id" river:"unique"`
-	Inline       bool   `json:"inline"`
+	Inline       bool   `json:"inline" river:"unique"`
 }
 
 // Kind implements river.JobArgs.

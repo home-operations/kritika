@@ -204,7 +204,10 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 		if errors.Is(err, jobs.ErrRerunQueued) {
 			already, err = true, nil
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return f.recordTx(ctx, tx, store.FollowupAnswered, reviewRequested, 0, "")
 	})
 	if errors.Is(err, jobs.ErrNoHead) {
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, "the pull request has no head to review", 0, "")
@@ -215,11 +218,6 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	f.logger.Info("review requested", "already_queued", already)
 	if _, err := f.client.React(ctx, f.owner, f.repo, f.comment, forge.ReactionEyes); err != nil {
 		f.logger.Info("not marked as being worked on", "error", err)
-	}
-	// Unlike a reply, the record is all a retry has to tell the request is
-	// answered, so one that cannot be written fails the attempt.
-	if err := f.record(ctx, store.FollowupAnswered, reviewRequested, 0, ""); err != nil {
-		return store.FollowupFailed, err
 	}
 	return store.FollowupAnswered, f.awaitReview(ctx)
 }
@@ -234,7 +232,7 @@ func (f *followUp) awaitingReview(ctx context.Context) (bool, error) {
 	var state store.FollowupState
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		state, err = store.FindFollowup(ctx, tx, f.pr.id, f.comment.ID)
+		state, err = store.FindFollowup(ctx, tx, f.pr.id, f.comment.ID, f.comment.Inline)
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {

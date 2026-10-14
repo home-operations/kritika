@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -39,17 +40,15 @@ type Proxy struct {
 	// Dial opens the upstream connection to an address the rules admit;
 	// nil means a net.Dialer with connectTimeout.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
-	// Client sends upgraded requests; nil means a client that dials
-	// through the rules and does not follow redirects, so the runner's own
-	// client sees them.
-	Client *http.Client
+	// Transport sends upgraded requests; nil dials through the rules.
+	Transport http.RoundTripper
 	// Observe, if set, is called once per request with its kind (connect,
 	// http) and outcome.
 	Observe func(kind, outcome string)
 	Logger  *slog.Logger
 
-	clientOnce sync.Once
-	client     *http.Client
+	transportOnce sync.Once
+	transport     http.RoundTripper
 }
 
 // Resolver is the part of net.Resolver the proxy uses.
@@ -228,12 +227,6 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 	wg.Wait()
 }
 
-// hopByHop are headers that belong to the proxy hop and are not forwarded.
-var hopByHop = []string{
-	"Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization", "Proxy-Connection",
-	"Te", "Trailer", "Transfer-Encoding", "Upgrade",
-}
-
 // upgrade forwards an absolute-URI http:// request to the same host over
 // HTTPS, adding the host's credential.
 func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
@@ -254,65 +247,51 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
 	defer cancel()
-	target := *r.URL
-	target.Scheme, target.Host = "https", host
-	if strings.Contains(host, ":") {
-		target.Host = "[" + host + "]"
+	proxy := &httputil.ReverseProxy{
+		Transport: p.httpTransport(),
+		ErrorLog:  slog.NewLogLogger(p.Logger.Handler(), slog.LevelWarn),
+		Rewrite: func(req *httputil.ProxyRequest) {
+			req.Out.URL.Scheme, req.Out.URL.Host = "https", host
+			if strings.Contains(host, ":") {
+				req.Out.URL.Host = "[" + host + "]"
+			}
+			req.Out.URL.User = nil
+			req.Out.Host = req.Out.URL.Host
+			req.Out.Header.Del("Authorization")
+			if cred, ok := rules.Credentials[strings.ToLower(host)]; ok {
+				req.Out.Header.Set("Authorization", cred)
+			}
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			p.observe("http", OutcomeAllowed)
+			p.Logger.Debug("egress request", "host", host, "method", r.Method, "path", r.URL.Path, "status", resp.StatusCode)
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if refused, ok := errors.AsType[*refusal](err); ok {
+				p.refuse(w, "http", r.URL.Host, refused.reason)
+				return
+			}
+			p.observe("http", OutcomeError)
+			p.Logger.Warn("egress request failed", "host", host, "error", err)
+			http.Error(w, "egress: "+err.Error(), http.StatusBadGateway)
+		},
 	}
-	req, err := http.NewRequestWithContext(ctx, r.Method, target.String(), r.Body)
-	if err != nil {
-		p.observe("http", OutcomeError)
-		http.Error(w, "egress: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	req.ContentLength = r.ContentLength
-	req.Header = r.Header.Clone()
-	for _, h := range hopByHop {
-		req.Header.Del(h)
-	}
-	req.Header.Del("Authorization")
-	if cred, ok := rules.Credentials[strings.ToLower(host)]; ok {
-		req.Header.Set("Authorization", cred)
-	}
-	resp, err := p.httpClient().Do(req)
-	if refused, ok := errors.AsType[*refusal](err); ok {
-		p.refuse(w, "http", r.URL.Host, refused.reason)
-		return
-	}
-	if err != nil {
-		p.observe("http", OutcomeError)
-		p.Logger.Warn("egress request failed", "host", host, "error", err)
-		http.Error(w, "egress: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
-	p.observe("http", OutcomeAllowed)
-	p.Logger.Debug("egress request", "host", host, "method", r.Method, "path", r.URL.Path, "status", resp.StatusCode)
-	for k, vs := range resp.Header {
-		for _, v := range vs {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	proxy.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// httpClient is Client, or the default one: the default transport less
-// its environment proxy, dialing through the rules, following no redirect.
-func (p *Proxy) httpClient() *http.Client {
-	p.clientOnce.Do(func() {
-		if p.client = p.Client; p.client != nil {
+// httpTransport reuses connections while checking new destinations against the rules.
+func (p *Proxy) httpTransport() http.RoundTripper {
+	p.transportOnce.Do(func() {
+		if p.transport = p.Transport; p.transport != nil {
 			return
 		}
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.Proxy = nil
 		transport.DialContext = p.dialContext
-		p.client = &http.Client{
-			Transport:     transport,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		}
+		p.transport = transport
 	})
-	return p.client
+	return p.transport
 }
 
 // ProxyURL checks a gateway URL a runner will be handed: http, a host, no

@@ -61,13 +61,15 @@ func TestReviewRequestLifecycle(t *testing.T) {
 	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	svc := ingest.NewService(st, queue)
 	tests := []struct {
-		name    string
-		status  store.ReviewStatus
-		pollErr bool
-		refused bool
-		mark    string
+		name               string
+		status             store.ReviewStatus
+		pollErr            bool
+		cancelAfterEnqueue bool
+		refused            bool
+		mark               string
 	}{
 		{name: "initial polling error", status: store.ReviewCompleted, pollErr: true, mark: forge.ReactionDone},
+		{name: "canceled after enqueue", status: store.ReviewCompleted, cancelAfterEnqueue: true, mark: forge.ReactionDone},
 		{name: "completed", status: store.ReviewCompleted, mark: forge.ReactionDone},
 		{name: "failed", status: store.ReviewFailed, mark: forge.ReactionFailed},
 		{name: "none ended", mark: forge.ReactionFailed},
@@ -114,9 +116,18 @@ func TestReviewRequestLifecycle(t *testing.T) {
 					}
 				}
 			}
-			err = w.Work(ctx, job)
+			workCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if tt.cancelAfterEnqueue {
+				lf.onEyes = cancel
+			}
+			err = w.Work(workCtx, job)
 			_, snoozed := errors.AsType[*river.JobSnoozeError](err)
-			if tt.pollErr {
+			if tt.cancelAfterEnqueue {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("canceled request = %v, want context cancellation", err)
+				}
+			} else if tt.pollErr {
 				if err == nil || snoozed {
 					t.Fatalf("initial poll = %v, want a database error", err)
 				}
@@ -151,6 +162,11 @@ func TestReviewRequestLifecycle(t *testing.T) {
 			job.Attempt = 2
 			if err := w.Work(ctx, job); err != nil {
 				t.Fatalf("resume polling: %v", err)
+			}
+			var queued int
+			if err := st.App().QueryRow(ctx, `SELECT count(*) FROM river_job
+				WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&queued); err != nil || queued != 1 {
+				t.Fatalf("review jobs after retry = %d, %v; want 1", queued, err)
 			}
 			if got := lf.reactions[commentID]; got != tt.mark {
 				t.Fatalf("settled reaction = %q, want %q", got, tt.mark)

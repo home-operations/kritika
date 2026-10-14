@@ -15,10 +15,11 @@ type FollowupState struct {
 }
 
 // FindFollowup returns ErrNotFound when the comment has no recorded outcome.
-func FindFollowup(ctx context.Context, tx pgx.Tx, prID string, commentID int64) (FollowupState, error) {
+func FindFollowup(ctx context.Context, tx pgx.Tx, prID string, commentID int64, inline bool) (FollowupState, error) {
 	var state FollowupState
-	err := tx.QueryRow(ctx, `SELECT status, reason, reply_comment_id FROM followups WHERE pull_request_id = $1 AND comment_id = $2`,
-		prID, commentID).Scan(&state.Status, &state.Reason, &state.ReplyCommentID)
+	err := tx.QueryRow(ctx, `SELECT status, reason, reply_comment_id FROM followups
+		WHERE pull_request_id = $1 AND comment_id = $2 AND inline = $3`,
+		prID, commentID, inline).Scan(&state.Status, &state.Reason, &state.ReplyCommentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, ErrNotFound
 	}
@@ -58,7 +59,7 @@ func RecordFollowup(ctx context.Context, tx pgx.Tx, r FollowupResult) error {
 	_, err := tx.Exec(ctx, `INSERT INTO followups
 		(account_id, pull_request_id, comment_id, author, inline, path, line, status, reason, reply_comment_id, model)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, left($9, 500), nullif($10::bigint, 0), $11)
-		ON CONFLICT (pull_request_id, comment_id) DO UPDATE SET status = excluded.status, reason = excluded.reason,
+		ON CONFLICT (pull_request_id, comment_id, inline) DO UPDATE SET status = excluded.status, reason = excluded.reason,
 			reply_comment_id = coalesce(excluded.reply_comment_id, followups.reply_comment_id), model = excluded.model`,
 		r.AccountID, r.PullRequestID, r.CommentID, r.Author, r.Inline, r.Path, r.Line,
 		r.Status, r.Reason, r.ReplyCommentID, r.Model)

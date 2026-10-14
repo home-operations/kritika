@@ -205,10 +205,29 @@ func checkFollowupStoreContracts(t *testing.T, s *Store, ctx context.Context, ac
 		must(t, RecordFollowup(ctx, tx, r))
 		r.ReplyCommentID, r.Reason = 0, strings.Repeat("x", 600)
 		must(t, RecordFollowup(ctx, tx, r))
-		state, err := FindFollowup(ctx, tx, prID, 1)
+		state, err := FindFollowup(ctx, tx, prID, 1, false)
 		must(t, err)
 		if state.ReplyCommentID == nil || *state.ReplyCommentID != 42 || len(state.Reason) != 500 {
 			t.Fatalf("follow-up = %+v", state)
+		}
+		inline := r
+		inline.Inline, inline.Status, inline.Reason, inline.ReplyCommentID = true, FollowupIgnored, "inline", 84
+		must(t, RecordFollowup(ctx, tx, inline))
+		inline.ReplyCommentID = 0
+		must(t, RecordFollowup(ctx, tx, inline))
+		for _, tt := range []struct {
+			inline bool
+			status FollowupStatus
+			reply  int64
+		}{
+			{false, FollowupAnswered, 42},
+			{true, FollowupIgnored, 84},
+		} {
+			state, err := FindFollowup(ctx, tx, prID, 1, tt.inline)
+			must(t, err)
+			if state.Status != tt.status || state.ReplyCommentID == nil || *state.ReplyCommentID != tt.reply {
+				t.Fatalf("inline=%v: follow-up = %+v", tt.inline, state)
+			}
 		}
 		r.CommentID, r.Status, r.Reason = 2, FollowupLimited, "limited"
 		must(t, RecordFollowup(ctx, tx, r))
@@ -225,7 +244,7 @@ func checkFollowupStoreContracts(t *testing.T, s *Store, ctx context.Context, ac
 		return nil
 	}))
 	must(t, s.WithAccount(ctx, other, func(tx pgx.Tx) error {
-		_, err := FindFollowup(ctx, tx, prID, 1)
+		_, err := FindFollowup(ctx, tx, prID, 1, false)
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatal(err)
 		}
@@ -303,7 +322,7 @@ func checkLabelLockTransaction(t *testing.T, s *Store, ctx context.Context, acco
 		t.Fatal(err)
 	}
 	must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-		_, err := FindFollowup(ctx, tx, prID, 1)
+		_, err := FindFollowup(ctx, tx, prID, 1, false)
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatalf("rolled-back follow-up = %v", err)
 		}

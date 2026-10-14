@@ -155,7 +155,7 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	var state store.FollowupState
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		state, err = store.FindFollowup(ctx, tx, f.pr.id, f.comment.ID)
+		state, err = store.FindFollowup(ctx, tx, f.pr.id, f.comment.ID, f.comment.Inline)
 		return err
 	})
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -586,10 +586,16 @@ func (f *followUp) reply(ctx context.Context, body string) (int64, error) {
 
 func (f *followUp) record(ctx context.Context, status store.FollowupStatus, reason string, replyID int64, modelName string) error {
 	return f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		return store.RecordFollowup(ctx, tx, store.FollowupResult{
-			AccountID: f.account.ID(), PullRequestID: f.pr.id, CommentID: f.comment.ID, Author: f.comment.Author,
-			Inline: f.comment.Inline, Path: f.comment.Path, Line: f.comment.Line,
-			Status: status, Reason: reason, ReplyCommentID: replyID, Model: modelName,
-		})
+		return f.recordTx(ctx, tx, status, reason, replyID, modelName)
+	})
+}
+
+func (f *followUp) recordTx(
+	ctx context.Context, tx pgx.Tx, status store.FollowupStatus, reason string, replyID int64, modelName string,
+) error {
+	return store.RecordFollowup(ctx, tx, store.FollowupResult{
+		AccountID: f.account.ID(), PullRequestID: f.pr.id, CommentID: f.comment.ID, Author: f.comment.Author,
+		Inline: f.comment.Inline, Path: f.comment.Path, Line: f.comment.Line,
+		Status: status, Reason: reason, ReplyCommentID: replyID, Model: modelName,
 	})
 }
