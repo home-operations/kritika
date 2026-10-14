@@ -87,7 +87,7 @@ func TestFetchRepoTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"Fetched " + url + " at v2", "under ../upstream/1-repo@v2, from the checkout", "1 files",
-		"The diff from v1", "changes 1 files", "It is in ../upstream/1-repo@v2.diff", "+func A() {}"} {
+		"The diff from v1", "changes 1 files:\npkg/a.go\nThe diff is in ../upstream/1-repo@v2.diff, and follows", "+func A() {}"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output lacks %q:\n%s", want, out)
 		}
@@ -176,11 +176,39 @@ func TestFetchRepoDiffPastBudget(t *testing.T) {
 	url, tool := servedRepo(t)
 	tool.budget = agent.NewWriteBudget(int64(len("package pkg\n\nfunc A() {}\n")))
 	out, err := tool.Run(t.Context(), fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"pkg"}}))
-	if err != nil || !strings.Contains(out, "It is not kept in a file") || !strings.Contains(out, "+func A() {}") {
+	if err != nil || !strings.Contains(out, "pkg/a.go\nThe diff is not kept in a file") || !strings.Contains(out, "+func A() {}") {
 		t.Fatalf("fetch = %q, %v", out, err)
 	}
 	if _, err := os.Stat(filepath.Join(tool.dir, "1-repo@v2.diff")); !os.IsNotExist(err) || tool.budget.Left() != 0 {
 		t.Fatalf("the diff file was written past the budget: budget left = %d, %v", tool.budget.Left(), err)
+	}
+}
+
+// TestFetchRepoDiffCut: a diff over the tool's cap is cut by the tool, the
+// changed paths before it kept, and the note after the cut names the file
+// that holds it whole.
+func TestFetchRepoDiffCut(t *testing.T) {
+	url, tool := servedRepo(t)
+	in := fetchInput(t, map[string]any{"url": url, "ref": "v2", "from": "v1", "paths": []string{"pkg"}})
+	whole, err := tool.Run(t.Context(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(whole, "[truncated") || strings.Contains(tool.Def().Description, "A diff cut to") {
+		t.Fatalf("without a cap, nothing is cut: %q\n%s", whole, tool.Def().Description)
+	}
+	tool.maxBytes = len(whole) - 10
+	out, err := tool.Run(t.Context(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > tool.maxBytes || !strings.Contains(out, "changes 1 files:\npkg/a.go\nThe diff is in ../upstream/2-repo@v2.diff") ||
+		!strings.Contains(out, "\n[truncated ") || !strings.HasSuffix(out, "]\n[the whole diff is in ../upstream/2-repo@v2.diff]") {
+		t.Fatalf("cut answer (%d bytes, cap %d) = %q", len(out), tool.maxBytes, out)
+	}
+	tool.maxBytes = 32 << 10
+	if d := tool.Def().Description; !strings.Contains(d, "A diff cut to 32 KiB in the answer is whole in the file the answer names") {
+		t.Fatalf("description = %q", d)
 	}
 }
 

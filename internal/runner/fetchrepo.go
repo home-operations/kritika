@@ -19,6 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/textcut"
 	"github.com/home-operations/kritika/internal/upstream"
 )
 
@@ -29,7 +30,8 @@ import (
 // at most fetchDiffBytes of a diff, as a kept output is. A run also lists tags
 // at most listMax times, counting the listing a fetch that names a missing
 // ref makes to name the closest; an answer shows at most tagsShown names,
-// and such an error at most closestMax.
+// such an error at most closestMax, and a diff's answer names at most
+// changedShown of the paths it changes before the patches.
 const (
 	fetchMax        = 8
 	fetchWriteBytes = 256 << 20
@@ -39,6 +41,7 @@ const (
 	listMax         = 8
 	tagsShown       = 200
 	closestMax      = 10
+	changedShown    = 100
 )
 
 // upstreamDir is the scratch directory fetch_repo writes to, beside the
@@ -83,6 +86,10 @@ type fetchRepoTool struct {
 	transport http.RoundTripper
 	// budget is what the review may still write beside the checkout.
 	budget *agent.WriteBudget
+	// maxBytes is the loop's cap on a tool's answer, which a diff is cut to
+	// here so the note after the cut, naming the file that holds it whole,
+	// survives; zero leaves the cut to the loop.
+	maxBytes int
 
 	fetches  int
 	listings int
@@ -90,14 +97,16 @@ type fetchRepoTool struct {
 }
 
 func (t *fetchRepoTool) Def() model.ToolDef {
-	return model.ToolDef{
-		Name: "fetch_repo",
-		Description: "Fetch a repository other than the one under review, such as the upstream of a dependency, at a tag, " +
-			"branch or commit, and write its files to a directory read_file reads and the run tool's commands search. With from, it also " +
-			"returns the diff between the two. With tags instead of ref, it lists the repository's tags, to find the tag " +
-			fmt.Sprintf("of a version rather than guess its name. A review may fetch %d times and list tags %d times.", fetchMax, listMax),
-		InputSchema: fetchRepoSchema,
+	desc := "Fetch a repository other than the one under review, such as the upstream of a dependency, at a tag, " +
+		"branch or commit, and write its files to a directory read_file reads and the run tool's commands search. With from, it also " +
+		"returns the diff between the two, the paths it changes listed first. With tags instead of ref, it lists the repository's " +
+		fmt.Sprintf("tags, to find the tag of a version rather than guess its name. A review may fetch %d times and list tags %d times.",
+			fetchMax, listMax)
+	if t.maxBytes > 0 {
+		desc += fmt.Sprintf(" A diff cut to %d KiB in the answer is whole in the file the answer names: read it with read_file in "+
+			"line ranges, or search it with the commands, rather than fetch again.", t.maxBytes>>10)
 	}
+	return model.ToolDef{Name: "fetch_repo", Description: desc, InputSchema: fetchRepoSchema}
 }
 
 func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string, error) {
@@ -198,12 +207,22 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 	if res.DiffCut > 0 {
 		fmt.Fprintf(&b, ", %d of them left out of it as too large", res.DiffCut)
 	}
-	if res.Diff == "" {
+	if len(res.Changed) == 0 {
 		b.WriteString(".")
 		return b.String(), nil
 	}
+	// The paths come before the patches, so a cut answer still says what
+	// the diff touches and the agent can ask for the files it needs.
+	shown := res.Changed[:min(len(res.Changed), changedShown)]
+	fmt.Fprintf(&b, ":\n%s\n", strings.Join(shown, "\n"))
+	if rest := len(res.Changed) - len(shown); rest > 0 {
+		fmt.Fprintf(&b, "and %d more, which the diff names.\n", rest)
+	}
+	if res.Diff == "" {
+		return strings.TrimSuffix(b.String(), "\n"), nil
+	}
 	if int64(len(res.Diff)) > t.budget.Left() {
-		fmt.Fprintf(&b, ". It is not kept in a file, past what this review may write, and follows, cut to fit when long:\n\n%s", res.Diff)
+		fmt.Fprintf(&b, "The diff is not kept in a file, past what this review may write, and follows, cut to fit when long:\n\n%s", res.Diff)
 		return b.String(), nil
 	}
 	diffFile := name + ".diff"
@@ -211,8 +230,15 @@ func (t *fetchRepoTool) Run(ctx context.Context, input json.RawMessage) (string,
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
 	t.budget.Spend(int64(len(res.Diff)))
-	fmt.Fprintf(&b, ". It is in %s/%s, and follows, cut to fit when long:\n\n%s", upstreamRel, diffFile, res.Diff)
-	return b.String(), nil
+	fmt.Fprintf(&b, "The diff is in %s/%s, and follows, cut to fit when long:\n\n%s", upstreamRel, diffFile, res.Diff)
+	out := b.String()
+	if t.maxBytes > 0 && len(out) > t.maxBytes {
+		// As the run tool does for a kept output: the note after the cut
+		// names the file, so it is read where the answer runs out.
+		tail := fmt.Sprintf("\n[the whole diff is in %s/%s]", upstreamRel, diffFile)
+		out = textcut.Truncate(out, t.maxBytes-len(tail)) + tail
+	}
+	return out, nil
 }
 
 // listTags answers a call that lists the tags of the repository at rawURL

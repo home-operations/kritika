@@ -97,7 +97,7 @@ func commandTool(
 	// An operator who allows only rg or fd has not let the agent reach the
 	// network, so fetch_repo comes with a command that does.
 	if found["gh"] != "" || found["curl"] != "" {
-		fetch = &fetchRepoTool{dir: up, budget: budget}
+		fetch = &fetchRepoTool{dir: up, budget: budget, maxBytes: maxOutput}
 	}
 	return run, fetch, cleanup
 }
