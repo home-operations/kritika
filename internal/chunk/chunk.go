@@ -167,12 +167,19 @@ func declarations(lp *languageParser, tree *gotreesitter.Tree, src []byte) []Dec
 	root := tree.RootNode()
 	var out []Decl
 	seen := map[[2]int]bool{}
+	// A statement holding one outlined symbol over the same lines (a Go
+	// type_spec in its type_declaration) is one declaration, not two.
+	type span struct {
+		symbol     string
+		start, end int
+	}
+	named := map[span]bool{}
 	add := func(d Decl) {
-		key := [2]int{d.StartByte, d.EndByte}
-		if seen[key] || d.EndByte <= d.StartByte {
+		key, lines := [2]int{d.StartByte, d.EndByte}, span{d.Symbol, d.StartLine, d.EndLine}
+		if seen[key] || named[lines] || d.EndByte <= d.StartByte {
 			return
 		}
-		seen[key] = true
+		seen[key], named[lines] = true, true
 		out = append(out, d)
 	}
 	symbols, _ := lp.outliner.OutlineTree(tree)

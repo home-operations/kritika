@@ -242,7 +242,7 @@ func checkDefinitions(t *testing.T, defs []Chunk) {
 		switch {
 		case d.Symbol == "Normalize" && d.Path == "use.go" && d.Ref == "Normalize":
 			normalize = true
-		case d.Symbol == "Widget" && d.Path == "widget.go" && d.Kind == "type":
+		case d.Symbol == "Widget" && d.Path == "widget.go" && d.Kind == "struct":
 			widget = true
 		case d.Path == "vendor/dep.go":
 			t.Fatalf("ignored path leaked into definitions: %+v", d)
