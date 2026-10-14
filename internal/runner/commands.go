@@ -25,7 +25,7 @@ import (
 // runner's secrets; the review then goes on with the read-only tools
 // alone. cleanup removes the scratch space.
 func commandTool(
-	ctx context.Context, p Spec, tree *agent.Tree, gitToken string, maxOutput int, logger *slog.Logger,
+	ctx context.Context, p Spec, tree *agent.Tree, secrets Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, cleanup func()) {
 	cleanup = func() {}
 	found := map[string]string{}
@@ -83,7 +83,7 @@ func commandTool(
 	env, proxied := commandEnv(home)
 	// gh reaches GitHub over HTTPS, which the gateway cannot add a
 	// credential to, so it carries the run's read-only token.
-	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + gitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
+	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
 	// A cut output is kept beside the checkout, where fetch_repo writes,
 	// within the budget the two share; one file holds at most what
 	// read_file reads of a diff, in line ranges.
@@ -91,7 +91,7 @@ func commandTool(
 	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Timeout: time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
 		MaxOutputBytes: maxOutput, Proxied: proxied, Note: note, Logger: logger,
-		Mask: Secrets{GitToken: gitToken}.Mask,
+		Mask: secrets.Mask,
 		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: budget},
 	})
 	// An operator who allows only rg or fd has not let the agent reach the

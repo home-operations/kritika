@@ -68,7 +68,7 @@ func TestJobSpec(t *testing.T) {
 		t.Fatal("a Kube without a pull policy must leave the container on Kubernetes' default")
 	}
 	checkRunnerEnv(t, c.Env)
-	checkProxyEnv(t, c.Env, "http://kritika-gateway:8082")
+	checkProxyEnv(t, c.Env, "http://:$(KRITIKA_GATEWAY_TOKEN)@kritika-gateway:8082")
 	checkSpecMount(t, pod, c)
 	if env := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env,
 		func(e corev1.EnvVar) bool { return e.Name == "HTTPS_PROXY" }) {
@@ -167,7 +167,8 @@ func TestJobSpecMountsTools(t *testing.T) {
 }
 
 // checkProxyEnv asserts the runner is pointed at the gateway for both
-// schemes and excepts only loopback and the gateway's own model endpoint.
+// schemes, with the run token the kubelet fills in as the password, and
+// excepts only loopback and the gateway's own model endpoint.
 func checkProxyEnv(t *testing.T, vars []corev1.EnvVar, gateway string) {
 	t.Helper()
 	env := map[string]string{}
@@ -201,7 +202,7 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 	for name, want := range map[string]struct {
 		key      string
 		optional bool
-	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", true}, "KRITIKA_DATABASE_TOKEN": {"database-token", false}} {
+	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", false}, "KRITIKA_DATABASE_TOKEN": {"database-token", false}} {
 		ref := env[name].ValueFrom
 		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritika-run-01234567" || ref.SecretKeyRef.Key != want.key ||
 			(ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) != want.optional {

@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"cmp"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -341,8 +342,8 @@ func DecodeSpec(data []byte) (Spec, error) {
 }
 
 // Secrets are a run's credentials, delivered apart from the spec: its
-// git token, database capability and, for a review or follow-up, model
-// gateway token.
+// git token, database capability and gateway token, which admits it to
+// the egress proxy and, for a review or follow-up, to its model.
 type Secrets struct {
 	GitToken      string
 	GatewayToken  string
@@ -350,9 +351,14 @@ type Secrets struct {
 }
 
 // Mask replaces every occurrence of each non-empty secret in text with
-// "***". Longer secrets go first so one containing another is masked whole.
+// "***", the gateway token also as the Basic credential curl prints for
+// its proxy. Longer secrets go first so one containing another is masked
+// whole.
 func (s Secrets) Mask(text string) string {
 	values := []string{s.GitToken, s.GatewayToken, s.DatabaseToken}
+	if s.GatewayToken != "" {
+		values = append(values, base64.StdEncoding.EncodeToString([]byte(":"+s.GatewayToken)))
+	}
 	slices.SortFunc(values, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
 	for _, v := range values {
 		if v != "" {

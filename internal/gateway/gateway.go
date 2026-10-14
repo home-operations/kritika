@@ -1,6 +1,7 @@
 // Package gateway is the worker's listener for runner pods: the egress
-// proxy they reach the outside through, and the model, similar-code and
-// conversation endpoints a review's runner calls with its run token. No
+// proxy they reach the outside through, each with its run token, and the
+// model, similar-code and conversation endpoints a review's runner calls
+// with the same token. No
 // provider key enters a runner pod: the gateway reserves each call
 // against the run's budget and checks the account's monthly cap, answers
 // it through the account's provider, and records what it spent where the
@@ -10,6 +11,7 @@ package gateway
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +26,7 @@ import (
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -76,7 +79,9 @@ func detach(ctx context.Context) (context.Context, context.CancelFunc) {
 func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodConnect || r.URL.IsAbs():
-		g.Proxy.ServeHTTP(w, r)
+		if g.admitProxy(w, r) {
+			g.Proxy.ServeHTTP(w, r)
+		}
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
 		g.chat(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/similar":
@@ -86,6 +91,50 @@ func (g *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// admitProxy authenticates a proxy request by the run token a runner is
+// handed as the password of its proxy URL, which git, gh and curl send as
+// Proxy-Authorization, or refuses the request and reports false. Only a
+// live run reaches the outside through the gateway, and the credentials
+// it adds, so the port is no relay for whatever else can reach it.
+func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) bool {
+	kind := "http"
+	if r.Method == http.MethodConnect {
+		kind = "connect"
+	}
+	token := proxyToken(r.Header.Get("Proxy-Authorization"))
+	r.Header.Del("Proxy-Authorization")
+	_, err := g.Store.LookupGatewayToken(r.Context(), token)
+	switch {
+	case errors.Is(err, store.ErrGatewayToken):
+		g.Metrics.Egress(kind, egress.OutcomeRefused)
+		g.Logger.Warn("gateway: proxy request refused: no valid run token", "kind", kind, "host", r.URL.Host)
+		w.Header().Set("Proxy-Authenticate", `Basic realm="kritika"`)
+		http.Error(w, "egress: a run token is required", http.StatusProxyAuthRequired)
+		return false
+	case err != nil:
+		g.Metrics.Egress(kind, egress.OutcomeError)
+		g.Logger.Error("gateway: token lookup failed", "error", err)
+		http.Error(w, "egress: the run token could not be checked", http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
+// proxyToken is the password of a Proxy-Authorization header's Basic
+// credentials, "" for anything else.
+func proxyToken(header string) string {
+	scheme, encoded, _ := strings.Cut(header, " ")
+	if !strings.EqualFold(scheme, "Basic") {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return ""
+	}
+	_, token, _ := strings.Cut(string(decoded), ":")
+	return token
 }
 
 // stepPart is the part of a split review a step is for, as its runner

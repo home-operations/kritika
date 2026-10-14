@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/openai/openai-go/v3"
@@ -11,6 +13,25 @@ import (
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/model"
 )
+
+func TestProxyToken(t *testing.T) {
+	basic := func(userinfo string) string { return "Basic " + base64.StdEncoding.EncodeToString([]byte(userinfo)) }
+	for _, tt := range []struct{ name, header, want string }{
+		{"the proxy URL's password", basic(":krk_token"), "krk_token"},
+		{"a user named too", basic("run:krk_token"), "krk_token"},
+		{"the scheme in any case", "basic " + strings.TrimPrefix(basic(":krk_token"), "Basic "), "krk_token"},
+		{"a token as the user", basic("krk_token"), ""},
+		{"a bearer token", "Bearer krk_token", ""},
+		{"not base64", "Basic krk_token!", ""},
+		{"no header", "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := proxyToken(tt.header); got != tt.want {
+				t.Fatalf("proxyToken(%q) = %q, want %q", tt.header, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestUpstreamStatus(t *testing.T) {
 	tests := []struct {

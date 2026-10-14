@@ -48,6 +48,9 @@ type Index struct {
 	// Embedders resolves the instance's embedder; a generation built with
 	// another model or dimension is rebuilt in full.
 	Embedders *adapter.Embedders
+	// GatewayTokenTTL is how long the run token that admits an index run
+	// to the egress proxy outlives its Job's deadline.
+	GatewayTokenTTL time.Duration
 
 	// superviseEvery overrides superviseInterval.
 	superviseEvery time.Duration

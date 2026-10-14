@@ -30,9 +30,10 @@ type Settings struct {
 	GatewayAddr string `env:"KRITIKA_GATEWAY_ADDR" envDefault:":8082" yaml:"gatewayAddr,omitempty"`
 
 	// GatewayURL is the gateway's in-cluster address, http://host:port:
-	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, and a
-	// review's job document names it as its model endpoint. serve needs it,
-	// since every review reaches its model through it.
+	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, with their
+	// run token as its password, and a review's job document names it as
+	// its model endpoint. serve needs it, since every review reaches its
+	// model through it.
 	GatewayURL string `env:"KRITIKA_GATEWAY_URL" yaml:"gatewayUrl,omitempty"`
 
 	// GatewayTokenTTL is how long a run token outlives its runner Job's

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -166,6 +167,12 @@ func TestSecretsMask(t *testing.T) {
 		{name: "overlapping secrets mask the longer whole", secrets: Secrets{GitToken: "abc", GatewayToken: "abcdef"},
 			in: "x abcdef y abc", want: "x *** y ***"},
 		{name: "only one set", secrets: Secrets{GatewayToken: "key"}, in: "key", want: "***"},
+		{name: "the gateway token as curl's proxy credential", secrets: Secrets{GatewayToken: "krk_1"},
+			in:   "> Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(":krk_1")) + "\nkrk_1",
+			want: "> Proxy-Authorization: Basic ***\n***"},
+		{name: "a minted token's credential, as curl -v prints it", secrets: Secrets{GatewayToken: "krk_" + strings.Repeat("ab", 32)},
+			in:   "> Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(":krk_"+strings.Repeat("ab", 32))) + "\r\n",
+			want: "> Proxy-Authorization: Basic ***\r\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

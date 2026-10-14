@@ -306,6 +306,15 @@ func TestRefusedArgs(t *testing.T) {
 		{"fd", []string{"-HIX", "sh"}, true},
 		{"fd", []string{"--exec", "sh"}, true},
 		{"fd", []string{"--exec-batch=sh"}, true},
+		{"curl", []string{"-sv", "-o", "-", "https://example.com/"}, false},
+		{"curl", []string{"--trace-ids", "--trace-time", "-v", "https://example.com/"}, false},
+		{"curl", []string{"-", "-X", "GET", "https://example.com/"}, false},
+		{"curl", []string{"--trace", "-", "https://example.com/"}, true},
+		{"curl", []string{"--trace-ascii=-", "https://example.com/"}, true},
+		{"curl", []string{"--trace-config", "all", "-v", "https://example.com/"}, true},
+		{"curl", []string{"--config", "curlrc", "https://example.com/"}, true},
+		{"curl", []string{"-K", "curlrc", "https://example.com/"}, true},
+		{"curl", []string{"-sKcurlrc", "https://example.com/"}, true},
 		{"jq", []string{"-x", "."}, false},
 	}
 	for _, tt := range tests {

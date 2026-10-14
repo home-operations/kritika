@@ -374,6 +374,25 @@ func refusedArgs(command string, args []string) string {
 				}
 			}
 		}
+	case "curl":
+		// A trace wraps the sent headers at 64 bytes, in hex with --trace,
+		// so the proxy credential comes out in pieces the output mask
+		// cannot match; -v prints each header whole. A config file from
+		// the checkout could turn a trace on too. A short group holding K
+		// is refused whether or not it is a value, as -XK would be.
+		for _, a := range args {
+			name, _, _ := strings.Cut(a, "=")
+			switch {
+			case name == "--trace" || name == "--trace-ascii" || name == "--trace-config":
+				return name + " is not offered: it prints the proxy credential; use -v"
+			case name == "--config":
+				return name + " is not offered: it reads options from a file"
+			case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):
+				continue
+			case strings.ContainsRune(a[1:], 'K'):
+				return "-K is not offered: it reads options from a file"
+			}
+		}
 	}
 	return ""
 }
