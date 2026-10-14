@@ -1,8 +1,10 @@
-suite: configmap without a file
+suite: external configuration
 templates:
   - configmap.tpl
 tests:
-  - it: renders nothing without a file, which is optional
+  - it: leaves an external ConfigMap untouched
+    set:
+      existingConfigMap: external-config
     asserts:
       - hasDocuments:
           count: 0

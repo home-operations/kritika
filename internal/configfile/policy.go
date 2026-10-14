@@ -38,7 +38,7 @@ const (
 	keyParts  = "agent.parts"
 )
 
-// The keys the environment sets as well (instance.go).
+// Instance default keys reported by FileLayer.
 const (
 	keyModel          = "review.model"
 	keyFallback       = "review.fallback"

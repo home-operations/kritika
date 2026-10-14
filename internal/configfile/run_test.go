@@ -91,7 +91,7 @@ func TestTools(t *testing.T) {
 	refused := map[string]string{
 		`{"name": "Helm", "image": "x"}`:                                 "must be lowercase",
 		`{"name": "helm", "image": "x"}, {"name": "helm", "image": "y"}`: `"helm" is listed twice`,
-		`{"name": "helm"}`: "KRITIKA_RUNNER_TOOLS[0].image is required",
+		`{"name": "helm"}`: "runner.tools[0].image is required",
 		`{"name": "helm", "image": "x", "path": "usr/bin"}`:                                     "must be a clean absolute path",
 		`{"name": "helm", "image": "x", "path": "/usr/../etc"}`:                                 "must be a clean absolute path",
 		`{"name": "helm", "image": "x", "commands": ["bin/helm"]}`:                              "must be a bare command name",
@@ -101,8 +101,8 @@ func TestTools(t *testing.T) {
 	for list, want := range refused {
 		t.Run(list, func(t *testing.T) {
 			t.Setenv("KRITIKA_RUNNER_TOOLS", "["+list+"]")
-			if _, err := Parse([]byte(minimal)); err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("Parse = %v, want an error containing %q", err, want)
+			if _, err := Parse([]byte(minimal)); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "KRITIKA_RUNNER_TOOLS") {
+				t.Fatalf("Parse = %v, want an error containing %q and KRITIKA_RUNNER_TOOLS", err, want)
 			}
 		})
 	}

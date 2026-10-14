@@ -438,33 +438,33 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		source := configfile.SourceDefault
 		if e.Set {
 			source = configfile.SourceEnv
+		} else if e.File {
+			source = configfile.SourceFile
 		}
-		add("environment", e.Name, withoutCredentials(e.Value), source)
+		section, key := "environment", e.Name
+		if e.File {
+			section, key = "file", e.Path
+		}
+		add(section, key, withoutCredentials(e.Value), source)
 	}
 	for _, in := range f.Connections {
 		source := configfile.SourceFile
-		if f.ConnectionFromEnv(in.Name) {
-			source = configfile.SourceEnv
-		}
 		add("apps", in.Name, strings.Join(in.Accounts, ", ")+", webhook /hooks/"+in.Name, source)
 	}
 	a := f.Auth
-	// An auth key an environment variable set shows as coming from it.
-	authFrom := func(path string, set bool) configfile.Source {
+	authFrom := func(set bool) configfile.Source {
 		switch {
-		case a.FromEnv(path):
-			return configfile.SourceEnv
 		case set:
 			return configfile.SourceFile
 		}
 		return configfile.SourceDefault
 	}
-	add("auth", "sessionTTL", a.SessionTTLOrDefault().String(), authFrom("sessionTTL", a.SessionTTL > 0))
+	add("auth", "sessionTTL", a.SessionTTLOrDefault().String(), authFrom(a.SessionTTL > 0))
 	admin, _, local := a.AdminUser()
 	if !local {
 		admin = "none"
 	}
-	add("auth", "admin", admin, authFrom("admin.password", local))
+	add("auth", "admin", admin, authFrom(local))
 	for _, s := range a.SignIns() {
 		value := s.Label()
 		if s.Issuer != "" {
@@ -473,7 +473,7 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		if s.RoleMappingExpr == "" {
 			value += ", no role mapping"
 		}
-		add("auth", string(s.Type()), value, authFrom(string(s.Type())+".clientId", true))
+		add("auth", string(s.Type()), value, authFrom(true))
 	}
 	layer := f.FileLayer()
 	for _, name := range slices.Sorted(maps.Keys(layer.Providers)) {

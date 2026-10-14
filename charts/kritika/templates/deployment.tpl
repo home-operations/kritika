@@ -7,12 +7,15 @@
 {{- if not .Values.database.runner.existingSecret -}}
 {{- fail "database.runner.existingSecret is required: runner Jobs connect with it" -}}
 {{- end -}}
-{{- $webURL := tpl (.Values.config.webUrl | default "" | toString) $ -}}
+{{- $configuration := include "kritika.configuration" . -}}
+{{- if not .Values.existingConfigMap -}}
+{{- $webURL := get ($configuration | fromYaml) "webUrl" | default "" | toString -}}
 {{- if not $webURL -}}
 {{- fail "config.webUrl is required: the dashboard's public URL, which the webhook listener shares under /hooks" -}}
 {{- end -}}
 {{- if not (regexMatch "^https?://" $webURL) -}}
 {{- fail "config.webUrl must be an http(s) URL" -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.runner.tools (semverCompare "<1.33.0-0" .Capabilities.KubeVersion.Version) -}}
 {{- fail (printf "runner.tools needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; this cluster is %s" .Capabilities.KubeVersion.Version) -}}
@@ -48,8 +51,8 @@ spec:
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}
       {{- $checksum := "" }}
-      {{- if and $.Values.configFile (not $.Values.existingConfigMap) }}
-      {{- $checksum = toYaml $.Values.configFile | sha256sum }}
+      {{- if not $.Values.existingConfigMap }}
+      {{- $checksum = $configuration | sha256sum }}
       {{- end }}
       {{- if or $checksum $.Values.podAnnotations }}
       annotations:
@@ -86,17 +89,17 @@ spec:
           securityContext:
             {{- tpl (toYaml $.Values.securityContext) $ | nindent 12 }}
           {{- $serveEnv := include "kritika.serveEnv" $ | fromYamlArray }}
+          {{- $fileEnv := include "kritika.configEnv" ($configuration | fromYaml) | fromYaml }}
           env:
             {{- toYaml $serveEnv | nindent 12 }}
-            {{- include "kritika.configEnv" $ | nindent 12 }}
             {{- range $name, $value := $.Values.env }}
             {{- range $serveEnv }}
             {{- if eq .name $name }}
             {{- fail (printf "env.%s: the chart sets this variable from its other values" $name) }}
             {{- end }}
             {{- end }}
-            {{- if hasPrefix "KRITIKA_" $name }}
-            {{- fail (printf "env.%s: set config.%s instead" $name (trimPrefix "KRITIKA_" $name | lower | camelcase | untitle)) }}
+            {{- if and (not $.Values.existingConfigMap) (hasKey $fileEnv $name) }}
+            {{- fail (printf "env.%s conflicts with config.%s: use one source for each setting" $name (get $fileEnv $name)) }}
             {{- end }}
             - name: {{ $name }}
               {{- if kindIs "map" $value }}
@@ -133,20 +136,16 @@ spec:
             {{- tpl (toYaml .) $ | nindent 12 }}
           {{- end }}
           volumeMounts:
-            {{- if include "kritika.hasConfigFile" $ }}
             - name: config
               mountPath: /etc/kritika
               readOnly: true
-            {{- end }}
             {{- with $.Values.volumeMounts }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
       volumes:
-        {{- if include "kritika.hasConfigFile" $ }}
         - name: config
           configMap:
             name: {{ include "kritika.configMapName" $ | quote }}
-        {{- end }}
         {{- with $.Values.volumes }}
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}

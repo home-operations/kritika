@@ -19,6 +19,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v4"
 
+	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/prfilter"
@@ -40,6 +41,7 @@ var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 // fileDoc is the configuration file's schema: sign-in and the whole
 // configuration.
 type fileDoc struct {
+	Settings  config.Settings       `yaml:",inline"`
 	Auth      Auth                  `yaml:"auth,omitempty"`
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
@@ -60,8 +62,7 @@ type accountDoc struct {
 }
 
 // Load reads, decodes, resolves and validates the configuration file at
-// name, overlaid with the environment. The file is optional: name "" loads
-// the environment alone.
+// name. An empty name loads defaults and operational environment settings.
 func Load(name string) (*File, error) {
 	var raw []byte
 	if name != "" {
@@ -73,37 +74,11 @@ func Load(name string) (*File, error) {
 	return Parse(raw)
 }
 
-// overlayPrefixes start the environment variables that overlay the file;
-// their values are part of the configuration, and so of its hash.
-var overlayPrefixes = []string{
-	authEnvPrefix, connectionEnvPrefix, providerEnvPrefix, reviewEnvPrefix, confidenceEnvPrefix, triggerEnvPrefix, embeddingEnvPrefix,
-}
-
-// configHash identifies a configuration: the file's bytes, the overlay
-// variables that change what it says, and the names of the secrets it
-// reads, so two replicas with the same file but another environment do not
-// compare equal. A secret's value stays out of it: the hash is stored and
-// logged, and a digest of a password invites guessing it offline. Two
-// replicas that read the same names with other values hash alike, which
-// the first sign-in or forge call on the odd one out tells apart.
-func configHash(raw []byte, environ, secretEnv []string) string {
+// configHash identifies the file and the names of referenced secrets.
+// Secret values stay out of the stored hash to prevent offline guessing.
+func configHash(raw []byte, secretEnv []string) string {
 	h := sha256.New()
 	h.Write(raw)
-	var overlay []string
-	for _, kv := range environ {
-		name, _, _ := strings.Cut(kv, "=")
-		if name == reviewWorkersEnv || !slices.ContainsFunc(overlayPrefixes, func(p string) bool { return strings.HasPrefix(name, p) }) {
-			continue
-		}
-		if slices.Contains(secretEnv, name) {
-			kv = name
-		}
-		overlay = append(overlay, kv)
-	}
-	slices.Sort(overlay)
-	for _, kv := range overlay {
-		h.Write([]byte("\x00" + kv))
-	}
 	for _, name := range secretEnv {
 		h.Write([]byte("\x00" + name))
 	}
@@ -112,6 +87,19 @@ func configHash(raw []byte, environ, secretEnv []string) string {
 
 // Parse is Load for bytes already in hand; nil or blank bytes are no file.
 func Parse(raw []byte) (*File, error) {
+	settings, err := config.LoadSettings(raw)
+	if err != nil {
+		return nil, err
+	}
+	return parse(raw, settings)
+}
+
+// FromConfig uses the file snapshot and runtime settings already read by config.Load.
+func FromConfig(cfg *config.Config) (*File, error) {
+	return parse(cfg.FileData(), cfg.Settings)
+}
+
+func parse(raw []byte, settings config.Settings) (*File, error) {
 	var doc fileDoc
 	if len(bytes.TrimSpace(raw)) > 0 {
 		dec := yaml.NewDecoder(bytes.NewReader(raw))
@@ -124,31 +112,12 @@ func Parse(raw []byte) (*File, error) {
 			return nil, errors.New("configfile: parse: the file must hold one document")
 		}
 	}
+	doc.Settings = settings
 	if doc.Apps == nil {
 		doc.Apps = map[string]Connection{}
 	}
-	environ := os.Environ()
-	if err := doc.Auth.overlayEnv(environ); err != nil {
-		return nil, err
-	}
-	envConnection, err := overlayConnectionEnv(doc.Apps, environ)
-	if err != nil {
-		return nil, err
-	}
-	envProvider, err := overlayProviderEnv(&doc.Providers, environ)
-	if err != nil {
-		return nil, err
-	}
-	envKeys := map[string]bool{}
-	if err := overlayDefaultsEnv(&doc.Defaults, environ, envKeys); err != nil {
-		return nil, err
-	}
-	if err := overlayEmbeddingEnv(&doc.Embedding, environ, envKeys); err != nil {
-		return nil, err
-	}
-	run, err := loadRun()
-	if err != nil {
-		return nil, err
+	if err := validateTools(doc.Settings.Tools); err != nil {
+		return nil, fmt.Errorf("configfile: KRITIKA_RUNNER_TOOLS: %w", err)
 	}
 	accounts, err := accountsOf(doc.Accounts, doc.Repositories)
 	if err != nil {
@@ -156,7 +125,7 @@ func Parse(raw []byte) (*File, error) {
 	}
 	f := &File{
 		Auth: doc.Auth, Connections: connectionsOf(doc.Apps), Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
-		Embedding: doc.Embedding, Run: run, envConnection: envConnection, envProvider: envProvider, envKeys: envKeys,
+		Embedding: doc.Embedding, Run: doc.Settings,
 	}
 	s := &secrets{}
 	if err := f.Auth.resolve(s); err != nil {
@@ -167,6 +136,9 @@ func Parse(raw []byte) (*File, error) {
 	}
 	slices.Sort(s.env)
 	f.secretEnv = s.env
+	if err := checkPolicyEnv(s.env); err != nil {
+		return nil, err
+	}
 	if err := f.Auth.validate(); err != nil {
 		return nil, err
 	}
@@ -174,7 +146,7 @@ func Parse(raw []byte) (*File, error) {
 		return nil, err
 	}
 	f.Accounts, f.unserved = servedAccounts(f.Connections, accounts)
-	f.hash = configHash(raw, environ, s.env)
+	f.hash = configHash(raw, s.env)
 	return f, nil
 }
 
@@ -355,26 +327,26 @@ func (f *File) validate(accounts []Account) error {
 func validateTools(tools []Tool) error {
 	names, commands := map[string]bool{}, map[string]string{}
 	for i, t := range tools {
-		where := fmt.Sprintf("KRITIKA_RUNNER_TOOLS[%d]", i)
+		where := fmt.Sprintf("runner.tools[%d]", i)
 		if !toolNameRe.MatchString(t.Name) {
-			return fmt.Errorf("configfile: %s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
+			return fmt.Errorf("%s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
 		}
 		if names[t.Name] {
-			return fmt.Errorf("configfile: %s.name %q is listed twice", where, t.Name)
+			return fmt.Errorf("%s.name %q is listed twice", where, t.Name)
 		}
 		names[t.Name] = true
 		if strings.TrimSpace(t.Image) == "" {
-			return fmt.Errorf("configfile: %s.image is required", where)
+			return fmt.Errorf("%s.image is required", where)
 		}
 		if t.Path != "" && (!path.IsAbs(t.Path) || path.Clean(t.Path) != t.Path) {
-			return fmt.Errorf("configfile: %s.path %q must be a clean absolute path inside the image", where, t.Path)
+			return fmt.Errorf("%s.path %q must be a clean absolute path inside the image", where, t.Path)
 		}
 		for _, c := range t.Provides() {
 			if !commandRe.MatchString(c) {
-				return fmt.Errorf("configfile: %s.commands %q must be a bare command name, not a path", where, c)
+				return fmt.Errorf("%s.commands %q must be a bare command name, not a path", where, c)
 			}
 			if other, dup := commands[c]; dup {
-				return fmt.Errorf("configfile: %s provides %q, which tool %q already provides", where, c, other)
+				return fmt.Errorf("%s provides %q, which tool %q already provides", where, c, other)
 			}
 			commands[c] = t.Name
 		}

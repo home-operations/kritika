@@ -1,66 +1,151 @@
 # Configuration
 
-kritika takes its settings from three places, each for what it suits:
+The YAML configuration file is the primary interface for application settings:
+sign-in, GitHub Apps, providers, review policy, logging, workers, polling and
+retention. `KRITIKA_CONFIG_FILE` names the file and is required by `serve` and `chatgpt login`.
+Helm's `config` uses exactly that document structure and renders it into a
+ConfigMap.
 
-| Where                                                                                                                                                                                          | What                                                                                                                                                              | Changed by                         |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| The configuration file, and its `KRITIKA_AUTH_*`, `KRITIKA_APPS_*`, `KRITIKA_PROVIDERS_*`, `KRITIKA_REVIEW_*`, `KRITIKA_CONFIDENCE_*`, `KRITIKA_TRIGGER_*` and `KRITIKA_EMBEDDING_*` variables | What is reviewed and how: sign-in, the GitHub Apps, model providers, the embedder, egress, the repository settings, the repository entries and the accounts       | a restart                          |
-| The other `KRITIKA_*` variables                                                                                                                                                                | How kritika runs: its addresses, the database, `KRITIKA_WEB_URL`, logging, polling, onboarding, retention and runner Jobs ([how kritika runs](#how-kritika-runs)) | a restart                          |
-| The dashboard                                                                                                                                                                                  | Whether each repository is on or off                                                                                                                              | an admin, on the Repositories page |
+- **Secrets** are references such as `{ env: ADMIN_PASSWORD }`, never literal
+  values in the file. Helm's `env` and `envFrom` supply those variables from
+  existing Secrets. kritika removes secret variables from its environment
+  after reading them. Database connection strings remain bootstrap variables:
+  `KRITIKA_DATABASE_URL`, `KRITIKA_DATABASE_OWNER_URL`, and, for the local
+  executor, `KRITIKA_RUNNER_DATABASE_URL`.
+- **Deployment settings** belong in Helm's `runner`, `database`, `service` and
+  other Kubernetes values. The chart derives the corresponding file settings
+  and rejects duplicates under `config`. In particular, use `runner.runtimeClass`
+  and `runner.deadline` for runner Jobs.
+- **Existing ConfigMaps** can supply `config.yaml` through `existingConfigMap`
+  instead of inline `config`. Setting both is an error. The external file
+  supplies `webUrl` and application settings; the chart supplies deployment
+  settings through environment variables. Omit chart-owned keys from that file:
+  `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
+  `databaseRunnerRole`, `executor`, and `runner`.
+- **Operational settings** support either file or environment: logging, listen
+  addresses, workers, polling, retention, database role names, executor and
+  runner settings. A setting cannot appear in both sources, even with the same
+  value. Conflicts fail startup with the relevant names. Omitted settings use
+  application defaults; explicit `false` and `0` remain explicit values.
+- **Application declarations and policy** use the file: `auth`, `apps`,
+  `providers`, `embedding`, review policy, account and repository settings.
+  Environment variables only supply values explicitly referenced by these
+  sections. Unreferenced auth, app, provider and policy env variables fail startup with
+  migration guidance. `KRITIKA_REVIEW_WORKERS` remains an operational setting.
+- **Startup** reads and validates the document at startup; changes require
+  a restart. Unknown keys and invalid values fail startup. Runtime validation
+  reports all failing bounds together, with file paths and environment
+  variable names. Durations use strings such as `10m` or `0s`.
+  The chart rolls pods
+  when its rendered configuration changes. External ConfigMap and Secret changes
+  require a restart or a controller such as Reloader.
 
-A repository's own [`.kritika.yaml`](repository-config.md) narrows what the
-configuration sets for it, from its own git.
+The dashboard controls whether each repository is enabled. A repository's own
+[`.kritika.yaml`](repository-config.md) narrows the configured policy.
+CEL expression keys end in `Expr`, or use `expr` within a condition.
 
-- **The file** is optional: `KRITIKA_CONFIG_FILE` names it, and the chart's
-  `configFile` renders it, so the configuration lives in git with the rest
-  of the deployment.
-- **A secret** in the file is `{ env: NAME }`, the variable holding it,
-  never the value itself; the chart's `env` and `envFrom` set such a
-  variable from an existing Secret. Once the configuration is read,
-  kritika removes every variable a secret came from from its own
-  environment.
-- **Variables** also set sign-in, one app, one provider, the review
-  models, some review, confidence and trigger settings, and the embedder.
-  A variable wins over the file and carries a secret itself, so a small
-  deployment can be configured from the environment alone. A variable
-  under one of the prefixes above that names no key is refused at startup
-  rather than ignored; `KRITIKA_REVIEW_WORKERS`, a process setting, is the
-  one exception.
-- **The chart's `config`** has a key for every `KRITIKA_*` variable it
-  does not derive from its other values, its name without the prefix in
-  camelCase (`KRITIKA_AUTH_OIDC_ISSUER` is `authOidcIssuer`); a secret's
-  key takes a `valueFrom` from a Secret.
-- **An expression:** a key whose value is a [CEL](https://cel.dev)
-  expression ends in `Expr`, or is the `expr` of a condition:
-  `roleMappingExpr`, and each item of a rule's `when` and of
-  `trigger.include` and `trigger.exclude`.
-- **When it is read:** once, at startup, with its variables. A change
-  takes a restart, and the chart rolls the pods when its `configFile`
-  changes. Content that does not load, or that would leave the dashboard
-  no way to sign in, fails startup, so a rolling update leaves the old
-  pods serving.
+## Helm templates
+
+Helm renders inline `config` through `tpl` with the release context. For example:
+
+```yaml
+config:
+  webUrl: "https://{{ .Release.Name }}.turbo.ac"
+```
+
+Templates can access `.Release`, `.Values` and other Helm context. This also
+applies to strings in prompts and rules. To preserve a literal expression, use
+`{{ "{{ .Example }}" }}`. External ConfigMaps and files loaded directly by the
+application are not processed by Helm.
+
+## Environment-only inputs
+
+These inputs have no configuration-file equivalent:
+
+| Variable | Purpose |
+| --- | --- |
+| `KRITIKA_CONFIG_FILE` | Configuration file path, required by `serve` and `chatgpt login` |
+| `KRITIKA_DATABASE_URL` | Application DSN for `serve`; runner DSN for `run` |
+| `KRITIKA_DATABASE_OWNER_URL` | Owner DSN for migrations and leader work |
+| `KRITIKA_RUNNER_DATABASE_URL` | Runner DSN for the local executor |
+| `KRITIKA_RUN_SPEC_FILE` | Per-run job document path |
+| `KRITIKA_GIT_TOKEN` | Per-run Git credential |
+| `KRITIKA_GATEWAY_TOKEN` | Per-run model gateway credential |
+| `KRITIKA_DATABASE_TOKEN` | Per-run database credential |
+
+The service supplies per-run inputs to runner Jobs. Secret references such as
+`{ env: OPENROUTER_API_KEY }` can use any environment variable name; the file
+defines how that value is used.
+
+## Migrating Helm values
+
+Move the contents of `configFile` into `config`; `configFile` is rejected with
+migration guidance. Move flat policy keys into their YAML sections, for example
+`config.reviewModel` becomes `config.review.model`, and
+`config.authAdminPassword` becomes `config.auth.admin.password: { env: ADMIN_PASSWORD }`.
+Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.
+Move `config.runnerRuntimeClass` to `runner.runtimeClass` and
+`config.runnerDeadline` to `runner.deadline`. Runtime keys such as
+`config.logLevel`, `config.reviewWorkers` and `config.pollInterval` keep their names.
+Move automatic auth, app, provider and policy env configuration into the file;
+those env names no longer configure the application implicitly. Existing secret
+variable names can still be used in explicit `{ env: NAME }` references.
+Remove old empty-string duration placeholders such as `config.pollInterval: ""`;
+omit the key to use its default. The chart rejects empty duration strings.
+Operational env settings remain supported. Remove their corresponding variables
+from `env` or `envFrom` when moving them into the file, to avoid duplicates.
+
+Example Helm values:
+
+```yaml
+config:
+  webUrl: https://kritika.example.com
+  logLevel: info
+  reviewWorkers: 2
+  pollInterval: 10m
+  auth:
+    admin:
+      password: { env: ADMIN_PASSWORD }
+  providers:
+    openrouter:
+      type: openrouter
+      apiKey: { env: OPENROUTER_API_KEY }
+  review:
+    model: openrouter/vendor/large-model
+runner:
+  runtimeClass: gvisor
+  deadline: 20m
+env:
+  ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-auth, key: password }
+  OPENROUTER_API_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-models, key: openrouter }
+```
 
 ## `auth`
 
-`auth` sets how people sign in and what each may do. Its variables are
-keys of the chart's `config`, the secrets among them from existing Secrets.
+`auth` sets how people sign in and what each may do. In Helm these keys
+belong under `config.auth`; secret references read variables supplied from
+existing Kubernetes Secrets.
 
-| Key                      | Environment variable                        |
-| ------------------------ | ------------------------------------------- |
-| `sessionTTL`             | `KRITIKA_AUTH_SESSION_TTL`                  |
-| `admin.user`             | `KRITIKA_AUTH_ADMIN_USER`                   |
-| `admin.password`         | `KRITIKA_AUTH_ADMIN_PASSWORD`               |
-| `oidc.name`              | `KRITIKA_AUTH_OIDC_NAME`                    |
-| `oidc.issuer`            | `KRITIKA_AUTH_OIDC_ISSUER`                  |
-| `oidc.clientId`          | `KRITIKA_AUTH_OIDC_CLIENT_ID`               |
-| `oidc.clientSecret`      | `KRITIKA_AUTH_OIDC_CLIENT_SECRET`           |
-| `oidc.scopes`            | `KRITIKA_AUTH_OIDC_SCOPES`, comma-separated |
-| `oidc.rolesClaim`        | `KRITIKA_AUTH_OIDC_ROLES_CLAIM`             |
-| `oidc.roleMappingExpr`   | `KRITIKA_AUTH_OIDC_ROLE_MAPPING_EXPR`       |
-| `oidc.defaultRole`       | `KRITIKA_AUTH_OIDC_DEFAULT_ROLE`            |
-| `github.clientId`        | `KRITIKA_AUTH_GITHUB_CLIENT_ID`             |
-| `github.clientSecret`    | `KRITIKA_AUTH_GITHUB_CLIENT_SECRET`         |
-| `github.roleMappingExpr` | `KRITIKA_AUTH_GITHUB_ROLE_MAPPING_EXPR`     |
+| Key | Purpose |
+| --- | --- |
+| `sessionTTL` | Dashboard session lifetime. |
+| `admin.user` | Local administrator username. |
+| `admin.password` | Environment reference for the administrator password. |
+| `oidc.name` | Sign-in button label. |
+| `oidc.issuer` | OpenID Connect issuer URL. |
+| `oidc.clientId` | Client ID, inline or an environment reference. |
+| `oidc.clientSecret` | Environment reference for the client secret. |
+| `oidc.scopes` | Requested scopes as a YAML list. |
+| `oidc.rolesClaim` | Claim containing the user's roles. |
+| `oidc.roleMappingExpr` | Expression mapping identity claims to a dashboard role. |
+| `oidc.defaultRole` | Role when no mapping applies. |
+| `github.clientId` | Client ID, inline or an environment reference. |
+| `github.clientSecret` | Environment reference for the client secret. |
+| `github.roleMappingExpr` | Expression mapping GitHub identity to a dashboard role. |
 
 ```yaml
 auth:
@@ -167,19 +252,6 @@ apps:
 | `clientId`      | the App's client ID, inline or, like the secrets, as a reference                                               |
 | `privateKey`    | the App's private key                                                                                          |
 | `webhookSecret` | the same value as the App's webhook secret                                                                     |
-
-The same app can come from the environment instead:
-
-| Variable                      | Key                          |
-| ----------------------------- | ---------------------------- |
-| `KRITIKA_APPS_NAME`           | the key, `github` unless set |
-| `KRITIKA_APPS_ACCOUNTS`       | `accounts`, comma-separated  |
-| `KRITIKA_APPS_CLIENT_ID`      | `clientId`                   |
-| `KRITIKA_APPS_PRIVATE_KEY`    | `privateKey`                 |
-| `KRITIKA_APPS_WEBHOOK_SECRET` | `webhookSecret`              |
-
-The environment declares at most one app. It replaces the file's app of
-the same name whole, or is added to the file's when none has that name.
 
 ## `providers` and `embedding`
 
@@ -492,32 +564,13 @@ a new title.
   [Runner tools](security.md#runner-tools) says what bounds a command and
   a fetch.
 
-### Environment variables
+### Configuration sources
 
-Some of the root's settings can come from the environment; the provider's
-and the embedder's variables are on [Models](models.md#from-the-environment):
-
-| Variable                       | Key                                                            |
-| ------------------------------ | -------------------------------------------------------------- |
-| `KRITIKA_REVIEW_MODEL`         | `review.model`                                                 |
-| `KRITIKA_REVIEW_FALLBACK`      | `review.fallback`                                              |
-| `KRITIKA_REVIEW_EFFORT`        | `review.effort`, a level or empty ([effort](models.md#effort)) |
-| `KRITIKA_REVIEW_APPROVE`       | `review.approve`, `true` or `false`                            |
-| `KRITIKA_REVIEW_FIXES`         | `review.fixes`, `true` or `false`                              |
-| `KRITIKA_REVIEW_INCREMENTAL`   | `review.incremental`, a whole number of files                  |
-| `KRITIKA_REVIEW_DIAGRAM`       | `review.diagram`, `true` or `false`                            |
-| `KRITIKA_REVIEW_COST`          | `review.cost`, `true` or `false`                               |
-| `KRITIKA_CONFIDENCE_MODEL`     | `confidence.model`                                             |
-| `KRITIKA_CONFIDENCE_FALLBACK`  | `confidence.fallback`                                          |
-| `KRITIKA_CONFIDENCE_EFFORT`    | `confidence.effort`, a level or empty                          |
-| `KRITIKA_CONFIDENCE_THRESHOLD` | `confidence.threshold`, a whole number from 0 to 5             |
-| `KRITIKA_CONFIDENCE_GATE`      | `confidence.gate`, `true` or `false`                           |
-| `KRITIKA_CONFIDENCE_RISK`      | `confidence.risk`, `low`, `medium`, `high` or `critical`       |
-| `KRITIKA_TRIGGER_SETTLE`       | `trigger.settle`, a duration such as `30s`                     |
-| `KRITIKA_TRIGGER_LIMIT`        | `trigger.limit`, a whole number of reviews                     |
-
-The Configuration page lists what the file and the environment set under
-"Instance settings", with where each comes from.
+App and provider declarations, authentication settings, review policy, and
+embedding settings come from the file. For these sections, environment variables
+supply values only where the file explicitly references them, such as
+`auth.admin.password: { env: ADMIN_PASSWORD }` or
+`providers.openrouter.apiKey: { env: OPENROUTER_API_KEY }`.
 
 ### Which repositories run
 
@@ -604,32 +657,30 @@ egress:
 
 ## How kritika runs
 
-The process settings below come from the environment rather than the file, each a camelCased
-key of the chart's `config` (`KRITIKA_POLL_INTERVAL` is `pollInterval`)
-except where noted; a restart changes them. The chart sets the rest of
-the process's variables, its addresses, database URLs and roles and the
-runner image, from its other values.
+The following keys live at the file's root unless they start with `runner.`.
+Under Helm, root keys go under `config`, while runner settings go under the
+chart's top-level `runner`. Operational environment variables remain supported.
 
-| Variable                           | What                                                                                                                                                                                                                             |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KRITIKA_POLL_INTERVAL`            | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set                                                                                                    |
-| `KRITIKA_POLL_LOOKBACK`            | how far back a first or long-idle poll looks; 24h unless set                                                                                                                                                                     |
-| `KRITIKA_ONBOARD_WINDOW`           | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                                                                                                          |
-| `KRITIKA_INDEX_GRACE`              | how long the index of a repository that stopped running is kept; 720h unless set                                                                                                                                                 |
-| `KRITIKA_TRANSCRIPT_RETENTION`     | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                                                                                                                 |
-| `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set                                                                                          |
-| `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                                                                                                               |
-| `KRITIKA_THREAD_WORKERS` | finding resolution/restoration jobs one replica runs at once, independently of model follow-ups; 1 unless set |
-| `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
-| `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
-| `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |
-| `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                            |
-| `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                                                                                                              |
-| `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline, at most 2h; 15m unless set                                                                                                                                                                              |
-| `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                                                                                                                   |
-| `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it                                                                                                    |
-| `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON; the chart's `runner.resources` renders it                                                                                                                                                     |
-| `KRITIKA_RUNNER_TOOLS`             | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON: each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides; the chart's `runner.tools` renders it |
+| File key | Environment variable                           | What                                                                                                                                                                                                                             |
+| --- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pollInterval` | `KRITIKA_POLL_INTERVAL`            | how often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set                                                                                                    |
+| `pollLookback` | `KRITIKA_POLL_LOOKBACK`            | how far back a first or long-idle poll looks; 24h unless set                                                                                                                                                                     |
+| `onboardWindow` | `KRITIKA_ONBOARD_WINDOW`           | how many onboarding index jobs the leader keeps queued or running at once; 4 unless set                                                                                                                                          |
+| `indexGrace` | `KRITIKA_INDEX_GRACE`              | how long the index of a repository that stopped running is kept; 720h unless set                                                                                                                                                 |
+| `transcriptRetention` | `KRITIKA_TRANSCRIPT_RETENTION`     | how long a review's full model transcript is kept, at least 24h; 720h unless set                                                                                                                                                 |
+| `diffRetention` | `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set                                                                                          |
+| `reviewWorkers` | `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                                                                                                               |
+| `threadWorkers` | `KRITIKA_THREAD_WORKERS` | finding resolution/restoration jobs one replica runs at once, independently of model follow-ups; 1 unless set |
+| `indexWorkers` | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
+| `leaderRetryInterval` | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
+| `gatewayTokenTtl` | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |
+| `logLevel` | `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                            |
+| `logFormat` | `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                                                                                                              |
+| `runner.deadline` | `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline, at most 2h; 15m unless set                                                                                                                                                                              |
+| `runner.runtimeClass` | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                                                                                                                   |
+| `runner.imagePullPolicy` | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it                                                                                                    |
+| `runner.resources` | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON in env or a YAML mapping in the file; the chart's `runner.resources` renders it                                                                                                                                                     |
+| `runner.tools` | `KRITIKA_RUNNER_TOOLS`             | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON in env or a YAML list in the file: each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides; the chart's `runner.tools` renders it |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps
@@ -642,9 +693,16 @@ Finding resolution/restoration jobs use a dedicated `thread` queue, with one
 worker per replica by default. They call the forge and update the database;
 they do not launch runner pods or acquire model slots. The default reserves
 capacity during model follow-ups, but permits less parallelism than two idle
-follow-up workers. Increase `KRITIKA_THREAD_WORKERS` if queue-delay metrics show
+follow-up workers. Increase `threadWorkers` if queue-delay metrics show
 it is needed. Database connections and forge API limits remain shared with
 reviews, so raising worker counts does not guarantee higher throughput.
 
 See [queue upgrades and rollbacks](database.md#queue-upgrades-and-rollbacks)
 before switching between releases that use different queue names.
+
+Other file settings are `webUrl` (required public URL), `addr`, `metricsAddr`,
+`gatewayAddr`, `gatewayUrl`, `executor`, `databaseAppRole` and
+`databaseRunnerRole`. The chart derives all except `webUrl` from deployment
+values. The `runner` section also accepts `image`, `serviceAccount`,
+`databaseSecret`, `databaseSecretKey` and `ttl`; the chart derives these from
+its runner and database values. Database Secret names are references, not DSNs.

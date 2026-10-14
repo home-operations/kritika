@@ -11,7 +11,7 @@ what a pull request could use to weaken its own review out of its reach.
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Install kritika into a namespace of its own            | runner Jobs run in the release namespace, and kritika's Role can create, patch and delete every Secret there, though it can never get or list one                                             |
 | Turn on the chart's `networkPolicy.enabled`            | a runner pod can then reach nothing but DNS, Postgres and the [egress gateway](#the-egress-gateway)                                                                                           |
-| Set `config.runnerRuntimeClass` to a sandboxed runtime | a kernel vulnerability reachable from the pod is contained by the sandbox rather than the node ([runner sandbox](#runner-sandbox))                                                            |
+| Set `runner.runtimeClass` to a sandboxed runtime | a kernel vulnerability reachable from the pod is contained by the sandbox rather than the node ([runner sandbox](#runner-sandbox))                                                            |
 | Set `runner.resources`                                 | a runaway run is killed in its own cgroup rather than pressing on its node                                                                                                                    |
 | Map roles on what the IdP controls                     | a role mapping is only as trustworthy as what it reads: map on groups or roles, not on an email or name a user can set on their own profile ([role mappings](configuration.md#role-mappings)) |
 
@@ -82,7 +82,7 @@ A credential's token is a secret reference like any other in the file,
 set from a Secret:
 
 ```yaml
-configFile:
+config:
   egress:
     allow: [api.github.com, "*.githubusercontent.com", ghcr.io]
     credentials:
@@ -237,14 +237,14 @@ runner:
   tools:
     - name: flate
       image: ghcr.io/home-operations/flate:0.6.5@sha256:e0e2d2de97539b3141977e8bb3bbb50ea5c5afe89477950e5fa972c9862478da
-configFile:
+config:
   agent: { commands: [gh, flate] }
 ```
 
 ## Runner sandbox
 
 A runner parses untrusted content and runs what the model asks. Set
-`config.runnerRuntimeClass` to a sandboxed runtime the cluster offers
+`runner.runtimeClass` to a sandboxed runtime the cluster offers
 (`gvisor` with runsc, or a Kata class), so a kernel vulnerability
 reachable from the pod is contained by the sandbox rather than the node.
 It is advised, not required: without it the pod's other bounds still hold,

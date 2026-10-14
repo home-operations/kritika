@@ -1,8 +1,5 @@
-// Package configfile is kritika's configuration: the configuration file with
-// its KRITIKA_* environment overlay, and the settings for how kritika runs
-// that come from the environment alone. Process configuration (addresses,
-// database, log level) is environment variables too and lives in
-// internal/config.
+// Package configfile loads application policy and runtime settings from YAML.
+// Operational settings support environment variables; policy and app declarations use the file.
 //
 // The file is loaded whole: the document is decoded with unknown keys
 // rejected, every secret reference resolved, every filter compiled and
@@ -21,6 +18,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -206,7 +204,7 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
-// DefaultRunnerDeadline bounds a runner Job when KRITIKA_RUNNER_DEADLINE
+// DefaultRunnerDeadline bounds a runner Job when runner.deadline
 // sets none.
 const DefaultRunnerDeadline = 15 * time.Minute
 
@@ -328,31 +326,8 @@ type TriggerSpec struct {
 	Limit *int `yaml:"limit,omitempty"`
 }
 
-// Tool is a command-line tool a runner pod mounts from an image, read-only,
-// for the agent's run tool. The runner image's own tools (curl, fd and rg
-// in the -tools image) need no entry.
-type Tool struct {
-	// Name identifies the tool; it names the pod volume.
-	Name string `json:"name"`
-	// Image is the image the tool comes from; pin it by digest.
-	Image string `json:"image"`
-	// Path is the directory inside the image that holds the binaries; it
-	// goes first on the runner's PATH. Default "/". The binaries must be
-	// statically linked or link only against glibc, libgcc and libstdc++,
-	// all the runner image carries.
-	Path string `json:"path,omitempty"`
-	// Commands are the binaries the tool provides, the names agent.commands
-	// allows; default the tool's name.
-	Commands []string `json:"commands,omitempty"`
-}
-
-// Provides lists the commands the tool puts on the runner's PATH.
-func (t Tool) Provides() []string {
-	if len(t.Commands) == 0 {
-		return []string{t.Name}
-	}
-	return t.Commands
-}
+// Tool is a command-line tool mounted into a runner Job.
+type Tool = config.Tool
 
 // Embedding is the instance's embedder, which builds the similar-code
 // index: a model of one of the instance's openrouter or openai providers,
@@ -404,10 +379,6 @@ const DefaultSimilarFloor = 0.5
 
 // Floor returns SimilarFloor, DefaultSimilarFloor when unset.
 func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimilarFloor) }
-
-// minRetention is the shortest transcript or diff retention that may be
-// set.
-const minRetention = 24 * time.Hour
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and
@@ -706,8 +677,7 @@ type Egress struct {
 	credentials map[string]Secret
 }
 
-// File is the running configuration, as the configuration file and its
-// environment set it.
+// File is the running configuration from the file and operational environment settings.
 type File struct {
 	Auth        Auth
 	Connections []Connection
@@ -716,7 +686,7 @@ type File struct {
 	Egress      Egress
 	// Embedding is the instance's embedder, nil when indexing is off.
 	Embedding *Embedding
-	// Run is how kritika runs, from the environment.
+	// Run holds the resolved runtime settings.
 	Run Run
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
@@ -725,13 +695,6 @@ type File struct {
 	hash string
 	// unserved are the account entries no connection serves.
 	unserved []Account
-	// envConnection names the connection the environment declared, "" for
-	// none.
-	envConnection string
-	// envProvider names the provider the environment declared, "" for none,
-	// and envKeys holds the instance defaults it set, by dotted path.
-	envProvider string
-	envKeys     map[string]bool
 	// secretEnv are the variables f's secrets came from, sorted.
 	secretEnv []string
 }

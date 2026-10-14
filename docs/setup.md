@@ -88,12 +88,12 @@ shows, with:
   and GitHub delivers each App's webhook under it, to `/hooks/<app name>`,
   both from one port. The chart's `ingress` or `httpRoute` routes the URL
   there; nothing else needs to be public.
-- **A way to sign in:** `config.authAdminPassword`, from an existing
-  Secret, for the local admin, or OIDC or GitHub with a role mapping that
+- **A way to sign in:** `config.auth.admin.password: { env: ADMIN_PASSWORD }`, backed by an existing
+  Secret through `env.ADMIN_PASSWORD`, for the local admin, or OIDC or GitHub with a role mapping that
   makes someone an admin ([`auth`](configuration.md#auth)). For GitHub
   through the App, set its client ID and secret as the
-  `KRITIKA_AUTH_GITHUB_*` variables.
-- **The [configuration file](configuration.md)** as `configFile`, or an
+  `config.auth.github` settings.
+- **The [configuration file](configuration.md)** as `config`, or an
   existing ConfigMap. Its secrets name variables, which `env` or `envFrom`
   set from existing Secrets: put the App's private key and webhook secret
   in a Secret and set a variable from each.
@@ -118,11 +118,11 @@ review:
 
 Add `embedding` to index each repository for similar code, `repositories`
 entries for an account's or a repository's own settings and rules, and
-`accounts` for an account's limits ([configuration](configuration.md)). The
-App can come from the environment instead ([`apps`](configuration.md#apps)).
+`accounts` for an account's limits ([configuration](configuration.md)). App
+credentials use explicit environment references in [`apps`](configuration.md#apps).
 
 The file lives in git with the rest of the deployment. kritika reads it at
-startup, and the chart rolls the pods when `configFile` changes. A changed
+startup, and the chart rolls the pods when `config` changes. A changed
 ConfigMap or Secret does not roll them: restart them after changing one,
 or have stakater's Reloader do it with
 `deploymentAnnotations: { reloader.stakater.com/auto: "true" }`. Runner

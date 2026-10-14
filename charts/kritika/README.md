@@ -27,20 +27,28 @@ where `my-values.yaml` sets:
 ```yaml
 config:
   webUrl: https://kritika.example.com
-  authAdminPassword:
-    valueFrom:
-      secretKeyRef: { name: kritika-admin, key: password }
-  providersApiKey:
-    valueFrom:
-      secretKeyRef: { name: kritika-openrouter, key: api-key }
-  reviewModel: openrouter/vendor/large-model
-configFile:
+  auth:
+    admin:
+      password: { env: ADMIN_PASSWORD }
+  providers:
+    openrouter:
+      type: openrouter
+      apiKey: { env: OPENROUTER_API_KEY }
+  review:
+    model: openrouter/vendor/large-model
   apps:
     github:
       accounts: [org-1]
       clientId: Iv1.example
       privateKey: { env: GITHUB_APP_PRIVATE_KEY }
       webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+env:
+  ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-admin, key: password }
+  OPENROUTER_API_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-openrouter, key: api-key }
 # A Secret with the keys GITHUB_APP_PRIVATE_KEY and GITHUB_APP_WEBHOOK_SECRET.
 envFrom:
   - secretRef:
@@ -51,35 +59,39 @@ ingress:
   tls: [{ hosts: [kritika.example.com], secretName: kritika-tls }]
 ```
 
-`config` is every `KRITIKA_*` variable the chart does not derive from its
-other values, keyed by its name without the prefix in camelCase
-(`pollInterval` is `KRITIKA_POLL_INTERVAL`): `webUrl`, the one public URL,
-with the dashboard at it and the webhook listener under it at `/hooks`;
-logging, the workers, polling, retention and runner Jobs' deadline and
-RuntimeClass; and the variables that stand in for the configuration file's
-sections, sign-in, one app, one provider, the review, confidence and
-trigger settings and the embedder (see
-[the configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)).
-A key left empty sets nothing and kritika's default applies; a secret
-takes a `valueFrom` map, like the admin password above, which is the way
-into a fresh instance. The chart's Ingress or HTTPRoute must route
-`webUrl`'s host.
+`config` is the application's YAML configuration: `webUrl`, logging, workers,
+polling, retention, `auth`, `apps`, `providers`, review policy and account settings.
+It has the same structure as the configuration file and is evaluated with
+`tpl`, so `webUrl: "https://{{ .Release.Name }}.example.com"` uses the release name. Omitted values use operational env settings or application defaults; zero and false are preserved.
+The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
-`configFile` is what is reviewed and how: sign-in (`auth`), the GitHub
-`apps`, model `providers`, the `embedding`, `egress`, the settings every
-repository gets (`review`, `confidence`, `trigger`, `comments`, `agent`),
-`repositories` entries keyed `owner/*` or `owner/name`, and `accounts`,
-with the `config` variables winning over it.
+- Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
+- Runner Jobs are configured under `runner`, including `runtimeClass` and
+  `deadline`. The chart derives application settings from runner, database
+  and service values and rejects duplicates under `config`.
+- A checksum of the rendered file rolls pods when configuration changes.
+- `existingConfigMap` supplies an external `config.yaml` instead of `config`;
+  setting both is an error. Put `webUrl` in that file and omit chart-owned
+  deployment settings. The chart supplies those through environment variables.
+  External ConfigMap and Secret changes need a restart or Reloader.
+- Operational settings such as logging, worker counts and polling support
+  `env` and `envFrom`, but a file setting and its environment variable cannot
+  both be set. Chart-managed environment variables are reserved.
+- Auth, apps, providers, embedding and review policy are declared in the file.
+  Their environment values must be explicitly referenced with `{ env: NAME }`;
+  automatic env declarations and policy overrides are not supported.
+- The config path, database DSNs and per-run credentials/spec path are env-only.
+  The chart supplies the config path and database DSNs from its deployment values.
 
-- kritika reads it at startup: the pods carry its checksum, so a change
-  rolls them, and a pod whose file doesn't load never becomes ready while
-  the ones before it keep serving.
-- Secrets never go in it: it names environment variables, which `env` and
-  `envFrom` set from existing Secrets, the way any Kubernetes container's
-  environment is set.
-- The chart refuses a `KRITIKA_*` variable under `env`, naming its
-  `config` key, and a `config` key for a variable it derives from its
-  other values, such as the addresses or the database.
+**Migration:** move `configFile` into `config`, flat policy keys such as
+`config.reviewModel` into `config.review.model`, and password `valueFrom`
+entries into `env` with references in the file. Move
+`config.runnerRuntimeClass` and `config.runnerDeadline` into
+`runner.runtimeClass` and `runner.deadline`. Move automatic auth, app, provider
+and policy env configuration into the file, keeping secret values in env with
+explicit file references. See the
+[configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)
+for the complete migration and external ConfigMap rules.
 
 The
 [setup guide](https://github.com/home-operations/kritika/blob/main/docs/setup.md)
@@ -128,7 +140,7 @@ chart confines them:
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - `runner.tools` adds programs a review's `agent.commands` may run, from
-  their own images; `config.runnerRuntimeClass` puts runner Jobs under a
+  their own images; `runner.runtimeClass` puts runner Jobs under a
   sandboxed runtime such as gVisor; `runner.resources` keeps a runaway run
   in its own cgroup.
 
@@ -139,7 +151,7 @@ gateway, runner tools and the sandbox in full.
 
 The chart runs one Deployment of `kritika serve`, one replica by default.
 Its rolling update surges a new pod and takes the old one down only once the
-new one is ready, so a rollout, such as the one a changed `configFile`
+new one is ready, so a rollout, such as the one a changed `config`
 starts, keeps one serving on its own: a pod is ready only once its database
 answers and it serves webhooks. Every replica serves webhooks and
 the dashboard and works jobs, and one holds the leader lock at a time, so
@@ -172,65 +184,7 @@ Kubernetes: `>=1.25.0-0`
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
-| config.appsAccounts | string | `""` | The users and organizations the app serves, comma-separated; set it to declare the app here. |
-| config.appsClientId | string | `""` | The GitHub App's client id, inline or from a Secret. |
-| config.appsName | string | `""` | The app's name, which is its webhook path, `/hooks/<name>`; `github` unless set. |
-| config.appsPrivateKey | string | `""` | The GitHub App's private key (PEM), from a Secret. |
-| config.appsWebhookSecret | string | `""` | The GitHub App's webhook secret, from a Secret. |
-| config.authAdminPassword | string | `""` | The local admin's password, from a Secret. The local admin exists only while one is set: the way into a fresh instance, and a way in when every provider is down. |
-| config.authAdminUser | string | `""` | The local admin's username; `admin` unless set. |
-| config.authGithubClientId | string | `""` | Client id for signing in with GitHub, inline or from a Secret: an OAuth App's, or the GitHub App's own; set it to sign in through GitHub. |
-| config.authGithubClientSecret | string | `""` | Client secret for signing in with GitHub, from a Secret. |
-| config.authGithubRoleMappingExpr | string | `""` | CEL expression mapping a GitHub sign-in to a kritika role, e.g. `login == "user-1" ? "admin" : ""`. |
-| config.authOidcClientId | string | `""` | OIDC client id, inline or from a Secret. |
-| config.authOidcClientSecret | string | `""` | OIDC client secret, from a Secret. |
-| config.authOidcDefaultRole | string | `""` | Role of an OIDC sign-in the mapping gives none; none unless set. |
-| config.authOidcIssuer | string | `""` | OpenID Connect issuer, an https URL; set it to sign in through OIDC. |
-| config.authOidcName | string | `""` | Label of the OIDC provider on the sign-in page; "SSO" unless set. |
-| config.authOidcRoleMappingExpr | string | `""` | CEL expression mapping an OIDC sign-in to a kritika role, `admin`, `member` or "" for none, e.g. `"kritika-admins" in roles ? "admin" : "member"`. |
-| config.authOidcRolesClaim | string | `""` | The ID token claim holding the person's roles or groups, read by `authOidcRoleMappingExpr`. |
-| config.authOidcScopes | string | `""` | OIDC scopes, comma-separated; `openid,email,profile` unless set. |
-| config.authSessionTtl | string | `""` | How long a dashboard session lasts, between 5m and 720h; 12h unless set. |
-| config.confidenceEffort | string | `""` | How hard the confidence model, and the fallback that takes its call, reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set. |
-| config.confidenceFallback | string | `""` | The model the scorer's call falls back to when the confidence model fails. |
-| config.confidenceGate | string | `""` | `true` fails the commit status under the threshold, so it can be a required check; off unless set, when the status reports the score and passes. |
-| config.confidenceModel | string | `""` | The model that scores each reviewed pull request from 0 to 5, `<provider>/<model>`; nothing is scored unless set. |
-| config.confidenceRisk | string | `""` | The highest risk a change may be rated and still be approved: `low`, `medium`, `high` or `critical`; `low` unless set. |
-| config.confidenceThreshold | string | `""` | The score a pull request must reach to be approved and, with the gate, for its commit status to pass, 0 to 5; 5 unless set. |
-| config.diffRetention | string | `""` | How long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set. |
-| config.embeddingDims | string | `""` | The embedding's dimensions, which the model must produce. |
-| config.embeddingModel | string | `""` | The embedding model, `<provider>/<model>`; set it to index each repository for similar code. |
-| config.gatewayTokenTtl | string | `""` | How long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies before revoking it; 1h unless set. |
-| config.indexGrace | string | `""` | How long the index of a repository that stopped running is kept; 720h unless set. |
-| config.indexWorkers | string | `""` | Index jobs one replica runs at once, rate-limited apart from reviews so onboarding a large account cannot starve them; 1 unless set. |
-| config.leaderRetryInterval | string | `""` | How often a replica retries the leader lock, and the holder checks it still has it; 15s unless set. |
-| config.logFormat | string | `"json"` | Log format: json or text. |
-| config.logLevel | string | `"info"` | Log level: debug, info, warn or error. |
-| config.onboardWindow | string | `""` | Onboarding index jobs the leader keeps queued or running at once; 4 unless set. |
-| config.pollInterval | string | `""` | How often the leader lists each app's open pull requests, its backstop for missed webhooks; `0s` turns it off; 10m unless set. |
-| config.pollLookback | string | `""` | How far back a first or long-idle poll looks; 24h unless set. |
-| config.providersApiKey | string | `""` | The provider's API key, from a Secret; required except for `chatgpt`, which uses `kritika chatgpt login`. |
-| config.providersBaseUrl | string | `""` | The provider's base URL, for an OpenAI-compatible endpoint; the type's own unless set. |
-| config.providersName | string | `""` | The provider's name, which models are addressed through as `<name>/<model>`; `openrouter` unless set. |
-| config.providersRetries | string | `""` | How many more times a review's model step, the scorer's call or a split review's summary call is tried when the provider fails it in a way another attempt may not (a 5xx, a 429, a timeout), with backoff; 0 unless set, at most 5. |
-| config.providersType | string | `""` | The provider's type, `openrouter`, `openai`, `anthropic`, `opencode` or `chatgpt`; the name unless set, when the name is one of those. |
-| config.reviewApprove | string | `""` | `true` has a review that finds nothing at P0 or P1 approve the pull request, or, with a confidence model, one whose score and risk allow it, and dismisses that approval when a later review's do not; off unless set. |
-| config.reviewCost | string | `""` | `true` ends the summary's footer with what the pull request's reviews have cost together; off unless set. |
-| config.reviewDiagram | string | `""` | `true` has the summary draw the flow the change adds or alters as a Mermaid diagram; off unless set. |
-| config.reviewEffort | string | `""` | How hard the review model, and the fallback that takes its step, reasons: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; the provider's default unless set. |
-| config.reviewFallback | string | `""` | The model a review falls back to when the review model fails. |
-| config.reviewFixes | string | `""` | `true` requires a suggested fix on every finding; off unless set. |
-| config.reviewIncremental | string | `""` | How many files may change since the last review before a re-review covers the whole pull request again; 25 unless set. |
-| config.reviewModel | string | `""` | The model every review runs on unless a repository names another, `<provider>/<model>`. |
-| config.reviewWorkers | string | `""` | Review jobs one replica runs at once, each holding a runner pod open; 2 unless set. |
-| config.runnerDeadline | string | `""` | A runner Job's deadline; 15m unless set. |
-| config.runnerRuntimeClass | string | `""` | RuntimeClass runner Jobs run under, e.g. `gvisor` or a Kata class; the cluster default unless set. Advised: a runner parses untrusted repository content and runs what the model asks. |
-| config.threadWorkers | string | `""` | Finding resolution/restoration jobs one replica runs at once, independently of model follow-ups and without runner pods; 1 unless set. |
-| config.transcriptRetention | string | `""` | How long a review's full model transcript is kept, at least 24h; 720h unless set. |
-| config.triggerLimit | string | `""` | How many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. |
-| config.triggerSettle | string | `""` | How long a review waits after a push, so a burst of pushes collapses onto the last one before anything is spent, e.g. `30s`; immediate unless set. |
-| config.webUrl | required | `""` | Public URL the dashboard is reached at, e.g. https://kritika.example.com; the webhooks share it under `/hooks/<app name>`. Must be an absolute http(s) URL with no query or fragment. GitHub delivers webhooks to it and sign-in redirects back to it, so the chart's Ingress or HTTPRoute must route this name. |
-| configFile | optional | `{}` | The configuration file, as YAML: what is reviewed and how, from `auth` and `apps` to `repositories` and `accounts`. Passed through verbatim, not tpl'd. See docs/configuration.md. |
+| config | object | `{}` | Application configuration, using the same YAML schema as config.yaml. Secrets are references such as { env: ADMIN_PASSWORD }, supplied through env or envFrom. Omitted settings use application defaults. Rendered through tpl with the release context. Mutually exclusive with existingConfigMap. |
 | database.app.existingSecret | required | `""` | Secret holding the application role's connection URI. |
 | database.app.key | string | `"uri"` | Key in that Secret. |
 | database.app.role | string | `"kritika_app"` | Name of the application role, asserted at startup (not superuser, no BYPASSRLS, owns nothing). |
@@ -240,9 +194,9 @@ Kubernetes: `>=1.25.0-0`
 | database.runner.key | string | `"uri"` | Key in that Secret. |
 | database.runner.role | string | `"kritika_runner"` | Name of the runner role, granted only what runner Jobs need. |
 | deploymentAnnotations | object | `{}` | Annotations added to the Deployment (e.g. `reloader.stakater.com/auto: "true"`). Pod-level annotations go in `podAnnotations`. |
-| env | object | `{}` | Environment variables of the kritika serve container, keyed by name: a plain value, or a map with the variable's `valueFrom` (a Secret, a ConfigMap or a field). Rendered through `tpl`. |
-| envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk, each key a variable: the Kubernetes `envFrom` list. A Secret whose keys are the variable names the configuration file references sets them all at once. |
-| existingConfigMap | string | `""` | Existing ConfigMap holding the file under the `config.yaml` key; takes precedence over `configFile`. A change to it takes a restart. |
+| env | object | `{}` | Operational settings and referenced secrets, keyed by environment variable name. Use valueFrom.secretKeyRef for credentials. Do not duplicate file settings or chart-managed variables. Rendered through tpl. |
+| envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application settings must not also be set in the file. |
+| existingConfigMap | string | `""` | Existing ConfigMap containing config.yaml instead of inline config. Put webUrl in that file. Changes require a restart, for example through a Reloader annotation. |
 | fullnameOverride | string | `""` | Override the full release name. |
 | httpRoute.additionalRules | list | `[]` | Custom rules prepended before the default rule (templated). |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
@@ -313,11 +267,13 @@ Kubernetes: `>=1.25.0-0`
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded, the database answers and it serves webhooks and the dashboard, so a rollout takes the previous pod down only once the new one can hold a delivery. |
 | replicas | int | `1` | Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritika serve pods. |
+| runner.deadline | string | `""` | Maximum duration of a runner Job; omitted uses the application's default of 15m. |
 | runner.image.digest | string | `""` | Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest. |
 | runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
 | runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
 | runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
+| runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry. |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |

@@ -43,6 +43,7 @@ tests:
           pattern: ^[0-9a-f]{64}$
   - it: leaves an existing ConfigMap's restarts to the deployment, keeping pod annotations
     set:
+      config: null
       existingConfigMap: kritika-config
       podAnnotations:
         example.com/owner: ops
@@ -53,124 +54,34 @@ tests:
           path: spec.template.metadata.annotations["example.com/owner"]
           value: ops
 
-  - it: renders each env entry after the chart's own, a plain value quoted and a map spliced in
-    set:
-      config:
-        embeddingDims: 1024
-        triggerSettle: "{{ .Release.Name }}-0s"
-      envFrom:
-        - secretRef:
-            name: kritika-bot
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: GITHUB_APP_PRIVATE_KEY
-            valueFrom:
-              secretKeyRef:
-                name: kritika-bot
-                key: private-key.pem
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_EMBEDDING_DIMS, value: "1024" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_TRIGGER_SETTLE, value: RELEASE-NAME-0s }
-      - equal:
-          path: spec.template.spec.containers[0].env[0].name
-          value: KRITIKA_CONFIG_FILE
-      - equal:
-          path: spec.template.spec.containers[0].envFrom
-          value:
-            - secretRef:
-                name: kritika-bot
-
   - it: refuses an env key the chart sets from its other values
     set:
       env:
-        KRITIKA_GATEWAY_URL: http://elsewhere.example.com
+        KRITIKA_DATABASE_URL: postgres://elsewhere.example.com/kritika
     asserts:
       - failedTemplate:
-          errorPattern: env.KRITIKA_GATEWAY_URL
+          errorPattern: env.KRITIKA_DATABASE_URL
 
-  - it: refuses a KRITIKA_* variable under env, naming its config key
+  - it: accepts operational env settings and explicitly referenced secrets
     set:
+      config.auth.admin.password: { env: KRITIKA_AUTH_ADMIN_PASSWORD }
       env:
-        KRITIKA_AUTH_OIDC_ISSUER: https://sso.example.com
-    asserts:
-      - failedTemplate:
-          errorPattern: "env.KRITIKA_AUTH_OIDC_ISSUER: set config.authOidcIssuer instead"
-
-  - it: turns each config key into its variable, numbers, zero and templates included, and leaves the empty ones to kritika's defaults
-    set:
-      config:
-        pollInterval: "{{ .Release.Name }}-0s"
-        reviewWorkers: 4
-        threadWorkers: 2
-        runnerRuntimeClass: gvisor
-        confidenceThreshold: 0
-        confidenceGate: false
-        reviewApprove: true
-        reviewDiagram: true
-        reviewCost: true
-        reviewEffort: high
-        confidenceEffort: low
-        confidenceFallback: openrouter/vendor/small-model
-        triggerLimit: 0
-        authOidcClientSecret: {}
+        KRITIKA_LOG_LEVEL: debug
+        KRITIKA_AUTH_ADMIN_PASSWORD:
+          valueFrom:
+            secretKeyRef: { name: kritika-auth, key: password }
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_CONFIDENCE_THRESHOLD, value: "0" }
+          content:
+            name: KRITIKA_LOG_LEVEL
+            value: debug
       - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_CONFIDENCE_GATE, value: "false" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_REVIEW_APPROVE, value: "true" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_REVIEW_DIAGRAM, value: "true" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_REVIEW_COST, value: "true" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_REVIEW_EFFORT, value: high }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_CONFIDENCE_EFFORT, value: low }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_CONFIDENCE_FALLBACK, value: openrouter/vendor/small-model }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_TRIGGER_LIMIT, value: "0" }
-      - notContains:
           path: spec.template.spec.containers[0].env
           content:
-            name: KRITIKA_AUTH_OIDC_CLIENT_SECRET
-          any: true
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_POLL_INTERVAL, value: RELEASE-NAME-0s }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_REVIEW_WORKERS, value: "4" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_THREAD_WORKERS, value: "2" }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_LOG_LEVEL, value: info }
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_INDEX_WORKERS
-          any: true
+            name: KRITIKA_AUTH_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef: { name: kritika-auth, key: password }
 
   - it: refuses a config key for a variable the chart derives from its other values
     set:
@@ -178,7 +89,7 @@ tests:
         addr: ":9000"
     asserts:
       - failedTemplate:
-          errorPattern: "config.addr: the chart sets KRITIKA_ADDR from its other values"
+          errorPattern: "config.addr: the chart derives this setting from its deployment values"
 
   - it: renders no envFrom by default
     asserts:
@@ -202,6 +113,9 @@ tests:
           path: spec.template.spec.containers[0].startupProbe
 
   - it: wires the three database secrets and the runner settings
+    set:
+      config: null
+      existingConfigMap: external-config
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -261,6 +175,9 @@ tests:
           value: ghcr.io/home-operations/kritika@sha256:deadbeef
 
   - it: runs runner Jobs on the -tools tag of the appVersion by default
+    set:
+      config: null
+      existingConfigMap: external-config
     asserts:
       # The tag floats with the release-please-stamped appVersion.
       - matchRegex:
@@ -274,6 +191,8 @@ tests:
 
   - it: takes the runner repository, tag and pull policy apart from the chart's image
     set:
+      config: null
+      existingConfigMap: external-config
       image.tag: 1.2.3
       runner.image.repository: registry.example/kritika-tools
       runner.image.tag: 24h
@@ -295,6 +214,8 @@ tests:
 
   - it: pins the runner image by its own digest
     set:
+      config: null
+      existingConfigMap: external-config
       image.digest: sha256:deadbeef
       runner.image.digest: sha256:cafef00d
       runner.image.tag: ignored
@@ -307,13 +228,6 @@ tests:
           content:
             name: KRITIKA_RUNNER_IMAGE
             value: ghcr.io/home-operations/kritika@sha256:cafef00d
-
-  - it: refuses a config key for the runner pull policy
-    set:
-      config.runnerImagePullPolicy: Never
-    asserts:
-      - failedTemplate:
-          errorPattern: "config.runnerImagePullPolicy: the chart sets KRITIKA_RUNNER_IMAGE_PULL_POLICY from its other values"
 
   - it: leaves how kritika runs to its defaults unless values set it
     asserts:
@@ -330,6 +244,8 @@ tests:
 
   - it: renders the runner pods' resources and tools as JSON
     set:
+      config: null
+      existingConfigMap: external-config
       runner.resources: { limits: { memory: 1Gi } }
       runner.tools: [{ name: helm, image: registry.example/helm:3 }]
     asserts:
@@ -348,11 +264,6 @@ tests:
     set:
       config.webUrl: https://dash.example.com
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_WEB_URL
-            value: https://dash.example.com
       - equal:
           path: spec.template.spec.containers[0].ports
           value:
@@ -362,6 +273,8 @@ tests:
 
   - it: hands kritika serve the gateway's in-cluster address, which it requires
     set:
+      config: null
+      existingConfigMap: external-config
       service.gatewayPort: 9090
     asserts:
       - contains:
@@ -382,42 +295,12 @@ tests:
       - failedTemplate:
           errorPattern: config.webUrl is required
 
-  - it: sets the local admin's password from a Secret through a config map value
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_AUTH_ADMIN_PASSWORD
-            valueFrom: { secretKeyRef: { name: kritika-auth, key: password } }
-
-  - it: takes the sign-in client ids from a Secret
+  - it: validates the rendered web URL
     set:
-      config.authOidcClientId:
-        valueFrom: { secretKeyRef: { name: kritika-oidc, key: client-id } }
-      config.authGithubClientId:
-        valueFrom: { secretKeyRef: { name: kritika-github, key: client-id } }
+      config.webUrl: '{{ printf "https://%s.turbo.ac" .Release.Name }}'
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_AUTH_OIDC_CLIENT_ID
-            valueFrom: { secretKeyRef: { name: kritika-oidc, key: client-id } }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_AUTH_GITHUB_CLIENT_ID
-            valueFrom: { secretKeyRef: { name: kritika-github, key: client-id } }
-
-  - it: runs without a configuration file
-    set:
-      configFile: null
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_CONFIG_FILE }
-          any: true
-      - isNullOrEmpty:
-          path: spec.template.spec.volumes
+      - isKind:
+          of: Deployment
 
   - it: fails when config.webUrl is not an http(s) URL
     set:
@@ -480,6 +363,8 @@ tests:
 
   - it: renders runner tools on a cluster that mounts image volumes
     set:
+      config: null
+      existingConfigMap: external-config
       runner.tools: [{ name: helm, image: registry.example/helm:3 }]
     capabilities:
       majorVersion: 1
@@ -492,3 +377,65 @@ tests:
               name: KRITIKA_RUNNER_TOOLS,
               value: '[{"image":"registry.example/helm:3","name":"helm"}]',
             }
+
+  - it: supplies only the config path and database credentials before extra env
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].env
+          count: 6
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_CONFIG_FILE, value: /etc/kritika/config.yaml }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ADMIN_PASSWORD
+            valueFrom: { secretKeyRef: { name: kritika-auth, key: password } }
+
+  - it: rejects inline config alongside an external ConfigMap
+    set:
+      existingConfigMap: external-config
+    asserts:
+      - failedTemplate:
+          errorPattern: config and existingConfigMap are mutually exclusive
+
+  - it: injects runner deployment settings for an external configuration
+    set:
+      config: null
+      existingConfigMap: external-config
+      runner.runtimeClass: gvisor
+      runner.deadline: 20m
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_DEADLINE, value: 20m }
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: config
+            configMap: { name: external-config }
+
+  - it: refuses env overriding a chart-owned file setting
+    set:
+      env.KRITIKA_ADDR: ":9"
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_ADDR conflicts with config.addr"
+
+  - it: refuses env duplicating an application file setting
+    set:
+      config.logLevel: debug
+      env.KRITIKA_LOG_LEVEL: debug
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_LOG_LEVEL conflicts with config.logLevel"
+
+  - it: refuses env duplicating a nested runner file setting
+    set:
+      env.KRITIKA_RUNNER_IMAGE: example.com/other:test
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_RUNNER_IMAGE conflicts with config.runner.image"

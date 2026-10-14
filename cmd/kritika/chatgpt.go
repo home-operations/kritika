@@ -15,7 +15,7 @@ import (
 )
 
 func loginChatGPT(ctx context.Context, cfg *config.Config, args []string, logger *slog.Logger) error {
-	f, err := loadConfig(cfg.ConfigFile)
+	f, err := loadConfig(cfg)
 	if err != nil {
 		return err
 	}

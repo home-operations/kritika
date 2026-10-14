@@ -125,40 +125,54 @@ In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 {{- end }}
 
 {{/*
-Whether a configuration file is mounted: the chart's, or an existing
-ConfigMap. Without one, kritika runs on its environment alone.
+The application file, with deployment settings derived from chart values.
 */}}
-{{- define "kritika.hasConfigFile" -}}
-{{- if or .Values.existingConfigMap .Values.configFile -}}true{{- end -}}
-{{- end }}
+{{- define "kritika.configuration" -}}
+{{- if hasKey .Values "configFile" -}}
+{{- fail "configFile has moved to config; migrate flat config keys to the application YAML schema" -}}
+{{- end -}}
+{{- if and .Values.existingConfigMap .Values.config -}}
+{{- fail "config and existingConfigMap are mutually exclusive" -}}
+{{- end -}}
+{{- $config := tpl (toYaml (.Values.config | default dict)) . | fromYaml -}}
+{{- if hasKey $config "Error" -}}
+{{- fail (printf "config must render valid YAML: %s" (get $config "Error")) -}}
+{{- end -}}
+{{- $runtime := include "kritika.runtimeConfig" . | fromYaml -}}
+{{- range $key, $_ := $config -}}
+{{- if hasKey $runtime $key -}}
+{{- fail (printf "config.%s: the chart derives this setting from its deployment values" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml (mergeOverwrite $config $runtime) -}}
+{{- end -}}
 
-{{/*
-The kritika serve container's variables from `config`: each key is a
-KRITIKA_* variable, its name without the prefix in camelCase. A key left
-empty sets nothing; a map is the variable's valueFrom. A key for a variable
-the chart derives from its other values is refused.
-*/}}
-{{- define "kritika.configEnv" -}}
-{{- $derived := list }}
-{{- range (include "kritika.serveEnv" . | fromYamlArray) }}
-{{- $derived = append $derived .name }}
-{{- end }}
-{{- range $key, $value := .Values.config }}
-{{- $name := printf "KRITIKA_%s" (snakecase $key | upper) }}
-{{- if has $name $derived }}
-{{- fail (printf "config.%s: the chart sets %s from its other values" $key $name) }}
-{{- end }}
-{{- if kindIs "map" $value }}
-{{- with $value }}
-- name: {{ $name }}
-  {{- tpl (toYaml .) $ | nindent 2 }}
-{{- end }}
-{{- else if ne (toString $value) "" }}
-- name: {{ $name }}
-  value: {{ tpl (toString $value) $ | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
+{{- define "kritika.runtimeConfig" -}}
+addr: {{ printf ":%d" (int .Values.service.port) | quote }}
+metricsAddr: {{ printf ":%d" (int .Values.service.metricsPort) | quote }}
+gatewayAddr: {{ printf ":%d" (int .Values.service.gatewayPort) | quote }}
+gatewayUrl: {{ include "kritika.gatewayURL" . | quote }}
+databaseAppRole: {{ .Values.database.app.role | quote }}
+databaseRunnerRole: {{ .Values.database.runner.role | quote }}
+executor: kubernetes
+runner:
+  image: {{ include "kritika.runnerImage" . | quote }}
+  imagePullPolicy: {{ .Values.runner.image.pullPolicy | quote }}
+  serviceAccount: {{ include "kritika.runnerServiceAccountName" . | quote }}
+  databaseSecret: {{ tpl .Values.database.runner.existingSecret . | quote }}
+  databaseSecretKey: {{ .Values.database.runner.key | quote }}
+  ttl: {{ tpl (toString .Values.runner.ttl) . | quote }}
+  runtimeClass: {{ tpl .Values.runner.runtimeClass . | quote }}
+  {{- with .Values.runner.deadline }}
+  deadline: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.runner.resources }}
+  resources: {{ toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.runner.tools }}
+  tools: {{ toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}
 
 {{/*
 The variables the chart derives from its values: the kritika serve container's
@@ -166,10 +180,9 @@ environment before `env`. Rendered as a list so the deployment can also refuse
 an `env` key that would duplicate one of them.
 */}}
 {{- define "kritika.serveEnv" -}}
-{{- if include "kritika.hasConfigFile" . }}
 - name: KRITIKA_CONFIG_FILE
   value: /etc/kritika/config.yaml
-{{- end }}
+{{- if .Values.existingConfigMap }}
 - name: KRITIKA_ADDR
   value: {{ printf ":%d" (int .Values.service.port) | quote }}
 - name: KRITIKA_METRICS_ADDR
@@ -182,6 +195,7 @@ an `env` key that would duplicate one of them.
   value: {{ .Values.database.app.role | quote }}
 - name: KRITIKA_DATABASE_RUNNER_ROLE
   value: {{ .Values.database.runner.role | quote }}
+{{- end }}
 - name: KRITIKA_DATABASE_URL
   valueFrom:
     secretKeyRef:
@@ -192,6 +206,7 @@ an `env` key that would duplicate one of them.
     secretKeyRef:
       name: {{ tpl .Values.database.owner.existingSecret . | quote }}
       key: {{ .Values.database.owner.key | quote }}
+{{- if .Values.existingConfigMap }}
 - name: KRITIKA_EXECUTOR
   value: kubernetes
 - name: KRITIKA_RUNNER_IMAGE
@@ -204,6 +219,12 @@ an `env` key that would duplicate one of them.
   value: {{ tpl .Values.database.runner.existingSecret . | quote }}
 - name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
   value: {{ .Values.database.runner.key | quote }}
+- name: KRITIKA_RUNNER_RUNTIME_CLASS
+  value: {{ tpl .Values.runner.runtimeClass . | quote }}
+{{- with .Values.runner.deadline }}
+- name: KRITIKA_RUNNER_DEADLINE
+  value: {{ . | quote }}
+{{- end }}
 - name: KRITIKA_RUNNER_TTL
   value: {{ tpl (toString .Values.runner.ttl) . | quote }}
 {{- with .Values.runner.resources }}
@@ -215,3 +236,20 @@ an `env` key that would duplicate one of them.
   value: {{ toJson . | quote }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/* Environment names corresponding to operational settings present in the file. */}}
+{{- define "kritika.configEnv" -}}
+{{- $names := dict -}}
+{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
+{{- if and (hasKey $ $key) (ne (get $ $key) nil) -}}
+{{- $_ := set $names (printf "KRITIKA_%s" ($key | snakecase | upper)) $key -}}
+{{- end -}}
+{{- end -}}
+{{- range $key, $value := (get . "runner" | default dict) -}}
+{{- if ne $value nil -}}
+{{- $_ := set $names (printf "KRITIKA_RUNNER_%s" ($key | snakecase | upper)) (printf "runner.%s" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $names -}}
+{{- end -}}

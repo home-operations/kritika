@@ -23,6 +23,7 @@ apps:
 	env := []config.EnvVar{
 		{Name: "KRITIKA_ADDR", Value: ":9090", Set: true},
 		{Name: "KRITIKA_METRICS_ADDR", Value: ":8081"},
+		{Name: "KRITIKA_LOG_LEVEL", Path: "logLevel", Value: "debug", File: true},
 		{Name: "KRITIKA_GATEWAY_URL", Value: "https://user:pass@gw.example", Set: true},
 		{Name: "KRITIKA_DATABASE_URL", Value: "set", Secret: true, Set: true},
 	}
@@ -33,6 +34,7 @@ apps:
 	for key, want := range map[string]InstanceSetting{
 		"environment KRITIKA_ADDR":         {"environment", "KRITIKA_ADDR", ":9090", configfile.SourceEnv},
 		"environment KRITIKA_METRICS_ADDR": {"environment", "KRITIKA_METRICS_ADDR", ":8081", configfile.SourceDefault},
+		"file logLevel":                    {"file", "logLevel", "debug", configfile.SourceFile},
 		"environment KRITIKA_GATEWAY_URL": {
 			"environment", "KRITIKA_GATEWAY_URL", "https://gw.example (credentials hidden)", configfile.SourceEnv,
 		},
@@ -51,14 +53,13 @@ apps:
 }
 
 // TestInstanceSettingsFileLayer: the providers, default models and
-// embedder the file and the environment set are listed with their source,
+// embedder the file sets are listed with their source,
 // and without their keys.
 func TestInstanceSettingsFileLayer(t *testing.T) {
 	t.Setenv("TEST_KEY", "sk-secret")
-	t.Setenv("KRITIKA_REVIEW_MODEL", "gw/big")
 	f, err := configfile.Parse([]byte(`providers:
   gw: { type: openai, baseUrl: "https://kritika:hunter2@gw.example/v1", apiKey: { env: TEST_KEY } }
-review: { fallback: gw/small }
+review: { model: gw/big, fallback: gw/small }
 trigger: { settle: 45s }
 embedding: { model: gw/e1, dims: 8 }
 `))
@@ -71,7 +72,7 @@ embedding: { model: gw/e1, dims: 8 }
 	}
 	for key, want := range map[string]InstanceSetting{
 		"providers gw":    {"providers", "gw", "openai at https://gw.example/v1 (credentials hidden)", configfile.SourceFile},
-		"review model":    {"review", "model", "gw/big", configfile.SourceEnv},
+		"review model":    {"review", "model", "gw/big", configfile.SourceFile},
 		"review fallback": {"review", "fallback", "gw/small", configfile.SourceFile},
 		"trigger settle":  {"trigger", "settle", "45s", configfile.SourceFile},
 		"embedding gw/e1": {"embedding", "gw/e1", "8 dimensions", configfile.SourceFile},

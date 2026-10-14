@@ -1,10 +1,8 @@
-// Package config loads kritika's process configuration from environment
-// variables: what the process itself needs to start. What kritika reviews
-// and how lives in the configuration file and its KRITIKA_* overlay
-// (internal/configfile).
+// Package config loads process settings from the configuration file and environment.
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,7 +11,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/caarlos0/env/v11"
 
@@ -66,53 +63,13 @@ const (
 	ExecutorLocal Executor = "local"
 )
 
-// Config holds the process configuration for kritika. All fields are populated
-// from environment variables via caarlos0/env. Call [Load] to parse and
-// validate; do not construct directly.
+// Config combines file settings with bootstrap credentials from the environment.
+// Call Load to parse and validate it.
 type Config struct {
-	// Addr is the listen address of serve's one public listener: the
-	// webhooks, /hooks/{connection}, and the dashboard. Port 8080 matches
-	// the container image's EXPOSE and the other services in the fleet.
-	Addr string `env:"KRITIKA_ADDR" envDefault:":8080"`
+	Settings
 
-	// MetricsAddr is the listen address for /healthz, /readyz and /metrics.
-	// Kept on a separate port from the public listener, as konflate does, so
-	// the management endpoints are never reachable through the ingress that
-	// fronts it.
-	MetricsAddr string `env:"KRITIKA_METRICS_ADDR" envDefault:":8081"`
-
-	// GatewayAddr is the listen address of the gateway serve runs: the
-	// forward proxy runner pods reach the outside through, and the model
-	// and similar-code endpoints a runner calls with its run token. Its own
-	// port, so the runner network policy can name it without opening the
-	// public or management listeners.
-	GatewayAddr string `env:"KRITIKA_GATEWAY_ADDR" envDefault:":8082"`
-
-	// GatewayURL is the gateway's in-cluster address, http://host:port:
-	// runner Jobs are handed it as HTTPS_PROXY and HTTP_PROXY, and a
-	// review's job document names it as its model endpoint. serve needs it,
-	// since every review reaches its model through it.
-	GatewayURL string `env:"KRITIKA_GATEWAY_URL"`
-
-	// GatewayTokenTTL is how long a run token outlives its runner Job's
-	// deadline before it expires on its own, in case the worker that
-	// minted it dies before revoking it.
-	GatewayTokenTTL time.Duration `env:"KRITIKA_GATEWAY_TOKEN_TTL" envDefault:"1h"`
-
-	// WebURL is the dashboard's externally reachable origin: an absolute
-	// http(s) URL with a host and no query or fragment. It is how the
-	// dashboard builds absolute links (OIDC redirect URIs, session cookie
-	// scope) back to itself, and how a review's summary comment links its
-	// re-run badge to the pull request's page, so it must match how the
-	// ingress/HTTPRoute actually exposes it. A trailing slash is trimmed. Required to serve.
-	// Parsed once into an unexported *url.URL, read back with
-	// [Config.WebURLParsed].
-	WebURL string `env:"KRITIKA_WEB_URL"`
-
-	// ConfigFile is the path of the optional configuration file: sign-in
-	// and the connections an admin keeps in git. serve loads it at startup,
-	// and a change takes a restart. Empty means no file, and the
-	// environment alone declares them.
+	// ConfigFile is the application configuration path, required by serve and chatgpt login.
+	// Changes take effect after a restart.
 	ConfigFile string `env:"KRITIKA_CONFIG_FILE"`
 
 	// DatabaseURL is the DSN every process connects with for request and
@@ -127,60 +84,6 @@ type Config struct {
 	// write across accounts. serve needs it to become leader; a runner
 	// must not have it.
 	DatabaseOwnerURL string `env:"KRITIKA_DATABASE_OWNER_URL,unset"`
-
-	// DatabaseAppRole and DatabaseRunnerRole are the Postgres role names the
-	// owner grants privileges to during migrations. They default to what
-	// deploy/dev and the chart's CloudNativePG example declare.
-	DatabaseAppRole    string `env:"KRITIKA_DATABASE_APP_ROLE" envDefault:"kritika_app"`
-	DatabaseRunnerRole string `env:"KRITIKA_DATABASE_RUNNER_ROLE" envDefault:"kritika_runner"`
-
-	// LeaderRetryInterval is how often a leader-eligible replica retries the
-	// leader lock and how often the holder verifies it still has it.
-	LeaderRetryInterval time.Duration `env:"KRITIKA_LEADER_RETRY_INTERVAL" envDefault:"15s"`
-
-	// ReviewWorkers is how many review jobs one worker replica runs at once.
-	// Each one holds a runner pod open for the length of a fetch and diff,
-	// so this bounds pods per replica, not model calls.
-	ReviewWorkers int `env:"KRITIKA_REVIEW_WORKERS" envDefault:"2"`
-	// IndexWorkers is how many index jobs one worker replica runs at once;
-	// indexing is rate-limited apart from reviews so onboarding a large
-	// account cannot starve them. Each holds a runner pod too, so a replica
-	// runs at most ReviewWorkers + IndexWorkers runner pods.
-	IndexWorkers int `env:"KRITIKA_INDEX_WORKERS" envDefault:"1"`
-
-	// ThreadWorkers reserves capacity for finding resolution/restoration updates.
-	// One per replica keeps these short forge/database jobs independent of model
-	// follow-ups without adding runner pods.
-	ThreadWorkers int `env:"KRITIKA_THREAD_WORKERS" envDefault:"1"`
-
-	// Executor selects how runners run; see the Executor type.
-	Executor Executor `env:"KRITIKA_EXECUTOR" envDefault:"kubernetes"`
-
-	// RunnerImage is the image runner Jobs use, normally the release's
-	// -tools image. Required to serve with the kubernetes executor.
-	RunnerImage string `env:"KRITIKA_RUNNER_IMAGE"`
-
-	// RunnerImagePullPolicy is the runner container's imagePullPolicy:
-	// Always, IfNotPresent or Never. Empty leaves Kubernetes' default for
-	// the image reference.
-	RunnerImagePullPolicy string `env:"KRITIKA_RUNNER_IMAGE_PULL_POLICY"`
-
-	// RunnerServiceAccount is the permissionless service account runner pods
-	// run as. RunnerDatabaseSecret and RunnerDatabaseSecretKey locate the
-	// runner role's DSN, which the Job injects as KRITIKA_DATABASE_URL.
-	RunnerServiceAccount    string `env:"KRITIKA_RUNNER_SERVICE_ACCOUNT" envDefault:"kritika-runner"`
-	RunnerDatabaseSecret    string `env:"KRITIKA_RUNNER_DATABASE_SECRET" envDefault:"kritika-postgres-runner"`
-	RunnerDatabaseSecretKey string `env:"KRITIKA_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri"`
-
-	// RunnerTTL is how long a finished Job stays for kubectl before
-	// Kubernetes removes it. The run row keeps everything the Job knew.
-	RunnerTTL time.Duration `env:"KRITIKA_RUNNER_TTL" envDefault:"10m"`
-
-	// RunnerRuntimeClass is the RuntimeClass runner pods run under, such as
-	// a gVisor or Kata class, so a pod that parses untrusted repository
-	// content is kept from the node's kernel. Empty uses the cluster's
-	// default runtime. Advised, not required.
-	RunnerRuntimeClass string `env:"KRITIKA_RUNNER_RUNTIME_CLASS"`
 
 	// RunnerDatabaseURL is the runner database role's DSN, needed only by
 	// the local executor, which runs the runner inside the serve process.
@@ -198,40 +101,13 @@ type Config struct {
 	GatewayToken string `env:"KRITIKA_GATEWAY_TOKEN,unset"`
 	// DatabaseToken authenticates this run to its database rows; it has no default.
 	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
-
-	// LogLevel is the minimum slog level emitted: debug, info, warn or error.
-	LogLevel string `env:"KRITIKA_LOG_LEVEL" envDefault:"info"`
-
-	// LogFormat selects the slog handler: "json" (the default, for containers)
-	// or "text" for local runs.
-	LogFormat string `env:"KRITIKA_LOG_FORMAT" envDefault:"json"`
-
-	webURL *url.URL
+	webURL        *url.URL
+	// fileData is the startup snapshot shared with the policy loader.
+	fileData []byte
 }
 
-// ValidateServe checks what serve needs beyond the common set.
-func (c *Config) ValidateServe() error {
-	var errs []error
-	if c.Executor == ExecutorKubernetes && c.RunnerImage == "" {
-		errs = append(errs, errors.New("config: KRITIKA_RUNNER_IMAGE is required with the kubernetes executor"))
-	}
-	switch c.RunnerImagePullPolicy {
-	case "", "Always", "IfNotPresent", "Never":
-	default:
-		errs = append(errs, fmt.Errorf("config: KRITIKA_RUNNER_IMAGE_PULL_POLICY %q is not Always, IfNotPresent or Never",
-			c.RunnerImagePullPolicy))
-	}
-	if c.Executor == ExecutorLocal && c.RunnerDatabaseURL == "" {
-		errs = append(errs, errors.New("config: KRITIKA_RUNNER_DATABASE_URL is required with the local executor"))
-	}
-	if c.WebURL == "" {
-		errs = append(errs, errors.New("config: KRITIKA_WEB_URL is required to serve"))
-	}
-	if c.GatewayURL == "" {
-		errs = append(errs, errors.New("config: KRITIKA_GATEWAY_URL is required to serve: every review reaches its model through the gateway"))
-	}
-	return errors.Join(errs...)
-}
+// FileData returns the configuration bytes read by Load. Treat the snapshot as read-only.
+func (c *Config) FileData() []byte { return c.fileData }
 
 // ValidateRunner checks what a runner pod needs. The job document itself is
 // decoded and validated by the runner package.
@@ -265,25 +141,34 @@ func (c *Config) parseWebURL() error {
 	trimmed := strings.TrimSuffix(c.WebURL, "/")
 	u, err := url.Parse(trimmed)
 	if err != nil {
-		return fmt.Errorf("config: KRITIKA_WEB_URL: %w", err)
+		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL: %w", err)
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("config: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
+		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must be an absolute http(s) URL, got %q", c.WebURL)
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("config: KRITIKA_WEB_URL must not have a query or fragment, got %q", c.WebURL)
+		return fmt.Errorf("config: webUrl: KRITIKA_WEB_URL must not have a query or fragment, got %q", c.WebURL)
 	}
 	c.WebURL = trimmed
 	c.webURL = u
 	return nil
 }
 
-// Load parses the environment into a Config and validates it. It fails fast
+// Load reads the environment and configuration file, then validates. It fails fast
 // on an invalid value so a misconfigured process never starts serving.
 func Load() (*Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
+	}
+	if cfg.ConfigFile != "" {
+		cfg.fileData, err = os.ReadFile(cfg.ConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("config: %w", err)
+		}
+		if err := cfg.ReadFile(cfg.fileData); err != nil {
+			return nil, err
+		}
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -292,46 +177,16 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if _, err := c.Level(); err != nil {
+	if err := c.Validate(); err != nil {
 		return err
-	}
-	switch strings.ToLower(c.LogFormat) {
-	case "json", "text":
-	default:
-		return fmt.Errorf("config: KRITIKA_LOG_FORMAT must be json or text, got %q", c.LogFormat)
 	}
 	if c.GatewayURL != "" {
 		if _, err := egress.ProxyURL(c.GatewayURL); err != nil {
-			return fmt.Errorf("config: KRITIKA_GATEWAY_URL: %w", err)
+			return fmt.Errorf("config: gatewayUrl: KRITIKA_GATEWAY_URL: %w", err)
 		}
-	}
-	if c.GatewayTokenTTL <= 0 {
-		return fmt.Errorf("config: KRITIKA_GATEWAY_TOKEN_TTL must be positive, got %s", c.GatewayTokenTTL)
 	}
 	if err := c.parseWebURL(); err != nil {
 		return err
-	}
-	if c.DatabaseAppRole == "" || c.DatabaseRunnerRole == "" || c.DatabaseAppRole == c.DatabaseRunnerRole {
-		return errors.New("config: KRITIKA_DATABASE_APP_ROLE and KRITIKA_DATABASE_RUNNER_ROLE must be set and distinct")
-	}
-	if c.LeaderRetryInterval <= 0 {
-		return fmt.Errorf("config: KRITIKA_LEADER_RETRY_INTERVAL must be positive, got %s", c.LeaderRetryInterval)
-	}
-	switch c.Executor {
-	case ExecutorKubernetes, ExecutorLocal:
-	default:
-		return fmt.Errorf("config: KRITIKA_EXECUTOR must be kubernetes or local, got %q", c.Executor)
-	}
-	return c.validateWork()
-}
-
-// validateWork checks the settings that size the queues and the runners.
-func (c *Config) validateWork() error {
-	if c.ReviewWorkers <= 0 || c.IndexWorkers <= 0 || c.ThreadWorkers <= 0 {
-		return errors.New("config: KRITIKA_REVIEW_WORKERS, KRITIKA_INDEX_WORKERS and KRITIKA_THREAD_WORKERS must be positive")
-	}
-	if c.RunnerTTL <= 0 {
-		return errors.New("config: KRITIKA_RUNNER_TTL must be positive")
 	}
 	return nil
 }
@@ -348,43 +203,72 @@ func (c *Config) Level() (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return 0, fmt.Errorf("config: KRITIKA_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
+		return 0, fmt.Errorf("config: logLevel: KRITIKA_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
 	}
 }
 
 // EnvVar is one environment variable Config reads, as this process has it.
 // A secret, one the process unsets once read, shows only whether it is
-// set. Set says whether the environment gave it, rather than its default.
+// set. Set identifies environment values; File identifies file values, with
+// Path naming their YAML key.
 type EnvVar struct {
 	Name   string
+	Path   string
 	Value  string
 	Secret bool
 	Set    bool
+	File   bool
 }
 
 // Env lists the variables Config reads, in the order it declares them. The
 // environment has lost its secrets by the time Load returns, so a secret
 // is set when its field holds a value.
 func (c *Config) Env() []EnvVar {
-	v := reflect.ValueOf(c).Elem()
 	var out []EnvVar
-	for i := range v.NumField() {
-		name, opts, _ := strings.Cut(v.Type().Field(i).Tag.Get("env"), ",")
-		if name == "" {
-			continue
-		}
-		e := EnvVar{Name: name, Secret: slices.Contains(strings.Split(opts, ","), "unset")}
-		field := v.Field(i)
-		if e.Secret {
-			e.Set, e.Value = !field.IsZero(), "not set"
-			if e.Set {
-				e.Value = "set"
+	var visit func(reflect.Value, string)
+	visit = func(v reflect.Value, prefix string) {
+		for i := range v.NumField() {
+			key, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("yaml"), ",")
+			if v.Type().Field(i).Anonymous {
+				nested := prefix
+				if key != "" {
+					nested += key + "."
+				}
+				visit(v.Field(i), nested)
+				continue
 			}
-		} else {
-			_, e.Set = os.LookupEnv(name)
-			e.Value = fmt.Sprint(field.Interface())
+			name, opts, _ := strings.Cut(v.Type().Field(i).Tag.Get("env"), ",")
+			if name == "" {
+				continue
+			}
+			e := EnvVar{Name: name, Secret: slices.Contains(strings.Split(opts, ","), "unset")}
+			e.File = c.fileEnv[name]
+			if e.File {
+				e.Path = prefix + key
+			}
+			field := v.Field(i)
+			if e.Secret {
+				e.Set, e.Value = !field.IsZero(), "not set"
+				if e.Set {
+					e.Value = "set"
+				}
+			} else {
+				_, e.Set = os.LookupEnv(name)
+				switch value := field.Interface().(type) {
+				case jsonObject, toolList:
+					raw, err := json.Marshal(value)
+					if err != nil {
+						e.Value = "invalid JSON: " + err.Error()
+					} else {
+						e.Value = string(raw)
+					}
+				default:
+					e.Value = fmt.Sprint(value)
+				}
+			}
+			out = append(out, e)
 		}
-		out = append(out, e)
 	}
+	visit(reflect.ValueOf(c).Elem(), "")
 	return out
 }
