@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -150,6 +151,67 @@ func TestCommandTool(t *testing.T) {
 		}
 	})
 
+}
+
+// TestCommandToolCache: a command writes under XDG_CACHE_HOME, the cache
+// directory of the run's scratch space, where a tool that keeps a cache
+// there, as flate does, has it; HOME still takes no write.
+func TestCommandToolCache(t *testing.T) {
+	// The run tool runs this binary as rg with the argument "cache": a
+	// bare environment carries no helper variable, so the role is an
+	// argument. Report where a write lands.
+	if flag.Arg(0) == "cache" {
+		for _, name := range []string{"XDG_CACHE_HOME", "HOME"} {
+			fmt.Printf("%s: %v\n", name, os.Mkdir(filepath.Join(os.Getenv(name), "flate"), 0o755))
+		}
+		os.Exit(0)
+	}
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("TMPDIR", t.TempDir())
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
+	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
+	s := reviewSpec()
+	s.Agent.CommandTimeoutSeconds = 5
+	run, _, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, slog.New(slog.DiscardHandler))
+	if run == nil {
+		cleanup()
+		t.Fatal("no run tool")
+	}
+	scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
+	if err != nil || len(scratch) != 1 {
+		cleanup()
+		t.Fatalf("scratch = %v, %v", scratch, err)
+	}
+	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^TestCommandToolCache$", "cache"}}))
+	if err != nil || !strings.Contains(out, "XDG_CACHE_HOME: <nil>\n") {
+		cleanup()
+		t.Fatalf("writes = %q, %v; want one under XDG_CACHE_HOME", out, err)
+	}
+	// Root writes a read-only HOME regardless.
+	if os.Geteuid() != 0 && !strings.Contains(out, "HOME: mkdir "+filepath.Join(scratch[0], "home", "flate")+": permission denied\n") {
+		cleanup()
+		t.Fatalf("writes = %q; want none under HOME", out)
+	}
+	if info, err := os.Stat(filepath.Join(scratch[0], "cache", "flate")); err != nil || !info.IsDir() {
+		cleanup()
+		t.Fatalf("XDG_CACHE_HOME is not the scratch space's cache directory: %v", err)
+	}
+	// What a command left in the cache goes with the scratch space.
+	cleanup()
+	if _, err := os.Stat(scratch[0]); !os.IsNotExist(err) {
+		t.Fatalf("scratch left behind: %v", err)
+	}
 }
 
 // TestCommandToolNothingToOffer: a PATH without a default command offers

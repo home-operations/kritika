@@ -18,7 +18,7 @@ import (
 func TestReservedEnvName(t *testing.T) {
 	for name, want := range map[string]bool{
 		"HOME": true, "home": true, "PATH": true, "https_proxy": true, "NO_PROXY": true, "GH_TOKEN": true, "GITHUB_TOKEN": true,
-		"GIT_EDITOR": true, "MISE_YES": true, "LD_PRELOAD": true, "CURL_HOME": true, "XDG_CONFIG_HOME": true, "RIPGREP_CONFIG_PATH": true,
+		"GIT_EDITOR": true, "MISE_YES": true, "LD_PRELOAD": true, "CURL_HOME": true, "XDG_CONFIG_HOME": true, "XDG_CACHE_HOME": true, "RIPGREP_CONFIG_PATH": true,
 		"PAGER": true, "NO_COLOR": false, "HELM_DRIVER": false, "GHX": false, "LDFLAGS": false,
 	} {
 		if got := reservedEnvName(name); got != want {

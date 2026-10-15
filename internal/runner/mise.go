@@ -50,7 +50,7 @@ var miseSystemVars = []string{"MISE_SYSTEM_CONFIG_DIR", "MISE_SYSTEM_DATA_DIR"}
 var (
 	reservedEnv = []string{
 		"HOME", "PATH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "GITHUB_TOKEN",
-		"CURL_HOME", "XDG_CONFIG_HOME", "RIPGREP_CONFIG_PATH", "DOCKER_CONFIG", "PAGER", "BROWSER", "EDITOR", "VISUAL",
+		"CURL_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "RIPGREP_CONFIG_PATH", "DOCKER_CONFIG", "PAGER", "BROWSER", "EDITOR", "VISUAL",
 	}
 	reservedEnvPrefixes = []string{"GH_", "GIT_", "MISE_", "LD_"}
 )
@@ -166,14 +166,15 @@ func newMiseTools(
 	}
 	// Every install goes through the runner, with its timeout and notes,
 	// where mise env would otherwise install what a config declares. mise
-	// stages downloads under HOME too, rather than in the pod's shared
-	// /tmp, so they are out of a command's reach as well. The ceiling
-	// keeps mise's config search, from its working directory, HOME, up
-	// to but not including the ceiling, out of the scratch directory and
-	// everything above it; mise walks resolved paths, so the ceiling is
-	// one too.
+	// keeps its cache and stages downloads under HOME too, rather than in
+	// the commands' XDG_CACHE_HOME or the pod's shared /tmp, so they are
+	// out of a command's reach as well. The ceiling keeps mise's config
+	// search, from its working directory, HOME, up to but not including
+	// the ceiling, out of the scratch directory and everything above it;
+	// mise walks resolved paths, so the ceiling is one too.
 	m.env = append(slices.Clone(base), "MISE_YES=1", "MISE_AUTO_INSTALL=false", "MISE_TRUSTED_CONFIG_PATHS="+home,
-		"MISE_CEILING_PATHS="+resolved(filepath.Dir(home)), "MISE_TMP_DIR="+filepath.Join(home, ".cache", "mise", "tmp"), "NO_COLOR=1")
+		"MISE_CEILING_PATHS="+resolved(filepath.Dir(home)), "MISE_CACHE_DIR="+filepath.Join(home, ".cache", "mise"),
+		"MISE_TMP_DIR="+filepath.Join(home, ".cache", "mise", "tmp"), "NO_COLOR=1")
 	for _, name := range miseSystemVars {
 		if v := os.Getenv(name); v != "" {
 			m.env = append(m.env, name+"="+v)

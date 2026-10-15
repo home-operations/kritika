@@ -64,8 +64,8 @@ checksum = "sha256:%x"
 			if err != nil || len(notes) != 0 {
 				t.Fatalf("parse = %v, %v", notes, err)
 			}
-			home := t.TempDir()
-			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+			home, cache := t.TempDir(), t.TempDir()
+			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "XDG_CACHE_HOME=" + cache}
 			m, notes, err := newMiseTools(t.Context(), bin, home, base, testMiseConfig, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
@@ -108,6 +108,11 @@ checksum = "sha256:%x"
 			}
 			if m.pending() {
 				t.Fatal("installed tool still pending")
+			}
+			// mise's cache is the runner's, under the read-only HOME, not
+			// in the commands' writable XDG_CACHE_HOME it would follow.
+			if !slices.Contains(m.env, "MISE_CACHE_DIR="+filepath.Join(home, ".cache", "mise")) {
+				t.Fatalf("mise env = %v, want its cache under HOME", m.env)
 			}
 			if got, err := os.ReadFile(filepath.Join(home, "mise.lock")); err != nil || string(got) != tt.lock {
 				t.Fatalf("lock changed: %s, %v", got, err)
