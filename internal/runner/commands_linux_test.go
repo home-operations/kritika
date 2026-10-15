@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 // environHelper names the role the test binary plays when TestHideEnviron
@@ -80,6 +81,17 @@ func TestCommandTool(t *testing.T) {
 	t.Cleanup(func() { miseBin = was })
 	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
+
+	t.Run("drops mise from a named list and offers the rest", func(t *testing.T) {
+		s := reviewSpec()
+		s.Agent.Commands = []string{"rg", "mise"}
+		run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{}, 1024, logger)
+		defer cleanup()
+		if run == nil || !slices.Equal(run.Names(), []string{"rg"}) ||
+			!slices.Equal(notes, []string{"Command mise not offered: it is reserved for the runner"}) {
+			t.Fatalf("run = %v, notes = %v", run, notes)
+		}
+	})
 
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
@@ -214,16 +226,25 @@ func TestCommandToolRestrictions(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for _, commands := range [][]string{{"*"}, {"mise"}, {"rg", "mise"}} {
-				if withMise && RepositoryTools(commands) {
+			for _, tt := range []struct {
+				commands []string
+				files    repoconfig.Files
+				notes    int
+			}{
+				{[]string{"*"}, nil, 1},
+				{[]string{"*"}, repoconfig.Files{RepoMiseConfig: "[tools]\n"}, 2},
+				{[]string{"mise"}, nil, 1},
+			} {
+				if withMise && RepositoryTools(tt.commands) {
 					continue
 				}
 				s := reviewSpec()
-				s.Agent.Commands = commands
-				run, fetch, notes, cleanup := commandTool(t.Context(), s, nil, nil, &Secrets{}, 1024, slog.New(slog.DiscardHandler))
+				s.Agent.Commands = tt.commands
+				run, fetch, notes, cleanup := commandTool(t.Context(), s, nil, tt.files, &Secrets{}, 1024, slog.New(slog.DiscardHandler))
 				cleanup()
-				if run != nil || fetch != nil || len(notes) != 1 || !strings.Contains(notes[0], "mise") {
-					t.Fatalf("commands=%v run=%v fetch=%v notes=%v", commands, run, fetch, notes)
+				if run != nil || fetch != nil || len(notes) != tt.notes || !strings.Contains(notes[0], "mise") ||
+					(tt.notes == 2 && !strings.Contains(notes[1], RepoMiseConfig)) {
+					t.Fatalf("commands=%v run=%v fetch=%v notes=%v", tt.commands, run, fetch, notes)
 				}
 			}
 		})

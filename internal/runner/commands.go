@@ -43,15 +43,17 @@ func commandTool(
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
 	withMise := err == nil
-	enabled, notes := commandsEnabled(p.Agent.Commands, withMise)
+	_, hasRepoConfig := files[RepoMiseConfig]
+	allowed, enabled, notes := commandsEnabled(p.Agent.Commands, withMise, hasRepoConfig)
 	if !enabled {
 		return nil, nil, notes, cleanup
 	}
-	allowed := p.Agent.Commands
 	var repo *repoMiseConfig
 	if RepositoryTools(allowed) {
+		var repoNotes []string
 		allowed = nil
-		repo, notes = readRepoMise(files, logger)
+		repo, repoNotes = readRepoMise(files, logger)
+		notes = append(notes, repoNotes...)
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
@@ -188,15 +190,25 @@ func commandTool(
 	return run, fetch, notes, cleanup
 }
 
-func commandsEnabled(commands []string, withMise bool) (bool, []string) {
+// commandsEnabled is what of commands the run tool may offer, and whether
+// that is anything: mise, the runner's own, is dropped from a named list,
+// and "*" needs an image with mise. notes say what was not offered, the
+// repository's config among it when hasRepoConfig is set.
+func commandsEnabled(commands []string, withMise, hasRepoConfig bool) (allowed []string, enabled bool, notes []string) {
+	allowed = commands
 	if slices.Contains(commands, "mise") {
-		return false, []string{"Commands not offered: mise is reserved for the runner"}
+		allowed = slices.DeleteFunc(slices.Clone(commands), func(c string) bool { return c == "mise" })
+		notes = append(notes, "Command mise not offered: it is reserved for the runner")
 	}
 	if RepositoryTools(commands) && !withMise {
-		return false, []string{`Commands not offered: agent.commands ["*"] requires a runner image with mise`}
+		notes = append(notes, `Commands not offered: agent.commands ["*"] requires a runner image with mise`)
+		if hasRepoConfig {
+			notes = append(notes, RepoMiseConfig+" not read: the runner image has no mise")
+		}
+		return nil, false, notes
 	}
 	// An empty list offers nothing, so mise need not be asked.
-	return len(commands) > 0 || (withMise && commands == nil), nil
+	return allowed, len(allowed) > 0 || (withMise && commands == nil), notes
 }
 
 // curlrc is the configuration curl reads from HOME. Without a terminal

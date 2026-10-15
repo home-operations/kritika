@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"net/url"
@@ -108,7 +109,8 @@ type RunTool struct {
 	schema  json.RawMessage
 	sources []string
 	ran     []string
-	errors  []string
+	// errors are the setup failure notes, one per command in failed.
+	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
 	calls int
 }
@@ -141,16 +143,25 @@ func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...)
 // nil.
 func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
 
-// Errors are masked command setup failures, each once, for the review summary.
+// Errors are masked command setup failures, the first per command, for
+// the review summary.
 func (rt *RunTool) Errors() []string { return append([]string{}, rt.errors...) }
 
 func (rt *RunTool) setupError(command string, err error) error {
-	note := textcut.Truncate(rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, err)), 2048)
-	if !slices.Contains(rt.errors, note) {
-		rt.errors = append(rt.errors, note)
+	// A path error names the binary under the runner's scratch space,
+	// which the summary must not show.
+	shown := err
+	if pe, ok := errors.AsType[*fs.PathError](err); ok {
+		shown = fmt.Errorf("%s: %w", pe.Op, pe.Err)
+	}
+	note := textcut.Truncate(rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, shown)), 2048)
+	if !slices.Contains(rt.failed, command) {
+		rt.failed, rt.errors = append(rt.failed, command), append(rt.errors, note)
 	}
 	if rt.cfg.Logger != nil {
-		rt.cfg.Logger.Warn("command unavailable", "command", command, "error", note)
+		// The rest of an install's output is in the runner's own log of it.
+		line, _, _ := strings.Cut(shown.Error(), "\n")
+		rt.cfg.Logger.Info("command unavailable", "command", command, "error", rt.mask(line))
 	}
 	return commandSetupError{message: "agent: run: " + note, cause: err}
 }
@@ -265,6 +276,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	if rt.cfg.Resolve != nil {
 		var err error
 		if bin, env, err = rt.cfg.Resolve(ctx, req.Command); err != nil {
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("agent: run: %w", ctx.Err())
+			}
 			return "", rt.setupError(req.Command, err)
 		}
 	}

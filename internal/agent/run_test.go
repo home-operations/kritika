@@ -125,31 +125,59 @@ func TestRunToolResolve(t *testing.T) {
 	}
 }
 
+// TestRunToolSetupErrors: a setup failure is masked, keeps its cause and
+// names no path, and a command gets one note however often it fails.
 func TestRunToolSetupErrors(t *testing.T) {
 	for _, resolve := range []bool{false, true} {
 		t.Run(fmt.Sprintf("resolver=%t", resolve), func(t *testing.T) {
 			rt, _ := newTestRunTool(t, false)
-			rt.cfg.Commands["rg"] = filepath.Join(t.TempDir(), "secret-token")
+			missing := filepath.Join(t.TempDir(), "secret-token")
+			rt.cfg.Commands["rg"] = missing
 			rt.cfg.Mask = func(s string) string { return strings.ReplaceAll(s, "secret-token", "***") }
-			failure := errors.New("download denied: secret-token")
+			var failure error
 			if resolve {
+				attempt := 0
 				rt.cfg.Resolve = func(context.Context, string) (string, []string, error) {
+					attempt++
+					failure = fmt.Errorf("download %d denied: secret-token", attempt)
 					return "", nil, failure
 				}
 			}
 			for range 2 {
 				_, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
-				if err == nil || strings.Contains(err.Error(), "secret-token") || !strings.Contains(err.Error(), "***") {
+				if err == nil || strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), filepath.Dir(missing)) {
 					t.Fatalf("err = %v", err)
 				}
-				if resolve && !errors.Is(err, failure) {
+				switch {
+				case resolve && (!errors.Is(err, failure) || !strings.Contains(err.Error(), "***")):
+					t.Fatalf("error lost its cause: %v", err)
+				case !resolve && !errors.Is(err, os.ErrNotExist):
 					t.Fatalf("error lost its cause: %v", err)
 				}
 			}
-			if notes := rt.Errors(); len(notes) != 1 || strings.Contains(notes[0], "secret-token") || !strings.Contains(notes[0], "***") {
+			notes := rt.Errors()
+			if len(notes) != 1 || strings.Contains(notes[0], "secret-token") || strings.Contains(notes[0], filepath.Dir(missing)) {
+				t.Fatalf("errors = %v", notes)
+			}
+			if resolve && notes[0] != "Command rg unavailable: download 1 denied: ***" {
 				t.Fatalf("errors = %v", notes)
 			}
 		})
+	}
+}
+
+// TestRunToolResolveCanceled: a resolver stopped by the run's cancellation
+// reports the cancellation, not the command.
+func TestRunToolResolveCanceled(t *testing.T) {
+	rt, _ := newTestRunTool(t, false)
+	ctx, cancel := context.WithCancel(t.Context())
+	rt.cfg.Resolve = func(ctx context.Context, _ string) (string, []string, error) {
+		cancel()
+		return "", nil, ctx.Err()
+	}
+	_, err := rt.Run(ctx, json.RawMessage(`{"command":"rg"}`))
+	if !errors.Is(err, context.Canceled) || len(rt.Errors()) != 0 {
+		t.Fatalf("err = %v, errors = %v", err, rt.Errors())
 	}
 }
 
