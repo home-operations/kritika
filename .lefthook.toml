@@ -11,7 +11,7 @@ glob = [
   "charts/kritika/values.yaml",
   "charts/kritika/README.md.gotmpl",
 ]
-run = "mise run generate && git add charts/kritika/values.yaml charts/kritika/README.md charts/kritika/values.schema.json"
+run = "mise run generate && git add charts/kritika/README.md charts/kritika/values.schema.json"
 
 # The generated chart README and schema and the authored MkDocs site under
 # docs/ are .prettierignore'd; exclude them from the shared formatters too.
@@ -42,10 +42,6 @@ stage_fixed = true
 [[pre-commit.jobs.group.jobs]]
 name = "mise-build-tools-lock"
 run = "mise -C build/tools lock && git add build/tools/mise.lock"
-
-[[pre-commit.jobs.group.jobs]]
-name = "mise-build-tools-chart"
-run = "mise run generate && git add charts/kritika/values.yaml charts/kritika/README.md charts/kritika/values.schema.json"
 
 [pre-commit.commands.golangci-lint]
 glob = "*.go"

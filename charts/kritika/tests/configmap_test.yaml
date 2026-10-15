@@ -87,6 +87,12 @@ tests:
           path: data["config.yaml"]
           pattern: "memory: 1Gi"
 
+  - it: omits the instance mise config by default, leaving the image's tools to the runner
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: miseConfig
+
   - it: refuses runner configuration duplicated in application config
     set:
       config.runner.runtimeClass: gvisor

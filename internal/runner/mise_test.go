@@ -345,6 +345,34 @@ func TestMiseRunCanceled(t *testing.T) {
 	}
 }
 
+// TestMiseToolsEmptyConfig: without an instance config, the chart's
+// default, nothing is written to home and the image's system config alone
+// supplies the tools.
+func TestMiseToolsEmptyConfig(t *testing.T) {
+	bin, dataDir := hostMise(t)
+	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
+	system := t.TempDir()
+	if err := os.WriteFile(filepath.Join(system, "config.toml"), []byte("[tools]\nyq = \""+testYqVersion+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MISE_SYSTEM_CONFIG_DIR", system)
+	home := t.TempDir()
+	m, notes, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, "", nil, &Secrets{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v", notes)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config")); !os.IsNotExist(err) {
+		t.Fatalf("an instance config was written without one: %v", err)
+	}
+	if yq := m.tools["yq"]; yq == nil || !yq.installed || !strings.HasPrefix(yq.installPath, dataDir) ||
+		!slices.Equal(slices.Sorted(maps.Keys(m.offered(nil))), []string{"yq"}) {
+		t.Fatalf("yq = %+v, offered = %v", yq, m.offered(nil))
+	}
+}
+
 // TestMiseToolsCeiling: a mise config a command could plant in the
 // scratch directory, above HOME, is not read.
 func TestMiseToolsCeiling(t *testing.T) {

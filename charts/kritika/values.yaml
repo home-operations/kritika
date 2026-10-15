@@ -167,19 +167,8 @@ runner:
   # -- Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.
   resources: {}
   mise:
-    # -- The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`. Defaults declare curl, fd, gh, jq, rg and yq at the image's versions, generated from `build/tools/mise.toml`. Override this value to add or replace tools and set instance-wide `[settings]` or `[env]`. Unmentioned image tools remain; narrow what is offered with `agent.commands`.
-    config: |
-      [tools]
-      # Each entry exposes only the executable it is there for, filter_bins for a
-      # release archive and symlink_bins for an aqua recipe, so a tool offers one
-      # command. curl has no registry short name, so it comes from its release
-      # archive; the others resolve to aqua packages.
-      "github:stunnel/static-curl" = { version = "8.22.0", matching = "glibc", filter_bins = "curl" }
-      fd = { version = "10.5.0", symlink_bins = true }
-      gh = { version = "2.102.0", symlink_bins = true }
-      jq = { version = "1.8.2", symlink_bins = true }
-      rg = { version = "15.2.0", symlink_bins = true }
-      yq = { version = "4.54.1", symlink_bins = true }
+    # -- The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain. Narrow what is offered with `agent.commands`.
+    config: ""
   serviceAccount:
     # -- Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.
     create: true

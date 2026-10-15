@@ -410,6 +410,10 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_RUNNER_DEADLINE, value: 20m }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_MISE_CONFIG }
+          any: true
       - contains:
           path: spec.template.spec.volumes
           content:

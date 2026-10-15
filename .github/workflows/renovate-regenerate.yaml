@@ -34,7 +34,6 @@ jobs:
         with:
           task: generate
           paths: |
-            charts/kritika/values.yaml
             charts/kritika/README.md
             charts/kritika/values.schema.json
 
@@ -53,6 +52,5 @@ jobs:
           client-id: ${{ secrets.BOT_CLIENT_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           paths: |
-            charts/kritika/values.yaml
             charts/kritika/README.md
             charts/kritika/values.schema.json

@@ -371,11 +371,11 @@ Outside Helm, the application key is `runner.miseConfig`, or use
 so adding one does not require Kubernetes 1.33. A custom runner image can
 still provide named commands on its own `PATH`.
 
-The chart's default mise config explicitly declares `curl`, `fd`, `gh`,
-`jq`, `rg` and `yq` at the image's versions. An unset `agent.commands`
-offers the image and instance tools; set `[]` to disable commands.
-Emptying `runner.mise.config` leaves the image's system tools available.
-`crane` is not a default: declare it when needed. If building on top of the
+The chart's `runner.mise.config` is empty by default: the image's
+`/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`, `rg` and `yq`,
+and an unset `agent.commands` offers those and the instance's tools; set
+`[]` to disable commands. `crane` is not a default: declare it when
+needed. If building on top of the
 `-tools` image, its preinstalled tools live in mise's system install
 directory, not `/usr/local/bin`.
 
