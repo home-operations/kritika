@@ -82,17 +82,6 @@ func TestCommandTool(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
-	t.Run("drops mise from a named list and offers the rest", func(t *testing.T) {
-		s := reviewSpec()
-		s.Agent.Commands = []string{"rg", "mise"}
-		run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{}, 1024, logger)
-		defer cleanup()
-		if run == nil || !slices.Equal(run.Names(), []string{"rg"}) ||
-			!slices.Equal(notes, []string{"Command mise not offered: it is reserved for the runner"}) {
-			t.Fatalf("run = %v, notes = %v", run, notes)
-		}
-	})
-
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
@@ -172,6 +161,31 @@ func TestCommandTool(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestCommandToolNamedMise(t *testing.T) {
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
+	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
+	s := reviewSpec()
+	s.Agent.Commands = []string{"rg", "mise"}
+	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{}, 1024, slog.New(slog.DiscardHandler))
+	defer cleanup()
+	if run == nil || !slices.Equal(run.Names(), []string{"rg"}) ||
+		!slices.Equal(notes, []string{"Command mise not offered: it is reserved for the runner"}) {
+		t.Fatalf("run = %v, notes = %v", run, notes)
+	}
 }
 
 func TestCommandToolCurlrc(t *testing.T) {
