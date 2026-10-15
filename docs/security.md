@@ -219,10 +219,10 @@ runner image without mise, which reads no repository config.
 under review and public repositories and no other private one; the run
 tool's description says so, so the agent does not try another way in. An
 app already allows `github.com` and `api.github.com` through the gateway.
-Every other host `curl` or `crane` reaches must pass the gateway too, so
-add the release hosts and registries to `egress.allow`; the run tool's
-and `fetch_repo`'s descriptions name the allowed hosts to the agent, so it
-does not spend calls on the rest:
+Every other host `curl` or a declared tool reaches must pass the gateway
+too, so add the release hosts and registries to `egress.allow`; the run
+tool's and `fetch_repo`'s descriptions name the allowed hosts to the
+agent, so it does not spend calls on the rest:
 
 ```yaml
 egress:
@@ -265,7 +265,7 @@ What bounds a command:
   versions, and falls back to the GitHub API when the gateway refuses it.
 - **Refused arguments:** the run tool refuses the arguments that would
   print a credential or run a program outside the list: `gh auth`,
-  `alias`, `config` and `extension`, `crane auth`, `fd -x` and `-X`,
+  `alias`, `config` and `extension`, `fd -x` and `-X`,
   `rg --pre` and `--hostname-bin`, and `curl --trace`, `--trace-ascii`,
   `--trace-config` and `--config`/`-K`, which would print the proxy
   credential in pieces the mask cannot match. It masks the token in a
