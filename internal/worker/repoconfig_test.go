@@ -117,8 +117,9 @@ func TestEffective(t *testing.T) {
 			if !slices.Equal(e.Ignore, tt.ignore) {
 				t.Fatalf("ignore=%v", e.Ignore)
 			}
-			if got := e.repoFiles(); !slices.Equal(got, tt.repoFiles) {
-				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
+			want := append(slices.Clone(tt.repoFiles), runner.RepoMiseConfig, runner.RepoMiseLock)
+			if got := e.repoFiles(); !slices.Equal(got, want) {
+				t.Fatalf("repoFiles = %v, want %v", got, want)
 			}
 			if got := e.templates(tt.files); got != tt.templates || e.Review.RequireSuggestedFix != tt.strict {
 				t.Fatalf("templates=%+v strict=%v", got, e.Review.RequireSuggestedFix)
@@ -128,33 +129,6 @@ func TestEffective(t *testing.T) {
 			}
 			if !slices.Equal(settings.Ignore, []string{"vendor/**"}) || !reflect.DeepEqual(settings.Review.Rules, adminSettings(t).Review.Rules) {
 				t.Fatalf("the admin's settings were modified: %v %v", settings.Ignore, settings.Review.Rules)
-			}
-		})
-	}
-}
-
-func TestRepositoryToolFiles(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		commands []string
-		want     bool
-	}{
-		{"unset", nil, false},
-		{"disabled", []string{}, false},
-		{"named", []string{"yq"}, false},
-		{"wildcard", []string{"*"}, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			settings := adminSettings(t)
-			settings.Agent.Commands = tt.commands
-			for _, doc := range [][]byte{nil, []byte("agent: { commands: ['*'] }\n")} {
-				e, _ := effective(settings, doc)
-				files := e.repoFiles()
-				for _, path := range []string{runner.RepoMiseConfig, runner.RepoMiseLock} {
-					if slices.Contains(files, path) != tt.want {
-						t.Fatalf("repoFiles = %v; want repository tools: %v", files, tt.want)
-					}
-				}
 			}
 		})
 	}
@@ -297,7 +271,8 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		reason string
 		model  configfile.ModelRef
 		// read are the files the follow-up's runner reads from the merge
-		// base, sorted.
+		// base, sorted, the repository's mise config and lock always among
+		// them.
 		read []string
 	}{
 		{name: "no file", files: files, model: "p/big", read: []string{"ops/inline.tmpl", "ops/rules.md", "ops/summary.tmpl"}},
@@ -323,7 +298,9 @@ func TestFollowUpRepoConfig(t *testing.T) {
 			}
 			read := f.eff.repoFiles()
 			slices.Sort(read)
-			if f.settings.Models.Review != tt.model || !slices.Equal(read, tt.read) {
+			want := append([]string{runner.RepoMiseConfig, runner.RepoMiseLock}, tt.read...)
+			slices.Sort(want)
+			if f.settings.Models.Review != tt.model || !slices.Equal(read, want) {
 				t.Fatalf("model = %s, files read = %q", f.settings.Models.Review, read)
 			}
 			if tt.reason == "" && f.mergeBase != "base" {

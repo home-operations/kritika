@@ -11,17 +11,6 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-func TestRepositoryTools(t *testing.T) {
-	for _, tt := range []struct {
-		commands []string
-		want     bool
-	}{{nil, false}, {[]string{}, false}, {[]string{"*"}, true}, {[]string{"rg"}, false}, {[]string{"*", "rg"}, false}} {
-		if got := RepositoryTools(tt.commands); got != tt.want {
-			t.Errorf("RepositoryTools(%v) = %v", tt.commands, got)
-		}
-	}
-}
-
 const repoMiseDoc = `[env]
 NO_COLOR = "1"
 HELM_DRIVER = "configmap"

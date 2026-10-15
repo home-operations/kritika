@@ -389,7 +389,7 @@ func (f *followUp) runAgent(
 			Agent: &runner.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
-				Commands: limits.Commands, CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
+				CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
 				Hosts: f.file.EgressHosts(), MiseConfig: f.file.MiseConfig(),
 			},
 		},

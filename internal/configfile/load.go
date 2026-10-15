@@ -30,10 +30,6 @@ import (
 // path segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// commandRe is a binary name the run tool looks up on PATH: no path
-// separator, so the allowlist cannot name a file in the checkout.
-var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
-
 // fileDoc is the configuration file's schema: sign-in and the whole
 // configuration.
 type fileDoc struct {
@@ -474,23 +470,6 @@ func validateAgent(where string, a Agent) error {
 	// The job document carries whole seconds.
 	if a.CommandTimeout != nil && *a.CommandTimeout < time.Second {
 		return fmt.Errorf("configfile: %sagent.commandTimeout must be at least 1s", where)
-	}
-	for i, c := range a.Commands {
-		if c == "mise" {
-			return fmt.Errorf("configfile: %sagent.commands: mise is reserved for the runner", where)
-		}
-		if c == "*" {
-			if len(a.Commands) > 1 {
-				return fmt.Errorf("configfile: %sagent.commands: \"*\" enables repository tools and stands alone", where)
-			}
-			continue
-		}
-		if !commandRe.MatchString(c) {
-			return fmt.Errorf("configfile: %sagent.commands[%d] %q must be a bare command name, not a path", where, i, c)
-		}
-		if slices.Contains(a.Commands[:i], c) {
-			return fmt.Errorf("configfile: %sagent.commands[%d] %q is listed twice", where, i, c)
-		}
 	}
 	return nil
 }

@@ -82,9 +82,9 @@ func TestCommandTool(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
-	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
+	t.Run("offers the default commands on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
-		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
+		s.Agent.CommandTimeoutSeconds = 5
 		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
@@ -135,11 +135,11 @@ func TestCommandTool(t *testing.T) {
 		}
 		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
 		s := reviewSpec()
-		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"gh", "rg"}, 5
+		s.Agent.CommandTimeoutSeconds = 5
 		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 		defer cleanup()
-		if run == nil || fetch == nil {
-			t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
+		if run == nil || fetch == nil || !slices.Equal(run.Names(), []string{"gh", "rg"}) {
+			t.Fatalf("run tool %v, fetch_repo %v", run, fetch != nil)
 		}
 		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
 		if err != nil || len(scratch) != 1 {
@@ -151,41 +151,22 @@ func TestCommandTool(t *testing.T) {
 	})
 
 	t.Run("nothing to offer", func(t *testing.T) {
-		for _, commands := range [][]string{nil, {"curl"}} {
-			s := reviewSpec()
-			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
-			run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, logger)
-			cleanup()
-			if run != nil || fetch != nil {
-				t.Fatalf("%v: run tool offered with %v, fetch_repo %v", commands, run.Names(), fetch != nil)
-			}
+		// A PATH with a program that is not a default command, and a
+		// repository config that needs mise to be read.
+		other := t.TempDir()
+		if err := os.Symlink(self, filepath.Join(other, "crane")); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", other)
+		s := reviewSpec()
+		s.Agent.CommandTimeoutSeconds = 5
+		files := repoconfig.Files{RepoMiseConfig: "[tools]\n"}
+		run, fetch, notes, cleanup := commandTool(t.Context(), s, head, files, &Secrets{GitToken: "ghs_run"}, 1024, logger)
+		cleanup()
+		if run != nil || fetch != nil || !slices.Equal(notes, []string{RepoMiseConfig + " not read: the runner image has no mise"}) {
+			t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
 		}
 	})
-}
-
-func TestCommandToolNamedMise(t *testing.T) {
-	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	bin := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin)
-	was := miseBin
-	miseBin = filepath.Join(t.TempDir(), "no-mise")
-	t.Cleanup(func() { miseBin = was })
-	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
-	s := reviewSpec()
-	s.Agent.Commands = []string{"rg", "mise"}
-	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{}, 1024, slog.New(slog.DiscardHandler))
-	defer cleanup()
-	if run == nil || !slices.Equal(run.Names(), []string{"rg"}) ||
-		!slices.Equal(notes, []string{"Command mise not offered: it is reserved for the runner"}) {
-		t.Fatalf("run = %v, notes = %v", run, notes)
-	}
 }
 
 func TestCommandToolCurlrc(t *testing.T) {
@@ -203,7 +184,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
-	s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = []string{"curl"}, 5, []string{"github.com", "ghcr.io"}
+	s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = 5, []string{"github.com", "ghcr.io"}
 	run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || fetch == nil {
@@ -226,41 +207,5 @@ func TestCommandToolCurlrc(t *testing.T) {
 	// credential, say: HOME is read-only once the tool is built.
 	if info, err := os.Stat(curlrc); err != nil || info.Mode().Perm()&0o222 != 0 {
 		t.Fatalf(".curlrc mode = %v, %v; want read-only", info.Mode().Perm(), err)
-	}
-}
-
-func TestCommandToolRestrictions(t *testing.T) {
-	for _, withMise := range []bool{false, true} {
-		t.Run(fmt.Sprintf("mise=%t", withMise), func(t *testing.T) {
-			was := miseBin
-			miseBin = filepath.Join(t.TempDir(), "mise")
-			t.Cleanup(func() { miseBin = was })
-			if withMise {
-				if err := os.WriteFile(miseBin, nil, 0o755); err != nil {
-					t.Fatal(err)
-				}
-			}
-			for _, tt := range []struct {
-				commands []string
-				files    repoconfig.Files
-				notes    int
-			}{
-				{[]string{"*"}, nil, 1},
-				{[]string{"*"}, repoconfig.Files{RepoMiseConfig: "[tools]\n"}, 2},
-				{[]string{"mise"}, nil, 1},
-			} {
-				if withMise && RepositoryTools(tt.commands) {
-					continue
-				}
-				s := reviewSpec()
-				s.Agent.Commands = tt.commands
-				run, fetch, notes, cleanup := commandTool(t.Context(), s, nil, tt.files, &Secrets{}, 1024, slog.New(slog.DiscardHandler))
-				cleanup()
-				if run != nil || fetch != nil || len(notes) != tt.notes || !strings.Contains(notes[0], "mise") ||
-					(tt.notes == 2 && !strings.Contains(notes[1], RepoMiseConfig)) {
-					t.Fatalf("commands=%v run=%v fetch=%v notes=%v", tt.commands, run, fetch, notes)
-				}
-			}
-		})
 	}
 }

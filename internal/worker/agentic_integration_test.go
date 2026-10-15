@@ -78,7 +78,6 @@ repositories:
   acme/widgets:
     agent:
       steps: 6
-      commands: [curl]
       commandTimeout: 5s
     rules:
       - { id: into-main, rule: Keep main releasable., when: [{ expr: 'pr.baseRef == "main"' }] }
@@ -1066,7 +1065,9 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 		return tx.QueryRow(h.ctx, `SELECT a.commands_offered, a.commands_run FROM agent_runs a
 			JOIN runner_runs r ON r.id = a.runner_run_id WHERE r.review_id = $1`, reviewID).Scan(&offered, &ran)
 	})
-	if err != nil || !slices.Equal(offered, []string{"curl"}) || !slices.Equal(ran, []string{"curl"}) {
+	// The harness's curl is on PATH; what else of the default commands
+	// this host has is offered beside it.
+	if err != nil || !slices.Contains(offered, "curl") || !slices.Equal(ran, []string{"curl"}) {
 		t.Fatalf("commands offered=%q ran=%q err=%v", offered, ran, err)
 	}
 	h.sm.mu.Lock()
@@ -1075,14 +1076,14 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	if len(results) == 0 || results[len(results)-1] != "exit code 0\nfetched -sS https://releases.example.com/b/v2\n" {
 		t.Fatalf("tool results = %q", results)
 	}
-	if !strings.Contains(system, "run tool: curl.") {
+	if !strings.Contains(system, "run tool: ") || !strings.Contains(system, "curl") {
 		t.Fatalf("system prompt lacks the run tool:\n%s", system)
 	}
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
 	if !strings.Contains(sticky, "<summary>Sources consulted</summary>\n\n- <https://releases.example.com/b/v2>\n") ||
-		!strings.Contains(sticky, "\n_Commands offered: curl; run: curl._\n") {
+		!strings.Contains(sticky, "\n_Commands offered: ") || !strings.Contains(sticky, "; run: curl._\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }

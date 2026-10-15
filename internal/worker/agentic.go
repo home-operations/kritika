@@ -336,7 +336,7 @@ func (w *Review) agentSpec(
 	spec.Agent = &runner.AgentLimits{
 		MaxSteps: settings.Agent.MaxSteps, MaxToolOutputBytes: settings.Agent.MaxToolOutputBytes, MaxTokens: admitted.maxTokens,
 		MaxPromptTokens: settings.Agent.MaxPromptTokens, Parts: size.parts, Parallel: size.slots,
-		TimeoutSeconds: int(settings.Agent.Timeout / time.Second), Commands: settings.Agent.Commands,
+		TimeoutSeconds:        int(settings.Agent.Timeout / time.Second),
 		CommandTimeoutSeconds: int(settings.Agent.CommandTimeout / time.Second), Fetches: settings.Agent.MaxFetches,
 	}
 	return deadline, notes, nil

@@ -135,20 +135,13 @@ func TestExecutablesUnder(t *testing.T) {
 func TestMiseToolsOffered(t *testing.T) {
 	helm, rg := &miseTool{name: "helm", installed: false}, &miseTool{name: "rg", installed: true}
 	m := &miseTools{byCommand: map[string]*miseTool{"helm": helm, "rg": rg}}
-	for _, tt := range []struct {
-		allowed []string
-		want    []string
-		pending bool
-	}{
-		{nil, []string{"helm", "rg"}, true},
-		{[]string{}, nil, false},
-		{[]string{"rg", "curl"}, []string{"rg"}, false},
-	} {
-		got := m.offered(tt.allowed)
-		names := slices.Sorted(maps.Keys(got))
-		if !slices.Equal(names, tt.want) || m.pending(got) != tt.pending {
-			t.Errorf("offered(%v) = %v, pending %v; want %v, %v", tt.allowed, names, m.pending(got), tt.want, tt.pending)
-		}
+	got := m.offered()
+	if names := slices.Sorted(maps.Keys(got)); !slices.Equal(names, []string{"helm", "rg"}) || !m.pending(got) {
+		t.Errorf("offered = %v, pending %v", names, m.pending(got))
+	}
+	helm.installed = true
+	if m.pending(m.offered()) {
+		t.Error("pending with every tool installed")
 	}
 }
 
@@ -216,7 +209,7 @@ func TestMiseTools(t *testing.T) {
 	if !strings.HasPrefix(yq.installPath, dataDir) {
 		t.Fatalf("yq installed at %s, not from the system installs under %s", yq.installPath, dataDir)
 	}
-	offered := m.offered(nil)
+	offered := m.offered()
 	if _, ok := offered["yq"]; !ok || len(offered) != 1 || m.pending(offered) {
 		t.Fatalf("offered = %v, pending %v", offered, m.pending(offered))
 	}
@@ -368,8 +361,8 @@ func TestMiseToolsEmptyConfig(t *testing.T) {
 		t.Fatalf("an instance config was written without one: %v", err)
 	}
 	if yq := m.tools["yq"]; yq == nil || !yq.installed || !strings.HasPrefix(yq.installPath, dataDir) ||
-		!slices.Equal(slices.Sorted(maps.Keys(m.offered(nil))), []string{"yq"}) {
-		t.Fatalf("yq = %+v, offered = %v", yq, m.offered(nil))
+		!slices.Equal(slices.Sorted(maps.Keys(m.offered())), []string{"yq"}) {
+		t.Fatalf("yq = %+v, offered = %v", yq, m.offered())
 	}
 }
 

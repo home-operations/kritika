@@ -356,29 +356,12 @@ beside it:
 
 ## Repository tools
 
-An admin enables repository-declared tools by setting `agent.commands` to
-`["*"]` in the instance configuration, at the root or for a repository:
-
-```yaml
-repositories:
-  org-1/repo-1:
-    agent: { commands: ["*"] }
-```
-
-The wildcard must stand alone. An unset `commands` offers the image's and
-instance's tools only; a named list narrows those commands and does not
-read repository tools. An empty list offers none. `.kritika.yaml` cannot
-set `agent.commands` or enable its own tools.
-
-When this file exists at the merge base without that permission, the
-review summary says repository tools are not enabled and names
-`agent.commands`. This checks only the file's presence; its contents and
-lock are not loaded. The wildcard requires a runner image with mise.
-
-With the wildcard, kritika reads `.kritika/mise.toml` and
-`.kritika/mise.lock` from the merge base, for reviews and follow-ups. A
-pull request changing either file uses the previously merged version for
-its own review. The repository's tools layer over the instance's and the
+A repository adds tools for its own reviews with a mise config of its
+own. kritika reads `.kritika/mise.toml` and `.kritika/mise.lock` from the
+merge base, for reviews and follow-ups, so a pull request changing either
+file uses the previously merged version for its own review. Reading them
+needs a runner image with mise; on one without, the review summary says
+the file was not read. The repository's tools layer over the instance's and the
 image's: an entry replaces the same tool, including its options, while
 unmentioned tools remain available.
 

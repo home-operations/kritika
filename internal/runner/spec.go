@@ -84,12 +84,9 @@ type AgentLimits struct {
 	Parts          int `json:"parts,omitempty"`
 	Parallel       int `json:"parallel,omitempty"`
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
-	// Commands name the commands the run tool may execute, among what the
-	// image's mise tools provide and its PATH has: nil, which travels as
-	// null, leaves every mise tool's command offered, and an empty list
-	// offers none.
-	Commands              []string `json:"commands"`
-	CommandTimeoutSeconds int      `json:"commandTimeoutSeconds,omitempty"`
+	// CommandTimeoutSeconds bounds one command the run tool executes;
+	// zero takes configfile.DefaultCommandTimeout.
+	CommandTimeoutSeconds int `json:"commandTimeoutSeconds,omitempty"`
 	// Fetches bounds fetch_repo's fetches for the run, a split review's
 	// parts between them; zero takes configfile.DefaultFetches.
 	Fetches int `json:"fetches,omitempty"`
@@ -247,15 +244,6 @@ func (s Spec) Validate() error {
 		}
 		if c := s.Prompt.Continue; c != nil && (c.RunID == "" || c.Session == "") {
 			return fmt.Errorf("runner: a %s spec's continuation needs a run and a session", s.Kind)
-		}
-		if len(s.Agent.Commands) > 0 && s.Agent.CommandTimeoutSeconds <= 0 {
-			return fmt.Errorf("runner: a %s spec with commands needs a command timeout", s.Kind)
-		}
-		for _, c := range s.Agent.Commands {
-			// A name with a separator would make exec.LookPath take it as a path.
-			if c == "" || strings.ContainsRune(c, '/') {
-				return fmt.Errorf("runner: spec command %q is not a bare command name", c)
-			}
 		}
 	}
 	return nil

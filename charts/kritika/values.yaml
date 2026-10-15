@@ -167,7 +167,7 @@ runner:
   # -- Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.
   resources: {}
   mise:
-    # -- The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain. Narrow what is offered with `agent.commands`.
+    # -- The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain.
     config: ""
   serviceAccount:
     # -- Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.

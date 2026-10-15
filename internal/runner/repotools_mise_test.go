@@ -71,7 +71,7 @@ checksum = "sha256:%x"
 				t.Fatal(err)
 			}
 			if !m.provides("yq") || m.provides(tt.command) != tt.offer {
-				t.Fatalf("offered = %v, tool = %+v, notes = %v", m.offered(nil), m.tools["http:repo-tool"], notes)
+				t.Fatalf("offered = %v, tool = %+v, notes = %v", m.offered(), m.tools["http:repo-tool"], notes)
 			}
 			if !slices.Contains(m.commandEnv(), "NO_COLOR=0") || !slices.Contains(m.commandEnv(), "REPO_ENV=from repository") {
 				t.Fatalf("repository env not merged: %v", m.commandEnv())
@@ -82,7 +82,7 @@ checksum = "sha256:%x"
 				}
 				return
 			}
-			if !m.pending(m.offered(nil)) {
+			if !m.pending(m.offered()) {
 				t.Fatal("repository tool installed before first use")
 			}
 			if err := lockTree(t.Context(), home, true); err != nil {
@@ -106,7 +106,7 @@ checksum = "sha256:%x"
 			if err != nil || string(out) != "from repository\n" {
 				t.Fatalf("run = %q, %v", out, err)
 			}
-			if m.pending(m.offered(nil)) {
+			if m.pending(m.offered()) {
 				t.Fatal("installed tool still pending")
 			}
 			if got, err := os.ReadFile(filepath.Join(home, "mise.lock")); err != nil || string(got) != tt.lock {
@@ -159,7 +159,7 @@ checksum = "sha256:abc"
 				t.Fatal(err)
 			}
 			if !m.tools["yq"].installed || !m.fromRepo(m.tools["yq"]) || !m.provides("yq") {
-				t.Fatalf("tool = %+v, offered = %v, notes = %v", m.tools["yq"], m.offered(nil), notes)
+				t.Fatalf("tool = %+v, offered = %v, notes = %v", m.tools["yq"], m.offered(), notes)
 			}
 		})
 	}

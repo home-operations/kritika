@@ -225,7 +225,6 @@ export interface AgentLimits {
   maxPromptTokens: number;
   maxParts: number;
   timeoutSeconds: number;
-  commands: string[];
   commandTimeoutSeconds: number;
   maxFetches: number;
 }

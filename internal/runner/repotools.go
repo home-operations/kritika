@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -23,10 +22,6 @@ const (
 	RepoMiseLock   = ".kritika/mise.lock"
 )
 
-// RepositoryTools reports whether commands, an agent.commands value, lets
-// a repository's own mise config supply tools: the one value "*".
-func RepositoryTools(commands []string) bool { return len(commands) == 1 && commands[0] == "*" }
-
 // repoMiseConfig is what the runner keeps of a repository's mise config:
 // the config, as mise reads it, and its lock, as the repository wrote it.
 type repoMiseConfig struct {
@@ -34,18 +29,6 @@ type repoMiseConfig struct {
 	tools        map[string]any
 	// locked names the tool versions the lock pins for the runner's platform.
 	locked map[string][]string
-}
-
-// disabledRepoTools checks only the tree entry: without the admin's
-// permission, neither the config's contents nor its lock are loaded.
-func disabledRepoTools(base *object.Tree, commands []string) []string {
-	if RepositoryTools(commands) {
-		return nil
-	}
-	if entry, err := base.FindEntry(RepoMiseConfig); err == nil && entry.Mode.IsFile() {
-		return []string{RepoMiseConfig + " not enabled: the admin must set agent.commands to [\"*\"]"}
-	}
-	return nil
 }
 
 func readRepoMise(files repoconfig.Files, logger *slog.Logger) (*repoMiseConfig, []string) {

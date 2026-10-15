@@ -5,11 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -21,37 +19,34 @@ import (
 	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
-// commandTool is the run tool for the commands p allows over a checkout of
-// tree written to scratch space, and fetch_repo, which writes beside the
-// checkout, when one of the commands already reaches the network. On an
-// image with mise the commands are those of the tools the merged mise
-// config declares, the image's system config under the instance's, each
-// installed on first use; p.Agent.Commands narrows them when set, nil
-// offering them all and an empty list none. A name it lists that no mise
-// tool provides, and every name on an image without mise, is looked up on
-// this image's PATH. With "*" for p.Agent.Commands the repository's own
-// mise config among files, read from the merge base, supplies tools too,
-// each installed at what its lock pins. Both tools are nil, with a no-op
-// cleanup, when there is nothing to offer or the commands cannot be kept
-// from the runner's secrets; the review then goes on with the read-only
-// tools alone. notes say what was not offered, for the review's summary,
-// and the values a mise config marks for redaction join secrets. cleanup
-// removes the scratch space.
+// defaultCommands are the commands of the tools the -tools image ships. A
+// runner image without mise offers those of them on its PATH.
+var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
+
+// commandTool is the run tool for the commands a run offers over a
+// checkout of tree written to scratch space, and fetch_repo, which writes
+// beside the checkout, when one of the commands already reaches the
+// network. On an image with mise the commands are those of the tools the
+// merged mise config declares: the image's system config under the
+// instance's, and the repository's own mise config among files, read from
+// the merge base, over both, each installed on first use at what its lock
+// pins. An image without mise offers the defaultCommands on its PATH.
+// Both tools are nil, with a no-op cleanup, when there is nothing to
+// offer or the commands cannot be kept from the runner's secrets; the
+// review then goes on with the read-only tools alone. notes say what was
+// not offered, for the review's summary, and the values a mise config
+// marks for redaction join secrets. cleanup removes the scratch space.
 func commandTool(
 	ctx context.Context, p Spec, tree *agent.Tree, files repoconfig.Files, secrets *Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
 	withMise := err == nil
-	_, hasRepoConfig := files[RepoMiseConfig]
-	allowed, enabled, notes := commandsEnabled(p.Agent.Commands, withMise, hasRepoConfig)
-	if !enabled {
-		return nil, nil, notes, cleanup
-	}
 	var repo *repoMiseConfig
-	if RepositoryTools(allowed) {
+	if _, ok := files[RepoMiseConfig]; ok && !withMise {
+		notes = append(notes, RepoMiseConfig+" not read: the runner image has no mise")
+	} else if withMise {
 		var repoNotes []string
-		allowed = nil
 		repo, repoNotes = readRepoMise(files, logger)
 		notes = append(notes, repoNotes...)
 	}
@@ -94,21 +89,15 @@ func commandTool(
 			logger.Warn("mise tools not offered", "error", err)
 			notes = append(notes, "mise tools not offered: "+err.Error())
 		} else {
-			maps.Copy(found, mise.offered(allowed))
+			found = mise.offered()
 			env = mise.commandEnv()
 		}
-	}
-	for _, name := range allowed {
-		if _, ok := found[name]; ok {
-			continue
+	} else {
+		for _, name := range defaultCommands {
+			if path, err := exec.LookPath(name); err == nil {
+				found[name] = path
+			}
 		}
-		path, err := exec.LookPath(name)
-		if err != nil {
-			logger.Info("command not offered: no mise tool provides it and it is not on this image's PATH", "command", name)
-			notes = append(notes, fmt.Sprintf("Command %s not offered: no mise tool provides it and it is not on this image's PATH", name))
-			continue
-		}
-		found[name] = path
 	}
 	if len(found) == 0 {
 		return nil, nil, notes, cleanup
@@ -175,7 +164,7 @@ func commandTool(
 	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
 		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Resolve: resolve,
-		Timeout:        time.Duration(p.Agent.CommandTimeoutSeconds) * time.Second,
+		Timeout:        cmp.Or(time.Duration(p.Agent.CommandTimeoutSeconds)*time.Second, configfile.DefaultCommandTimeout),
 		MaxOutputBytes: maxOutput, Proxied: proxied, Hosts: p.Agent.Hosts, Note: note, Logger: logger,
 		Mask: secrets.Mask,
 		Keep: &agent.Kept{Dir: up, Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: budget},
@@ -190,27 +179,6 @@ func commandTool(
 		}
 	}
 	return run, fetch, notes, cleanup
-}
-
-// commandsEnabled is what of commands the run tool may offer, and whether
-// that is anything: mise, the runner's own, is dropped from a named list,
-// and "*" needs an image with mise. notes say what was not offered, the
-// repository's config among it when hasRepoConfig is set.
-func commandsEnabled(commands []string, withMise, hasRepoConfig bool) (allowed []string, enabled bool, notes []string) {
-	allowed = commands
-	if slices.Contains(commands, "mise") {
-		allowed = slices.DeleteFunc(slices.Clone(commands), func(c string) bool { return c == "mise" })
-		notes = append(notes, "Command mise not offered: it is reserved for the runner")
-	}
-	if RepositoryTools(commands) && !withMise {
-		notes = append(notes, `Commands not offered: agent.commands ["*"] requires a runner image with mise`)
-		if hasRepoConfig {
-			notes = append(notes, RepoMiseConfig+" not read: the runner image has no mise")
-		}
-		return nil, false, notes
-	}
-	// An empty list offers nothing, so mise need not be asked.
-	return allowed, len(allowed) > 0 || (withMise && commands == nil), notes
 }
 
 // curlrc is the configuration curl reads from HOME. Without a terminal

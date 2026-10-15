@@ -7,12 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/pelletier/go-toml/v2"
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/config"
@@ -57,22 +55,10 @@ func TestHelmConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered configuration: %v", err)
 	}
-	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseConfig() == "" {
+	// The chart's default mise config is empty: the image's tools come from
+	// its own system config.
+	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseConfig() != "" {
 		t.Fatalf("rendered runtime settings = %+v", f.Run)
-	}
-	imageConfig, err := os.ReadFile("../../build/tools/mise.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var imageTools, chartTools map[string]any
-	if err := toml.Unmarshal(imageConfig, &imageTools); err != nil {
-		t.Fatal(err)
-	}
-	if err := toml.Unmarshal([]byte(f.MiseConfig()), &chartTools); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(chartTools, imageTools) {
-		t.Fatal("chart defaults differ from the image's tool versions or options; run mise run generate")
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {

@@ -139,10 +139,10 @@ chart confines them:
   `egress` lists and is the runner's only way to its model.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
-- `runner.mise.config`, empty by default, adds programs a review's
-  `agent.commands` may run to the six the runner image declares; `runner.runtimeClass` puts runner Jobs under a
-  sandboxed runtime such as gVisor; `runner.resources` keeps a runaway run
-  in its own cgroup.
+- `runner.mise.config`, empty by default, adds programs the review's run
+  tool may execute to the six the runner image declares;
+  `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
+  gVisor; `runner.resources` keeps a runaway run in its own cgroup.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
@@ -152,8 +152,7 @@ gateway, runner tools and the sandbox in full.
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Declare tools in
 `runner.mise.config` instead; no extra image volume or Kubernetes 1.33
 requirement remains. The runner image declares its six tools itself, so
-the value is empty by default and they stay available. Set
-`config.agent.commands: []` to disable commands. See the
+the value is empty by default and they stay available. See the
 [migration example](https://kritika.home-operations.com/security/#migrating-from-image-mounted-tools).
 
 ### Topology
@@ -281,7 +280,7 @@ Kubernetes: `>=1.25.0-0`
 | runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
 | runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
 | runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
-| runner.mise.config | string | `""` | The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain. Narrow what is offered with `agent.commands`. |
+| runner.mise.config | string | `""` | The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |

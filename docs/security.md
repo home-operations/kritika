@@ -168,23 +168,16 @@ A tool at the image's version runs from its system install; any other
 downloads on the first run that uses it, into the run's own scratch space,
 at the version the config pins and with the verification its backend
 gives it. The run tool offers every command the merged config's tools
-provide, and `agent.commands` narrows that to the names it lists; an
-empty list offers none, which is how an instance takes a default tool
-away. A name it lists that no tool provides is looked up on the image's
-`PATH`, which is how an image set in `runner.image` without mise offers
-the programs its builder put there.
-`mise` itself is refused in `agent.commands`. On an image without mise,
-`["*"]` offers no commands and the review summary explains why. A
-follow-up posts no summary, so its reply carries such notes, and a
-command's setup failure, instead.
+provide, `mise` itself excepted. An image set in `runner.image` without
+mise offers the six default commands its builder put on its `PATH`, and
+reads no repository config, which the review summary says. A follow-up
+posts no summary, so its reply carries such notes, and a command's setup
+failure, instead.
 
-An admin may set `agent.commands: ["*"]` to allow the repository's own
-[`.kritika/mise.toml`](repository-config.md#repository-tools) to layer tools
-over the image and instance configs. The wildcard must stand alone; an
-unset or named command list does not load repository tools. Both this
-file and `.kritika/mise.lock` are read from the merge base, so a pull
-request cannot change the tools or download pins used to review itself.
-`.kritika.yaml` cannot change `agent.commands`.
+A repository's own [`.kritika/mise.toml`](repository-config.md#repository-tools)
+layers tools over the image and instance configs. Both this file and
+`.kritika/mise.lock` are read from the merge base, so a pull request
+cannot change the tools or download pins used to review itself.
 
 The runner keeps of a repository's `[tools]` entry its version and the
 options that select, verify and extract its download. The options that
@@ -218,8 +211,9 @@ tool is not offered as `gh` unless the image has it installed at the
 repository's version; a summary note says so. Egress remains bounded by
 the gateway and network policy. Replacing a default tool also
 keeps the argument restrictions written for the shipped version; another
-version may interpret those flags differently. Enable `["*"]` only for
-repositories whose merged tool choices the admin trusts.
+version may interpret those flags differently. An instance that reviews
+repositories whose tool choices it does not trust should run them on a
+runner image without mise, which reads no repository config.
 
 `gh` signs in with the run's own GitHub token, which reads the repository
 under review and public repositories and no other private one; the run
@@ -233,9 +227,6 @@ does not spend calls on the rest:
 ```yaml
 egress:
   allow: ["*.githubusercontent.com"]
-repositories:
-  org-1/repo-1:
-    agent: { commands: [gh, curl, fd, rg] }
 ```
 
 What bounds a command:
@@ -362,8 +353,6 @@ runner:
     config: |
       [tools]
       "github:home-operations/flate" = "0.6.5"
-config:
-  agent: { commands: [gh, flate] }
 ```
 
 Outside Helm, the application key is `runner.miseConfig`, or use
@@ -373,9 +362,8 @@ still provide named commands on its own `PATH`.
 
 The chart's `runner.mise.config` is empty by default: the image's
 `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`, `rg` and `yq`,
-and an unset `agent.commands` offers those and the instance's tools; set
-`[]` to disable commands. `crane` is not a default: declare it when
-needed. If building on top of the
+and every review offers those, the instance's tools and the repository's.
+`crane` is not a default: declare it when needed. If building on top of the
 `-tools` image, its preinstalled tools live in mise's system install
 directory, not `/usr/local/bin`.
 

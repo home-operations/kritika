@@ -135,7 +135,6 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if err != nil {
 		return err
 	}
-	notes = append(notes, disabledRepoTools(baseTree, p.Agent.Commands)...)
 	ignore := p.Ignore
 	priorHead, deltaPaths := priorDelta(res, p, logger)
 	// Everything the worker reads back is decided here, before the pack is

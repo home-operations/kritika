@@ -484,14 +484,6 @@ type Agent struct {
 	// never splits.
 	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
-	// Commands name the commands the agent's run tool may execute, such
-	// as curl, fd and rg, among those the runner image's mise tools
-	// provide, which are all offered when it is unset, and none when it
-	// is empty; a name no mise tool provides is looked up on the image's
-	// PATH, which is all an image without mise offers. The one value "*"
-	// offers every tool's commands, those a repository's own
-	// .kritika/mise.toml declares included.
-	Commands []string `yaml:"commands,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
 	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`
 	// Fetches bounds the repositories fetch_repo fetches for a review, a
@@ -507,31 +499,25 @@ type AgentSettings struct {
 	MaxPromptTokens    int
 	MaxParts           int
 	Timeout            time.Duration
-	Commands           []string
 	CommandTimeout     time.Duration
 	MaxFetches         int
 }
 
 // MarshalJSON is the API's form of the bounds: the durations in whole
-// seconds, as the dashboard shows them, and commands never null.
+// seconds, as the dashboard shows them.
 func (a AgentSettings) MarshalJSON() ([]byte, error) {
-	commands := a.Commands
-	if commands == nil {
-		commands = []string{}
-	}
 	return json.Marshal(struct {
-		MaxSteps              int      `json:"maxSteps"`
-		MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
-		MaxTokens             int64    `json:"maxTokens"`
-		MaxPromptTokens       int      `json:"maxPromptTokens"`
-		MaxParts              int      `json:"maxParts"`
-		TimeoutSeconds        int64    `json:"timeoutSeconds"`
-		Commands              []string `json:"commands"`
-		CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
-		MaxFetches            int      `json:"maxFetches"`
+		MaxSteps              int   `json:"maxSteps"`
+		MaxToolOutputBytes    int   `json:"maxToolOutputBytes"`
+		MaxTokens             int64 `json:"maxTokens"`
+		MaxPromptTokens       int   `json:"maxPromptTokens"`
+		MaxParts              int   `json:"maxParts"`
+		TimeoutSeconds        int64 `json:"timeoutSeconds"`
+		CommandTimeoutSeconds int64 `json:"commandTimeoutSeconds"`
+		MaxFetches            int   `json:"maxFetches"`
 	}{
 		MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens,
-		MaxPromptTokens: a.MaxPromptTokens, MaxParts: a.MaxParts, TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
+		MaxPromptTokens: a.MaxPromptTokens, MaxParts: a.MaxParts, TimeoutSeconds: int64(a.Timeout.Seconds()),
 		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()), MaxFetches: a.MaxFetches,
 	})
 }
@@ -546,7 +532,7 @@ var DefaultAgent = AgentSettings{
 	MaxPromptTokens:    review.DefaultBudgetTokens,
 	MaxParts:           DefaultParts,
 	Timeout:            20 * time.Minute,
-	CommandTimeout:     30 * time.Second,
+	CommandTimeout:     DefaultCommandTimeout,
 	MaxFetches:         DefaultFetches,
 }
 
@@ -558,6 +544,10 @@ const DefaultParts = 8
 // unless agent.fetches says otherwise: the upstream of a dependency bump
 // takes one, a review of several a few more.
 const DefaultFetches = 8
+
+// DefaultCommandTimeout bounds one command of the run tool unless
+// agent.commandTimeout sets it.
+const DefaultCommandTimeout = 30 * time.Second
 
 // MinPromptTokens is the least agent.prompt takes: the system prompt, with
 // its rules and skills, and the pull request's description are paid

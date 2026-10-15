@@ -23,7 +23,7 @@ func adminSettings() configfile.Settings {
 			Include: []configfile.Filter{{Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
 			Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
 		},
-		Agent: configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute, Commands: []string{"rg"}},
+		Agent: configfile.AgentSettings{MaxSteps: 30, MaxToolOutputBytes: 1000, MaxTokens: 5000, Timeout: 10 * time.Minute},
 		Review: configfile.Review{
 			RequireSuggestedFix: true,
 			Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,

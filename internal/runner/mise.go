@@ -571,15 +571,12 @@ func isExecutable(path string) bool {
 	return err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0
 }
 
-// offered are the commands the tools provide that allowed admits: all of
-// them when allowed is nil, none when it is empty, otherwise the names it
-// lists. The map's values are empty: the binaries are resolved per call.
-func (m *miseTools) offered(allowed []string) map[string]string {
-	out := map[string]string{}
+// offered are the commands the tools provide. The map's values are
+// empty: the binaries are resolved per call.
+func (m *miseTools) offered() map[string]string {
+	out := make(map[string]string, len(m.byCommand))
 	for c := range m.byCommand {
-		if allowed == nil || slices.Contains(allowed, c) {
-			out[c] = ""
-		}
+		out[c] = ""
 	}
 	return out
 }

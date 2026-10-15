@@ -15,8 +15,8 @@ import (
 )
 
 // TestCommandToolMise: on an image with mise, the run tool offers the
-// merged config's commands, all of them unless agent.commands narrows
-// them, and runs them in mise's environment.
+// merged config's commands, the repository's tools among them, and runs
+// them in mise's environment.
 func TestCommandToolMise(t *testing.T) {
 	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
 	bin, dataDir := hostMise(t)
@@ -38,29 +38,20 @@ func TestCommandToolMise(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name     string
-		commands []string
-		want     []string
+		name  string
+		files repoconfig.Files
+		want  []string
 	}{
-		{"every mise command unless narrowed", nil, []string{"yq"}},
-		{"none when the list is empty", []string{}, nil},
-		{"only the listed names", []string{"yq", "rg"}, []string{"yq"}},
-		{"a name no tool provides", []string{"rg"}, nil},
-		{"wildcard merges repository tools", []string{"*"}, []string{"helm", "yq"}},
+		{"the image's and instance's tools", nil, []string{"yq"}},
+		{"the repository's tools merged", files, []string{"helm", "yq"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
-			s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.MiseConfig = tt.commands, 10, testMiseConfig
-			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, files, &Secrets{GitToken: "ghs_run"}, 4096, logger)
+			s.Agent.CommandTimeoutSeconds, s.Agent.MiseConfig = 10, testMiseConfig
+			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, tt.files, &Secrets{GitToken: "ghs_run"}, 4096, logger)
 			defer cleanup()
 			if fetch != nil {
 				t.Fatal("fetch_repo offered without a command that reaches the network")
-			}
-			if tt.want == nil {
-				if run != nil {
-					t.Fatalf("run tool offered: %v", run.Names())
-				}
-				return
 			}
 			if run == nil || !slices.Equal(run.Names(), tt.want) {
 				t.Fatalf("run tool %v, notes %v", run, notes)
@@ -76,7 +67,7 @@ func TestCommandToolMise(t *testing.T) {
 				t.Fatalf("scratch = %v, %v", scratch, err)
 			}
 			home := filepath.Join(scratch[0], "home")
-			if RepositoryTools(tt.commands) {
+			if tt.files != nil {
 				out, err := run.Run(t.Context(), json.RawMessage(`{"command":"yq","args":["env(REPO_MARKER)","values.yaml"]}`))
 				if err != nil || !strings.HasPrefix(out, "exit code 0\nmerge base\n") {
 					t.Fatalf("repository env = %q, %v", out, err)
@@ -86,7 +77,7 @@ func TestCommandToolMise(t *testing.T) {
 					t.Fatalf("mise config = %q, %v", config, err)
 				}
 			} else if _, err := os.Stat(filepath.Join(home, "mise.toml")); !os.IsNotExist(err) {
-				t.Fatalf("repository config written without wildcard: %v", err)
+				t.Fatalf("repository config written without one: %v", err)
 			}
 			if _, err := os.Stat(filepath.Join(scratch[0], "checkout", RepoMiseLock)); !os.IsNotExist(err) {
 				t.Fatalf("lock written to checkout: %v", err)
