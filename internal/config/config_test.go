@@ -60,6 +60,7 @@ func TestLoad(t *testing.T) {
 		{name: "same role for app and runner", env: map[string]string{"KRITIKA_DATABASE_RUNNER_ROLE": "kritika_app"}, wantErr: true},
 		{name: "zero leader retry", env: map[string]string{"KRITIKA_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIKA_EXECUTOR": "docker"}, wantErr: true},
+		{name: "removed runner tools", env: map[string]string{"KRITIKA_RUNNER_TOOLS": "[]"}, wantErr: true},
 		{name: "zero thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "0"}, wantErr: true},
 		{name: "negative thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "-1"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIKA_REVIEW_WORKERS": "0"}, wantErr: true},

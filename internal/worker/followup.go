@@ -285,7 +285,7 @@ func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) 
 	}
 	pctx, cancel := detach(ctx)
 	defer cancel()
-	replyID, err := f.reply(pctx, review.FollowUpBody(reply, agent.Model, string(f.settings.Models.Effort)))
+	replyID, err := f.reply(pctx, review.FollowUpBody(reply, agent.Model, string(f.settings.Models.Effort), agent.CommandErrors))
 	if err != nil {
 		return store.FollowupFailed, err
 	}
@@ -389,14 +389,13 @@ func (f *followUp) runAgent(
 			Agent: &runner.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
-				Commands: limits.Commands, CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
-				Hosts: f.file.EgressHosts(),
+				CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
+				Hosts: f.file.EgressHosts(), MiseConfig: f.file.MiseConfig(),
 			},
 		},
 		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
 		Deadline:  deadline,
 		Resources: resources,
-		Tools:     f.file.ToolsFor(limits.Commands),
 	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
 	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr
 	// The run's record must land even once the job's ctx has ended. A

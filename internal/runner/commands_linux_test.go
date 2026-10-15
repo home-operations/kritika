@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v6"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 // environHelper names the role the test binary plays when TestHideEnviron
@@ -75,13 +76,16 @@ func TestCommandTool(t *testing.T) {
 	t.Setenv("PATH", bin)
 	t.Setenv("HTTPS_PROXY", "http://gateway:8082")
 	t.Setenv("TMPDIR", t.TempDir())
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
 	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
-	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
+	t.Run("offers the default commands on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
-		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
-		run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, logger)
+		s.Agent.CommandTimeoutSeconds = 5
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
 		}
@@ -131,11 +135,11 @@ func TestCommandTool(t *testing.T) {
 		}
 		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
 		s := reviewSpec()
-		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"gh", "rg"}, 5
-		run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, logger)
+		s.Agent.CommandTimeoutSeconds = 5
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, logger)
 		defer cleanup()
-		if run == nil || fetch == nil {
-			t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
+		if run == nil || fetch == nil || !slices.Equal(run.Names(), []string{"gh", "rg"}) {
+			t.Fatalf("run tool %v, fetch_repo %v", run, fetch != nil)
 		}
 		scratch, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "kritika-run-*"))
 		if err != nil || len(scratch) != 1 {
@@ -146,17 +150,33 @@ func TestCommandTool(t *testing.T) {
 		}
 	})
 
-	t.Run("nothing to offer", func(t *testing.T) {
-		for _, commands := range [][]string{nil, {"curl"}} {
-			s := reviewSpec()
-			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
-			run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, logger)
-			cleanup()
-			if run != nil || fetch != nil {
-				t.Fatalf("%v: run tool offered with %v, fetch_repo %v", commands, run.Names(), fetch != nil)
-			}
-		}
-	})
+}
+
+// TestCommandToolNothingToOffer: a PATH without a default command offers
+// no run tool, and a repository config needs mise to be read.
+func TestCommandToolNothingToOffer(t *testing.T) {
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(bin, "crane")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
+	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
+	s := reviewSpec()
+	s.Agent.CommandTimeoutSeconds = 5
+	files := repoconfig.Files{RepoMiseConfig: "[tools]\n"}
+	run, fetch, notes, cleanup := commandTool(t.Context(), s, head, files, Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
+	cleanup()
+	if run != nil || fetch != nil || !slices.Equal(notes, []string{RepoMiseConfig + " not read: the runner image has no mise"}) {
+		t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
+	}
 }
 
 func TestCommandToolCurlrc(t *testing.T) {
@@ -174,8 +194,8 @@ func TestCommandToolCurlrc(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
-	s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = []string{"curl"}, 5, []string{"github.com", "ghcr.io"}
-	run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
+	s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = 5, []string{"github.com", "ghcr.io"}
+	run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || fetch == nil {
 		t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
@@ -189,7 +209,13 @@ func TestCommandToolCurlrc(t *testing.T) {
 	if err != nil || len(scratch) != 1 {
 		t.Fatalf("scratch = %v, %v", scratch, err)
 	}
-	if b, err := os.ReadFile(filepath.Join(scratch[0], "home", ".curlrc")); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\n" {
+	curlrc := filepath.Join(scratch[0], "home", ".curlrc")
+	if b, err := os.ReadFile(curlrc); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\n" {
 		t.Fatalf(".curlrc = %q, %v", b, err)
+	}
+	// A command may not rewrite it, with a trace that prints the proxy
+	// credential, say: HOME is read-only once the tool is built.
+	if info, err := os.Stat(curlrc); err != nil || info.Mode().Perm()&0o222 != 0 {
+		t.Fatalf(".curlrc mode = %v, %v; want read-only", info.Mode().Perm(), err)
 	}
 }

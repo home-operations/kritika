@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -77,7 +78,6 @@ repositories:
   acme/widgets:
     agent:
       steps: 6
-      commands: [curl]
       commandTimeout: 5s
     rules:
       - { id: into-main, rule: Keep main releasable., when: [{ expr: 'pr.baseRef == "main"' }] }
@@ -101,6 +101,8 @@ const (
 	scriptStall
 	// scriptRun has curl fetch a release page, then submits.
 	scriptRun
+	// scriptRunNoSubmit calls curl, then exhausts its steps without submitting.
+	scriptRunNoSubmit
 	// scriptSkill reads the skill review-go, then submits.
 	scriptSkill
 	// scriptTruncated submits a review the output cap cut off.
@@ -238,11 +240,15 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return fmt.Sprintf(`{"role":"assistant","content":null,"tool_calls":[{"id":"c%d","type":"function","function":{"name":%q,"arguments":%s}}]}`,
 			step, name, b)
 	}
-	if script == scriptRun {
+	switch script {
+	case scriptRun, scriptRunNoSubmit:
 		finish = "tool_calls"
 		message = tool("run", `{"command":"curl","args":["-sS","https://releases.example.com/b/v2"]}`)
 		if step > 1 {
 			message = tool("submit_review", `{"summary":{"take":"Bumps b to v2.","praise":[]},"findings":[]}`)
+			if script == scriptRunNoSubmit {
+				finish, message = "stop", `{"role":"assistant","content":"Still looking."}`
+			}
 		}
 	}
 	if script == scriptSkill {
@@ -350,8 +356,6 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
 	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
-	t.Setenv("KRITIKA_RUNNER_TOOLS", `[{"name": "helm", "image": "registry.example/helm:3"},
-		{"name": "kurl", "image": "registry.example/kurl:1", "path": "/usr/bin", "commands": ["curl"]}]`)
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritika:provider-secret@", 1)
@@ -370,7 +374,9 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte("#!/bin/sh\necho fetched \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// PATH holds that curl alone, so the run tool offers nothing the host
+	// happens to have.
+	t.Setenv("PATH", bin)
 	h.lf = &localForge{dir: h.dir, base: h.base, tip: h.head}
 	h.exec = &hookExecutor{inner: &executor.Local{Store: runnerStore}, st: appStore}
 
@@ -609,12 +615,6 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	var timeline []map[string]any
 	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
 	_ = json.Unmarshal([]byte(run.timeline), &timeline)
-	h.exec.mu.Lock()
-	mounted := h.exec.tools
-	h.exec.mu.Unlock()
-	if !slices.Equal(mounted, []string{"kurl"}) {
-		t.Fatalf("tools handed to the executor = %v, want only kurl, which provides the curl acme/widgets allows", mounted)
-	}
 	if run.stop != "submitted" || run.steps != 3 || run.model != "agent-model" || tools["grep"] != 1 || tools["read_file"] != 1 ||
 		tools["submit_review"] != 1 || len(timeline) != 3 || run.input != 300 || run.output != 30 {
 		t.Fatalf("agent run = %+v", run)
@@ -990,6 +990,58 @@ func (h *agenticHarness) checkNoSecrets(t *testing.T, where string, args ...any)
 	return text
 }
 
+func TestCommandErrorsPublished(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the run tool is offered on Linux alone")
+	}
+	for i, tt := range []struct {
+		name   string
+		script modelScript
+		status string
+	}{
+		{"submitted", scriptRun, "completed"},
+		{"incomplete", scriptRunNoSubmit, "failed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newAgenticHarness(t, 71+i)
+			bin, err := exec.LookPath("curl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(bin, []byte("#!/no-such-interpreter\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			h.sm.reset(tt.script)
+			h.dispatch(t, h.head)
+			reviewID, status, errText := h.waitReview(t, h.head)
+			if status != tt.status {
+				t.Fatalf("status=%s error=%s", status, errText)
+			}
+			var run store.AgentRunRow
+			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+				var id string
+				if err := tx.QueryRow(h.ctx, `SELECT id FROM runner_runs WHERE review_id = $1`, reviewID).Scan(&id); err != nil {
+					return err
+				}
+				var err error
+				run, err = store.FindAgentRun(h.ctx, tx, id)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if len(run.CommandErrors) != 1 || !strings.Contains(run.CommandErrors[0], "Command curl unavailable") {
+				t.Fatalf("command errors = %v", run.CommandErrors)
+			}
+			h.lf.mu.Lock()
+			sticky := h.lf.comments[commentBase+1]
+			h.lf.mu.Unlock()
+			if !strings.Contains(sticky, "Command curl unavailable") {
+				t.Fatalf("summary omitted the command error: %s", sticky)
+			}
+		})
+	}
+}
+
 func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptRun)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc v2() {}\n")
@@ -1276,8 +1328,6 @@ type hookExecutor struct {
 	// started does: with the error, the kubelet's start time and no
 	// runner run.
 	unstarted error
-	// tools are the names of the tools the last run was handed.
-	tools []string
 	// st, when set, reads the last run's grant as it starts: its agent
 	// limits, Job deadline and token budget.
 	st       *store.Store
@@ -1290,10 +1340,6 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	e.mu.Lock()
 	hold, detach, unstarted := e.hold, e.detach, e.unstarted
 	e.hold, e.detach, e.unstarted = 0, false, nil
-	e.tools = nil
-	for _, tool := range spec.Tools {
-		e.tools = append(e.tools, tool.Name)
-	}
 	e.agent, e.deadline, e.budget = spec.Job.Agent, spec.Deadline, 0
 	if e.st != nil {
 		if g, err := e.st.LookupGatewayToken(ctx, spec.Secrets.GatewayToken); err == nil {

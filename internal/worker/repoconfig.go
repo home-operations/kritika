@@ -18,6 +18,7 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -59,12 +60,17 @@ func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
 }
 
 // repoFiles are the paths the runner reads from the merge base: the files
-// the settings name, and .kritika.yaml itself, which the review's context
-// pack keeps a copy of.
+// the settings name, .kritika.yaml itself, which the review's context pack
+// keeps a copy of, and the repository's mise config and lock.
 func (e *Effective) repoFiles() []string {
 	paths := e.Review.Referenced()
 	if e.Found && !slices.Contains(paths, repoconfig.FileName) {
 		paths = append(paths, repoconfig.FileName)
+	}
+	for _, path := range []string{runner.RepoMiseConfig, runner.RepoMiseLock} {
+		if !slices.Contains(paths, path) {
+			paths = append(paths, path)
+		}
 	}
 	return paths
 }

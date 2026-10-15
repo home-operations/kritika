@@ -988,7 +988,8 @@ func TestGatewayTokens(t *testing.T) {
 			}
 			var prID string
 			if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
-				VALUES ($1, $2, (random() * 1e6)::int, 'abc') RETURNING id`, alpha, g.RepositoryID).Scan(&prID); err != nil {
+				SELECT $1, $2, coalesce(max(number), 0) + 1, 'abc' FROM pull_requests
+				WHERE repository_id = $2 RETURNING id`, alpha, g.RepositoryID).Scan(&prID); err != nil {
 				return err
 			}
 			if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status)

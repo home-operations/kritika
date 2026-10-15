@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"net/url"
@@ -41,6 +42,11 @@ type RunConfig struct {
 	CommandEnv map[string][]string
 	// Commands map each name the model may run to the binary it runs.
 	Commands map[string]string
+	// Resolve, when set, finds the binary a command runs and the
+	// environment it runs with at the time of the call, installing the
+	// command's tool first when it is not yet; Commands then only names
+	// what is offered. Its error is returned to the model.
+	Resolve func(ctx context.Context, command string) (bin string, env []string, err error)
 	// Timeout bounds one command.
 	Timeout time.Duration
 	// MaxOutputBytes caps the combined output kept of one command.
@@ -52,7 +58,7 @@ type RunConfig struct {
 	Hosts   []string
 	// Note, when set, is appended to the tool's description.
 	Note string
-	// Mask, when set, is applied to a command's output before the model
+	// Mask, when set, is applied to a command's output and setup errors before the model
 	// sees it, to keep a credential a command printed out of the
 	// conversation.
 	Mask func(string) string
@@ -103,6 +109,8 @@ type RunTool struct {
 	schema  json.RawMessage
 	sources []string
 	ran     []string
+	// errors are the setup failure notes, one per command in failed.
+	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
 	calls int
 }
@@ -134,6 +142,39 @@ func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...)
 // Ran are the commands the model ran, each once in first-use order, never
 // nil.
 func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
+
+// Errors are masked command setup failures, the first per command, for
+// the review summary.
+func (rt *RunTool) Errors() []string { return append([]string{}, rt.errors...) }
+
+func (rt *RunTool) setupError(command string, err error) error {
+	// A path error names the binary under the runner's scratch space,
+	// which the summary must not show.
+	shown := err
+	if pe, ok := errors.AsType[*fs.PathError](err); ok {
+		shown = fmt.Errorf("%s: %w", pe.Op, pe.Err)
+	}
+	note := textcut.Truncate(rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, shown)), 2048)
+	if !slices.Contains(rt.failed, command) {
+		rt.failed, rt.errors = append(rt.failed, command), append(rt.errors, note)
+	}
+	if rt.cfg.Logger != nil {
+		// The rest of an install's output is in the runner's own log of it.
+		line, _, _ := strings.Cut(shown.Error(), "\n")
+		rt.cfg.Logger.Info("command unavailable", "command", command, "error", rt.mask(line))
+	}
+	return commandSetupError{message: "agent: run: " + note, cause: err}
+}
+
+// commandSetupError masks its message while preserving cancellation and
+// filesystem errors for callers that inspect the cause.
+type commandSetupError struct {
+	message string
+	cause   error
+}
+
+func (e commandSetupError) Error() string { return e.message }
+func (e commandSetupError) Unwrap() error { return e.cause }
 
 // Kept is where the tool keeps a cut output whole, nil when it keeps none.
 func (rt *RunTool) Kept() *Kept { return rt.cfg.Keep }
@@ -231,6 +272,16 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 		rt.cfg.Logger.Info("command started", "call", rt.calls, "command", req.Command, "args", args)
 	}
+	env := rt.cfg.Env
+	if rt.cfg.Resolve != nil {
+		var err error
+		if bin, env, err = rt.cfg.Resolve(ctx, req.Command); err != nil {
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("agent: run: %w", ctx.Err())
+			}
+			return "", rt.setupError(req.Command, err)
+		}
+	}
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
 	defer cancel()
 	out := &cappedBuffer{max: rt.cfg.MaxOutputBytes, keep: rt.cfg.MaxOutputBytes}
@@ -240,7 +291,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	}
 	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(rt.cfg.Env), rt.cfg.CommandEnv[req.Command]...), out, errs
+	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
@@ -253,7 +304,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		return rt.result(stopped, out, out.dropped(), rt.mask(errs.String())), nil
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
-			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
+			return "", rt.setupError(req.Command, err)
 		}
 	}
 	code := cmd.ProcessState.ExitCode()

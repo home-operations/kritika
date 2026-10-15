@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,37 @@ index 111..222 100644
 +
 +func b() {}
 `
+
+func TestAgentRecordCommandErrors(t *testing.T) {
+	run := agent.NewRunTool(agent.RunConfig{
+		Commands: map[string]string{"tool": ""},
+		Resolve: func(context.Context, string) (string, []string, error) {
+			return "", nil, errors.New("install failed")
+		},
+	})
+	if _, err := run.Run(t.Context(), json.RawMessage(`{"command":"tool"}`)); err == nil {
+		t.Fatal("expected an install failure")
+	}
+	var rec agentRecord
+	rec.useTools(agentTools{run: run})
+	if !slices.Equal(rec.commandErrors, []string{"Command tool unavailable: install failed"}) {
+		t.Fatalf("command errors = %v", rec.commandErrors)
+	}
+	rec.useTools(agentTools{})
+	if rec.commandErrors == nil || len(rec.commandErrors) != 0 {
+		t.Fatalf("empty command errors = %#v", rec.commandErrors)
+	}
+	// A follow-up's notes on what was not offered come first, run tool or
+	// none.
+	rec.useTools(agentTools{run: run, notes: []string{"mise tools not offered: x"}})
+	if !slices.Equal(rec.commandErrors, []string{"mise tools not offered: x", "Command tool unavailable: install failed"}) {
+		t.Fatalf("command errors with notes = %v", rec.commandErrors)
+	}
+	rec.useTools(agentTools{notes: []string{"mise tools not offered: x"}})
+	if !slices.Equal(rec.commandErrors, []string{"mise tools not offered: x"}) {
+		t.Fatalf("notes without a run tool = %v", rec.commandErrors)
+	}
+}
 
 // loopPrompt is a review's prompt for s as agentLoop takes it, with the
 // strict contract when strict is set.

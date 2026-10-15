@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
 
@@ -12,12 +13,16 @@ import (
 )
 
 // repoFiles reads the repository files the spec names from the merge-base
-// tree, noting any it could not keep.
+// tree, noting any it could not keep. A repository need not declare
+// tools, so its mise config and lock are not noted when missing.
 func repoFiles(base *object.Tree, paths []string) (repoconfig.Files, []string, error) {
 	files, notes, err := repoconfig.Collect(treeReader(base), paths...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: %w", err)
 	}
+	notes = slices.DeleteFunc(notes, func(note string) bool {
+		return note == repoconfig.NotFound(RepoMiseConfig) || note == repoconfig.NotFound(RepoMiseLock)
+	})
 	return files, notes, nil
 }
 

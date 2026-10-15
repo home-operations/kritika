@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"slices"
 	"time"
 
 	"github.com/home-operations/kritika/internal/config"
@@ -35,14 +34,6 @@ func (f *File) RunnerFor() (deadline time.Duration, resources map[string]any) {
 	return f.Run.RunnerDeadline, f.Run.RunnerResources
 }
 
-// ToolsFor returns the tools that provide any of commands, the ones a run
-// whose agent may run commands mounts; nil when none does.
-func (f *File) ToolsFor(commands []string) []Tool {
-	var out []Tool
-	for _, t := range f.Run.Tools {
-		if slices.ContainsFunc(t.Provides(), func(c string) bool { return slices.Contains(commands, c) }) {
-			out = append(out, t)
-		}
-	}
-	return out
-}
+// MiseConfig is the instance's mise config for runner Jobs, "" for the
+// runner image's own.
+func (f *File) MiseConfig() string { return f.Run.RunnerMiseConfig }

@@ -202,6 +202,7 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
 		notes = append(notes, note)
 	}
+	notes = append(notes, run.CommandErrors...)
 	return &publicationAnswer{Result: res, Unanchored: unanchored, Notes: notes, Model: run.Model}, nil
 }
 
@@ -298,7 +299,7 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
-		Incomplete: reason, Notes: p.repoNotes, WebURL: web, PullURL: pull,
+		Incomplete: reason, Notes: slices.Concat(p.repoNotes, p.agent.CommandErrors), WebURL: web, PullURL: pull,
 	})
 	commentID, err := p.upsertSticky(ctx, body)
 	if err != nil {

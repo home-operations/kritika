@@ -144,13 +144,22 @@ func oneLine(s string) string {
 	return s
 }
 
-// FollowUpBody renders the reply as posted, with the model that answered
-// and, after a slash, the effort it reasoned at when one was set.
-func FollowUpBody(reply, model, effort string) string {
+// FollowUpBody renders the reply as posted: the reply, the notes on what
+// the run's tools could not do, as a review's summary states them, and
+// the model that answered with, after a slash, the effort it reasoned at
+// when one was set.
+func FollowUpBody(reply, model, effort string, notes []string) string {
+	var b strings.Builder
+	b.WriteString(reply)
+	b.WriteString("\n")
+	for _, note := range notes {
+		fmt.Fprintf(&b, "\n_%s._\n", note)
+	}
 	if effort != "" {
 		model += "/" + effort
 	}
-	return reply + fmt.Sprintf("\n\n<sub>kritika follow-up with %s.</sub>\n", model)
+	fmt.Fprintf(&b, "\n<sub>kritika follow-up with %s.</sub>\n", model)
+	return b.String()
 }
 
 // LimitBody is posted once when a thread hits its follow-up rate limit.

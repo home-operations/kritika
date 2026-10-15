@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestCommandEnv(t *testing.T) {
@@ -87,5 +88,33 @@ func TestKeptOutputRead(t *testing.T) {
 	out, err = read.Run(t.Context(), fetchInput(t, map[string]any{"path": "../upstream/run-1.out", "start_line": 400, "end_line": 400}))
 	if err != nil || out != "400\ta line of a long render" {
 		t.Fatalf("read_file of the kept output = %q, %v", out, err)
+	}
+}
+
+// TestDefaultCommandsMatchImage: the commands a runner image without mise
+// offers from its PATH are those the -tools image declares.
+func TestDefaultCommandsMatchImage(t *testing.T) {
+	doc, err := os.ReadFile("../../build/tools/mise.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var image struct {
+		Tools map[string]any `toml:"tools"`
+	}
+	if err := toml.Unmarshal(doc, &image); err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	for name, tool := range image.Tools {
+		options, _ := tool.(map[string]any)
+		if bins := binsOf(options["filter_bins"]); bins != nil {
+			commands = append(commands, bins...)
+		} else {
+			commands = append(commands, name)
+		}
+	}
+	slices.Sort(commands)
+	if !slices.Equal(commands, defaultCommands) {
+		t.Fatalf("image tools %v, defaultCommands %v", commands, defaultCommands)
 	}
 }

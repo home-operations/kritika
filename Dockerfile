@@ -45,31 +45,37 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -o kritika ./cmd/kritika
 
 # ---- Runner tools -----------------------------------------------------------
-# The release builds of the tools the -tools image puts on PATH, installed by
-# mise from build/tools/mise.toml at the URLs and checksums its lockfile pins
-# for this platform. A glibc stage, so mise records the same linux-x64 and
-# linux-arm64 platforms as the repository's own lockfile. mise's image has no
-# shell to copy the binaries out with, so its static binary and the CA roots
-# it downloads with are taken from it instead.
+# The release builds of the tools the -tools image offers the agent's run
+# tool, installed by mise from build/tools/mise.toml at the URLs and
+# checksums its lockfile pins for this platform, as mise system installs:
+# the runner's own mise uses a system install for any config that resolves
+# the same version, so a default tool is never downloaded at run time. The
+# same file becomes the image's system config, which declares those
+# versions. A glibc stage, so mise records the same linux-x64 and
+# linux-arm64 platforms as the repository's own lockfile. mise's image has
+# no shell, so its static binary and the CA roots it downloads with are
+# taken from it instead. The binary lives outside PATH: the runner runs it
+# by path, and a command the agent runs must not find it.
 FROM mirror.gcr.io/jdxcode/mise:2026.10.9 AS mise
 FROM mirror.gcr.io/library/debian:trixie-slim AS runner-tools
-COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
+COPY --from=mise /usr/local/bin/mise /opt/mise/bin/mise
 COPY --from=mise /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 WORKDIR /tools
 COPY build/tools/mise.toml build/tools/mise.lock ./
-# The manifest keeps each tool's bin path down to the executables it is
-# there for, so the bin paths are copied whole.
-RUN mise trust && mise install --locked \
-    && mkdir /out && mise bin-paths | xargs -I{} cp -rL {}/. /out/
+RUN /opt/mise/bin/mise trust && /opt/mise/bin/mise install --system --locked \
+    && mkdir -p /etc/mise && cp mise.toml /etc/mise/config.toml && cp mise.lock /etc/mise/mise.lock
 
 # ---- Runtime with runner tools ----------------------------------------------
-# kritika with the agent's commands on PATH for its run tool, the chart's
-# runner image for runner Jobs. Built with --target tools; published as the
-# -tools tag of each release. Distroless with glibc, libgcc and libstdc++ for
-# the tools' release builds, and no shell or package manager, so those
-# commands are the only other programs a pod can start.
+# kritika with mise and the tools its system config declares, for the
+# agent's run tool, the chart's runner image for runner Jobs. Built with
+# --target tools; published as the -tools tag of each release. Distroless
+# with glibc, libgcc and libstdc++ for the tools' release builds, and no
+# shell or package manager: mise, outside PATH, and the tools it installs
+# are the only other programs in the image.
 FROM gcr.io/distroless/cc:nonroot AS tools
-COPY --from=runner-tools /out/ /usr/local/bin/
+COPY --from=runner-tools /opt/mise/bin/mise /opt/mise/bin/mise
+COPY --from=runner-tools /etc/mise/ /etc/mise/
+COPY --from=runner-tools /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=builder /workspace/kritika /kritika
 ENTRYPOINT ["/kritika"]
 

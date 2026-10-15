@@ -21,9 +21,8 @@ func TestHelmConfiguration(t *testing.T) {
 		t.Skip("helm is required to validate the chart's application configuration")
 	}
 	cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
-		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.33.0",
+		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.32.0",
 		"--set", "runner.runtimeClass=gvisor", "--set", "runner.deadline=20m",
-		"--set", "runner.tools[0].name=helm", "--set", "runner.tools[0].image=example.com/helm:test",
 		"--set", "config.pollInterval=0s",
 		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com")
 	rendered, err := cmd.CombinedOutput()
@@ -56,7 +55,9 @@ func TestHelmConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered configuration: %v", err)
 	}
-	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || len(f.ToolsFor([]string{"helm"})) != 1 {
+	// The chart's default mise config is empty: the image's tools come from
+	// its own system config.
+	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseConfig() != "" {
 		t.Fatalf("rendered runtime settings = %+v", f.Run)
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")

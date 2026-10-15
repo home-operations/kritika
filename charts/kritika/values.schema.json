@@ -415,7 +415,7 @@
       "type": "object"
     },
     "imagePullSecrets": {
-      "description": "Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs and the tool images they mount.",
+      "description": "Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs.",
       "items": {
         "required": []
       },
@@ -984,7 +984,7 @@
           "type": "string"
         },
         "image": {
-          "description": "Image for runner Jobs: the release's `-tools` image, which adds crane,\ncurl, fd, gh, jq, rg and yq for a review's or follow-up's `agent.commands`.",
+          "description": "Image for runner Jobs: the release's `-tools` image, which adds mise\nwith curl, fd, gh, jq, rg and yq for a review's or follow-up's run tool.",
           "properties": {
             "digest": {
               "default": "",
@@ -1013,6 +1013,19 @@
           },
           "required": [],
           "title": "image",
+          "type": "object"
+        },
+        "mise": {
+          "properties": {
+            "config": {
+              "default": "",
+              "description": "The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain.",
+              "title": "config",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "mise",
           "type": "object"
         },
         "resources": {
@@ -1051,14 +1064,6 @@
           "required": [],
           "title": "serviceAccount",
           "type": "object"
-        },
-        "tools": {
-          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIKA_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.",
-          "items": {
-            "required": []
-          },
-          "title": "tools",
-          "type": "array"
         },
         "ttl": {
           "default": "10m",

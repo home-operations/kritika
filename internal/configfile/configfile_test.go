@@ -892,7 +892,6 @@ func TestRepositoryAgentReview(t *testing.T) {
 	withRepo := func(repo string) string {
 		return acme("  acme/x: " + repo + "\n")
 	}
-
 	t.Run("defaults resolve when unset", func(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo("{}")))
 		if err != nil {
@@ -917,7 +916,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 
 	t.Run("repository values override the defaults", func(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo(`{
-      agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, parts: 3, timeout: 3m, commands: [curl, rg], commandTimeout: 10s, fetches: 3 },
+      agent: { steps: 12, output: 4096, tokens: 250000, prompt: 120000, parts: 3, timeout: 3m, commandTimeout: 10s, fetches: 3 },
       review: { incremental: 5, fixes: true },
       rules: [{ id: style, file: docs/rules.md }],
       comments: { summary: .kritika/summary.md.tmpl, finding: .kritika/inline.md.tmpl } }`)))
@@ -926,7 +925,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 		}
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, MaxPromptTokens: 120_000, MaxParts: 3, Timeout: 3 * time.Minute,
-			Commands: []string{"curl", "rg"}, CommandTimeout: 10 * time.Second, MaxFetches: 3}
+			CommandTimeout: 10 * time.Second, MaxFetches: 3}
 		if !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
 			t.Fatalf("agent=%+v incremental=%+v", s.Agent, s.Incremental)
 		}
@@ -968,10 +967,6 @@ func TestRepositoryAgentReview(t *testing.T) {
 		{"unknown agent key", "{ agent: { maxSteps: 3 } }", "field maxSteps not found"},
 		{"zero command timeout", "{ agent: { commandTimeout: 0s } }", "agent.commandTimeout must be at least 1s"},
 		{"sub-second command timeout", "{ agent: { commandTimeout: 500ms } }", "agent.commandTimeout must be at least 1s"},
-		{"command path", "{ agent: { commands: [/usr/bin/curl] } }", "must be a bare command name"},
-		{"relative command path", "{ agent: { commands: [./tool] } }", "must be a bare command name"},
-		{"empty command", "{ agent: { commands: [''] } }", "must be a bare command name"},
-		{"duplicate command", "{ agent: { commands: [rg, rg] } }", "is listed twice"},
 		{"absolute rule file", "{ rules: [{ id: a, file: /etc/passwd }] }", "must be relative"},
 		{"escaping template path", "{ comments: { summary: ../x.tmpl } }", "escapes the repository"},
 		{"a rule with a file and text", "{ rules: [{ id: a, rule: Check., file: a.md }] }", "set one of rule or file"},

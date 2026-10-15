@@ -139,13 +139,21 @@ chart confines them:
   `egress` lists and is the runner's only way to its model.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
-- `runner.tools` adds programs a review's `agent.commands` may run, from
-  their own images; `runner.runtimeClass` puts runner Jobs under a
-  sandboxed runtime such as gVisor; `runner.resources` keeps a runaway run
-  in its own cgroup.
+- `runner.mise.config`, empty by default, adds programs the review's run
+  tool may execute to the six the runner image declares;
+  `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
+  gVisor; `runner.resources` keeps a runaway run in its own cgroup.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
+
+### Migrating runner tools
+
+`runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Declare tools in
+`runner.mise.config` instead; no extra image volume or Kubernetes 1.33
+requirement remains. The runner image declares its six tools itself, so
+the value is empty by default and they stay available. See the
+[migration example](https://kritika.home-operations.com/security/#migrating-from-image-mounted-tools).
 
 ### Topology
 
@@ -213,7 +221,7 @@ Kubernetes: `>=1.25.0-0`
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.repository | string | `"ghcr.io/home-operations/kritika"` | Image repository. |
 | image.tag | string | `""` | Overrides the image tag; defaults to the chart appVersion. |
-| imagePullSecrets | list | `[]` | Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs and the tool images they mount. |
+| imagePullSecrets | list | `[]` | Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs. |
 | ingress.annotations | object | `{}` | Ingress annotations. |
 | ingress.className | string | `""` | IngressClass name. |
 | ingress.enabled | bool | `false` | Expose the public Service through an Ingress. |
@@ -272,12 +280,12 @@ Kubernetes: `>=1.25.0-0`
 | runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
 | runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
 | runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
+| runner.mise.config | string | `""` | The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry. |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |
-| runner.tools | list | `[]` | Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIKA_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster. |
 | runner.ttl | string | `"10m"` | How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |
 | service.gatewayPort | int | `8082` | Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allow` less `egress.deny`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod. |

@@ -1,17 +1,16 @@
-# The tools the -tools image puts on the agent's PATH, installed by the
-# Dockerfile's runner-tools stage with `mise install --locked` at the URLs
-# and checksums mise.lock pins per platform. The image carries glibc, libgcc
-# and libstdc++ and no other library, so a build may link against those or
-# be static. After changing a version, refresh the lock with
+# The tools the -tools image offers the agent's run tool, installed by the
+# Dockerfile's runner-tools stage with `mise install --system --locked` at
+# the URLs and checksums mise.lock pins per platform, and declared by this
+# file as the image's system config. The image carries glibc, libgcc and
+# libstdc++ and no other library, so a build may link against those or be
+# static. After changing a version, refresh the lock with
 # `mise -C build/tools lock -p linux-x64,linux-arm64`.
 [tools]
 # Each entry exposes only the executable it is there for, filter_bins for a
-# release archive and symlink_bins for an aqua recipe, so the Dockerfile
-# copies every bin path as is. curl has no registry short name, and crane's
-# aqua recipe would expose gcrane beside it, so both come from their release
-# archives; the others resolve to aqua packages.
+# release archive and symlink_bins for an aqua recipe, so a tool offers one
+# command. curl has no registry short name, so it comes from its release
+# archive; the others resolve to aqua packages.
 "github:stunnel/static-curl" = { version = "8.22.0", matching = "glibc", filter_bins = "curl" }
-"github:google/go-containerregistry" = { version = "0.22.1", filter_bins = "crane" }
 fd = { version = "10.5.0", symlink_bins = true }
 gh = { version = "2.102.0", symlink_bins = true }
 jq = { version = "1.8.2", symlink_bins = true }

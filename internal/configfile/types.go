@@ -18,7 +18,6 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -326,9 +325,6 @@ type TriggerSpec struct {
 	Limit *int `yaml:"limit,omitempty"`
 }
 
-// Tool is a command-line tool mounted into a runner Job.
-type Tool = config.Tool
-
 // Embedding is the instance's embedder, which builds the similar-code
 // index: a model of one of the instance's openrouter or openai providers,
 // on its endpoint and key. There is one per instance because the index has
@@ -488,10 +484,6 @@ type Agent struct {
 	// never splits.
 	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
-	// Commands name the binaries the agent's run tool may execute, such as
-	// curl, fd and rg. The tool is offered only for names the runner image
-	// has on its PATH, so the distroless image offers none.
-	Commands []string `yaml:"commands,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
 	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`
 	// Fetches bounds the repositories fetch_repo fetches for a review, a
@@ -507,38 +499,32 @@ type AgentSettings struct {
 	MaxPromptTokens    int
 	MaxParts           int
 	Timeout            time.Duration
-	Commands           []string
 	CommandTimeout     time.Duration
 	MaxFetches         int
 }
 
 // MarshalJSON is the API's form of the bounds: the durations in whole
-// seconds, as the dashboard shows them, and commands never null.
+// seconds, as the dashboard shows them.
 func (a AgentSettings) MarshalJSON() ([]byte, error) {
-	commands := a.Commands
-	if commands == nil {
-		commands = []string{}
-	}
 	return json.Marshal(struct {
-		MaxSteps              int      `json:"maxSteps"`
-		MaxToolOutputBytes    int      `json:"maxToolOutputBytes"`
-		MaxTokens             int64    `json:"maxTokens"`
-		MaxPromptTokens       int      `json:"maxPromptTokens"`
-		MaxParts              int      `json:"maxParts"`
-		TimeoutSeconds        int64    `json:"timeoutSeconds"`
-		Commands              []string `json:"commands"`
-		CommandTimeoutSeconds int64    `json:"commandTimeoutSeconds"`
-		MaxFetches            int      `json:"maxFetches"`
+		MaxSteps              int   `json:"maxSteps"`
+		MaxToolOutputBytes    int   `json:"maxToolOutputBytes"`
+		MaxTokens             int64 `json:"maxTokens"`
+		MaxPromptTokens       int   `json:"maxPromptTokens"`
+		MaxParts              int   `json:"maxParts"`
+		TimeoutSeconds        int64 `json:"timeoutSeconds"`
+		CommandTimeoutSeconds int64 `json:"commandTimeoutSeconds"`
+		MaxFetches            int   `json:"maxFetches"`
 	}{
 		MaxSteps: a.MaxSteps, MaxToolOutputBytes: a.MaxToolOutputBytes, MaxTokens: a.MaxTokens,
-		MaxPromptTokens: a.MaxPromptTokens, MaxParts: a.MaxParts, TimeoutSeconds: int64(a.Timeout.Seconds()), Commands: commands,
+		MaxPromptTokens: a.MaxPromptTokens, MaxParts: a.MaxParts, TimeoutSeconds: int64(a.Timeout.Seconds()),
 		CommandTimeoutSeconds: int64(a.CommandTimeout.Seconds()), MaxFetches: a.MaxFetches,
 	})
 }
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
-// steps, tool output and tokens are the agent loop's own defaults. No
-// command is allowed by default: a repository is opted into the run tool.
+// steps, tool output and tokens are the agent loop's own defaults. Its
+// commands are unset: every command the runner image's mise tools provide.
 var DefaultAgent = AgentSettings{
 	MaxSteps:           agent.DefaultLimits.MaxSteps,
 	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
@@ -546,7 +532,7 @@ var DefaultAgent = AgentSettings{
 	MaxPromptTokens:    review.DefaultBudgetTokens,
 	MaxParts:           DefaultParts,
 	Timeout:            20 * time.Minute,
-	CommandTimeout:     30 * time.Second,
+	CommandTimeout:     DefaultCommandTimeout,
 	MaxFetches:         DefaultFetches,
 }
 
@@ -558,6 +544,10 @@ const DefaultParts = 8
 // unless agent.fetches says otherwise: the upstream of a dependency bump
 // takes one, a review of several a few more.
 const DefaultFetches = 8
+
+// DefaultCommandTimeout bounds one command of the run tool unless
+// agent.commandTimeout sets it.
+const DefaultCommandTimeout = 30 * time.Second
 
 // MinPromptTokens is the least agent.prompt takes: the system prompt, with
 // its rules and skills, and the pull request's description are paid

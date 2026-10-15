@@ -232,7 +232,7 @@ func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []
 		b, err := read(p)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			notes = append(notes, fmt.Sprintf("%s: referenced but not found", p))
+			notes = append(notes, NotFound(p))
 		case err != nil:
 			return nil, nil, fmt.Errorf("repoconfig: read %s: %w", p, err)
 		case len(b) > MaxFileBytes:
@@ -251,6 +251,11 @@ func Collect(read func(name string) ([]byte, error), paths ...string) (Files, []
 // MaxTotalBytes.
 func overTotal(name string) string {
 	return fmt.Sprintf("%s: skipped, would exceed the %d byte total limit", name, MaxTotalBytes)
+}
+
+// NotFound is the note for a named file the tree does not have.
+func NotFound(name string) string {
+	return fmt.Sprintf("%s: referenced but not found", name)
 }
 
 // TooLarge is the note for a file over MaxFileBytes.

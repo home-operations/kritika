@@ -1399,6 +1399,9 @@ func checkReviewRequest(
 
 func TestReviewWorkerEndToEnd(t *testing.T) {
 	ctx := t.Context()
+	// Nothing runs from PATH here: without it, the host's own curl or gh
+	// would give every review a run tool.
+	t.Setenv("PATH", t.TempDir())
 	logger := slog.New(slog.DiscardHandler)
 	appStore := storetest.Open(t)
 	if _, err := appStore.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8); err != nil {

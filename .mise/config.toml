@@ -131,14 +131,11 @@ description = "Render the Helm chart with the lint values"
 run = "helm template kritika charts/kritika --values charts/kritika/ci/lint-values.yaml"
 
 [tasks.generate]
-description = "Regenerate the chart's committed README and values.schema.json from Chart.yaml and values.yaml"
-run = """
-helm-docs --chart-search-root=charts --log-level=warn
-helm-schema --chart-search-root charts/kritika --skip-auto-generation required,additionalProperties --append-newline
-"""
+description = "Regenerate the chart's README and values.schema.json"
+run = "scripts/generate-chart.sh"
 
 [tasks.generate-check]
-description = "Fail if the generated chart README or schema are stale (CI gate)"
+description = "Fail if the generated chart README or schema is stale (CI gate)"
 run = """
 mise run generate
 git diff --exit-code charts/kritika/README.md charts/kritika/values.schema.json

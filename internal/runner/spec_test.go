@@ -69,7 +69,7 @@ func TestDecodeSpec(t *testing.T) {
 			wantErr: "a followup spec needs a base"},
 		{name: "a follow-up without a prompt", in: func() string { s := followUpSpec(); s.Prompt = nil; return encode(s) }(),
 			wantErr: "a followup spec needs a prompt"},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":28`, `"version":29`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":30`, `"version":31`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},
@@ -84,18 +84,6 @@ func TestDecodeSpec(t *testing.T) {
 		{name: "a review without a prompt", in: func() string { s := reviewSpec(); s.Prompt = nil; return encode(s) }(), wantErr: "prompt"},
 		{name: "a review without the gateway", in: func() string { s := reviewSpec(); s.Model.GatewayURL = ""; return encode(s) }(), wantErr: "gateway"},
 		{name: "a version 4 document", in: func() string { s := reviewSpec(); s.Version = 4; return encode(s) }(), wantErr: "version 4"},
-		{name: "valid with commands", in: func() string {
-			s := reviewSpec()
-			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 30
-			return encode(s)
-		}()},
-		{name: "commands without a timeout", in: func() string { s := reviewSpec(); s.Agent.Commands = []string{"rg"}; return encode(s) }(),
-			wantErr: "command timeout"},
-		{name: "a command given as a path", in: func() string {
-			s := reviewSpec()
-			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"../../tmp/x"}, 30
-			return encode(s)
-		}(), wantErr: "bare command name"},
 		{name: "trailing data", in: encode(reviewSpec()) + "{}", wantErr: "trailing"},
 		{name: "not json", in: "nope", wantErr: "runner"},
 	}

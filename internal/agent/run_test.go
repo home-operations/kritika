@@ -2,7 +2,9 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -92,6 +94,91 @@ func newTestRunTool(t *testing.T, proxied bool) (*RunTool, string) {
 		Commands: map[string]string{"rg": self, "curl": self},
 		Timeout:  2 * time.Second, MaxOutputBytes: 4096, Proxied: proxied,
 	}), dir
+}
+
+// TestRunToolResolve: a resolver picks the binary and the environment per
+// call, and its error reaches the model.
+func TestRunToolResolve(t *testing.T) {
+	rt, _ := newTestRunTool(t, false)
+	self, _ := os.Executable()
+	var resolved []string
+	rt.cfg.Resolve = func(_ context.Context, command string) (string, []string, error) {
+		resolved = append(resolved, command)
+		if command == "curl" {
+			return "", nil, errors.New("curl could not be installed: no network")
+		}
+		return self, append(slices.Clone(rt.cfg.Env), "TOOL=1"), nil
+	}
+	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
+	if err != nil || !strings.Contains(out, "env=TOOL=1\n") {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if _, err := rt.Run(t.Context(), json.RawMessage(`{"command":"curl"}`)); err == nil ||
+		err.Error() != "agent: run: Command curl unavailable: curl could not be installed: no network" {
+		t.Fatalf("err = %v", err)
+	}
+	if !slices.Equal(resolved, []string{"rg", "curl"}) {
+		t.Fatalf("resolved = %v", resolved)
+	}
+	if !slices.Equal(rt.Errors(), []string{"Command curl unavailable: curl could not be installed: no network"}) {
+		t.Fatalf("errors = %v", rt.Errors())
+	}
+}
+
+// TestRunToolSetupErrors: a setup failure is masked, keeps its cause and
+// names no path, and a command gets one note however often it fails.
+func TestRunToolSetupErrors(t *testing.T) {
+	for _, resolve := range []bool{false, true} {
+		t.Run(fmt.Sprintf("resolver=%t", resolve), func(t *testing.T) {
+			rt, _ := newTestRunTool(t, false)
+			missing := filepath.Join(t.TempDir(), "secret-token")
+			rt.cfg.Commands["rg"] = missing
+			rt.cfg.Mask = func(s string) string { return strings.ReplaceAll(s, "secret-token", "***") }
+			var failure error
+			if resolve {
+				attempt := 0
+				rt.cfg.Resolve = func(context.Context, string) (string, []string, error) {
+					attempt++
+					failure = fmt.Errorf("download %d denied: secret-token", attempt)
+					return "", nil, failure
+				}
+			}
+			for range 2 {
+				_, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
+				if err == nil || strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), filepath.Dir(missing)) {
+					t.Fatalf("err = %v", err)
+				}
+				switch {
+				case resolve && (!errors.Is(err, failure) || !strings.Contains(err.Error(), "***")):
+					t.Fatalf("error lost its cause: %v", err)
+				case !resolve && !errors.Is(err, os.ErrNotExist):
+					t.Fatalf("error lost its cause: %v", err)
+				}
+			}
+			notes := rt.Errors()
+			if len(notes) != 1 || strings.Contains(notes[0], "secret-token") || strings.Contains(notes[0], filepath.Dir(missing)) {
+				t.Fatalf("errors = %v", notes)
+			}
+			if resolve && notes[0] != "Command rg unavailable: download 1 denied: ***" {
+				t.Fatalf("errors = %v", notes)
+			}
+		})
+	}
+}
+
+// TestRunToolResolveCanceled: a resolver stopped by the run's cancellation
+// reports the cancellation, not the command.
+func TestRunToolResolveCanceled(t *testing.T) {
+	rt, _ := newTestRunTool(t, false)
+	ctx, cancel := context.WithCancel(t.Context())
+	rt.cfg.Resolve = func(ctx context.Context, _ string) (string, []string, error) {
+		cancel()
+		return "", nil, ctx.Err()
+	}
+	_, err := rt.Run(ctx, json.RawMessage(`{"command":"rg"}`))
+	if !errors.Is(err, context.Canceled) || len(rt.Errors()) != 0 {
+		t.Fatalf("err = %v, errors = %v", err, rt.Errors())
+	}
 }
 
 func TestRunTool(t *testing.T) {

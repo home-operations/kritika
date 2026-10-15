@@ -316,6 +316,10 @@ type agentTools struct {
 	fetch  *fetchRepoTool
 	search *searchTool
 	skills *skillTool
+	// notes say what of the run tool was not offered and why; a run with
+	// no summary to state them, a follow-up, records them with the
+	// command errors, which its reply carries.
+	notes []string
 }
 
 // extra lists the tools to offer.
@@ -447,8 +451,10 @@ func (rec *agentRecord) useTools(tools agentTools) {
 		rec.skillsOffered, rec.skillsOpened = tools.skills.names(), tools.skills.Opened()
 	}
 	rec.commandsOffered, rec.commandsRun = []string{}, []string{}
+	rec.commandErrors = append([]string{}, tools.notes...)
 	if tools.run != nil {
 		rec.commandsOffered, rec.commandsRun = tools.commands(), tools.run.Ran()
+		rec.commandErrors = append(rec.commandErrors, tools.run.Errors()...)
 	}
 }
 
@@ -470,6 +476,7 @@ type agentRecord struct {
 	// run tool's commands.
 	skillsOffered, skillsOpened  []string
 	commandsOffered, commandsRun []string
+	commandErrors                []string
 	// model answered the run's last step; empty when no step was answered,
 	// and the worker then names the model the run was granted.
 	model string
@@ -548,14 +555,14 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 		_, err := tx.Exec(ctx, `
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
-				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts, unpriced_steps)
+				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts, unpriced_steps, command_errors)
 			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
-				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21
+				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22
 			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
 			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued, rec.parts,
-			rec.unpricedSteps)
+			rec.unpricedSteps, rec.commandErrors)
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

@@ -2,7 +2,6 @@ package configfile
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +20,7 @@ func TestRun(t *testing.T) {
 		deadline, resources := f.RunnerFor()
 		if f.PollInterval() != 10*time.Minute || f.PollLookback() != 24*time.Hour || f.OnboardWindow() != 4 ||
 			f.DisabledIndexGrace() != 30*24*time.Hour || f.TranscriptRetention() != 30*24*time.Hour || f.DiffRetention() != 30*24*time.Hour ||
-			deadline != DefaultRunnerDeadline || resources != nil || f.Run.Tools != nil {
+			deadline != DefaultRunnerDeadline || resources != nil {
 			t.Fatalf("run = %+v", f.Run)
 		}
 	})
@@ -50,6 +49,7 @@ func TestRun(t *testing.T) {
 		{"KRITIKA_RUNNER_DEADLINE", fmt.Sprintf("%ds", int64(jobtimeout.MaxRunnerDeadline.Seconds())+1), "KRITIKA_RUNNER_DEADLINE must not exceed"},
 		{"KRITIKA_RUNNER_RESOURCES", "[1]", "KRITIKA_RUNNER_RESOURCES"},
 		{"KRITIKA_POLL_LOOKBACK", "soon", "KRITIKA_POLL_LOOKBACK"},
+		{"KRITIKA_RUNNER_TOOLS", "[]", "KRITIKA_RUNNER_TOOLS has been removed"},
 	}
 	for _, tt := range refused {
 		t.Run(tt.env+"="+tt.value, func(t *testing.T) {
@@ -63,47 +63,4 @@ func TestRun(t *testing.T) {
 		t.Setenv("KRITIKA_RUNNER_DEADLINE", jobtimeout.MaxRunnerDeadline.String())
 		mustLoad(t, minimal)
 	})
-}
-
-func TestTools(t *testing.T) {
-	t.Setenv("TEST_PRIVATE_KEY", "tok")
-	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	t.Setenv("KRITIKA_RUNNER_TOOLS", `[{"name": "helm", "image": "registry.example/helm:3", "path": "/usr/bin"},
-		{"name": "flux-tools", "image": "registry.example/flux:2", "commands": ["flux", "flate"]}]`)
-	f := mustLoad(t, minimal)
-	names := func(ts []Tool) []string {
-		out := make([]string, 0, len(ts))
-		for _, x := range ts {
-			out = append(out, x.Name)
-		}
-		return out
-	}
-	if got := names(f.ToolsFor([]string{"curl", "flate"})); !slices.Equal(got, []string{"flux-tools"}) {
-		t.Fatalf("ToolsFor(curl, flate) = %v, want flux-tools", got)
-	}
-	if got := names(f.ToolsFor([]string{"helm", "flux"})); !slices.Equal(got, []string{"helm", "flux-tools"}) {
-		t.Fatalf("ToolsFor(helm, flux) = %v", got)
-	}
-	if got := f.ToolsFor([]string{"curl", "rg"}); got != nil {
-		t.Fatalf("ToolsFor(curl, rg) = %v, want nil: the runner image provides those", got)
-	}
-
-	refused := map[string]string{
-		`{"name": "Helm", "image": "x"}`:                                 "must be lowercase",
-		`{"name": "helm", "image": "x"}, {"name": "helm", "image": "y"}`: `"helm" is listed twice`,
-		`{"name": "helm"}`: "runner.tools[0].image is required",
-		`{"name": "helm", "image": "x", "path": "usr/bin"}`:                                     "must be a clean absolute path",
-		`{"name": "helm", "image": "x", "path": "/usr/../etc"}`:                                 "must be a clean absolute path",
-		`{"name": "helm", "image": "x", "commands": ["bin/helm"]}`:                              "must be a bare command name",
-		`{"name": "helm", "image": "x"}, {"name": "helm2", "image": "y", "commands": ["helm"]}`: `which tool "helm" already provides`,
-		`{"name": "helm", "image": "x", "binaries": ["helm"]}`:                                  "unknown field",
-	}
-	for list, want := range refused {
-		t.Run(list, func(t *testing.T) {
-			t.Setenv("KRITIKA_RUNNER_TOOLS", "["+list+"]")
-			if _, err := Parse([]byte(minimal)); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "KRITIKA_RUNNER_TOOLS") {
-				t.Fatalf("Parse = %v, want an error containing %q and KRITIKA_RUNNER_TOOLS", err, want)
-			}
-		})
-	}
 }

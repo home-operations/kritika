@@ -21,6 +21,13 @@ configuration applied. `KRITIKA_SMOKE_KEEP=1` leaves the cluster running
 for a look afterwards, and `KRITIKA_SMOKE_IMAGE` names an image already
 built, to skip the build.
 
+`build/tools/mise.toml` pins the runner image's tools, which the image
+declares in its `/etc/mise/config.toml`; the chart's `runner.mise.config`
+is empty by default and adds to them. After changing it, refresh its lock
+with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
+generate` rebuilds the chart's README and schema from `values.yaml`; the
+Renovate regeneration workflow commits both.
+
 ## Docs
 
 This site is MkDocs Material, declared in `pyproject.toml`, pinned in

@@ -3,10 +3,6 @@ templates:
   - deployment.tpl
 values:
   - ../ci/lint-values.yaml
-# The runner tools tests need a cluster that mounts image volumes.
-capabilities:
-  majorVersion: 1
-  minorVersion: 33
 tests:
   - it: renders one Deployment of kritika serve by default
     asserts:
@@ -241,24 +237,29 @@ tests:
           content:
             name: KRITIKA_RUNNER_TOOLS
           any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_MISE_CONFIG
+          any: true
 
-  - it: renders the runner pods' resources and tools as JSON
+  - it: renders the runner pods' resources as JSON, and the mise config as is
     set:
       config: null
       existingConfigMap: external-config
       runner.resources: { limits: { memory: 1Gi } }
-      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+      runner.mise.config: |
+        [tools]
+        helm = "4.3.0"
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }
+          content:
+            name: KRITIKA_RUNNER_MISE_CONFIG
+            value: "[tools]\nhelm = \"4.3.0\"\n"
       - contains:
           path: spec.template.spec.containers[0].env
-          content:
-            {
-              name: KRITIKA_RUNNER_TOOLS,
-              value: '[{"image":"registry.example/helm:3","name":"helm"}]',
-            }
+          content: { name: KRITIKA_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }
 
   - it: hands kritika serve the dashboard's URL, and one public port for the webhooks and the dashboard
     set:
@@ -351,32 +352,29 @@ tests:
       - notExists:
           path: spec.template.spec.topologySpreadConstraints
 
-  - it: refuses runner tools on a cluster older than 1.33, which cannot mount them
+  - it: rejects removed tool mounts with migration guidance
     set:
       runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+    asserts:
+      - failedTemplate:
+          errorMessage: runner.tools has been removed; declare tools in runner.mise.config instead
+
+  - it: supports mise tools without image volume support
+    set:
+      config: null
+      existingConfigMap: external-config
+      runner.mise.config: |
+        [tools]
+        helm = "4.3.0"
     capabilities:
       majorVersion: 1
       minorVersion: 32
     asserts:
-      - failedTemplate:
-          errorPattern: runner.tools needs Kubernetes 1.33 or newer
-
-  - it: renders runner tools on a cluster that mounts image volumes
-    set:
-      config: null
-      existingConfigMap: external-config
-      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
-    capabilities:
-      majorVersion: 1
-      minorVersion: 33
-    asserts:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            {
-              name: KRITIKA_RUNNER_TOOLS,
-              value: '[{"image":"registry.example/helm:3","name":"helm"}]',
-            }
+            name: KRITIKA_RUNNER_MISE_CONFIG
+            value: "[tools]\nhelm = \"4.3.0\"\n"
 
   - it: supplies only the config path and database credentials before extra env
     asserts:
@@ -412,6 +410,10 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_RUNNER_DEADLINE, value: 20m }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_MISE_CONFIG }
+          any: true
       - contains:
           path: spec.template.spec.volumes
           content:

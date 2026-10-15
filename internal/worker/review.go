@@ -166,9 +166,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
-	spec.Agent.Hosts = file.EgressHosts()
+	spec.Agent.Hosts, spec.Agent.MiseConfig = file.EgressHosts(), file.MiseConfig()
 	b.notes = append(b.notes, promptNotes...)
-	tools := file.ToolsFor(settings.Agent.Commands)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, args.HeadSHA, w.superviseEvery, logger)
 	out := w.runRunner(ctx, w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(account.Key(), pr.repository, jobs.QueueReview, args.Number),
@@ -177,7 +176,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		Secrets:     secrets,
 		Deadline:    deadline,
 		Resources:   resources,
-		Tools:       tools,
 	}, args.AccountID, runID, settings.Models.Review, w.rowWait, logger)
 	// The parts are done with the slots they ran in.
 	releaseExtra()
