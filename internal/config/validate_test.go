@@ -29,6 +29,8 @@ func TestSettingsValidation(t *testing.T) {
 		{"empty role", "databaseAppRole: ''", "databaseAppRole: KRITIKA_DATABASE_APP_ROLE must be set"},
 		{"same database roles", "databaseRunnerRole: kritika_app", "databaseRunnerRole: KRITIKA_DATABASE_RUNNER_ROLE must be distinct"},
 		{"unknown executor", "executor: docker", "executor: KRITIKA_EXECUTOR must be kubernetes or local"},
+		{"malformed mise config", "runner: {miseConfig: '[tools'}", "runner.miseConfig: KRITIKA_RUNNER_MISE_CONFIG must be a TOML document: "},
+		{"mise config", "runner: {miseConfig: \"[tools]\\nhelm = '4.3.0'\"}", ""},
 		{"allowed bounds", fmt.Sprintf("pollInterval: 0s\npollLookback: 0s\nindexGrace: 0s\ntranscriptRetention: 24h\ndiffRetention: 24h\nrunner: {deadline: %s}", jobtimeout.MaxRunnerDeadline), ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

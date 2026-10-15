@@ -390,7 +390,7 @@ func (f *followUp) runAgent(
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
 				Commands: limits.Commands, CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
-				Hosts: f.file.EgressHosts(),
+				Hosts: f.file.EgressHosts(), MiseConfig: f.file.MiseConfig(),
 			},
 		},
 		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},

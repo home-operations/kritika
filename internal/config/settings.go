@@ -149,6 +149,10 @@ type Runner struct {
 	// Tools are the command-line tools a runner pod may mount from an image
 	// for the agent's run tool, a JSON list.
 	Tools toolList `env:"KRITIKA_RUNNER_TOOLS" yaml:"tools,omitempty"`
+	// RunnerMiseConfig is the instance's mise config, a TOML document whose
+	// tools the agent's run tool offers every repository, in place of the
+	// runner image's own /etc/mise/config.toml. Empty keeps the image's.
+	RunnerMiseConfig string `env:"KRITIKA_RUNNER_MISE_CONFIG" yaml:"miseConfig,omitempty"`
 }
 
 // jsonObject is a JSON object from the environment, kept as loose maps

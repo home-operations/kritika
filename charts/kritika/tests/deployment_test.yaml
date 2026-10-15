@@ -241,14 +241,27 @@ tests:
           content:
             name: KRITIKA_RUNNER_TOOLS
           any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_MISE_CONFIG
+          any: true
 
-  - it: renders the runner pods' resources and tools as JSON
+  - it: renders the runner pods' resources and tools as JSON, and the mise config as is
     set:
       config: null
       existingConfigMap: external-config
       runner.resources: { limits: { memory: 1Gi } }
       runner.tools: [{ name: helm, image: registry.example/helm:3 }]
+      runner.mise.config: |
+        [tools]
+        helm = "4.3.0"
     asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_RUNNER_MISE_CONFIG
+            value: "[tools]\nhelm = \"4.3.0\"\n"
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }

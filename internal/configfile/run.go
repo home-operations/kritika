@@ -35,6 +35,10 @@ func (f *File) RunnerFor() (deadline time.Duration, resources map[string]any) {
 	return f.Run.RunnerDeadline, f.Run.RunnerResources
 }
 
+// MiseConfig is the instance's mise config for runner Jobs, "" for the
+// runner image's own.
+func (f *File) MiseConfig() string { return f.Run.RunnerMiseConfig }
+
 // ToolsFor returns the tools that provide any of commands, the ones a run
 // whose agent may run commands mounts; nil when none does.
 func (f *File) ToolsFor(commands []string) []Tool {

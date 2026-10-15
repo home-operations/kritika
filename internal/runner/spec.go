@@ -23,7 +23,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 28
+const SpecVersion = 29
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -94,6 +94,10 @@ type AgentLimits struct {
 	// as configfile.EgressHosts lists them, for the tools' descriptions;
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
+	// MiseConfig is the instance's mise config, the admin's TOML document
+	// declaring the tools every repository is offered; "" leaves the
+	// runner image's own system config in place.
+	MiseConfig string `json:"miseConfig,omitempty"`
 }
 
 // Prompt is what a review run needs beyond the checkout to write its

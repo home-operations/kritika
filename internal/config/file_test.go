@@ -70,13 +70,16 @@ runner:
     - name: flux
       image: example.com/flux:test
       commands: [flux, flate]
+  miseConfig: |
+    [tools]
+    helm = "4.3.0"
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.ReviewWorkers != 5 || s.IndexWorkers != 1 || s.PollInterval != 0 ||
 		s.RunnerImage != "example.com/runner:test" || s.RunnerServiceAccount != "" ||
-		s.RunnerRuntimeClass != "gvisor" || s.RunnerTTL != 10*time.Minute {
+		s.RunnerRuntimeClass != "gvisor" || s.RunnerTTL != 10*time.Minute || s.RunnerMiseConfig != "[tools]\nhelm = \"4.3.0\"\n" {
 		t.Fatalf("merged settings = %+v", s)
 	}
 	wantResources := jsonObject{

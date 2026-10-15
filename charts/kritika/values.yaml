@@ -166,6 +166,9 @@ runner:
   ttl: 10m
   # -- Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.
   resources: {}
+  mise:
+    # -- The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), a TOML document whose `[tools]` the agent's run tool offers every repository, pinned by exact version, in place of the runner image's own `/etc/mise/config.toml`. Empty keeps the image's, which declares the `-tools` image's curl, crane, fd, gh, jq, rg and yq at the versions `build/tools/mise.toml` pins; a config set here replaces it whole, so it names every tool the instance offers.
+    config: ""
   # -- Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIKA_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.
   tools: []
   serviceAccount:
