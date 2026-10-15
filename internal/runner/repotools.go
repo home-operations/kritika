@@ -58,8 +58,9 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 	}
 	var notes []string
 	kept := map[string]any{}
+	var keptTools map[string]any
 	if tools, ok := raw["tools"].(map[string]any); ok {
-		keptTools := map[string]any{}
+		keptTools = map[string]any{}
 		for _, name := range slices.Sorted(maps.Keys(tools)) {
 			tool, toolNotes := keptTool("tool "+name, tools[name])
 			notes = append(notes, toolNotes...)
@@ -101,8 +102,7 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 	if err != nil {
 		return nil, nil, fmt.Errorf("runner: %s: %w", RepoMiseConfig, err)
 	}
-	tools, _ := kept["tools"].(map[string]any)
-	r := &repoMiseConfig{config: string(out), lock: files[RepoMiseLock], tools: tools}
+	r := &repoMiseConfig{config: string(out), lock: files[RepoMiseLock], tools: keptTools}
 	if r.lock != "" {
 		if r.locked, err = lockedTools(r.lock, misePlatform()); err != nil {
 			return nil, nil, err
@@ -210,7 +210,11 @@ func templatedValue(v any) bool {
 	case []any:
 		return slices.ContainsFunc(v, templatedValue)
 	case map[string]any:
-		return slices.ContainsFunc(slices.Collect(maps.Values(v)), templatedValue)
+		for _, x := range v {
+			if templatedValue(x) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -223,7 +227,13 @@ func (r *repoMiseConfig) filterBins(name string) []string {
 		tool = versions[0]
 	}
 	options, _ := tool.(map[string]any)
-	switch bins := options["filter_bins"].(type) {
+	return binsOf(options["filter_bins"])
+}
+
+// binsOf is a filter_bins value as a decoded TOML or JSON document holds
+// it, a name or a list of them, as a list; nil for none.
+func binsOf(v any) []string {
+	switch bins := v.(type) {
 	case string:
 		if bins != "" {
 			return []string{bins}

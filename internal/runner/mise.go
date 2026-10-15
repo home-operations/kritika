@@ -73,8 +73,6 @@ type miseTool struct {
 	installed   bool
 	// source is the config file that declares it.
 	source string
-	// commands are the executables it offers.
-	commands []string
 }
 
 // miseTools are the tools mise's merged config declares for a run, the
@@ -91,7 +89,7 @@ type miseTools struct {
 	base, env []string
 	// secrets mask mise's output; the values the config marks for
 	// redaction join them.
-	secrets   *Secrets
+	secrets   Secrets
 	logger    *slog.Logger
 	tools     map[string]*miseTool
 	byCommand map[string]*miseTool
@@ -135,10 +133,13 @@ func resolved(path string) string {
 // which mise layers over the global one, with its lock beside it; its
 // tools install at what the lock pins, and one the lock does not pin for
 // this platform is not offered unless the image has that version
-// installed already. notes say what was not offered and why, for the
-// review's summary.
+// installed already. credentialed names the commands that run with one
+// of the run's credentials, which a repository's own binary is not
+// offered as. notes say what was not offered and why, for the review's
+// summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, config string, repo *repoMiseConfig, secrets *Secrets, logger *slog.Logger,
+	ctx context.Context, bin, home string, base []string, config string, repo *repoMiseConfig, credentialed []string, secrets Secrets,
+	logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if config != "" {
 		dir := filepath.Join(home, ".config", "mise")
@@ -155,9 +156,6 @@ func newMiseTools(
 				return nil, nil, fmt.Errorf("runner: repository mise config: %w", err)
 			}
 		}
-	}
-	if secrets.Redacted == nil {
-		secrets.Redacted = &Redactions{}
 	}
 	m := &miseTools{
 		bin: bin, home: home, base: base, secrets: secrets, logger: logger, repo: repo,
@@ -185,6 +183,9 @@ func newMiseTools(
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := m.redactions(ctx); err != nil {
+		return nil, nil, err
+	}
 	for _, name := range slices.Sorted(maps.Keys(m.tools)) {
 		t := m.tools[name]
 		if m.fromRepo(t) && !t.installed && !slices.Contains(repo.locked[name], t.version) {
@@ -205,18 +206,16 @@ func newMiseTools(
 			notes = append(notes, fmt.Sprintf("mise tool %s not offered: it provides mise", name))
 			continue
 		}
-		t.commands = commands
 		for _, c := range commands {
 			if other := m.byCommand[c]; other != nil {
 				notes = append(notes, fmt.Sprintf("mise tool %s does not offer %s: %s offers it already", name, c, other.name))
 				continue
 			}
-			// gh runs with the run's GitHub token, so a binary the
-			// repository chose is not offered as it; one the image has
-			// installed at the repository's version is the image's.
-			if c == "gh" && m.fromRepo(t) && !t.installed {
-				notes = append(notes, fmt.Sprintf("%s: %s does not offer gh: gh carries the run's GitHub token, "+
-					"so only the image or the instance provides it", RepoMiseConfig, name))
+			// A tool the image has installed at the repository's version
+			// is the image's binary.
+			if slices.Contains(credentialed, c) && m.fromRepo(t) && !t.installed {
+				notes = append(notes, fmt.Sprintf("%s: %s does not offer %s: it carries one of the run's credentials, "+
+					"so only the image or the instance provides it", RepoMiseConfig, name, c))
 				continue
 			}
 			m.byCommand[c] = t
@@ -382,20 +381,26 @@ func (m *miseTools) refresh(ctx context.Context) ([]string, error) {
 	if m.path, m.extra, notes, err = parseMiseEnv(out); err != nil {
 		return nil, err
 	}
-	// The values the config marks for redaction stay out of a command's
-	// result and the review, as the run's tokens do.
-	out, err = m.run(ctx, "env", "--json", "--redacted")
+	return notes, nil
+}
+
+// redactions adds the values the config marks for redaction to the run's
+// secrets, so they stay out of a command's result and the review, as the
+// run's tokens do. The config does not change after the start, so they
+// are read once.
+func (m *miseTools) redactions(ctx context.Context) error {
+	out, err := m.run(ctx, "env", "--json", "--redacted")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var redacted map[string]string
 	if err := json.Unmarshal(out, &redacted); err != nil {
-		return nil, fmt.Errorf("runner: mise env --redacted: %w", err)
+		return fmt.Errorf("runner: mise env --redacted: %w", err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(redacted)) {
 		m.secrets.Redacted.Add(redacted[name])
 	}
-	return notes, nil
+	return nil
 }
 
 // parseMiseEnv splits mise env --json into PATH's entries, nil when mise
@@ -407,7 +412,7 @@ func parseMiseEnv(out []byte) (path, extra, notes []string, err error) {
 		return nil, nil, nil, fmt.Errorf("runner: mise env: %w", err)
 	}
 	if p := env["PATH"]; p != "" {
-		path = strings.Split(p, string(os.PathListSeparator))
+		path = filepath.SplitList(p)
 	}
 	for _, name := range slices.Sorted(maps.Keys(env)) {
 		switch {
@@ -460,22 +465,12 @@ func registryBins(entries []registryEntry, key string) []string {
 type miseToolInfo struct {
 	Backend string `json:"backend"`
 	Options struct {
-		FilterBins json.RawMessage `json:"filter_bins"`
+		FilterBins any `json:"filter_bins"`
 	} `json:"tool_options"`
 }
 
 // filterBins is the tool's filter_bins option, a name or a list of them.
-func (i miseToolInfo) filterBins() []string {
-	var one string
-	if json.Unmarshal(i.Options.FilterBins, &one) == nil && one != "" {
-		return []string{one}
-	}
-	var many []string
-	if json.Unmarshal(i.Options.FilterBins, &many) == nil {
-		return many
-	}
-	return nil
-}
+func (i miseToolInfo) filterBins() []string { return binsOf(i.Options.FilterBins) }
 
 // commandsOf are the commands t offers: an installed tool's executables,
 // and for one still to install what its config says and the registry
@@ -581,13 +576,10 @@ func (m *miseTools) offered() map[string]string {
 	return out
 }
 
-// provides reports whether a mise tool offers command.
-func (m *miseTools) provides(command string) bool { return m.byCommand[command] != nil }
-
 // pending reports whether an offered tool is still to install.
-func (m *miseTools) pending(offered map[string]string) bool {
-	for c := range offered {
-		if t := m.byCommand[c]; t != nil && !t.installed {
+func (m *miseTools) pending() bool {
+	for _, t := range m.byCommand {
+		if !t.installed {
 			return true
 		}
 	}
@@ -657,7 +649,7 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 		_, err := m.refresh(ictx)
 		return err
 	})
-	output := m.secrets.Mask(strings.TrimSpace(string(out.buf)))
+	output := m.secrets.Mask(textcut.Prefix(strings.TrimSpace(string(out.buf)), installOutputBytes))
 	switch {
 	case ctx.Err() != nil:
 		return ctx.Err()

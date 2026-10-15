@@ -3,11 +3,15 @@ package runner
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,18 +41,18 @@ var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
 // not offered, for the review's summary, and the values a mise config
 // marks for redaction join secrets. cleanup removes the scratch space.
 func commandTool(
-	ctx context.Context, p Spec, tree *agent.Tree, files repoconfig.Files, secrets *Secrets, maxOutput int, logger *slog.Logger,
+	ctx context.Context, p Spec, tree *agent.Tree, files repoconfig.Files, secrets Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
 	withMise := err == nil
 	var repo *repoMiseConfig
-	if _, ok := files[RepoMiseConfig]; ok && !withMise {
-		notes = append(notes, RepoMiseConfig+" not read: the runner image has no mise")
-	} else if withMise {
+	if withMise {
 		var repoNotes []string
 		repo, repoNotes = readRepoMise(files, logger)
 		notes = append(notes, repoNotes...)
+	} else if _, ok := files[RepoMiseConfig]; ok {
+		notes = append(notes, RepoMiseConfig+" not read: the runner image has no mise")
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
@@ -65,9 +69,11 @@ func commandTool(
 	// rewrite it, or the binaries and config mise keeps there.
 	dir, home, up := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"), filepath.Join(scratch, upstreamDir)
 	// The scratch space goes however the run ended, so its removal does
-	// not stop with ctx.
+	// not stop with ctx. Only home and the scratch directory itself were
+	// made read-only; home may not exist yet.
 	cleanup = func() {
-		if err := lockTree(context.WithoutCancel(ctx), scratch, false); err != nil {
+		err := lockTree(context.WithoutCancel(ctx), home, false)
+		if err := errors.Join(os.Chmod(scratch, 0o755), err); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			logger.Warn("scratch not made writable for its removal", "error", err)
 		}
 		_ = os.RemoveAll(scratch)
@@ -79,18 +85,22 @@ func commandTool(
 		}
 	}
 	env, proxied := commandEnv(home)
+	// gh reaches GitHub over HTTPS, which the gateway cannot add a
+	// credential to, so it carries the run's read-only token; a command
+	// that carries a credential is never a binary the repository chose.
+	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
 	found := map[string]string{}
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
-		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseConfig, repo, secrets, logger)
+		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseConfig, repo,
+			slices.Sorted(maps.Keys(commandEnvs)), secrets, logger)
 		notes = append(notes, miseNotes...)
 		if err != nil {
 			logger.Warn("mise tools not offered", "error", err)
 			notes = append(notes, "mise tools not offered: "+err.Error())
 		} else {
 			found = mise.offered()
-			env = mise.commandEnv()
 		}
 	} else {
 		for _, name := range defaultCommands {
@@ -102,7 +112,8 @@ func commandTool(
 	if len(found) == 0 {
 		return nil, nil, notes, cleanup
 	}
-	if _, curl := found["curl"]; curl {
+	_, curl := found["curl"]
+	if curl {
 		if err := os.WriteFile(filepath.Join(home, ".curlrc"), []byte(curlrc), 0o644); err != nil {
 			logger.Warn("commands not offered: no scratch space", "error", err)
 			return nil, nil, notes, cleanup
@@ -142,22 +153,11 @@ func commandTool(
 	}
 	var resolve func(context.Context, string) (string, []string, error)
 	if mise != nil {
-		resolve = func(ctx context.Context, command string) (string, []string, error) {
-			if mise.provides(command) {
-				return mise.resolve(ctx, command)
-			}
-			if err := mise.usable(); err != nil {
-				return "", nil, err
-			}
-			return found[command], mise.commandEnv(), nil
-		}
-		if mise.pending(found) {
+		resolve = mise.resolve
+		if mise.pending() {
 			note += " A command whose tool is not installed yet is installed on first use, which can take a moment."
 		}
 	}
-	// gh reaches GitHub over HTTPS, which the gateway cannot add a
-	// credential to, so it carries the run's read-only token.
-	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
 	// A cut output is kept beside the checkout, where fetch_repo writes,
 	// within the budget the two share; one file holds at most what
 	// read_file reads of a diff, in line ranges.
@@ -172,7 +172,6 @@ func commandTool(
 	// An operator who allows only rg or fd has not let the agent reach the
 	// network, so fetch_repo comes with a command that does.
 	_, gh := found["gh"]
-	_, curl := found["curl"]
 	if gh || curl {
 		fetch = &fetchRepoTool{
 			dir: up, budget: budget, fetchMax: cmp.Or(p.Agent.Fetches, configfile.DefaultFetches), maxBytes: maxOutput, hosts: p.Agent.Hosts,

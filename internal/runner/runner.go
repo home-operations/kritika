@@ -37,6 +37,9 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 	if err := spec.Validate(); err != nil {
 		return err
 	}
+	// Every copy of the secrets taken from here on shares the redactions
+	// a mise config adds mid-run.
+	secrets.Redacted = &Redactions{}
 	st = st.ForRunner(secrets.DatabaseToken)
 	if err := st.WithRunnerJob(ctx, spec.RunID, func(tx pgx.Tx) error {
 		var id string
@@ -178,7 +181,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		}
 		var commandNotes []string
 		var cleanup func()
-		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), files, &secrets,
+		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), files, secrets,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
 		notes = append(notes, commandNotes...)

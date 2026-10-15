@@ -12,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 // TestCommandToolMise: on an image with mise, the run tool offers the
@@ -48,7 +49,7 @@ func TestCommandToolMise(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
 			s.Agent.CommandTimeoutSeconds, s.Agent.MiseConfig = 10, testMiseConfig
-			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, tt.files, &Secrets{GitToken: "ghs_run"}, 4096, logger)
+			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, tt.files, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096, logger)
 			defer cleanup()
 			if fetch != nil {
 				t.Fatal("fetch_repo offered without a command that reaches the network")

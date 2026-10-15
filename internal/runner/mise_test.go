@@ -136,11 +136,11 @@ func TestMiseToolsOffered(t *testing.T) {
 	helm, rg := &miseTool{name: "helm", installed: false}, &miseTool{name: "rg", installed: true}
 	m := &miseTools{byCommand: map[string]*miseTool{"helm": helm, "rg": rg}}
 	got := m.offered()
-	if names := slices.Sorted(maps.Keys(got)); !slices.Equal(names, []string{"helm", "rg"}) || !m.pending(got) {
-		t.Errorf("offered = %v, pending %v", names, m.pending(got))
+	if names := slices.Sorted(maps.Keys(got)); !slices.Equal(names, []string{"helm", "rg"}) || !m.pending() {
+		t.Errorf("offered = %v, pending %v", names, m.pending())
 	}
 	helm.installed = true
-	if m.pending(m.offered()) {
+	if m.pending() {
 		t.Error("pending with every tool installed")
 	}
 }
@@ -184,8 +184,8 @@ func TestMiseTools(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_CONFIG_DIR", t.TempDir())
 	home := t.TempDir()
 	base := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
-	secrets := &Secrets{GitToken: "ghs_run"}
-	m, notes, err := newMiseTools(t.Context(), bin, home, base, testMiseConfig, nil, secrets, slog.New(slog.DiscardHandler))
+	secrets := Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}
+	m, notes, err := newMiseTools(t.Context(), bin, home, base, testMiseConfig, nil, nil, secrets, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestMiseTools(t *testing.T) {
 	}
 	// A value found by a later refresh, after an install, reaches every
 	// mask built from the secrets before it.
-	mask, copied := secrets.Mask, *secrets
+	mask, copied := secrets.Mask, secrets
 	secrets.Redacted.Add("later")
 	if mask("x later") != "x ***" || copied.Mask("x later") != "x ***" {
 		t.Fatal("a redaction added later is not masked by an earlier mask")
@@ -203,15 +203,15 @@ func TestMiseTools(t *testing.T) {
 		t.Fatalf("notes = %v", notes)
 	}
 	yq := m.tools["yq"]
-	if yq == nil || !yq.installed || yq.version != testYqVersion || !slices.Equal(yq.commands, []string{"yq"}) {
+	if yq == nil || !yq.installed || yq.version != testYqVersion || m.byCommand["yq"] != yq {
 		t.Fatalf("yq = %+v", yq)
 	}
 	if !strings.HasPrefix(yq.installPath, dataDir) {
 		t.Fatalf("yq installed at %s, not from the system installs under %s", yq.installPath, dataDir)
 	}
 	offered := m.offered()
-	if _, ok := offered["yq"]; !ok || len(offered) != 1 || m.pending(offered) {
-		t.Fatalf("offered = %v, pending %v", offered, m.pending(offered))
+	if _, ok := offered["yq"]; !ok || len(offered) != 1 || m.pending() {
+		t.Fatalf("offered = %v, pending %v", offered, m.pending())
 	}
 	path, env, err := m.resolve(t.Context(), "yq")
 	if err != nil {
@@ -251,7 +251,9 @@ func TestDeclaredCommands(t *testing.T) {
 		var i miseToolInfo
 		i.Backend = backend
 		if filter != "" {
-			i.Options.FilterBins = json.RawMessage(filter)
+			if err := json.Unmarshal([]byte(filter), &i.Options.FilterBins); err != nil {
+				t.Fatal(err)
+			}
 		}
 		return i
 	}
@@ -332,7 +334,7 @@ func TestMiseRunCanceled(t *testing.T) {
 	bin, _ := hostMise(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	m := &miseTools{bin: bin, home: t.TempDir(), secrets: &Secrets{}, logger: slog.New(slog.DiscardHandler)}
+	m := &miseTools{bin: bin, home: t.TempDir(), secrets: Secrets{Redacted: &Redactions{}}, logger: slog.New(slog.DiscardHandler)}
 	if _, err := m.run(ctx, "ls", "--json"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
 	}
@@ -350,7 +352,7 @@ func TestMiseToolsEmptyConfig(t *testing.T) {
 	}
 	t.Setenv("MISE_SYSTEM_CONFIG_DIR", system)
 	home := t.TempDir()
-	m, notes, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, "", nil, &Secrets{}, slog.New(slog.DiscardHandler))
+	m, notes, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, "", nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +382,7 @@ func TestMiseToolsCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scratch, "mise.toml"), []byte("[tools]\njq = \"1.8.2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, testMiseConfig, nil, &Secrets{}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, testMiseConfig, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +401,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	t.Setenv("MISE_SYSTEM_CONFIG_DIR", t.TempDir())
 	home := t.TempDir()
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, testMiseConfig, nil, &Secrets{}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, testMiseConfig, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +459,7 @@ func TestMiseExecRelock(t *testing.T) {
 		_ = os.Chmod(filepath.Join(home, "sealed"), 0o755)
 		_ = lockTree(context.Background(), home, false)
 	})
-	m := &miseTools{bin: bin, home: home, env: []string{"HOME=" + home, "PATH=/usr/bin:/bin"}, secrets: &Secrets{}, logger: slog.New(slog.DiscardHandler), locked: true}
+	m := &miseTools{bin: bin, home: home, env: []string{"HOME=" + home, "PATH=/usr/bin:/bin"}, secrets: Secrets{Redacted: &Redactions{}}, logger: slog.New(slog.DiscardHandler), locked: true}
 	if err := lockTree(t.Context(), home, true); err != nil {
 		t.Fatal(err)
 	}

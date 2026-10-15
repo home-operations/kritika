@@ -57,7 +57,7 @@ checksum = "sha256:%x"
 		{"missing checksum", strings.ReplaceAll(lock, fmt.Sprintf("sha256:%x", sha256.Sum256(payload)), ""), "repo-tool", lockNote, false, false},
 		{"wrong checksum", strings.ReplaceAll(lock, fmt.Sprintf("%x", sha256.Sum256(payload)), strings.Repeat("0", 64)), "repo-tool", "", true, true},
 		// A repository's binary is not run with the run's GitHub token.
-		{"gh refused", lock, "gh", "does not offer gh: gh carries the run's GitHub token", false, false},
+		{"gh refused", lock, "gh", "does not offer gh: it carries one of the run's credentials", false, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			repo, notes, err := keptRepoMiseConfig(repoconfig.Files{RepoMiseConfig: doc(tt.command), RepoMiseLock: tt.lock})
@@ -66,11 +66,11 @@ checksum = "sha256:%x"
 			}
 			home := t.TempDir()
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
-			m, notes, err := newMiseTools(t.Context(), bin, home, base, testMiseConfig, repo, &Secrets{}, slog.New(slog.DiscardHandler))
+			m, notes, err := newMiseTools(t.Context(), bin, home, base, testMiseConfig, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !m.provides("yq") || m.provides(tt.command) != tt.offer {
+			if m.byCommand["yq"] == nil || (m.byCommand[tt.command] != nil) != tt.offer {
 				t.Fatalf("offered = %v, tool = %+v, notes = %v", m.offered(), m.tools["http:repo-tool"], notes)
 			}
 			if !slices.Contains(m.commandEnv(), "NO_COLOR=0") || !slices.Contains(m.commandEnv(), "REPO_ENV=from repository") {
@@ -82,7 +82,7 @@ checksum = "sha256:%x"
 				}
 				return
 			}
-			if !m.pending(m.offered()) {
+			if !m.pending() {
 				t.Fatal("repository tool installed before first use")
 			}
 			if err := lockTree(t.Context(), home, true); err != nil {
@@ -106,7 +106,7 @@ checksum = "sha256:%x"
 			if err != nil || string(out) != "from repository\n" {
 				t.Fatalf("run = %q, %v", out, err)
 			}
-			if m.pending(m.offered()) {
+			if m.pending() {
 				t.Fatal("installed tool still pending")
 			}
 			if got, err := os.ReadFile(filepath.Join(home, "mise.lock")); err != nil || string(got) != tt.lock {
@@ -154,11 +154,11 @@ checksum = "sha256:abc"
 				home = link
 			}
 			m, notes, err := newMiseTools(t.Context(), bin, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"},
-				testMiseConfig, repo, &Secrets{}, slog.New(slog.DiscardHandler))
+				testMiseConfig, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !m.tools["yq"].installed || !m.fromRepo(m.tools["yq"]) || !m.provides("yq") {
+			if !m.tools["yq"].installed || !m.fromRepo(m.tools["yq"]) || m.byCommand["yq"] == nil {
 				t.Fatalf("tool = %+v, offered = %v, notes = %v", m.tools["yq"], m.offered(), notes)
 			}
 		})
