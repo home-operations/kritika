@@ -575,11 +575,9 @@ a new title.
   appear in the summary.
   The agent is told to use `gh` for GitHub,
   which signs in with a token minted for the run that can only read the
-  repository under review and public repositories, and `crane`, when
-  offered, for a container image's tags, digest, manifest and labels,
-  read anonymously from its registry. With `gh` or `curl` the agent can
-  also fetch another repository's files, or list its tags, with
-  `fetch_repo`, such as the upstream of a dependency on any host.
+  repository under review and public repositories. With `gh` or `curl`
+  the agent can also fetch another repository's files, or list its tags,
+  with `fetch_repo`, such as the upstream of a dependency on any host.
   [Runner tools](security.md#runner-tools) says what bounds a command and
   a fetch.
 
