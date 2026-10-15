@@ -626,7 +626,12 @@ func (m *miseTools) resolve(ctx context.Context, command string) (string, []stri
 // its own process, so its GitHub API calls count against the App
 // installation's limit rather than the gateway's one address, then
 // reads the tools and environment again, all within installTimeout and
-// with home unlocked once.
+// with home unlocked once. Whether t is installed is what mise lists
+// afterwards, not mise's exit status: after an install, mise rebuilds the
+// runtime symlinks of every tool, the image's system installs included,
+// and exits non-zero when one of those directories, which the runner
+// cannot write, needs a link it cannot make; the tool is installed all
+// the same, and mise's output is logged.
 func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	started := time.Now()
 	ictx, cancel := context.WithTimeout(ctx, installTimeout)
@@ -640,12 +645,12 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 		args = []string{"install", "--locked", t.name}
 	}
 	out := &cappedWriter{max: installOutputBytes}
-	var installed bool
+	var exitErr error
 	err := m.unlocked(ctx, func() error {
-		if err := m.exec(ictx, out, out, args...); err != nil {
-			return err
+		exitErr = m.exec(ictx, out, out, args...)
+		if exitErr != nil && ictx.Err() != nil {
+			return exitErr
 		}
-		installed = true
 		_, err := m.refresh(ictx)
 		return err
 	})
@@ -653,17 +658,22 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	switch {
 	case ctx.Err() != nil:
 		return ctx.Err()
-	case err != nil && installed:
-		return err
 	case err != nil && ictx.Err() != nil:
 		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
 		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, installTimeout)
 	case err != nil:
-		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
+		if exitErr != nil {
+			m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", exitErr, "output", output)
+		}
+		return err
+	case !t.installed && exitErr != nil:
+		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", exitErr, "output", output)
 		return fmt.Errorf("%s could not be installed: %s", t.name, output)
-	}
-	if !t.installed {
+	case !t.installed:
 		return fmt.Errorf("%s is not installed after its install: %s", t.name, output)
+	case exitErr != nil:
+		m.logger.Warn("tool installed, mise exited with an error", "tool", t.name, "version", t.version, "source", t.source,
+			"path", t.installPath, "error", exitErr, "output", output)
 	}
 	m.logger.Info("tool installed", "tool", t.name, "version", t.version, "source", t.source, "path", t.installPath,
 		"elapsed", time.Since(started).Round(time.Millisecond), "output", output)
