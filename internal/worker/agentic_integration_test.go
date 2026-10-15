@@ -993,7 +993,7 @@ func TestCommandErrorsPublished(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the run tool is offered on Linux alone")
 	}
-	for _, tt := range []struct {
+	for i, tt := range []struct {
 		name   string
 		script modelScript
 		status string
@@ -1002,7 +1002,7 @@ func TestCommandErrorsPublished(t *testing.T) {
 		{"incomplete", scriptRunNoSubmit, "failed"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newAgenticHarness(t, 71)
+			h := newAgenticHarness(t, 71+i)
 			bin, err := exec.LookPath("curl")
 			if err != nil {
 				t.Fatal(err)
