@@ -1,5 +1,5 @@
 # The tools the -tools image offers the agent's run tool, installed by the
-# Dockerfile's runner-tools stage with `mise install --system --locked` at
+# Dockerfile's tools stage with `mise install --system --locked` at
 # the URLs and checksums mise.lock pins per platform, and declared by this
 # file as the image's system config. The image carries glibc, libgcc and
 # libstdc++ and no other library, so a build may link against those or be

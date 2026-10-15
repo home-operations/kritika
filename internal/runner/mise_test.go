@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
@@ -365,6 +366,96 @@ func TestMiseToolsEmptyConfig(t *testing.T) {
 	if yq := m.tools["yq"]; yq == nil || !yq.installed || !strings.HasPrefix(yq.installPath, dataDir) ||
 		!slices.Equal(slices.Sorted(maps.Keys(m.offered())), []string{"yq"}) {
 		t.Fatalf("yq = %+v, offered = %v", yq, m.offered())
+	}
+}
+
+// TestMiseInstallSystemLinks: an install succeeds when mise exits
+// non-zero only for the runtime symlinks of a system install it cannot
+// write, as it does in the -tools image, where the system installs are
+// root's: mise, from 2026.10.8, keeps a global link beside each install
+// and repairs every tool's links after an install. The tool is judged by
+// what mise lists, and mise's output is logged.
+func TestMiseInstallSystemLinks(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a read-only directory")
+	}
+	bin, dataDir := hostMise(t)
+	miseAtLeast(t, bin, 2026, 10, 8)
+	// A copy of the host's yq install, as the only system install, in a
+	// directory mise cannot write once it lacks the global link the system
+	// config selects. No sudo is on PATH, as in the image.
+	system := t.TempDir()
+	installs := filepath.Join(system, "installs", "yq")
+	if err := os.MkdirAll(installs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".mise.backend.toml", testYqVersion} {
+		src := filepath.Join(dataDir, "installs", "yq", name)
+		if err := os.CopyFS(filepath.Join(installs, name), os.DirFS(src)); err != nil {
+			doc, rerr := os.ReadFile(src)
+			if rerr != nil {
+				t.Fatal(err, rerr)
+			}
+			if err := os.WriteFile(filepath.Join(installs, name), doc, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := os.Chmod(installs, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(installs, 0o755) })
+	t.Setenv("MISE_SYSTEM_DATA_DIR", system)
+	config := t.TempDir()
+	if err := os.WriteFile(filepath.Join(config, "config.toml"), []byte("[tools]\nyq = \""+testYqVersion+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MISE_SYSTEM_CONFIG_DIR", config)
+	home := t.TempDir()
+	var logs strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, "", nil, nil, Secrets{Redacted: &Redactions{}}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yq := m.tools["yq"]
+	if yq == nil || !yq.installed || !strings.HasPrefix(yq.installPath, installs) {
+		t.Fatalf("yq = %+v", yq)
+	}
+	// As a tool still to install: the reads after mise's exit are what
+	// find it installed.
+	yq.installed = false
+	if err := m.install(t.Context(), yq); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if !yq.installed {
+		t.Fatal("yq not found installed after its install")
+	}
+	if !strings.Contains(logs.String(), "mise exited with an error") {
+		t.Fatalf("mise did not exit with an error on the system install's links; log:\n%s", logs.String())
+	}
+	if _, err := os.Lstat(filepath.Join(installs, "global")); !os.IsNotExist(err) {
+		t.Fatalf("global link in the read-only system install: %v", err)
+	}
+}
+
+// miseAtLeast skips the test when the mise at bin is older than the
+// given year.month.patch release.
+func miseAtLeast(t *testing.T, bin string, year, month, patch int) {
+	t.Helper()
+	out, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		t.Skip(err)
+	}
+	version, _, _ := strings.Cut(string(out), " ")
+	var have [3]int
+	for i, part := range strings.SplitN(version, ".", 3) {
+		if _, err := fmt.Sscanf(part, "%d", &have[i]); err != nil {
+			t.Skipf("mise --version = %q: %v", out, err)
+		}
+	}
+	if slices.Compare(have[:], []int{year, month, patch}) < 0 {
+		t.Skipf("mise %s is older than %d.%d.%d", version, year, month, patch)
 	}
 }
 
