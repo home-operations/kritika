@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"time"
 
@@ -146,9 +145,6 @@ type Runner struct {
 	// verbatim into its pod spec, a JSON object of requests and limits.
 	RunnerDeadline  time.Duration `env:"KRITIKA_RUNNER_DEADLINE" envDefault:"15m" yaml:"deadline,omitempty"`
 	RunnerResources jsonObject    `env:"KRITIKA_RUNNER_RESOURCES" yaml:"resources,omitempty"`
-	// Tools are the command-line tools a runner pod may mount from an image
-	// for the agent's run tool, a JSON list.
-	Tools toolList `env:"KRITIKA_RUNNER_TOOLS" yaml:"tools,omitempty"`
 	// RunnerMiseConfig is the instance's mise config, a TOML document whose
 	// tools the agent's run tool offers every repository, layered over the
 	// runner image's own /etc/mise/config.toml. Empty leaves the image's.
@@ -164,50 +160,3 @@ func (o *jsonObject) UnmarshalText(b []byte) error { return json.Unmarshal(b, (*
 
 // UnmarshalYAML accepts native resource maps alongside the environment's JSON.
 func (o *jsonObject) UnmarshalYAML(n *yaml.Node) error { return n.Decode((*map[string]any)(o)) }
-
-// toolList is the tool catalog from the environment.
-type toolList []Tool
-
-// UnmarshalText decodes the variable's JSON, refusing unknown keys.
-func (t *toolList) UnmarshalText(b []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	return dec.Decode((*[]Tool)(t))
-}
-
-// UnmarshalYAML keeps unknown-field checks across the custom decoder boundary.
-func (t *toolList) UnmarshalYAML(n *yaml.Node) error {
-	raw, err := yaml.Marshal(n)
-	if err != nil {
-		return err
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	dec.KnownFields(true)
-	return dec.Decode((*[]Tool)(t))
-}
-
-// Tool is a command-line tool a runner pod mounts from an image, read-only,
-// for the agent's run tool. The runner image's own tools (curl, fd and rg
-// in the -tools image) need no entry.
-type Tool struct {
-	// Name identifies the tool; it names the pod volume.
-	Name string `json:"name" yaml:"name"`
-	// Image is the image the tool comes from; pin it by digest.
-	Image string `json:"image" yaml:"image"`
-	// Path is the directory inside the image that holds the binaries; it
-	// goes first on the runner's PATH. Default "/". The binaries must be
-	// statically linked or link only against glibc, libgcc and libstdc++,
-	// all the runner image carries.
-	Path string `json:"path,omitempty" yaml:"path,omitempty"`
-	// Commands are the binaries the tool provides, the names agent.commands
-	// allows; default the tool's name.
-	Commands []string `json:"commands,omitempty" yaml:"commands,omitempty"`
-}
-
-// Provides lists the commands the tool puts on the runner's PATH.
-func (t Tool) Provides() []string {
-	if len(t.Commands) == 0 {
-		return []string{t.Name}
-	}
-	return t.Commands
-}

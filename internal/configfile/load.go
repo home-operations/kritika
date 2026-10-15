@@ -30,10 +30,6 @@ import (
 // path segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// toolNameRe bounds a tool name to what fits a pod volume name after its
-// "tool-" prefix: a DNS label of at most 63 characters.
-var toolNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,56}[a-z0-9])?$`)
-
 // commandRe is a binary name the run tool looks up on PATH: no path
 // separator, so the allowlist cannot name a file in the checkout.
 var commandRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
@@ -115,9 +111,6 @@ func parse(raw []byte, settings config.Settings) (*File, error) {
 	doc.Settings = settings
 	if doc.Apps == nil {
 		doc.Apps = map[string]Connection{}
-	}
-	if err := validateTools(doc.Settings.Tools); err != nil {
-		return nil, fmt.Errorf("configfile: KRITIKA_RUNNER_TOOLS: %w", err)
 	}
 	accounts, err := accountsOf(doc.Accounts, doc.Repositories)
 	if err != nil {
@@ -319,39 +312,6 @@ func (f *File) validate(accounts []Account) error {
 		return err
 	}
 	return f.validateAccounts(accounts)
-}
-
-// validateTools checks the tool catalog: unique volume-safe names, an
-// image each, a clean absolute path, and bare command names no two tools
-// both provide.
-func validateTools(tools []Tool) error {
-	names, commands := map[string]bool{}, map[string]string{}
-	for i, t := range tools {
-		where := fmt.Sprintf("runner.tools[%d]", i)
-		if !toolNameRe.MatchString(t.Name) {
-			return fmt.Errorf("%s.name %q must be lowercase alphanumerics and hyphens, 1 to 58 characters", where, t.Name)
-		}
-		if names[t.Name] {
-			return fmt.Errorf("%s.name %q is listed twice", where, t.Name)
-		}
-		names[t.Name] = true
-		if strings.TrimSpace(t.Image) == "" {
-			return fmt.Errorf("%s.image is required", where)
-		}
-		if t.Path != "" && (!path.IsAbs(t.Path) || path.Clean(t.Path) != t.Path) {
-			return fmt.Errorf("%s.path %q must be a clean absolute path inside the image", where, t.Path)
-		}
-		for _, c := range t.Provides() {
-			if !commandRe.MatchString(c) {
-				return fmt.Errorf("%s.commands %q must be a bare command name, not a path", where, c)
-			}
-			if other, dup := commands[c]; dup {
-				return fmt.Errorf("%s provides %q, which tool %q already provides", where, c, other)
-			}
-			commands[c] = t.Name
-		}
-	}
-	return nil
 }
 
 // validateEmbedding checks the embedder's dimension fits the index column

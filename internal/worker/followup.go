@@ -396,7 +396,6 @@ func (f *followUp) runAgent(
 		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
 		Deadline:  deadline,
 		Resources: resources,
-		Tools:     f.file.ToolsFor(limits.Commands),
 	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
 	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr
 	// The run's record must land even once the job's ctx has ended. A

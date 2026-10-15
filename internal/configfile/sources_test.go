@@ -19,12 +19,14 @@ diffRetention: 96h
 runner:
   deadline: 20m
   resources: {limits: {memory: 1Gi}}
-  tools: [{name: helm, image: example.com/helm:test, commands: [helm]}]
+  miseConfig: |
+    [tools]
+    helm = "4.3.0"
 `)
 	deadline, resources := f.RunnerFor()
 	if f.PollInterval() != 0 || f.PollLookback() != 2*time.Hour || f.OnboardWindow() != 8 ||
 		f.DisabledIndexGrace() != 48*time.Hour || f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour ||
-		deadline != 20*time.Minute || resources["limits"] == nil || len(f.ToolsFor([]string{"helm"})) != 1 {
+		deadline != 20*time.Minute || resources["limits"] == nil || f.MiseConfig() != "[tools]\nhelm = \"4.3.0\"\n" {
 		t.Fatalf("runtime settings = %+v", f.Run)
 	}
 	for _, doc := range []string{

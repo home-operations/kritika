@@ -18,7 +18,6 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/agent"
-	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -325,9 +324,6 @@ type TriggerSpec struct {
 	// completed, until someone resumes them; zero never pauses.
 	Limit *int `yaml:"limit,omitempty"`
 }
-
-// Tool is a command-line tool mounted into a runner Job.
-type Tool = config.Tool
 
 // Embedding is the instance's embedder, which builds the similar-code
 // index: a model of one of the instance's openrouter or openai providers,

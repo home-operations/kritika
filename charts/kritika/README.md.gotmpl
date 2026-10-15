@@ -144,13 +144,22 @@ chart confines them:
   `egress` lists and is the runner's only way to its model.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
-- `runner.tools` adds programs a review's `agent.commands` may run, from
-  their own images; `runner.runtimeClass` puts runner Jobs under a
+- `runner.mise.config` declares the six default tools and adds programs a
+  review's `agent.commands` may run; `runner.runtimeClass` puts runner Jobs under a
   sandboxed runtime such as gVisor; `runner.resources` keeps a runaway run
   in its own cgroup.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
+
+### Migrating runner tools
+
+`runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Declare tools in
+`runner.mise.config` instead; no extra image volume or Kubernetes 1.33
+requirement remains. The defaults list the six tools shipped in the
+runner image. Set `config.agent.commands: []` to disable commands; an empty
+mise config still inherits the image's tools. See the
+[migration example](https://kritika.home-operations.com/security/#migrating-from-image-mounted-tools).
 
 ### Topology
 

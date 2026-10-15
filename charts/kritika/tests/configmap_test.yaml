@@ -67,7 +67,6 @@ tests:
       runner.image.repository: registry.example/tools
       runner.image.tag: custom
       runner.resources: { limits: { memory: 1Gi } }
-      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
       runner.mise.config: |
         [tools]
         helm = "4.3.0"
@@ -87,9 +86,6 @@ tests:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "memory: 1Gi"
-      - matchRegex:
-          path: data["config.yaml"]
-          pattern: "image: registry.example/helm:3"
 
   - it: refuses runner configuration duplicated in application config
     set:

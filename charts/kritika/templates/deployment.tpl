@@ -17,8 +17,8 @@
 {{- fail "config.webUrl must be an http(s) URL" -}}
 {{- end -}}
 {{- end -}}
-{{- if and .Values.runner.tools (semverCompare "<1.33.0-0" .Capabilities.KubeVersion.Version) -}}
-{{- fail (printf "runner.tools needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; this cluster is %s" .Capabilities.KubeVersion.Version) -}}
+{{- if hasKey .Values.runner "tools" -}}
+{{- fail "runner.tools has been removed; declare tools in runner.mise.config instead" -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment

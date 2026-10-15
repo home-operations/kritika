@@ -415,7 +415,7 @@
       "type": "object"
     },
     "imagePullSecrets": {
-      "description": "Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs and the tool images they mount.",
+      "description": "Image pull secrets for private registries, for the kritika serve pods and, through the runner ServiceAccount, runner Jobs.",
       "items": {
         "required": []
       },
@@ -1018,8 +1018,8 @@
         "mise": {
           "properties": {
             "config": {
-              "default": "",
-              "description": "The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), a TOML document whose `[tools]` the agent's run tool offers every repository, pinned by exact version, layered over the runner image's own `/etc/mise/config.toml`, which declares the `-tools` image's curl, fd, gh, jq, rg and yq at the versions `build/tools/mise.toml` pins: per tool the entry here replaces the image's, and the image's other tools stay. Narrow what is offered with `agent.commands`.",
+              "default": "[tools]\n# Each entry exposes only the executable it is there for, filter_bins for a\n# release archive and symlink_bins for an aqua recipe, so a tool offers one\n# command. curl has no registry short name, so it comes from its release\n# archive; the others resolve to aqua packages.\n\"github:stunnel/static-curl\" = { version = \"8.22.0\", matching = \"glibc\", filter_bins = \"curl\" }\nfd = { version = \"10.5.0\", symlink_bins = true }\ngh = { version = \"2.102.0\", symlink_bins = true }\njq = { version = \"1.8.2\", symlink_bins = true }\nrg = { version = \"15.2.0\", symlink_bins = true }\nyq = { version = \"4.54.1\", symlink_bins = true }\n",
+              "description": "The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`. Defaults declare curl, fd, gh, jq, rg and yq at the image's versions, generated from `build/tools/mise.toml`. Override this value to add or replace tools and set instance-wide `[settings]` or `[env]`. Unmentioned image tools remain; narrow what is offered with `agent.commands`.",
               "title": "config",
               "type": "string"
             }
@@ -1064,14 +1064,6 @@
           "required": [],
           "title": "serviceAccount",
           "type": "object"
-        },
-        "tools": {
-          "description": "Command-line tools a runner pod mounts from an image for the agent's run tool (KRITIKA_RUNNER_TOOLS), each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides. Needs Kubernetes 1.33 or newer, which mounts an image volume with a subPath; the chart refuses to render them on an older cluster.",
-          "items": {
-            "required": []
-          },
-          "title": "tools",
-          "type": "array"
         },
         "ttl": {
           "default": "10m",

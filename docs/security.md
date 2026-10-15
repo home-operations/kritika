@@ -345,28 +345,35 @@ does not work there. The config's `[settings]` apply to every runner: a
 `url_replacements` rule sends downloads to a mirror, whose host must pass
 the gateway like any other, and `[env]` reaches every command.
 
-The chart's `runner.tools` still mounts a program from an image of its
-own, as a read-only image volume put first on the runner's `PATH`, which
-`agent.commands` must then name. It needs Kubernetes 1.33 or newer.
+### Migrating from image-mounted tools
 
-| Key        | What                                                           |
-| ---------- | -------------------------------------------------------------- |
-| `name`     | the tool's name                                                |
-| `image`    | its image, pinned by digest                                    |
-| `path`     | the directory of its binaries inside the image; `/` unless set |
-| `commands` | the commands it provides; its name unless set                  |
-
-The binaries must be static or link only against glibc, libgcc and
-libstdc++.
+`runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Delete them from
+Helm values, the application configuration and the environment. Declare
+each tool in the instance's mise config instead; for example, a flate
+image mount becomes:
 
 ```yaml
 runner:
-  tools:
-    - name: flate
-      image: ghcr.io/home-operations/flate:0.6.5@sha256:e0e2d2de97539b3141977e8bb3bbb50ea5c5afe89477950e5fa972c9862478da
+  mise:
+    config: |
+      [tools]
+      "github:home-operations/flate" = "0.6.5"
 config:
   agent: { commands: [gh, flate] }
 ```
+
+Outside Helm, the application key is `runner.miseConfig`, or use
+`KRITIKA_RUNNER_MISE_CONFIG`. Tools no longer use Kubernetes image volumes,
+so adding one does not require Kubernetes 1.33. A custom runner image can
+still provide named commands on its own `PATH`.
+
+The chart's default mise config explicitly declares `curl`, `fd`, `gh`,
+`jq`, `rg` and `yq` at the image's versions. An unset `agent.commands`
+offers the image and instance tools; set `[]` to disable commands.
+Emptying `runner.mise.config` leaves the image's system tools available.
+`crane` is not a default: declare it when needed. If building on top of the
+`-tools` image, its preinstalled tools live in mise's system install
+directory, not `/usr/local/bin`.
 
 ## Runner sandbox
 

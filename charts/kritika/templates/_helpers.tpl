@@ -169,9 +169,6 @@ runner:
   {{- with .Values.runner.resources }}
   resources: {{ toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .Values.runner.tools }}
-  tools: {{ toYaml . | nindent 4 }}
-  {{- end }}
   {{- with .Values.runner.mise.config }}
   miseConfig: {{ . | quote }}
   {{- end }}
@@ -232,10 +229,6 @@ an `env` key that would duplicate one of them.
   value: {{ tpl (toString .Values.runner.ttl) . | quote }}
 {{- with .Values.runner.resources }}
 - name: KRITIKA_RUNNER_RESOURCES
-  value: {{ toJson . | quote }}
-{{- end }}
-{{- with .Values.runner.tools }}
-- name: KRITIKA_RUNNER_TOOLS
   value: {{ toJson . | quote }}
 {{- end }}
 {{- with .Values.runner.mise.config }}

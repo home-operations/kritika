@@ -357,8 +357,6 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
 	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
-	t.Setenv("KRITIKA_RUNNER_TOOLS", `[{"name": "helm", "image": "registry.example/helm:3"},
-		{"name": "kurl", "image": "registry.example/kurl:1", "path": "/usr/bin", "commands": ["curl"]}]`)
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritika:provider-secret@", 1)
@@ -616,12 +614,6 @@ func checkAgentSubmits(t *testing.T, h *agenticHarness) {
 	var timeline []map[string]any
 	_ = json.Unmarshal([]byte(run.toolCalls), &tools)
 	_ = json.Unmarshal([]byte(run.timeline), &timeline)
-	h.exec.mu.Lock()
-	mounted := h.exec.tools
-	h.exec.mu.Unlock()
-	if !slices.Equal(mounted, []string{"kurl"}) {
-		t.Fatalf("tools handed to the executor = %v, want only kurl, which provides the curl acme/widgets allows", mounted)
-	}
 	if run.stop != "submitted" || run.steps != 3 || run.model != "agent-model" || tools["grep"] != 1 || tools["read_file"] != 1 ||
 		tools["submit_review"] != 1 || len(timeline) != 3 || run.input != 300 || run.output != 30 {
 		t.Fatalf("agent run = %+v", run)
@@ -1335,8 +1327,6 @@ type hookExecutor struct {
 	// started does: with the error, the kubelet's start time and no
 	// runner run.
 	unstarted error
-	// tools are the names of the tools the last run was handed.
-	tools []string
 	// st, when set, reads the last run's grant as it starts: its agent
 	// limits, Job deadline and token budget.
 	st       *store.Store
@@ -1349,10 +1339,6 @@ func (e *hookExecutor) Run(ctx context.Context, spec executor.Spec) executor.Res
 	e.mu.Lock()
 	hold, detach, unstarted := e.hold, e.detach, e.unstarted
 	e.hold, e.detach, e.unstarted = 0, false, nil
-	e.tools = nil
-	for _, tool := range spec.Tools {
-		e.tools = append(e.tools, tool.Name)
-	}
 	e.agent, e.deadline, e.budget = spec.Job.Agent, spec.Deadline, 0
 	if e.st != nil {
 		if g, err := e.st.LookupGatewayToken(ctx, spec.Secrets.GatewayToken); err == nil {

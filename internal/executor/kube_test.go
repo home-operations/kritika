@@ -16,7 +16,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/runner"
 )
 
@@ -126,43 +125,15 @@ func mustJob(t *testing.T, k *Kube, s Spec) *batchv1.Job {
 	return j
 }
 
-// TestJobSpecMountsTools checks each tool becomes a read-only image volume
-// mounted at its own directory, from the path inside its image, with the
-// tool directories first on PATH ahead of the image's own.
-func TestJobSpecMountsTools(t *testing.T) {
-	s := spec()
-	s.Tools = []configfile.Tool{
-		{Name: "helm", Image: "registry.example/helm:3", Path: "/usr/bin"},
-		{Name: "flate", Image: "registry.example/flate@sha256:0123"},
-	}
-	pod := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, s).Spec.Template.Spec
-	images := map[string]string{}
+func TestJobSpecKeepsImagePath(t *testing.T) {
+	pod := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec
 	for _, v := range pod.Volumes {
 		if v.Image != nil {
-			images[v.Name] = v.Image.Reference
+			t.Fatalf("unexpected image volume: %s", v.Name)
 		}
 	}
-	if images["tool-helm"] != "registry.example/helm:3" || images["tool-flate"] != "registry.example/flate@sha256:0123" || len(images) != 2 {
-		t.Fatalf("image volumes = %v", images)
-	}
-	c := pod.Containers[0]
-	mounts := map[string]corev1.VolumeMount{}
-	for _, m := range c.VolumeMounts {
-		mounts[m.Name] = m
-	}
-	if m := mounts["tool-helm"]; m.MountPath != "/opt/kritika/tools/helm" || m.SubPath != "usr/bin" || !m.ReadOnly {
-		t.Fatalf("helm mount = %+v", m)
-	}
-	if m := mounts["tool-flate"]; m.MountPath != "/opt/kritika/tools/flate" || m.SubPath != "" || !m.ReadOnly {
-		t.Fatalf("flate mount = %+v", m)
-	}
-	want := "/opt/kritika/tools/helm:/opt/kritika/tools/flate:" + imagePath
-	if i := slices.IndexFunc(c.Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }); i < 0 || c.Env[i].Value != want {
-		t.Fatalf("PATH = %v, want %s", c.Env, want)
-	}
-	bare := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec.Containers[0]
-	if slices.ContainsFunc(bare.Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }) {
-		t.Fatal("a run without tools must keep the image's own PATH")
+	if slices.ContainsFunc(pod.Containers[0].Env, func(e corev1.EnvVar) bool { return e.Name == "PATH" }) {
+		t.Fatal("the runner must keep the image's own PATH")
 	}
 }
 

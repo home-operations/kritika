@@ -66,10 +66,6 @@ runner:
       cpu: 10m
     limits:
       example.com/device: "1"
-  tools:
-    - name: flux
-      image: example.com/flux:test
-      commands: [flux, flate]
   miseConfig: |
     [tools]
     helm = "4.3.0"
@@ -86,11 +82,10 @@ runner:
 		"requests": map[string]any{"cpu": "10m"},
 		"limits":   map[string]any{"example.com/device": "1"},
 	}
-	wantTools := toolList{{Name: "flux", Image: "example.com/flux:test", Commands: []string{"flux", "flate"}}}
-	if !reflect.DeepEqual(s.RunnerResources, wantResources) || !reflect.DeepEqual(s.Tools, wantTools) {
-		t.Fatalf("resources = %#v, tools = %#v", s.RunnerResources, s.Tools)
+	if !reflect.DeepEqual(s.RunnerResources, wantResources) {
+		t.Fatalf("resources = %#v", s.RunnerResources)
 	}
-	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_TOOLS"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] {
+	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_MISE_CONFIG"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] {
 		t.Fatalf("file provenance = %v", s.fileEnv)
 	}
 }
@@ -101,7 +96,7 @@ func TestSettingsTypes(t *testing.T) {
 		{"duration must be scalar", "pollInterval: [10m]", "pollInterval"},
 		{"workers must be numeric", "reviewWorkers: '4'", "reviewWorkers"},
 		{"no boolean coercion", "logLevel: true", "logLevel"},
-		{"tools must be a list", "runner: {tools: {name: flux}}", "runner.tools"},
+		{"removed tools", "runner: {tools: [{name: flux, image: example.com/flux:test}]}", "tools"},
 		{"resources must be a map", "runner: {resources: [1]}", "runner.resources"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,21 +130,15 @@ func TestNullSettingsAreOmitted(t *testing.T) {
 func TestEnvFormatsStructuredFileSettings(t *testing.T) {
 	s, err := LoadSettings([]byte(`runner:
   resources: {requests: {cpu: 10m}}
-  tools: [{name: flux, image: example.com/flux:test}]
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := Config{Settings: s}
 	for _, e := range cfg.Env() {
-		switch e.Name {
-		case "KRITIKA_RUNNER_RESOURCES":
+		if e.Name == "KRITIKA_RUNNER_RESOURCES" {
 			if e.Value != `{"requests":{"cpu":"10m"}}` || !e.File || e.Path != "runner.resources" {
 				t.Fatalf("resources = %+v", e)
-			}
-		case "KRITIKA_RUNNER_TOOLS":
-			if e.Value != `[{"name":"flux","image":"example.com/flux:test"}]` || !e.File || e.Path != "runner.tools" {
-				t.Fatalf("tools = %+v", e)
 			}
 		}
 	}
