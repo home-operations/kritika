@@ -48,6 +48,10 @@ func (f *fakeRescueStore) JobHead(context.Context, int64) (store.JobHead, bool, 
 	return f.head, f.head != (store.JobHead{}), nil
 }
 
+func (f *fakeRescueStore) WithPublicationLock(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 func (f *fakeRescueStore) OrphanedRuns(context.Context, int) ([]store.OrphanedRun, error) {
 	return f.orphaned, nil
 }
@@ -241,6 +245,8 @@ apps:
 		{"a job that started no review", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8}, store.JobHead{}, nil},
 		{"a look back at a merged pull request", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8},
 			store.JobHead{AccountID: head.AccountID, Repository: head.Repository, HeadSHA: head.HeadSHA, Statusless: true}, nil},
+		{"a head a newer review speaks for", store.AbandonedJob{ID: 1, Kind: "review", Attempt: 8, MaxAttempts: 8},
+			store.JobHead{AccountID: head.AccountID, Repository: head.Repository, HeadSHA: head.HeadSHA, Ceded: true}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

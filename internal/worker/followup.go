@@ -377,7 +377,7 @@ func (f *followUp) runAgent(
 	if err != nil {
 		return nil, err
 	}
-	sup := runSupervision(f.w.Store, f.account.ID(), runID, "", "", f.w.superviseEvery, f.logger)
+	sup := runSupervision(f.w.Store, f.account.ID(), runID, "", "", "", f.w.superviseEvery, f.logger)
 	out := f.w.runRunner(ctx, f.w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(f.account.Key(), f.pr.repository, jobs.QueueFollowUp, f.pr.number),
 		Annotations: runnerAnnotations(f.jobID, f.pr.headSHA),

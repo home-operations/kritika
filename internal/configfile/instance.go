@@ -2,7 +2,6 @@ package configfile
 
 import (
 	"strconv"
-	"time"
 )
 
 // FileLayer is what the configuration file sets for the
@@ -15,7 +14,7 @@ type FileLayer struct {
 	// Defaults are the other settings it writes: review effort, approve,
 	// fixes, incremental, diagram,
 	// the confidence model, fallback, effort, threshold, gate and risk,
-	// settle and limit, in that order, by their policy keys.
+	// and limit, in that order, by their policy keys.
 	Defaults  []FileDefault
 	Embedding *FileEmbedding
 }
@@ -81,7 +80,6 @@ func (f *File) FileLayer() FileLayer {
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},
 		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
-		{keySettle, durationValue(d.Trigger.Settle), d.Trigger.Settle != nil},
 		{keyLimit, strconv.Itoa(deref(d.Trigger.Limit)), d.Trigger.Limit != nil},
 	} {
 		if x.set {
@@ -101,11 +99,4 @@ func deref[T any](p *T) T {
 		return zero
 	}
 	return *p
-}
-
-func durationValue(d *time.Duration) string {
-	if d == nil {
-		return ""
-	}
-	return d.String()
 }

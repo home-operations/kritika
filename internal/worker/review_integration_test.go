@@ -1802,6 +1802,17 @@ func checkSnoozeWhileSlotsHeld(
 }
 
 // waitFor polls cond until it holds or timeout passes.
+// waitStatus waits for the forge's commit status to be want: a status that
+// follows its review's commit lands under the publication lock.
+func waitStatus(t *testing.T, lf *localForge, want string) {
+	t.Helper()
+	waitFor(t, 5*time.Second, "commit status "+want, func() bool {
+		lf.mu.Lock()
+		defer lf.mu.Unlock()
+		return lf.status == want
+	})
+}
+
 func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -1910,11 +1921,9 @@ review:
 		if status, _, _ := waitReview(head); status != "skipped" {
 			t.Fatalf("status = %s, want skipped: the merge-base ignore globs cover every changed path", status)
 		}
-		lf.mu.Lock()
-		forgeStatus := lf.status
-		lf.mu.Unlock()
-		if forgeStatus != "success: kritika: skipped (only ignored paths changed)" || skipReason(head) != "only_skipped_paths" {
-			t.Fatalf("status = %q reason = %q", forgeStatus, skipReason(head))
+		waitStatus(t, lf, "success: kritika: skipped (only ignored paths changed)")
+		if reason := skipReason(head); reason != "only_skipped_paths" {
+			t.Fatalf("reason = %q", reason)
 		}
 	}
 	fc.mu.Lock()
@@ -1983,12 +1992,7 @@ review:
 	if status, _, _ := waitReview(labelledHead); status != "skipped" || skipReason(labelledHead) != "filtered" {
 		t.Fatalf("status = %s reason = %q, want skipped by the label filter", status, skipReason(labelledHead))
 	}
-	lf.mu.Lock()
-	forgeStatus := lf.status
-	lf.mu.Unlock()
-	if forgeStatus != "success: kritika: skipped (filtered: skip-label)" {
-		t.Fatalf("status = %q", forgeStatus)
-	}
+	waitStatus(t, lf, "success: kritika: skipped (filtered: skip-label)")
 	checkLabelRepeat(ctx, t, appStore, insertOnly, accountID, labelledHead)
 
 	// The label comes off while the job that skipped the head under it is
@@ -3557,7 +3561,13 @@ func checkEnqueueReindexSentinels(
 
 // TestRetriedJobEndsItsEarlierReview: an attempt of a review job ends the
 // review an earlier attempt of the same job left running, and no other.
-func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
+// TestStartReviewOwnership: the last review to start owns the pull request
+// (store.StartReview). A start cancels the older active reviews, whatever
+// their head, and points them at itself; a retry of the job of one so
+// canceled starts nothing; a head the pull request moved past is refused;
+// and an earlier attempt of the same job is ended failed, not replaced.
+// Starts racing from many workers leave one running review.
+func TestStartReviewOwnership(t *testing.T) {
 	ctx := t.Context()
 	logger := slog.New(slog.DiscardHandler)
 	st := storetest.Open(t)
@@ -3588,27 +3598,99 @@ func TestRetriedJobEndsItsEarlierReview(t *testing.T) {
 	}
 	w := &Review{Store: st, Current: configfile.NewCurrent(file), Logger: logger}
 	args := jobs.ReviewArgs{AccountID: account.ID(), RepositoryID: repoID, Number: 4242, HeadSHA: "abc4242"}
-	attempt := func(jobID int64) string {
+	attempt := func(jobID int64) store.Started {
 		t.Helper()
-		id, _, _, err := w.start(ctx, args, pr, "base", "", jobID)
+		s, _, err := w.start(ctx, args, pr, "base", "", jobID, nil)
 		if err != nil {
 			t.Fatalf("start(%d): %v", jobID, err)
 		}
-		return id
+		return s
 	}
-	status := func(id string) string {
+	// row is a review's status, error and the review that replaced it.
+	row := func(id string) (status, errText, replacedBy string) {
 		t.Helper()
-		var s string
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT status FROM reviews WHERE id = $1`, id).Scan(&s)
+			return tx.QueryRow(ctx, `SELECT status, error, coalesce(replaced_by_review_id::text, '') FROM reviews WHERE id = $1`, id).
+				Scan(&status, &errText, &replacedBy)
 		}); err != nil {
 			t.Fatal(err)
 		}
-		return s
+		return status, errText, replacedBy
 	}
-	first, other := attempt(7001), attempt(7002)
+	first := attempt(7001)
 	retry := attempt(7001)
-	if got := []string{status(first), status(other), status(retry)}; got[0] != "failed" || got[1] != "running" || got[2] != "running" {
-		t.Fatalf("statuses = %v, want the first attempt failed and the others running", got)
+	if status, errText, by := row(first.ReviewID); status != "failed" || errText != "its job was retried" || by != "" || len(retry.Replaced) != 0 {
+		t.Fatalf("the earlier attempt = %s (%q) replaced by %q, and the retry replaced %v; want it failed as retried", status, errText, by, retry.Replaced)
+	}
+	second := attempt(7002)
+	if !slices.Equal(second.Replaced, []string{retry.ReviewID}) {
+		t.Fatalf("the second start replaced %v, want the retry %s", second.Replaced, retry.ReviewID)
+	}
+	if status, errText, by := row(retry.ReviewID); status != "canceled" || errText != store.ReplacedReviewError || by != second.ReviewID {
+		t.Fatalf("the replaced review = %s (%q) replaced by %q, want canceled by %s", status, errText, by, second.ReviewID)
+	}
+	third := attempt(7003)
+	if !slices.Equal(third.Replaced, []string{second.ReviewID}) {
+		t.Fatalf("the third start replaced %v, want the second %s", third.Replaced, second.ReviewID)
+	}
+	if _, _, by := row(retry.ReviewID); by != second.ReviewID {
+		t.Fatalf("the first replaced review now points at %q, want still %s", by, second.ReviewID)
+	}
+	if status, _, _ := row(third.ReviewID); status != "running" {
+		t.Fatalf("the third review = %s, want running", status)
+	}
+	if _, _, err := w.start(ctx, args, pr, "base", "", 7002, nil); !errors.Is(err, store.ErrReviewReplaced) {
+		t.Fatalf("a retry of a replaced review's job = %v, want ErrReviewReplaced", err)
+	}
+	moved := args
+	moved.HeadSHA = "def4242"
+	if _, _, err := w.start(ctx, moved, pr, "base", "", 7004, nil); !errors.Is(err, store.ErrHeadMoved) {
+		t.Fatalf("a start of a head the pull request does not have = %v, want ErrHeadMoved", err)
+	}
+	if status, _, _ := row(third.ReviewID); status != "running" {
+		t.Fatalf("the third review after the refused starts = %s, want still running", status)
+	}
+	checkRacingStarts(ctx, t, st, w, args, pr)
+}
+
+// checkRacingStarts starts reviews of pr from many workers at once: each
+// waits out the lock the others hold, as the worker's snooze does, and
+// exactly one review is left running, the one that started last.
+func checkRacingStarts(ctx context.Context, t *testing.T, st *store.Store, w *Review, args jobs.ReviewArgs, pr *pullRequest) {
+	t.Helper()
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Go(func() {
+			for {
+				_, _, err := w.start(ctx, args, pr, "base", "", 7100+int64(i), nil)
+				if errors.Is(err, store.ErrPublicationBusy) {
+					time.Sleep(10 * time.Millisecond)
+					continue
+				}
+				if err != nil {
+					t.Errorf("start(%d): %v", 7100+i, err)
+				}
+				return
+			}
+		})
+	}
+	wg.Wait()
+	var running, newest string
+	var dangling int
+	if err := st.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT string_agg(id::text, ',') FROM reviews WHERE pull_request_id = $1 AND finished_at IS NULL`, pr.id).
+			Scan(&running); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT id FROM reviews WHERE pull_request_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, pr.id).Scan(&newest); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE pull_request_id = $1 AND finished_at IS NOT NULL
+			AND status = 'canceled' AND replaced_by_review_id IS NULL`, pr.id).Scan(&dangling)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if running != newest || dangling != 0 {
+		t.Fatalf("running reviews = %q, newest %s, canceled without a replacement %d; want the newest alone running", running, newest, dangling)
 	}
 }

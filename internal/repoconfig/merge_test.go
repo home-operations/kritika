@@ -16,7 +16,7 @@ import (
 
 func adminSettings() configfile.Settings {
 	return configfile.Settings{
-		Enabled: true, Ignore: []string{"vendor/**"}, Settle: 2 * time.Minute,
+		Enabled: true, Ignore: []string{"vendor/**"},
 		Models:     configfile.Models{Review: "p/big", Effort: model.EffortHigh},
 		Confidence: configfile.Confidence{Effort: model.EffortHigh, Threshold: 5, Risk: review.RiskMedium},
 		Filters: configfile.Filters{
@@ -212,7 +212,7 @@ func TestMerge(t *testing.T) {
 		{name: "a skill scope takes no other key", doc: "skills: { scope: { db: { allowed-tools: [x] } } }\n", wantErr: "field allowed-tools not found"},
 		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
-		{name: "settle is the admin's alone", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},
+		{name: "settle is no longer a key", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},
 		{name: "a secret reference does not decode", doc: "review: { model: { env: KEY } }\n", wantErr: "cannot construct"},
 		{name: "a file that does not parse leaves the admin's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}

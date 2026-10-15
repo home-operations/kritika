@@ -44,7 +44,6 @@
       ]
     },
     "ignore": ["vendor/**"],
-    "settleSeconds": 30,
     "maxAutoReviews": 0,
     "maxDeltaFiles": 40,
     "review": {
@@ -107,7 +106,7 @@
   "sources": {
     "review.model": "defaults",
     "trigger.exclude": "account",
-    "trigger.settle": "default"
+    "trigger.limit": "default"
   },
   "repoConfig": {
     "reviewId": "rev-1",
@@ -139,7 +138,6 @@
         ]
       },
       "ignore": ["vendor/**"],
-      "settleSeconds": 30,
       "maxAutoReviews": 0,
       "maxDeltaFiles": 40,
       "review": {

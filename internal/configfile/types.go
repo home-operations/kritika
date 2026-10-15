@@ -317,9 +317,6 @@ const (
 // condition with a name already listed replacing that one where it stands.
 type TriggerSpec struct {
 	Filters `yaml:",inline"`
-	// Settle delays a review job for a new head, so a burst of pushes
-	// collapses onto the last one before anything is spent.
-	Settle *time.Duration `yaml:"settle,omitempty"`
 	// Limit pauses a pull request's automatic reviews once that many have
 	// completed, until someone resumes them; zero never pauses.
 	Limit *int `yaml:"limit,omitempty"`
@@ -721,8 +718,6 @@ type Settings struct {
 	// Ignore is DefaultIgnore plus the repository's own globs. The in-repo
 	// file's globs are unioned in by the caller that has the checkout.
 	Ignore []string
-	// Settle delays a review job for a new head; zero means immediate.
-	Settle time.Duration
 	// MaxAutoReviews pauses a pull request's automatic reviews once that
 	// many have completed; zero never pauses.
 	MaxAutoReviews int

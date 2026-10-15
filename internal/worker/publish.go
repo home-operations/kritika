@@ -85,18 +85,19 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		return store.ReviewPrepared, cause
 	}
 	answer, err := p.prepare(job)
+	if errors.Is(err, errReplaced) {
+		return store.ReviewCanceled, nil
+	}
 	if errors.Is(err, errSuperseded) {
 		_, endErr := p.w.endReview(job, p.account.ID(), p.reviewID,
 			store.ReviewEnd{Status: store.ReviewSuperseded, OnlyUnfinished: true})
 		return store.ReviewSuperseded, endErr
 	}
 	if err != nil {
-		if p.invalidAnswer && job.Err() == nil {
+		// A lock another publisher holds is waited out, as deliver does.
+		if p.invalidAnswer && job.Err() == nil && !errors.Is(err, store.ErrPublicationBusy) {
 			if !p.statusReported {
-				owner, repo := p.pr.ownerRepo()
-				if statusErr := p.client.SetStatus(job, owner, repo, p.pr.headSHA, forge.StatusError, reviewFailedDescription); statusErr != nil {
-					p.logger.Warn("commit status not set", "error", statusErr)
-				}
+				p.w.reportEnd(job, p.ended(), reviewFailedDescription)
 			}
 			_, endErr := p.w.endReview(job, p.account.ID(), p.reviewID,
 				store.ReviewEnd{Status: store.ReviewFailed, Error: err.Error(), OnlyUnfinished: true})
@@ -111,6 +112,15 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 		return store.ReviewFailed, err
 	}
 	return p.deliver(job, answer)
+}
+
+// ended is the review as reportEnd takes it.
+func (p *publishPhase) ended() endedReview {
+	owner, repo := p.pr.ownerRepo()
+	return endedReview{
+		accountID: p.account.ID(), reviewID: p.reviewID, prID: p.pr.id, headSHA: p.pr.headSHA,
+		owner: owner, repo: repo, client: p.client, logger: p.logger,
+	}
 }
 
 // prepare settles the findings, summary and confidence before delivery.
@@ -293,23 +303,32 @@ func skipDescription(reason, filter string) string {
 
 // incomplete replaces the sticky comment with one saying why this head was
 // not fully reviewed, in kritika's own template, and records the model.
+// incomplete posts that the review stopped short, for reason, as a
+// delivery posts: under the pull request's publication lock, and only
+// while the review is still the pull request's, so one a newer review
+// replaced or a newer head superseded posts nothing.
 func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string) error {
-	owner, repo := p.pr.ownerRepo()
-	web, pull := p.dashboard(owner, repo)
-	body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
-		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-		Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
-		Incomplete: reason, Notes: slices.Concat(p.repoNotes, p.agent.CommandErrors), WebURL: web, PullURL: pull,
+	return p.w.Store.WithPublicationLock(ctx, p.pr.id, func(ctx context.Context) error {
+		if err := p.preparationCurrent(ctx); err != nil {
+			return err
+		}
+		owner, repo := p.pr.ownerRepo()
+		web, pull := p.dashboard(owner, repo)
+		body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
+			Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
+			Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
+			Incomplete: reason, Notes: slices.Concat(p.repoNotes, p.agent.CommandErrors), WebURL: web, PullURL: pull,
+		})
+		commentID, err := p.upsertSticky(ctx, body)
+		if err != nil {
+			return err
+		}
+		if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusError, "kritika: review incomplete ("+reason+")"); err != nil {
+			p.logger.Warn("commit status not set", "error", err)
+		}
+		p.statusReported = true
+		return p.persist(ctx, review.Result{}, nil, nil, modelName, commentID)
 	})
-	commentID, err := p.upsertSticky(ctx, body)
-	if err != nil {
-		return err
-	}
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, forge.StatusError, "kritika: review incomplete ("+reason+")"); err != nil {
-		p.logger.Warn("commit status not set", "error", err)
-	}
-	p.statusReported = true
-	return p.persist(ctx, review.Result{}, nil, nil, modelName, commentID)
 }
 
 func (p *publishPhase) countFindings(res review.Result) {

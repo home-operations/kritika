@@ -63,7 +63,7 @@ var goldenRepoSettings = RepoSettings{
 		Include: []configfile.Filter{{Expr: `pr.author.startsWith("renovate")`}, {Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
 		Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
 	},
-	Ignore: []string{"vendor/**"}, SettleSeconds: 30, MaxDeltaFiles: 40,
+	Ignore: []string{"vendor/**"}, MaxDeltaFiles: 40,
 	Confidence: configfile.Confidence{
 		Model: "openrouter/acme-judge", Fallback: "openrouter/acme-judge-small", Effort: "low", Threshold: 5, Risk: review.RiskLow,
 		Instructions: "Image bumps are low.",
@@ -134,7 +134,7 @@ var goldens = map[string]any{
 		Repository: goldenRepo,
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
-			"trigger.exclude": configfile.SourceAccount, "review.model": configfile.SourceDefaults, "trigger.settle": configfile.SourceDefault,
+			"trigger.exclude": configfile.SourceAccount, "review.model": configfile.SourceDefaults, "trigger.limit": configfile.SourceDefault,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,

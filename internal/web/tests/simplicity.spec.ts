@@ -45,11 +45,11 @@ test('repository details stay accessible without displacing pull requests', asyn
   await expect(settings).toHaveAttribute('aria-expanded', 'false');
   await settings.focus();
   await page.keyboard.press('Enter');
-  await page.getByRole('searchbox', { name: 'Filter settings' }).fill('settle');
-  await expect(page.locator('#repo-settings').locator('../..').getByRole('term')).toHaveText(['Settle']);
+  await page.getByRole('searchbox', { name: 'Filter settings' }).fill('delta');
+  await expect(page.locator('#repo-settings').locator('../..').getByRole('term')).toHaveText(['Max delta files']);
   await settings.click();
   await settings.click();
-  await expect(page.getByRole('searchbox', { name: 'Filter settings' })).toHaveValue('settle');
+  await expect(page.getByRole('searchbox', { name: 'Filter settings' })).toHaveValue('delta');
   await page.getByRole('button', { name: 'Index runs', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Index runs', exact: true })).toBeVisible();
 });

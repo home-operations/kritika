@@ -29,12 +29,6 @@ func Queues() []string {
 // only trigger the worker lets bypass the bot-author patch-id skip.
 const TriggerManual = "manual"
 
-// Settles reports whether a review started by trigger waits out the
-// repository's settle time first: only a new head (a push, or one the
-// poller found) does, since an open, reopen or draft transition has no
-// earlier head to supersede.
-func Settles(trigger string) bool { return trigger == "synchronize" || trigger == "poll" }
-
 // LabelChange reports whether trigger is a label added to or removed from
 // the pull request: the head is the one already judged, so only a filter
 // that reads labels can decide differently.

@@ -281,7 +281,7 @@ one. They come in five groups, with a few keys beside them:
 | ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
 | `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost` | what a review runs on and what it says     |
 | `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`          | how a review is judged                     |
-| `trigger`    | `include`, `exclude`, `settle`, `limit`                                             | which pull requests are reviewed, and when |
+| `trigger`    | `include`, `exclude`, `limit`                                                       | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`                                                      | what is posted                             |
 | `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`, `fetches` | the bounds of a review's tool loop   |
 | beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone   |                                            |
@@ -300,7 +300,6 @@ review:
   model: openrouter/vendor/large-model
   fallback: openrouter/vendor/small-model
 trigger:
-  settle: 30s
   exclude:
     - expr: pr.draft
     - { name: forks, expr: pr.fork }
@@ -341,7 +340,6 @@ describes, and these, which are the admin's alone:
 | `confidence.instructions` | guidance to the scorer on rating risk ([risk](confidence.md#risk))                                                                                                                                                                                                                  |
 | `review.cost`             | `true` ends the summary's footer with what the pull request's reviews have cost together, every model call charged to one of them. Off unless set: the comment is public, on a fork's pull request too, and the figure is the instance's spend                                      |
 | `review.incremental`      | how many files of the change may move since the last review before a re-review covers the whole pull request again; 25 unless set ([incremental reviews](#incremental-reviews))                                                                                                     |
-| `trigger.settle`          | how long a new head waits before its review starts, so a burst of pushes is reviewed once; no wait unless set                                                                                                                                                                       |
 | `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. The summary of the last one says so, and `@<app slug> review` and `resume` still work ([commands](reviews.md#commands)) |
 | `agent`                   | the bounds of a review's tool loop ([the agent](#the-agent))                                                                                                                                                                                                                        |
 | `limits`                  | at the root alone: every account's limits ([`accounts`](#accounts))                                                                                                                                                                                                                 |
@@ -350,6 +348,12 @@ describes, and these, which are the admin's alone:
 A repository adds tools of its own through
 [`.kritika/mise.toml`](repository-config.md#repository-tools); it cannot
 supply mise `[settings]`, which stay the admin's.
+
+`trigger.settle` is no longer a key, at the root or in an entry: a file
+that still sets it does not load, so remove it before upgrading. A new
+head is reviewed as soon as a slot is free, and a review that starts
+cancels the pull request's older active reviews
+([overlapping reviews](reviews.md#overlapping-reviews)).
 
 ### Precedence
 

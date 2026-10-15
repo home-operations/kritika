@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -96,10 +95,10 @@ func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
 	doc := strings.Replace(fileWithDefaults, "review: { model: openrouter/big, fallback: openrouter/small }",
 		"review: {model: openrouter/big, fallback: openrouter/small, effort: low, approve: true, fixes: true, cost: true, incremental: 7, diagram: true}", 1)
-	f := mustLoad(t, doc+"trigger: {settle: 45s, limit: 3}\n")
+	f := mustLoad(t, doc+"trigger: {limit: 3}\n")
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
-	if s.MaxAutoReviews != 3 || s.Settle != 45*time.Second || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
+	if s.MaxAutoReviews != 3 || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
 		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost {
 		t.Fatalf("settings = %+v", s)
 	}

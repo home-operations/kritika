@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -80,17 +79,6 @@ func (e *Effective) repoFiles() []string {
 // read leaves the built-in template in use, as the pack's notes say.
 func (e *Effective) templates(files repoconfig.Files) review.Templates {
 	return review.Templates{Summary: files[e.Review.Templates.Summary], Inline: files[e.Review.Templates.Inline]}
-}
-
-// settleLeft is how much longer a review job started by trigger, enqueued
-// at created, waits before it runs: a new head waits until settle has
-// passed since it arrived, so a burst of pushes is reviewed once, at its
-// last head.
-func settleLeft(trigger string, settle time.Duration, created, now time.Time) time.Duration {
-	if !jobs.Settles(trigger) {
-		return 0
-	}
-	return created.Add(settle).Sub(now)
 }
 
 // skipByRepo ends a review the merge-base .kritika.yaml disables or filters

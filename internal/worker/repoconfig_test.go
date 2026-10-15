@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -224,31 +223,6 @@ func TestReadRepoConfig(t *testing.T) {
 			doc, notes, err := readRepoConfig(t.Context(), tt.client, "o", "r", "base")
 			if !errors.Is(err, tt.wantErr) || string(doc) != tt.doc || (doc == nil) != (tt.doc == "") || !slices.Equal(notes, tt.notes) {
 				t.Fatalf("readRepoConfig = %q, %q, %v", doc, notes, err)
-			}
-		})
-	}
-}
-
-func TestSettleLeft(t *testing.T) {
-	created := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name    string
-		trigger string
-		settle  time.Duration
-		now     time.Time
-		want    time.Duration
-	}{
-		{"a push waits out the settle time", "synchronize", time.Minute, created.Add(20 * time.Second), 40 * time.Second},
-		{"so does a head the poller found", "poll", time.Minute, created, time.Minute},
-		{"a push past its settle time runs", "synchronize", time.Minute, created.Add(2 * time.Minute), -time.Minute},
-		{"no settle time", "synchronize", 0, created, 0},
-		{"an opened pull request does not wait", "opened", time.Minute, created, 0},
-		{"nor does a manual re-run", "manual", time.Minute, created, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := settleLeft(tt.trigger, tt.settle, created, tt.now); got != tt.want {
-				t.Fatalf("settleLeft = %v, want %v", got, tt.want)
 			}
 		})
 	}

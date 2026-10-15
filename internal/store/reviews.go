@@ -20,24 +20,125 @@ type NewReview struct {
 	JobID                                                                  int64
 }
 
-// StartReview records a running review and its runner run and returns
-// their ids. An earlier attempt of the same job that never finished its
-// review (a write that failed and was retried, a worker that died) left it
-// running, and a running review blocks every re-run of its head, so it is
-// ended failed first.
-func StartReview(ctx context.Context, tx pgx.Tx, r NewReview) (reviewID, runID string, err error) {
+// ErrHeadMoved is returned by StartReview when the pull request's head is
+// no longer the one the review is of: the review is superseded before it
+// starts, and must not take the pull request from the current head's.
+var ErrHeadMoved = errors.New("store: the pull request's head moved")
+
+// ErrReviewReplaced is returned by StartReview when a review an earlier
+// attempt of the same job started was replaced by a newer review: it stays
+// canceled, and the job starts no other in its place.
+var ErrReviewReplaced = errors.New("store: a newer review replaced this job's review")
+
+// ReplacedReviewError is what a review a newer one replaced records as its
+// error.
+const ReplacedReviewError = "replaced by a newer review"
+
+// Started is a review StartReview recorded: its id, its runner run's, and
+// the older reviews of the pull request it canceled.
+type Started struct {
+	ReviewID, RunID string
+	Replaced        []string
+}
+
+// StartReview records a running review and its runner run. The last review
+// to start owns the pull request: every older review of it still active,
+// running or prepared, whatever its head, is canceled and points at the
+// new one (replaced_by_review_id), and the starts of one pull request are
+// serialized on its row, so two at once have one unambiguous winner. The
+// row lock also orders a start against ingest's head updates: a review of
+// a head that moved is ErrHeadMoved, so a stale head's queued job cannot
+// take the pull request from its current head's review. An earlier attempt
+// of the same job that never finished its review (a write that failed and
+// was retried, a worker that died) left it running, and a running review
+// blocks every re-run of its head, so it is ended failed first; one a newer
+// review replaced is ErrReviewReplaced, so the job does not revive it.
+func StartReview(ctx context.Context, tx pgx.Tx, r NewReview) (Started, error) {
+	var head string
+	if err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests WHERE id = $1 FOR UPDATE`, r.PullRequestID).Scan(&head); err != nil {
+		return Started{}, fmt.Errorf("store: lock pull request: %w", err)
+	}
+	if head != r.HeadSHA {
+		return Started{}, ErrHeadMoved
+	}
+	replaced, err := JobReviewReplaced(ctx, tx, r.PullRequestID, r.JobID)
+	if err != nil {
+		return Started{}, err
+	}
+	if replaced {
+		return Started{}, ErrReviewReplaced
+	}
 	if _, err := tx.Exec(ctx, `UPDATE reviews SET status = 'failed', error = 'its job was retried', finished_at = now()
 		WHERE pull_request_id = $1 AND river_job_id = $2 AND finished_at IS NULL`, r.PullRequestID, r.JobID); err != nil {
-		return "", "", fmt.Errorf("store: end an earlier attempt's review: %w", err)
+		return Started{}, fmt.Errorf("store: end an earlier attempt's review: %w", err)
 	}
+	var s Started
 	if err := tx.QueryRow(ctx, `INSERT INTO reviews
 		(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, trigger, river_job_id)
 		VALUES ($1, $2, $3, $4, $5, 'running', $6, $7) RETURNING id`,
-		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Trigger, r.JobID).Scan(&reviewID); err != nil {
-		return "", "", fmt.Errorf("store: insert review: %w", err)
+		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Trigger, r.JobID).Scan(&s.ReviewID); err != nil {
+		return Started{}, fmt.Errorf("store: insert review: %w", err)
 	}
-	runID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindReview, reviewID, r.JobID)
-	return reviewID, runID, err
+	// A prepared review's checkpoint becomes the terminal marker, so its
+	// job's retry resumes nothing.
+	rows, err := tx.Query(ctx, `UPDATE reviews SET status = 'canceled', error = $3, finished_at = now(), replaced_by_review_id = $2,
+		publication = CASE WHEN publication IS NOT NULL THEN '{}'::jsonb END
+		WHERE pull_request_id = $1 AND id <> $2 AND finished_at IS NULL RETURNING id::text`,
+		r.PullRequestID, s.ReviewID, ReplacedReviewError)
+	if err != nil {
+		return Started{}, fmt.Errorf("store: cancel the older reviews: %w", err)
+	}
+	if s.Replaced, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		return Started{}, fmt.Errorf("store: cancel the older reviews: %w", err)
+	}
+	s.RunID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindReview, s.ReviewID, r.JobID)
+	return s, err
+}
+
+// JobReviewReplaced reports whether a review River job jobID started on the
+// pull request was replaced by a newer review (see StartReview).
+func JobReviewReplaced(ctx context.Context, tx pgx.Tx, pullRequestID string, jobID int64) (bool, error) {
+	var replaced bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reviews
+		WHERE pull_request_id = $1 AND river_job_id = $2 AND replaced_by_review_id IS NOT NULL)`, pullRequestID, jobID).Scan(&replaced)
+	if err != nil {
+		return false, fmt.Errorf("store: read the job's replaced reviews: %w", err)
+	}
+	return replaced, nil
+}
+
+// ReviewCeded reports whether the review no longer speaks for its pull
+// request, whose commit status, approval and marks are then a newer
+// review's to set: a newer review replaced it (see StartReview), or a newer
+// review of the pull request, of its head or another, has started since.
+// ErrNotFound when there is no such review.
+func ReviewCeded(ctx context.Context, tx pgx.Tx, reviewID string) (bool, error) {
+	var ceded bool
+	err := tx.QueryRow(ctx, `SELECT r.replaced_by_review_id IS NOT NULL OR EXISTS (
+			SELECT 1 FROM reviews n JOIN runner_runs rr ON rr.review_id = n.id
+			WHERE n.pull_request_id = r.pull_request_id AND (n.created_at, n.id) > (r.created_at, r.id))
+		FROM reviews r WHERE r.id = $1`, reviewID).Scan(&ceded)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: read whether the review was ceded: %w", err)
+	}
+	return ceded, nil
+}
+
+// ReviewReplaced reports whether a newer review of the pull request
+// replaced the review (see StartReview), or ErrNotFound.
+func ReviewReplaced(ctx context.Context, tx pgx.Tx, reviewID string) (bool, error) {
+	var replaced bool
+	err := tx.QueryRow(ctx, `SELECT replaced_by_review_id IS NOT NULL FROM reviews WHERE id = $1`, reviewID).Scan(&replaced)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: read whether the review was replaced: %w", err)
+	}
+	return replaced, nil
 }
 
 // EndedReview is a review that ended before it ran: superseded, skipped or

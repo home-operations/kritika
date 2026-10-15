@@ -262,7 +262,6 @@ export interface RepoSettings {
   filters: Filters;
   ignore: string[];
   skills: { paths: string[]; scope: Record<string, SkillScope> };
-  settleSeconds: number;
   maxAutoReviews: number;
   maxDeltaFiles: number;
   review: ReviewBlock;
@@ -463,6 +462,8 @@ export interface ReviewInfo extends Review {
   // newestReviewId is the pull request's newest review that was not skipped, null when none is newer than this.
   newestReviewId: string | null;
   cancelRequestedAt: string | null;
+  // replacedByReviewId is the newer review whose start canceled this one, null for a review that ended any other way.
+  replacedByReviewId: string | null;
 }
 
 export interface Summary {

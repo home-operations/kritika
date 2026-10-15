@@ -345,7 +345,7 @@ func repoConfig(settings configfile.Settings, row *store.RepoFileRow) *RepoConfi
 func repoSettings(s configfile.Settings) RepoSettings {
 	return RepoSettings{
 		Enabled: s.Enabled, Models: s.Models, Filters: s.Filters,
-		Ignore: s.Ignore, SettleSeconds: int64(s.Settle.Seconds()), MaxAutoReviews: s.MaxAutoReviews,
+		Ignore: s.Ignore, MaxAutoReviews: s.MaxAutoReviews,
 		MaxDeltaFiles: s.Incremental.MaxDeltaFiles,
 		Review:        s.Review, Confidence: s.Confidence, Skills: loadedScopes(s.Skills), Agent: s.Agent, Limits: s.Limits,
 	}

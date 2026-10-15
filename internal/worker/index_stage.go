@@ -53,7 +53,7 @@ func (w *Index) stage(
 		return err
 	}
 	defer w.revokeGatewayTokens(ctx, logger, spec.RunID)
-	sup := runSupervision(w.Store, account.ID(), spec.RunID, "", "", w.superviseEvery, logger)
+	sup := runSupervision(w.Store, account.ID(), spec.RunID, "", "", "", w.superviseEvery, logger)
 	started = true
 	res, cause := supervise(ctx, sup, w.Executor, executor.Spec{
 		Labels:      runnerLabels(account.Key(), repository, jobs.QueueIndex, 0),

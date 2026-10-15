@@ -204,9 +204,6 @@ func (s *Settings) apply(o *Overrides) {
 // trigger lays one scope's trigger keys over s.
 func (s *Settings) trigger(o *Overrides) {
 	s.Filters = s.Filters.with(o.Trigger.Filters)
-	if o.Trigger.Settle != nil {
-		s.Settle = *o.Trigger.Settle
-	}
 	if o.Trigger.Limit != nil {
 		s.MaxAutoReviews = *o.Trigger.Limit
 	}

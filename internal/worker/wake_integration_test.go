@@ -60,8 +60,8 @@ func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 	}{
 		{name: "a review snoozed for a slot wakes when one is free", kind: "review", account: account.ID(), metadata: waiting, woken: true},
 		{name: "a review snoozed for a slot sleeps while every slot is held", kind: "review", account: account.ID(), metadata: waiting, held: true},
-		{name: "a review snoozed for its settle time is left alone", kind: "review", account: account.ID(), metadata: `{"snoozes": 1}`},
-		{name: "a review snoozed for its settle time after a slot is left alone", kind: "review", account: account.ID(), metadata: `{"snoozes": 2, "slot_wait": null}`},
+		{name: "a review snoozed for something other than a slot is left alone", kind: "review", account: account.ID(), metadata: `{"snoozes": 1}`},
+		{name: "a review snoozed for something else after a slot is left alone", kind: "review", account: account.ID(), metadata: `{"snoozes": 2, "slot_wait": null}`},
 		{name: "a job of another kind is left alone", kind: "index", account: account.ID(), metadata: waiting},
 		{name: "a review of an account that is not running is left alone", kind: "review", account: "github:nobody", metadata: waiting},
 	} {

@@ -2,7 +2,7 @@
   import { Resource, live } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { href } from '../router.svelte';
-  import { shortSha, duration, wholeNumber } from '../format';
+  import { shortSha, wholeNumber } from '../format';
   import type { RepoDetail, Repository } from '../types';
   import StateView from './StateView.svelte';
   import Time from './Time.svelte';
@@ -24,7 +24,6 @@
           <dt>Reviews</dt><dd>{d.enabled && (d.repoConfig?.settings.enabled ?? true) ? 'Enabled' : 'Disabled'}</dd>
           <dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>
           <dt>Review model</dt><dd class="mono">{settings.models.review || 'Not configured'}</dd>
-          <dt>Settle time</dt><dd>{duration(settings.settleSeconds * 1000) || '0s'}</dd>
         </dl>
         {#if d.repoConfig?.ignored}<p class="text-danger wrap-anywhere mt-1">Repository configuration ignored: {d.repoConfig.ignored}</p>{/if}
       </div>

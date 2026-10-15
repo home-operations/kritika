@@ -34,7 +34,7 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
   onedr0p/*: { trigger: { exclude: [{ name: drafts, expr: pr.draft }] } }
   onedr0p/home-ops: {}
   onedr0p/polled: {}
-  onedr0p/settle: { trigger: { settle: 60s } }
+  onedr0p/at-once: {}
   onedr0p/opened-only: { trigger: { include: [{ expr: 'pr.event == "opened"' }] } }
   onedr0p/labelled: { trigger: { exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }] } }
   onedr0p/no-forks: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }
@@ -461,8 +461,6 @@ func TestDispatchStaleEvent(t *testing.T) {
 	}
 }
 
-// A new head is enqueued at once even where the repository settles: the
-// worker waits the settle time out, since .kritika.yaml may set it.
 // TestDispatchSkipsArchivedAndForks: nothing runs for an archived
 // repository, or a fork its own entry does not turn on, whatever the
 // account's settings say.
@@ -543,7 +541,7 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 
 	opened := &webhook.PullRequest{Number: 9, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: "s1", BaseRef: "main"}
 	before := time.Now()
-	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/settle"), PullRequest: opened}))
+	out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo("onedr0p/at-once"), PullRequest: opened}))
 	after := time.Now()
 	if err != nil || out.Status != Enqueued {
 		t.Fatalf("opened dispatch = %+v, %v", out, err)
@@ -555,7 +553,7 @@ func TestDispatchPullRequestEnqueuesAtOnce(t *testing.T) {
 	synced := *opened
 	synced.HeadSHA = "s2"
 	before = time.Now()
-	out, err = svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/settle"), PullRequest: &synced}))
+	out, err = svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "synchronize", Repository: repo("onedr0p/at-once"), PullRequest: &synced}))
 	after = time.Now()
 	if err != nil || out.Status != Enqueued {
 		t.Fatalf("synchronize dispatch = %+v, %v", out, err)

@@ -55,12 +55,15 @@ func (w *Review) afterRun(
 		return prepared{}, decision.end.Status, decision.jobError()
 	}
 	if decision.end.Status == store.ReviewCanceled {
+		// A review a newer one replaced leaves the head's status to that
+		// one; a cancel someone asked for reports itself.
+		if decision.description == "" {
+			logger.Info("review canceled before preparation: a newer review replaced it")
+			return prepared{}, decision.end.Status, nil
+		}
 		sctx, cancel := detach(ctx)
 		defer cancel()
-		owner, repo := pr.ownerRepo()
-		if err := client.SetStatus(sctx, owner, repo, args.HeadSHA, forge.StatusError, decision.description); err != nil {
-			logger.Warn("commit status not set", "error", err)
-		}
+		w.reportEnd(sctx, afterRunEnded(args, pr, reviewID, client, logger), decision.description)
 		return prepared{}, decision.end.Status, nil
 	}
 	for stage, n := range pack.StageCounts {
@@ -68,15 +71,20 @@ func (w *Review) afterRun(
 	}
 	if decision.end.Status == store.ReviewSkipped {
 		logger.Info("review skipped", "reason", pack.SkipReason, "patch_id", review.ShortSHA(pack.PatchID))
-		// The skip is committed; reporting it must survive a job ending now.
+		// The skip is committed, and its job with it when the filter decided
+		// it: reporting it must survive a job ending now, and a review of
+		// the head someone asks for meanwhile owns the head from its start.
 		sctx, cancel := detach(ctx)
 		defer cancel()
-		owner, repo := pr.ownerRepo()
 		state, desc := skipVerdict(pack.carried, eff.Confidence.Gate, skipDescription(pack.SkipReason, pack.SkipDetail))
-		if err := client.SetStatus(sctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
-			logger.Warn("commit status not set", "error", err)
-		}
-		carryApproval(sctx, logger, client, pr, eff.Settings, pack.carried)
+		w.ownedWrite(sctx, afterRunEnded(args, pr, reviewID, client, logger), func(ctx context.Context) error {
+			owner, repo := pr.ownerRepo()
+			if err := client.SetStatus(ctx, owner, repo, args.HeadSHA, state, "kritika: "+desc); err != nil {
+				logger.Warn("commit status not set", "error", err)
+			}
+			carryApproval(ctx, logger, client, pr, eff.Settings, pack.carried)
+			return nil
+		})
 		if decision.disposition == reviewSnooze {
 			logger.Info("labels moved while the runner judged the filter; the review is judged again")
 		}
@@ -87,6 +95,15 @@ func (w *Review) afterRun(
 		patchID: pack.PatchID, eff: eff, templates: eff.templates(pack.Files), notes: append(slices.Clone(notes), pack.Notes...),
 		scope: pack.Scope, ruleIDs: pack.RuleIDs,
 	}, decision.end.Status, nil
+}
+
+// afterRunEnded is the review afterRun ends, as ownedWrite takes it.
+func afterRunEnded(args jobs.ReviewArgs, pr *pullRequest, reviewID string, client forge.Client, logger *slog.Logger) endedReview {
+	owner, repo := pr.ownerRepo()
+	return endedReview{
+		accountID: args.AccountID, reviewID: reviewID, prID: pr.id, headSHA: args.HeadSHA,
+		owner: owner, repo: repo, client: client, logger: logger,
+	}
 }
 
 type preparationRecord struct {
@@ -107,9 +124,13 @@ func (w *Review) recordPreparation(
 		if err != nil {
 			return fmt.Errorf("worker: read preparation head and labels: %w", err)
 		}
-		status, canceled, err := store.LockReviewPreparation(ctx, tx, reviewID)
+		status, canceled, replaced, err := store.LockReviewPreparation(ctx, tx, reviewID)
 		if err != nil {
 			return err
+		}
+		if replaced {
+			decision = reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewFinish}
+			return nil
 		}
 		if status != store.ReviewRunning {
 			return fmt.Errorf("worker: review is %s before preparation", status)
