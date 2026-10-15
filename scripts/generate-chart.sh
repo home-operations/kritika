@@ -7,7 +7,7 @@ trap 'rm -f "$generated"' EXIT
 awk '
   FNR == NR {
     if ($0 == "[tools]") tools = 1
-    if (tools) config = config "      " $0 "\n"
+    if (tools) config = config ($0 == "" ? "" : "      " $0) "\n"
     next
   }
   $0 == "  mise:" { mise = 1 }
@@ -16,7 +16,7 @@ awk '
     skip = 1
     next
   }
-  skip && /^      / { next }
+  skip && (/^      / || /^$/) { next }
   skip { skip = 0; mise = 0 }
   { print }
 ' build/tools/mise.toml charts/kritika/values.yaml > "$generated"

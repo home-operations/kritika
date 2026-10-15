@@ -11,7 +11,7 @@ glob = [
   "charts/kritika/values.yaml",
   "charts/kritika/README.md.gotmpl",
 ]
-run = "scripts/generate-chart.sh && git add charts/kritika/values.yaml charts/kritika/README.md charts/kritika/values.schema.json"
+run = "mise run generate && git add charts/kritika/values.yaml charts/kritika/README.md charts/kritika/values.schema.json"
 
 # The generated chart README and schema and the authored MkDocs site under
 # docs/ are .prettierignore'd; exclude them from the shared formatters too.
@@ -21,7 +21,7 @@ run = "scripts/generate-chart.sh && git add charts/kritika/values.yaml charts/kr
 [pre-commit.commands.format-markdown]
 exclude = ["charts/kritika/README.md", "docs/**"]
 
-[pre-commit]
+[pre-commit.commands.format-json]
 exclude = ["charts/kritika/values.schema.json"]
 
 # build/tools is a mise config root of its own, outside the shared format-mise
@@ -45,7 +45,7 @@ run = "mise -C build/tools lock && git add build/tools/mise.lock"
 
 [[pre-commit.jobs.group.jobs]]
 name = "mise-build-tools-chart"
-run = "scripts/generate-chart.sh && git add charts/kritika/values.yaml charts/kritika/README.md charts/kritika/values.schema.json"
+run = "mise run generate && git add charts/kritika/values.yaml charts/kritika/README.md charts/kritika/values.schema.json"
 
 [pre-commit.commands.golangci-lint]
 glob = "*.go"

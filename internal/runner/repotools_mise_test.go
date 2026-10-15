@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
@@ -23,12 +24,14 @@ func TestMiseRepositoryTools(t *testing.T) {
 	if err := os.WriteFile(artifact, payload, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	doc := fmt.Sprintf(`[env]
+	doc := func(command string) string {
+		return fmt.Sprintf(`[env]
 REPO_ENV = "from repository"
 NO_COLOR = "0"
 [tools]
-"http:repo-tool" = { version = "1.0.0", url = "file://%s", filter_bins = "repo-tool" }
-`, filepath.ToSlash(artifact))
+"http:repo-tool" = { version = "1.0.0", url = "file://%s", filter_bins = "%s" }
+`, filepath.ToSlash(artifact), command)
+	}
 	lock := fmt.Sprintf(`lockfile_version = 3
 [[tools."http:repo-tool"]]
 version = "1.0.0"
@@ -38,20 +41,26 @@ specifiers = ["1.0.0"]
 url = "file://%s"
 checksum = "sha256:%x"
 `, misePlatform(), filepath.ToSlash(artifact), sha256.Sum256(payload))
+	lockNote := "does not pin it for " + misePlatform()
 	for _, tt := range []struct {
 		name, lock string
-		offer      bool
-		installErr bool
+		// command is what the tool is offered as, and note what the notes
+		// say when it is not.
+		command, note string
+		offer         bool
+		installErr    bool
 	}{
-		{"locked install", lock, true, false},
-		{"missing lock", "", false, false},
-		{"missing platform", strings.ReplaceAll(lock, "platforms."+misePlatform(), "platforms.other-x64"), false, false},
-		{"wrong version", strings.ReplaceAll(lock, "1.0.0", "2.0.0"), false, false},
-		{"missing checksum", strings.ReplaceAll(lock, fmt.Sprintf("sha256:%x", sha256.Sum256(payload)), ""), false, false},
-		{"wrong checksum", strings.ReplaceAll(lock, fmt.Sprintf("%x", sha256.Sum256(payload)), strings.Repeat("0", 64)), true, true},
+		{"locked install", lock, "repo-tool", "", true, false},
+		{"missing lock", "", "repo-tool", lockNote, false, false},
+		{"missing platform", strings.ReplaceAll(lock, "platforms."+misePlatform(), "platforms.other-x64"), "repo-tool", lockNote, false, false},
+		{"wrong version", strings.ReplaceAll(lock, "1.0.0", "2.0.0"), "repo-tool", lockNote, false, false},
+		{"missing checksum", strings.ReplaceAll(lock, fmt.Sprintf("sha256:%x", sha256.Sum256(payload)), ""), "repo-tool", lockNote, false, false},
+		{"wrong checksum", strings.ReplaceAll(lock, fmt.Sprintf("%x", sha256.Sum256(payload)), strings.Repeat("0", 64)), "repo-tool", "", true, true},
+		// A repository's binary is not run with the run's GitHub token.
+		{"gh refused", lock, "gh", "does not offer gh: gh carries the run's GitHub token", false, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			repo, notes, err := keptRepoMiseConfig(repoconfig.Files{RepoMiseConfig: doc, RepoMiseLock: tt.lock})
+			repo, notes, err := keptRepoMiseConfig(repoconfig.Files{RepoMiseConfig: doc(tt.command), RepoMiseLock: tt.lock})
 			if err != nil || len(notes) != 0 {
 				t.Fatalf("parse = %v, %v", notes, err)
 			}
@@ -61,26 +70,26 @@ checksum = "sha256:%x"
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !m.provides("yq") || m.provides("repo-tool") != tt.offer {
+			if !m.provides("yq") || m.provides(tt.command) != tt.offer {
 				t.Fatalf("offered = %v, tool = %+v, notes = %v", m.offered(nil), m.tools["http:repo-tool"], notes)
 			}
 			if !slices.Contains(m.commandEnv(), "NO_COLOR=0") || !slices.Contains(m.commandEnv(), "REPO_ENV=from repository") {
 				t.Fatalf("repository env not merged: %v", m.commandEnv())
 			}
 			if !tt.offer {
-				if !strings.Contains(strings.Join(notes, "\n"), "does not pin it for "+misePlatform()) {
-					t.Fatalf("no lock note: %v", notes)
+				if !strings.Contains(strings.Join(notes, "\n"), tt.note) {
+					t.Fatalf("notes = %v, want one with %q", notes, tt.note)
 				}
 				return
 			}
 			if !m.pending(m.offered(nil)) {
 				t.Fatal("repository tool installed before first use")
 			}
-			if err := lockTree(home, true); err != nil {
+			if err := lockTree(t.Context(), home, true); err != nil {
 				t.Fatal(err)
 			}
 			m.locked = true
-			t.Cleanup(func() { _ = lockTree(home, false) })
+			t.Cleanup(func() { _ = lockTree(context.Background(), home, false) })
 			path, env, err := m.resolve(t.Context(), "repo-tool")
 			if tt.installErr {
 				if err == nil || !strings.Contains(strings.ToLower(err.Error()), "checksum") {

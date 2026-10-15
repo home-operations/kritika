@@ -174,7 +174,9 @@ away. A name it lists that no tool provides is looked up on the image's
 `PATH`, which is how an image set in `runner.image` without mise offers
 the programs its builder put there.
 `mise` itself is refused in `agent.commands`. On an image without mise,
-`["*"]` offers no commands and the review summary explains why.
+`["*"]` offers no commands and the review summary explains why. A
+follow-up posts no summary, so its reply carries such notes, and a
+command's setup failure, instead.
 
 An admin may set `agent.commands: ["*"]` to allow the repository's own
 [`.kritika/mise.toml`](repository-config.md#repository-tools) to layer tools
@@ -210,9 +212,11 @@ Such a tool can also invoke mise by its absolute path; keeping mise out of
 the offered commands does not prevent subprocess execution.
 
 The clean environment hides the runner's database and model credentials,
-but commands still receive the gateway proxy credential, and a tool
-offered as `gh` receives the run's read-only GitHub token. Egress remains
-bounded by the gateway and network policy. Replacing a default tool also
+but commands still receive the gateway proxy credential, and the tool
+offered as `gh` receives the run's read-only GitHub token, so a repository
+tool is not offered as `gh` unless the image has it installed at the
+repository's version; a summary note says so. Egress remains bounded by
+the gateway and network policy. Replacing a default tool also
 keeps the argument restrictions written for the shipped version; another
 version may interpret those flags differently. Enable `["*"]` only for
 repositories whose merged tool choices the admin trusts.

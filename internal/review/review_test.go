@@ -498,9 +498,13 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	if err := CheckFollowUp(json.RawMessage(`{"reply": "Because the base value moved."}`)); err != nil {
 		t.Fatalf("CheckFollowUp = %v", err)
 	}
-	if !strings.HasPrefix(FollowUpBody(reply, "m", ""), reply) || !strings.Contains(FollowUpBody(reply, "m", ""), "kritika follow-up with m.") ||
-		!strings.Contains(FollowUpBody(reply, "m", "low"), "kritika follow-up with m/low.") {
+	if !strings.HasPrefix(FollowUpBody(reply, "m", "", nil), reply) || !strings.Contains(FollowUpBody(reply, "m", "", nil), "kritika follow-up with m.") ||
+		!strings.Contains(FollowUpBody(reply, "m", "low", nil), "kritika follow-up with m/low.") {
 		t.Fatal("FollowUpBody")
+	}
+	noted := FollowUpBody(reply, "m", "", []string{"Command curl unavailable: x", "mise tools not offered: y"})
+	if want := reply + "\n\n_Command curl unavailable: x._\n\n_mise tools not offered: y._\n\n<sub>kritika follow-up with m.</sub>\n"; noted != want {
+		t.Fatalf("FollowUpBody with notes = %q, want %q", noted, want)
 	}
 }
 

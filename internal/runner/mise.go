@@ -102,11 +102,15 @@ type miseTools struct {
 	// repoSource the file it is written to, as mise names it.
 	repo       *repoMiseConfig
 	repoSource string
-	// locked says home is read-only, as it is once the run tool is built;
-	// broken is why it could not be made so again, after which no command
+	// registry is mise's registry, read on the first tool whose commands
+	// it names; nil until then.
+	registry []registryEntry
+	// locked says home is read-only, as it is once the run tool is built,
+	// and writable that unlocked has it writable for the while; broken is
+	// why it could not be made read-only again, after which no command
 	// runs.
-	locked bool
-	broken error
+	locked, writable bool
+	broken           error
 }
 
 // fromRepo reports whether the repository's config declares t.
@@ -181,10 +185,6 @@ func newMiseTools(
 	if err != nil {
 		return nil, nil, err
 	}
-	registry, err := m.registry(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
 	for _, name := range slices.Sorted(maps.Keys(m.tools)) {
 		t := m.tools[name]
 		if m.fromRepo(t) && !t.installed && !slices.Contains(repo.locked[name], t.version) {
@@ -192,7 +192,7 @@ func newMiseTools(
 				RepoMiseConfig, name, t.version, RepoMiseLock, misePlatform()))
 			continue
 		}
-		commands, err := m.commandsOf(ctx, t, registry)
+		commands, err := m.commandsOf(ctx, t)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -209,6 +209,14 @@ func newMiseTools(
 		for _, c := range commands {
 			if other := m.byCommand[c]; other != nil {
 				notes = append(notes, fmt.Sprintf("mise tool %s does not offer %s: %s offers it already", name, c, other.name))
+				continue
+			}
+			// gh runs with the run's GitHub token, so a binary the
+			// repository chose is not offered as it; one the image has
+			// installed at the repository's version is the image's.
+			if c == "gh" && m.fromRepo(t) && !t.installed {
+				notes = append(notes, fmt.Sprintf("%s: %s does not offer gh: gh carries the run's GitHub token, "+
+					"so only the image or the instance provides it", RepoMiseConfig, name))
 				continue
 			}
 			m.byCommand[c] = t
@@ -242,7 +250,7 @@ func (m *miseTools) run(ctx context.Context, args ...string) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, miseTimeout)
 	defer cancel()
 	stdout, stderr := &cappedWriter{max: miseOutputBytes}, &cappedWriter{max: installOutputBytes}
-	if err := m.exec(cctx, stdout, stderr, args...); err != nil {
+	if err := m.unlocked(ctx, func() error { return m.exec(cctx, stdout, stderr, args...) }); err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("runner: mise %s: %w", args[0], ctx.Err())
 		}
@@ -258,29 +266,38 @@ func (m *miseTools) run(ctx context.Context, args ...string) ([]byte, error) {
 	return stdout.buf, nil
 }
 
-// exec runs mise with args, home writable for the while. Once the run
-// tool is built, home is read-only between calls; a home that cannot be
-// made so again is broken, and no command runs after.
-func (m *miseTools) exec(ctx context.Context, stdout, stderr *cappedWriter, args ...string) (err error) {
+// unlocked runs f, a use of mise, with home writable. Once the run tool
+// is built, home is read-only between the runner's own uses of it; an
+// unlocked within another leaves the locking to the outer one, so an
+// install and the reads after it walk home once. A home that cannot be
+// made read-only again is broken: f's error carries that too, so the
+// command it was for does not run, and no command runs after.
+func (m *miseTools) unlocked(ctx context.Context, f func() error) (err error) {
 	if m.broken != nil {
 		return m.broken
 	}
-	if m.locked {
-		if err := lockTree(m.home, false); err != nil {
-			m.broken = fmt.Errorf("runner: home not made writable for mise: %w", err)
-			_ = lockTree(m.home, true)
-			return m.broken
-		}
-		// A relock that fails fails this call too: the command it was
-		// for must not run either.
-		defer func() {
-			if lerr := lockTree(m.home, true); lerr != nil {
-				m.broken = fmt.Errorf("runner: home not made read-only after mise: %w", lerr)
-				m.logger.Warn("commands no longer run: home not made read-only after mise", "error", lerr)
-				err = errors.Join(err, m.broken)
-			}
-		}()
+	if !m.locked || m.writable {
+		return f()
 	}
+	if err := lockTree(ctx, m.home, false); err != nil {
+		m.broken = fmt.Errorf("runner: home not made writable for mise: %w", err)
+		_ = lockTree(ctx, m.home, true)
+		return m.broken
+	}
+	m.writable = true
+	defer func() {
+		m.writable = false
+		if lerr := lockTree(ctx, m.home, true); lerr != nil {
+			m.broken = fmt.Errorf("runner: home not made read-only after mise: %w", lerr)
+			m.logger.Warn("commands no longer run: home not made read-only after mise", "error", lerr)
+			err = errors.Join(err, m.broken)
+		}
+	}()
+	return f()
+}
+
+// exec runs mise with args in the run's environment, within unlocked.
+func (m *miseTools) exec(ctx context.Context, stdout, stderr *cappedWriter, args ...string) error {
 	cmd := exec.CommandContext(ctx, m.bin, args...)
 	// mise reads the configs from its working directory up to the
 	// ceiling; home holds the instance's, as the run's global config.
@@ -300,11 +317,14 @@ func (m *miseTools) usable() error {
 }
 
 // lockTree takes the owner's write permission from everything under dir,
-// dir included, or gives it back. Symlinks are left alone: their targets
-// are reached on their own.
-func lockTree(dir string, lock bool) error {
+// dir included, or gives it back, until ctx ends. Symlinks are left
+// alone: their targets are reached on their own.
+func lockTree(ctx context.Context, dir string, lock bool) error {
 	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.Type()&fs.ModeSymlink != 0 {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		info, err := d.Info()
@@ -378,14 +398,17 @@ func (m *miseTools) refresh(ctx context.Context) ([]string, error) {
 	return notes, nil
 }
 
-// parseMiseEnv splits mise env --json into PATH's entries and the other
-// variables it sets, less the reserved names, which the notes name.
+// parseMiseEnv splits mise env --json into PATH's entries, nil when mise
+// sets none, and the other variables it sets, less the reserved names,
+// which the notes name.
 func parseMiseEnv(out []byte) (path, extra, notes []string, err error) {
 	var env map[string]string
 	if err := json.Unmarshal(out, &env); err != nil {
 		return nil, nil, nil, fmt.Errorf("runner: mise env: %w", err)
 	}
-	path = strings.Split(env["PATH"], string(os.PathListSeparator))
+	if p := env["PATH"]; p != "" {
+		path = strings.Split(p, string(os.PathListSeparator))
+	}
 	for _, name := range slices.Sorted(maps.Keys(env)) {
 		switch {
 		case name == "PATH":
@@ -405,17 +428,20 @@ type registryEntry struct {
 	Bins     []string `json:"bins"`
 }
 
-// registry is mise's registry, read offline.
-func (m *miseTools) registry(ctx context.Context) ([]registryEntry, error) {
+// registryEntries is mise's registry, read offline once, on the first
+// call: a run whose tools are all installed never reads it.
+func (m *miseTools) registryEntries(ctx context.Context) ([]registryEntry, error) {
+	if m.registry != nil {
+		return m.registry, nil
+	}
 	out, err := m.run(ctx, "registry", "--json")
 	if err != nil {
 		return nil, err
 	}
-	var entries []registryEntry
-	if err := json.Unmarshal(out, &entries); err != nil {
+	if err := json.Unmarshal(out, &m.registry); err != nil {
 		return nil, fmt.Errorf("runner: mise registry: %w", err)
 	}
-	return entries, nil
+	return m.registry, nil
 }
 
 // registryBins are the commands the registry lists for key, a short name
@@ -454,7 +480,7 @@ func (i miseToolInfo) filterBins() []string {
 // commandsOf are the commands t offers: an installed tool's executables,
 // and for one still to install what its config says and the registry
 // lists, as declaredCommands has them.
-func (m *miseTools) commandsOf(ctx context.Context, t *miseTool, registry []registryEntry) ([]string, error) {
+func (m *miseTools) commandsOf(ctx context.Context, t *miseTool) ([]string, error) {
 	if t.installed {
 		return executablesUnder(m.path, t.installPath), nil
 	}
@@ -470,6 +496,10 @@ func (m *miseTools) commandsOf(ctx context.Context, t *miseTool, registry []regi
 	var info miseToolInfo
 	if err := json.Unmarshal(out, &info); err != nil {
 		return nil, fmt.Errorf("runner: mise tool %s: %w", t.name, err)
+	}
+	registry, err := m.registryEntries(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return declaredCommands(t.name, info, registry), nil
 }
@@ -567,12 +597,12 @@ func (m *miseTools) pending(offered map[string]string) bool {
 	return false
 }
 
-// commandEnv is the commands' environment: base with mise's PATH, then the
-// config's [env].
+// commandEnv is the commands' environment: base with mise's PATH, when
+// it set one, then the config's [env].
 func (m *miseTools) commandEnv() []string {
 	env := make([]string, 0, len(m.base)+len(m.extra))
 	for _, kv := range m.base {
-		if strings.HasPrefix(kv, "PATH=") {
+		if strings.HasPrefix(kv, "PATH=") && len(m.path) > 0 {
 			kv = "PATH=" + strings.Join(m.path, string(os.PathListSeparator))
 		}
 		env = append(env, kv)
@@ -606,7 +636,8 @@ func (m *miseTools) resolve(ctx context.Context, command string) (string, []stri
 // install installs t with mise, which gets the run's GitHub token for
 // its own process, so its GitHub API calls count against the App
 // installation's limit rather than the gateway's one address, then
-// reads the tools and environment again, all within installTimeout.
+// reads the tools and environment again, all within installTimeout and
+// with home unlocked once.
 func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	started := time.Now()
 	ictx, cancel := context.WithTimeout(ctx, installTimeout)
@@ -620,20 +651,27 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 		args = []string{"install", "--locked", t.name}
 	}
 	out := &cappedWriter{max: installOutputBytes}
-	err := m.exec(ictx, out, out, args...)
+	var installed bool
+	err := m.unlocked(ctx, func() error {
+		if err := m.exec(ictx, out, out, args...); err != nil {
+			return err
+		}
+		installed = true
+		_, err := m.refresh(ictx)
+		return err
+	})
 	output := m.secrets.Mask(strings.TrimSpace(string(out.buf)))
 	switch {
 	case ctx.Err() != nil:
 		return ctx.Err()
+	case err != nil && installed:
+		return err
 	case err != nil && ictx.Err() != nil:
 		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
 		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, installTimeout)
 	case err != nil:
 		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
 		return fmt.Errorf("%s could not be installed: %s", t.name, output)
-	}
-	if _, err := m.refresh(ictx); err != nil {
-		return err
 	}
 	if !t.installed {
 		return fmt.Errorf("%s is not installed after its install: %s", t.name, output)

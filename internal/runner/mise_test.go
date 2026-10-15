@@ -47,6 +47,24 @@ func TestParseMiseEnv(t *testing.T) {
 	if _, _, _, err := parseMiseEnv([]byte("not json")); err == nil {
 		t.Fatal("no error for a non-JSON env")
 	}
+	// An env without PATH gives none, not one empty entry, which would
+	// name the working directory.
+	if path, _, _, err := parseMiseEnv([]byte(`{"NO_COLOR":"1"}`)); err != nil || path != nil {
+		t.Fatalf("path = %#v, %v", path, err)
+	}
+}
+
+// TestMiseCommandEnvPath: the commands' PATH is mise's when it set one,
+// else the runner's own.
+func TestMiseCommandEnvPath(t *testing.T) {
+	m := &miseTools{base: []string{"PATH=/usr/bin", "HOME=/h"}, extra: []string{"X=1"}}
+	if got := m.commandEnv(); !slices.Equal(got, []string{"PATH=/usr/bin", "HOME=/h", "X=1"}) {
+		t.Fatalf("env without a mise PATH = %v", got)
+	}
+	m.path = []string{"/tool/bin", "/usr/bin"}
+	if got := m.commandEnv(); !slices.Equal(got, []string{"PATH=/tool/bin:/usr/bin", "HOME=/h", "X=1"}) {
+		t.Fatalf("env with a mise PATH = %v", got)
+	}
 }
 
 func TestRegistryBins(t *testing.T) {
@@ -288,7 +306,7 @@ func TestLockTree(t *testing.T) {
 	if err := os.Symlink("/nowhere", filepath.Join(dir, "link")); err != nil {
 		t.Fatal(err)
 	}
-	if err := lockTree(root, true); err != nil {
+	if err := lockTree(t.Context(), root, true); err != nil {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]os.FileMode{root: 0o555, dir: 0o555, file: 0o555} {
@@ -304,7 +322,7 @@ func TestLockTree(t *testing.T) {
 			t.Fatal("a file was created in a locked directory")
 		}
 	}
-	if err := lockTree(root, false); err != nil {
+	if err := lockTree(t.Context(), root, false); err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Stat(file); err != nil || info.Mode().Perm() != 0o755 {
@@ -364,7 +382,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := lockTree(home, true); err != nil {
+	if err := lockTree(t.Context(), home, true); err != nil {
 		t.Fatal(err)
 	}
 	m.locked = true
@@ -373,7 +391,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	}
 	// A directory the walk cannot read fails the relock.
 	sealed := filepath.Join(home, "sealed")
-	if err := lockTree(home, false); err != nil {
+	if err := lockTree(t.Context(), home, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(sealed, 0); err != nil {
@@ -381,9 +399,9 @@ func TestMiseToolsBroken(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = os.Chmod(sealed, 0o755)
-		_ = lockTree(home, false)
+		_ = lockTree(context.Background(), home, false)
 	})
-	if err := lockTree(home, true); err == nil {
+	if err := lockTree(t.Context(), home, true); err == nil {
 		t.Fatal("locked a tree with an unreadable directory")
 	}
 	if _, err := m.run(t.Context(), "ls", "--json"); err == nil {
@@ -416,15 +434,14 @@ func TestMiseExecRelock(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = os.Chmod(filepath.Join(home, "sealed"), 0o755)
-		_ = lockTree(home, false)
+		_ = lockTree(context.Background(), home, false)
 	})
 	m := &miseTools{bin: bin, home: home, env: []string{"HOME=" + home, "PATH=/usr/bin:/bin"}, secrets: &Secrets{}, logger: slog.New(slog.DiscardHandler), locked: true}
-	if err := lockTree(home, true); err != nil {
+	if err := lockTree(t.Context(), home, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.exec(t.Context(), &cappedWriter{max: 1024}, &cappedWriter{max: 1024}, "install", "x"); err == nil ||
-		!strings.Contains(err.Error(), "not made read-only after mise") {
-		t.Fatalf("exec = %v", err)
+	if _, err := m.run(t.Context(), "install", "x"); err == nil || !strings.Contains(err.Error(), "not made read-only after mise") {
+		t.Fatalf("run = %v", err)
 	}
 	if err := m.usable(); err == nil {
 		t.Fatal("usable after a failed relock")

@@ -69,8 +69,10 @@ func commandTool(
 	// and keeps HOME read-only once the tool is built, so a command cannot
 	// rewrite it, or the binaries and config mise keeps there.
 	dir, home, up := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"), filepath.Join(scratch, upstreamDir)
+	// The scratch space goes however the run ended, so its removal does
+	// not stop with ctx.
 	cleanup = func() {
-		if err := lockTree(scratch, false); err != nil {
+		if err := lockTree(context.WithoutCancel(ctx), scratch, false); err != nil {
 			logger.Warn("scratch not made writable for its removal", "error", err)
 		}
 		_ = os.RemoveAll(scratch)
@@ -119,7 +121,7 @@ func commandTool(
 	}
 	// Neither HOME nor the scratch directory itself takes a command's
 	// writes from here on: the checkout and the upstream directory do.
-	if err := lockTree(home, true); err != nil {
+	if err := lockTree(ctx, home, true); err != nil {
 		logger.Warn("commands not offered: home cannot be made read-only", "error", err)
 		return nil, nil, notes, cleanup
 	}

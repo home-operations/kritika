@@ -316,6 +316,10 @@ type agentTools struct {
 	fetch  *fetchRepoTool
 	search *searchTool
 	skills *skillTool
+	// notes say what of the run tool was not offered and why; a run with
+	// no summary to state them, a follow-up, records them with the
+	// command errors, which its reply carries.
+	notes []string
 }
 
 // extra lists the tools to offer.
@@ -447,10 +451,10 @@ func (rec *agentRecord) useTools(tools agentTools) {
 		rec.skillsOffered, rec.skillsOpened = tools.skills.names(), tools.skills.Opened()
 	}
 	rec.commandsOffered, rec.commandsRun = []string{}, []string{}
-	rec.commandErrors = []string{}
+	rec.commandErrors = append([]string{}, tools.notes...)
 	if tools.run != nil {
 		rec.commandsOffered, rec.commandsRun = tools.commands(), tools.run.Ran()
-		rec.commandErrors = tools.run.Errors()
+		rec.commandErrors = append(rec.commandErrors, tools.run.Errors()...)
 	}
 }
 
