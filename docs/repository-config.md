@@ -370,6 +370,11 @@ instance's tools only; a named list narrows those commands and does not
 read repository tools. An empty list offers none. `.kritika.yaml` cannot
 set `agent.commands` or enable its own tools.
 
+When this file exists at the merge base without that permission, the
+review summary says repository tools are not enabled and names
+`agent.commands`. This checks only the file's presence; its contents and
+lock are not loaded. The wildcard requires a runner image with mise.
+
 With the wildcard, kritika reads `.kritika/mise.toml` and
 `.kritika/mise.lock` from the merge base, for reviews and follow-ups. A
 pull request changing either file uses the previously merged version for

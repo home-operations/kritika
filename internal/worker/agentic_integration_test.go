@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -101,6 +102,8 @@ const (
 	scriptStall
 	// scriptRun has curl fetch a release page, then submits.
 	scriptRun
+	// scriptRunNoSubmit calls curl, then exhausts its steps without submitting.
+	scriptRunNoSubmit
 	// scriptSkill reads the skill review-go, then submits.
 	scriptSkill
 	// scriptTruncated submits a review the output cap cut off.
@@ -238,11 +241,15 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return fmt.Sprintf(`{"role":"assistant","content":null,"tool_calls":[{"id":"c%d","type":"function","function":{"name":%q,"arguments":%s}}]}`,
 			step, name, b)
 	}
-	if script == scriptRun {
+	switch script {
+	case scriptRun, scriptRunNoSubmit:
 		finish = "tool_calls"
 		message = tool("run", `{"command":"curl","args":["-sS","https://releases.example.com/b/v2"]}`)
 		if step > 1 {
 			message = tool("submit_review", `{"summary":{"take":"Bumps b to v2.","praise":[]},"findings":[]}`)
+			if script == scriptRunNoSubmit {
+				finish, message = "stop", `{"role":"assistant","content":"Still looking."}`
+			}
 		}
 	}
 	if script == scriptSkill {
@@ -988,6 +995,58 @@ func (h *agenticHarness) checkNoSecrets(t *testing.T, where string, args ...any)
 		}
 	}
 	return text
+}
+
+func TestCommandErrorsPublished(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the run tool is offered on Linux alone")
+	}
+	for _, tt := range []struct {
+		name   string
+		script modelScript
+		status string
+	}{
+		{"submitted", scriptRun, "completed"},
+		{"incomplete", scriptRunNoSubmit, "failed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newAgenticHarness(t, 71)
+			bin, err := exec.LookPath("curl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(bin, []byte("#!/no-such-interpreter\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			h.sm.reset(tt.script)
+			h.dispatch(t, h.head)
+			reviewID, status, errText := h.waitReview(t, h.head)
+			if status != tt.status {
+				t.Fatalf("status=%s error=%s", status, errText)
+			}
+			var run store.AgentRunRow
+			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+				var id string
+				if err := tx.QueryRow(h.ctx, `SELECT id FROM runner_runs WHERE review_id = $1`, reviewID).Scan(&id); err != nil {
+					return err
+				}
+				var err error
+				run, err = store.FindAgentRun(h.ctx, tx, id)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if len(run.CommandErrors) != 1 || !strings.Contains(run.CommandErrors[0], "Command curl unavailable") {
+				t.Fatalf("command errors = %v", run.CommandErrors)
+			}
+			h.lf.mu.Lock()
+			sticky := h.lf.comments[commentBase+1]
+			h.lf.mu.Unlock()
+			if !strings.Contains(sticky, "Command curl unavailable") {
+				t.Fatalf("summary omitted the command error: %s", sticky)
+			}
+		})
+	}
 }
 
 func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {

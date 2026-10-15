@@ -516,6 +516,9 @@ func validateAgent(where string, a Agent) error {
 		return fmt.Errorf("configfile: %sagent.commandTimeout must be at least 1s", where)
 	}
 	for i, c := range a.Commands {
+		if c == "mise" {
+			return fmt.Errorf("configfile: %sagent.commands: mise is reserved for the runner", where)
+		}
 		if c == "*" {
 			if len(a.Commands) > 1 {
 				return fmt.Errorf("configfile: %sagent.commands: \"*\" enables repository tools and stands alone", where)

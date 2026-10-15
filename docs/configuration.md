@@ -568,6 +568,10 @@ a new title.
   offers none. `["*"]`, which must stand alone, also merges the
   repository's [`.kritika/mise.toml`](repository-config.md#repository-tools)
   and lock from the merge base. Only the admin may set this permission.
+  `mise` itself is rejected as a command. On a custom image without mise,
+  named commands are found on `PATH`; `["*"]` offers no commands and the
+  review summary explains that mise is required. Tool install and command
+  resolution failures also appear in the summary.
   The agent is told to use `gh` for GitHub,
   which signs in with a token minted for the run that can only read the
   repository under review and public repositories, and `crane`, when

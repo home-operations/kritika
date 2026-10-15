@@ -75,6 +75,9 @@ func TestCommandTool(t *testing.T) {
 	t.Setenv("PATH", bin)
 	t.Setenv("HTTPS_PROXY", "http://gateway:8082")
 	t.Setenv("TMPDIR", t.TempDir())
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
 	logger := slog.New(slog.DiscardHandler)
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n", "vendor/x.go": "package x\n"}), []string{"vendor/**"})
 
@@ -197,5 +200,32 @@ func TestCommandToolCurlrc(t *testing.T) {
 	// credential, say: HOME is read-only once the tool is built.
 	if info, err := os.Stat(curlrc); err != nil || info.Mode().Perm()&0o222 != 0 {
 		t.Fatalf(".curlrc mode = %v, %v; want read-only", info.Mode().Perm(), err)
+	}
+}
+
+func TestCommandToolRestrictions(t *testing.T) {
+	for _, withMise := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mise=%t", withMise), func(t *testing.T) {
+			was := miseBin
+			miseBin = filepath.Join(t.TempDir(), "mise")
+			t.Cleanup(func() { miseBin = was })
+			if withMise {
+				if err := os.WriteFile(miseBin, nil, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, commands := range [][]string{{"*"}, {"mise"}, {"rg", "mise"}} {
+				if withMise && RepositoryTools(commands) {
+					continue
+				}
+				s := reviewSpec()
+				s.Agent.Commands = commands
+				run, fetch, notes, cleanup := commandTool(t.Context(), s, nil, nil, &Secrets{}, 1024, slog.New(slog.DiscardHandler))
+				cleanup()
+				if run != nil || fetch != nil || len(notes) != 1 || !strings.Contains(notes[0], "mise") {
+					t.Fatalf("commands=%v run=%v fetch=%v notes=%v", commands, run, fetch, notes)
+				}
+			}
+		})
 	}
 }

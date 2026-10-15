@@ -173,6 +173,8 @@ empty list offers none, which is how an instance takes a default tool
 away. A name it lists that no tool provides is looked up on the image's
 `PATH`, which is how an image set in `runner.image` without mise offers
 the programs its builder put there.
+`mise` itself is refused in `agent.commands`. On an image without mise,
+`["*"]` offers no commands and the review summary explains why.
 
 An admin may set `agent.commands: ["*"]` to allow the repository's own
 [`.kritika/mise.toml`](repository-config.md#repository-tools) to layer tools
@@ -199,6 +201,21 @@ checksum for the runner's platform is not offered, unless the image has
 that version installed already and nothing is downloaded. Downloads use
 `mise install --locked` and stay within the existing install timeout and
 gateway restrictions.
+
+Enabling repository tools trusts the repository's merged tool definitions.
+kritika does not vet arbitrary binaries, install hooks or `install_env`.
+A tool with an interpreter, plugin loader or subprocess feature can run
+code from the pull request despite the checkout's missing execute bits.
+Such a tool can also invoke mise by its absolute path; keeping mise out of
+the offered commands does not prevent subprocess execution.
+
+The clean environment hides the runner's database and model credentials,
+but commands still receive the gateway proxy credential, and a tool
+offered as `gh` receives the run's read-only GitHub token. Egress remains
+bounded by the gateway and network policy. Replacing a default tool also
+keeps the argument restrictions written for the shipped version; another
+version may interpret those flags differently. Enable `["*"]` only for
+repositories whose merged tool choices the admin trusts.
 
 `gh` signs in with the run's own GitHub token, which reads the repository
 under review and public repositories and no other private one; the run
@@ -242,8 +259,9 @@ What bounds a command:
   `PATH`, a tool that would provide a `mise` command is not offered, and
   every install goes through the runner, with a two-minute timeout. A
   tool that cannot be installed, or does not provide the command it was
-  offered as, fails that call with the reason, and the summary notes a
-  tool that could not be offered. Installs reach the tool's release host
+  offered as, fails that call with the reason. The summary records these
+  failures even if the model omits them, as well as tools that could not
+  be offered. Installs reach the tool's release host
   through the gateway, so `egress.allow` must name it: for a GitHub
   release `release-assets.githubusercontent.com`, which the download is
   redirected to from `github.com`, which an app already allows, plus
@@ -257,8 +275,9 @@ What bounds a command:
   `--trace-config` and `--config`/`-K`, which would print the proxy
   credential in pieces the mask cannot match. It masks the token in a
   command's output and in the submitted review.
-- **A plain checkout:** the files are written without execute bits, so
-  nothing in the pull request can be started, and an empty `.git` whose
+- **A plain checkout:** the files are written without execute bits,
+  preventing direct execution. An interpreter or plugin loader can still
+  read and run them. An empty `.git` whose
   `origin` is the repository's clone URL, with no history, lets a tool
   that locates a repository by its working tree, such as flate, find this
   one. Ignored paths, lockfiles and vendored trees among them, are left

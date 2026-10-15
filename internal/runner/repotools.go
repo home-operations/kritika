@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -35,13 +36,19 @@ type repoMiseConfig struct {
 	locked map[string][]string
 }
 
-func readRepoMise(files repoconfig.Files, withMise bool, logger *slog.Logger) (*repoMiseConfig, []string) {
-	if !withMise {
-		if _, ok := files[RepoMiseConfig]; ok {
-			return nil, []string{RepoMiseConfig + " not read: the runner image has no mise"}
-		}
-		return nil, nil
+// disabledRepoTools checks only the tree entry: without the admin's
+// permission, neither the config's contents nor its lock are loaded.
+func disabledRepoTools(base *object.Tree, commands []string) []string {
+	if RepositoryTools(commands) {
+		return nil
 	}
+	if entry, err := base.FindEntry(RepoMiseConfig); err == nil && entry.Mode.IsFile() {
+		return []string{RepoMiseConfig + " not enabled: the admin must set agent.commands to [\"*\"]"}
+	}
+	return nil
+}
+
+func readRepoMise(files repoconfig.Files, logger *slog.Logger) (*repoMiseConfig, []string) {
 	repo, notes, err := keptRepoMiseConfig(files)
 	if err != nil {
 		logger.Warn("repository mise config not read", "error", err)

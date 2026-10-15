@@ -57,7 +57,7 @@ type RunConfig struct {
 	Hosts   []string
 	// Note, when set, is appended to the tool's description.
 	Note string
-	// Mask, when set, is applied to a command's output before the model
+	// Mask, when set, is applied to a command's output and setup errors before the model
 	// sees it, to keep a credential a command printed out of the
 	// conversation.
 	Mask func(string) string
@@ -108,6 +108,7 @@ type RunTool struct {
 	schema  json.RawMessage
 	sources []string
 	ran     []string
+	errors  []string
 	// calls counts the commands run, which number the kept outputs.
 	calls int
 }
@@ -139,6 +140,30 @@ func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...)
 // Ran are the commands the model ran, each once in first-use order, never
 // nil.
 func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
+
+// Errors are masked command setup failures, each once, for the review summary.
+func (rt *RunTool) Errors() []string { return append([]string{}, rt.errors...) }
+
+func (rt *RunTool) setupError(command string, err error) error {
+	note := textcut.Truncate(rt.mask(fmt.Sprintf("Command %s unavailable: %s", command, err)), 2048)
+	if !slices.Contains(rt.errors, note) {
+		rt.errors = append(rt.errors, note)
+	}
+	if rt.cfg.Logger != nil {
+		rt.cfg.Logger.Warn("command unavailable", "command", command, "error", note)
+	}
+	return commandSetupError{message: "agent: run: " + note, cause: err}
+}
+
+// commandSetupError masks its message while preserving cancellation and
+// filesystem errors for callers that inspect the cause.
+type commandSetupError struct {
+	message string
+	cause   error
+}
+
+func (e commandSetupError) Error() string { return e.message }
+func (e commandSetupError) Unwrap() error { return e.cause }
 
 // Kept is where the tool keeps a cut output whole, nil when it keeps none.
 func (rt *RunTool) Kept() *Kept { return rt.cfg.Keep }
@@ -240,7 +265,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	if rt.cfg.Resolve != nil {
 		var err error
 		if bin, env, err = rt.cfg.Resolve(ctx, req.Command); err != nil {
-			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
+			return "", rt.setupError(req.Command, err)
 		}
 	}
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
@@ -265,7 +290,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		return rt.result(stopped, out, out.dropped(), rt.mask(errs.String())), nil
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
-			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
+			return "", rt.setupError(req.Command, err)
 		}
 	}
 	code := cmd.ProcessState.ExitCode()

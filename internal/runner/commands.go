@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,15 +43,15 @@ func commandTool(
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
 	withMise := err == nil
-	// An empty list offers nothing, so mise need not be asked.
-	if len(p.Agent.Commands) == 0 && (!withMise || p.Agent.Commands != nil) {
-		return nil, nil, nil, cleanup
+	enabled, notes := commandsEnabled(p.Agent.Commands, withMise)
+	if !enabled {
+		return nil, nil, notes, cleanup
 	}
 	allowed := p.Agent.Commands
 	var repo *repoMiseConfig
 	if RepositoryTools(allowed) {
 		allowed = nil
-		repo, notes = readRepoMise(files, withMise, logger)
+		repo, notes = readRepoMise(files, logger)
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
@@ -100,6 +101,7 @@ func commandTool(
 		path, err := exec.LookPath(name)
 		if err != nil {
 			logger.Info("command not offered: no mise tool provides it and it is not on this image's PATH", "command", name)
+			notes = append(notes, fmt.Sprintf("Command %s not offered: no mise tool provides it and it is not on this image's PATH", name))
 			continue
 		}
 		found[name] = path
@@ -184,6 +186,17 @@ func commandTool(
 		}
 	}
 	return run, fetch, notes, cleanup
+}
+
+func commandsEnabled(commands []string, withMise bool) (bool, []string) {
+	if slices.Contains(commands, "mise") {
+		return false, []string{"Commands not offered: mise is reserved for the runner"}
+	}
+	if RepositoryTools(commands) && !withMise {
+		return false, []string{`Commands not offered: agent.commands ["*"] requires a runner image with mise`}
+	}
+	// An empty list offers nothing, so mise need not be asked.
+	return len(commands) > 0 || (withMise && commands == nil), nil
 }
 
 // curlrc is the configuration curl reads from HOME. Without a terminal

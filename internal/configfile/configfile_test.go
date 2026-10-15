@@ -980,6 +980,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 		{"relative command path", "{ agent: { commands: [./tool] } }", "must be a bare command name"},
 		{"empty command", "{ agent: { commands: [''] } }", "must be a bare command name"},
 		{"duplicate command", "{ agent: { commands: [rg, rg] } }", "is listed twice"},
+		{"mise command", "{ agent: { commands: [mise] } }", "mise is reserved for the runner"},
 		{"wildcard with a name", "{ agent: { commands: ['*', rg] } }", "stands alone"},
 		{"wildcard after a name", "{ agent: { commands: [rg, '*'] } }", "stands alone"},
 		{"duplicate wildcard", "{ agent: { commands: ['*', '*'] } }", "stands alone"},

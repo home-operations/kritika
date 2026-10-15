@@ -142,3 +142,26 @@ func TestNotIgnored(t *testing.T) {
 		})
 	}
 }
+
+func TestDisabledRepoTools(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		commands []string
+		files    map[string]string
+		wantNote bool
+	}{
+		{"absent", nil, map[string]string{"main.go": "package main"}, false},
+		{"unset", nil, map[string]string{RepoMiseConfig: "invalid TOML"}, true},
+		{"empty", []string{}, map[string]string{RepoMiseConfig: "invalid TOML"}, true},
+		{"named", []string{"rg"}, map[string]string{RepoMiseConfig: "invalid TOML"}, true},
+		{"enabled", []string{"*"}, map[string]string{RepoMiseConfig: "invalid TOML"}, false},
+		{"directory", nil, map[string]string{RepoMiseConfig + "/child": "not a config"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			notes := disabledRepoTools(tree(t, tt.files), tt.commands)
+			if (len(notes) == 1) != tt.wantNote || (tt.wantNote && !strings.Contains(notes[0], "agent.commands")) {
+				t.Fatalf("notes = %v", notes)
+			}
+		})
+	}
+}

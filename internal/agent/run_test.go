@@ -114,11 +114,42 @@ func TestRunToolResolve(t *testing.T) {
 		t.Fatalf("out = %q, err = %v", out, err)
 	}
 	if _, err := rt.Run(t.Context(), json.RawMessage(`{"command":"curl"}`)); err == nil ||
-		err.Error() != "agent: run: curl: curl could not be installed: no network" {
+		err.Error() != "agent: run: Command curl unavailable: curl could not be installed: no network" {
 		t.Fatalf("err = %v", err)
 	}
 	if !slices.Equal(resolved, []string{"rg", "curl"}) {
 		t.Fatalf("resolved = %v", resolved)
+	}
+	if !slices.Equal(rt.Errors(), []string{"Command curl unavailable: curl could not be installed: no network"}) {
+		t.Fatalf("errors = %v", rt.Errors())
+	}
+}
+
+func TestRunToolSetupErrors(t *testing.T) {
+	for _, resolve := range []bool{false, true} {
+		t.Run(fmt.Sprintf("resolver=%t", resolve), func(t *testing.T) {
+			rt, _ := newTestRunTool(t, false)
+			rt.cfg.Commands["rg"] = filepath.Join(t.TempDir(), "secret-token")
+			rt.cfg.Mask = func(s string) string { return strings.ReplaceAll(s, "secret-token", "***") }
+			failure := errors.New("download denied: secret-token")
+			if resolve {
+				rt.cfg.Resolve = func(context.Context, string) (string, []string, error) {
+					return "", nil, failure
+				}
+			}
+			for range 2 {
+				_, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
+				if err == nil || strings.Contains(err.Error(), "secret-token") || !strings.Contains(err.Error(), "***") {
+					t.Fatalf("err = %v", err)
+				}
+				if resolve && !errors.Is(err, failure) {
+					t.Fatalf("error lost its cause: %v", err)
+				}
+			}
+			if notes := rt.Errors(); len(notes) != 1 || strings.Contains(notes[0], "secret-token") || !strings.Contains(notes[0], "***") {
+				t.Fatalf("errors = %v", notes)
+			}
+		})
 	}
 }
 

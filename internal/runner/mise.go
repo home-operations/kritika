@@ -626,10 +626,10 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	case ctx.Err() != nil:
 		return ctx.Err()
 	case err != nil && ictx.Err() != nil:
-		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "error", err, "output", output)
+		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
 		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, installTimeout)
 	case err != nil:
-		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "error", err, "output", output)
+		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
 		return fmt.Errorf("%s could not be installed: %s", t.name, output)
 	}
 	if _, err := m.refresh(ictx); err != nil {
@@ -638,7 +638,7 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	if !t.installed {
 		return fmt.Errorf("%s is not installed after its install: %s", t.name, output)
 	}
-	m.logger.Info("tool installed", "tool", t.name, "version", t.version, "path", t.installPath,
+	m.logger.Info("tool installed", "tool", t.name, "version", t.version, "source", t.source, "path", t.installPath,
 		"elapsed", time.Since(started).Round(time.Millisecond), "output", output)
 	return nil
 }
