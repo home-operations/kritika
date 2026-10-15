@@ -16,6 +16,7 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
+	"github.com/home-operations/kritika/internal/runner"
 )
 
 func adminSettings(t *testing.T) configfile.Settings {
@@ -127,6 +128,33 @@ func TestEffective(t *testing.T) {
 			}
 			if !slices.Equal(settings.Ignore, []string{"vendor/**"}) || !reflect.DeepEqual(settings.Review.Rules, adminSettings(t).Review.Rules) {
 				t.Fatalf("the admin's settings were modified: %v %v", settings.Ignore, settings.Review.Rules)
+			}
+		})
+	}
+}
+
+func TestRepositoryToolFiles(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		commands []string
+		want     bool
+	}{
+		{"unset", nil, false},
+		{"disabled", []string{}, false},
+		{"named", []string{"yq"}, false},
+		{"wildcard", []string{"*"}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := adminSettings(t)
+			settings.Agent.Commands = tt.commands
+			for _, doc := range [][]byte{nil, []byte("agent: { commands: ['*'] }\n")} {
+				e, _ := effective(settings, doc)
+				files := e.repoFiles()
+				for _, path := range []string{runner.RepoMiseConfig, runner.RepoMiseLock} {
+					if slices.Contains(files, path) != tt.want {
+						t.Fatalf("repoFiles = %v; want repository tools: %v", files, tt.want)
+					}
+				}
 			}
 		})
 	}

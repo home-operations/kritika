@@ -892,7 +892,15 @@ func TestRepositoryAgentReview(t *testing.T) {
 	withRepo := func(repo string) string {
 		return acme("  acme/x: " + repo + "\n")
 	}
-
+	t.Run("wildcard enables repository tools", func(t *testing.T) {
+		f, err := loadBytes(t, []byte(withRepo("{ agent: { commands: ['*'] } }")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.Settings(&f.Accounts[0], "acme/x").Agent.Commands; !slices.Equal(got, []string{"*"}) {
+			t.Fatalf("commands = %v", got)
+		}
+	})
 	t.Run("defaults resolve when unset", func(t *testing.T) {
 		f, err := loadBytes(t, []byte(withRepo("{}")))
 		if err != nil {
@@ -972,6 +980,9 @@ func TestRepositoryAgentReview(t *testing.T) {
 		{"relative command path", "{ agent: { commands: [./tool] } }", "must be a bare command name"},
 		{"empty command", "{ agent: { commands: [''] } }", "must be a bare command name"},
 		{"duplicate command", "{ agent: { commands: [rg, rg] } }", "is listed twice"},
+		{"wildcard with a name", "{ agent: { commands: ['*', rg] } }", "stands alone"},
+		{"wildcard after a name", "{ agent: { commands: [rg, '*'] } }", "stands alone"},
+		{"duplicate wildcard", "{ agent: { commands: ['*', '*'] } }", "stands alone"},
 		{"absolute rule file", "{ rules: [{ id: a, file: /etc/passwd }] }", "must be relative"},
 		{"escaping template path", "{ comments: { summary: ../x.tmpl } }", "escapes the repository"},
 		{"a rule with a file and text", "{ rules: [{ id: a, rule: Check., file: a.md }] }", "set one of rule or file"},

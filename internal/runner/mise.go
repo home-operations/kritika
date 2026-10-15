@@ -98,6 +98,8 @@ type miseTools struct {
 	// path is PATH as mise computes it, its tools' bin directories before
 	// base's, and extra the config's [env] less the reserved names.
 	path, extra []string
+	// repo is the repository's config, nil when it supplies no tools.
+	repo *repoMiseConfig
 	// locked says home is read-only, as it is once the run tool is built;
 	// broken is why it could not be made so again, after which no command
 	// runs.
@@ -105,13 +107,22 @@ type miseTools struct {
 	broken error
 }
 
+// fromRepo reports whether the repository's config declares t.
+func (m *miseTools) fromRepo(t *miseTool) bool {
+	return m.repo != nil && t.source == filepath.Join(m.home, "mise.toml")
+}
+
 // newMiseTools reads the merged config with mise at bin, after writing
 // config, when set, as the run's global config under home: mise applies
 // a global config's [settings] where it ignores the system config's, so
-// the instance's mirrors and the like take effect there. notes say what
-// was not offered and why, for the review's summary.
+// the instance's mirrors and the like take effect there. repo, when set,
+// is the repository's config, written as the run's local config in home,
+// which mise layers over the global one, with its lock beside it; its
+// tools install at what the lock pins, and one the lock does not pin for
+// this platform is not offered. notes say what was not offered and why,
+// for the review's summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, config string, secrets *Secrets, logger *slog.Logger,
+	ctx context.Context, bin, home string, base []string, config string, repo *repoMiseConfig, secrets *Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if config != "" {
 		dir := filepath.Join(home, ".config", "mise")
@@ -122,11 +133,18 @@ func newMiseTools(
 			return nil, nil, fmt.Errorf("runner: mise config: %w", err)
 		}
 	}
+	if repo != nil {
+		for name, doc := range map[string]string{"mise.toml": repo.config, "mise.lock": repo.lock} {
+			if err := os.WriteFile(filepath.Join(home, name), []byte(doc), 0o644); err != nil {
+				return nil, nil, fmt.Errorf("runner: repository mise config: %w", err)
+			}
+		}
+	}
 	if secrets.Redacted == nil {
 		secrets.Redacted = &Redactions{}
 	}
 	m := &miseTools{
-		bin: bin, home: home, base: base, secrets: secrets, logger: logger,
+		bin: bin, home: home, base: base, secrets: secrets, logger: logger, repo: repo,
 		tools: map[string]*miseTool{}, byCommand: map[string]*miseTool{},
 	}
 	// Every install goes through the runner, with its timeout and notes,
@@ -153,6 +171,11 @@ func newMiseTools(
 	}
 	for _, name := range slices.Sorted(maps.Keys(m.tools)) {
 		t := m.tools[name]
+		if m.fromRepo(t) && !slices.Contains(repo.locked[name], t.version) {
+			notes = append(notes, fmt.Sprintf("%s: %s@%s not offered: %s does not pin it for %s",
+				RepoMiseConfig, name, t.version, RepoMiseLock, misePlatform()))
+			continue
+		}
 		commands, err := m.commandsOf(ctx, t, registry)
 		if err != nil {
 			return nil, nil, err
@@ -419,6 +442,11 @@ func (m *miseTools) commandsOf(ctx context.Context, t *miseTool, registry []regi
 	if t.installed {
 		return executablesUnder(m.path, t.installPath), nil
 	}
+	if m.fromRepo(t) {
+		if bins := m.repo.filterBins(t.name); len(bins) > 0 {
+			return bins, nil
+		}
+	}
 	out, err := m.run(ctx, "tool", t.name, "--json")
 	if err != nil {
 		return nil, err
@@ -570,8 +598,13 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	env := m.env
 	m.env = append(slices.Clone(env), "MISE_GITHUB_TOKEN="+m.secrets.GitToken)
 	defer func() { m.env = env }()
+	// A repository's tool installs at the URL and checksum its lock pins.
+	args := []string{"install", t.name}
+	if m.fromRepo(t) {
+		args = []string{"install", "--locked", t.name}
+	}
 	out := &cappedWriter{max: installOutputBytes}
-	err := m.exec(ictx, out, out, "install", t.name)
+	err := m.exec(ictx, out, out, args...)
 	output := m.secrets.Mask(strings.TrimSpace(string(out.buf)))
 	switch {
 	case ctx.Err() != nil:

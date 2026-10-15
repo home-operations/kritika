@@ -347,6 +347,10 @@ describes, and these, which are the admin's alone:
 | `limits`                  | at the root alone: every account's limits ([`accounts`](#accounts))                                                                                                                                                                                                                 |
 | `enabled`                 | at the root and `owner/*` only: the default for existing or explicitly listed repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
 
+The admin also decides whether repository-declared tools are allowed:
+`agent.commands: ["*"]` enables [`.kritika/mise.toml`](repository-config.md#repository-tools).
+The repository cannot enable this itself or supply mise `[settings]`.
+
 ### Precedence
 
 A value applies in this order: kritika's default, the file's root,
@@ -505,7 +509,7 @@ a new title.
 | `prompt`         | 24000, at least 8000 | tokens of the prompt a review, its confidence score and a follow-up start from               |
 | `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                    |
 | `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                          |
-| `commands`       | every mise tool's    | the programs its run tool may execute, among the runner image's tools; an empty list none    |
+| `commands`       | image and instance tools | program names to offer; `[]` offers none; `["*"]` also enables repository tools |
 | `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |
 | `fetches`        | 8                    | repositories `fetch_repo` may fetch for a review, a split one's parts between them           |
 
@@ -559,8 +563,12 @@ a new title.
 - **Commands:** the runner's `-tools` image offers `curl`, `fd`, `gh`,
   `jq`, `rg` and `yq`, and the chart's `runner.mise.config` adds any
   other tool mise installs, such as `crane`. Every command those tools
-  provide is offered unless `agent.commands` lists the ones to offer, or
-  an empty list to offer none. The agent is told to use `gh` for GitHub,
+  provide is offered when `agent.commands` is unset. A named list offers
+  only those commands from the image and instance, and an empty list
+  offers none. `["*"]`, which must stand alone, also merges the
+  repository's [`.kritika/mise.toml`](repository-config.md#repository-tools)
+  and lock from the merge base. Only the admin may set this permission.
+  The agent is told to use `gh` for GitHub,
   which signs in with a token minted for the run that can only read the
   repository under review and public repositories, and `crane`, when
   offered, for a container image's tags, digest, manifest and labels,

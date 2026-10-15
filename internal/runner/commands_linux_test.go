@@ -81,7 +81,7 @@ func TestCommandTool(t *testing.T) {
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
-		run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
 		}
@@ -132,7 +132,7 @@ func TestCommandTool(t *testing.T) {
 		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
 		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"gh", "rg"}, 5
-		run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 		defer cleanup()
 		if run == nil || fetch == nil {
 			t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
@@ -150,7 +150,7 @@ func TestCommandTool(t *testing.T) {
 		for _, commands := range [][]string{nil, {"curl"}} {
 			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
-			run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, logger)
+			run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 			cleanup()
 			if run != nil || fetch != nil {
 				t.Fatalf("%v: run tool offered with %v, fetch_repo %v", commands, run.Names(), fetch != nil)
@@ -175,7 +175,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = []string{"curl"}, 5, []string{"github.com", "ghcr.io"}
-	run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
+	run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, &Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || fetch == nil {
 		t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)

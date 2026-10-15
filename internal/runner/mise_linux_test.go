@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/configfile"
 )
 
 // TestCommandToolMise: on an image with mise, the run tool offers the
@@ -27,7 +28,15 @@ func TestCommandToolMise(t *testing.T) {
 	miseBin = bin
 	t.Cleanup(func() { miseBin = was })
 	logger := slog.New(slog.DiscardHandler)
-	head := agent.NewTree(tree(t, map[string]string{"values.yaml": "image: x\n"}), nil)
+	head := agent.NewTree(tree(t, map[string]string{
+		"values.yaml": "image: x\n", RepoMiseConfig: "[tools]\nhelm = '99.0.0'\n", RepoMiseLock: "head lock",
+	}), configfile.DefaultIgnore)
+	files, _, err := repoFiles(tree(t, map[string]string{
+		RepoMiseConfig: "[tools]\nhelm = '4.3.0'\n[env]\nREPO_MARKER = 'merge base'\n", RepoMiseLock: repoMiseLockDoc,
+	}), []string{RepoMiseConfig, RepoMiseLock})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tt := range []struct {
 		name     string
 		commands []string
@@ -37,11 +46,12 @@ func TestCommandToolMise(t *testing.T) {
 		{"none when the list is empty", []string{}, nil},
 		{"only the listed names", []string{"yq", "rg"}, []string{"yq"}},
 		{"a name no tool provides", []string{"rg"}, nil},
+		{"wildcard merges repository tools", []string{"*"}, []string{"helm", "yq"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.MiseConfig = tt.commands, 10, testMiseConfig
-			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 4096, logger)
+			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, files, &Secrets{GitToken: "ghs_run"}, 4096, logger)
 			defer cleanup()
 			if fetch != nil {
 				t.Fatal("fetch_repo offered without a command that reaches the network")
@@ -66,6 +76,25 @@ func TestCommandToolMise(t *testing.T) {
 				t.Fatalf("scratch = %v, %v", scratch, err)
 			}
 			home := filepath.Join(scratch[0], "home")
+			if RepositoryTools(tt.commands) {
+				out, err := run.Run(t.Context(), json.RawMessage(`{"command":"yq","args":["env(REPO_MARKER)","values.yaml"]}`))
+				if err != nil || !strings.HasPrefix(out, "exit code 0\nmerge base\n") {
+					t.Fatalf("repository env = %q, %v", out, err)
+				}
+				config, err := os.ReadFile(filepath.Join(home, "mise.toml"))
+				if err != nil || !strings.Contains(string(config), "4.3.0") || strings.Contains(string(config), "99.0.0") {
+					t.Fatalf("mise config = %q, %v", config, err)
+				}
+			} else if _, err := os.Stat(filepath.Join(home, "mise.toml")); !os.IsNotExist(err) {
+				t.Fatalf("repository config written without wildcard: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(scratch[0], "checkout", RepoMiseLock)); !os.IsNotExist(err) {
+				t.Fatalf("lock written to checkout: %v", err)
+			}
+			config, err := os.ReadFile(filepath.Join(scratch[0], "checkout", RepoMiseConfig))
+			if err != nil || !strings.Contains(string(config), "99.0.0") {
+				t.Fatalf("checkout config = %q, %v", config, err)
+			}
 			for _, path := range []string{home, filepath.Join(home, ".config", "mise"), filepath.Join(home, ".config", "mise", "config.toml")} {
 				if info, err := os.Stat(path); err != nil || info.Mode().Perm()&0o222 != 0 {
 					t.Fatalf("%s: mode %v, %v; want read-only", path, info.Mode().Perm(), err)

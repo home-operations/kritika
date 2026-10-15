@@ -11,6 +11,9 @@ The file holds nothing secret: no field takes a credential, a URL, a host
 or a secret reference, and a model it names is a `<provider>/<model>` of a
 provider an admin configured.
 
+Repositories may also declare review tools in
+[`.kritika/mise.toml`](#repository-tools), when an admin enables them.
+
 [`kritika.schema.json`](kritika.schema.json) is its JSON Schema. An editor
 using the YAML language server validates the file as it is written when
 its first line names the schema:
@@ -350,6 +353,86 @@ beside it:
 | `.Rules`                     | the ids of the rules it enforces                                 |
 | `.URL`                       | a link to the lines at the head commit                           |
 | `.ThreadURL`                 | a link to its inline comment thread, once one is posted          |
+
+## Repository tools
+
+An admin enables repository-declared tools by setting `agent.commands` to
+`["*"]` in the instance configuration, at the root or for a repository:
+
+```yaml
+repositories:
+  org-1/repo-1:
+    agent: { commands: ["*"] }
+```
+
+The wildcard must stand alone. An unset `commands` offers the image's and
+instance's tools only; a named list narrows those commands and does not
+read repository tools. An empty list offers none. `.kritika.yaml` cannot
+set `agent.commands` or enable its own tools.
+
+With the wildcard, kritika reads `.kritika/mise.toml` and
+`.kritika/mise.lock` from the merge base, for reviews and follow-ups. A
+pull request changing either file uses the previously merged version for
+its own review. The repository's tools layer over the instance's and the
+image's: an entry replaces the same tool, including its options, while
+unmentioned tools remain available.
+
+For example, `.kritika/mise.toml` can contain:
+
+```toml
+[tools]
+helm = "4.3.0"
+"github:home-operations/flate" = { version = "0.6.5", filter_bins = "flate" }
+
+[env]
+NO_COLOR = "1"
+```
+
+kritika keeps the entire `[tools]` table, including tool options such as
+`filter_bins`, `postinstall` and `install_env`. It keeps `[env]` values
+only when they are literal strings under non-reserved names. Templates,
+`_.` directives, non-string values and the reserved names listed under
+[runner tools](security.md#runner-tools) are dropped with summary notes.
+`[settings]`, `[tasks]` and hooks are also dropped with notes; other
+sections are ignored. Only the admin controls mise settings, including
+mirrors, and the repository cannot expand network access.
+
+Generate and commit the lock alongside the config:
+
+```sh
+mise -C .kritika lock
+```
+
+Include the runner's platforms when generating the lock, for example:
+
+```sh
+mise -C .kritika lock --platform linux-x64,linux-arm64
+```
+
+A repository tool needs a lock entry for its selected version with a URL
+and checksum for the runner's platform. Without one it is not offered,
+and the review summary says why. Tools that need downloading install on
+first use with `mise install --locked`; a failed install fails that tool
+call without stopping the review. Release hosts still need the admin's
+`egress.allow` permission.
+
+Renovate's [mise manager](https://docs.renovatebot.com/modules/manager/mise/)
+recognizes this config and supports lock updates. A minimal Renovate
+configuration enabling periodic lock maintenance is:
+
+```json
+{
+  "extends": ["config:recommended"],
+  "lockFileMaintenance": { "enabled": true }
+}
+```
+
+Keep `.kritika/mise.lock` in the same update as `.kritika/mise.toml`; the
+commands above also regenerate it manually. The runner writes the
+filtered merge-base config and its lock into its isolated `HOME`, outside
+the checkout. The checkout contains the head's `.kritika/mise.toml` unless
+ignored, but excludes lockfiles by default; that copy does not configure
+the runner's mise.
 
 ## Include and exclude recipes
 

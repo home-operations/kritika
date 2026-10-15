@@ -492,7 +492,9 @@ type Agent struct {
 	// as curl, fd and rg, among those the runner image's mise tools
 	// provide, which are all offered when it is unset, and none when it
 	// is empty; a name no mise tool provides is looked up on the image's
-	// PATH, which is all an image without mise offers.
+	// PATH, which is all an image without mise offers. The one value "*"
+	// offers every tool's commands, those a repository's own
+	// .kritika/mise.toml declares included.
 	Commands []string `yaml:"commands,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
 	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`

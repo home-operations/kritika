@@ -17,6 +17,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 // commandTool is the run tool for the commands p allows over a checkout of
@@ -27,14 +28,16 @@ import (
 // installed on first use; p.Agent.Commands narrows them when set, nil
 // offering them all and an empty list none. A name it lists that no mise
 // tool provides, and every name on an image without mise, is looked up on
-// this image's PATH. Both tools are nil, with a no-op cleanup, when there
-// is nothing to offer or the commands cannot be kept from the runner's
-// secrets; the review then goes on with the read-only tools alone. notes
-// say what was not offered, for the review's summary, and the values a
-// mise config marks for redaction join secrets. cleanup removes the
-// scratch space.
+// this image's PATH. With "*" for p.Agent.Commands the repository's own
+// mise config among files, read from the merge base, supplies tools too,
+// each installed at what its lock pins. Both tools are nil, with a no-op
+// cleanup, when there is nothing to offer or the commands cannot be kept
+// from the runner's secrets; the review then goes on with the read-only
+// tools alone. notes say what was not offered, for the review's summary,
+// and the values a mise config marks for redaction join secrets. cleanup
+// removes the scratch space.
 func commandTool(
-	ctx context.Context, p Spec, tree *agent.Tree, secrets *Secrets, maxOutput int, logger *slog.Logger,
+	ctx context.Context, p Spec, tree *agent.Tree, files repoconfig.Files, secrets *Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
@@ -42,6 +45,12 @@ func commandTool(
 	// An empty list offers nothing, so mise need not be asked.
 	if len(p.Agent.Commands) == 0 && (!withMise || p.Agent.Commands != nil) {
 		return nil, nil, nil, cleanup
+	}
+	allowed := p.Agent.Commands
+	var repo *repoMiseConfig
+	if RepositoryTools(allowed) {
+		allowed = nil
+		repo, notes = readRepoMise(files, withMise, logger)
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
@@ -74,17 +83,17 @@ func commandTool(
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
-		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseConfig, secrets, logger)
+		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseConfig, repo, secrets, logger)
 		notes = append(notes, miseNotes...)
 		if err != nil {
 			logger.Warn("mise tools not offered", "error", err)
 			notes = append(notes, "mise tools not offered: "+err.Error())
 		} else {
-			maps.Copy(found, mise.offered(p.Agent.Commands))
+			maps.Copy(found, mise.offered(allowed))
 			env = mise.commandEnv()
 		}
 	}
-	for _, name := range p.Agent.Commands {
+	for _, name := range allowed {
 		if _, ok := found[name]; ok {
 			continue
 		}

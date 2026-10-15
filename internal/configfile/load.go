@@ -516,6 +516,12 @@ func validateAgent(where string, a Agent) error {
 		return fmt.Errorf("configfile: %sagent.commandTimeout must be at least 1s", where)
 	}
 	for i, c := range a.Commands {
+		if c == "*" {
+			if len(a.Commands) > 1 {
+				return fmt.Errorf("configfile: %sagent.commands: \"*\" enables repository tools and stands alone", where)
+			}
+			continue
+		}
 		if !commandRe.MatchString(c) {
 			return fmt.Errorf("configfile: %sagent.commands[%d] %q must be a bare command name, not a path", where, i, c)
 		}
