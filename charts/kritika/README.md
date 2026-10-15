@@ -272,7 +272,7 @@ Kubernetes: `>=1.25.0-0`
 | runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
 | runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
 | runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
-| runner.mise.config | string | `""` | The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), a TOML document whose `[tools]` the agent's run tool offers every repository, pinned by exact version, in place of the runner image's own `/etc/mise/config.toml`. Empty keeps the image's, which declares the `-tools` image's curl, crane, fd, gh, jq, rg and yq at the versions `build/tools/mise.toml` pins; a config set here replaces it whole, so it names every tool the instance offers. |
+| runner.mise.config | string | `""` | The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), a TOML document whose `[tools]` the agent's run tool offers every repository, pinned by exact version, layered over the runner image's own `/etc/mise/config.toml`, which declares the `-tools` image's curl, fd, gh, jq, rg and yq at the versions `build/tools/mise.toml` pins: per tool the entry here replaces the image's, and the image's other tools stay. Narrow what is offered with `agent.commands`. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |

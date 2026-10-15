@@ -176,10 +176,12 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		if skills := slices.Concat(in.skills, in.loaded); len(skills) > 0 {
 			tools.skills = &skillTool{base: baseTree, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: skillNames(in.loaded)}
 		}
+		var commandNotes []string
 		var cleanup func()
-		tools.run, tools.fetch, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets,
+		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), &secrets,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
+		notes = append(notes, commandNotes...)
 		if split == nil {
 			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
 			notes = append(notes, prompt.notes()...)

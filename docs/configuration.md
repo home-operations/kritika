@@ -505,7 +505,7 @@ a new title.
 | `prompt`         | 24000, at least 8000 | tokens of the prompt a review, its confidence score and a follow-up start from               |
 | `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                    |
 | `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                          |
-| `commands`       | none                 | the programs its run tool may execute                                                        |
+| `commands`       | every mise tool's    | the programs its run tool may execute, among the runner image's tools; an empty list none    |
 | `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |
 | `fetches`        | 8                    | repositories `fetch_repo` may fetch for a review, a split one's parts between them           |
 
@@ -556,14 +556,17 @@ a new title.
   diff since the last review, when that is over 64 KiB. The token grant and
   the Job deadline are sized for the parts from the pull request's size as
   the forge reports it, the deadline for running them in the slots taken.
-- **Commands:** the runner's `-tools` image has `gh`, `crane`, `curl`,
-  `fd`, `jq`, `rg` and `yq`. The agent is told to use `gh` for GitHub,
+- **Commands:** the runner's `-tools` image offers `curl`, `fd`, `gh`,
+  `jq`, `rg` and `yq`, and the chart's `runner.mise.config` adds any
+  other tool mise installs, such as `crane`. Every command those tools
+  provide is offered unless `agent.commands` lists the ones to offer, or
+  an empty list to offer none. The agent is told to use `gh` for GitHub,
   which signs in with a token minted for the run that can only read the
-  repository under review and public repositories, and `crane` for a
-  container image's tags, digest, manifest and labels, read anonymously
-  from its registry. With `gh` or `curl` the agent can also
-  fetch another repository's files, or list its tags, with `fetch_repo`,
-  such as the upstream of a dependency on any host.
+  repository under review and public repositories, and `crane`, when
+  offered, for a container image's tags, digest, manifest and labels,
+  read anonymously from its registry. With `gh` or `curl` the agent can
+  also fetch another repository's files, or list its tags, with
+  `fetch_repo`, such as the upstream of a dependency on any host.
   [Runner tools](security.md#runner-tools) says what bounds a command and
   a fetch.
 
@@ -683,7 +686,7 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `runner.runtimeClass` | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                                                                                                                   |
 | `runner.imagePullPolicy` | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it                                                                                                    |
 | `runner.resources` | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON in env or a YAML mapping in the file; the chart's `runner.resources` renders it                                                                                                                                                     |
-| `runner.miseConfig` | `KRITIKA_RUNNER_MISE_CONFIG`       | the instance's mise config, a TOML document whose `[tools]` the agent's run tool offers every repository, in place of the runner image's own `/etc/mise/config.toml`; the chart's `runner.mise.config` renders it |
+| `runner.miseConfig` | `KRITIKA_RUNNER_MISE_CONFIG`       | the instance's mise config, a TOML document whose `[tools]` the agent's run tool offers every repository, layered over the runner image's own `/etc/mise/config.toml`; the chart's `runner.mise.config` renders it |
 | `runner.tools` | `KRITIKA_RUNNER_TOOLS`             | command-line tools a runner pod mounts from an image for the agent's run tool, as JSON in env or a YAML list in the file: each a `name`, a digest-pinned `image`, the `path` of its binaries and the `commands` it provides; the chart's `runner.tools` renders it |
 
 A transcript may contain repository content the agent read, and every

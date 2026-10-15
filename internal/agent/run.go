@@ -41,6 +41,11 @@ type RunConfig struct {
 	CommandEnv map[string][]string
 	// Commands map each name the model may run to the binary it runs.
 	Commands map[string]string
+	// Resolve, when set, finds the binary a command runs and the
+	// environment it runs with at the time of the call, installing the
+	// command's tool first when it is not yet; Commands then only names
+	// what is offered. Its error is returned to the model.
+	Resolve func(ctx context.Context, command string) (bin string, env []string, err error)
 	// Timeout bounds one command.
 	Timeout time.Duration
 	// MaxOutputBytes caps the combined output kept of one command.
@@ -231,6 +236,13 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 		rt.cfg.Logger.Info("command started", "call", rt.calls, "command", req.Command, "args", args)
 	}
+	env := rt.cfg.Env
+	if rt.cfg.Resolve != nil {
+		var err error
+		if bin, env, err = rt.cfg.Resolve(ctx, req.Command); err != nil {
+			return "", fmt.Errorf("agent: run: %s: %w", req.Command, err)
+		}
+	}
 	cctx, cancel := context.WithTimeout(ctx, rt.cfg.Timeout)
 	defer cancel()
 	out := &cappedBuffer{max: rt.cfg.MaxOutputBytes, keep: rt.cfg.MaxOutputBytes}
@@ -240,7 +252,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	}
 	errs := &stderrTail{out: out, max: rt.cfg.MaxOutputBytes / stderrShare, last: '\n'}
 	cmd := exec.CommandContext(cctx, bin, req.Args...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(rt.cfg.Env), rt.cfg.CommandEnv[req.Command]...), out, errs
+	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = rt.cfg.Dir, append(slices.Clone(env), rt.cfg.CommandEnv[req.Command]...), out, errs
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second

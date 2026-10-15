@@ -81,7 +81,7 @@ func TestCommandTool(t *testing.T) {
 	t.Run("offers what is on PATH, over a checkout", func(t *testing.T) {
 		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"curl", "rg"}, 5
-		run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 		if run == nil {
 			t.Fatal("no run tool")
 		}
@@ -132,7 +132,7 @@ func TestCommandTool(t *testing.T) {
 		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
 		s := reviewSpec()
 		s.Agent.Commands, s.Agent.CommandTimeoutSeconds = []string{"gh", "rg"}, 5
-		run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, logger)
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 		defer cleanup()
 		if run == nil || fetch == nil {
 			t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
@@ -150,7 +150,7 @@ func TestCommandTool(t *testing.T) {
 		for _, commands := range [][]string{nil, {"curl"}} {
 			s := reviewSpec()
 			s.Agent.Commands, s.Agent.CommandTimeoutSeconds = commands, 5
-			run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, logger)
+			run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, logger)
 			cleanup()
 			if run != nil || fetch != nil {
 				t.Fatalf("%v: run tool offered with %v, fetch_repo %v", commands, run.Names(), fetch != nil)
@@ -175,7 +175,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
 	s := reviewSpec()
 	s.Agent.Commands, s.Agent.CommandTimeoutSeconds, s.Agent.Hosts = []string{"curl"}, 5, []string{"github.com", "ghcr.io"}
-	run, fetch, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
+	run, fetch, _, cleanup := commandTool(t.Context(), s, head, &Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil || fetch == nil {
 		t.Fatalf("run tool %v, fetch_repo %v", run != nil, fetch != nil)
@@ -189,7 +189,13 @@ func TestCommandToolCurlrc(t *testing.T) {
 	if err != nil || len(scratch) != 1 {
 		t.Fatalf("scratch = %v, %v", scratch, err)
 	}
-	if b, err := os.ReadFile(filepath.Join(scratch[0], "home", ".curlrc")); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\n" {
+	curlrc := filepath.Join(scratch[0], "home", ".curlrc")
+	if b, err := os.ReadFile(curlrc); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\n" {
 		t.Fatalf(".curlrc = %q, %v", b, err)
+	}
+	// A command may not rewrite it, with a trace that prints the proxy
+	// credential, say: HOME is read-only once the tool is built.
+	if info, err := os.Stat(curlrc); err != nil || info.Mode().Perm()&0o222 != 0 {
+		t.Fatalf(".curlrc mode = %v, %v; want read-only", info.Mode().Perm(), err)
 	}
 }

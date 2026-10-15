@@ -141,15 +141,38 @@ it, so it has no switch:
 
 ## Runner tools
 
-A repository's `agent.commands` lets the model run allowlisted programs
-over a checkout of the head commit: to read a dependency bump's release
-notes and upstream pull requests with `gh`, read a container image's tags,
-digest, manifest and labels from its registry with `crane`, fetch anything
-else with `curl`, search with `rg` and `fd`, or read JSON and YAML with
-`jq` and `yq`. Runner Jobs run on the release's `-tools` image, a
-distroless image with all seven, pinned by digest like the chart's image.
-A command is offered only when the runner image has it on its `PATH`, so
-an image set in `runner.image` without them offers none.
+The model runs allowlisted programs over a checkout of the head commit:
+to read a dependency bump's release notes and upstream pull requests with
+`gh`, fetch anything else with `curl`, search with `rg` and `fd`, or read
+JSON and YAML with `jq` and `yq`. Runner Jobs run on the release's `-tools`
+image, pinned by digest like the chart's image: a distroless image that
+carries [mise](https://mise.jdx.dev/) and those six tools as mise system
+installs, declared by its system config, `/etc/mise/config.toml`, at the
+versions `build/tools/mise.toml` pins. The chart's `runner.mise.config`
+layers the instance's config over it, as mise merges configs: per tool,
+the instance's entry replaces the image's, options included, and the
+image's other tools stay. So an admin adds a tool, `crane` for a
+container image's tags, digest, manifest and labels, say, or `flate` for
+a chart's rendered output, without an image build or a list of the six:
+
+```yaml
+runner:
+  mise:
+    config: |
+      [tools]
+      crane = "0.22.1"
+      "github:home-operations/flate" = "0.6.5"
+```
+
+A tool at the image's version runs from its system install; any other
+downloads on the first run that uses it, into the run's own scratch space,
+at the version the config pins and with the verification its backend
+gives it. The run tool offers every command the merged config's tools
+provide, and `agent.commands` narrows that to the names it lists; an
+empty list offers none, which is how an instance takes a default tool
+away. A name it lists that no tool provides is looked up on the image's
+`PATH`, which is how an image set in `runner.image` without mise offers
+the programs its builder put there.
 
 `gh` signs in with the run's own GitHub token, which reads the repository
 under review and public repositories and no other private one; the run
@@ -172,15 +195,35 @@ What bounds a command:
 
 - **No shell:** a command runs without one, and the `-tools` image has
   none either.
-- **A bare environment:** `PATH`, its own `HOME` and the gateway, and for
-  `gh` the run's token as `GH_TOKEN`. The runner makes itself unreadable
-  to the command first, so it cannot read the runner's credentials from
-  `/proc`. `HOME` is apart from the checkout, so a pull request cannot
-  plant a `.curlrc`; the runner writes one that turns off `curl`'s
-  progress meter, which would otherwise land in the result, follows the
-  redirects the gateway hands back, and fails on an HTTP error with its
-  body kept, so a host the gateway refuses is a failed command naming the
-  reason rather than a success whose output is the refusal.
+- **A bare environment:** `PATH`, with the tools' directories first, its
+  own `HOME` and the gateway, the mise config's `[env]`, and for `gh` the
+  run's token as `GH_TOKEN`. The runner makes itself unreadable to the
+  command first, so it cannot read the runner's credentials from `/proc`,
+  and runs mise with the same bare environment, so neither a tool's
+  install hooks nor a config's templates see them. `HOME` is apart from
+  the checkout, so a pull request cannot plant a `.curlrc`; the runner
+  writes one that turns off `curl`'s progress meter, which would otherwise
+  land in the result, follows the redirects the gateway hands back, and
+  fails on an HTTP error with its body kept, so a host the gateway
+  refuses is a failed command naming the reason rather than a success
+  whose output is the refusal. A config's `[env]` may not set what the
+  runner sets or what would point a tool past the argument checks:
+  `HOME`, `PATH`, the proxy variables, `GH_*`, `GIT_*`, `MISE_*`, `LD_*`,
+  `GITHUB_TOKEN`, `CURL_HOME`, `XDG_CONFIG_HOME`, `RIPGREP_CONFIG_PATH`,
+  `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and `VISUAL` are dropped,
+  and the review's summary says so.
+- **mise is never a command:** the runner runs it by its path outside
+  `PATH`, a tool that would provide a `mise` command is not offered, and
+  every install goes through the runner, with a two-minute timeout. A
+  tool that cannot be installed, or does not provide the command it was
+  offered as, fails that call with the reason, and the summary notes a
+  tool that could not be offered. Installs reach the tool's release host
+  through the gateway, so `egress.allow` must name it: for a GitHub
+  release `release-assets.githubusercontent.com`, which the download is
+  redirected to from `github.com`, which an app already allows, plus
+  `tuf-repo-cdn.sigstore.dev` for a tool whose aqua recipe verifies an
+  attestation; mise also asks `mise-versions.jdx.dev` for a tool's
+  versions, and falls back to the GitHub API when the gateway refuses it.
 - **Refused arguments:** the run tool refuses the arguments that would
   print a credential or run a program outside the list: `gh auth`,
   `alias`, `config` and `extension`, `crane auth`, `fd -x` and `-X`,
@@ -245,9 +288,21 @@ repository and a ref, never git arguments.
 
 ### More tools
 
-The chart's `runner.tools` mounts more programs from their own images,
-each as a read-only image volume put first on the runner's `PATH`, which
-`agent.commands` may then allow. It needs Kubernetes 1.33 or newer.
+Declare a tool in `runner.mise.config` by its registry short name where
+it has one (`helm`, `crane`), which names its commands before it installs,
+else as `aqua:owner/repo`, whose recipe names the release asset and what
+mise verifies, and as `github:owner/repo` as a last resort, with
+`filter_bins` naming its commands unless the repository's name is the
+command. The binaries must be static or link only
+against glibc, libgcc and libstdc++, which is all the image carries, so a
+backend that builds or needs a runtime (`npm:`, `pipx:`, `cargo:`, `go:`)
+does not work there. The config's `[settings]` apply to every runner: a
+`url_replacements` rule sends downloads to a mirror, whose host must pass
+the gateway like any other, and `[env]` reaches every command.
+
+The chart's `runner.tools` still mounts a program from an image of its
+own, as a read-only image volume put first on the runner's `PATH`, which
+`agent.commands` must then name. It needs Kubernetes 1.33 or newer.
 
 | Key        | What                                                           |
 | ---------- | -------------------------------------------------------------- |

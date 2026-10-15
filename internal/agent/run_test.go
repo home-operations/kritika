@@ -2,7 +2,9 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -92,6 +94,32 @@ func newTestRunTool(t *testing.T, proxied bool) (*RunTool, string) {
 		Commands: map[string]string{"rg": self, "curl": self},
 		Timeout:  2 * time.Second, MaxOutputBytes: 4096, Proxied: proxied,
 	}), dir
+}
+
+// TestRunToolResolve: a resolver picks the binary and the environment per
+// call, and its error reaches the model.
+func TestRunToolResolve(t *testing.T) {
+	rt, _ := newTestRunTool(t, false)
+	self, _ := os.Executable()
+	var resolved []string
+	rt.cfg.Resolve = func(_ context.Context, command string) (string, []string, error) {
+		resolved = append(resolved, command)
+		if command == "curl" {
+			return "", nil, errors.New("curl could not be installed: no network")
+		}
+		return self, append(slices.Clone(rt.cfg.Env), "TOOL=1"), nil
+	}
+	out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
+	if err != nil || !strings.Contains(out, "env=TOOL=1\n") {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if _, err := rt.Run(t.Context(), json.RawMessage(`{"command":"curl"}`)); err == nil ||
+		err.Error() != "agent: run: curl: curl could not be installed: no network" {
+		t.Fatalf("err = %v", err)
+	}
+	if !slices.Equal(resolved, []string{"rg", "curl"}) {
+		t.Fatalf("resolved = %v", resolved)
+	}
 }
 
 func TestRunTool(t *testing.T) {

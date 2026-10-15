@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -23,7 +24,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 29
+const SpecVersion = 30
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -83,9 +84,11 @@ type AgentLimits struct {
 	Parts          int `json:"parts,omitempty"`
 	Parallel       int `json:"parallel,omitempty"`
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
-	// Commands name the binaries the run tool may execute; the runner
-	// offers those it finds on its PATH, and no run tool without any.
-	Commands              []string `json:"commands,omitempty"`
+	// Commands name the commands the run tool may execute, among what the
+	// image's mise tools provide and its PATH has: nil, which travels as
+	// null, leaves every mise tool's command offered, and an empty list
+	// offers none.
+	Commands              []string `json:"commands"`
 	CommandTimeoutSeconds int      `json:"commandTimeoutSeconds,omitempty"`
 	// Fetches bounds fetch_repo's fetches for the run, a split review's
 	// parts between them; zero takes configfile.DefaultFetches.
@@ -95,8 +98,8 @@ type AgentLimits struct {
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
 	// MiseConfig is the instance's mise config, the admin's TOML document
-	// declaring the tools every repository is offered; "" leaves the
-	// runner image's own system config in place.
+	// declaring the tools every repository is offered, layered over the
+	// runner image's own system config; "" leaves that alone.
 	MiseConfig string `json:"miseConfig,omitempty"`
 }
 
@@ -359,6 +362,36 @@ type Secrets struct {
 	GitToken      string
 	GatewayToken  string
 	DatabaseToken string
+	// Redacted are the values a mise config marks for redaction, masked
+	// as the tokens are: shared by every copy of the secrets, since a
+	// tool installed mid-run may add to them.
+	Redacted *Redactions
+}
+
+// Redactions are values to mask, added to as a run goes on and read by
+// every mask that holds them.
+type Redactions struct {
+	mu     sync.Mutex
+	values []string
+}
+
+// Add adds v, once; an empty value is nothing to mask.
+func (r *Redactions) Add(v string) {
+	if v == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !slices.Contains(r.values, v) {
+		r.values = append(r.values, v)
+	}
+}
+
+// Values are the values added so far.
+func (r *Redactions) Values() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.values)
 }
 
 // Mask replaces every occurrence of each non-empty secret in text with
@@ -367,6 +400,9 @@ type Secrets struct {
 // whole.
 func (s Secrets) Mask(text string) string {
 	values := []string{s.GitToken, s.GatewayToken, s.DatabaseToken}
+	if s.Redacted != nil {
+		values = append(values, s.Redacted.Values()...)
+	}
 	if s.GatewayToken != "" {
 		values = append(values, base64.StdEncoding.EncodeToString([]byte(":"+s.GatewayToken)))
 	}

@@ -34,21 +34,6 @@ url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_am
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
-[[tools."github:google/go-containerregistry"]]
-version = "0.22.1"
-backend = "github:google/go-containerregistry"
-specifiers = ["0.22.1"]
-
-[tools."github:google/go-containerregistry"."platforms.linux-arm64"]
-checksum = "sha256:898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110"
-url = "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/google/go-containerregistry/releases/assets/543544372"
-
-[tools."github:google/go-containerregistry"."platforms.linux-x64"]
-checksum = "sha256:0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0"
-url = "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/google/go-containerregistry/releases/assets/543544389"
-
 [[tools."github:stunnel/static-curl"]]
 version = "8.22.0"
 backend = "github:stunnel/static-curl"

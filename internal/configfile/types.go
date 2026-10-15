@@ -488,9 +488,11 @@ type Agent struct {
 	// never splits.
 	Parts   *int           `yaml:"parts,omitempty"`
 	Timeout *time.Duration `yaml:"timeout,omitempty"`
-	// Commands name the binaries the agent's run tool may execute, such as
-	// curl, fd and rg. The tool is offered only for names the runner image
-	// has on its PATH, so the distroless image offers none.
+	// Commands name the commands the agent's run tool may execute, such
+	// as curl, fd and rg, among those the runner image's mise tools
+	// provide, which are all offered when it is unset, and none when it
+	// is empty; a name no mise tool provides is looked up on the image's
+	// PATH, which is all an image without mise offers.
 	Commands []string `yaml:"commands,omitempty"`
 	// CommandTimeout bounds one command the run tool executes.
 	CommandTimeout *time.Duration `yaml:"commandTimeout,omitempty"`
@@ -537,8 +539,8 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 }
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
-// steps, tool output and tokens are the agent loop's own defaults. No
-// command is allowed by default: a repository is opted into the run tool.
+// steps, tool output and tokens are the agent loop's own defaults. Its
+// commands are unset: every command the runner image's mise tools provide.
 var DefaultAgent = AgentSettings{
 	MaxSteps:           agent.DefaultLimits.MaxSteps,
 	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
