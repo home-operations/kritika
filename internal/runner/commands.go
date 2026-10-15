@@ -66,8 +66,12 @@ func commandTool(
 	// HOME is apart from the checkout, or a repository could plant the
 	// ~/.curlrc curl reads before its arguments; the runner writes its own,
 	// and keeps HOME read-only once the tool is built, so a command cannot
-	// rewrite it, or the binaries and config mise keeps there.
-	dir, home, up := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"), filepath.Join(scratch, upstreamDir)
+	// rewrite it, or the binaries and config mise keeps there. The cache
+	// directory is the commands' XDG_CACHE_HOME, so a tool that keeps a
+	// cache there, as flate does, has somewhere to write it that is not
+	// HOME.
+	dir, home, up, cache := filepath.Join(scratch, "checkout"), filepath.Join(scratch, "home"),
+		filepath.Join(scratch, upstreamDir), filepath.Join(scratch, "cache")
 	// The scratch space goes however the run ended, so its removal does
 	// not stop with ctx. Only home and the scratch directory itself were
 	// made read-only; home may not exist yet.
@@ -78,13 +82,13 @@ func commandTool(
 		}
 		_ = os.RemoveAll(scratch)
 	}
-	for _, d := range []string{dir, home, up} {
+	for _, d := range []string{dir, home, up, cache} {
 		if err := os.Mkdir(d, 0o755); err != nil {
 			logger.Warn("commands not offered: no scratch space", "error", err)
 			return nil, nil, notes, cleanup
 		}
 	}
-	env, proxied := commandEnv(home)
+	env, proxied := commandEnv(home, cache)
 	// gh reaches GitHub over HTTPS, which the gateway cannot add a
 	// credential to, so it carries the run's read-only token; a command
 	// that carries a credential is never a binary the repository chose.
@@ -120,7 +124,8 @@ func commandTool(
 		}
 	}
 	// Neither HOME nor the scratch directory itself takes a command's
-	// writes from here on: the checkout and the upstream directory do.
+	// writes from here on: the checkout, the cache directory and the
+	// upstream directory do.
 	if err := lockTree(ctx, home, true); err != nil {
 		logger.Warn("commands not offered: home cannot be made read-only", "error", err)
 		return nil, nil, notes, cleanup
@@ -203,11 +208,11 @@ func markRepository(dir, cloneURL string) error {
 }
 
 // commandEnv is the whole environment of a command: PATH, home as HOME,
-// and the pod's proxy settings under both spellings, since curl reads
-// http_proxy only in lower case. proxied reports whether there is an
-// HTTPS proxy, the egress gateway.
-func commandEnv(home string) (env []string, proxied bool) {
-	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}
+// cache as XDG_CACHE_HOME, and the pod's proxy settings under both
+// spellings, since curl reads http_proxy only in lower case. proxied
+// reports whether there is an HTTPS proxy, the egress gateway.
+func commandEnv(home, cache string) (env []string, proxied bool) {
+	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "XDG_CACHE_HOME=" + cache}
 	for _, name := range []string{"HTTP_PROXY", httpsProxyEnv, "NO_PROXY"} {
 		lower := strings.ToLower(name)
 		if v := cmp.Or(os.Getenv(name), os.Getenv(lower)); v != "" {

@@ -234,22 +234,29 @@ What bounds a command:
 - **No shell:** a command runs without one, and the `-tools` image has
   none either.
 - **A bare environment:** `PATH`, with the tools' directories first, its
-  own `HOME` and the gateway, the mise config's `[env]`, and for `gh` the
-  run's token as `GH_TOKEN`. The runner makes itself unreadable to the
-  command first, so it cannot read the runner's credentials from `/proc`,
-  and runs mise with the same bare environment, so neither a tool's
-  install hooks nor a config's templates see them. `HOME` is apart from
-  the checkout, so a pull request cannot plant a `.curlrc`; the runner
-  writes one that turns off `curl`'s progress meter, which would otherwise
-  land in the result, follows the redirects the gateway hands back, and
-  fails on an HTTP error with its body kept, so a host the gateway
-  refuses is a failed command naming the reason rather than a success
-  whose output is the refusal. A config's `[env]` may not set what the
-  runner sets or what would point a tool past the argument checks:
+  own `HOME`, `XDG_CACHE_HOME` and the gateway, the mise config's `[env]`,
+  and for `gh` the run's token as `GH_TOKEN`. The runner makes itself
+  unreadable to the command first, so it cannot read the runner's
+  credentials from `/proc`, and runs mise with the same bare environment,
+  so neither a tool's install hooks nor a config's templates see them.
+  `HOME` is apart from the checkout, so a pull request cannot plant a
+  `.curlrc`; the runner writes one that turns off `curl`'s progress meter,
+  which would otherwise land in the result, follows the redirects the
+  gateway hands back, and fails on an HTTP error with its body kept, so a
+  host the gateway refuses is a failed command naming the reason rather
+  than a success whose output is the refusal. A config's `[env]` may not
+  set what the runner sets or what would point a tool past the argument
+  checks:
   `HOME`, `PATH`, the proxy variables, `GH_*`, `GIT_*`, `MISE_*`, `LD_*`,
-  `GITHUB_TOKEN`, `CURL_HOME`, `XDG_CONFIG_HOME`, `RIPGREP_CONFIG_PATH`,
-  `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and `VISUAL` are dropped,
-  and the review's summary says so.
+  `GITHUB_TOKEN`, `CURL_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`,
+  `RIPGREP_CONFIG_PATH`, `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and
+  `VISUAL` are dropped, and the review's summary says so.
+- **Few writable places:** `HOME`, with the binaries and config mise keeps
+  there, is read-only once the commands are offered, and so is the scratch
+  directory holding it. A command writes to the checkout, to the
+  `../upstream/` directory beside it, and to `XDG_CACHE_HOME`, a directory
+  of the same scratch space where a tool that keeps a cache, such as
+  flate, puts it. mise's own cache stays under `HOME`.
 - **mise is never a command:** the runner runs it by its path outside
   `PATH`, a tool that would provide a `mise` command is not offered, and
   every install goes through the runner, with a two-minute timeout. A

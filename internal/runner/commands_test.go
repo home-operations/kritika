@@ -20,17 +20,17 @@ func TestCommandEnv(t *testing.T) {
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin")
 	t.Setenv("KRITIKA_GIT_TOKEN", "secret")
 
-	env, proxied := commandEnv("/tmp/home")
-	if proxied || !slices.Equal(env, []string{"PATH=/usr/local/bin:/usr/bin", "HOME=/tmp/home"}) {
+	env, proxied := commandEnv("/tmp/home", "/tmp/cache")
+	if proxied || !slices.Equal(env, []string{"PATH=/usr/local/bin:/usr/bin", "HOME=/tmp/home", "XDG_CACHE_HOME=/tmp/cache"}) {
 		t.Fatalf("without a proxy: env = %q, proxied = %v", env, proxied)
 	}
 
 	t.Setenv("HTTPS_PROXY", "http://gateway:8082")
 	t.Setenv("HTTP_PROXY", "http://gateway:8082")
 	t.Setenv("no_proxy", "localhost")
-	env, proxied = commandEnv("/tmp/home")
+	env, proxied = commandEnv("/tmp/home", "/tmp/cache")
 	want := []string{
-		"PATH=/usr/local/bin:/usr/bin", "HOME=/tmp/home",
+		"PATH=/usr/local/bin:/usr/bin", "HOME=/tmp/home", "XDG_CACHE_HOME=/tmp/cache",
 		"HTTP_PROXY=http://gateway:8082", "http_proxy=http://gateway:8082",
 		"HTTPS_PROXY=http://gateway:8082", "https_proxy=http://gateway:8082",
 		"NO_PROXY=localhost", "no_proxy=localhost",
