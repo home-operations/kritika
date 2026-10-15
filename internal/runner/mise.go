@@ -98,8 +98,10 @@ type miseTools struct {
 	// path is PATH as mise computes it, its tools' bin directories before
 	// base's, and extra the config's [env] less the reserved names.
 	path, extra []string
-	// repo is the repository's config, nil when it supplies no tools.
-	repo *repoMiseConfig
+	// repo is the repository's config, nil when it supplies no tools, and
+	// repoSource the file it is written to, as mise names it.
+	repo       *repoMiseConfig
+	repoSource string
 	// locked says home is read-only, as it is once the run tool is built;
 	// broken is why it could not be made so again, after which no command
 	// runs.
@@ -109,7 +111,16 @@ type miseTools struct {
 
 // fromRepo reports whether the repository's config declares t.
 func (m *miseTools) fromRepo(t *miseTool) bool {
-	return m.repo != nil && t.source == filepath.Join(m.home, "mise.toml")
+	return m.repo != nil && t.source == m.repoSource
+}
+
+// resolved is path with its symlinks resolved, as mise names a config
+// file, or path as given when it cannot be resolved.
+func resolved(path string) string {
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		return r
+	}
+	return path
 }
 
 // newMiseTools reads the merged config with mise at bin, after writing
@@ -119,8 +130,9 @@ func (m *miseTools) fromRepo(t *miseTool) bool {
 // is the repository's config, written as the run's local config in home,
 // which mise layers over the global one, with its lock beside it; its
 // tools install at what the lock pins, and one the lock does not pin for
-// this platform is not offered. notes say what was not offered and why,
-// for the review's summary.
+// this platform is not offered unless the image has that version
+// installed already. notes say what was not offered and why, for the
+// review's summary.
 func newMiseTools(
 	ctx context.Context, bin, home string, base []string, config string, repo *repoMiseConfig, secrets *Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
@@ -147,15 +159,19 @@ func newMiseTools(
 		bin: bin, home: home, base: base, secrets: secrets, logger: logger, repo: repo,
 		tools: map[string]*miseTool{}, byCommand: map[string]*miseTool{},
 	}
+	if repo != nil {
+		m.repoSource = resolved(filepath.Join(home, "mise.toml"))
+	}
 	// Every install goes through the runner, with its timeout and notes,
 	// where mise env would otherwise install what a config declares. mise
 	// stages downloads under HOME too, rather than in the pod's shared
 	// /tmp, so they are out of a command's reach as well. The ceiling
 	// keeps mise's config search, from its working directory, HOME, up
 	// to but not including the ceiling, out of the scratch directory and
-	// everything above it.
+	// everything above it; mise walks resolved paths, so the ceiling is
+	// one too.
 	m.env = append(slices.Clone(base), "MISE_YES=1", "MISE_AUTO_INSTALL=false", "MISE_TRUSTED_CONFIG_PATHS="+home,
-		"MISE_CEILING_PATHS="+filepath.Dir(home), "MISE_TMP_DIR="+filepath.Join(home, ".cache", "mise", "tmp"), "NO_COLOR=1")
+		"MISE_CEILING_PATHS="+resolved(filepath.Dir(home)), "MISE_TMP_DIR="+filepath.Join(home, ".cache", "mise", "tmp"), "NO_COLOR=1")
 	for _, name := range miseSystemVars {
 		if v := os.Getenv(name); v != "" {
 			m.env = append(m.env, name+"="+v)
@@ -171,7 +187,7 @@ func newMiseTools(
 	}
 	for _, name := range slices.Sorted(maps.Keys(m.tools)) {
 		t := m.tools[name]
-		if m.fromRepo(t) && !slices.Contains(repo.locked[name], t.version) {
+		if m.fromRepo(t) && !t.installed && !slices.Contains(repo.locked[name], t.version) {
 			notes = append(notes, fmt.Sprintf("%s: %s@%s not offered: %s does not pin it for %s",
 				RepoMiseConfig, name, t.version, RepoMiseLock, misePlatform()))
 			continue
@@ -336,7 +352,7 @@ func (m *miseTools) refresh(ctx context.Context) ([]string, error) {
 			t = &miseTool{name: name}
 			m.tools[name] = t
 		}
-		t.version, t.installPath, t.installed, t.source = v.Version, v.InstallPath, v.Installed, v.Source.Path
+		t.version, t.installPath, t.installed, t.source = v.Version, v.InstallPath, v.Installed, resolved(v.Source.Path)
 	}
 	out, err = m.run(ctx, "env", "--json")
 	if err != nil {

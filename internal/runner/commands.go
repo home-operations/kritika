@@ -54,12 +54,12 @@ func commandTool(
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)
-		return nil, nil, nil, cleanup
+		return nil, nil, notes, cleanup
 	}
 	scratch, err := os.MkdirTemp("", "kritika-run-")
 	if err != nil {
 		logger.Warn("commands not offered: no scratch space", "error", err)
-		return nil, nil, nil, cleanup
+		return nil, nil, notes, cleanup
 	}
 	// HOME is apart from the checkout, or a repository could plant the
 	// ~/.curlrc curl reads before its arguments; the runner writes its own,
@@ -75,7 +75,7 @@ func commandTool(
 	for _, d := range []string{dir, home, up} {
 		if err := os.Mkdir(d, 0o755); err != nil {
 			logger.Warn("commands not offered: no scratch space", "error", err)
-			return nil, nil, nil, cleanup
+			return nil, nil, notes, cleanup
 		}
 	}
 	env, proxied := commandEnv(home)

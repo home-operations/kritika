@@ -388,8 +388,16 @@ helm = "4.3.0"
 NO_COLOR = "1"
 ```
 
-kritika keeps the entire `[tools]` table, including tool options such as
-`filter_bins`, `postinstall` and `install_env`. It keeps `[env]` values
+kritika keeps each `[tools]` entry's version and the options that select,
+verify and extract its download: `os`, `filter_bins`, `asset_pattern`,
+`additional_asset_patterns`, `matching`, `matching_regex`, `no_app`,
+`version_prefix`, `url`, `format`, `strip_components`, `bin_path`, `bin`,
+`rename_exe`, `exe`, `extract_all`, `symlink_bins`, `checksum`, `size`
+and `platforms`, whose per-platform tables keep the same options. Every
+other option is dropped with a summary note, among them `postinstall`,
+`install_env`, `depends`, `api_url` and `headers`, as is any option whose
+value holds a template: an install only downloads and unpacks, and the
+lock pins the version, so a `url` must be literal. It keeps `[env]` values
 only when they are literal strings under non-reserved names. Templates,
 `_.` directives, non-string values and the reserved names listed under
 [runner tools](security.md#runner-tools) are dropped with summary notes.
@@ -410,11 +418,12 @@ mise -C .kritika lock --platform linux-x64,linux-arm64
 ```
 
 A repository tool needs a lock entry for its selected version with a URL
-and checksum for the runner's platform. Without one it is not offered,
-and the review summary says why. Tools that need downloading install on
-first use with `mise install --locked`; a failed install fails that tool
-call without stopping the review. Release hosts still need the admin's
-`egress.allow` permission.
+and checksum for the runner's platform, unless the runner image already
+has that version installed, in which case nothing is downloaded. Without
+one it is not offered, and the review summary says why. Tools that need
+downloading install on first use with `mise install --locked`; a failed
+install fails that tool call without stopping the review. Release hosts
+still need the admin's `egress.allow` permission.
 
 Renovate's [mise manager](https://docs.renovatebot.com/modules/manager/mise/)
 recognizes this config and supports lock updates. A minimal Renovate

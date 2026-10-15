@@ -182,16 +182,23 @@ file and `.kritika/mise.lock` are read from the merge base, so a pull
 request cannot change the tools or download pins used to review itself.
 `.kritika.yaml` cannot change `agent.commands`.
 
-The runner keeps repository `[tools]` options intact, including install
-hooks and `install_env`. Repository `[env]` permits only literal strings
-under non-reserved names; templates and `_.` directives are dropped.
-`[tasks]`, `[settings]` and hooks outside `[tools]` are dropped too, with
-summary notes. Mise settings and egress permissions remain the admin's.
-The filtered config and its lock live outside the checkout in the run's
-read-only `HOME`, trusted only for the runner's own mise calls. A tool
-without a locked version, URL and checksum for the runner's platform is
-not offered. Downloads use `mise install --locked` and stay within the
-existing install timeout and gateway restrictions.
+The runner keeps of a repository's `[tools]` entry its version and the
+options that select, verify and extract its download. The options that
+run a command or set its environment (`postinstall`, `install_env`,
+`depends`), that would send mise's token to another host (`api_url`,
+`headers`) and any option holding a template are dropped, since mise
+renders templates, `exec()` among them, when it reads the config and
+runs install hooks with the run's GitHub token in their environment.
+Repository `[env]` permits only literal strings under non-reserved names;
+templates and `_.` directives are dropped. `[tasks]`, `[settings]` and
+hooks are dropped too, with summary notes. Mise settings and egress
+permissions remain the admin's. The filtered config and its lock live
+outside the checkout in the run's read-only `HOME`, trusted only for the
+runner's own mise calls. A tool without a locked version, URL and
+checksum for the runner's platform is not offered, unless the image has
+that version installed already and nothing is downloaded. Downloads use
+`mise install --locked` and stay within the existing install timeout and
+gateway restrictions.
 
 `gh` signs in with the run's own GitHub token, which reads the repository
 under review and public repositories and no other private one; the run

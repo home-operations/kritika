@@ -78,6 +78,7 @@ func TestKeptRepoMiseConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []string{
+			".kritika/mise.toml: tool github:home-operations/flate option postinstall dropped: only the download's options are kept",
 			".kritika/mise.toml: env COUNT dropped: only a plain string is kept",
 			".kritika/mise.toml: env FROM_ENV dropped: templates are not rendered",
 			".kritika/mise.toml: env GH_TOKEN dropped: the name is reserved",
@@ -89,12 +90,12 @@ func TestKeptRepoMiseConfig(t *testing.T) {
 		if !slices.Equal(notes, want) {
 			t.Fatalf("notes = %q", notes)
 		}
-		for _, s := range []string{"NO_COLOR = '1'", "HELM_DRIVER = 'configmap'", "helm = '4.3.0'", "postinstall = 'flate --help'", "filter_bins = 'flate'"} {
+		for _, s := range []string{"NO_COLOR = '1'", "HELM_DRIVER = 'configmap'", "helm = '4.3.0'", "filter_bins = 'flate'"} {
 			if !strings.Contains(r.config, s) {
 				t.Fatalf("config lacks %q:\n%s", s, r.config)
 			}
 		}
-		for _, s := range []string{"HOME", "get_env", "settings", "tasks", "COUNT", "GH_TOKEN", "_.file", "url_replacements"} {
+		for _, s := range []string{"HOME", "get_env", "settings", "tasks", "COUNT", "GH_TOKEN", "_.file", "url_replacements", "postinstall"} {
 			if strings.Contains(r.config, s) {
 				t.Fatalf("config keeps %q:\n%s", s, r.config)
 			}
@@ -155,30 +156,58 @@ func TestRepoMiseEnv(t *testing.T) {
 	}
 }
 
-func TestRepoMiseToolsIntact(t *testing.T) {
+func TestRepoMiseTools(t *testing.T) {
 	doc := `[tools]
 helm = ["4.3.0", "4.2.0"]
-"github:home-operations/flate" = { version = "0.6.5", postinstall = "flate --help", install_env = { MODE = "{{ os() }}" }, filter_bins = ["flate"] }
+"github:home-operations/flate" = { version = "0.6.5", postinstall = "flate --help", install_env = { MODE = "{{ os() }}" }, depends = ["node"], api_url = "https://evil", filter_bins = ["flate"], exe = "flate" }
+"http:tool" = { version = "1.0.0", url = "https://example.com/{{ exec(command='id') }}", headers = { Authorization = "x" } }
+"http:per-platform" = { version = "1.0.0", platforms = { linux-x64 = { url = "https://example.com/x64", checksum = "sha256:ab", postinstall = "x" }, linux-arm64 = { url = "https://example.com/{{ version }}" }, windows-x64 = "no" } }
+templated = "{{ get_env(name='V') }}"
+"github:owner/versioned" = { version = "{{ get_env(name='V') }}", exe = "x" }
+number = 1
 [hooks]
 enter = "echo ignored"
-[settings]
-experimental = true
-[tasks.test]
-run = "echo ignored"
 `
 	r, notes, err := keptRepoMiseConfig(repoconfig.Files{RepoMiseConfig: doc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var before, after map[string]any
-	if err := toml.Unmarshal([]byte(doc), &before); err != nil {
+	var kept map[string]any
+	if err := toml.Unmarshal([]byte(r.config), &kept); err != nil {
 		t.Fatal(err)
 	}
-	if err := toml.Unmarshal([]byte(r.config), &after); err != nil {
-		t.Fatal(err)
+	want := map[string]any{
+		"helm":                         []any{"4.3.0", "4.2.0"},
+		"github:home-operations/flate": map[string]any{"version": "0.6.5", "filter_bins": []any{"flate"}, "exe": "flate"},
+		"http:tool":                    map[string]any{"version": "1.0.0"},
+		"http:per-platform": map[string]any{"version": "1.0.0", "platforms": map[string]any{
+			"linux-x64":   map[string]any{"url": "https://example.com/x64", "checksum": "sha256:ab"},
+			"linux-arm64": map[string]any{},
+		}},
 	}
-	if len(after) != 1 || !reflect.DeepEqual(before["tools"], after["tools"]) || len(notes) != 3 {
-		t.Fatalf("config = %s, notes = %v", r.config, notes)
+	if len(kept) != 1 || !reflect.DeepEqual(kept["tools"], want) {
+		t.Fatalf("config = %s", r.config)
+	}
+	wantNotes := []string{
+		".kritika/mise.toml: tool github:home-operations/flate option api_url dropped: only the download's options are kept",
+		".kritika/mise.toml: tool github:home-operations/flate option depends dropped: only the download's options are kept",
+		".kritika/mise.toml: tool github:home-operations/flate option install_env dropped: only the download's options are kept",
+		".kritika/mise.toml: tool github:home-operations/flate option postinstall dropped: only the download's options are kept",
+		".kritika/mise.toml: tool github:owner/versioned option version dropped: templates are not rendered",
+		".kritika/mise.toml: tool http:per-platform platform linux-arm64 option url dropped: templates are not rendered",
+		".kritika/mise.toml: tool http:per-platform platform linux-x64 option postinstall dropped: only the download's options are kept",
+		".kritika/mise.toml: tool http:per-platform platform windows-x64 dropped: it is not a table",
+		".kritika/mise.toml: tool http:tool option headers dropped: only the download's options are kept",
+		".kritika/mise.toml: tool http:tool option url dropped: templates are not rendered",
+		".kritika/mise.toml: tool number dropped: it is not a version or a table",
+		".kritika/mise.toml: tool templated dropped: templates are not rendered",
+		".kritika/mise.toml: [hooks] dropped: only the admin sets it",
+	}
+	if !slices.Equal(notes, wantNotes) {
+		t.Fatalf("notes = %q", notes)
+	}
+	if bins := r.filterBins("github:home-operations/flate"); !slices.Equal(bins, []string{"flate"}) {
+		t.Fatalf("filterBins = %v", bins)
 	}
 }
 

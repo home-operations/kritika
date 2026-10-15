@@ -107,31 +107,49 @@ checksum = "sha256:%x"
 	}
 }
 
-func TestMiseRepositoryInstalledToolLock(t *testing.T) {
+// TestMiseRepositoryInstalledTool: a tool the repository declares at a
+// version the image has installed needs no lock entry, nothing being
+// downloaded, and is the repository's however HOME is reached: mise names
+// a config by its resolved path, so a symlinked HOME must match too.
+func TestMiseRepositoryInstalledTool(t *testing.T) {
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	t.Setenv("MISE_SYSTEM_CONFIG_DIR", t.TempDir())
 	doc := "[tools]\nyq = '" + testYqVersion + "'\n"
-	for _, platform := range []string{misePlatform(), "other-x64"} {
-		t.Run(platform, func(t *testing.T) {
-			lock := fmt.Sprintf(`[[tools.yq]]
+	lock := fmt.Sprintf(`[[tools.yq]]
 version = %q
 backend = "aqua:mikefarah/yq"
-[tools.yq."platforms.%s"]
+[tools.yq."platforms.other-x64"]
 url = "https://example.com/yq"
 checksum = "sha256:abc"
-`, testYqVersion, platform)
-			repo, _, err := keptRepoMiseConfig(repoconfig.Files{RepoMiseConfig: doc, RepoMiseLock: lock})
+`, testYqVersion)
+	for _, tt := range []struct {
+		name, lock string
+		symlinked  bool
+	}{
+		{"no lock", "", false},
+		{"another platform's lock", lock, false},
+		{"symlinked home", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, _, err := keptRepoMiseConfig(repoconfig.Files{RepoMiseConfig: doc, RepoMiseLock: tt.lock})
 			if err != nil {
 				t.Fatal(err)
 			}
 			home := t.TempDir()
+			if tt.symlinked {
+				link := filepath.Join(t.TempDir(), "link")
+				if err := os.Symlink(home, link); err != nil {
+					t.Fatal(err)
+				}
+				home = link
+			}
 			m, notes, err := newMiseTools(t.Context(), bin, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"},
 				testMiseConfig, repo, &Secrets{}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !m.tools["yq"].installed || !m.fromRepo(m.tools["yq"]) || m.provides("yq") != (platform == misePlatform()) {
+			if !m.tools["yq"].installed || !m.fromRepo(m.tools["yq"]) || !m.provides("yq") {
 				t.Fatalf("tool = %+v, offered = %v, notes = %v", m.tools["yq"], m.offered(nil), notes)
 			}
 		})

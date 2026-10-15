@@ -51,12 +51,12 @@ func readRepoMise(files repoconfig.Files, withMise bool, logger *slog.Logger) (*
 }
 
 // keptRepoMiseConfig is the part of a repository's mise config the runner
-// gives mise: [tools], with every option, and [env] as literal strings
-// under names that are not reserved. Templates, which read the
-// environment and files, and the _. directives, which load files, are
-// dropped, as are [settings], [tasks] and hooks, so only the admin sets
-// mise's settings; the notes say what was dropped. nil when files has no
-// config.
+// gives mise: [tools], each with the options in toolOptions, and [env] as
+// literal strings under names that are not reserved. Templates, which
+// read the environment and files and run commands, and the _. directives,
+// which load files, are dropped, as are [settings], [tasks] and hooks, so
+// only the admin sets mise's settings; the notes say what was dropped.
+// nil when files has no config.
 func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, error) {
 	doc, ok := files[RepoMiseConfig]
 	if !ok {
@@ -68,8 +68,18 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 	}
 	var notes []string
 	kept := map[string]any{}
-	if tools, ok := raw["tools"].(map[string]any); ok && len(tools) > 0 {
-		kept["tools"] = tools
+	if tools, ok := raw["tools"].(map[string]any); ok {
+		keptTools := map[string]any{}
+		for _, name := range slices.Sorted(maps.Keys(tools)) {
+			tool, toolNotes := keptTool("tool "+name, tools[name])
+			notes = append(notes, toolNotes...)
+			if tool != nil {
+				keptTools[name] = tool
+			}
+		}
+		if len(keptTools) > 0 {
+			kept["tools"] = keptTools
+		}
 	}
 	if env, ok := raw["env"].(map[string]any); ok {
 		literal := map[string]any{}
@@ -82,7 +92,7 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 				notes = append(notes, fmt.Sprintf("%s: env %s dropped: the name is reserved", RepoMiseConfig, name))
 			case !isString:
 				notes = append(notes, fmt.Sprintf("%s: env %s dropped: only a plain string is kept", RepoMiseConfig, name))
-			case strings.Contains(value, "{{") || strings.Contains(value, "{%") || strings.Contains(value, "{#"):
+			case templated(value):
 				notes = append(notes, fmt.Sprintf("%s: env %s dropped: templates are not rendered", RepoMiseConfig, name))
 			default:
 				literal[name] = value
@@ -109,6 +119,110 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 		}
 	}
 	return r, notes, nil
+}
+
+// toolOptions are the options of a [tools] entry the runner keeps: the
+// version, and what selects, verifies and extracts its download. The
+// options that run a command (postinstall, depends) or set its
+// environment (install_env), that send mise's token to another host
+// (api_url, headers) and that discover versions are dropped: the lock
+// pins the version, and an install must only download and unpack.
+var toolOptions = []string{
+	"version", "os", "filter_bins",
+	"asset_pattern", "additional_asset_patterns", "matching", "matching_regex", "no_app", "version_prefix",
+	"url", "format", "strip_components", "bin_path", "bin", "rename_exe", "exe", "extract_all", "symlink_bins",
+	"checksum", "size", "platforms",
+}
+
+// keptTool is tool as the runner keeps it: a version, a table of its
+// options or a list of either, nil when nothing of it is kept; at names
+// it in the notes.
+func keptTool(at string, tool any) (any, []string) {
+	switch tool := tool.(type) {
+	case string:
+		if templated(tool) {
+			return nil, []string{fmt.Sprintf("%s: %s dropped: templates are not rendered", RepoMiseConfig, at)}
+		}
+		return tool, nil
+	case []any:
+		var kept []any
+		var notes []string
+		for _, v := range tool {
+			k, n := keptTool(at, v)
+			notes = append(notes, n...)
+			if k != nil {
+				kept = append(kept, k)
+			}
+		}
+		if len(kept) == 0 {
+			return nil, notes
+		}
+		return kept, notes
+	case map[string]any:
+		kept, notes := keptToolOptions(at, tool)
+		// A table that lost its version would select the latest.
+		if _, had := tool["version"]; had && kept["version"] == nil {
+			return nil, notes
+		}
+		return kept, notes
+	}
+	return nil, []string{fmt.Sprintf("%s: %s dropped: it is not a version or a table", RepoMiseConfig, at)}
+}
+
+// keptToolOptions are the options among options, a tool's or one
+// platform's under its platforms table, that toolOptions lists and that
+// hold no template.
+func keptToolOptions(at string, options map[string]any) (map[string]any, []string) {
+	kept := map[string]any{}
+	var notes []string
+	for _, name := range slices.Sorted(maps.Keys(options)) {
+		value := options[name]
+		switch {
+		case !slices.Contains(toolOptions, name):
+			notes = append(notes, fmt.Sprintf("%s: %s option %s dropped: only the download's options are kept", RepoMiseConfig, at, name))
+		case name == "platforms":
+			platforms, ok := value.(map[string]any)
+			if !ok {
+				notes = append(notes, fmt.Sprintf("%s: %s option %s dropped: it is not a table", RepoMiseConfig, at, name))
+				continue
+			}
+			keptPlatforms := map[string]any{}
+			for _, platform := range slices.Sorted(maps.Keys(platforms)) {
+				table, ok := platforms[platform].(map[string]any)
+				if !ok {
+					notes = append(notes, fmt.Sprintf("%s: %s platform %s dropped: it is not a table", RepoMiseConfig, at, platform))
+					continue
+				}
+				k, n := keptToolOptions(at+" platform "+platform, table)
+				notes = append(notes, n...)
+				keptPlatforms[platform] = k
+			}
+			kept[name] = keptPlatforms
+		case templatedValue(value):
+			notes = append(notes, fmt.Sprintf("%s: %s option %s dropped: templates are not rendered", RepoMiseConfig, at, name))
+		default:
+			kept[name] = value
+		}
+	}
+	return kept, notes
+}
+
+// templated reports whether mise would render s as a template.
+func templated(s string) bool {
+	return strings.Contains(s, "{{") || strings.Contains(s, "{%") || strings.Contains(s, "{#")
+}
+
+// templatedValue reports whether a string anywhere in v is templated.
+func templatedValue(v any) bool {
+	switch v := v.(type) {
+	case string:
+		return templated(v)
+	case []any:
+		return slices.ContainsFunc(v, templatedValue)
+	case map[string]any:
+		return slices.ContainsFunc(slices.Collect(maps.Values(v)), templatedValue)
+	}
+	return false
 }
 
 // filterBins reads the declared options because mise tool --json can
