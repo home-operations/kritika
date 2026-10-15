@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.71](https://github.com/home-operations/kritika/compare/0.0.70...0.0.71) (2026-10-15)
+
+
+### Bug Fixes
+
+* **runner:** install tools when mise cannot repair the image's system links ([#966](https://github.com/home-operations/kritika/issues/966)) ([65f494a](https://github.com/home-operations/kritika/commit/65f494a7e6a83a29c6fb56f750129536232b0069))
+
 ## [0.0.70](https://github.com/home-operations/kritika/compare/0.0.69...0.0.70) (2026-10-15)
 
 
