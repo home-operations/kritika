@@ -150,23 +150,33 @@ func TestCommandTool(t *testing.T) {
 		}
 	})
 
-	t.Run("nothing to offer", func(t *testing.T) {
-		// A PATH with a program that is not a default command, and a
-		// repository config that needs mise to be read.
-		other := t.TempDir()
-		if err := os.Symlink(self, filepath.Join(other, "crane")); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("PATH", other)
-		s := reviewSpec()
-		s.Agent.CommandTimeoutSeconds = 5
-		files := repoconfig.Files{RepoMiseConfig: "[tools]\n"}
-		run, fetch, notes, cleanup := commandTool(t.Context(), s, head, files, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, logger)
-		cleanup()
-		if run != nil || fetch != nil || !slices.Equal(notes, []string{RepoMiseConfig + " not read: the runner image has no mise"}) {
-			t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
-		}
-	})
+}
+
+// TestCommandToolNothingToOffer: a PATH without a default command offers
+// no run tool, and a repository config needs mise to be read.
+func TestCommandToolNothingToOffer(t *testing.T) {
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(bin, "crane")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
+	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
+	s := reviewSpec()
+	s.Agent.CommandTimeoutSeconds = 5
+	files := repoconfig.Files{RepoMiseConfig: "[tools]\n"}
+	run, fetch, notes, cleanup := commandTool(t.Context(), s, head, files, Secrets{GitToken: "ghs_run"}, 1024, slog.New(slog.DiscardHandler))
+	cleanup()
+	if run != nil || fetch != nil || !slices.Equal(notes, []string{RepoMiseConfig + " not read: the runner image has no mise"}) {
+		t.Fatalf("run tool %v, fetch_repo %v, notes %v", run, fetch != nil, notes)
+	}
 }
 
 func TestCommandToolCurlrc(t *testing.T) {
