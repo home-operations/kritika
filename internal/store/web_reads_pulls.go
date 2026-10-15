@@ -240,6 +240,9 @@ type ReviewRow struct {
 	CreatedAt         time.Time
 	FinishedAt        *time.Time
 	CancelRequestedAt *time.Time
+	// ReplacedByReviewID is the newer review of the pull request whose
+	// start canceled this one, nil for any other end (see StartReview).
+	ReplacedByReviewID *string
 	// Summary is the reviews.summary JSON, nil when the review has none.
 	Summary *review.Summary
 	// Confidence is the reviews.confidence JSON, nil when the review was
@@ -255,7 +258,7 @@ type ReviewRow struct {
 
 const reviewColumns = `v.id, v.pull_request_id, r.name, p.number, p.title, p.url, v.status, v.trigger, v.scope, v.scope_reason,
 	v.model, v.head_sha, v.merge_base_sha, v.patch_id, v.prior_review_id, v.skip_reason, v.error, v.created_at, v.finished_at,
-	v.cancel_requested_at, v.summary, v.confidence, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0),
+	v.cancel_requested_at, v.replaced_by_review_id, v.summary, v.confidence, coalesce(u.cost, 0), coalesce(u.input, 0), coalesce(u.output, 0),
 	coalesce(u.calls, 0), coalesce(u.plan_calls, 0), coalesce(u.unpriced_calls, 0),
 	(SELECT n.id FROM reviews n WHERE n.pull_request_id = v.pull_request_id AND n.status <> 'skipped'
 		AND (n.created_at, n.id) > (v.created_at, v.id)
@@ -271,8 +274,8 @@ func scanReview(row pgx.CollectableRow) (ReviewRow, error) {
 	var summary, confidence []byte
 	if err := row.Scan(&v.ID, &v.PullRequestID, &v.Repository, &v.Number, &v.Title, &v.URL, &status, &v.Trigger, &scope, &v.ScopeReason,
 		&v.Model, &v.HeadSHA, &v.MergeBaseSHA, &v.PatchID, &v.PriorReviewID, &v.SkipReason, &v.Error, &v.CreatedAt, &v.FinishedAt,
-		&v.CancelRequestedAt, &summary, &confidence, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.Calls, &v.PlanCalls, &v.UnpricedCalls,
-		&v.NewestReviewID,
+		&v.CancelRequestedAt, &v.ReplacedByReviewID, &summary, &confidence, &v.CostUSD, &v.InputTokens, &v.OutputTokens, &v.Calls,
+		&v.PlanCalls, &v.UnpricedCalls, &v.NewestReviewID,
 		&v.PullState, &v.PullMerged); err != nil {
 		return v, err
 	}

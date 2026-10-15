@@ -97,8 +97,8 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 	}
 	// A runner that never started spent nothing; its retry may run the model.
 	if res.Err != nil && runCause == nil && res.NeverStarted && !finalAttempt {
-		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner did not start; retried"},
-			disposition: reviewRetry, err: fmt.Errorf("worker: runner did not start: %w", res.Err)}
+		end := store.ReviewEnd{Status: store.ReviewSuperseded, Error: "its runner did not start; retried", OnlyUnfinished: true}
+		return reviewDecision{end: end, disposition: reviewRetry, err: fmt.Errorf("worker: runner did not start: %w", res.Err)}
 	}
 	if agentErr != nil {
 		// Retrying a missing result would pay for the agent again.
@@ -108,8 +108,12 @@ func decideRunnerReview(jobCause, runCause error, res executor.Result, agentErr 
 	if res.Err == nil {
 		return reviewDecision{disposition: reviewContinue}
 	}
+	// An end a newer review's start recorded meanwhile stands.
 	if errors.Is(runCause, errSuperseded) {
-		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded}, disposition: reviewFinish}
+		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewSuperseded, OnlyUnfinished: true}, disposition: reviewFinish}
+	}
+	if errors.Is(runCause, errReplaced) {
+		return reviewDecision{end: store.ReviewEnd{Status: store.ReviewCanceled, OnlyUnfinished: true}, disposition: reviewFinish}
 	}
 	detail := res.Err.Error()
 	if errors.Is(runCause, errHeartbeatLost) {

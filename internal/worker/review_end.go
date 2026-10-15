@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
@@ -41,37 +42,91 @@ func (w *Review) judgeRun(
 	if decision.description != "" {
 		return true, w.failReview(cctx, e, "", decision.end.Error)
 	}
-	if err := w.finishReview(cctx, e.accountID, e.reviewID, decision.end.Status, "", decision.end.Error); err != nil {
+	if _, err := w.endReview(cctx, e.accountID, e.reviewID, decision.end); err != nil {
 		return true, err
 	}
 	return true, decision.jobError()
 }
 
-// finishReview ends a review as status, recording its patch id when known
-// and why it failed.
-func (w *Review) finishReview(ctx context.Context, accountID, reviewID string, status store.ReviewStatus, patchID, errText string) error {
-	_, err := w.endReview(ctx, accountID, reviewID, store.ReviewEnd{Status: status, PatchID: patchID, Error: errText})
-	return err
-}
-
 // failReview ends a review as failed and reports that on the head commit:
 // a head whose review broke must not read as one still waiting for it.
 // The description stays generic since the error can name internal hosts.
+// A review a newer one replaced meanwhile keeps that end, and the head's
+// status is the newer review's to set.
 func (w *Review) failReview(ctx context.Context, e endedReview, patchID, errText string) error {
-	if err := e.client.SetStatus(ctx, e.owner, e.repo, e.headSHA, forge.StatusError, reviewFailedDescription); err != nil {
-		e.logger.Warn("commit status not set", "error", err)
+	ended, err := w.endReview(ctx, e.accountID, e.reviewID, store.ReviewEnd{
+		Status: store.ReviewFailed, PatchID: patchID, Error: errText, OnlyUnfinished: true,
+	})
+	if err != nil || !ended {
+		return err
 	}
-	return w.finishReview(ctx, e.accountID, e.reviewID, store.ReviewFailed, patchID, errText)
+	w.reportEnd(ctx, e, reviewFailedDescription)
+	return nil
 }
 
 // endedReview is what finishEnded needs to know of the review whose job
 // ended.
 type endedReview struct {
-	accountID, accountKey, reviewID, headSHA, jobName string
-	owner, repo                                       string
-	client                                            forge.Client
-	started                                           time.Time
-	logger                                            *slog.Logger
+	accountID, accountKey, reviewID, prID, headSHA, jobName string
+	owner, repo                                             string
+	client                                                  forge.Client
+	started                                                 time.Time
+	logger                                                  *slog.Logger
+}
+
+// lockRetry is how long lockedWrite waits before it tries a held
+// publication lock again.
+const lockRetry = 500 * time.Millisecond
+
+// lockedWrite runs write under the publication lock of pull request prID,
+// taken with lock, waiting out a holder for as long as ctx allows: the
+// holder is a review's start or another review's publication, each brief.
+func lockedWrite(
+	ctx context.Context, lock func(context.Context, string, func(context.Context) error) error, prID string,
+	write func(context.Context) error,
+) error {
+	for {
+		err := lock(ctx, prID, write)
+		if !errors.Is(err, store.ErrPublicationBusy) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(lockRetry):
+		}
+	}
+}
+
+// ownedWrite runs write, what a review that ended short of publishing says
+// of its pull request on the forge, under the pull request's publication
+// lock and only while the review still speaks for it (store.ReviewCeded):
+// a newer review's start sets its own status under the same lock, so the
+// write never lands over what a newer review said.
+func (w *Review) ownedWrite(ctx context.Context, e endedReview, write func(context.Context) error) {
+	err := lockedWrite(ctx, w.Store.WithPublicationLock, e.prID, func(ctx context.Context) error {
+		var ceded bool
+		err := w.Store.WithAccount(ctx, e.accountID, func(tx pgx.Tx) error {
+			var err error
+			ceded, err = store.ReviewCeded(ctx, tx, e.reviewID)
+			return err
+		})
+		if err != nil || ceded {
+			return err
+		}
+		return write(ctx)
+	})
+	if err != nil {
+		e.logger.Warn("commit status not set", "error", err)
+	}
+}
+
+// reportEnd sets the head's error status, desc, for a review that ended
+// short of publishing (see ownedWrite).
+func (w *Review) reportEnd(ctx context.Context, e endedReview, desc string) {
+	w.ownedWrite(ctx, e, func(ctx context.Context) error {
+		return e.client.SetStatus(ctx, e.owner, e.repo, e.headSHA, forge.StatusError, desc)
+	})
 }
 
 // finishEnded ends a review whose job ctx ended before the review could: a
@@ -105,9 +160,7 @@ func (w *Review) finishInterrupted(ctx context.Context, e endedReview, decision 
 		return decision.jobError()
 	}
 	e.logger.Info("review "+string(decision.end.Status)+" as its job ended", "cause", context.Cause(ctx), "job", e.jobName)
-	if err := e.client.SetStatus(cctx, e.owner, e.repo, e.headSHA, forge.StatusError, decision.description); err != nil {
-		e.logger.Warn("commit status not set", "error", err)
-	}
+	w.reportEnd(cctx, e, decision.description)
 	w.Metrics.Review(e.accountKey, string(decision.end.Status), time.Since(e.started))
 	return decision.jobError()
 }

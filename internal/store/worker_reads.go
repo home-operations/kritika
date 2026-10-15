@@ -88,16 +88,16 @@ func LockPullRequestPreparation(ctx context.Context, tx pgx.Tx, prID string) (st
 	return head, labels, nil
 }
 
-// LockReviewPreparation serializes preparation with dashboard cancellation.
-func LockReviewPreparation(ctx context.Context, tx pgx.Tx, reviewID string) (ReviewStatus, bool, error) {
-	var status ReviewStatus
-	var canceled bool
-	err := tx.QueryRow(ctx, `SELECT status, cancel_requested_at IS NOT NULL FROM reviews WHERE id = $1 FOR UPDATE`,
-		reviewID).Scan(&status, &canceled)
+// LockReviewPreparation serializes preparation with dashboard cancellation
+// and with a newer review's start: it returns the review's status, whether
+// a cancel was asked of it, and whether a newer review replaced it.
+func LockReviewPreparation(ctx context.Context, tx pgx.Tx, reviewID string) (status ReviewStatus, canceled, replaced bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT status, cancel_requested_at IS NOT NULL, replaced_by_review_id IS NOT NULL
+		FROM reviews WHERE id = $1 FOR UPDATE`, reviewID).Scan(&status, &canceled, &replaced)
 	if err != nil {
-		return "", false, fmt.Errorf("store: lock review preparation: %w", err)
+		return "", false, false, fmt.Errorf("store: lock review preparation: %w", err)
 	}
-	return status, canceled, nil
+	return status, canceled, replaced, nil
 }
 
 func ReadFilterPullRequest(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {

@@ -31,8 +31,6 @@ repositories:
   home-operations/flate:
     ignore:
       - "**/testdata/**"
-    trigger:
-      settle: 30s
   home-operations/kopiur:
     trigger:
       exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }]
@@ -41,8 +39,6 @@ repositories:
   onedr0p/*:
     review:
       model: local/claude-opus-5
-    trigger:
-      settle: 2m
 
 accounts:
   home-operations:

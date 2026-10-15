@@ -420,9 +420,6 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if risk := r.Confidence.Risk; risk != nil && !risk.Valid() {
 		return fmt.Errorf("configfile: %s%s must be %s, got %q", where, keyRisk, review.RiskLevels, *risk)
 	}
-	if r.Trigger.Settle != nil && *r.Trigger.Settle < 0 {
-		return fmt.Errorf("configfile: %strigger.settle must not be negative", where)
-	}
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: %strigger.limit must not be negative", where)
 	}

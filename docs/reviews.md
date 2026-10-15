@@ -8,7 +8,7 @@ and the commands that steer it.
 | What happens                                           | What kritika reviews                                                                                                                              |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The pull request opens, reopens or is ready for review | its head, unless a review has already seen it                                                                                                     |
-| A push                                                 | the new head, once `trigger.settle` has passed: only what changed since the last review, unless more files moved than `review.incremental` allows |
+| A push                                                 | the new head, at once: only what changed since the last review, unless more files moved than `review.incremental` allows                          |
 | A label is added or removed                            | the head, only if it has no review yet: the trigger lists kept it out, or its review failed                                                       |
 | A poll finds a push the webhook missed                 | the new head, or a head whose review failed, once                                                                                                 |
 | `@<bot> review`, or a re-run from the dashboard        | the whole pull request at its head, even one the admin's trigger lists keep out, that is paused, or that is merged or closed                      |
@@ -25,6 +25,27 @@ a review missed: it posts its summary and findings, but sets no commit
 status and approves nothing. Where a merge commit or a fast-forward put
 the head in its base branch, it diffs against the merge base the last
 review used; with none, nothing is left to review, and kritika says so.
+
+### Overlapping reviews
+
+The last review to start owns the pull request. A review that starts
+while an older review of the same pull request is still running or
+publishing, whatever head either is of, cancels it: the older runner is
+stopped and its model slot freed, it posts nothing more and leaves the
+commit status and approval to the newer review, and the dashboard shows
+it canceled with a link to the review that replaced it. What it spent is
+still recorded. A review that is only queued, waiting for a slot or for a
+retry, cancels nothing until it starts, and a queued review of a head the
+pull request has moved past ends superseded instead of starting. A
+canceled review stays canceled: it is not retried, and when the review
+that replaced it fails, that failure is what is reported.
+
+A start that finds the pull request's previous review posting its result
+waits for that to finish, so a review either posts in full or never
+posts. `@<bot> review` and a dashboard re-run do not start a second review
+of a head whose review is already queued or running: the request is
+refused as busy ([actions](dashboard.md#actions)), and the running review
+stands in for it.
 
 ## What it posts
 

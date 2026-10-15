@@ -115,18 +115,22 @@ func (b *Base) otherReviewRunning(ctx context.Context, logger *slog.Logger, acco
 // jobErr ended the last attempt and the review is left as it is, and
 // unanswered otherwise, as when it was superseded, skipped or canceled, or
 // its job is retried, whatever the retried attempt's review says. A
-// failure of a head the pull request has moved past is unanswered too:
-// the newer head's review speaks for the pull request, and may already
-// have. Not knowing counts as unanswered.
+// review a newer review speaks for (store.ReviewCeded), or a failure of a
+// head the pull request has moved past, is unanswered too: that review
+// speaks for the pull request, and may already have. Not knowing counts as
+// unanswered.
 func (b *Base) reviewOutcome(ctx context.Context, logger *slog.Logger, accountID, reviewID string, jobErr error, lastAttempt bool) outcome {
 	if jobErr != nil && !lastAttempt {
 		return unanswered
 	}
 	var status store.ReviewStatus
-	var current bool
+	var current, ceded bool
 	err := b.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		var err error
-		status, current, err = store.ReviewHeadStatus(ctx, tx, reviewID)
+		if status, current, err = store.ReviewHeadStatus(ctx, tx, reviewID); err != nil {
+			return err
+		}
+		ceded, err = store.ReviewCeded(ctx, tx, reviewID)
 		return err
 	})
 	if err != nil {
@@ -134,6 +138,8 @@ func (b *Base) reviewOutcome(ctx context.Context, logger *slog.Logger, accountID
 		return unanswered
 	}
 	switch {
+	case ceded:
+		return unanswered
 	case jobErr == nil && status == store.ReviewCompleted:
 		return answered
 	case current && (jobErr != nil || status == store.ReviewFailed):

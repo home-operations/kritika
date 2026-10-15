@@ -27,10 +27,11 @@ func filteredPreparation(t *testing.T, number int) (*agenticHarness, *river.Job[
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, job.Args, pr, h.base, "", job.ID)
+	started, _, err := h.review.start(h.ctx, job.Args, pr, h.base, "", job.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	reviewID, runID := started.ReviewID, started.RunID
 	err = h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(h.ctx, `UPDATE river_job SET state = 'running', attempt = 1, attempted_at = now() WHERE id = $1`, job.ID); err != nil {
 			return err

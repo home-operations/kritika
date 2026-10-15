@@ -45,6 +45,7 @@ type rescueStore interface {
 	EndOrphanedRun(ctx context.Context, run store.OrphanedRun, reason string) error
 	SweepJobHeartbeats(ctx context.Context) (int64, error)
 	SweepIndexProgress(ctx context.Context, limit int) error
+	WithPublicationLock(ctx context.Context, pullRequestID string, fn func(context.Context) error) error
 }
 
 // Rescuer hands the jobs of a replica that died back to the queue, and
@@ -140,13 +141,16 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 // reportEnded replaces the pending status on the head of a review job
 // that was rescued into a state River does not run again: its dead worker
 // set the status and nothing else would replace it. A look back at a merged
-// or closed pull request set none, and is left so.
+// or closed pull request set none, and is left so. The status is set under
+// the pull request's publication lock, once the head is seen to be the
+// job's review's still: a newer review of it that started, as the rescue
+// freed the head for one, owns the status.
 func (r *Rescuer) reportEnded(ctx context.Context, job store.AbandonedJob) error {
 	if r.Current == nil || r.Forges == nil {
 		return nil
 	}
 	head, ok, err := r.Store.JobHead(ctx, job.ID)
-	if err != nil || !ok || head.Statusless {
+	if err != nil || !ok || head.Statusless || head.Ceded {
 		return err
 	}
 	file := r.Current.Get()
@@ -167,7 +171,17 @@ func (r *Rescuer) reportEnded(ctx context.Context, job store.AbandonedJob) error
 		desc = "kritika: review canceled"
 	}
 	owner, repo, _ := strings.Cut(head.Repository, "/")
-	return client.SetStatus(ctx, owner, repo, head.HeadSHA, forge.StatusError, desc)
+	// The lock's holder is brief, and the job is not rescued twice: the
+	// report waits it out rather than being lost.
+	lctx, cancel := detach(ctx)
+	defer cancel()
+	return lockedWrite(lctx, r.Store.WithPublicationLock, head.PullRequestID, func(ctx context.Context) error {
+		head, ok, err := r.Store.JobHead(ctx, job.ID)
+		if err != nil || !ok || head.Ceded {
+			return err
+		}
+		return client.SetStatus(ctx, owner, repo, head.HeadSHA, forge.StatusError, desc)
+	})
 }
 
 // reap deletes run's Job, revokes its gateway tokens and ends it. The Job

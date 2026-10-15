@@ -184,7 +184,6 @@ type RepoSettings struct {
 	Models         configfile.Models        `json:"models"`
 	Filters        configfile.Filters       `json:"filters"`
 	Ignore         []string                 `json:"ignore"`
-	SettleSeconds  int64                    `json:"settleSeconds"`
 	MaxAutoReviews int                      `json:"maxAutoReviews"`
 	MaxDeltaFiles  int                      `json:"maxDeltaFiles"`
 	Review         configfile.Review        `json:"review"`

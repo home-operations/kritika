@@ -77,7 +77,7 @@ A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
 review's summary says which field was dropped and what it may be, and the
 rest of the file still applies. `agent`,
-`trigger.settle`, `trigger.limit`, `review.incremental`, `review.cost`,
+`trigger.limit`, `review.incremental`, `review.cost`,
 `confidence.instructions` and `limits` are the admin's alone; a file
 naming one of them, or any other unknown key, does not parse.
 

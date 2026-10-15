@@ -334,6 +334,37 @@ type agenticHarness struct {
 	dir    string
 	base   string
 	head   string
+	// fakeJob is the last River job id startReview gave a review.
+	fakeJob int64
+}
+
+// setHead moves the pull request's head to head, as ingest does on a push.
+func (h *agenticHarness) setHead(t *testing.T, pr *pullRequest, head string) {
+	t.Helper()
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = $2 WHERE id = $1`, pr.id, head)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pr.headSHA = head
+}
+
+// startReview records a review of args.HeadSHA on pr as the worker would,
+// under a River job id of its own. The checks here review heads the pull
+// request never had, so its head is moved there for the start, which
+// refuses a head that moved (store.StartReview), and back after it.
+func (h *agenticHarness) startReview(t *testing.T, args jobs.ReviewArgs, pr *pullRequest) store.Started {
+	t.Helper()
+	current := pr.headSHA
+	h.setHead(t, pr, args.HeadSHA)
+	h.fakeJob++
+	s, _, err := h.review.start(h.ctx, args, pr, h.base, "", 9_000_000+h.fakeJob, nil)
+	h.setHead(t, pr, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func newAgenticHarness(t *testing.T, number int) *agenticHarness {
@@ -752,10 +783,8 @@ func checkGatewayConversation(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	started := h.startReview(t, args, pr)
+	reviewID, runID := started.ReviewID, started.RunID
 	t.Cleanup(func() {
 		_ = h.st.RevokeGatewayTokens(context.Background(), runID)
 		_ = failRun(context.Background(), h.st, h.account.ID(), runID, "test run")
@@ -1100,10 +1129,8 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	started := h.startReview(t, args, pr)
+	reviewID, runID := started.ReviewID, started.RunID
 	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{
 		RunID: runID, AccountID: h.account.ID(), ReviewID: reviewID, RepositoryID: pr.repositoryID, Model: "gateway/agent-model", Budget: 150,
 	}, time.Now().Add(time.Minute))
@@ -1662,10 +1689,7 @@ func checkFailRun(t *testing.T, h *agenticHarness) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	runID := h.startReview(t, args, pr).RunID
 	if err := failRun(h.ctx, h.st, h.account.ID(), runID, "worker: read pull request for the filter: boom"); err != nil {
 		t.Fatal(err)
 	}
@@ -1714,11 +1738,9 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			e := endedReview{accountID: h.account.ID(), accountKey: h.account.Key(), reviewID: reviewID, headSHA: tt.head,
+			started := h.startReview(t, args, pr)
+			reviewID, runID := started.ReviewID, started.RunID
+			e := endedReview{accountID: h.account.ID(), accountKey: h.account.Key(), reviewID: reviewID, prID: pr.id, headSHA: tt.head,
 				owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.DiscardHandler)}
 			h.lf.mu.Lock()
 			h.lf.status = ""
@@ -1743,6 +1765,37 @@ func checkAgentSpecFailed(t *testing.T, h *agenticHarness) {
 			}
 		})
 	}
+
+	t.Run("a review a newer one replaced keeps its end", func(t *testing.T) {
+		args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"),
+			Number: 1, HeadSHA: strings.Repeat("5", 40), Trigger: "test"}
+		pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, args.Number)
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := h.startReview(t, args, pr)
+		h.startReview(t, args, pr)
+		e := endedReview{accountID: h.account.ID(), accountKey: h.account.Key(), reviewID: started.ReviewID, prID: pr.id, headSHA: args.HeadSHA,
+			owner: "acme", repo: "widgets", client: h.lf, started: time.Now(), logger: slog.New(slog.DiscardHandler)}
+		h.lf.mu.Lock()
+		h.lf.status = ""
+		h.lf.mu.Unlock()
+		if err := h.review.agentSpecFailed(h.ctx, e, started.RunID, boom); err == nil {
+			t.Fatal("agentSpecFailed = nil, want the spec error for River")
+		}
+		h.lf.mu.Lock()
+		forgeStatus := h.lf.status
+		h.lf.mu.Unlock()
+		var status, errText string
+		if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(h.ctx, `SELECT status, error FROM reviews WHERE id = $1`, started.ReviewID).Scan(&status, &errText)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if status != "canceled" || errText != store.ReplacedReviewError || forgeStatus != "" {
+			t.Fatalf("review %s (%q), forge status %q; want the replacement's end kept and no status set", status, errText, forgeStatus)
+		}
+	})
 }
 
 // checkReviewOutcome: the marks say a review failed only of the pull
@@ -1774,11 +1827,8 @@ func checkReviewOutcome(t *testing.T, h *agenticHarness) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := args
 			a.HeadSHA = tt.head
-			reviewID, _, _, err := h.review.start(h.ctx, a, pr, h.base, "", 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := h.review.finishReview(h.ctx, args.AccountID, reviewID, tt.status, "", ""); err != nil {
+			reviewID := h.startReview(t, a, pr).ReviewID
+			if _, err := h.review.endReview(h.ctx, args.AccountID, reviewID, store.ReviewEnd{Status: tt.status}); err != nil {
 				t.Fatal(err)
 			}
 			if got := h.review.reviewOutcome(h.ctx, slog.New(slog.DiscardHandler), args.AccountID, reviewID, tt.jobErr, tt.last); got != tt.want {
@@ -1879,12 +1929,7 @@ func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	if err != nil || skip != runner.SkipUnchangedPatch || recorded != skip || agentRows != 0 {
 		t.Fatalf("pack skip = %q, the review's %q, with %d agent run(s), %v; want %s on both with none", skip, recorded, agentRows, err, runner.SkipUnchangedPatch)
 	}
-	h.lf.mu.Lock()
-	forgeStatus := h.lf.status
-	h.lf.mu.Unlock()
-	if forgeStatus != "success: kritika: skipped (patch unchanged since the last review)" {
-		t.Fatalf("forge status = %q", forgeStatus)
-	}
+	h.waitForgeStatus(t, "success: kritika: skipped (patch unchanged since the last review)")
 }
 
 // checkLinesExcluded has the admin exclude by pr.lines under what a push
@@ -2276,12 +2321,20 @@ func (h *agenticHarness) checkRunnerFiltered(t *testing.T, reviewID, name string
 		t.Fatalf("pack skip = %q by %q, the review's %q, with %d agent run(s), %v; want filtered by %q on both with none",
 			skip, detail, recorded, agentRows, err, name)
 	}
-	h.lf.mu.Lock()
-	forgeStatus := h.lf.status
-	h.lf.mu.Unlock()
-	if want := "success: kritika: skipped (filtered: " + name + ")"; forgeStatus != want {
-		t.Fatalf("forge status = %q, want %q", forgeStatus, want)
-	}
+	h.waitForgeStatus(t, "success: kritika: skipped (filtered: "+name+")")
+}
+
+// waitForgeStatus waits for the forge's commit status to be want: a skip's
+// status follows its row's commit, under the publication lock.
+func (h *agenticHarness) waitForgeStatus(t *testing.T, want string) {
+	t.Helper()
+	var got string
+	waitFor(t, 5*time.Second, "commit status "+want, func() bool {
+		h.lf.mu.Lock()
+		defer h.lf.mu.Unlock()
+		got = h.lf.status
+		return got == want
+	})
 }
 
 // rerun asks for another review of head, whose last one is finished, as
@@ -2441,10 +2494,8 @@ func checkSimilarRoute(t *testing.T, h *agenticHarness, repoID, code string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewID, runID, _, err := h.review.start(h.ctx, args, pr, h.base, "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	started := h.startReview(t, args, pr)
+	reviewID, runID := started.ReviewID, started.RunID
 	// A budget the first call's embedding overruns: it is reserved while
 	// the run has spent nothing, and the second finds it spent.
 	token, err := h.st.MintGatewayToken(h.ctx, store.GatewayGrant{

@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/home-operations/kritika/internal/model"
 )
@@ -35,7 +34,7 @@ func TestParse(t *testing.T) {
 	f, err := Parse([]byte(`providers:
   p: { type: openai, apiKey: { env: TEST_KEY } }
 review: { model: p/big }
-trigger: { settle: 2m }
+trigger: { limit: 2 }
 apps:
 ` + fileApp("acme-bot", "acme") + fileApp("org-bot", "org-2", "Org-3") + `repositories:
   ORG-2/repo-1: { trigger: { limit: 3 } }
@@ -57,7 +56,7 @@ accounts:
 		t.Fatalf("accounts = %v", accounts)
 	}
 	org2, ok := f.Account(ForgeGitHub, "org-2")
-	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2, "org-2/repo-1").MaxAutoReviews != 3 || f.Settings(org2, "").Settle != 2*time.Minute {
+	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2, "org-2/repo-1").MaxAutoReviews != 3 || f.Settings(org2, "").MaxAutoReviews != 2 {
 		t.Fatalf("org-2 = %+v", org2)
 	}
 	if in := f.ConnectionFor(org2); in == nil || in.Name != "org-bot" {

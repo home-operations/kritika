@@ -27,6 +27,9 @@ type ReviewInfo struct {
 	// skipped, null when none is newer than this.
 	NewestReviewID    *string    `json:"newestReviewId"`
 	CancelRequestedAt *time.Time `json:"cancelRequestedAt"`
+	// ReplacedByReviewID is the newer review whose start canceled this
+	// one, null for a review that ended any other way.
+	ReplacedByReviewID *string `json:"replacedByReviewId"`
 }
 
 // Summary is a review's take, praise and merge impact. Diagram is the Mermaid

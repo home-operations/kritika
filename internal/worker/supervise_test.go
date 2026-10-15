@@ -15,10 +15,11 @@ import (
 // fakeState is a run as the database would report it, changed by the test
 // while the fake executor blocks.
 type fakeState struct {
-	mu      sync.Mutex
-	started bool
-	age     time.Duration
-	head    string
+	mu       sync.Mutex
+	started  bool
+	age      time.Duration
+	head     string
+	replaced bool
 }
 
 func (f *fakeState) heartbeat(context.Context) (time.Duration, bool, error) {
@@ -31,6 +32,12 @@ func (f *fakeState) headSHA(context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.head, nil
+}
+
+func (f *fakeState) isReplaced(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.replaced, nil
 }
 
 func (f *fakeState) set(fn func(*fakeState)) {
@@ -70,6 +77,11 @@ func TestSupervise(t *testing.T) {
 			change: func(f *fakeState) { f.started, f.age = true, 2*time.Minute }, wantCause: errHeartbeatLost},
 		{name: "head moves while running is superseded", checkHead: true, exec: &blockingExecutor{started: make(chan struct{})},
 			change: func(f *fakeState) { f.head = "89abcdef0123456789abcdef0123456789abcdef" }, wantCause: errSuperseded},
+		{name: "a newer review starting while running is replaced", checkHead: true, exec: &blockingExecutor{started: make(chan struct{})},
+			change: func(f *fakeState) { f.replaced = true }, wantCause: errReplaced},
+		{name: "a newer head's review that started is a replacement, not a supersession", checkHead: true,
+			exec:   &blockingExecutor{started: make(chan struct{})},
+			change: func(f *fakeState) { f.head, f.replaced = "89abcdef0123456789abcdef0123456789abcdef", true }, wantCause: errReplaced},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,7 +92,7 @@ func TestSupervise(t *testing.T) {
 					logger: slog.New(slog.DiscardHandler),
 				}
 				if tt.checkHead {
-					s.head, s.want = state.headSHA, head
+					s.head, s.want, s.replaced = state.headSHA, head, state.isReplaced
 				}
 				done := make(chan struct{})
 				var res executor.Result

@@ -427,7 +427,6 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   const narrows = (sc: { paths?: string[]; when?: { expr: string }[] }) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
   await expect(settings).toContainText(`Skills ${skills.paths.join(', ') || 'off'}`);
   await expect(settings).toContainText(`Skill scopes ${Object.entries(skills.scope).map(([name, sc]) => `${name}${sc.load ? ' (loaded)' : ''}: ${narrows(sc)}`).join('; ') || '—'}`);
-  await expect(settings).toContainText('Settle 30s (default)');
   const file = page.locator('#repo-file').locator('../..');
   await expect(file).toContainText(`Include${conditions(rc.filters.include)} (beside the admin's)`);
   await expect(file).toContainText(`Exclude${conditions(rc.filters.exclude)} (beside the admin's)`);

@@ -77,7 +77,6 @@ func TestLoadFull(t *testing.T) {
 			review   ModelRef
 			conc     int
 			perDay   int
-			settle   time.Duration
 			filterOK map[string]any   // a PR the effective filter must accept
 			filterNo []map[string]any // PRs the effective filter must reject
 		}{
@@ -87,9 +86,8 @@ func TestLoadFull(t *testing.T) {
 				filterOK: SamplePR(), filterNo: []map[string]any{with(SamplePR(), "draft", true)},
 			},
 			{
-				name: "listed repo applies its own settle", account: ho, repo: "home-operations/flate",
+				name: "listed repo inherits the account", account: ho, repo: "home-operations/flate",
 				enabled: true, review: "openrouter/openai/gpt-6-sol", conc: 3, perDay: 200,
-				settle:   30 * time.Second,
 				filterOK: SamplePR(),
 			},
 			{
@@ -104,7 +102,6 @@ func TestLoadFull(t *testing.T) {
 			{
 				name: "account overrides review model", account: od, repo: "onedr0p/home-ops",
 				enabled: true, review: "local/claude-opus-5", conc: 3,
-				settle:   2 * time.Minute,
 				filterOK: SamplePR(),
 			},
 		}
@@ -112,8 +109,7 @@ func TestLoadFull(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				s := f.Settings(tt.account, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review ||
-					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay ||
-					s.Settle != tt.settle {
+					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay {
 					t.Fatalf("Settings = %+v", s)
 				}
 				if s.Models.Fallback != "local/claude-sonnet-5" {
@@ -405,7 +401,7 @@ apps:
 }
 
 // acme is minimal with entries, lines of the repositories map, such as
-// "  acme/*: { trigger: { settle: 1m } }\n".
+// "  acme/*: { trigger: { limit: 3 } }\n".
 func acme(entries string) string {
 	if entries == "" {
 		return minimal
@@ -432,7 +428,7 @@ func TestEnabledDefault(t *testing.T) {
 		name, doc string
 		want      map[string]bool
 	}{
-		{"on unless turned off", acme("  acme/listed: { trigger: { settle: 1m } }\n"),
+		{"on unless turned off", acme("  acme/listed: { trigger: { limit: 3 } }\n"),
 			map[string]bool{"acme/new": true, "acme/listed": true}},
 		{"off at the defaults", "enabled: false\n" + acme("  acme/listed: {}\n"),
 			map[string]bool{"acme/new": false, "acme/listed": false}},
@@ -469,7 +465,7 @@ func TestRuns(t *testing.T) {
 		{"a source repository turned off", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{}, false},
 		{"a fork", acme(""), "acme/copy", fork, false},
 		{"a fork owner/* turns on", acme("  acme/*: { enabled: true }\n"), "acme/copy", fork, false},
-		{"a fork with an entry", acme("  acme/copy: { trigger: { settle: 1m } }\n"), "acme/copy", fork, false},
+		{"a fork with an entry", acme("  acme/copy: { trigger: { limit: 3 } }\n"), "acme/copy", fork, false},
 		{"an archived repository", acme(""), "acme/old", archived, false},
 		{"a repository an admin turned off", acme("  acme/*: { enabled: true }\n"), "acme/app", RepoTraits{TurnedOn: new(false)}, false},
 		{"a repository an admin turned on", acme("  acme/*: { enabled: false }\n"), "acme/app", RepoTraits{TurnedOn: new(true)}, true},
@@ -635,7 +631,6 @@ func TestParseRejects(t *testing.T) {
 		{"owner/* model referencing undeclared provider", acme("  acme/*: { review: { model: nope/gpt } }\n"), "not declared under providers"},
 		{"negative limit", "limits:\n  reviewsPerDay: -1\n" + minimal, "must not be negative"},
 		{"negative account limit", acmeAccount("    limits: { tokensPerMonth: -1 }\n"), "accounts.acme.limits: limits must not be negative"},
-		{"negative settle default", "trigger:\n  settle: -1s\n" + minimal, "configfile: trigger.settle must not be negative"},
 		{"negative trigger limit", acme("  acme/x: { trigger: { limit: -1 } }\n"), "repositories.acme/x.trigger.limit must not be negative"},
 		{"trigger.lines is not a key", acme("  acme/x: { trigger: { lines: 500 } }\n"), "field lines not found"},
 		{"trigger condition with a bad glob", acme("  acme/x: { trigger: { include: [{ paths: ['['] }] } }\n"), `include[0]: paths[0] "[" is not a valid glob`},
@@ -657,8 +652,7 @@ func TestParseRejects(t *testing.T) {
 			`configfile: rules[0].when[1]: name "n" is given twice`},
 		{"rule whenExpr is not a key", "rules: [{ id: a, rule: x, whenExpr: 'true' }]\n" + minimal, "field whenExpr not found"},
 		{"rule condition not a bool", "rules: [{ id: a, rule: x, when: [{ expr: pr.title }] }]\n" + minimal, "configfile: rules[0].when[0]"},
-		{"negative settle at owner/*", acme("  acme/*: { trigger: { settle: -1s } }\n"), "repositories.acme/*.trigger.settle must not be negative"},
-		{"negative settle repository", acme("  acme/x: { trigger: { settle: -1s } }\n"), "repositories.acme/x.trigger.settle must not be negative"},
+		{"trigger.settle is no longer a key", acme("  acme/x: { trigger: { settle: 30s } }\n"), "field settle not found"},
 		{"indexing role removed", "review:\n  indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
 		{"include syntax error", "trigger:\n  include: [{ expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.include[0]"},
@@ -682,7 +676,7 @@ func TestParseRejects(t *testing.T) {
 		{"a repository entry that says where it starts", acme("  acme/x: { enabled: false }\n"), "repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
 		{"a defaults wrapper", "defaults: { enabled: false }\n" + minimal, "field defaults not found"},
 		{"a models block at the root", "models: { review: p/m }\n" + minimal, "field models not found"},
-		{"a flat settle on an entry", acme("  acme/x: { settle: 1m }\n"), "field settle not found"},
+		{"a flat limit on an entry", acme("  acme/x: { limit: 3 }\n"), "field limit not found"},
 		{"an unknown polling section", "polling: { interval: 5m }\n" + minimal, "field polling not found"},
 	}
 	for _, tt := range tests {
@@ -742,7 +736,6 @@ review: { model: p/big, fallback: p/small, incremental: 3 }
 trigger:
   include: [{ name: bots, expr: 'pr.author.startsWith("renovate")' }]
   exclude: [{ name: drafts, expr: pr.draft }]
-  settle: 2m
   limit: 4
 ignore: ["defaults/**"]
 agent: { steps: 9 }
@@ -771,7 +764,7 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
 		f := parse(t, doc("", "", ""))
 		s := f.Settings(&f.Accounts[0], "acme/x")
-		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.Settle != 2*time.Minute || s.MaxAutoReviews != 4 || s.Agent.MaxSteps != 9 ||
+		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.MaxAutoReviews != 4 || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
 			t.Fatalf("inherited settings = %+v", s)
@@ -779,11 +772,11 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 
 	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
-		f := parse(t, doc("tokensPerMonth: 0", `trigger: { include: [{ name: bots, expr: "true" }, { expr: pr.open }], exclude: [{ name: drafts, expr: "false" }, { expr: pr.fork }], settle: 0s }, review: { fallback: "" }`, `comments: { summary: "" }`))
+		f := parse(t, doc("tokensPerMonth: 0", `trigger: { include: [{ name: bots, expr: "true" }, { expr: pr.open }], exclude: [{ name: drafts, expr: "false" }, { expr: pr.fork }], limit: 0 }, review: { fallback: "" }`, `comments: { summary: "" }`))
 		s := f.Settings(&f.Accounts[0], "acme/x")
 		// A condition under a broader scope's name replaces it where it
 		// stands, and one without a name is added.
-		if filterExprs(s.Filters.Include) != "true, pr.open" || filterExprs(s.Filters.Exclude) != "false, pr.fork" || s.Settle != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
+		if filterExprs(s.Filters.Include) != "true, pr.open" || filterExprs(s.Filters.Exclude) != "false, pr.fork" || s.MaxAutoReviews != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
 			s.Limits.TokensPerMonth != 0 || s.Limits.ReviewsPerDay != 5 {
 			t.Fatalf("cleared settings = %+v", s)
 		}

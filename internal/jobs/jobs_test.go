@@ -96,28 +96,6 @@ func TestJobArgs(t *testing.T) {
 	}
 }
 
-func TestSettles(t *testing.T) {
-	tests := []struct {
-		trigger string
-		want    bool
-	}{
-		{trigger: "synchronize", want: true},
-		{trigger: "poll", want: true},
-		{trigger: "opened"},
-		{trigger: "reopened"},
-		{trigger: "ready_for_review"},
-		{trigger: TriggerManual},
-		{trigger: ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.trigger, func(t *testing.T) {
-			if got := Settles(tt.trigger); got != tt.want {
-				t.Fatalf("Settles(%q) = %v, want %v", tt.trigger, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestLabelChange(t *testing.T) {
 	tests := []struct {
 		trigger string

@@ -342,8 +342,8 @@ test.describe('settings search', () => {
     await page.getByRole('button', { name: 'Repository settings', exact: true }).click();
     const settings = page.locator('#repo-settings').locator('../..');
     await expect(settings.getByText('Review model')).toBeVisible();
-    await settings.getByLabel('Filter settings').fill('settle');
-    await expect(settings.locator('dt')).toHaveText(['Settle']);
+    await settings.getByLabel('Filter settings').fill('delta');
+    await expect(settings.locator('dt')).toHaveText(['Max delta files']);
     await expect(page.locator('#repo-agent').locator('../..').locator('dt')).toHaveCount(0);
     await settings.getByLabel('Filter settings').fill('vendor/');
     await expect(settings.locator('dt')).toHaveText(['Ignore']);

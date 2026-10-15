@@ -263,10 +263,7 @@ func (w *Review) finishPublication(
 	}
 	p.logger.Log(fctx, level, "publication "+string(decision.end.Status), "review", p.reviewID, "error", decision.end.Error)
 	if p.client != nil {
-		owner, repo := p.pr.ownerRepo()
-		if err := p.client.SetStatus(fctx, owner, repo, p.pr.headSHA, forge.StatusError, decision.description); err != nil {
-			p.logger.Warn("commit status not set", "error", err)
-		}
+		w.reportEnd(fctx, p.ended(), decision.description)
 	} else {
 		p.logger.Warn("publication status and reactions not set: forge client unavailable")
 	}
@@ -319,7 +316,8 @@ func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.Revie
 }
 
 // preparationCurrent checks durable cancellation even when River's context
-// already carries a shutdown cause and cannot receive a later cancellation.
+// already carries a shutdown cause and cannot receive a later cancellation,
+// and whether a newer head or review has overtaken the review meanwhile.
 func (p *publishPhase) preparationCurrent(ctx context.Context) error {
 	return p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
 		saved, err := store.ReadPublication(ctx, tx, p.jobID)
@@ -330,13 +328,17 @@ func (p *publishPhase) preparationCurrent(ctx context.Context) error {
 			return river.ErrJobCancelledRemotely
 		}
 		current, err := store.PublicationCurrent(ctx, tx, p.reviewID)
+		if err != nil || current {
+			return err
+		}
+		replaced, err := store.ReviewReplaced(ctx, tx, p.reviewID)
 		if err != nil {
 			return err
 		}
-		if !current {
-			return errSuperseded
+		if replaced {
+			return errReplaced
 		}
-		return nil
+		return errSuperseded
 	})
 }
 

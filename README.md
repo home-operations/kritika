@@ -40,7 +40,8 @@ its own Kubernetes Job pod that holds no provider key or App key.
   with a prompt a coding agent can apply it from.
 - **Incremental reviews.** A later push is reviewed against what changed since
   the last review, an earlier finding it finds gone has its thread
-  resolved, `trigger.settle` folds a burst of force-pushes into one, and
+  resolved, a review that starts cancels the pull request's older ones
+  still running, so a burst of force-pushes ends with one result, and
   `trigger.limit` pauses a long-lived pull request's automatic reviews,
   as `@<bot> pause` does on request.
 - **Follow-ups.** Someone with write access can @-mention the bot and get an

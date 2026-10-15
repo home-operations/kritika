@@ -37,7 +37,8 @@
     "patchId": "patch1",
     "priorReviewId": "rev-0",
     "newestReviewId": null,
-    "cancelRequestedAt": null
+    "cancelRequestedAt": null,
+    "replacedByReviewId": null
   },
   "summary": {
     "take": "Looks fine.",

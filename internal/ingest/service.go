@@ -58,8 +58,7 @@ const (
 // pullRequestActions are the pull request actions that record the pull
 // request, each saying whether it also starts a review; ActionPoll and
 // ActionBaseline are the poller's synthetic ones. The review job starts at
-// once: the worker waits out the repository's settle time (jobs.Settles),
-// since .kritika.yaml may set it. The record-only actions keep the title,
+// once. The record-only actions keep the title,
 // body, labels and draft state current between pushes: a review job reads
 // them when it builds its prompt, and the filter and the rules judge them,
 // so an edit that arrives after the push that queued the job, as
