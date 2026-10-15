@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.70](https://github.com/home-operations/kritika/compare/0.0.69...0.0.70) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** remove the settle delay and let the last started review win ([#964](https://github.com/home-operations/kritika/issues/964))
+* **runner:** manage instance and repository tools with mise ([#961](https://github.com/home-operations/kritika/issues/961))
+
+### Features
+
+* **review:** remove the settle delay and let the last started review win ([#964](https://github.com/home-operations/kritika/issues/964)) ([0197524](https://github.com/home-operations/kritika/commit/019752430f8c644a685ab3e95db34945378e61d8))
+* **runner:** manage instance and repository tools with mise ([#961](https://github.com/home-operations/kritika/issues/961)) ([47dbf34](https://github.com/home-operations/kritika/commit/47dbf34041129a9951b139ae62edfa2765ae0002))
+
 ## [0.0.69](https://github.com/home-operations/kritika/compare/0.0.68...0.0.69) (2026-10-14)
 
 
