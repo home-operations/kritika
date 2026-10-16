@@ -192,6 +192,15 @@ an `env` key that would duplicate one of them.
 {{- define "kritika.serveEnv" -}}
 - name: KRITIKA_CONFIG_FILE
   value: /etc/kritika/config.yaml
+# The pod's own name and UID, which its Kubernetes Events name.
+- name: KRITIKA_POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: KRITIKA_POD_UID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.uid
 {{- if .Values.existingConfigMap }}
 - name: KRITIKA_ADDR
   value: {{ printf ":%d" (int .Values.service.port) | quote }}

@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -65,7 +66,14 @@ type Kube struct {
 	// StartGrace is how long a pod may stay unable to start before its run
 	// is given up; startGrace unless set.
 	StartGrace time.Duration
-	Logger     *slog.Logger
+	// Events, when set, records the Events on runner Jobs.
+	Events *Events
+	Logger *slog.Logger
+}
+
+// RunEvent implements EventRecorder.
+func (k *Kube) RunEvent(ctx context.Context, res Result, warning bool, reason, note string) {
+	k.Events.RunEvent(ctx, res, warning, reason, note)
 }
 
 // NewKubeInCluster returns a Kubernetes client from the pod's service
@@ -107,22 +115,23 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	// run whose container never ran, which the worker retries.
 	secrets := k.Client.CoreV1().Secrets(k.Namespace)
 	if _, err := secrets.Create(ctx, k.secret(spec, runSpec), metav1.CreateOptions{}); err != nil {
-		return Result{NeverStarted: true, Err: fmt.Errorf("executor: create secret: %w", err)}
+		return Result{NeverStarted: true, Err: setupError(ctx, fmt.Errorf("executor: create secret: %w", err))}
 	}
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
+		err = setupError(ctx, fmt.Errorf("executor: create job: %w", err))
 		if ctx.Err() != nil {
 			// The server may have persisted the Job before the call gave up.
 			k.deleteJob(ctx, name)
 		}
 		k.deleteSecret(ctx, name)
-		return Result{NeverStarted: true, Err: fmt.Errorf("executor: create job: %w", err)}
+		return Result{NeverStarted: true, Err: err}
 	}
-	res := Result{JobName: created.Name}
+	res := Result{JobName: created.Name, JobUID: string(created.UID)}
 	if err := k.own(ctx, created); err != nil {
+		res.NeverStarted, res.Err = true, setupError(ctx, err)
 		k.deleteJob(ctx, created.Name)
 		k.deleteSecret(ctx, name)
-		res.NeverStarted, res.Err = true, err
 		return res
 	}
 	poll := cmp.Or(k.Poll, 3*time.Second)
@@ -154,7 +163,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			}
 			k.deleteJob(ctx, created.Name)
 			k.finish(ctx, &res, spec.Secrets)
-			res.Err = fmt.Errorf("executor: get job: %w", err)
+			res.Abandoned, res.Err = true, fmt.Errorf("executor: get job: %w", err)
 			return res
 		}
 		unread = 0
@@ -184,6 +193,17 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			return res
 		}
 	}
+}
+
+// setupError is the error of a step setting the run up, with the run's
+// cancellation cause beside it when the step failed because ctx ended: the
+// cause says why. It is taken as the step fails, before any cleanup, so a
+// cancellation landing during the cleanup is not taken for the failure's.
+func setupError(ctx context.Context, err error) error {
+	if ctx.Err() == nil || !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("%w (%w)", err, context.Cause(ctx))
 }
 
 // startGrace is how long a runner pod may stay unable to start, unscheduled

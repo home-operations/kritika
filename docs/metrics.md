@@ -132,6 +132,36 @@ is excluded from the delay alert because onboarding deliberately waits behind
 higher-priority updates. Vector latency is graphed without an alert threshold
 until a representative production baseline is available.
 
+## Kubernetes Events
+
+kritika records Events that `kubectl describe` and `kubectl events` show and
+an event collector gathers: on a runner Job, why kritika ended its run, and
+on a kritika serve pod, what its leader did.
+
+| On                  | Reason          | Type    | When                                                                                                         |
+| ------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| a runner Job        | `Superseded`    | Normal  | a newer head of the pull request superseded the run; the note names it                                       |
+| a runner Job        | `Replaced`      | Normal  | a newer review of the pull request replaced the run                                                          |
+| a runner Job        | `Cancelled`     | Normal  | the run was cancelled from the dashboard                                                                     |
+| a runner Job        | `HeartbeatLost` | Warning | the runner's heartbeat went stale, so kritika ended the run                                                  |
+| a runner Job        | `NeverStarted`  | Warning | its pod could not start, as for an image that cannot be pulled or a pod no node takes; the note says why     |
+| a runner Job        | `Interrupted`   | Normal  | kritika serve stopped, and the job runs again                                                                |
+| a runner Job        | `Interrupted`   | Warning | the job's heartbeat stopped landing, so kritika handed it back to its queue                                  |
+| a runner Job        | `TimedOut`      | Warning | the job ran out of time                                                                                      |
+| a runner Job        | `StatusUnreadable` | Warning | kritika could not read the Job's status, so it deleted the Job                                            |
+| a kritika serve pod | `LeaderElected` | Normal  | the replica took the lead                                                                                    |
+| a kritika serve pod | `ConfigApplied` | Normal  | the leader applied the configuration, named by its hash                                                      |
+| a kritika serve pod | `ConfigRefused` | Warning | the store refused the configuration, and the last applied one stays live, as `kritika_config_error` says too |
+
+A run that ended on its own, finished or failed, gets none: its Job's own
+Events, from the Job controller, tell. kritika deletes the Job of a run it
+ends, so `kubectl events --for job/<name>` finds those Events once
+`kubectl describe` no longer can. A pod's Events need its name and UID,
+which the chart passes as `KRITIKA_POD_NAME` and `KRITIKA_POD_UID`. The
+chart's Role lets kritika create Events in its namespace; one it cannot
+record is logged. Kubernetes keeps Events for an hour unless the API
+server's `--event-ttl` says otherwise.
+
 ## Grafana dashboard
 
 The chart's `monitoring.dashboards.enabled` renders a Grafana dashboard of

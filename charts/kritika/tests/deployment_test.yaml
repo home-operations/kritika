@@ -11,6 +11,21 @@ tests:
           content:
             name: KRITIKA_RUNNER_RUNTIME_CLASS
           any: true
+      # The pod's name and UID, for the Events kritika records on it.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
       - hasDocuments:
           count: 1
       - isKind:
@@ -368,11 +383,11 @@ tests:
       - failedTemplate:
           errorMessage: runner.mise.config has been removed; declare tools in a repository's .kritika/mise.toml and mirrors in runner.mise.urlReplacements instead
 
-  - it: supplies only the config path and database credentials before extra env
+  - it: supplies only the config path, the pod's name and UID and database credentials before extra env
     asserts:
       - lengthEqual:
           path: spec.template.spec.containers[0].env
-          count: 6
+          count: 8
       - contains:
           path: spec.template.spec.containers[0].env
           content: { name: KRITIKA_CONFIG_FILE, value: /etc/kritika/config.yaml }

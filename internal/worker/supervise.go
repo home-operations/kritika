@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/runner"
@@ -21,6 +22,12 @@ var (
 	errReplaced      = errors.New("worker: a newer review of the pull request replaced the run")
 	errHeartbeatLost = errors.New("worker: runner heartbeat lost")
 )
+
+// supersededBy is errSuperseded naming the newer head, for the run's Event.
+type supersededBy string
+
+func (supersededBy) Error() string { return errSuperseded.Error() }
+func (supersededBy) Unwrap() error { return errSuperseded }
 
 const (
 	// superviseInterval is how often a running run is checked.
@@ -50,6 +57,7 @@ type supervision struct {
 // supervise runs spec, cancelling it when its heartbeat goes stale, a newer
 // head supersedes it or a newer review replaces it. It returns the
 // executor's result and the cause it cancelled with, nil when it did not.
+// An executor that runs Jobs records on the run's Job why kritika ended it.
 func supervise(ctx context.Context, s supervision, exec executor.Executor, spec executor.Spec) (executor.Result, error) {
 	rctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -61,6 +69,11 @@ func supervise(ctx context.Context, s supervision, exec executor.Executor, spec 
 	for {
 		select {
 		case res := <-done:
+			if r, ok := exec.(executor.EventRecorder); ok {
+				if warning, reason, note := runEnd(context.Cause(ctx), res); reason != "" {
+					r.RunEvent(ctx, res, warning, reason, note)
+				}
+			}
 			return res, cause
 		case <-t.C:
 		}
@@ -93,7 +106,7 @@ func (s supervision) check(ctx context.Context) error {
 		case err != nil:
 			s.logger.Warn("supervise: read head", "error", err)
 		case head != s.want:
-			return errSuperseded
+			return supersededBy(head)
 		}
 	}
 	age, started, err := s.heartbeat(ctx)
@@ -104,6 +117,42 @@ func (s supervision) check(ctx context.Context) error {
 		return errHeartbeatLost
 	}
 	return nil
+}
+
+// runEnd says why kritika ended a run, for an Event on its Job: whether
+// the Event is a warning, its reason and its note. It reads the executor's
+// own account of the run, res, whose error carries the cause a cancelled
+// run stopped with, rather than whichever cause has landed since:
+// supervision may settle on one, or the job's ctx end, after the run
+// already stopped. jobCause is the job's: a run cut by a shutdown or the
+// job's timeout stopped with it. A run that ended on its own has no
+// reason; its Job's own Events tell.
+func runEnd(jobCause error, res executor.Result) (warning bool, reason, note string) {
+	if res.Err == nil {
+		return false, "", ""
+	}
+	if head, ok := errors.AsType[supersededBy](res.Err); ok {
+		return false, "Superseded", fmt.Sprintf("a newer head, %s, superseded the run", string(head[:min(len(head), 8)]))
+	}
+	switch {
+	case errors.Is(res.Err, errReplaced):
+		return false, "Replaced", "a newer review of the pull request replaced the run"
+	case errors.Is(res.Err, errHeartbeatLost):
+		return true, "HeartbeatLost", "the runner's heartbeat went stale, so kritika ended the run"
+	case errors.Is(res.Err, river.ErrJobCancelledRemotely):
+		return false, "Cancelled", "the run was cancelled from the dashboard"
+	case errors.Is(res.Err, errJobFenced):
+		return true, "Interrupted", "the job's heartbeat stopped landing, so kritika handed the job back to its queue"
+	case jobCause != nil && errors.Is(res.Err, jobCause) && errors.Is(jobCause, context.DeadlineExceeded):
+		return true, "TimedOut", "the job ran out of time"
+	case jobCause != nil && errors.Is(res.Err, jobCause):
+		return false, "Interrupted", "kritika serve stopped, and the job runs again"
+	case res.Abandoned:
+		return true, "StatusUnreadable", "kritika could not read the Job's status, so it deleted the Job"
+	case res.NeverStarted:
+		return true, "NeverStarted", "its pod did not start: " + cmp.Or(res.TerminationReason, res.Err.Error())
+	}
+	return false, "", ""
 }
 
 // runSupervision builds the supervision of one runner run. Heartbeat age is

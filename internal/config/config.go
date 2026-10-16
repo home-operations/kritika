@@ -89,6 +89,12 @@ type Config struct {
 	// the local executor, which runs the runner inside the serve process.
 	RunnerDatabaseURL string `env:"KRITIKA_RUNNER_DATABASE_URL,unset"`
 
+	// PodName and PodUID are serve's own pod's, from the downward API: its
+	// Kubernetes Events name the pod by them, and kubectl describe matches a
+	// pod's Events by its UID. A pod's hostname is not always its name.
+	PodName string `env:"KRITIKA_POD_NAME"`
+	PodUID  string `env:"KRITIKA_POD_UID"`
+
 	// RunSpecFile is the path of a runner's job document, a
 	// versioned JSON runner spec the worker mounts into the Job from the
 	// run's Secret. A file rather than a variable: a spec can outgrow the

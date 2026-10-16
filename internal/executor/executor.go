@@ -42,6 +42,11 @@ type Result struct {
 	// pod's start time before it pulls the pod's images.
 	NeverStarted bool
 	LogTail      string
+	// JobUID is the UID of the run's Job, which its Events name.
+	JobUID string
+	// Abandoned is set when the executor deleted the run's Job because it
+	// could not read the Job's status.
+	Abandoned bool
 	// Err is set when the run did not complete successfully.
 	Err error
 }
@@ -49,4 +54,10 @@ type Result struct {
 // Executor runs a spec to completion.
 type Executor interface {
 	Run(ctx context.Context, spec Spec) Result
+}
+
+// An EventRecorder records an Event on the Job of a run its executor ran,
+// without waiting for the write: the executors that run Jobs are one.
+type EventRecorder interface {
+	RunEvent(ctx context.Context, res Result, warning bool, reason, note string)
 }

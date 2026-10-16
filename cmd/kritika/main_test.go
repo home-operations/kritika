@@ -7,15 +7,19 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/server"
 )
@@ -52,9 +56,10 @@ func applyStage(reg *prometheus.Registry) float64 {
 	return -1
 }
 
-// TestApplyConfig: a refusal for the configuration's content is logged and
-// raised on the gauge without ending leadership, a database error ends
-// it, and the onApplied error is returned as is.
+// TestApplyConfig: a refusal for the configuration's content is logged,
+// raised on the gauge and recorded as an Event on the pod without ending
+// leadership, a database error ends it, and the onApplied error is
+// returned as is.
 func TestApplyConfig(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
@@ -63,18 +68,24 @@ func TestApplyConfig(t *testing.T) {
 		wantErr   string
 		wantGauge float64
 		applied   bool
+		// event is the reason of the Event recorded on the pod, if any.
+		event string
 	}{
-		{name: "applied", wantGauge: 0, applied: true},
-		{name: "refused for its content", apply: fmt.Errorf("store: account refused: %w", &pgconn.PgError{Code: "23514"}), wantGauge: 1},
+		{name: "applied", wantGauge: 0, applied: true, event: "ConfigApplied"},
+		{name: "refused for its content", apply: fmt.Errorf("store: account refused: %w", &pgconn.PgError{Code: "23514"}), wantGauge: 1,
+			event: "ConfigRefused"},
 		{name: "database error", apply: errors.New("connection reset"), wantErr: "connection reset", wantGauge: 0},
-		{name: "onApplied error", onApplied: errors.New("enqueue failed"), wantErr: "enqueue failed", wantGauge: 0, applied: true},
+		{name: "onApplied error", onApplied: errors.New("enqueue failed"), wantErr: "enqueue failed", wantGauge: 0, applied: true,
+			event: "ConfigApplied"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			gauge := server.NewConfigErrorGauge(reg)
 			applied := make(chan string, 1)
+			client := fake.NewSimpleClientset()
+			events := executor.NewEvents(client, "kritika", "kritika-7c9f5d6b8-xk2lp", "pod-uid", slog.New(slog.DiscardHandler))
 			err := applyConfig(t.Context(), parseAccount(t, "good"), func(context.Context, *configfile.File) error { return tt.apply },
-				recordApplied(applied, tt.onApplied), gauge, slog.New(slog.DiscardHandler))
+				recordApplied(applied, tt.onApplied), gauge, events, slog.New(slog.DiscardHandler))
 			if (err == nil) != (tt.wantErr == "") || err != nil && err.Error() != tt.wantErr {
 				t.Fatalf("applyConfig = %v, want %q", err, tt.wantErr)
 			}
@@ -83,6 +94,22 @@ func TestApplyConfig(t *testing.T) {
 			}
 			if got := applyStage(reg); got != tt.wantGauge {
 				t.Fatalf("config error gauge = %v, want %v", got, tt.wantGauge)
+			}
+			list, err := client.EventsV1().Events("kritika").List(t.Context(), metav1.ListOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			reasons := make([]string, 0, len(list.Items))
+			for _, e := range list.Items {
+				reasons = append(reasons, e.Type+" "+e.Reason+" "+e.Regarding.Kind)
+			}
+			want := []string{}
+			if tt.event != "" {
+				kind := map[string]string{"ConfigApplied": "Normal", "ConfigRefused": "Warning"}[tt.event]
+				want = []string{kind + " " + tt.event + " Pod"}
+			}
+			if !slices.Equal(reasons, want) {
+				t.Fatalf("events = %q, want %q", reasons, want)
 			}
 		})
 	}
