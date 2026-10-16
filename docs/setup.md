@@ -125,8 +125,9 @@ The file lives in git with the rest of the deployment. kritika reads it at
 startup, and the chart rolls the pods when `config` changes. A changed
 ConfigMap or Secret does not roll them: restart them after changing one,
 or have stakater's Reloader do it with
-`deploymentAnnotations: { reloader.stakater.com/auto: "true" }`. Runner
-Jobs read their Secret as each one starts.
+`deploymentAnnotations: { reloader.stakater.com/auto: "true" }`. The
+chart's own ConfigMap tells Reloader to ignore it, so an upgrade still
+rolls the pods once. Runner Jobs read their Secret as each one starts.
 
 ## Install the App
 

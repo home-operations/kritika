@@ -7,6 +7,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kritika.labels" . | nindent 4 }}
+  annotations:
+    # The pods' checksum/config rolls them on a change. A Reloader rollout
+    # too would race Helm's, adding a ReplicaSet of the previous release.
+    reloader.stakater.com/ignore: "true"
 data:
   config.yaml: |
     {{- $config | nindent 4 }}
