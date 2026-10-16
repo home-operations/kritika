@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.74](https://github.com/home-operations/kritika/compare/0.0.73...0.0.74) (2026-10-16)
+
+
+### Features
+
+* **review:** fold sources, skills and commands into one Review context block ([#985](https://github.com/home-operations/kritika/issues/985)) ([b661273](https://github.com/home-operations/kritika/commit/b6612730fd96a48b70adf2a6f5dd9e7a58671616))
+
+
+### Bug Fixes
+
+* **chart:** tell Reloader to ignore the chart's own ConfigMap ([#984](https://github.com/home-operations/kritika/issues/984)) ([978da3b](https://github.com/home-operations/kritika/commit/978da3b2fd8b28f239b5620c6822ec6cf3761e9c))
+
 ## [0.0.73](https://github.com/home-operations/kritika/compare/0.0.72...0.0.73) (2026-10-16)
 
 
