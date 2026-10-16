@@ -167,6 +167,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger = logger.With("account", account.Key())
+	if ev.Repository != nil {
+		logger = logger.With("repository", ev.Repository.FullName)
+	}
+	if n := pullNumber(ev); n != 0 {
+		logger = logger.With("pr", n)
+	}
 	// The forge gives up on a delivery after ten seconds and does not send
 	// it again, so a dispatch that outlasts the request still finishes: a
 	// comment or thread event that rolled back with it would be lost.
@@ -182,4 +188,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.Info("webhook handled", "status", out.Status, "reason", out.Reason, "job", out.Job)
 	h.Metrics.Webhook(name, out.Status)
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// pullNumber is the pull request ev concerns, whether the event is the
+// pull request's own, a comment on it or one of its review threads; 0
+// when it concerns none.
+func pullNumber(ev webhook.Event) int {
+	switch {
+	case ev.PullRequest != nil:
+		return ev.PullRequest.Number
+	case ev.Comment != nil:
+		return ev.Comment.Number
+	case ev.Thread != nil:
+		return ev.Thread.Number
+	}
+	return 0
 }

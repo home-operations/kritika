@@ -1,10 +1,12 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -64,10 +66,15 @@ const prBody = `{"action":"opened","pull_request":{"number":1,"user":{"login":"x
 
 func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 	t.Helper()
+	return setupLogged(t, disp, slog.New(slog.DiscardHandler))
+}
+
+func setupLogged(t *testing.T, disp Dispatcher, logger *slog.Logger) *httptest.Server {
+	t.Helper()
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML)
-	h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.DiscardHandler))
+	h := NewHandler(configfile.NewCurrent(f), disp, logger)
 	if r, ok := disp.(DeliveryRecorder); ok {
 		h.Deliveries = r
 	}
@@ -141,6 +148,49 @@ func TestHandler(t *testing.T) {
 				if !strings.EqualFold(req.Account.Name, req.Event.Account) || req.Event.Kind != webhook.KindPullRequest {
 					t.Fatalf("request = %+v", req)
 				}
+			}
+		})
+	}
+}
+
+// TestHandlerLogsRepositoryAndPullRequest: a handled delivery's line
+// names the repository it was for and, when the event concerns one, the
+// pull request, so a skip can be traced from the logs alone.
+func TestHandlerLogsRepositoryAndPullRequest(t *testing.T) {
+	const repo = `"repository":{"full_name":"onedr0p/home-ops","default_branch":"main","owner":{"login":"onedr0p"}}`
+	for _, tt := range []struct {
+		name, event, body string
+		pr                float64
+	}{
+		{"pull request", "pull_request", prBody, 1},
+		{"comment", "issue_comment", `{"action":"created","issue":{"number":7,"pull_request":{"url":"x"}},
+		  "comment":{"id":99,"body":"@bot look","user":{"login":"devin","type":"User"}},` + repo + `}`, 7},
+		{"review thread", "pull_request_review_thread", `{"action":"resolved","pull_request":{"number":9},
+		  "sender":{"login":"devin"},"thread":{"comments":[{"id":5}]},` + repo + `}`, 9},
+		{"push", "push", `{"ref":"refs/heads/main","after":"2",` + repo + `}`, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			srv := setupLogged(t, &fakeDispatcher{out: Outcome{Status: Skipped, Reason: "disabled"}}, slog.New(slog.NewJSONHandler(&logs, nil)))
+			if resp := post(t, srv, "/hooks/bot-ross", tt.event, "s3cret", tt.body); resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+			var line map[string]any
+			for raw := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+				if err := json.Unmarshal([]byte(raw), &line); err != nil {
+					t.Fatal(err)
+				}
+				if line["msg"] == "webhook handled" {
+					break
+				}
+				line = nil
+			}
+			if line == nil {
+				t.Fatalf("no webhook handled line in:\n%s", logs.String())
+			}
+			pr, hasPR := line["pr"]
+			if line["repository"] != "onedr0p/home-ops" || line["reason"] != "disabled" || hasPR != (tt.pr != 0) || (hasPR && pr != tt.pr) {
+				t.Fatalf("webhook handled = %v, want repository onedr0p/home-ops and pr %v", line, tt.pr)
 			}
 		})
 	}
