@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # kritika with mise and the tools the agent's run tool offers: the chart's
 # runner image. Built with --target tools, published as the -tools tag.
 # Distroless with glibc for the tools' release builds, and no shell.
-FROM mirror.gcr.io/jdxcode/mise:2026.10.9 AS mise
+FROM mirror.gcr.io/jdxcode/mise:2026.10.11 AS mise
 FROM gcr.io/distroless/cc:nonroot AS tools
 # mise lives outside PATH. The runner runs it by path; a command the agent
 # runs must not find it.
