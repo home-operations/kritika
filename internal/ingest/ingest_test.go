@@ -1,10 +1,12 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -64,10 +66,15 @@ const prBody = `{"action":"opened","pull_request":{"number":1,"user":{"login":"x
 
 func setup(t *testing.T, disp Dispatcher) *httptest.Server {
 	t.Helper()
+	return setupLogged(t, disp, slog.New(slog.DiscardHandler))
+}
+
+func setupLogged(t *testing.T, disp Dispatcher, logger *slog.Logger) *httptest.Server {
+	t.Helper()
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
 	f := configfiletest.Load(t, configYAML)
-	h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.DiscardHandler))
+	h := NewHandler(configfile.NewCurrent(f), disp, logger)
 	if r, ok := disp.(DeliveryRecorder); ok {
 		h.Deliveries = r
 	}
@@ -144,6 +151,71 @@ func TestHandler(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHandlerLogsRepositoryAndPullRequest: a handled delivery's line
+// names the repository it was for and, when the event concerns one, the
+// pull request, so a skip can be traced from the logs alone.
+func TestHandlerLogsRepositoryAndPullRequest(t *testing.T) {
+	const repo = `"repository":{"full_name":"onedr0p/home-ops","default_branch":"main","owner":{"login":"onedr0p"}}`
+	for _, tt := range []struct {
+		name, event, body string
+		pr                float64
+	}{
+		{"pull request", "pull_request", prBody, 1},
+		{"comment", "issue_comment", `{"action":"created","issue":{"number":7,"pull_request":{"url":"x"}},
+		  "comment":{"id":99,"body":"@bot look","user":{"login":"devin","type":"User"}},` + repo + `}`, 7},
+		{"review thread", "pull_request_review_thread", `{"action":"resolved","pull_request":{"number":9},
+		  "sender":{"login":"devin"},"thread":{"comments":[{"id":5}]},` + repo + `}`, 9},
+		{"push", "push", `{"ref":"refs/heads/main","after":"2",` + repo + `}`, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			srv := setupLogged(t, &fakeDispatcher{out: Outcome{Status: Skipped, Reason: "disabled"}}, slog.New(slog.NewJSONHandler(&logs, nil)))
+			if resp := post(t, srv, "/hooks/bot-ross", tt.event, "s3cret", tt.body); resp.StatusCode != http.StatusAccepted {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+			line := loggedLine(t, &logs, "webhook handled")
+			pr, hasPR := line["pr"]
+			if line["repository"] != "onedr0p/home-ops" || line["reason"] != "disabled" || hasPR != (tt.pr != 0) || (hasPR && pr != tt.pr) {
+				t.Fatalf("webhook handled = %v, want repository onedr0p/home-ops and pr %v", line, tt.pr)
+			}
+		})
+	}
+}
+
+// TestHandlerLogsRepositoryOfServedAccounts: a failed dispatch's line
+// names the repository and pull request too, and the line for an account
+// the instance does not serve names neither.
+func TestHandlerLogsRepositoryOfServedAccounts(t *testing.T) {
+	var logs bytes.Buffer
+	srv := setupLogged(t, &fakeDispatcher{err: errors.New("db down")}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	post(t, srv, "/hooks/bot-ross", "pull_request", "s3cret", prBody)
+	post(t, srv, "/hooks/bot-ross", "pull_request", "s3cret",
+		strings.ReplaceAll(prBody, `"owner":{"login":"onedr0p"}`, `"owner":{"login":"stranger"}`))
+	if failed := loggedLine(t, &logs, "webhook dispatch failed"); failed["repository"] != "onedr0p/home-ops" || failed["pr"] != float64(1) {
+		t.Fatalf("webhook dispatch failed = %v, want repository onedr0p/home-ops and pr 1", failed)
+	}
+	stranger := loggedLine(t, &logs, "webhook for an undeclared account ignored")
+	if _, named := stranger["repository"]; named || stranger["pr"] != nil {
+		t.Fatalf("undeclared account line = %v, want neither repository nor pr", stranger)
+	}
+}
+
+// loggedLine is the JSON line in logs whose message is msg.
+func loggedLine(t *testing.T, logs *bytes.Buffer, msg string) map[string]any {
+	t.Helper()
+	for raw := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		var line map[string]any
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			t.Fatal(err)
+		}
+		if line["msg"] == msg {
+			return line
+		}
+	}
+	t.Fatalf("no %q line in:\n%s", msg, logs.String())
+	return nil
 }
 
 // TestHandlerRecordsUnsigned: a delivery with no signature, which an App
