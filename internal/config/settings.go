@@ -79,14 +79,14 @@ type Settings struct {
 	// leader lock and how often the holder verifies it still has it.
 	LeaderRetryInterval time.Duration `env:"KRITIKA_LEADER_RETRY_INTERVAL" envDefault:"15s" yaml:"leaderRetryInterval,omitempty"`
 
-	// ReviewWorkers is how many review jobs one worker replica runs at once.
-	// Each one holds a runner pod open for the length of a fetch and diff,
-	// so this bounds pods per replica, not model calls.
+	// ReviewWorkers is the capacity of each of the separate review and
+	// follow-up queues on one replica. Each job can hold a runner pod;
+	// model concurrency is bounded separately by account limits.
 	ReviewWorkers int `env:"KRITIKA_REVIEW_WORKERS" envDefault:"2" yaml:"reviewWorkers,omitempty"`
 	// IndexWorkers is how many index jobs one worker replica runs at once;
 	// indexing is rate-limited apart from reviews so onboarding a large
 	// account cannot starve them. Each holds a runner pod too, so a replica
-	// runs at most ReviewWorkers + IndexWorkers runner pods.
+	// runs at most 2*ReviewWorkers + IndexWorkers concurrent runner pods.
 	IndexWorkers int `env:"KRITIKA_INDEX_WORKERS" envDefault:"1" yaml:"indexWorkers,omitempty"`
 
 	// ThreadWorkers reserves capacity for finding resolution/restoration updates.

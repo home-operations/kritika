@@ -283,13 +283,15 @@ one. They come in five groups, with a few keys beside them:
 | `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`          | how a review is judged                     |
 | `trigger`    | `include`, `exclude`, `limit`                                                       | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`, `dashboard`                                         | what is posted                             |
-| `agent`      | `steps`, `output`, `tokens`, `prompt`, `timeout`, `commands`, `commandTimeout`, `fetches` | the bounds of a review's tool loop   |
+| `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches` | the bounds of a review's tool loop   |
 | beside them  | `enabled`, `rules`, `context`, `skills`, `ignore`, and `limits` at the root alone   |                                            |
 
-`ignore` lists globs of the paths kritika never looks at: they are left out
-of a review's context and of the index, on top of kritika's own (vendored
-trees, lockfiles, generated and minified code, source maps and logs), and a
-pull request that changes nothing else is skipped. Changing the effective
+`ignore` lists globs of paths left out of a review's initial diff and
+context, the index, and the agent's searches and checkout, on top of
+kritika's own (vendored trees, lockfiles, generated and minified code,
+source maps and logs). A pull request that changes nothing else is skipped.
+The agent can still read an ignored path with `read_file` or its diff with
+`read_diff`; `ignore` is not an access restriction. Changing the effective
 ignore rules triggers a full rebuild on the next index run, including files
 whose contents have not changed. Editing instance configuration does not
 queue index jobs by itself; reindex an idle repository from the dashboard
@@ -692,7 +694,7 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `indexGrace` | `KRITIKA_INDEX_GRACE`              | how long the index of a repository that stopped running is kept; 720h unless set                                                                                                                                                 |
 | `transcriptRetention` | `KRITIKA_TRANSCRIPT_RETENTION`     | how long a review's full model transcript is kept, and the hosts the gateway refused its runs, at least 24h; 720h unless set                                                                                                     |
 | `diffRetention` | `KRITIKA_DIFF_RETENTION`           | how long a review keeps the diff it was made from, the context it read and the repository files it named, at least 24h; 720h unless set                                                                                          |
-| `reviewWorkers` | `KRITIKA_REVIEW_WORKERS`           | review jobs one replica runs at once; 2 unless set                                                                                                                                                                               |
+| `reviewWorkers` | `KRITIKA_REVIEW_WORKERS`           | jobs one replica runs at once in each of the separate review and follow-up queues; 2 per queue unless set |
 | `threadWorkers` | `KRITIKA_THREAD_WORKERS` | finding resolution/restoration jobs one replica runs at once, independently of model follow-ups; 1 unless set |
 | `indexWorkers` | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
 | `leaderRetryInterval` | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |

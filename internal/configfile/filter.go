@@ -156,9 +156,6 @@ func (fs Filters) NeedsDiff() bool {
 	return slices.ContainsFunc(fs.Include, Filter.needsDiff) || slices.ContainsFunc(fs.Exclude, Filter.needsDiff)
 }
 
-// Empty reports whether fs hold no condition.
-func (fs Filters) Empty() bool { return len(fs.Include) == 0 && len(fs.Exclude) == 0 }
-
 // with is fs with more laid over them, list by list: a condition of more
 // with a name the list already has replaces that condition where it
 // stands, and the rest follow in order.
