@@ -7,10 +7,12 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"net/url"
 	"reflect"
 	"slices"
 	"testing"
 
+	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
@@ -297,6 +299,41 @@ func TestWriteSticky(t *testing.T) {
 }
 
 var errForge = errors.New("forge: forbidden")
+
+// TestDashboard: the comments get the dashboard's origin and the pull
+// request's page on it only from a worker with a web URL, and only where the
+// admin leaves the dashboard in the repository's comments.
+func TestDashboard(t *testing.T) {
+	t.Parallel()
+	web, err := url.Parse("https://kritika.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name              string
+		web               *url.URL
+		dashboard         bool
+		wantWeb, wantPull string
+	}{
+		{name: "on", web: web, dashboard: true,
+			wantWeb: "https://kritika.example.com", wantPull: "https://kritika.example.com/#/a/github/acme/pulls/acme/x/7"},
+		{name: "off", web: web},
+		{name: "no web URL", dashboard: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &publishPhase{
+				w: &Review{WebURL: tt.web}, account: &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme"},
+				pr: &pullRequest{repository: "acme/x", number: 7},
+			}
+			p.settings.Review.Dashboard = tt.dashboard
+			if gotWeb, gotPull := p.dashboard("acme", "x"); gotWeb != tt.wantWeb || gotPull != tt.wantPull {
+				t.Fatalf("dashboard = %q, %q; want %q, %q", gotWeb, gotPull, tt.wantWeb, tt.wantPull)
+			}
+		})
+	}
+}
 
 // TestUnfinishedParts: each part of a split review that ended before it
 // submitted is named with its files, the first few of them, and none is

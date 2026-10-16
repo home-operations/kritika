@@ -734,9 +734,11 @@ func (p *publishPhase) cost(ctx context.Context) string {
 }
 
 // dashboard is the dashboard's origin and the pull request's page on it,
-// both "" when the worker was given no web URL.
+// both "" when the worker was given no web URL or the admin keeps the
+// dashboard out of the repository's comments. Repository templates get the
+// same values, so none can print the URL either.
 func (p *publishPhase) dashboard(owner, repo string) (web, pull string) {
-	if p.w.WebURL == nil {
+	if p.w.WebURL == nil || !p.settings.Review.Dashboard {
 		return "", ""
 	}
 	return p.w.WebURL.String(), review.PullPageURL(p.w.WebURL, string(p.account.Forge), p.account.Name, owner, repo, p.pr.number)

@@ -577,6 +577,11 @@ type Review struct {
 	Templates           ReviewTemplates `json:"templates"`
 	// InlineComments is false to post the summary alone.
 	InlineComments bool `json:"inlineComments"`
+	// Dashboard is false to keep the dashboard's URL out of the comments,
+	// which anyone can read on a public repository: the summary then has
+	// no re-run badge, and each severity is its label in text rather than
+	// an image the dashboard serves.
+	Dashboard bool `json:"dashboard"`
 	// Approve is true to approve a pull request whose review found nothing
 	// at P0 or P1, or, where a confidence score is asked for,
 	// whose score and risk allow it, and to dismiss that approval when a
@@ -607,12 +612,15 @@ type ContextFile struct {
 }
 
 // CommentsSpec sets how a review comments at one scope: whether findings
-// go inline, and the repository files that replace the built-in summary
-// and finding templates, where an empty path restores the built-in one.
+// go inline, the repository files that replace the built-in summary
+// and finding templates, where an empty path restores the built-in one,
+// and whether the comments carry the dashboard's URL, which only the
+// admin decides.
 type CommentsSpec struct {
-	Inline  *bool   `yaml:"inline,omitempty"`
-	Summary *string `yaml:"summary,omitempty"`
-	Finding *string `yaml:"finding,omitempty"`
+	Inline    *bool   `yaml:"inline,omitempty"`
+	Summary   *string `yaml:"summary,omitempty"`
+	Finding   *string `yaml:"finding,omitempty"`
+	Dashboard *bool   `yaml:"dashboard,omitempty"`
 }
 
 // Referenced lists the repository paths the block names whose contents a

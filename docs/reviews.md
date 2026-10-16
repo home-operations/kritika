@@ -78,7 +78,9 @@ unless `comments.inline` is off; the summary lists every finding.
 
 A finding's severity, `p0`, `p1` or `p2`, leads its comment as a badge,
 an image the dashboard serves under `config.webUrl`, so the forge must
-reach it; without a web URL the badge is the label in text. The
+reach it; where the admin turns
+[`comments.dashboard`](configuration.md#what-only-the-admin-sets) off, the
+badge is the label in text. The
 dashboard's `severity:` filter, the API and `kritika_findings_total`
 carry the same names:
 
@@ -130,7 +132,9 @@ From the top, each part shown only when it has something to say:
    `review.cost` on.
 
 The re-run badge at the top opens the pull request's page on the
-dashboard. A repository can replace the comment with its own template
+dashboard. Where `comments.dashboard` is off the summary has none, and
+`@<bot> review` re-runs instead ([commands](#commands)). A repository can
+replace the comment with its own template
 ([`comments.summary`](repository-config.md#comment-templates)).
 
 Merge impact needs no configuration. It appears only when the review

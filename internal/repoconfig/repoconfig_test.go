@@ -27,6 +27,7 @@ func TestParse_Invalid(t *testing.T) {
 		{"a single filter expression", "trigger:\n  filterExpr: \"true\"\n"},
 		{"forks are the admin's to exclude", "trigger:\n  forks: false\n"},
 		{"cost is the admin's to show", "review:\n  cost: true\n"},
+		{"the dashboard is the admin's to show", "comments:\n  dashboard: true\n"},
 		{"absolute rule file", "rules: [{ id: a, file: /etc/passwd }]\n"},
 		{"rule file escapes repo", "rules: [{ id: a, file: ../x }]\n"},
 		{"rule with both a rule and a file", "rules: [{ id: a, rule: Check., file: x.md }]\n"},

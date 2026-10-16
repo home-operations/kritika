@@ -54,6 +54,7 @@
         "inline": ""
       },
       "inlineComments": true,
+      "dashboard": true,
       "approve": false,
       "diagram": false,
       "cost": false,
@@ -148,6 +149,7 @@
           "inline": ""
         },
         "inlineComments": true,
+        "dashboard": true,
         "approve": false,
         "diagram": false,
         "cost": false,

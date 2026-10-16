@@ -241,6 +241,7 @@ export interface ReviewBlock {
   requireSuggestedFix: boolean;
   templates: { summary?: string; inline?: string };
   inlineComments: boolean;
+  dashboard: boolean;
   approve: boolean;
   diagram: boolean;
   cost: boolean;

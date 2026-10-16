@@ -77,7 +77,7 @@ A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
 review's summary says which field was dropped and what it may be, and the
 rest of the file still applies. `agent`,
-`trigger.limit`, `review.incremental`, `review.cost`,
+`trigger.limit`, `review.incremental`, `review.cost`, `comments.dashboard`,
 `confidence.instructions` and `limits` are the admin's alone; a file
 naming one of them, or any other unknown key, does not parse.
 
@@ -336,7 +336,7 @@ The summary template's dot is the review:
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
 | `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`                     |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                     |
-| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its re-run badge points |
+| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its re-run badge points; both "" when the admin's `comments.dashboard` is off |
 
 The inline template's dot is one finding, with the dashboard's origin
 beside it:
@@ -345,7 +345,7 @@ beside it:
 | ---------------------------- | ---------------------------------------------------------------- |
 | `.Path`, `.Line`, `.EndLine` | where it is                                                      |
 | `.Severity`, `.Category`     | how much it matters, and what kind of problem it is; `.Severity.Label` is its badge text, P0 to P2, and `.Severity.Badge .WebURL` the badge image, or the label in bold without a dashboard |
-| `.WebURL`                    | the dashboard's origin, "" when it has no public URL             |
+| `.WebURL`                    | the dashboard's origin, "" when the admin's `comments.dashboard` is off |
 | `.Title`, `.Explanation`     | what it is                                                       |
 | `.SuggestedFix`              | the fix, in prose                                                |
 | `.Replacement`               | the lines that replace the finding's, for a one-click suggestion |

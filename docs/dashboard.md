@@ -14,7 +14,9 @@ resync the repositories from GitHub, or uninstall an App from an account
 it does not serve ([actions](#actions)). Everything else is set in the
 [configuration file](configuration.md), which the dashboard shows but does
 not change. A review's summary comment carries a re-run badge that opens
-the pull request's page here.
+the pull request's page here, unless the admin keeps the dashboard out of
+the repository's comments
+([`comments.dashboard`](configuration.md#what-only-the-admin-sets)).
 
 ## Navigation
 

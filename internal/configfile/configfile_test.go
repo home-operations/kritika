@@ -809,8 +809,8 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	})
 }
 
-// TestReviewPresentation checks every finding goes inline unless a scope
-// turns inline comments off.
+// TestReviewPresentation checks every finding goes inline, and the comments
+// carry the dashboard's URL, unless a scope turns either off.
 func TestReviewPresentation(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -823,8 +823,15 @@ func TestReviewPresentation(t *testing.T) {
 		return f
 	}
 	f := parse(t, "", "  acme/x: {}\n")
-	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments {
-		t.Fatalf("review = %+v, want every finding inline", s.Review)
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments || !s.Review.Dashboard {
+		t.Fatalf("review = %+v, want every finding inline and the dashboard in the comments", s.Review)
+	}
+	f = parse(t, "comments: { dashboard: false }", "  acme/x: { comments: { dashboard: true } }\n  acme/y: {}\n")
+	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.Dashboard {
+		t.Fatalf("review = %+v, want the repository's dashboard over the account's", s.Review)
+	}
+	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.Dashboard || !s.Review.InlineComments {
+		t.Fatalf("review = %+v, want the account's dashboard off and inline comments left on", s.Review)
 	}
 	f = parse(t, "comments: { inline: false }", "  acme/x: { comments: { inline: true } }\n  acme/y: {}\n")
 	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments {
