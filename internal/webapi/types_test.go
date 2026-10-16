@@ -70,7 +70,7 @@ var goldenRepoSettings = RepoSettings{
 	},
 	Review: configfile.Review{
 		RequireSuggestedFix: true,
-		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true,
+		Templates:           configfile.ReviewTemplates{Summary: "docs/summary.tmpl"}, InlineComments: true, Dashboard: true,
 		Context: []configfile.ContextFile{{Path: "db/schema.sql", Description: "the schema", Paths: []string{"**/*.sql"}}},
 	},
 	Agent: configfile.AgentSettings{

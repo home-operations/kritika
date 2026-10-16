@@ -36,12 +36,13 @@ func TestSpecValue(t *testing.T) {
 func TestSources(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, "trigger: { limit: 2 }\nagent: { steps: 9 }\n"+
-		acme("  acme/*: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }\n  acme/x: { trigger: { limit: 0, include: [{ expr: \"true\" }] } }\n"))
+	f := mustLoad(t, "trigger: { limit: 2 }\nagent: { steps: 9 }\ncomments: { dashboard: false }\n"+
+		acme("  acme/*: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }\n  acme/x: { trigger: { limit: 0, include: [{ expr: \"true\" }] }, comments: { inline: false } }\n"))
 	s := f.Sources(&f.Accounts[0], "acme/x")
 	for key, want := range map[string]Source{
 		"trigger.limit": SourceAccount, "trigger.exclude": SourceAccount, "agent.steps": SourceDefaults, "enabled": SourceDefault, "trigger.include": SourceAccount,
 		"agent.tokens": SourceDefault, "agent.prompt": SourceDefault, "review.model": SourceDefault, "ignore": SourceDefault,
+		"comments": SourceAccount, "comments.dashboard": SourceDefaults,
 	} {
 		if s[key] != want {
 			t.Errorf("%s from %s, want %s", key, s[key], want)

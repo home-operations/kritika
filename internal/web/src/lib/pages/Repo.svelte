@@ -86,6 +86,7 @@
     { label: 'Skill scopes', key: 'skills.scope', value: (s) => scopes(s.skills.scope), mono: true },
     { label: 'Require suggested fix', key: 'review.fixes', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
+    { label: 'Dashboard in comments', key: 'comments.dashboard', value: (s) => yes(s.review.dashboard) },
     { label: 'Approve', key: 'review.approve', value: (s) => yes(s.review.approve) },
     { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Cost in footer', key: 'review.cost', value: (s) => yes(s.review.cost) },

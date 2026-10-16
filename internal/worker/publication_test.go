@@ -1,0 +1,49 @@
+package worker
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/home-operations/kritika/internal/configfile"
+)
+
+// TestRestoreDashboard: a resumed publication takes comments.dashboard from
+// the configuration it resumes under, for its repository, whatever it was
+// saved with.
+func TestRestoreDashboard(t *testing.T) {
+	t.Parallel()
+	off := configfile.Overrides{Comments: configfile.CommentsSpec{Dashboard: new(false)}}
+	tests := []struct {
+		name    string
+		saved   bool
+		file    *configfile.File
+		entries []configfile.Repository
+		want    bool
+	}{
+		{name: "saved on, now off", saved: true, file: &configfile.File{Defaults: configfile.Defaults{Overrides: off}}},
+		{name: "saved off, now on", file: &configfile.File{}, want: true},
+		{name: "now off for its repository", saved: true, file: &configfile.File{},
+			entries: []configfile.Repository{{Name: "x", Overrides: off}}},
+		{name: "now off for another repository", saved: true, file: &configfile.File{},
+			entries: []configfile.Repository{{Name: "y", Overrides: off}}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			payload, err := json.Marshal(publicationSnapshot{Version: 1, Review: configfile.Review{InlineComments: true, Dashboard: tt.saved}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := &publishPhase{
+				file: tt.file, account: &configfile.Account{Forge: configfile.ForgeGitHub, Name: "acme", Repositories: tt.entries},
+				pr: &pullRequest{repository: "acme/x"},
+			}
+			if _, err := p.restore(payload); err != nil {
+				t.Fatal(err)
+			}
+			if got := p.settings.Review; got.Dashboard != tt.want || !got.InlineComments {
+				t.Fatalf("review = %+v, want dashboard %v and the rest as saved", got, tt.want)
+			}
+		})
+	}
+}

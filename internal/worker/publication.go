@@ -141,6 +141,11 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	}
 	p.settings = configfile.Settings{Review: s.Review, Confidence: s.ConfidenceRule,
 		Models: configfile.Models{Effort: s.Effort}, MaxAutoReviews: s.MaxAutoReviews}
+	// Whether the comments carry the dashboard's URL follows the
+	// configuration the publication resumes under, not the one it was saved
+	// with: the restart that turned comments.dashboard off may be what
+	// interrupted it.
+	p.settings.Review.Dashboard = p.file.Settings(p.account, p.pr.repository).Review.Dashboard
 	p.templates, p.scope, p.trigger = s.Templates, s.Scope, s.Trigger
 	if p.pr.closed == "" {
 		p.pr.closed = s.Closed

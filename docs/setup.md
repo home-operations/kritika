@@ -87,7 +87,10 @@ shows, with:
 - **`config.webUrl`**, the one public URL. The dashboard is served at it,
   and GitHub delivers each App's webhook under it, to `/hooks/<app name>`,
   both from one port. The chart's `ingress` or `httpRoute` routes the URL
-  there; nothing else needs to be public.
+  there; nothing else needs to be public. Review comments link to it and
+  load their badges from it, so a public repository's comments show its
+  host unless [`comments.dashboard`](configuration.md#what-only-the-admin-sets)
+  is off.
 - **A way to sign in:** `config.auth.admin.password: { env: ADMIN_PASSWORD }`, backed by an existing
   Secret through `env.ADMIN_PASSWORD`, for the local admin, or OIDC or GitHub with a role mapping that
   makes someone an admin ([`auth`](configuration.md#auth)). For GitHub

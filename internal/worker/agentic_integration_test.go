@@ -2256,7 +2256,7 @@ func checkAgentReadsSkill(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
-	if !strings.Contains(sticky, "· 1/1 skills</summary>\n\n- **Skills read:** `review-go`\n") {
+	if !strings.Contains(sticky, " · 1/1 skills") || !strings.Contains(sticky, "\n- **Skills read:** `review-go`\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }
@@ -2301,7 +2301,7 @@ func checkAgentLoadsSkill(t *testing.T, h *agenticHarness) {
 		strings.Contains(system, "- review-go:") {
 		t.Fatalf("system prompt does not end with the skill given whole:\n%s", system)
 	}
-	if !strings.Contains(sticky, "· 1/1 skills</summary>\n\n- **Skills read:** `review-go`\n") {
+	if !strings.Contains(sticky, " · 1/1 skills") || !strings.Contains(sticky, "\n- **Skills read:** `review-go`\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }
