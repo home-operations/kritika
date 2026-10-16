@@ -1,3 +1,18 @@
+{{- /* A namespace and pod labels, networkPolicy.dns's or .postgres's with the
+namespace filled in, as Cilium's matchLabels and as a Calico selector. */}}
+{{- define "kritika.ciliumLabels" -}}
+k8s:io.kubernetes.pod.namespace: {{ .namespace | quote }}
+{{- range $key, $value := .podSelector }}
+{{ $key | quote }}: {{ $value | quote }}
+{{- end }}
+{{- end -}}
+{{- define "kritika.calicoSelector" -}}
+{{- $labels := list }}
+{{- range $key, $value := . }}
+{{- $labels = append $labels (printf "%s == '%s'" $key $value) }}
+{{- end }}
+{{- join " && " $labels | default "all()" }}
+{{- end -}}
 {{- /* DNS egress to the cluster's DNS alone, as networkPolicy.dns describes
 it, in each flavor: kritika.dnsEgress and kritika.calicoDNSEgress take
 networkPolicy.dns, kritika.ciliumDNSEgress a dict of it as dns and of the
@@ -26,10 +41,7 @@ names the pods may look up as names, any name when there are none. */}}
 {{- define "kritika.ciliumDNSEgress" -}}
 - toEndpoints:
     - matchLabels:
-        k8s:io.kubernetes.pod.namespace: {{ .dns.namespace | quote }}
-        {{- range $key, $value := .dns.podSelector }}
-        {{ $key | quote }}: {{ $value | quote }}
-        {{- end }}
+        {{- include "kritika.ciliumLabels" .dns | nindent 8 }}
   toPorts:
     {{- include "kritika.ciliumDNSPorts" .names | nindent 4 }}
 {{- /* Cilium gives the node's own addresses, a NodeLocal DNSCache's among
@@ -56,16 +68,12 @@ them, the host's identity, which no CIDR selects. */}}
   {{- end }}
 {{- end -}}
 {{- define "kritika.calicoDNSEgress" -}}
-{{- $labels := list }}
-{{- range $key, $value := .podSelector }}
-{{- $labels = append $labels (printf "%s == '%s'" $key $value) }}
-{{- end }}
 {{- range $protocol := list "UDP" "TCP" }}
 - action: Allow
   protocol: {{ $protocol }}
   destination:
     namespaceSelector: {{ printf "kubernetes.io/metadata.name == '%s'" $.namespace | quote }}
-    selector: {{ join " && " $labels | default "all()" | quote }}
+    selector: {{ include "kritika.calicoSelector" $.podSelector | quote }}
     ports:
       - 53
 {{- /* One rule an address: a rule's nets may not mix IPv4 and IPv6. */}}
@@ -86,11 +94,13 @@ them, the host's identity, which no CIDR selects. */}}
 {{- $metrics := int .Values.service.metricsPort }}
 {{- $gateway := int .Values.service.gatewayPort }}
 {{- $postgres := int $np.postgresPort }}
-{{- /* Runner pods reach the outside through the gateway alone. */}}
-{{- $runnerPorts := list $postgres }}
 {{- $serverPorts := concat $np.egressPorts (list $postgres) }}
 {{- $serverSelector := printf "app.kubernetes.io/name == '%s' && app.kubernetes.io/instance == '%s'" (include "kritika.name" .) .Release.Name }}
 {{- $dns := dict "namespace" $np.dns.namespace "podSelector" ($np.dns.podSelector | default (dict "k8s-app" "kube-dns")) "nodeLocalAddresses" $np.dns.nodeLocalAddresses }}
+{{- $pg := $np.postgres }}
+{{- $pgPods := dict "namespace" ($pg.namespace | default .Release.Namespace) "podSelector" $pg.podSelector }}
+{{- /* The database's pods are a peer unless cidrs alone say where it is. */}}
+{{- $pgPeer := or $pg.podSelector $pg.namespace (not $pg.cidrs) }}
 {{- if eq $np.type "default" }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -138,9 +148,9 @@ spec:
         - port: 6443
           protocol: TCP
 ---
-# Runner pods: no ingress at all; egress to DNS, Postgres and the gateway
-# port on the server pods, through which the git remote, the model and
-# similar-code endpoints and every allowed host are reached.
+# Runner pods: no ingress at all; egress to the cluster's DNS, the database
+# and the gateway port on the server pods, through which the git remote, the
+# model and similar-code endpoints and every allowed host are reached.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -160,11 +170,22 @@ spec:
     {{- if $np.allowDNS }}
     {{- include "kritika.dnsEgress" $dns | nindent 4 }}
     {{- end }}
-    - ports:
-        {{- range $runnerPorts }}
-        - port: {{ . }}
-          protocol: TCP
+    - to:
+        {{- if $pgPeer }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $pgPods.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $pgPods.podSelector | nindent 14 }}
         {{- end }}
+        {{- range $pg.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ $postgres }}
+          protocol: TCP
     - to:
         - podSelector:
             matchLabels:
@@ -245,15 +266,23 @@ spec:
     {{- $names := prepend $np.dns.runnerNames "*.*.svc.cluster.local" }}
     {{- include "kritika.ciliumDNSEgress" (dict "dns" $dns "names" $names) | nindent 4 }}
     {{- end }}
-    - toEntities:
-        - cluster
-        - world
+    {{- if $pgPeer }}
+    - toEndpoints:
+        - matchLabels:
+            {{- include "kritika.ciliumLabels" $pgPods | nindent 12 }}
       toPorts:
         - ports:
-            {{- range $runnerPorts }}
-            - port: {{ . | quote }}
+            - port: {{ $postgres | quote }}
               protocol: TCP
-            {{- end }}
+    {{- end }}
+    {{- with $pg.cidrs }}
+    - toCIDR:
+        {{- toYaml . | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $postgres | quote }}
+              protocol: TCP
+    {{- end }}
     - toEndpoints:
         - matchLabels:
             {{- include "kritika.selectorLabels" . | nindent 12 }}
@@ -324,13 +353,25 @@ spec:
     {{- if $np.allowDNS }}
     {{- include "kritika.calicoDNSEgress" $dns | nindent 4 }}
     {{- end }}
+    {{- if $pgPeer }}
     - action: Allow
       protocol: TCP
       destination:
+        namespaceSelector: {{ printf "kubernetes.io/metadata.name == '%s'" $pgPods.namespace | quote }}
+        selector: {{ include "kritika.calicoSelector" $pgPods.podSelector | quote }}
         ports:
-          {{- range $runnerPorts }}
-          - {{ . }}
-          {{- end }}
+          - {{ $postgres }}
+    {{- end }}
+    {{- /* One rule a CIDR: a rule's nets may not mix IPv4 and IPv6. */}}
+    {{- range $pg.cidrs }}
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - {{ . | quote }}
+        ports:
+          - {{ $postgres }}
+    {{- end }}
     - action: Allow
       protocol: TCP
       destination:

@@ -136,7 +136,8 @@ Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
 - With `networkPolicy.enabled`, a runner pod reaches nothing but the
-  cluster's DNS, Postgres and the egress gateway kritika serve runs on
+  cluster's DNS, the database `networkPolicy.postgres` locates and the
+  egress gateway kritika serve runs on
   `service.gatewayPort`, which allows what the configuration file's
   `egress` lists and is the runner's only way to its model. With the
   Cilium flavor, it may look up only the names of the cluster's Services
@@ -287,6 +288,9 @@ Kubernetes: `>=1.25.0-0`
 | networkPolicy.dns.runnerNames | list | `[]` | With the Cilium flavor, the names runner pods may look up besides those of the cluster's Services, `<service>.<namespace>.svc.cluster.local`, which the cluster's DNS answers itself (an ExternalName Service's goes on to the name its author set): the database's host when it is outside the cluster. Each is a name, or a Cilium `matchPattern` in which `*` stands for part of one label. Cilium refuses any other name; the other flavors do not filter names. |
 | networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
 | networkPolicy.enabled | bool | `false` | Create the NetworkPolicies. |
+| networkPolicy.postgres.cidrs | list | `[]` | CIDRs of a database outside the cluster, such as `192.0.2.10/32`. |
+| networkPolicy.postgres.namespace | string | `""` | Namespace of the database's pods; the release namespace when empty. |
+| networkPolicy.postgres.podSelector | object | `{}` | Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set. |
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |
 | networkPolicy.type | string | `"default"` | Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy). |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |

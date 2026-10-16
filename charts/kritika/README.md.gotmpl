@@ -141,7 +141,8 @@ Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
 - With `networkPolicy.enabled`, a runner pod reaches nothing but the
-  cluster's DNS, Postgres and the egress gateway kritika serve runs on
+  cluster's DNS, the database `networkPolicy.postgres` locates and the
+  egress gateway kritika serve runs on
   `service.gatewayPort`, which allows what the configuration file's
   `egress` lists and is the runner's only way to its model. With the
   Cilium flavor, it may look up only the names of the cluster's Services
