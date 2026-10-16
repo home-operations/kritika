@@ -163,6 +163,17 @@ to `runner.mise.urlReplacements`. The runner image declares its six tools
 itself, so they stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 
+### Migrating NetworkPolicies
+
+With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
+Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
+its pods are not `k8s-app: kube-dns` in `kube-system`, and list a NodeLocal
+DNSCache's address in `networkPolicy.dns.nodeLocalAddresses`. With the
+Cilium flavor, runner pods may look up only the cluster's Service names
+and those `networkPolicy.dns.runnerNames` lists: add the host of a
+database outside the cluster, or runs cannot look it up. See
+[name lookups](https://kritika.home-operations.com/security/#name-lookups).
+
 ### Topology
 
 The chart runs one Deployment of `kritika serve`, one replica by default.
