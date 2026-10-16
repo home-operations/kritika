@@ -123,8 +123,7 @@ by the access it adds or removes in effect, not by the size of the edit. Grantin
 have it, by binding them to a role or by widening a role they hold, rates at least high, and critical when the access
 is administrative, reaches secrets or production data, or cannot be quickly reverted. A revert that removes the grant
 lowers nothing: the access was held until then. A rename, or a replacement that leaves what each principal may do
-unchanged, grants nothing. Narrowing or removing access rates by what it breaks; removing the access a revert would
-need is an outage a revert does not quickly fix.
+unchanged, grants nothing. Narrowing or removing access rates by what it breaks.
 
 A dependency update rates by what the dependency does and how far its version moves, not as a class of its own.
 Call a dependency standalone when nothing else depends on it, shared when other things do, and central when much

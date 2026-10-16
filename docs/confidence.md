@@ -109,8 +109,7 @@ administrative, reaches secrets or production data, or cannot be quickly
 reverted. A revert that removes the grant lowers nothing: the access was
 held until then. A rename, or a replacement that leaves what each
 principal may do unchanged, grants nothing. Narrowing or removing access
-rates by what it breaks; removing the access a revert would need is an
-outage a revert does not quickly fix.
+rates by what it breaks.
 
 A dependency update is rated by what the dependency does and how far its
 version moves, not as a class of its own:
