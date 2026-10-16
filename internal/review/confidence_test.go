@@ -168,8 +168,9 @@ func TestConfidenceSystemConcerns(t *testing.T) {
 		"a prerequisite for merging that is unmet or that nothing in the description or the account shows was met",
 		"their silence about a changed line is no sign that the review skipped it",
 		"neither is a step the description sets for a release that comes after the merge",
-		"Granting a role, permission or membership to principals that did not have it rates at least high",
-		"A revert that removes the grant does not bring it below high",
+		"Granting access to principals that did not have it, by binding them to a role or by widening a role they hold, rates at least high",
+		"critical when the access is administrative, reaches secrets or production data, or cannot be quickly reverted",
+		"A revert that removes the grant lowers nothing",
 	} {
 		t.Run(rule, func(t *testing.T) {
 			if !strings.Contains(system, rule) {

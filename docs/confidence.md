@@ -98,17 +98,19 @@ there is rated by what it can do there, not by the area it touches:
 | `low`      | nothing that matters: documentation, tests, formatting, comments, and small changes that leave behavior alone                                   |
 | `medium`   | a routine change that a revert undoes, such as ordinary application logic or a single setting                                                   |
 | `high`     | a breaking or major change to something much else depends on                                                                                    |
-| `critical` | lose or corrupt data, delete managed resources or secrets, widen administrative access, expose a secret, or cause an outage that a revert does not quickly fix |
+| `critical` | cause an outage a revert does not quickly fix, or lose or corrupt data, delete managed resources or secrets, widen administrative access, or expose a secret |
 
-A change to who or what may do something, a role, grant, permission,
-policy or group membership, is rated by the access it hands out, not by
-the size of the edit. Granting a role, permission or membership to
-principals that did not have it rates at least `high`, and `critical` when
-the role is administrative, reaches secrets or production data, or the
-grant cannot be quickly reverted. A revert that removes the grant does not
-bring it below `high`: the access was held until then. Narrowing or
-removing access rates by what it breaks; locking out the only
-administrator is an outage a revert does not quickly fix.
+A change to who or what may do something, a role, its rules, a grant,
+permission, policy or group membership, is rated by the access it adds or
+removes in effect, not by the size of the edit. Granting access to
+principals that did not have it, by binding them to a role or by widening
+a role they hold, rates at least `high`, and `critical` when the access is
+administrative, reaches secrets or production data, or cannot be quickly
+reverted. A revert that removes the grant lowers nothing: the access was
+held until then. A rename, or a replacement that leaves what each
+principal may do unchanged, grants nothing. Narrowing or removing access
+rates by what it breaks; removing the access a revert would need is an
+outage a revert does not quickly fix.
 
 A dependency update is rated by what the dependency does and how far its
 version moves, not as a class of its own:
