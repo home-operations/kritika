@@ -9,15 +9,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
-// ReviewPullRequest is a pull request as a review or follow-up job reads
-// it, with what is known of its repository, which its settings resolve by.
 type ReviewPullRequest struct {
 	ID, RepositoryID, Repository    string
-	Traits                          configfile.RepoTraits
 	Number                          int
 	HeadSHA, BaseRef, Title, Author string
 	AuthorIsBot                     bool
@@ -27,12 +23,12 @@ type ReviewPullRequest struct {
 
 func FindReviewPullRequest(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (ReviewPullRequest, error) {
 	var pr ReviewPullRequest
-	err := tx.QueryRow(ctx, `SELECT p.id, p.repository_id, r.name, r.archived, r.fork, r.visibility, r.turned_on,
-		p.number, p.head_sha, p.base_ref, p.title, p.author, p.author_is_bot, p.state, p.merged
+	err := tx.QueryRow(ctx, `SELECT p.id, p.repository_id, r.name, p.number, p.head_sha, p.base_ref, p.title, p.author,
+		p.author_is_bot, p.state, p.merged
 		FROM pull_requests p JOIN repositories r ON r.id = p.repository_id
 		WHERE p.repository_id = $1 AND p.number = $2`, repositoryID, number).
-		Scan(&pr.ID, &pr.RepositoryID, &pr.Repository, &pr.Traits.Archived, &pr.Traits.Fork, &pr.Traits.Visibility, &pr.Traits.TurnedOn,
-			&pr.Number, &pr.HeadSHA, &pr.BaseRef, &pr.Title, &pr.Author, &pr.AuthorIsBot, &pr.State, &pr.Merged)
+		Scan(&pr.ID, &pr.RepositoryID, &pr.Repository, &pr.Number, &pr.HeadSHA, &pr.BaseRef, &pr.Title, &pr.Author,
+			&pr.AuthorIsBot, &pr.State, &pr.Merged)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pr, ErrNotFound
 	}

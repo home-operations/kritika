@@ -30,12 +30,11 @@ type UnpricedModel struct {
 }
 
 // UnpricedModels lists the review, fallback and confidence models of the
-// file's own settings, its visibility entries and every account's entries
-// whose provider's API reports no cost, as anthropic's and openai's do
-// not, and whose pricing has no price under the model as written: its id,
-// or the floating alias that prices whatever model it selects. A
-// repository's .kritika.yaml is read only when it is reviewed, so its
-// models are not listed.
+// file's own settings and of every account's entries whose provider's API
+// reports no cost, as anthropic's and openai's do not, and whose pricing
+// has no price under the model as written: its id, or the floating alias
+// that prices whatever model it selects. A repository's .kritika.yaml is
+// read only when it is reviewed, so its models are not listed.
 func (f *File) UnpricedModels() []UnpricedModel {
 	var out []UnpricedModel
 	check := func(where string, t *Account, r *Overrides) {
@@ -59,9 +58,6 @@ func (f *File) UnpricedModels() []UnpricedModel {
 		}
 	}
 	check("", nil, &f.Defaults.Overrides)
-	for _, key := range slices.Sorted(maps.Keys(f.Visibility)) {
-		check("visibility."+key+".", nil, f.Visibility[key])
-	}
 	for i := range f.Accounts {
 		a := &f.Accounts[i]
 		if a.pattern != "" {

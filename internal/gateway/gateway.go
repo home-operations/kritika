@@ -284,7 +284,7 @@ func (g *Server) admit(w http.ResponseWriter, r *http.Request) (runCall, bool) {
 	}
 	logger := g.Logger.With("account", account.Key(), "run", review.ShortSHA(grant.RunID))
 	// A step spends tokens, not a review, so only the month's cap applies.
-	limits := file.Settings(account, "", configfile.RepoTraits{}).Limits
+	limits := file.Settings(account, "").Limits
 	capped, err := g.Store.CapReached(ctx, account.ID(), configfile.Limits{TokensPerMonth: limits.TokensPerMonth})
 	if err != nil {
 		logger.Error("gateway: caps not read", "error", err)

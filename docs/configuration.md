@@ -273,11 +273,9 @@ embedding:
 ## Repository settings and `repositories`
 
 The repository settings are written at the file's root and apply to every
-repository, and two maps hold the entries that change them for some:
-`visibility` has an entry for the `public`, `private` or `internal`
-repositories, as GitHub reports each, and `repositories` has `owner/*` for
-every repository of an account and `owner/name` for one. They come in five
-groups, with a few keys beside them:
+repository, and `repositories` holds the entries that change them for
+some: `owner/*` for every repository of an account, and `owner/name` for
+one. They come in five groups, with a few keys beside them:
 
 | Group        | Keys                                                                                | What they set                              |
 | ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -345,7 +343,7 @@ describes, and these, which are the admin's alone:
 | `trigger.limit`           | how many automatic reviews a pull request gets before kritika pauses them, so a long-lived pull request stops spending on every push; unlimited unless set. The summary of the last one says so, and `@<app slug> review` and `resume` still work ([commands](reviews.md#commands)) |
 | `agent`                   | the bounds of a review's tool loop ([the agent](#the-agent))                                                                                                                                                                                                                        |
 | `limits`                  | at the root alone: every account's limits ([`accounts`](#accounts))                                                                                                                                                                                                                 |
-| `enabled`                 | at the root, in a `visibility` entry and in `owner/*` only: the default for existing or explicitly listed repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
+| `enabled`                 | at the root and `owner/*` only: the default for existing or explicitly listed repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
 
 A repository adds tools of its own through
 [`.kritika/mise.toml`](repository-config.md#repository-tools); it cannot
@@ -359,12 +357,11 @@ cancels the pull request's older active reviews
 
 ### Precedence
 
-A value applies in this order: kritika's default, the file's root, the
-`visibility` entry for the repository's visibility, `owner/*`,
-`owner/name`, and the repository's `.kritika.yaml`. A narrower value
-replaces the broader one's, except:
+A value applies in this order: kritika's default, the file's root,
+`owner/*`, `owner/name`, and the repository's `.kritika.yaml`. A narrower
+value replaces the broader one's, except:
 
-| Key                                  | Across the root, `visibility`, `owner/*` and `owner/name`                | From a `.kritika.yaml`                                            |
+| Key                                  | Across the root, `owner/*` and `owner/name`                              | From a `.kritika.yaml`                                            |
 | ------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `ignore`                             | globs add up                                                             | globs add up                                                      |
 | `rules`                              | add up by id                                                             | added; a rule under an admin's id is dropped                      |
@@ -375,21 +372,6 @@ replaces the broader one's, except:
 | `review.fixes`                       | replaces                                                                 | can only turn it on                                               |
 | `confidence.risk`                    | replaces                                                                 | can only lower it                                                 |
 | `enabled`                            | replaces                                                                 | can only turn it off                                              |
-
-A `visibility` entry applies to every repository GitHub reports with that
-visibility, on every account, and follows a repository made public or
-private as soon as the webhook or the next listing says so. Until GitHub
-has said what a repository is, none applies. An entry takes the keys an
-`owner/*` entry takes:
-
-```yaml
-visibility:
-  public:
-    review: { cost: false }
-    trigger:
-      exclude:
-        - { name: forks, expr: pr.fork }
-```
 
 ### Confidence and risk
 
@@ -632,13 +614,12 @@ Whether one runs is decided in this order:
    one an admin turned on or off on the Repositories page runs as they chose;
 3. a fork does not run, since an account can reach many forks it never
    meant to review;
-4. any other runs as `enabled` says, at the root, in its `visibility`
-   entry or in `owner/*`: on unless one sets `enabled: false`.
+4. any other runs as `enabled` says, at the root or `owner/*`: on unless
+   one sets `enabled: false`.
 
 An `owner/name` entry may not set `enabled`: the dashboard owns a
-repository's on or off. The root, `visibility` and `owner/*` defaults apply
-only to existing or explicitly listed repositories without a dashboard
-choice.
+repository's on or off. The root and `owner/*` defaults apply only to
+existing or explicitly listed repositories without a dashboard choice.
 A repository that is off, that the App no longer reaches, or whose account
 no App serves is neither reviewed, polled nor indexed. Its index is
 dropped once it has been off for `KRITIKA_INDEX_GRACE`, counted from the

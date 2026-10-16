@@ -132,11 +132,11 @@ func (s *Service) pullRequest(ctx context.Context, req Request) (Outcome, error)
 		}
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
-	runs, traits, err := s.registerAndCheckRepository(ctx, req)
+	settings := req.File.Settings(req.Account, ev.Repository.FullName)
+	runs, err := s.registerAndCheckRepository(ctx, req)
 	if err != nil {
 		return Outcome{}, err
 	}
-	settings := req.File.Settings(req.Account, ev.Repository.FullName, traits)
 	// The filter says what is reviewed, not what is recorded: an action
 	// that records only is not judged by it, or a draft's edit would leave
 	// the row behind under a filter that skips drafts. A label change it
@@ -299,7 +299,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
-	if runs, _, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
+	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "followup"}
@@ -339,7 +339,7 @@ func (s *Service) thread(ctx context.Context, req Request) (Outcome, error) {
 	if th.SenderIsBot {
 		return Outcome{Status: Skipped, Reason: "bot"}, nil
 	}
-	if runs, _, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
+	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "thread"}
@@ -374,7 +374,7 @@ func (s *Service) push(ctx context.Context, req Request) (Outcome, error) {
 	if ev.Push.After == "" || strings.Trim(ev.Push.After, "0") == "" {
 		return Outcome{Status: Skipped, Reason: "branch-deleted"}, nil
 	}
-	if runs, _, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
+	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
 		return Outcome{Status: Skipped, Reason: reasonDisabled}, err
 	}
 	out := Outcome{Status: Enqueued, Job: "index"}
@@ -510,14 +510,14 @@ func polled(action string) bool { return action == ActionPoll || action == Actio
 
 // registerAndCheckRepository discovers an unknown repository and records
 // what a webhook says of a known one, before the event is judged, so what
-// the forge says of a repository is kept whether or not its pull request
-// is. It reports whether the repository runs and what is now known of it,
-// which its settings resolve by: the webhook's report, with the known
-// visibility where the payload names none, and the dashboard's choice. A
-// synthetic event of the poller's carries the traits the store had when the
-// poll read them: it is judged by what the store knows now, and writes none
-// of them back, so a webhook recorded since is not undone.
-func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (bool, configfile.RepoTraits, error) {
+// the forge says of a repository is kept whether or not the event is acted
+// on. It reports whether the repository runs, as the store then knows it:
+// the webhook's report, with the known visibility where the payload names
+// none, and the dashboard's choice. A synthetic event of the poller's
+// carries the traits the store had when the poll read them: it is judged by
+// what the store knows now, and writes none of them back, so a webhook
+// recorded since is not undone.
+func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (bool, error) {
 	repo := req.Event.Repository
 	reported := &repo.RepoTraits
 	if polled(req.Event.Action) {
@@ -537,9 +537,9 @@ func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (
 		return err
 	})
 	if err != nil {
-		return false, t, err
+		return false, err
 	}
-	return req.File.Runs(req.Account, repo.FullName, t), t, nil
+	return req.File.Runs(req.Account, repo.FullName, t), nil
 }
 
 func repoID(req Request, fullName string) string {

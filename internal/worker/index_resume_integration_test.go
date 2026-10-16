@@ -393,7 +393,7 @@ func workResumeAttempt(t *testing.T, w *Index, ctx context.Context, job *river.J
 func seedResumeBase(t *testing.T, st *store.Store, file *configfile.File, account *configfile.Account, repo, name string) {
 	t.Helper()
 	ctx := t.Context()
-	eff, _ := effective(file.Settings(account, name, configfile.RepoTraits{}), nil)
+	eff, _ := effective(file.Settings(account, name), nil)
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var run string
 		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status,ignore_hash)

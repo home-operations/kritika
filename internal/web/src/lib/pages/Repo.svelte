@@ -108,7 +108,6 @@
     env: 'environment',
     file: 'config file',
     defaults: 'instance',
-    visibility: 'visibility entry',
     account: 'account',
     repository: '.kritika.yaml',
   };

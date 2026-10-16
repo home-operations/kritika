@@ -147,7 +147,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	}
 	sum := AccountSummary{
 		Slug: t.Slug(), Repositories: stats.Repositories,
-		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "", configfile.RepoTraits{}).Limits),
+		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
 		Attention: attentionDTO(attention), LastPolledAt: polled,
 		ChatGPTEnabled: len(file.ChatGPTProviders(t)) > 0,
 	}
@@ -207,7 +207,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, "", configfile.RepoTraits{})
+	settings := t.file.Settings(t.account, "")
 	d := AccountDetail{
 		Slug:   t.account.Slug(),
 		Models: settings.Models, Limits: settings.Limits, Filters: settings.Filters,
@@ -309,10 +309,10 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, row.FullName, row.RepoTraits)
+	settings := t.file.Settings(t.account, row.FullName)
 	d := RepoDetail{
 		Repository: repository(row, t.file.Runs(t.account, row.FullName, row.RepoTraits)),
-		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName, row.RepoTraits),
+		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)

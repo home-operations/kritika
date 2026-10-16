@@ -54,9 +54,6 @@ type Review struct {
 type pullRequest struct {
 	id, repositoryID string
 	repository       string
-	// traits are what is known of its repository, which its settings
-	// resolve by.
-	traits           configfile.RepoTraits
 	number           int
 	headSHA, baseRef string
 	title, author    string
@@ -270,7 +267,7 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 	case row.State != "open":
 		closed = "the pull request is closed"
 	}
-	return &pullRequest{id: row.ID, repositoryID: row.RepositoryID, repository: row.Repository, traits: row.Traits, number: row.Number,
+	return &pullRequest{id: row.ID, repositoryID: row.RepositoryID, repository: row.Repository, number: row.Number,
 		headSHA: row.HeadSHA, baseRef: row.BaseRef, title: row.Title, author: row.Author,
 		authorIsBot: row.AuthorIsBot, closed: closed}, nil
 }
@@ -469,7 +466,7 @@ func (w *Review) begin(
 		logger.Info("review skipped before start", "reason", pr.closed)
 		return begun{}, true, w.end(ctx, e, store.ReviewSkipped, pr.closed)
 	}
-	settings := file.Settings(account, pr.repository, pr.traits)
+	settings := file.Settings(account, pr.repository)
 	if held, err := w.slotsHeld(ctx, e, job, account.ID(), settings); held {
 		return begun{}, true, err
 	}

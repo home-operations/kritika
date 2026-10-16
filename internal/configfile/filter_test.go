@@ -240,7 +240,7 @@ func TestFilterScopes(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Parse: %v", err)
 				}
-				s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{}).Filters
+				s := f.Settings(&f.Accounts[0], "acme/x").Filters
 				got, kept := s.Include, s.Exclude
 				if list == "exclude" {
 					got, kept = kept, got
@@ -253,7 +253,7 @@ func TestFilterScopes(t *testing.T) {
 					t.Fatalf("Skips: %v", err)
 				}
 				// A repository's conditions stay its own.
-				sibling := f.Settings(&f.Accounts[0], "acme/y", RepoTraits{}).Filters
+				sibling := f.Settings(&f.Accounts[0], "acme/y").Filters
 				if list == "exclude" {
 					sibling.Include = sibling.Exclude
 				}

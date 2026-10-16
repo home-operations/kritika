@@ -40,11 +40,11 @@ func TestFileInstanceDefaults(t *testing.T) {
 	if p, ok := f.Provider(a, "openrouter"); !ok || p.APIKeyValue().Value() != "sk-file" {
 		t.Fatalf("provider = %+v, %v; want the file's", p, ok)
 	}
-	s := f.Settings(a, "acme/x", RepoTraits{})
+	s := f.Settings(a, "acme/x")
 	if s.Models.Review != "openrouter/big" || s.Models.Fallback != "openrouter/small" {
 		t.Fatalf("models = %+v; want the file's", s.Models)
 	}
-	if src := f.Sources(a, "acme/x", RepoTraits{}); src["review.model"] != SourceDefaults || src["review.fallback"] != SourceDefaults {
+	if src := f.Sources(a, "acme/x"); src["review.model"] != SourceDefaults || src["review.fallback"] != SourceDefaults {
 		t.Fatalf("sources = %v; want the models from the defaults", src)
 	}
 	if f.Embedding == nil || f.Embedding.Model != "e1" || f.Embedding.APIKeyValue().Value() != "sk-file" || f.Embedding.BaseURL != "https://openrouter.ai/api/v1" {
@@ -97,13 +97,13 @@ func TestFileReviewDefaults(t *testing.T) {
 		"review: {model: openrouter/big, fallback: openrouter/small, effort: low, approve: true, fixes: true, cost: true, incremental: 7, diagram: true}", 1)
 	f := mustLoad(t, doc+"trigger: {limit: 3}\n")
 	a := &f.Accounts[0]
-	s := f.Settings(a, "acme/x", RepoTraits{})
+	s := f.Settings(a, "acme/x")
 	if s.MaxAutoReviews != 3 || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
 		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost {
 		t.Fatalf("settings = %+v", s)
 	}
 	for _, d := range f.FileLayer().Defaults {
-		if d.Source != SourceFile || f.Sources(a, "acme/x", RepoTraits{})[d.Key] != SourceDefaults {
+		if d.Source != SourceFile || f.Sources(a, "acme/x")[d.Key] != SourceDefaults {
 			t.Fatalf("source = %+v", d)
 		}
 	}
@@ -118,7 +118,7 @@ func TestConfidenceSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if c := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{}).Confidence; c != (Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
+	if c := f.Settings(&f.Accounts[0], "acme/x").Confidence; c != (Confidence{Threshold: DefaultConfidenceThreshold, Risk: review.RiskLow}) {
 		t.Fatalf("confidence = %+v; want no model, the provider's effort, the default threshold and the lowest risk", c)
 	}
 	for _, tt := range []struct{ name, doc, want string }{
@@ -157,11 +157,11 @@ repositories:
 		// An effort written empty leaves it to the provider.
 		"acme/y": {Fallback: "openrouter/judge-small", Threshold: 4, Gate: true, Risk: review.RiskMedium},
 	} {
-		if got := f.Settings(a, repo, RepoTraits{}).Confidence; got != want {
+		if got := f.Settings(a, repo).Confidence; got != want {
 			t.Errorf("confidence of %s = %+v, want %+v", repo, got, want)
 		}
 	}
-	if src := f.Sources(a, "acme/z", RepoTraits{}); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceDefaults ||
+	if src := f.Sources(a, "acme/z"); src["confidence.model"] != SourceDefaults || src["confidence.fallback"] != SourceDefaults ||
 		src["confidence.threshold"] != SourceDefaults || src["confidence.gate"] != SourceDefaults {
 		t.Fatalf("sources = %v", src)
 	}

@@ -66,13 +66,12 @@ func (a *Account) Repository(fullName string) *Repository {
 }
 
 // Settings resolves the effective settings for the repository fullName,
-// "owner/repo", of account a, known as t. Layers apply in one direction:
-// defaults, then the entry for the repository's visibility, if one exists,
-// then the account, then its entry for the repository, if one exists. A
+// "owner/repo", of account a. Layers apply in one direction: defaults, then
+// the account, then its entry for the repository, if one exists. A
 // repository the account does not list gets the account's settings, so it
 // is enabled unless the defaults or the account turn it off; an empty
-// fullName and zero traits give the account's settings alone.
-func (f *File) Settings(a *Account, fullName string, t RepoTraits) Settings {
+// fullName gives the account's settings alone.
+func (f *File) Settings(a *Account, fullName string) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      slices.Clone(DefaultIgnore),
@@ -85,9 +84,6 @@ func (f *File) Settings(a *Account, fullName string, t RepoTraits) Settings {
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
-	if v := f.Visibility[t.Visibility]; v != nil {
-		s.apply(v)
-	}
 	s.apply(&a.Overrides)
 	s.Limits = s.Limits.overlay(a.Limits)
 	if r := a.Repository(fullName); r != nil {
@@ -113,7 +109,7 @@ func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
 	case t.Fork:
 		return false
 	default:
-		return f.Settings(a, fullName, t).Enabled
+		return f.Settings(a, fullName).Enabled
 	}
 }
 
@@ -126,12 +122,10 @@ const (
 	SourceDefault Source = "default"
 	SourceEnv     Source = "env"
 	SourceFile    Source = "file"
-	// SourceDefaults is the file's own settings, at its root,
-	// SourceVisibility its entry for the repository's visibility, and
+	// SourceDefaults is the file's own settings, at its root, and
 	// SourceAccount an account's entry or one of its repository entries.
-	SourceDefaults   Source = "defaults"
-	SourceVisibility Source = "visibility"
-	SourceAccount    Source = "account"
+	SourceDefaults Source = "defaults"
+	SourceAccount  Source = "account"
 )
 
 // Sources says, for each setting the policy table lets an admin write,
@@ -139,16 +133,12 @@ const (
 // from: the narrowest scope that writes it, or the built-in default.
 // Ignore globs come from every scope; the narrowest that adds some is
 // given.
-func (f *File) Sources(a *Account, fullName string, t RepoTraits) map[string]Source {
+func (f *File) Sources(a *Account, fullName string) map[string]Source {
 	type scope struct {
 		spec   any
 		source Source
 	}
-	scopes := []scope{{&f.Defaults, SourceDefaults}}
-	if v := f.Visibility[t.Visibility]; v != nil {
-		scopes = append(scopes, scope{v, SourceVisibility})
-	}
-	scopes = append(scopes, scope{a, SourceAccount})
+	scopes := []scope{{&f.Defaults, SourceDefaults}, {a, SourceAccount}}
 	if r := a.Repository(fullName); r != nil {
 		scopes = append(scopes, scope{r, SourceAccount})
 	}

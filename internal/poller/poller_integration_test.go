@@ -276,6 +276,17 @@ func (f *tipForge) BranchTip(context.Context, string, string, string) (string, s
 	return f.tip, "main", nil
 }
 
+// recordingDispatcher records the events a poll dispatches.
+type recordingDispatcher struct {
+	ingest.Dispatcher
+	events []webhook.Event
+}
+
+func (d *recordingDispatcher) Dispatch(ctx context.Context, req ingest.Request) (ingest.Outcome, error) {
+	d.events = append(d.events, req.Event)
+	return d.Dispatcher.Dispatch(ctx, req)
+}
+
 // TestPollerIndexesAMovedDefaultBranch: a connection no webhook reaches
 // has its indexed repositories' default branches checked, and an index job
 // queued when one moved; one that webhooks reach does not.
@@ -333,7 +344,8 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 		return commits
 	}
 	tf := &tipForge{tip: "moved"}
-	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: tf}, Dispatcher: ingest.NewService(st, queue), Logger: logger}
+	dispatched := &recordingDispatcher{Dispatcher: ingest.NewService(st, queue)}
+	p := &Poller{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: tf}, Dispatcher: dispatched, Logger: logger}
 	poll := func() {
 		t.Helper()
 		if _, err := p.Poll(ctx, file, account, in); err != nil {
@@ -349,6 +361,17 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	poll()
 	if got := indexJobs(); len(got) != 1 || got[0] != "moved" {
 		t.Fatalf("index jobs = %v, want one at the moved tip", got)
+	}
+	// The push carries the traits the poll read, which ingest writes back
+	// only for a webhook's report, not a poll's.
+	var pushes []webhook.Event
+	for _, ev := range dispatched.events {
+		if ev.Kind == webhook.KindPush && ev.Repository.FullName == "onedr0p/home-ops" {
+			pushes = append(pushes, ev)
+		}
+	}
+	if len(pushes) != 1 || pushes[0].Action != ingest.ActionPoll {
+		t.Fatalf("pushes dispatched for onedr0p/home-ops = %+v, want one marked as the poll's", pushes)
 	}
 
 	if _, err := st.App().Exec(ctx, `DELETE FROM river_job WHERE kind = 'index'`); err != nil {

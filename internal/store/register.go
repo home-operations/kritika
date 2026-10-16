@@ -122,9 +122,7 @@ func ensureRepository(
 // which is what it returns. nil records nothing, for a report that only
 // repeats what the store already said. The row is written only when the
 // report changes it, so a pull request's every push does not stamp a known
-// repository; a report that confirms the row therefore does not shield it
-// from a listing taken before it. A repository not known returns
-// ErrNotFound.
+// repository. A repository not known returns ErrNotFound.
 func RepositoryTraits(ctx context.Context, tx pgx.Tx, id string, reported *configfile.RepoTraits) (configfile.RepoTraits, error) {
 	var known configfile.RepoTraits
 	if reported != nil {

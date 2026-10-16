@@ -177,13 +177,13 @@ type MonthUsage struct {
 // boundaries are the database's, as the worker's cap checks use.
 func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string, t configfile.RepoTraits) bool) (AccountStats, error) {
 	var s AccountStats
-	rows, err := tx.Query(ctx, `SELECT name, archived, fork, visibility, turned_on FROM repositories WHERE enabled`)
+	rows, err := tx.Query(ctx, `SELECT name, archived, fork, turned_on FROM repositories WHERE enabled`)
 	if err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
 	var name string
 	var t configfile.RepoTraits
-	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork, &t.Visibility, &t.TurnedOn}, func() error {
+	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork, &t.TurnedOn}, func() error {
 		if enabled(name, t) {
 			s.Repositories++
 		}

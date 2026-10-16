@@ -41,9 +41,7 @@ type fileDoc struct {
 	Egress    Egress                `yaml:"egress,omitempty"`
 	// Defaults are the repository settings written at the file's root.
 	Defaults Defaults `yaml:",inline"`
-	// Visibility holds the entries for the public, private and internal
-	// repositories, and Repositories the owner/* and owner/name entries.
-	Visibility   map[string]Overrides  `yaml:"visibility,omitempty"`
+	// Repositories are the owner/* and owner/name entries.
 	Repositories map[string]Overrides  `yaml:"repositories,omitempty"`
 	Accounts     map[string]accountDoc `yaml:"accounts,omitempty"`
 }
@@ -114,13 +112,9 @@ func parse(raw []byte, settings config.Settings) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	visibility, err := visibilityOf(doc.Visibility)
-	if err != nil {
-		return nil, err
-	}
 	f := &File{
 		Auth: doc.Auth, Connections: connectionsOf(doc.Apps), Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
-		Visibility: visibility, Embedding: doc.Embedding, Run: doc.Settings,
+		Embedding: doc.Embedding, Run: doc.Settings,
 	}
 	s := &secrets{}
 	if err := f.Auth.resolve(s); err != nil {
@@ -169,11 +163,6 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 	if err := f.Defaults.Trigger.Compile(); err != nil {
 		return fmt.Errorf("configfile: trigger.%w", err)
 	}
-	for _, key := range slices.Sorted(maps.Keys(f.Visibility)) {
-		if err := f.Visibility[key].Trigger.Compile(); err != nil {
-			return fmt.Errorf("configfile: visibility.%s.trigger.%w", key, err)
-		}
-	}
 	for i := range f.Connections {
 		if err := f.Connections[i].resolve("apps."+f.Connections[i].Name, s); err != nil {
 			return err
@@ -217,20 +206,6 @@ func (f *File) resolveEmbedding() error {
 	}
 	e.Model, e.apiKey = e.Ref.Model(), p.apiKey
 	return nil
-}
-
-// visibilityOf gathers the file's visibility entries, keyed as GitHub
-// names a repository's visibility.
-func visibilityOf(entries map[string]Overrides) (map[string]*Overrides, error) {
-	out := make(map[string]*Overrides, len(entries))
-	for _, key := range slices.Sorted(maps.Keys(entries)) {
-		if !slices.Contains(Visibilities, key) {
-			return nil, fmt.Errorf("configfile: visibility.%s: an entry is keyed %s", key, strings.Join(Visibilities, ", "))
-		}
-		o := entries[key]
-		out[key] = &o
-	}
-	return out, nil
 }
 
 // accountsOf gathers each account's entries, in the order of their
@@ -375,11 +350,6 @@ func (f *File) validateAccounts(accounts []Account) error {
 	}
 	if err := f.validateOverrides("", nil, &f.Defaults.Overrides); err != nil {
 		return err
-	}
-	for _, key := range slices.Sorted(maps.Keys(f.Visibility)) {
-		if err := f.validateOverrides("visibility."+key+".", nil, f.Visibility[key]); err != nil {
-			return err
-		}
 	}
 	for i := range accounts {
 		if err := f.validateAccount(&accounts[i]); err != nil {

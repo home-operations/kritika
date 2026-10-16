@@ -461,15 +461,11 @@ type Repository struct {
 // default.
 type RepoTraits struct {
 	Archived, Fork bool
-	// Visibility is one of Visibilities as GitHub reports it, "" until it
-	// has: a webhook or listing without one leaves the known value.
+	// Visibility is public, private or internal as GitHub reports it, ""
+	// until it has: a webhook or listing without one leaves the known value.
 	Visibility string
 	TurnedOn   *bool
 }
-
-// Visibilities are the visibilities GitHub gives a repository, and the
-// keys of the configuration's visibility entries.
-var Visibilities = []string{"public", "private", "internal"}
 
 // Agent bounds a review's agent. A field left unset takes its default from
 // DefaultAgent; one that is set must be positive.
@@ -694,10 +690,6 @@ type File struct {
 	Embedding *Embedding
 	// Run holds the resolved runtime settings.
 	Run Run
-	// Visibility holds the file's entries for the public, private and
-	// internal repositories, by visibility, which Settings lays between the
-	// file's root and an account's entries.
-	Visibility map[string]*Overrides
 	// Accounts are every account a running connection serves, in the order
 	// the connections list them.
 	Accounts []Account

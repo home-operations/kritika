@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/auth"
-	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -153,7 +152,7 @@ func (s *Server) listInstanceQueue(w http.ResponseWriter, r *http.Request) error
 		}
 		// The account's own review model always shows, busy or not; another
 		// model, a repository's choice, only while it holds a slot.
-		settings := file.Settings(t, "", configfile.RepoTraits{})
+		settings := file.Settings(t, "")
 		own := string(settings.Models.Review)
 		if _, ok := held[own]; !ok && own != "" {
 			held[own] = 0

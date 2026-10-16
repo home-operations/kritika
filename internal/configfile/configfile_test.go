@@ -107,7 +107,7 @@ func TestLoadFull(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				s := f.Settings(tt.account, tt.repo, RepoTraits{})
+				s := f.Settings(tt.account, tt.repo)
 				if s.Enabled != tt.enabled || s.Models.Review != tt.review ||
 					s.Limits.Concurrency != tt.conc || s.Limits.ReviewsPerDay != tt.perDay {
 					t.Fatalf("Settings = %+v", s)
@@ -131,7 +131,7 @@ func TestLoadFull(t *testing.T) {
 
 	t.Run("concurrency falls back to the default when unset everywhere", func(t *testing.T) {
 		g := &File{Accounts: []Account{{Forge: ForgeGitHub, Name: "x"}}}
-		if got := g.Settings(&g.Accounts[0], "x/y", RepoTraits{}).Limits.Concurrency; got != DefaultConcurrency {
+		if got := g.Settings(&g.Accounts[0], "x/y").Limits.Concurrency; got != DefaultConcurrency {
 			t.Fatalf("concurrency = %d, want %d", got, DefaultConcurrency)
 		}
 	})
@@ -217,11 +217,11 @@ func TestIgnore(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	ho, _ := f.Account(ForgeGitHub, "home-operations")
-	got := f.Settings(ho, "home-operations/flate", RepoTraits{}).Ignore
+	got := f.Settings(ho, "home-operations/flate").Ignore
 	if len(got) != len(DefaultIgnore)+1 || got[len(got)-1] != "**/testdata/**" {
 		t.Fatalf("ignore = %v", got)
 	}
-	if n := len(f.Settings(ho, "home-operations/other", RepoTraits{}).Ignore); n != len(DefaultIgnore) {
+	if n := len(f.Settings(ho, "home-operations/other").Ignore); n != len(DefaultIgnore) {
 		t.Fatalf("unlisted repo ignore = %d globs, want defaults only", n)
 	}
 }
@@ -345,7 +345,7 @@ confidence: { model: or/%[2]s, fallback: or/%[1]s }
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := f.Settings(&f.Accounts[0], "acme/repo", RepoTraits{})
+	s := f.Settings(&f.Accounts[0], "acme/repo")
 	for _, ref := range []struct {
 		got  ModelRef
 		want string
@@ -374,8 +374,6 @@ func TestUnpricedModels(t *testing.T) {
     pricing: { ~sonnet-latest: { input: 2 }, claude-x: { input: 3 } }
 review: { model: a/~opus-latest, fallback: or/~acme/large-latest }
 confidence: { model: priced/~sonnet-latest, fallback: o/gpt-x }
-visibility:
-  public: { review: { model: priced/claude-z } }
 ` + acme(`  acme/*: { confidence: { model: priced/claude-y } }
   acme/x: { review: { model: priced/claude-x, fallback: oc/glm } }
 `)
@@ -386,7 +384,6 @@ visibility:
 	want := []UnpricedModel{
 		{Setting: "review.model", Ref: "a/~opus-latest"},
 		{Setting: "confidence.fallback", Ref: "o/gpt-x"},
-		{Setting: "visibility.public.review.model", Ref: "priced/claude-z"},
 		{Setting: "repositories.acme/*.confidence.model", Ref: "priced/claude-y"},
 	}
 	if got := f.UnpricedModels(); !slices.Equal(got, want) {
@@ -444,7 +441,7 @@ func TestEnabledDefault(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustLoad(t, tt.doc)
 			for repo, want := range tt.want {
-				if got := f.Settings(&f.Accounts[0], repo, RepoTraits{}).Enabled; got != want {
+				if got := f.Settings(&f.Accounts[0], repo).Enabled; got != want {
 					t.Errorf("%s enabled = %v, want %v", repo, got, want)
 				}
 			}
@@ -766,7 +763,7 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 
 	t.Run("an account inherits what it leaves out", func(t *testing.T) {
 		f := parse(t, doc("", "", ""))
-		s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{})
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		if filterExprs(s.Filters.Include) != `pr.author.startsWith("renovate")` || filterExprs(s.Filters.Exclude) != "pr.draft" || s.MaxAutoReviews != 4 || s.Agent.MaxSteps != 9 ||
 			s.Incremental.MaxDeltaFiles != 3 || s.Models.Fallback != "p/small" || s.Limits.TokensPerMonth != 1000 ||
 			!reflect.DeepEqual(s.Review.Rules, []Rule{{ID: "ops", File: "ops/rules.md"}}) || s.Review.Templates.Summary != "ops/summary.tmpl" {
@@ -776,7 +773,7 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 
 	t.Run("an empty or zero value written at a narrower scope clears", func(t *testing.T) {
 		f := parse(t, doc("tokensPerMonth: 0", `trigger: { include: [{ name: bots, expr: "true" }, { expr: pr.open }], exclude: [{ name: drafts, expr: "false" }, { expr: pr.fork }], limit: 0 }, review: { fallback: "" }`, `comments: { summary: "" }`))
-		s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{})
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		// A condition under a broader scope's name replaces it where it
 		// stands, and one without a name is added.
 		if filterExprs(s.Filters.Include) != "true, pr.open" || filterExprs(s.Filters.Exclude) != "false, pr.fork" || s.MaxAutoReviews != 0 || s.Models.Fallback != "" || s.Models.Review != "p/big" ||
@@ -791,7 +788,7 @@ limits: { tokensPerMonth: 1000, reviewsPerDay: 5 }
 	t.Run("the narrowest scope written wins, field by field", func(t *testing.T) {
 		f := parse(t, doc("", `agent: { steps: 7, prompt: 30000 }, review: { fixes: true }, ignore: ["account/**"]`,
 			`review: { model: p/small }, ignore: ["repo/**"], agent: { tokens: 500 }`))
-		s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{})
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		if s.Agent.MaxSteps != 7 || s.Agent.MaxTokens != 500 || s.Agent.MaxPromptTokens != 30_000 || s.Models.Review != "p/small" {
 			t.Fatalf("settings = %+v", s)
 		}
@@ -826,21 +823,21 @@ func TestReviewPresentation(t *testing.T) {
 		return f
 	}
 	f := parse(t, "", "  acme/x: {}\n")
-	if s := f.Settings(&f.Accounts[0], "", RepoTraits{}); !s.Review.InlineComments {
+	if s := f.Settings(&f.Accounts[0], ""); !s.Review.InlineComments {
 		t.Fatalf("review = %+v, want every finding inline", s.Review)
 	}
 	f = parse(t, "comments: { inline: false }", "  acme/x: { comments: { inline: true } }\n  acme/y: {}\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{}); !s.Review.InlineComments {
+	if s := f.Settings(&f.Accounts[0], "acme/x"); !s.Review.InlineComments {
 		t.Fatalf("review = %+v, want the repository's inline comments over the account's", s.Review)
 	}
-	if s := f.Settings(&f.Accounts[0], "acme/y", RepoTraits{}); s.Review.InlineComments {
+	if s := f.Settings(&f.Accounts[0], "acme/y"); s.Review.InlineComments {
 		t.Fatalf("review = %+v, want the account's inline comments off", s.Review)
 	}
 	f = parse(t, "review: { approve: true }", "  acme/x: { review: { approve: false } }\n  acme/y: {}\n")
-	if s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{}); s.Review.Approve {
+	if s := f.Settings(&f.Accounts[0], "acme/x"); s.Review.Approve {
 		t.Fatalf("review = %+v, want the repository's approve over the account's", s.Review)
 	}
-	if s := f.Settings(&f.Accounts[0], "acme/y", RepoTraits{}); !s.Review.Approve {
+	if s := f.Settings(&f.Accounts[0], "acme/y"); !s.Review.Approve {
 		t.Fatalf("review = %+v, want the account's approve", s.Review)
 	}
 }
@@ -852,7 +849,7 @@ func TestSettingsProviders(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, "providers:\n  p: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"+
 		acmeAccount("    providers:\n      own: { type: openai, apiKey: { env: TEST_WEBHOOK_SECRET } }\n"))
-	if got := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{}).Providers; !slices.Equal(got, []string{"own", "p"}) {
+	if got := f.Settings(&f.Accounts[0], "acme/x").Providers; !slices.Equal(got, []string{"own", "p"}) {
 		t.Fatalf("providers = %q, want [own p]", got)
 	}
 }
@@ -868,7 +865,7 @@ func TestRulesAddUp(t *testing.T) {
 		"acme/x":        {{ID: "a", Rule: "A2", Paths: []string{"**/*.go"}}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
 		"acme/unlisted": {{ID: "a", Rule: "A"}, {ID: "b", Rule: "B"}, {ID: "c", Rule: "C"}},
 	} {
-		if got := f.Settings(&f.Accounts[0], repo, RepoTraits{}).Review.Rules; !reflect.DeepEqual(got, want) {
+		if got := f.Settings(&f.Accounts[0], repo).Review.Rules; !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: rules = %+v, want %+v", repo, got, want)
 		}
 	}
@@ -876,7 +873,7 @@ func TestRulesAddUp(t *testing.T) {
 		"acme/x":        {"a": ScopeRepository, "b": ScopeDefaults, "c": ScopeAccount},
 		"acme/unlisted": {"a": ScopeDefaults, "b": ScopeDefaults, "c": ScopeAccount},
 	} {
-		if got := f.RuleScopes(&f.Accounts[0], repo, RepoTraits{}); !maps.Equal(got, want) {
+		if got := f.RuleScopes(&f.Accounts[0], repo); !maps.Equal(got, want) {
 			t.Errorf("%s: scopes = %v, want %v", repo, got, want)
 		}
 	}
@@ -894,7 +891,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, repo := range []string{"acme/x", "acme/unlisted"} {
-			s := f.Settings(&f.Accounts[0], repo, RepoTraits{})
+			s := f.Settings(&f.Accounts[0], repo)
 			if !reflect.DeepEqual(s.Agent, DefaultAgent) || s.Incremental.MaxDeltaFiles != DefaultMaxDeltaFiles {
 				t.Fatalf("%s: agent=%+v incremental=%+v", repo, s.Agent, s.Incremental)
 			}
@@ -919,7 +916,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{})
+		s := f.Settings(&f.Accounts[0], "acme/x")
 		want := AgentSettings{MaxSteps: 12, MaxToolOutputBytes: 4096, MaxTokens: 250_000, MaxPromptTokens: 120_000, MaxParts: 3, Timeout: 3 * time.Minute,
 			CommandTimeout: 10 * time.Second, MaxFetches: 3}
 		if !reflect.DeepEqual(s.Agent, want) || s.Incremental.MaxDeltaFiles != 5 {
@@ -941,7 +938,7 @@ func TestRepositoryAgentReview(t *testing.T) {
 		}
 		want := DefaultAgent
 		want.MaxSteps = 7
-		if got := f.Settings(&f.Accounts[0], "acme/x", RepoTraits{}).Agent; !reflect.DeepEqual(got, want) {
+		if got := f.Settings(&f.Accounts[0], "acme/x").Agent; !reflect.DeepEqual(got, want) {
 			t.Fatalf("agent = %+v, want %+v", got, want)
 		}
 	})
