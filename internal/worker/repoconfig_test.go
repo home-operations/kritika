@@ -110,7 +110,8 @@ func TestEffective(t *testing.T) {
 				doc = []byte(tt.doc)
 			}
 			e, notes := effective(settings, doc)
-			if e.Enabled != tt.enabled || !e.InRepoFilters.Empty() != tt.inRepoFilter || !reflect.DeepEqual(e.Filters, settings.Filters) {
+			hasInRepoFilter := len(e.InRepoFilters.Include)+len(e.InRepoFilters.Exclude) > 0
+			if e.Enabled != tt.enabled || hasInRepoFilter != tt.inRepoFilter || !reflect.DeepEqual(e.Filters, settings.Filters) {
 				t.Fatalf("enabled=%v inRepoFilters=%v admin filters=%v", e.Enabled, e.InRepoFilters, e.Filters)
 			}
 			if !slices.Equal(e.Ignore, tt.ignore) {

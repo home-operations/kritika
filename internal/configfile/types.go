@@ -524,8 +524,7 @@ func (a AgentSettings) MarshalJSON() ([]byte, error) {
 }
 
 // DefaultAgent applies to every agent bound a repository leaves unset. Its
-// steps, tool output and tokens are the agent loop's own defaults. Its
-// commands are unset: every command the runner image's mise tools provide.
+// steps, tool output and tokens are the agent loop's own defaults.
 var DefaultAgent = AgentSettings{
 	MaxSteps:           agent.DefaultLimits.MaxSteps,
 	MaxToolOutputBytes: agent.DefaultLimits.MaxToolOutputBytes,
