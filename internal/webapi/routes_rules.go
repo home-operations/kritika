@@ -54,8 +54,9 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 			continue
 		}
 		rr := repoRules{
-			name: row.FullName, settings: t.file.Settings(t.account, row.FullName), sources: t.file.Sources(t.account, row.FullName),
-			ruleScopes: t.file.RuleScopes(t.account, row.FullName),
+			name:     row.FullName,
+			settings: t.file.Settings(t.account, row.FullName, row.RepoTraits), sources: t.file.Sources(t.account, row.FullName, row.RepoTraits),
+			ruleScopes: t.file.RuleScopes(t.account, row.FullName, row.RepoTraits),
 		}
 		if f, ok := files[row.ID]; ok && f.Doc != nil {
 			rr.doc = []byte(*f.Doc)
@@ -156,6 +157,7 @@ func collectRules(repos []repoRules) []Rule {
 // that writes it.
 var ruleFrom = map[configfile.Scope]RuleSource{
 	configfile.ScopeDefaults:   RuleSource(configfile.SourceDefaults),
+	configfile.ScopeVisibility: RuleSource(configfile.SourceVisibility),
 	configfile.ScopeAccount:    RuleSource(configfile.SourceAccount),
 	configfile.ScopeRepository: RuleFromEntry,
 }

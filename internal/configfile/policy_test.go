@@ -8,7 +8,7 @@ import (
 // TestPoliciesNameSettings checks every row of the table names a setting
 // each scope it lists has, and no scope it leaves out.
 func TestPoliciesNameSettings(t *testing.T) {
-	specs := map[Scope]any{ScopeDefaults: &Defaults{}, ScopeAccount: &Account{}, ScopeRepository: &Repository{}}
+	specs := map[Scope]any{ScopeDefaults: &Defaults{}, ScopeVisibility: &Overrides{}, ScopeAccount: &Account{}, ScopeRepository: &Repository{}}
 	for _, p := range Policies {
 		for scope, spec := range specs {
 			_, ok := SpecValue(spec, p.Key)
@@ -38,7 +38,7 @@ func TestSources(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	f := mustLoad(t, "trigger: { limit: 2 }\nagent: { steps: 9 }\n"+
 		acme("  acme/*: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }\n  acme/x: { trigger: { limit: 0, include: [{ expr: \"true\" }] } }\n"))
-	s := f.Sources(&f.Accounts[0], "acme/x")
+	s := f.Sources(&f.Accounts[0], "acme/x", RepoTraits{})
 	for key, want := range map[string]Source{
 		"trigger.limit": SourceAccount, "trigger.exclude": SourceAccount, "agent.steps": SourceDefaults, "enabled": SourceDefault, "trigger.include": SourceAccount,
 		"agent.tokens": SourceDefault, "agent.prompt": SourceDefault, "review.model": SourceDefault, "ignore": SourceDefault,
@@ -47,7 +47,7 @@ func TestSources(t *testing.T) {
 			t.Errorf("%s from %s, want %s", key, s[key], want)
 		}
 	}
-	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x"); s["trigger.limit"] != SourceDefaults || s["trigger.exclude"] != SourceDefault {
+	if s := f.Sources(&Account{Forge: ForgeGitHub, Name: "other"}, "other/x", RepoTraits{}); s["trigger.limit"] != SourceDefaults || s["trigger.exclude"] != SourceDefault {
 		t.Fatalf("an account without an entry = %v", s)
 	}
 }

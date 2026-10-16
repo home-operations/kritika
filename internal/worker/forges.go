@@ -94,7 +94,8 @@ func (a *Apps) Reach(ctx context.Context, in *configfile.Connection) (map[string
 		repos := make([]store.ReachedRepository, 0, len(r.Repositories))
 		for _, repo := range r.Repositories {
 			repos = append(repos, store.ReachedRepository{
-				FullName: repo.FullName, DefaultBranch: repo.DefaultBranch, Traits: &configfile.RepoTraits{Archived: repo.Archived, Fork: repo.Fork},
+				FullName: repo.FullName, DefaultBranch: repo.DefaultBranch,
+				Traits: &configfile.RepoTraits{Archived: repo.Archived, Fork: repo.Fork, Visibility: repo.Visibility},
 			})
 		}
 		out[strings.ToLower(r.Account)] = repos

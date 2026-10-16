@@ -25,12 +25,15 @@ func agentRunTimeout(file *configfile.File, accountID, repositoryID string, revi
 	account, _ := file.AccountByID(accountID)
 	deadline, _ := file.RunnerFor()
 	if account != nil {
-		agent := repoSettings(file, account, repositoryID).Agent
-		timeout := agent.Timeout
-		if review {
-			timeout = partsTimeout(agent.MaxParts, timeout)
+		longest := deadline
+		for _, s := range repoSettings(file, account, repositoryID) {
+			timeout := s.Agent.Timeout
+			if review {
+				timeout = partsTimeout(s.Agent.MaxParts, timeout)
+			}
+			longest = max(longest, agentDeadline(deadline, timeout))
 		}
-		deadline = agentDeadline(deadline, timeout)
+		deadline = longest
 	}
 	return min(deadline+jobtimeout.LeaseWaitHeadroom+jobtimeout.PublishHeadroom, jobtimeout.MaxJobTimeout)
 }
@@ -48,14 +51,25 @@ func (w *FollowUp) Timeout(job *river.Job[jobs.FollowUpArgs]) time.Duration {
 	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, job.Args.RepositoryID, false)
 }
 
-// repoSettings resolves a repository's settings from its id, which a job
-// carries instead of the name the configuration is keyed by. A repository
-// the account does not list gets the account's settings, as in Settings.
-func repoSettings(file *configfile.File, account *configfile.Account, repositoryID string) configfile.Settings {
+// repoSettings resolves the settings a repository may have from its id,
+// which a job carries instead of the name the configuration is keyed by,
+// and without the visibility only the store knows: one resolution without
+// a visibility, then one under each visibility the file has an entry for.
+// A repository the account does not list gets the account's settings, as
+// in Settings.
+func repoSettings(file *configfile.File, account *configfile.Account, repositoryID string) []configfile.Settings {
+	var name string
 	for _, r := range account.Repositories {
-		if name := account.Name + "/" + r.Name; configfile.RepositoryID(account.ID(), name) == repositoryID {
-			return file.Settings(account, name)
+		if n := account.Name + "/" + r.Name; configfile.RepositoryID(account.ID(), n) == repositoryID {
+			name = n
+			break
 		}
 	}
-	return file.Settings(account, "")
+	out := []configfile.Settings{file.Settings(account, name, configfile.RepoTraits{})}
+	for _, v := range configfile.Visibilities {
+		if file.Visibility[v] != nil {
+			out = append(out, file.Settings(account, name, configfile.RepoTraits{Visibility: v}))
+		}
+	}
+	return out
 }

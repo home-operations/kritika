@@ -211,6 +211,8 @@ export interface Repository {
   defaultBranch: string;
   archived: boolean;
   fork: boolean;
+  // visibility is public, private or internal as GitHub reports it, "" until it has.
+  visibility: string;
   // turnedOn starts false for discovered repositories, then follows the
   // admin's choice; null lets the configuration decide.
   turnedOn: boolean | null;
@@ -272,7 +274,7 @@ export interface RepoSettings {
 
 // defaults is a setting written at the configuration file's root, account
 // one written in an account's entry.
-export type ConfigSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'repository';
+export type ConfigSource = 'default' | 'env' | 'file' | 'defaults' | 'visibility' | 'account' | 'repository';
 
 // One instance-wide setting, read-only in the admin console: a secret
 // shows only whether it is set.
@@ -567,7 +569,7 @@ export interface Analytics {
 export type RuleKind = 'rule' | 'context';
 // entry is an account's entry for the repository; repository is the
 // repository's own .kritika.yaml.
-export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'account' | 'entry' | 'repository';
+export type RuleSource = 'default' | 'env' | 'file' | 'defaults' | 'visibility' | 'account' | 'entry' | 'repository';
 
 // Rule is one written rule or file reviews read, with where it is set, the
 // paths it applies to (every change when empty), and the repositories that

@@ -32,9 +32,9 @@ type IndexRepo struct {
 func FindIndexRepo(ctx context.Context, tx pgx.Tx, repositoryID string) (IndexRepo, error) {
 	var r IndexRepo
 	var active *string
-	err := tx.QueryRow(ctx, `SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork, turned_on
+	err := tx.QueryRow(ctx, `SELECT name, default_branch, enabled, active_index_run_id::text, archived, fork, visibility, turned_on
 		FROM repositories WHERE id = $1`, repositoryID).
-		Scan(&r.Name, &r.DefaultBranch, &r.Enabled, &active, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.TurnedOn)
+		Scan(&r.Name, &r.DefaultBranch, &r.Enabled, &active, &r.Traits.Archived, &r.Traits.Fork, &r.Traits.Visibility, &r.Traits.TurnedOn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrNotFound
 	}

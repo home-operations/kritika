@@ -177,13 +177,13 @@ type MonthUsage struct {
 // boundaries are the database's, as the worker's cap checks use.
 func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string, t configfile.RepoTraits) bool) (AccountStats, error) {
 	var s AccountStats
-	rows, err := tx.Query(ctx, `SELECT name, archived, fork, turned_on FROM repositories WHERE enabled`)
+	rows, err := tx.Query(ctx, `SELECT name, archived, fork, visibility, turned_on FROM repositories WHERE enabled`)
 	if err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
 	var name string
 	var t configfile.RepoTraits
-	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork, &t.TurnedOn}, func() error {
+	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork, &t.Visibility, &t.TurnedOn}, func() error {
 		if enabled(name, t) {
 			s.Repositories++
 		}
@@ -312,7 +312,7 @@ type ReviewRef struct {
 
 // The last review, lr, is the repository's newest that was not skipped, as
 // a pull request's is.
-const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork, r.turned_on,
+const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork, r.visibility, r.turned_on,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
@@ -328,7 +328,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var status string
 	var lrID, lrStatus *string
 	var lrAt *time.Time
-	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch, &r.Archived, &r.Fork, &r.TurnedOn,
+	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch, &r.Archived, &r.Fork, &r.Visibility, &r.TurnedOn,
 		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {
@@ -345,17 +345,18 @@ type RepoKind string
 
 // Repository kinds. RepoInUse, the default, is the ones kritika can run:
 // neither archived nor a fork, but for the forks an admin turned on.
-// RepoForks is every fork not archived, and RepoArchived every archived
-// repository.
+// RepoForks is every fork not archived, RepoPublic every public repository
+// not archived, fork or not, and RepoArchived every archived repository.
 const (
 	RepoInUse    RepoKind = ""
 	RepoForks    RepoKind = "forks"
+	RepoPublic   RepoKind = "public"
 	RepoArchived RepoKind = "archived"
 )
 
 // Valid reports whether k is a kind a list takes.
 func (k RepoKind) Valid() bool {
-	return k == RepoInUse || k == RepoForks || k == RepoArchived
+	return k == RepoInUse || k == RepoForks || k == RepoPublic || k == RepoArchived
 }
 
 // RepoFilter picks the repositories a list shows: those of Kind.
@@ -373,6 +374,7 @@ func ListRepos(ctx context.Context, tx pgx.Tx, f RepoFilter, p Page) ([]RepoRow,
 		WHERE ($1 OR (r.name, r.id) > ($2, $3::uuid))
 		  AND CASE $5
 			WHEN 'forks' THEN r.fork AND NOT r.archived
+			WHEN 'public' THEN r.visibility = 'public' AND NOT r.archived
 			WHEN 'archived' THEN r.archived
 			ELSE NOT r.archived AND (NOT r.fork OR coalesce(r.turned_on, false))
 		  END

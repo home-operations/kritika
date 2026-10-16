@@ -168,6 +168,9 @@ type Repository struct {
 	DefaultBranch string `json:"defaultBranch"`
 	Archived      bool   `json:"archived"`
 	Fork          bool   `json:"fork"`
+	// Visibility is public, private or internal as GitHub reports it, ""
+	// until it has.
+	Visibility string `json:"visibility"`
 	// TurnedOn starts false for discovered repositories, then follows the
 	// admin's choice; null lets the configuration decide whether it runs.
 	TurnedOn   *bool      `json:"turnedOn"`

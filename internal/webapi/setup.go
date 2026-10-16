@@ -59,7 +59,8 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 		repos := make([]store.ReachedRepository, 0, len(a.Repositories))
 		for _, x := range a.Repositories {
 			repos = append(repos, store.ReachedRepository{
-				FullName: x.FullName, DefaultBranch: x.DefaultBranch, Traits: &configfile.RepoTraits{Archived: x.Archived, Fork: x.Fork},
+				FullName: x.FullName, DefaultBranch: x.DefaultBranch,
+				Traits: &configfile.RepoTraits{Archived: x.Archived, Fork: x.Fork, Visibility: x.Visibility},
 			})
 		}
 		added, _, err := s.store.RegisterRepositories(r.Context(), acct.ID(), repos, listedAt)

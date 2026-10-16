@@ -103,6 +103,28 @@ func TestJobTimeouts(t *testing.T) {
 	}
 }
 
+// TestJobTimeoutsAllowForVisibilityEntries: a job's timeout is computed
+// without the repository's visibility, so it allows for the longest agent
+// timeout a visibility entry may give the repository.
+func TestJobTimeoutsAllowForVisibilityEntries(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s")
+	file := configfiletest.Load(t, timeoutConfigYAML+"visibility:\n  public: { agent: { timeout: 50m } }\n")
+	current := configfile.NewCurrent(file)
+	acme, _ := file.Account(configfile.ForgeGitHub, "acme")
+	review, followUp := &Review{Current: current}, &FollowUp{Current: current}
+	for _, name := range []string{"acme/unlisted", "acme/whole"} {
+		id := configfile.RepositoryID(acme.ID(), name)
+		if got := followUp.Timeout(&river.Job[jobs.FollowUpArgs]{Args: jobs.FollowUpArgs{AccountID: acme.ID(), RepositoryID: id}}); got != 75*time.Minute {
+			t.Errorf("%s: follow-up timeout = %s, want 75m for a public repository's 50m agent", name, got)
+		}
+	}
+	whole := configfile.RepositoryID(acme.ID(), "acme/whole")
+	if got := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: whole}}); got != 75*time.Minute {
+		t.Errorf("review timeout of a never split review = %s, want 75m for a public repository's 50m agent", got)
+	}
+}
+
 func TestDetach(t *testing.T) {
 	parent, cancelParent := context.WithCancel(t.Context())
 	ctx, cancel := detach(parent)

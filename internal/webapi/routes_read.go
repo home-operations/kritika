@@ -147,7 +147,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	}
 	sum := AccountSummary{
 		Slug: t.Slug(), Repositories: stats.Repositories,
-		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
+		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "", configfile.RepoTraits{}).Limits),
 		Attention: attentionDTO(attention), LastPolledAt: polled,
 		ChatGPTEnabled: len(file.ChatGPTProviders(t)) > 0,
 	}
@@ -207,7 +207,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, "")
+	settings := t.file.Settings(t.account, "", configfile.RepoTraits{})
 	d := AccountDetail{
 		Slug:   t.account.Slug(),
 		Models: settings.Models, Limits: settings.Limits, Filters: settings.Filters,
@@ -238,7 +238,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	}
 	f := store.RepoFilter{Kind: store.RepoKind(r.URL.Query().Get("type"))}
 	if !f.Kind.Valid() {
-		return errBadRequest(CodeBadRequest, "type must be forks or archived")
+		return errBadRequest(CodeBadRequest, "type must be forks, public or archived")
 	}
 	ctx := r.Context()
 	var rows []store.RepoRow
@@ -262,7 +262,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
 		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, ManagedBy: r.ManagedBy,
-		DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork, TurnedOn: r.TurnedOn,
+		DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork, Visibility: r.Visibility, TurnedOn: r.TurnedOn,
 		Index: IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
 	if r.LastReview != nil {
@@ -309,10 +309,10 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, row.FullName)
+	settings := t.file.Settings(t.account, row.FullName, row.RepoTraits)
 	d := RepoDetail{
 		Repository: repository(row, t.file.Runs(t.account, row.FullName, row.RepoTraits)),
-		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
+		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName, row.RepoTraits),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)

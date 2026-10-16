@@ -244,6 +244,7 @@ type ghRepo struct {
 	DefaultBranch string `json:"default_branch"`
 	Archived      bool   `json:"archived"`
 	Fork          bool   `json:"fork"`
+	Visibility    string `json:"visibility"`
 	Owner         ghUser `json:"owner"`
 }
 
@@ -251,7 +252,8 @@ func (r ghRepo) event() *Repository {
 	if r.FullName == "" {
 		return nil
 	}
-	return &Repository{FullName: r.FullName, DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork}
+	return &Repository{FullName: r.FullName, DefaultBranch: r.DefaultBranch,
+		Archived: r.Archived, Fork: r.Fork, Visibility: r.Visibility}
 }
 
 // ghPR is a pull request as GitHub payloads carry one.
@@ -463,7 +465,8 @@ func parsePush(delivery string, body []byte) (Event, error) {
 // repositoryActions are the repository event actions that change what
 // kritika records of one; the rest, such as edited, change nothing it keeps.
 var repositoryActions = map[string]bool{
-	"created": true, "archived": true, "unarchived": true, "renamed": true, "transferred": true, "deleted": true,
+	"created": true, "archived": true, "unarchived": true, "publicized": true, "privatized": true,
+	"renamed": true, "transferred": true, "deleted": true,
 }
 
 func parseRepository(delivery string, body []byte) (Event, error) {

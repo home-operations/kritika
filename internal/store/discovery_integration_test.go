@@ -60,7 +60,8 @@ func TestConfigTakesOverDiscoveryDefault(t *testing.T) {
 				if _, _, err := EnsureRepository(ctx, tx, a.ID(), ReachedRepository{FullName: name}); err != nil {
 					return err
 				}
-				on, err := TurnedOn(ctx, tx, id)
+				known, err := RepositoryTraits(ctx, tx, id, nil)
+				on := known.TurnedOn
 				if err == nil && ((on == nil) != (tt.choice == nil) || (on != nil && tt.choice != nil && *on != *tt.choice)) {
 					t.Errorf("config takeover got %v, want %v", on, tt.choice)
 				}

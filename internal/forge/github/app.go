@@ -153,6 +153,8 @@ type Repository struct {
 	// Name is the repository's name, FullName "owner/name".
 	Name, FullName, DefaultBranch string
 	Archived, Fork                bool
+	// Visibility is public, private or internal, as GitHub reports it.
+	Visibility string
 }
 
 // Repositories lists every repository installation id reaches, with a
@@ -169,7 +171,7 @@ func (a *App) Repositories(ctx context.Context, id int64) ([]Repository, error) 
 		}
 		out = append(out, Repository{
 			Name: r.GetName(), FullName: r.GetFullName(), DefaultBranch: r.GetDefaultBranch(),
-			Archived: r.GetArchived(), Fork: r.GetFork(),
+			Archived: r.GetArchived(), Fork: r.GetFork(), Visibility: r.GetVisibility(),
 		})
 	}
 	return out, nil

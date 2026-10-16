@@ -33,6 +33,7 @@
     env: 'Environment',
     file: 'Config file',
     defaults: 'Instance settings',
+    visibility: 'Visibility entry',
     account: 'Account entry',
     entry: 'Repository entry',
     repository: '.kritika.yaml',
@@ -42,7 +43,7 @@
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: repoNames },
     { key: 'kind', hint: 'rule or context', values: ['rule', 'context'] },
-    { key: 'source', hint: 'where it is set', values: ['default', 'env', 'file', 'defaults', 'account', 'entry', 'repository'] },
+    { key: 'source', hint: 'where it is set', values: ['default', 'env', 'file', 'defaults', 'visibility', 'account', 'entry', 'repository'] },
   ]);
   let text = $state('');
   let applied = $state(parseTokens('', []));

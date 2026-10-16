@@ -62,7 +62,7 @@ func (s *SlotWake) check(ctx context.Context, job *rivertype.JobRow) {
 		return
 	}
 	// Limits are set per account, so the review counted these slots.
-	slots := file.Settings(account, "").Limits.Concurrency
+	slots := file.Settings(account, "", configfile.RepoTraits{}).Limits.Concurrency
 	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
 	defer cancel()
 	logger := s.Logger.With("job", job.ID, "model", meta.SlotWait)

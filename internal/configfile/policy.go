@@ -11,6 +11,7 @@ type Scope string
 // Admin scopes, broadest first.
 const (
 	ScopeDefaults   Scope = "defaults"
+	ScopeVisibility Scope = "visibility"
 	ScopeAccount    Scope = "account"
 	ScopeRepository Scope = "repository"
 )
@@ -27,7 +28,7 @@ type Policy struct {
 }
 
 var (
-	everyScope    = []Scope{ScopeDefaults, ScopeAccount, ScopeRepository}
+	everyScope    = []Scope{ScopeDefaults, ScopeVisibility, ScopeAccount, ScopeRepository}
 	accountScopes = []Scope{ScopeDefaults, ScopeAccount}
 )
 

@@ -151,10 +151,10 @@ export function queueFilter(f: Record<string, string | undefined>): QueueFilter 
   return Object.keys(out).length ? out : undefined;
 }
 
-export interface RepoFilter { type?: 'forks' | 'archived'; q?: string }
+export interface RepoFilter { type?: 'forks' | 'public' | 'archived'; q?: string }
 export function repoFilter(f: Record<string, string | undefined>): RepoFilter | undefined {
   const out: RepoFilter = {};
-  if (f.type === 'forks' || f.type === 'archived') out.type = f.type;
+  if (f.type === 'forks' || f.type === 'public' || f.type === 'archived') out.type = f.type;
   if (f.q) out.q = f.q;
   return Object.keys(out).length ? out : undefined;
 }

@@ -8,6 +8,7 @@
       "defaultBranch": "main",
       "archived": false,
       "fork": false,
+      "visibility": "private",
       "turnedOn": null,
       "index": {
         "activeCommit": "def456",

@@ -89,7 +89,8 @@ func TestRenamePreservesEnablement(t *testing.T) {
 				}
 			}
 			if err := st.WithAccount(ctx, to.ID(), func(tx pgx.Tx) error {
-				on, err := store.TurnedOn(ctx, tx, configfile.RepositoryID(to.ID(), name))
+				known, err := store.RepositoryTraits(ctx, tx, configfile.RepositoryID(to.ID(), name), nil)
+				on := known.TurnedOn
 				if err == nil && ((on == nil) != (tt.want == nil) || (on != nil && tt.want != nil && *on != *tt.want)) {
 					t.Errorf("renamed repository enablement = %v, want %v", on, tt.want)
 				}

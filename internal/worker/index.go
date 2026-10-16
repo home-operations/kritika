@@ -83,7 +83,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	logger := w.Logger.With("account", account.Key(), "repository", repo.Name, "trigger", args.Trigger)
-	settings := file.Settings(account, repo.Name)
+	settings := file.Settings(account, repo.Name, repo.Traits)
 	if !repo.Enabled || !file.Runs(account, repo.Name, repo.Traits) {
 		logger.Info("index skipped, repository disabled")
 		return nil

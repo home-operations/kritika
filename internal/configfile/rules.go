@@ -96,12 +96,17 @@ func checkWhen(when []When) error {
 }
 
 // RuleScopes says, by id, which scope writes each rule Settings(a,
-// fullName) runs: the file's own, the account, or its entry for the
-// repository.
-func (f *File) RuleScopes(a *Account, fullName string) map[string]Scope {
+// fullName, t) runs: the file's own, its entry for the repository's
+// visibility, the account, or its entry for the repository.
+func (f *File) RuleScopes(a *Account, fullName string, t RepoTraits) map[string]Scope {
 	out := map[string]Scope{}
 	for _, r := range f.Defaults.Rules {
 		out[r.ID] = ScopeDefaults
+	}
+	if v := f.Visibility[t.Visibility]; v != nil {
+		for _, r := range v.Rules {
+			out[r.ID] = ScopeVisibility
+		}
 	}
 	for _, r := range a.Rules {
 		out[r.ID] = ScopeAccount

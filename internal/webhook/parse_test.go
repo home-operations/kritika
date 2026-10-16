@@ -159,6 +159,13 @@ func TestParseGitHubRepositoryTraits(t *testing.T) {
 			KindRepository, configfile.RepoTraits{}},
 		{"fork created", "repository", `{"action":"created","repository":{"full_name":"a/b","fork":true,"owner":{"login":"a"}}}`,
 			KindRepository, configfile.RepoTraits{Fork: true}},
+		{"pull request in a public repository", "pull_request", `{"action":"opened","pull_request":{"number":1,"user":{"login":"x"}},
+		  "repository":{"full_name":"a/b","private":false,"visibility":"public","owner":{"login":"a"}}}`,
+			KindPullRequest, configfile.RepoTraits{Visibility: "public"}},
+		{"repository publicized", "repository", `{"action":"publicized","repository":{"full_name":"a/b","visibility":"public","owner":{"login":"a"}}}`,
+			KindRepository, configfile.RepoTraits{Visibility: "public"}},
+		{"repository privatized", "repository", `{"action":"privatized","repository":{"full_name":"a/b","private":true,"visibility":"private","owner":{"login":"a"}}}`,
+			KindRepository, configfile.RepoTraits{Visibility: "private"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -762,38 +762,57 @@ func TestDispatchRepository(t *testing.T) {
 			Installation: &webhook.Installation{Repositories: []string{"onedr0p/old"}}}
 		_, _ = svc.Dispatch(context.Background(), request(f, removed))
 	})
-	traits := func() (archived, fork bool) {
+	traits := func() configfile.RepoTraits {
 		t.Helper()
+		var got configfile.RepoTraits
 		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT archived, fork FROM repositories WHERE name = 'onedr0p/old'`).Scan(&archived, &fork)
+			return tx.QueryRow(ctx, `SELECT archived, fork, visibility FROM repositories WHERE name = 'onedr0p/old'`).
+				Scan(&got.Archived, &got.Fork, &got.Visibility)
 		}); err != nil {
 			t.Fatal(err)
 		}
-		return archived, fork
+		return got
 	}
-	old := &webhook.Repository{FullName: "onedr0p/old", Archived: true, Fork: true}
+	old := &webhook.Repository{FullName: "onedr0p/old", Archived: true, Fork: true, Visibility: "public"}
 	archived := webhook.Event{Kind: webhook.KindRepository, Action: "archived", Account: "onedr0p", Repository: old}
 	if out, err := svc.Dispatch(ctx, request(f, archived)); err != nil || out != (Outcome{Status: Recorded, Reason: "archived"}) {
 		t.Fatalf("Dispatch = %+v, %v; want recorded for archived", out, err)
 	}
-	if a, fk := traits(); !a || !fk {
-		t.Fatalf("archived=%v fork=%v after the repository event", a, fk)
+	if got := traits(); got != (configfile.RepoTraits{Archived: true, Fork: true, Visibility: "public"}) {
+		t.Fatalf("traits = %+v after the repository event", got)
 	}
 	added := webhook.Event{Kind: webhook.KindInstallation, Action: "added", Account: "onedr0p",
 		Installation: &webhook.Installation{Repositories: []string{"onedr0p/old"}}}
 	if _, err := svc.Dispatch(ctx, request(f, added)); err != nil {
 		t.Fatal(err)
 	}
-	if a, fk := traits(); !a || !fk {
-		t.Fatalf("archived=%v fork=%v after an installation event; it names the repository alone", a, fk)
+	if got := traits(); got != (configfile.RepoTraits{Archived: true, Fork: true, Visibility: "public"}) {
+		t.Fatalf("traits = %+v after an installation event; it names the repository alone", got)
 	}
 	old.Archived = false
 	unarchived := webhook.Event{Kind: webhook.KindRepository, Action: "unarchived", Account: "onedr0p", Repository: old}
 	if _, err := svc.Dispatch(ctx, request(f, unarchived)); err != nil {
 		t.Fatal(err)
 	}
-	if a, fk := traits(); a || !fk {
-		t.Fatalf("archived=%v fork=%v after unarchiving", a, fk)
+	if got := traits(); got != (configfile.RepoTraits{Fork: true, Visibility: "public"}) {
+		t.Fatalf("traits = %+v after unarchiving", got)
+	}
+	old.Visibility = "private"
+	privatized := webhook.Event{Kind: webhook.KindRepository, Action: "privatized", Account: "onedr0p", Repository: old}
+	if out, err := svc.Dispatch(ctx, request(f, privatized)); err != nil || out != (Outcome{Status: Recorded, Reason: "privatized"}) {
+		t.Fatalf("Dispatch = %+v, %v; want recorded for privatized", out, err)
+	}
+	if got := traits(); got != (configfile.RepoTraits{Fork: true, Visibility: "private"}) {
+		t.Fatalf("traits = %+v after making the repository private", got)
+	}
+	// A payload without a visibility, as an older forge sends, keeps the
+	// known one.
+	old.Visibility = ""
+	if _, err := svc.Dispatch(ctx, request(f, unarchived)); err != nil {
+		t.Fatal(err)
+	}
+	if got := traits(); got != (configfile.RepoTraits{Fork: true, Visibility: "private"}) {
+		t.Fatalf("traits = %+v after a repository event without a visibility", got)
 	}
 }
 

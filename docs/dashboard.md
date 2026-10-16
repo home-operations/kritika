@@ -240,7 +240,9 @@ repositories without a dashboard choice
 ([which repositories run](configuration.md#which-repositories-run)).
 
 The page lists the repositories that can run, with any fork turned on; its
-Type filter lists the forks, or the archived repositories, instead.
+Type filter lists the forks, the public repositories, or the archived
+repositories, instead. Each repository is badged as GitHub reports it: a
+fork, archived, public or internal; a private one carries no badge.
 "Resync from GitHub" lists the repositories the App reaches again, such as
 right after unarchiving one, and disables the ones it no longer reaches.
 After unarchiving and resyncing, turn the repository on if it is still off.

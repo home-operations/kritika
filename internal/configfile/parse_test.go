@@ -56,7 +56,7 @@ accounts:
 		t.Fatalf("accounts = %v", accounts)
 	}
 	org2, ok := f.Account(ForgeGitHub, "org-2")
-	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2, "org-2/repo-1").MaxAutoReviews != 3 || f.Settings(org2, "").MaxAutoReviews != 2 {
+	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2, "org-2/repo-1", RepoTraits{}).MaxAutoReviews != 3 || f.Settings(org2, "", RepoTraits{}).MaxAutoReviews != 2 {
 		t.Fatalf("org-2 = %+v", org2)
 	}
 	if in := f.ConnectionFor(org2); in == nil || in.Name != "org-bot" {
