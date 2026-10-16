@@ -20,6 +20,14 @@ tests:
           path: data["config.yaml"]
           pattern: "env: GITHUB_APP_PRIVATE_KEY"
 
+  - it: renders the visibility entries
+    set:
+      config.visibility.public.review.cost: false
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "visibility:\n  public:\n    review:\n      cost: false"
+
   - it: renders nothing when an existing ConfigMap is named
     set:
       existingConfigMap: my-config

@@ -150,6 +150,10 @@
           "required": [],
           "type": "object"
         },
+        "visibility": {
+          "required": [],
+          "type": "object"
+        },
         "webUrl": {
           "type": "string"
         }
