@@ -206,12 +206,6 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	if note := p.judge(ctx, review.Result{Summary: res.Summary, Findings: slices.Concat(res.Findings, unanchored)}, diff); note != "" {
 		notes = append(notes, note)
 	}
-	if note := skillsNote(run.SkillsOffered, run.SkillsOpened); note != "" {
-		notes = append(notes, note)
-	}
-	if note := commandsNote(run.CommandsOffered, run.CommandsRun); note != "" {
-		notes = append(notes, note)
-	}
 	notes = append(notes, run.CommandErrors...)
 	return &publicationAnswer{Result: res, Unanchored: unanchored, Notes: notes, Model: run.Model}, nil
 }
@@ -259,33 +253,6 @@ func unfinishedParts(parts []store.AgentPart) []string {
 
 // maxNamedFiles is how many files a note names before it counts the rest.
 const maxNamedFiles = 5
-
-// skillsNote is what the summary states about the repository's skills: the
-// ones the review was offered and, of those, the ones it read. "" when it
-// was offered none.
-func skillsNote(offered, opened []string) string {
-	if len(offered) == 0 {
-		return ""
-	}
-	read := "none read"
-	if len(opened) > 0 {
-		read = "read: " + strings.Join(opened, ", ")
-	}
-	return fmt.Sprintf("Skills offered: %s; %s", strings.Join(offered, ", "), read)
-}
-
-// commandsNote is the summary's note of the commands the run tool offered
-// and the ones the agent ran, "" when it offered none.
-func commandsNote(offered, ran []string) string {
-	if len(offered) == 0 {
-		return ""
-	}
-	used := "none run"
-	if len(ran) > 0 {
-		used = "run: " + strings.Join(ran, ", ")
-	}
-	return fmt.Sprintf("Commands offered: %s; %s", strings.Join(offered, ", "), used)
-}
 
 // skipDescription is how the commit status states a skip: a repository's
 // own reason or a bot's unchanged patch, and for a filtered one the name of
@@ -446,15 +413,18 @@ func (p *publishPhase) writeBack(
 		posted = append(posted, i)
 	}
 	var sources []string
+	var skills, commands review.Offered
 	if p.agent != nil {
 		sources = review.SourceLinks(p.agent.Sources)
+		skills = review.Offered{Names: p.agent.SkillsOffered, Used: p.agent.SkillsOpened}
+		commands = review.Offered{Names: p.agent.CommandsOffered, Used: p.agent.CommandsRun}
 	}
 	counts := review.Result{Findings: reported}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
 		Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
-		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources,
+		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}
 	if p.prior.id != "" {

@@ -112,56 +112,6 @@ func TestSkipDescription(t *testing.T) {
 	}
 }
 
-func TestSkillsNote(t *testing.T) {
-	tests := []struct {
-		name            string
-		offered, opened []string
-		want            string
-	}{
-		{name: "none offered"},
-		{name: "none offered, as the runner writes it", offered: []string{}, opened: []string{}},
-		{name: "offered and none read", offered: []string{"review-renovate-pr", "go-style"}, want: "Skills offered: review-renovate-pr, go-style; none read"},
-		{
-			name: "offered and one read", offered: []string{"review-renovate-pr", "go-style"}, opened: []string{"review-renovate-pr"},
-			want: "Skills offered: review-renovate-pr, go-style; read: review-renovate-pr",
-		},
-		{
-			name: "each read, in the order read", offered: []string{"review-renovate-pr", "go-style"}, opened: []string{"go-style", "review-renovate-pr"},
-			want: "Skills offered: review-renovate-pr, go-style; read: go-style, review-renovate-pr",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := skillsNote(tt.offered, tt.opened); got != tt.want {
-				t.Errorf("skillsNote(%q, %q) = %q, want %q", tt.offered, tt.opened, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCommandsNote(t *testing.T) {
-	tests := []struct {
-		name         string
-		offered, ran []string
-		want         string
-	}{
-		{name: "none offered"},
-		{name: "none offered, as the runner writes it", offered: []string{}, ran: []string{}},
-		{name: "offered and none run", offered: []string{"gh", "helm"}, want: "Commands offered: gh, helm; none run"},
-		{
-			name: "each run, in the order first run", offered: []string{"gh", "helm", "kubectl"}, ran: []string{"helm", "gh"},
-			want: "Commands offered: gh, helm, kubectl; run: helm, gh",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := commandsNote(tt.offered, tt.ran); got != tt.want {
-				t.Errorf("commandsNote(%q, %q) = %q, want %q", tt.offered, tt.ran, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestSettlePrior: an earlier finding not reported again is resolved only
 // when the review lists its id; any other stays open, carried on from the
 // head it was last reported at.

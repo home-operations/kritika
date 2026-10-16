@@ -89,12 +89,20 @@
 {{ end -}}
 {{ end -}}
 {{ end -}}
-{{ if .Sources }}
+{{ if or .Sources .Skills.Names .Commands.Names }}
 <details>
-<summary>Sources consulted</summary>
+<summary>Review context{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
 
-{{ range .Sources -}}
-- <{{ . }}>
+{{ if .Sources -}}
+- **Sources:**
+{{ range .Sources }}  - <{{ . }}>
+{{ end -}}
+{{ end -}}
+{{ if .Skills.Names -}}
+- **Skills read:** {{ if .Skills.Used }}`{{ join "` `" .Skills.Named }}`{{ if .Skills.More }} and {{ .Skills.More }} more{{ end }}{{ else }}none{{ end }}
+{{ end -}}
+{{ if .Commands.Names -}}
+- **Commands run:** {{ if .Commands.Used }}`{{ join "` `" .Commands.Named }}`{{ if .Commands.More }} and {{ .Commands.More }} more{{ end }}{{ else }}none{{ end }}
 {{ end }}
 </details>
 {{ end -}}

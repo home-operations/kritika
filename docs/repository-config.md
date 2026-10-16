@@ -232,13 +232,13 @@ one, with nothing to configure.
 - **No tools granted:** `allowed-tools` and every other frontmatter key is
   ignored. A skill guides a review and grants it no tool or command, and
   the review skips a step that needs one it was not given.
-- **Reported:** the review's summary carries a note of the skills it was
-  offered and the ones it read, such as
-  `Skills offered: review-renovate-pr, go-style; read: review-renovate-pr`,
-  and each read shows in its transcript; a skill given whole counts as
-  read. A review offered commands through
-  the run tool carries a note of the same shape beside it, such as
-  `Commands offered: gh, helm; run: helm`.
+- **Reported:** the summary's collapsed **Review context** block counts
+  the skills the review was offered and names the ones it read, such as
+  `1/2 skills` on the block's line and `Skills read: review-renovate-pr`
+  inside it, and each read shows in its transcript; a skill given whole
+  counts as read. A review offered commands through the run tool is
+  counted the same way beside it, such as `1/2 commands` and
+  `Commands run: helm`.
 - **Follow-ups** are answered by an agent with the review's tools and
   commands, under the same `agent` limits, in a runner of its own; it is
   offered no skills.
@@ -332,6 +332,7 @@ The summary template's dot is the review:
 | `.Incremental`, `.PriorHeadSHA`, `.PriorHeadURL`                             | whether the review covered only what changed since the last one, and that review's head                                  |
 | `.Prior`                                                                     | the last review's findings this review listed as resolved, with `.Resolved`, then those dismissed, with `.Dismissed` and `.DismissReason` |
 | `.Sources`                                                                   | links to what the review's commands fetched                                                                              |
+| `.Skills`, `.Commands`                                                       | the repository's skills and the run tool's commands the review was offered, each with `.Names`, every one offered, and `.Used`, the ones it read or ran; `.Named` is `.Used` sorted and cut to the first 10, `.More` how many that leaves out |
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
 | `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`                     |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                     |
