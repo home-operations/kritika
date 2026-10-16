@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -66,10 +67,11 @@ repositories:
 	}
 
 	reached := 0
-	var bypassed []bool
+	var bypassed, locked []bool
 	proxy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached++
 		bypassed = append(bypassed, egress.CacheBypassed(r.Context()))
+		locked = append(locked, egress.LockedInstall(r.Context()))
 		if r.Header.Get("Proxy-Authorization") != "" {
 			t.Error("the run token reached the proxy")
 		}
@@ -116,16 +118,25 @@ repositories:
 		})
 	}
 	// The retry of an install around the gateway's cache names the
-	// proxy's user as egress.UncachedProxyUser, and the proxy gets the
-	// request marked so.
-	t.Run("a retry around the gateway's cache", func(t *testing.T) {
-		if code, _, err := get(via(egress.UncachedProxyUser, token), "http://example.com/"); err != nil || code != http.StatusTeapot {
-			t.Fatalf("status = %d, %v; want %d", code, err, http.StatusTeapot)
-		}
-		if len(bypassed) != 2 || bypassed[0] || !bypassed[1] {
-			t.Fatalf("bypassed = %v: want the retry's request alone marked", bypassed)
-		}
-	})
+	// proxy's user as egress.UncachedProxyUser, and a repository's locked
+	// install as egress.LockedProxyUser; the proxy gets each request
+	// marked so, and only that one.
+	for _, tt := range []struct {
+		name, user       string
+		bypassed, locked []bool
+	}{
+		{"a retry around the gateway's cache", egress.UncachedProxyUser, []bool{false, true}, []bool{false, false}},
+		{"a locked install", egress.LockedProxyUser, []bool{false, true, false}, []bool{false, false, true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if code, _, err := get(via(tt.user, token), "http://example.com/"); err != nil || code != http.StatusTeapot {
+				t.Fatalf("status = %d, %v; want %d", code, err, http.StatusTeapot)
+			}
+			if !slices.Equal(bypassed, tt.bypassed) || !slices.Equal(locked, tt.locked) {
+				t.Fatalf("bypassed = %v, locked = %v; want %v, %v", bypassed, locked, tt.bypassed, tt.locked)
+			}
+		})
+	}
 	// A CONNECT's refusal, and the proxy's own answer, surface as the
 	// transport's error.
 	t.Run("a CONNECT without the token", func(t *testing.T) {
@@ -146,8 +157,8 @@ repositories:
 			t.Fatalf("status = %d, %v; want %d", code, err, http.StatusProxyAuthRequired)
 		}
 	})
-	if reached != 3 {
-		t.Fatalf("the proxy served %d requests, want the three with the run token", reached)
+	if reached != 4 {
+		t.Fatalf("the proxy served %d requests, want the four with the run token", reached)
 	}
 }
 

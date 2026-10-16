@@ -20,6 +20,7 @@ func TestProxyCredentials(t *testing.T) {
 		{"the proxy URL's password", basic(":krk_token"), "", "krk_token"},
 		{"a user named too", basic("run:krk_token"), "run", "krk_token"},
 		{"a retry around the cache", basic("uncached:krk_token"), "uncached", "krk_token"},
+		{"a locked install", basic("locked:krk_token"), "locked", "krk_token"},
 		{"the scheme in any case", "basic " + strings.TrimPrefix(basic(":krk_token"), "Basic "), "", "krk_token"},
 		{"a token as the user", basic("krk_token"), "krk_token", ""},
 		{"a bearer token", "Bearer krk_token", "", ""},

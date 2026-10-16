@@ -192,13 +192,14 @@ runner:
     # -- Annotations for the runner ServiceAccount.
     annotations: {}
 
-# The gateway's download cache: each kritika serve replica keeps what runner
-# tools download from the hosts `config.egress.cache` names, in an emptyDir,
-# and serves it again to the next run that asks for the same URL, so a tool
-# is fetched once per replica rather than once per run. mise still checks
-# every download against the repository's lock.
+# The gateway's download cache: each kritika serve replica keeps what a
+# repository's locked tools download, and what runner tools download from the
+# hosts `config.egress.cache` names, in an emptyDir, and serves it again to
+# the next run that asks for the same URL, so a tool is fetched once per
+# replica rather than once per run. mise still checks every download against
+# the repository's lock.
 gatewayCache:
-  # -- Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR); `config.egress.cache` names the hosts whose downloads it keeps.
+  # -- Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR), which keeps what a repository's `.kritika/mise.lock` pins; `config.egress.cache` names more hosts whose downloads it keeps.
   enabled: false
   # -- The most the cache keeps (KRITIKA_GATEWAY_CACHE_MAX_SIZE), in bytes or with Ki, Mi, Gi or Ti, the least recently used downloads going first, and apart from that the most its fetches under way may write. Allow ephemeral storage for twice this size plus evicted files still being served and the pod's other storage use. Evicted files retain disk space until their readers finish, for up to two minutes; their total size is not bounded by this setting.
   maxSize: 2Gi

@@ -18,6 +18,9 @@ type Rules struct {
 	// Cached are the exact hosts whose downloads the proxy's cache keeps
 	// and serves again, when it has a cache.
 	Cached []string
+	// Uncached are the exact hosts the cache keeps nothing from, a locked
+	// install's downloads included.
+	Uncached []string
 }
 
 // List is one side of the rules.

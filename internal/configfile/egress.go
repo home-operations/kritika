@@ -131,9 +131,11 @@ func checkHost(h string) error {
 // EgressRules is what the gateway allows for this file: the configured
 // entries and, once any connection exists, GitHub and its API, since
 // runners fetch from the one and gh reads the other, the denied entries,
-// plus the credentials as Authorization header values. Provider endpoints
-// are not among them: a runner reaches its model through the gateway's
-// model endpoint, and the worker calls the provider.
+// plus the credentials as Authorization header values, and what its cache
+// keeps: the cached hosts, and never the GitHub API, which mise sends the
+// run's token, not even for a locked install. Provider endpoints are not
+// among them: a runner reaches its model through the gateway's model
+// endpoint, and the worker calls the provider.
 func (f *File) EgressRules() egress.Rules {
 	allow := egress.List{Hosts: slices.Clone(f.Egress.allow.Hosts), Prefixes: f.Egress.allow.Prefixes}
 	if len(f.Connections) > 0 {
@@ -147,12 +149,19 @@ func (f *File) EgressRules() egress.Rules {
 	for host, secret := range f.Egress.credentials {
 		creds[host] = "Bearer " + secret.Value()
 	}
-	return egress.Rules{Allow: allow, Deny: f.Egress.deny, Credentials: creds, Cached: slices.Clone(f.Egress.Cache)}
+	return egress.Rules{
+		Allow: allow, Deny: f.Egress.deny, Credentials: creds, Cached: slices.Clone(f.Egress.Cache), Uncached: []string{GitHubAPIHost},
+	}
 }
 
 // EgressCached names the hosts whose downloads the gateway keeps, which a
 // runner's mise reaches over plain HTTP so the gateway can keep them.
 func (f *File) EgressCached() []string { return slices.Clone(f.Egress.Cache) }
+
+// GatewayCaches reports whether the gateway keeps downloads, which a
+// runner then sends what its repository's lock pins through, from
+// whichever host.
+func (f *File) GatewayCaches() bool { return f.Run.GatewayCacheDir != "" }
 
 // EgressHosts names the hosts the gateway lets a runner reach, for the
 // agent's tool descriptions: the allowed hosts, GitHub's among them, less

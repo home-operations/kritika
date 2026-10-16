@@ -282,11 +282,11 @@
       "type": "string"
     },
     "gatewayCache": {
-      "description": "The gateway's download cache: each kritika serve replica keeps what runner\ntools download from the hosts `config.egress.cache` names, in an emptyDir,\nand serves it again to the next run that asks for the same URL, so a tool\nis fetched once per replica rather than once per run. mise still checks\nevery download against the repository's lock.",
+      "description": "The gateway's download cache: each kritika serve replica keeps what a\nrepository's locked tools download, and what runner tools download from the\nhosts `config.egress.cache` names, in an emptyDir, and serves it again to\nthe next run that asks for the same URL, so a tool is fetched once per\nreplica rather than once per run. mise still checks every download against\nthe repository's lock.",
       "properties": {
         "enabled": {
           "default": false,
-          "description": "Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR); `config.egress.cache` names the hosts whose downloads it keeps.",
+          "description": "Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR), which keeps what a repository's `.kritika/mise.lock` pins; `config.egress.cache` names more hosts whose downloads it keeps.",
           "title": "enabled",
           "type": "boolean"
         },

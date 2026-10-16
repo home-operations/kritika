@@ -375,9 +375,12 @@ of the same `from` and `to` pairs, or use
 
 A run installs the tools its repository declares, so without a mirror
 each run downloads them again. The gateway can keep those downloads
-instead: `egress.cache` names the hosts, and each replica keeps what
-runs fetch from them in `gatewayCacheDir`, an emptyDir under Helm,
-serving it to the next run that asks for the same URL:
+instead: with `gatewayCacheDir` set, an emptyDir under Helm, each replica
+keeps what a repository's locked installs download from the hosts its
+`.kritika/mise.lock` pins, and serves it to the next run that asks for
+the same URL. `egress.cache` names more hosts whose downloads it keeps
+for every install, such as those of the tools the admin's mise config
+declares, which no lock pins:
 
 ```yaml
 gatewayCache:
@@ -385,33 +388,45 @@ gatewayCache:
 config:
   egress:
     allow: [get.helm.sh, "*.githubusercontent.com"]
-    cache: [get.helm.sh, github.com]
+    # Optional: what a repository's lock pins is kept without it.
+    cache: [get.helm.sh]
 ```
 
-- **What is kept.** A runner's mise reaches a cached host over plain
-  HTTP, `https://get.helm.sh/` rewritten to `http://get.helm.sh/` after
-  `runner.mise.urlReplacements`, and the gateway fetches it over HTTPS,
-  as it does any plain HTTP request, following redirects itself, each
-  through the egress rules: a GitHub release download that redirects to
-  `release-assets.githubusercontent.com` needs that host allowed, as it
-  does without the cache. The gateway keeps only what any run could
-  fetch for itself: a GET or HEAD with no query and no credential,
-  answered without a cookie or a `Cache-Control` of `private` or
-  `no-store`, through no redirect to a URL with credentials. A host with
-  an `egress.credentials` entry cannot be cached, nor `api.github.com`,
-  which mise sends the run's token, and a cached host's URLs must not
-  carry a credential in their path. The fetch is the gateway's own, with
-  its own User-Agent, and runs that ask for the same URL at once share
-  it. A command's plain HTTP request to a cached host, such as `curl
-  http://get.helm.sh/...`, is answered and kept the same way.
+- **What is kept.** A repository's locked install reaches each host its
+  lock pins a download on over plain HTTP, `https://github.com/`
+  rewritten to `http://github.com/` after `runner.mise.urlReplacements`,
+  with the proxy URL's username `locked`; every install does the same for
+  a host `egress.cache` names. The gateway fetches such a request over
+  HTTPS, as it does any plain HTTP request, following redirects itself,
+  each through the egress rules: a GitHub release download that
+  redirects to `release-assets.githubusercontent.com` needs that host
+  allowed, as it does without the cache, and a host `egress.allow` and
+  `egress.deny` refuse is refused with the cache too. The gateway keeps
+  only what any run could fetch for itself: a GET or HEAD with no query
+  and no credential, answered without a cookie or a `Cache-Control` of
+  `private` or `no-store`, through no redirect to a URL with credentials.
+  A host with an `egress.credentials` entry is never cached, nor
+  `api.github.com`, which mise sends the run's token; a lock's downloads
+  from it, or from `raw.githubusercontent.com`, which mise sends the
+  token too, stay on HTTPS. A cached host's URLs must not carry a
+  credential in their path.
+  The fetch is the gateway's own, with its own User-Agent, and runs that
+  ask for the same URL at once share it. A command's plain HTTP request
+  to a cached host, such as `curl http://get.helm.sh/...`, is answered
+  and kept the same way.
 - **Integrity.** mise checks every download against the checksum the
   repository's lock pins, so a stale or damaged copy fails the install
   rather than changing a tool, and the runner then installs the tool
-  once more, asking the gateway, by the proxy URL's username, not to
-  answer from its cache. The gateway fetches a kept download again after
-  `gatewayCacheMaxAge`, 24h unless set, so an asset replaced upstream
-  costs retries for at most that long. No run can write the cache, only
-  have the gateway fetch a URL a cached host serves.
+  once more, asking the gateway, by the proxy URL's username `uncached`,
+  not to answer from its cache; a locked install's retry also leaves
+  its lock's hosts on HTTPS, as it would go without the cache. The
+  gateway fetches a kept download again after `gatewayCacheMaxAge`, 24h
+  unless set, so an asset replaced upstream costs retries for at most
+  that long. No run can write the cache, only have the gateway fetch a
+  URL a cached host serves or, by naming the proxy's user `locked`, a URL
+  any other allowed host serves; what the gateway keeps from a host
+  `egress.cache` does not name is served only to a request named
+  `locked` too, which a locked install checks against its lock.
 - **Size.** `gatewayCacheMaxSize`, 2Gi unless set, bounds what each
   replica keeps, the least recently used going first, and apart from
   that what the fetches under way, at most eight at once, may write: a
@@ -425,8 +440,9 @@ config:
   which lasts as long as its pod.
 - **A mirror.** mise applies one rule to a URL, so a rule that rewrites
   to a mirror over `https://` skips the cache. To keep a mirror's
-  downloads, rewrite to it over `http://`, which the gateway upgrades,
-  and name its host in `egress.cache`.
+  downloads, rewrite to it over `http://`, which the gateway upgrades; a
+  locked install's are kept then, and the other installs' once its host
+  is in `egress.cache`.
 
 ### Migrating from image-mounted tools
 

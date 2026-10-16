@@ -104,12 +104,12 @@ func TestLockedTools(t *testing.T) {
 	for platform, want := range map[string][]string{
 		"linux-x64": {"helm"}, "linux-arm64": {"github:home-operations/flate", "helm"}, "darwin-arm64": nil,
 	} {
-		got, err := lockedTools(repoMiseLockDoc, platform)
+		got, _, err := lockedTools(repoMiseLockDoc, platform)
 		if err != nil || !slices.Equal(slices.Sorted(maps.Keys(got)), want) {
 			t.Errorf("lockedTools(%s) = %v, %v; want %v", platform, got, err, want)
 		}
 	}
-	if _, err := lockedTools("nope = [", "linux-x64"); err == nil {
+	if _, _, err := lockedTools("nope = [", "linux-x64"); err == nil {
 		t.Fatal("no error for a lock that is not TOML")
 	}
 }
@@ -222,8 +222,8 @@ version = "1.0.0"
 url = 1
 checksum = true
 `
-	got, err := lockedTools(lock, "linux-x64")
-	if err != nil || !reflect.DeepEqual(got, map[string][]string{"tool": {"1.0.0"}}) {
-		t.Fatalf("lockedTools = %v, %v", got, err)
+	got, urls, err := lockedTools(lock, "linux-x64")
+	if err != nil || !reflect.DeepEqual(got, map[string][]string{"tool": {"1.0.0"}}) || !slices.Equal(urls, []string{"https://example.com/tool"}) {
+		t.Fatalf("lockedTools = %v, %v, %v", got, urls, err)
 	}
 }

@@ -212,7 +212,7 @@ Kubernetes: `>=1.25.0-0`
 | envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application settings must not also be set in the file. |
 | existingConfigMap | string | `""` | Existing ConfigMap containing config.yaml instead of inline config. Put webUrl in that file. Changes require a restart, for example through a Reloader annotation. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gatewayCache.enabled | bool | `false` | Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR); `config.egress.cache` names the hosts whose downloads it keeps. |
+| gatewayCache.enabled | bool | `false` | Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR), which keeps what a repository's `.kritika/mise.lock` pins; `config.egress.cache` names more hosts whose downloads it keeps. |
 | gatewayCache.maxAge | string | `"24h"` | How long a kept download is served before it is fetched again (KRITIKA_GATEWAY_CACHE_MAX_AGE), a Go duration. |
 | gatewayCache.maxSize | string | `"2Gi"` | The most the cache keeps (KRITIKA_GATEWAY_CACHE_MAX_SIZE), in bytes or with Ki, Mi, Gi or Ti, the least recently used downloads going first, and apart from that the most its fetches under way may write. Allow ephemeral storage for twice this size plus evicted files still being served and the pod's other storage use. Evicted files retain disk space until their readers finish, for up to two minutes; their total size is not bounded by this setting. |
 | httpRoute.additionalRules | list | `[]` | Custom rules prepended before the default rule (templated). |

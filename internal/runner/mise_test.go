@@ -202,7 +202,7 @@ func TestMiseTools(t *testing.T) {
 	home := t.TempDir()
 	base := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
 	secrets := Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}
-	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, nil, nil, nil, secrets, slog.New(slog.DiscardHandler))
+	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, nil, false, nil, nil, secrets, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestMiseToolsURLReplacements(t *testing.T) {
 		{From: "https://github.com/acme/", To: "https://mirror.example.com/acme/"},
 		{From: "https://github.com/", To: "https://mirror.example.com/github/"},
 	}
-	m, notes, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, rules, nil, nil, nil,
+	m, notes, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, rules, nil, false, nil, nil,
 		Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -458,7 +458,7 @@ func TestMiseInstallSystemLinks(t *testing.T) {
 	home := t.TempDir()
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, nil, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +517,7 @@ func TestMiseToolsCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scratch, "mise.toml"), []byte("[tools]\njq = \"1.8.2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +536,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, testMiseConfig)
 	home := t.TempDir()
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -181,7 +181,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
 	spec.Agent.Hosts, spec.Agent.MiseURLReplacements = file.EgressHosts(), file.MiseURLReplacements()
-	spec.Agent.CachedHosts = file.EgressCached()
+	spec.Agent.CachedHosts, spec.Agent.CacheLocked = file.EgressCached(), file.GatewayCaches()
 	b.notes = append(b.notes, promptNotes...)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, reviewID, args.HeadSHA, w.superviseEvery, logger)
 	out := w.runRunner(ctx, w.Executor, sup, executor.Spec{

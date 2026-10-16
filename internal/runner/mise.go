@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,8 +100,11 @@ type miseTools struct {
 	path, extra []string
 	// uncached is env for an install that failed through the gateway's
 	// cache, its proxy URLs asking the gateway not to answer from it; nil
-	// when the gateway caches nothing.
-	uncached []string
+	// when the gateway caches no host for every install. repoEnv is env
+	// for a repository's locked install, which reaches the hosts its lock
+	// pins downloads on through the cache too, its proxy URLs saying it is
+	// locked; nil when that install goes as any other does.
+	uncached, repoEnv []string
 	// repo is the repository's config, nil when it supplies no tools, and
 	// repoSource the file it is written to, as mise names it.
 	repo       *repoMiseConfig
@@ -140,11 +142,13 @@ func resolved(path string) string {
 // installed already. replacements, when set, rewrite the URLs mise
 // downloads from, and reach mise alone; cached names the hosts whose
 // downloads the gateway keeps, which mise then reaches through the
-// gateway's cache. credentialed names the commands that run with one of
-// the run's credentials, which a repository's own binary is not offered
-// as. notes say what was not offered and why, for the review's summary.
+// gateway's cache, and cacheLocked says the gateway keeps a locked
+// install's downloads from any host, which the repository's tools then
+// reach it for. credentialed names the commands that run with one of the
+// run's credentials, which a repository's own binary is not offered as.
+// notes say what was not offered and why, for the review's summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, replacements []config.MiseURLReplacement, cached []string,
+	ctx context.Context, bin, home string, base []string, replacements []config.MiseURLReplacement, cached []string, cacheLocked bool,
 	repo *repoMiseConfig, credentialed []string, secrets Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if repo != nil {
@@ -190,6 +194,13 @@ func newMiseTools(
 			m.env = append(slices.Clone(common), "MISE_URL_REPLACEMENTS="+miseURLReplacements(append(slices.Clone(replacements), rules...)))
 		}
 		m.uncached = withProxyUser(m.env, egress.UncachedProxyUser)
+	}
+	// A repository's locked install reaches the hosts its lock pins
+	// downloads on through the cache as well, which keeps them from any
+	// host for a request the proxy's username says is locked; mise checks
+	// each against the lock.
+	if cacheLocked && repo != nil && len(repo.urls) > 0 && httpProxied(base) {
+		m.repoEnv = lockedInstallEnv(common, replacements, cached, repo.urls)
 	}
 	notes, err := m.refresh(ctx)
 	if err != nil {
@@ -255,50 +266,6 @@ func miseURLReplacements(rules []config.MiseURLReplacement) string {
 	}
 	b.WriteByte('}')
 	return b.String()
-}
-
-// cacheReplacements are the rules that send a download from one of
-// cached, the hosts whose downloads the gateway keeps, to the gateway as
-// plain HTTP, which it upgrades, so it can keep what it fetches. mise
-// tries them after replacements, so a mirror the admin set still wins,
-// and none repeats a from of theirs, since mise keys the rules by it.
-func cacheReplacements(replacements []config.MiseURLReplacement, cached []string) []config.MiseURLReplacement {
-	var rules []config.MiseURLReplacement
-	for _, host := range cached {
-		from := "https://" + host + "/"
-		if !slices.ContainsFunc(replacements, func(r config.MiseURLReplacement) bool { return r.From == from }) {
-			rules = append(rules, config.MiseURLReplacement{From: from, To: "http://" + host + "/"})
-		}
-	}
-	return rules
-}
-
-// httpProxied reports whether env names an HTTP proxy.
-func httpProxied(env []string) bool {
-	return slices.ContainsFunc(env, func(kv string) bool {
-		name, value, _ := strings.Cut(kv, "=")
-		return strings.EqualFold(name, "HTTP_PROXY") && value != ""
-	})
-}
-
-// withProxyUser is env with the username of each proxy URL, under either
-// spelling, set to user, the password, which is the run token, kept.
-func withProxyUser(env []string, user string) []string {
-	out := slices.Clone(env)
-	for i, kv := range out {
-		name, value, _ := strings.Cut(kv, "=")
-		if !strings.EqualFold(name, "HTTP_PROXY") && !strings.EqualFold(name, "HTTPS_PROXY") {
-			continue
-		}
-		u, err := url.Parse(value)
-		if err != nil || u.User == nil {
-			continue
-		}
-		password, _ := u.User.Password()
-		u.User = url.UserPassword(user, password)
-		out[i] = name + "=" + u.String()
-	}
-	return out
 }
 
 // cappedWriter keeps the first max bytes written to it and counts the
@@ -700,21 +667,28 @@ func (m *miseTools) resolve(ctx context.Context, command string) (string, []stri
 }
 
 // install installs t with mise, through the gateway's cache when it has
-// one and, should that fail, once more without it: what the cache served
-// may be stale or damaged, which the lock's checksum catches, and the
-// same install without the cache fetches from upstream. Whether t is
-// installed is what mise lists afterwards, not mise's exit status: after
-// an install, mise rebuilds the runtime symlinks of every tool, the
-// image's system installs included, and exits non-zero when one of those
-// directories, which the runner cannot write, needs a link it cannot
-// make; the tool is installed all the same, and mise's output is logged.
+// one, a repository's tool as a locked install, and, should that fail,
+// once more without it: what the cache served may be stale or damaged,
+// which the lock's checksum catches, and the same install without the
+// cache fetches from upstream. Whether t is installed is what mise lists
+// afterwards, not mise's exit status: after an install, mise rebuilds the
+// runtime symlinks of every tool, the image's system installs included,
+// and exits non-zero when one of those directories, which the runner
+// cannot write, needs a link it cannot make; the tool is installed all
+// the same, and mise's output is logged.
 func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	started := time.Now()
-	a, cached := m.installWith(ctx, t, m.env), m.uncached != nil
+	// A locked install's retry leaves out its lock's rules too, so it goes
+	// as it would without the cache.
+	env, retry := m.env, m.uncached
+	if m.fromRepo(t) && m.repoEnv != nil {
+		env, retry = m.repoEnv, withProxyUser(m.env, egress.UncachedProxyUser)
+	}
+	a, cached := m.installWith(ctx, t, env), retry != nil
 	if !t.installed && ctx.Err() == nil && cached {
 		m.logger.Warn("tool not installed through the gateway's cache, installing it without", "tool", t.name, "version", t.version,
 			"source", t.source, "error", errors.Join(a.exitErr, a.err), "output", a.output)
-		a, cached = m.installWith(ctx, t, m.uncached), false
+		a, cached = m.installWith(ctx, t, retry), false
 	}
 	switch {
 	case ctx.Err() != nil:
