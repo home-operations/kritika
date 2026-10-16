@@ -228,7 +228,11 @@ networkPolicy:
 
 A database outside the cluster goes in `networkPolicy.postgres.cidrs`; with
 the `cilium` flavor, list its host in `networkPolicy.dns.runnerNames` too,
-so runner pods may look it up.
+so runner pods may look it up. An install already running with
+`networkPolicy.enabled` must set these before it upgrades to a chart that
+narrows the port, when its database is not in the release namespace: the
+upgrade succeeds, and kritika serve, whose own policy keeps the port open,
+stays ready, but every run fails to connect.
 
 ## Connections
 

@@ -175,6 +175,12 @@ and those `networkPolicy.dns.runnerNames` lists: add the host of a
 database outside the cluster, or runs cannot look it up. See
 [name lookups](https://kritika.home-operations.com/security/#name-lookups).
 
+Runner pods reach the Postgres port only where `networkPolicy.postgres`
+says the database is, any pod in the release namespace unless set. Before
+upgrading, set its `namespace`, `podSelector` or `cidrs` when the database
+is elsewhere, or runs cannot connect while kritika serve still can. See
+[Postgres](https://kritika.home-operations.com/database/#secrets-and-connection-uris).
+
 ### Topology
 
 The chart runs one Deployment of `kritika serve`, one replica by default.
