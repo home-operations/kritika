@@ -18,7 +18,10 @@
 {{- end -}}
 {{- end -}}
 {{- if hasKey .Values.runner "tools" -}}
-{{- fail "runner.tools has been removed; declare tools in runner.mise.config instead" -}}
+{{- fail "runner.tools has been removed; declare tools in a repository's .kritika/mise.toml instead" -}}
+{{- end -}}
+{{- if hasKey (.Values.runner.mise | default dict) "config" -}}
+{{- fail "runner.mise.config has been removed; declare tools in a repository's .kritika/mise.toml and mirrors in runner.mise.urlReplacements instead" -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment

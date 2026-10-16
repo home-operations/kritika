@@ -255,7 +255,7 @@ func (c *Config) Env() []EnvVar {
 			} else {
 				_, e.Set = os.LookupEnv(name)
 				switch value := field.Interface().(type) {
-				case jsonObject:
+				case jsonObject, MiseURLReplacements:
 					raw, err := json.Marshal(value)
 					if err != nil {
 						e.Value = "invalid JSON: " + err.Error()

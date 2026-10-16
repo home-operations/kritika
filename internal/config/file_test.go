@@ -66,17 +66,26 @@ runner:
       cpu: 10m
     limits:
       example.com/device: "1"
-  miseConfig: |
-    [tools]
-    helm = "4.3.0"
+  miseUrlReplacements:
+    - from: https://github.com/acme/
+      to: https://mirror.example.com/acme/
+    - from: https://github.com/
+      to: https://mirror.example.com/github/
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.ReviewWorkers != 5 || s.IndexWorkers != 1 || s.PollInterval != 0 ||
 		s.RunnerImage != "example.com/runner:test" || s.RunnerServiceAccount != "" ||
-		s.RunnerRuntimeClass != "gvisor" || s.RunnerTTL != 10*time.Minute || s.RunnerMiseConfig != "[tools]\nhelm = \"4.3.0\"\n" {
+		s.RunnerRuntimeClass != "gvisor" || s.RunnerTTL != 10*time.Minute {
 		t.Fatalf("merged settings = %+v", s)
+	}
+	wantReplacements := MiseURLReplacements{
+		{From: "https://github.com/acme/", To: "https://mirror.example.com/acme/"},
+		{From: "https://github.com/", To: "https://mirror.example.com/github/"},
+	}
+	if !reflect.DeepEqual(s.RunnerMiseURLReplacements, wantReplacements) {
+		t.Fatalf("URL replacements = %#v", s.RunnerMiseURLReplacements)
 	}
 	wantResources := jsonObject{
 		"requests": map[string]any{"cpu": "10m"},
@@ -85,7 +94,7 @@ runner:
 	if !reflect.DeepEqual(s.RunnerResources, wantResources) {
 		t.Fatalf("resources = %#v", s.RunnerResources)
 	}
-	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_MISE_CONFIG"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] {
+	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_MISE_URL_REPLACEMENTS"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] {
 		t.Fatalf("file provenance = %v", s.fileEnv)
 	}
 }
@@ -97,7 +106,10 @@ func TestSettingsTypes(t *testing.T) {
 		{"workers must be numeric", "reviewWorkers: '4'", "reviewWorkers"},
 		{"no boolean coercion", "logLevel: true", "logLevel"},
 		{"removed tools", "runner: {tools: [{name: flux, image: example.com/flux:test}]}", "tools"},
+		{"removed mise config", "runner: {miseConfig: \"[tools]\\nhelm = '4.3.0'\"}", "miseConfig"},
 		{"resources must be a map", "runner: {resources: [1]}", "runner.resources"},
+		{"URL replacements must be a list", "runner: {miseUrlReplacements: {from: a, to: b}}", "miseUrlReplacements"},
+		{"URL replacement keys are known", "runner: {miseUrlReplacements: [{from: a, to: b, too: c}]}", "too"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := LoadSettings([]byte(tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -130,15 +142,22 @@ func TestNullSettingsAreOmitted(t *testing.T) {
 func TestEnvFormatsStructuredFileSettings(t *testing.T) {
 	s, err := LoadSettings([]byte(`runner:
   resources: {requests: {cpu: 10m}}
+  miseUrlReplacements: [{from: "https://github.com/", to: "https://mirror.example.com/"}]
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := Config{Settings: s}
 	for _, e := range cfg.Env() {
-		if e.Name == "KRITIKA_RUNNER_RESOURCES" {
+		switch e.Name {
+		case "KRITIKA_RUNNER_RESOURCES":
 			if e.Value != `{"requests":{"cpu":"10m"}}` || !e.File || e.Path != "runner.resources" {
 				t.Fatalf("resources = %+v", e)
+			}
+		case "KRITIKA_RUNNER_MISE_URL_REPLACEMENTS":
+			if e.Value != `[{"from":"https://github.com/","to":"https://mirror.example.com/"}]` || !e.File ||
+				e.Path != "runner.miseUrlReplacements" {
+				t.Fatalf("URL replacements = %+v", e)
 			}
 		}
 	}

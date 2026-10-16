@@ -31,10 +31,11 @@ var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
 // checkout of tree written to scratch space, and fetch_repo, which writes
 // beside the checkout, when one of the commands already reaches the
 // network. On an image with mise the commands are those of the tools the
-// merged mise config declares: the image's system config under the
-// instance's, and the repository's own mise config among files, read from
-// the merge base, over both, each installed on first use at what its lock
-// pins. An image without mise offers the defaultCommands on its PATH.
+// merged mise config declares: the image's system config, and the
+// repository's own mise config among files, read from the merge base,
+// over it, each of the repository's tools installed on first use at what
+// its lock pins. An image without mise offers the defaultCommands on its
+// PATH.
 // Both tools are nil, with a no-op cleanup, when there is nothing to
 // offer or the commands cannot be kept from the runner's secrets; the
 // review then goes on with the read-only tools alone. notes say what was
@@ -97,7 +98,7 @@ func commandTool(
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
-		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseConfig, repo,
+		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseURLReplacements, repo,
 			slices.Sorted(maps.Keys(commandEnvs)), secrets, logger)
 		notes = append(notes, miseNotes...)
 		if err != nil {

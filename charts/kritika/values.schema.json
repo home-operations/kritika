@@ -1016,12 +1016,30 @@
           "type": "object"
         },
         "mise": {
+          "description": "The runner image declares curl, fd, gh, jq, rg and yq; a repository adds\ntools for its own reviews in `.kritika/mise.toml`, pinned by its lock.",
           "properties": {
-            "config": {
-              "default": "",
-              "description": "The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain.",
-              "title": "config",
-              "type": "string"
+            "urlReplacements": {
+              "description": "Rewrites of the URLs runner tools download from (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS), such as to a caching mirror: mise's `url_replacements`, tried in order until one matches. `from` is a URL prefix, or `regex:` and a pattern whose groups `to` may name as `$1`. The mirror's host must pass the egress gateway; a download is still checked against the repository's lock.",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "from": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "to": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "type": "object"
+              },
+              "title": "urlReplacements",
+              "type": "array"
             }
           },
           "required": [],

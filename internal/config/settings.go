@@ -145,10 +145,13 @@ type Runner struct {
 	// verbatim into its pod spec, a JSON object of requests and limits.
 	RunnerDeadline  time.Duration `env:"KRITIKA_RUNNER_DEADLINE" envDefault:"15m" yaml:"deadline,omitempty"`
 	RunnerResources jsonObject    `env:"KRITIKA_RUNNER_RESOURCES" yaml:"resources,omitempty"`
-	// RunnerMiseConfig is the instance's mise config, a TOML document whose
-	// tools the agent's run tool offers every repository, layered over the
-	// runner image's own /etc/mise/config.toml. Empty leaves the image's.
-	RunnerMiseConfig string `env:"KRITIKA_RUNNER_MISE_CONFIG" yaml:"miseConfig,omitempty"`
+	// RunnerMiseURLReplacements rewrite the URLs runner tools download
+	// from, such as to a caching mirror, as mise's url_replacements, the
+	// one mise setting an admin sets: mise ignores the [settings] of the
+	// image's system config, and a repository's are dropped. mise checks a
+	// locked download against the repository's lock, so a mirror cannot
+	// change what a tool is. Empty leaves every URL as it is.
+	RunnerMiseURLReplacements MiseURLReplacements `env:"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS" yaml:"miseUrlReplacements,omitempty"`
 }
 
 // jsonObject is a JSON object from the environment, kept as loose maps
@@ -160,3 +163,25 @@ func (o *jsonObject) UnmarshalText(b []byte) error { return json.Unmarshal(b, (*
 
 // UnmarshalYAML accepts native resource maps alongside the environment's JSON.
 func (o *jsonObject) UnmarshalYAML(n *yaml.Node) error { return n.Decode((*map[string]any)(o)) }
+
+// MiseURLReplacement is one of mise's url_replacements rules: a download
+// URL From matches, as a prefix or, after "regex:", a pattern, becomes To.
+type MiseURLReplacement struct {
+	From string `json:"from" yaml:"from"`
+	To   string `json:"to" yaml:"to"`
+}
+
+// MiseURLReplacements are rules in the order mise tries them, the first
+// that matches a URL rewriting it, so they are a list rather than a map:
+// a JSON array in the environment, a YAML sequence in the file.
+type MiseURLReplacements []MiseURLReplacement
+
+// UnmarshalText decodes the variable's JSON.
+func (r *MiseURLReplacements) UnmarshalText(b []byte) error {
+	return json.Unmarshal(b, (*[]MiseURLReplacement)(r))
+}
+
+// UnmarshalYAML accepts a native sequence alongside the environment's JSON.
+func (r *MiseURLReplacements) UnmarshalYAML(n *yaml.Node) error {
+	return n.Decode((*[]MiseURLReplacement)(r))
+}

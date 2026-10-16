@@ -29,8 +29,13 @@ func TestSettingsValidation(t *testing.T) {
 		{"empty role", "databaseAppRole: ''", "databaseAppRole: KRITIKA_DATABASE_APP_ROLE must be set"},
 		{"same database roles", "databaseRunnerRole: kritika_app", "databaseRunnerRole: KRITIKA_DATABASE_RUNNER_ROLE must be distinct"},
 		{"unknown executor", "executor: docker", "executor: KRITIKA_EXECUTOR must be kubernetes or local"},
-		{"malformed mise config", "runner: {miseConfig: '[tools'}", "runner.miseConfig: KRITIKA_RUNNER_MISE_CONFIG must be a TOML document: "},
-		{"mise config", "runner: {miseConfig: \"[tools]\\nhelm = '4.3.0'\"}", ""},
+		{"URL replacement without a to", "runner: {miseUrlReplacements: [{from: 'https://github.com/'}]}",
+			"runner.miseUrlReplacements: KRITIKA_RUNNER_MISE_URL_REPLACEMENTS must give every rule a from of its own and a to"},
+		{"URL replacement without a from", "runner: {miseUrlReplacements: [{to: 'https://mirror.example.com/'}]}",
+			"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS must give every rule a from of its own and a to"},
+		{"URL replacements sharing a from", "runner: {miseUrlReplacements: [{from: a, to: b}, {from: a, to: c}]}",
+			"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS must give every rule a from of its own and a to"},
+		{"URL replacements", "runner: {miseUrlReplacements: [{from: 'regex:^https://(.+)/', to: 'https://mirror.example.com/$1/'}]}", ""},
 		{"allowed bounds", fmt.Sprintf("pollInterval: 0s\npollLookback: 0s\nindexGrace: 0s\ntranscriptRetention: 24h\ndiffRetention: 24h\nrunner: {deadline: %s}", jobtimeout.MaxRunnerDeadline), ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

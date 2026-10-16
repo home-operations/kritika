@@ -22,7 +22,7 @@ func TestCommandToolMise(t *testing.T) {
 	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
-	t.Setenv("MISE_SYSTEM_CONFIG_DIR", t.TempDir())
+	systemMiseConfig(t, testMiseConfig)
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("TMPDIR", t.TempDir())
 	was := miseBin
@@ -43,12 +43,12 @@ func TestCommandToolMise(t *testing.T) {
 		files repoconfig.Files
 		want  []string
 	}{
-		{"the image's and instance's tools", nil, []string{"yq"}},
+		{"the image's tools", nil, []string{"yq"}},
 		{"the repository's tools merged", files, []string{"helm", "yq"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
-			s.Agent.CommandTimeoutSeconds, s.Agent.MiseConfig = 10, testMiseConfig
+			s.Agent.CommandTimeoutSeconds = 10
 			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, tt.files, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096, logger)
 			defer cleanup()
 			if fetch != nil {
@@ -87,7 +87,11 @@ func TestCommandToolMise(t *testing.T) {
 			if err != nil || !strings.Contains(string(config), "99.0.0") {
 				t.Fatalf("checkout config = %q, %v", config, err)
 			}
-			for _, path := range []string{home, filepath.Join(home, ".config", "mise"), filepath.Join(home, ".config", "mise", "config.toml")} {
+			paths := []string{home}
+			if tt.files != nil {
+				paths = append(paths, filepath.Join(home, "mise.toml"), filepath.Join(home, "mise.lock"))
+			}
+			for _, path := range paths {
 				if info, err := os.Stat(path); err != nil || info.Mode().Perm()&0o222 != 0 {
 					t.Fatalf("%s: mode %v, %v; want read-only", path, info.Mode().Perm(), err)
 				}

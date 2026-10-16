@@ -67,16 +67,16 @@ tests:
       runner.image.repository: registry.example/tools
       runner.image.tag: custom
       runner.resources: { limits: { memory: 1Gi } }
-      runner.mise.config: |
-        [tools]
-        helm = "4.3.0"
+      runner.mise.urlReplacements:
+        - { from: "https://github.com/acme/", to: "https://mirror.example.com/acme/" }
+        - { from: "https://github.com/", to: "https://mirror.example.com/github/" }
     asserts:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "runtimeClass: gvisor"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'miseConfig: \|\n\s+\[tools\]\n\s+helm = "4.3.0"'
+          pattern: 'miseUrlReplacements:\n\s+- from: https://github.com/acme/\n\s+to: https://mirror.example.com/acme/\n\s+- from: https://github.com/\n\s+to: https://mirror.example.com/github/'
       - matchRegex:
           path: data["config.yaml"]
           pattern: "deadline: 20m"
@@ -87,11 +87,11 @@ tests:
           path: data["config.yaml"]
           pattern: "memory: 1Gi"
 
-  - it: omits the instance mise config by default, leaving the image's tools to the runner
+  - it: omits URL replacements by default, leaving runner downloads at their URLs
     asserts:
       - notMatchRegex:
           path: data["config.yaml"]
-          pattern: miseConfig
+          pattern: miseUrlReplacements
 
   - it: refuses runner configuration duplicated in application config
     set:

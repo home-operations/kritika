@@ -29,14 +29,16 @@ func TestRun(t *testing.T) {
 		for k, v := range map[string]string{
 			"KRITIKA_POLL_INTERVAL": "0s", "KRITIKA_POLL_LOOKBACK": "1h", "KRITIKA_ONBOARD_WINDOW": "8", "KRITIKA_INDEX_GRACE": "48h",
 			"KRITIKA_TRANSCRIPT_RETENTION": "72h", "KRITIKA_DIFF_RETENTION": "96h", "KRITIKA_RUNNER_DEADLINE": "10m",
-			"KRITIKA_RUNNER_RESOURCES": `{"limits":{"memory":"1Gi"}}`,
+			"KRITIKA_RUNNER_RESOURCES":             `{"limits":{"memory":"1Gi"}}`,
+			"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS": `[{"from":"https://github.com/","to":"https://mirror.example.com/"}]`,
 		} {
 			t.Setenv(k, v)
 		}
 		f := mustLoad(t, minimal)
 		deadline, resources := f.RunnerFor()
 		if f.PollInterval() != 0 || f.PollLookback() != time.Hour || f.OnboardWindow() != 8 || f.DisabledIndexGrace() != 48*time.Hour ||
-			f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour || deadline != 10*time.Minute || resources["limits"] == nil {
+			f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour || deadline != 10*time.Minute || resources["limits"] == nil ||
+			len(f.MiseURLReplacements()) != 1 || f.MiseURLReplacements()[0].To != "https://mirror.example.com/" {
 			t.Fatalf("run = %+v", f.Run)
 		}
 	})
@@ -50,6 +52,8 @@ func TestRun(t *testing.T) {
 		{"KRITIKA_RUNNER_RESOURCES", "[1]", "KRITIKA_RUNNER_RESOURCES"},
 		{"KRITIKA_POLL_LOOKBACK", "soon", "KRITIKA_POLL_LOOKBACK"},
 		{"KRITIKA_RUNNER_TOOLS", "[]", "KRITIKA_RUNNER_TOOLS has been removed"},
+		{"KRITIKA_RUNNER_MISE_CONFIG", "[tools]", "KRITIKA_RUNNER_MISE_CONFIG has been removed"},
+		{"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS", `[{"from":"https://github.com/"}]`, "KRITIKA_RUNNER_MISE_URL_REPLACEMENTS must give every rule"},
 	}
 	for _, tt := range refused {
 		t.Run(tt.env+"="+tt.value, func(t *testing.T) {

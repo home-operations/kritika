@@ -148,36 +148,41 @@ JSON and YAML with `jq` and `yq`. Runner Jobs run on the release's `-tools`
 image, pinned by digest like the chart's image: a distroless image that
 carries [mise](https://mise.jdx.dev/) and those six tools as mise system
 installs, declared by its system config, `/etc/mise/config.toml`, at the
-versions `build/tools/mise.toml` pins. The chart's `runner.mise.config`
-layers the instance's config over it, as mise merges configs: per tool,
-the instance's entry replaces the image's, options included, and the
-image's other tools stay. So an admin adds a tool, `crane` for a
+versions `build/tools/mise.toml` pins. Every other tool is the
+repository's: its own
+[`.kritika/mise.toml`](repository-config.md#repository-tools) layers
+tools over the image's, as mise merges configs: per tool, the
+repository's entry replaces the image's, options included, and the
+image's other tools stay. So a repository adds a tool, `crane` for a
 container image's tags, digest, manifest and labels, say, or `flate` for
-a chart's rendered output, without an image build or a list of the six:
+a chart's rendered output, without an image build, and pins its download
+in `.kritika/mise.lock`:
 
-```yaml
-runner:
-  mise:
-    config: |
-      [tools]
-      crane = "0.22.1"
-      "github:home-operations/flate" = "0.6.5"
+```toml
+[tools]
+crane = "0.22.1"
+"github:home-operations/flate" = "0.6.5"
 ```
 
-A tool at the image's version runs from its system install; any other
-downloads on the first run that uses it, into the run's own scratch space,
-at the version the config pins and with the verification its backend
-gives it. The run tool offers every command the merged config's tools
-provide, `mise` itself excepted. An image set in `runner.image` without
-mise offers the six default commands its builder put on its `PATH`, and
-reads no repository config, which the review summary says. A follow-up
-posts no summary, so its reply carries such notes, and a command's setup
-failure, instead.
+Both files are read from the merge base, so a pull request cannot change
+the tools or download pins used to review itself. A tool at the image's
+version runs from its system install; any other downloads on the first
+run that uses it, into the run's own scratch space, at the URL and
+checksum the lock pins. The run tool offers every command the merged
+config's tools provide, `mise` itself excepted. An image set in
+`runner.image` without mise offers the six default commands its builder
+put on its `PATH`, and reads no repository config, which the review
+summary says. A follow-up posts no summary, so its reply carries such
+notes, and a command's setup failure, instead.
 
-A repository's own [`.kritika/mise.toml`](repository-config.md#repository-tools)
-layers tools over the image and instance configs. Both this file and
-`.kritika/mise.lock` are read from the merge base, so a pull request
-cannot change the tools or download pins used to review itself.
+A tool every repository should have belongs in the runner image: an
+image built on the `-tools` image, with the tool added to its
+`/etc/mise/config.toml` and to `/etc/mise/mise.lock`, which the runner's
+user must be able to read (`mise lock` writes it mode 0600), and
+installed with `mise install --system --locked` as the release's
+Dockerfile installs the six, set in `runner.image`. The admin's one mise
+setting is a mirror for the downloads, `runner.mise.urlReplacements`
+(see [more tools](#more-tools)).
 
 The runner keeps of a repository's `[tools]` entry its version and the
 options that select, verify and extract its download. The options that
@@ -188,7 +193,7 @@ renders templates, `exec()` among them, when it reads the config and
 runs install hooks with the run's GitHub token in their environment.
 Repository `[env]` permits only literal strings under non-reserved names;
 templates and `_.` directives are dropped. `[tasks]`, `[settings]` and
-hooks are dropped too, with summary notes. Mise settings and egress
+hooks are dropped too, with summary notes. Mirrors and egress
 permissions remain the admin's. The filtered config and its lock live
 outside the checkout in the run's read-only `HOME`, trusted only for the
 runner's own mise calls. A tool without a locked version, URL and
@@ -335,7 +340,7 @@ repository and a ref, never git arguments.
 
 ### More tools
 
-Declare a tool in `runner.mise.config` by its registry short name where
+Declare a tool in `.kritika/mise.toml` by its registry short name where
 it has one (`helm`, `crane`), which names its commands before it installs,
 else as `aqua:owner/repo`, whose recipe names the release asset and what
 mise verifies, and as `github:owner/repo` as a last resort, with
@@ -343,35 +348,71 @@ mise verifies, and as `github:owner/repo` as a last resort, with
 command. The binaries must be static or link only
 against glibc, libgcc and libstdc++, which is all the image carries, so a
 backend that builds or needs a runtime (`npm:`, `pipx:`, `cargo:`, `go:`)
-does not work there. The config's `[settings]` apply to every runner: a
-`url_replacements` rule sends downloads to a mirror, whose host must pass
-the gateway like any other, and `[env]` reaches every command.
+does not work there.
+
+`runner.mise.urlReplacements` sends every runner's tool downloads to a
+mirror, whose host must pass the gateway like any other; what `curl`,
+`gh` and `fetch_repo` reach is left as it is. The rules are
+mise's `url_replacements`, tried in order until one rewrites the URL: a
+`from` is a URL prefix, or `regex:` and a pattern whose groups `to` names
+as `$1`:
+
+```yaml
+runner:
+  mise:
+    urlReplacements:
+      - from: https://github.com/
+        to: https://mirror.example.internal/github/
+```
+
+A download from the mirror is checked against the checksum the
+repository's lock pins, so the mirror cannot change what a tool is.
+Outside Helm, the application key is `runner.miseUrlReplacements`, a list
+of the same `from` and `to` pairs, or use
+`KRITIKA_RUNNER_MISE_URL_REPLACEMENTS`, a JSON array of them.
 
 ### Migrating from image-mounted tools
 
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Delete them from
 Helm values, the application configuration and the environment. Declare
-each tool in the instance's mise config instead; for example, a flate
-image mount becomes:
+each tool in the `.kritika/mise.toml` of the repositories whose reviews
+use it instead, with its lock; for example, a flate image mount becomes:
 
-```yaml
-runner:
-  mise:
-    config: |
-      [tools]
-      "github:home-operations/flate" = "0.6.5"
+```toml
+[tools]
+"github:home-operations/flate" = "0.6.5"
 ```
 
-Outside Helm, the application key is `runner.miseConfig`, or use
-`KRITIKA_RUNNER_MISE_CONFIG`. Tools no longer use Kubernetes image volumes,
-so adding one does not require Kubernetes 1.33. A custom runner image can
-still provide named commands on its own `PATH`.
+Tools no longer use Kubernetes image volumes, so adding one does not
+require Kubernetes 1.33. A custom runner image can still provide named
+commands on its own `PATH`.
 
-The chart's `runner.mise.config` is empty by default: the image's
-`/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`, `rg` and `yq`,
-and every review offers those, the instance's tools and the repository's.
-`crane` is not a default: declare it when needed. If building on top of the
-`-tools` image, its preinstalled tools live in mise's system install
+### Migrating from the instance mise config
+
+`runner.mise.config`, `runner.miseConfig` and `KRITIKA_RUNNER_MISE_CONFIG`
+are removed. The instance's config had no lock, so its tools downloaded
+with only the verification their backend gives them. Delete it from Helm
+values, the application configuration and the environment, and move what
+it held:
+
+- **`[tools]`:** into the `.kritika/mise.toml` of each repository whose
+  reviews use the tool, locked with
+  `mise -C .kritika lock --platform linux-x64,linux-arm64`; a tool every
+  repository needs goes into a runner image built on the `-tools` image
+  (see [runner tools](#runner-tools)).
+- **`url_replacements`:** into `runner.mise.urlReplacements`, one `from`
+  and `to` pair per rule, in the order the rules were written.
+- **`[env]`:** a plain value into each repository's `[env]`, as a
+  literal string. A value marked `redact = true` is a secret and does
+  not belong in a repository: a token a tool sends to a host goes in
+  [`egress.credentials`](#the-egress-gateway), which the gateway adds to
+  the tool's plain `http://` requests, so the runner never holds it.
+- **Other `[settings]`:** no longer apply.
+
+The image's `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`,
+`rg` and `yq`, and every review offers those and the repository's tools.
+`crane` is not a default: declare it when needed. If building on top of
+the `-tools` image, its preinstalled tools live in mise's system install
 directory, not `/usr/local/bin`.
 
 ## Runner sandbox

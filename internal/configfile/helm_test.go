@@ -55,9 +55,8 @@ func TestHelmConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered configuration: %v", err)
 	}
-	// The chart's default mise config is empty: the image's tools come from
-	// its own system config.
-	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseConfig() != "" {
+	// The chart sets no URL replacements unless asked to.
+	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseURLReplacements() != nil {
 		t.Fatalf("rendered runtime settings = %+v", f.Run)
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")

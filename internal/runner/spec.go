@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -24,7 +25,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 30
+const SpecVersion = 31
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -94,10 +95,9 @@ type AgentLimits struct {
 	// as configfile.EgressHosts lists them, for the tools' descriptions;
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
-	// MiseConfig is the instance's mise config, the admin's TOML document
-	// declaring the tools every repository is offered, layered over the
-	// runner image's own system config; "" leaves that alone.
-	MiseConfig string `json:"miseConfig,omitempty"`
+	// MiseURLReplacements rewrite the URLs mise downloads tools from, in
+	// the order mise tries them; none leaves every URL as it is.
+	MiseURLReplacements []config.MiseURLReplacement `json:"miseUrlReplacements,omitempty"`
 }
 
 // Prompt is what a review run needs beyond the checkout to write its
