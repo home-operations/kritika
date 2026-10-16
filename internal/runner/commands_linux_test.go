@@ -272,7 +272,7 @@ func TestCommandToolCurlrc(t *testing.T) {
 		t.Fatalf("scratch = %v, %v", scratch, err)
 	}
 	curlrc := filepath.Join(scratch[0], "home", ".curlrc")
-	if b, err := os.ReadFile(curlrc); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\n" {
+	if b, err := os.ReadFile(curlrc); err != nil || string(b) != "no-progress-meter\nlocation\nfail-with-body\nproto = \"=http,https\"\n" {
 		t.Fatalf(".curlrc = %q, %v", b, err)
 	}
 	// A command may not rewrite it, with a trace that prints the proxy

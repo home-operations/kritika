@@ -193,8 +193,10 @@ func commandTool(
 // itself; it sends credentials only to the initial host. A host the
 // gateway refuses answers a plain http:// request with a 403, which curl
 // would otherwise report as a success, exit code 0 and the refusal as the
-// body; failing on it keeps the body, which names the reason.
-const curlrc = "no-progress-meter\nlocation\nfail-with-body\n"
+// body; failing on it keeps the body, which names the reason. The proxy
+// variables cover http and https alone, so a URL of any other scheme curl
+// speaks, given or redirected to, would connect around the gateway.
+const curlrc = "no-progress-meter\nlocation\nfail-with-body\nproto = \"=http,https\"\n"
 
 // markRepository gives the checkout an empty .git whose origin is the
 // repository's clone URL: no history, but enough for a tool that locates a
@@ -209,12 +211,15 @@ func markRepository(dir, cloneURL string) error {
 }
 
 // commandEnv is the whole environment of a command: PATH, home as HOME,
-// cache as XDG_CACHE_HOME, and the pod's proxy settings under both
-// spellings, since curl reads http_proxy only in lower case. proxied
-// reports whether there is an HTTPS proxy, the egress gateway.
+// cache as XDG_CACHE_HOME, and the pod's proxies under both spellings,
+// since curl reads http_proxy only in lower case. The pod's NO_PROXY is
+// left out, so curl reaches localhost and the gateway's own host through
+// the gateway too: its --connect-to or an --alt-svc cache would send a
+// direct connection to one anywhere. proxied reports whether there is an
+// HTTPS proxy, the egress gateway.
 func commandEnv(home, cache string) (env []string, proxied bool) {
 	env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "XDG_CACHE_HOME=" + cache}
-	for _, name := range []string{"HTTP_PROXY", httpsProxyEnv, "NO_PROXY"} {
+	for _, name := range []string{"HTTP_PROXY", httpsProxyEnv} {
 		lower := strings.ToLower(name)
 		if v := cmp.Or(os.Getenv(name), os.Getenv(lower)); v != "" {
 			env = append(env, name+"="+v, lower+"="+v)
