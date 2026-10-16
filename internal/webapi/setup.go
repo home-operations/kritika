@@ -44,7 +44,12 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	listedAt := s.now()
+	// The listing's time is the database's, which stamps the rows a webhook
+	// names meanwhile; this process's clock may differ from it.
+	listedAt, err := s.store.Now(r.Context())
+	if err != nil {
+		return err
+	}
 	accounts, err := app.Reach(r.Context(), in.Accounts)
 	if err != nil {
 		return errForge(err)
