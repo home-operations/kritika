@@ -415,7 +415,7 @@ func (p *Poller) pollTip(
 		return nil
 	}
 	ev := webhook.Event{
-		Kind: webhook.KindPush, Delivery: fmt.Sprintf("poll-%s-push", started.UTC().Format("20060102T150405")),
+		Kind: webhook.KindPush, Action: ingest.ActionPoll, Delivery: fmt.Sprintf("poll-%s-push", started.UTC().Format("20060102T150405")),
 		Repository: &webhook.Repository{FullName: r.Name, DefaultBranch: branch, RepoTraits: r.Traits}, Account: owner,
 		Push: &webhook.Push{Ref: "refs/heads/" + branch, After: tip},
 	}

@@ -456,11 +456,15 @@ type Repository struct {
 
 // RepoTraits is what kritika knows of a repository beyond its name: what the
 // forge says of it, that an archived repository is read-only and a fork a
-// copy of another one, and its dashboard enablement. Newly discovered
-// repositories start turned off; nil uses the configuration's default.
+// copy of another one, who can read it, and its dashboard enablement. Newly
+// discovered repositories start turned off; nil uses the configuration's
+// default.
 type RepoTraits struct {
 	Archived, Fork bool
-	TurnedOn       *bool
+	// Visibility is public, private or internal as GitHub reports it, ""
+	// until it has: a webhook or listing without one leaves the known value.
+	Visibility string
+	TurnedOn   *bool
 }
 
 // Agent bounds a review's agent. A field left unset takes its default from

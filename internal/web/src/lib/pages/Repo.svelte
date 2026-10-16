@@ -158,7 +158,7 @@
         {/if}
       {/snippet}
     </PageHeader>
-    {#if res.data?.fork || res.data?.archived}<p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm"><RepoTraits r={res.data} /></p>{/if}
+    {#if res.data?.fork || res.data?.archived || res.data?.visibility === 'public' || res.data?.visibility === 'internal'}<p class="meta-line flex flex-wrap items-center gap-y-1 gap-x-3 text-muted text-ui-sm"><RepoTraits r={res.data} /></p>{/if}
     <section class="panel" aria-labelledby="repo-pulls">
       <header class="panel-head">
         <h2 id="repo-pulls">Pull requests</h2>

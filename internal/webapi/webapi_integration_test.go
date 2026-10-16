@@ -555,7 +555,7 @@ func testPullNumbersOutsideInt4(t *testing.T, e *apiEnv) {
 
 func testRepoKinds(t *testing.T, e *apiEnv) {
 	t.Cleanup(func() {
-		e.exec(`UPDATE repositories SET fork = false, archived = false, turned_on = NULL WHERE name IN ('wa/one', 'wa/two')`)
+		e.exec(`UPDATE repositories SET fork = false, archived = false, visibility = '', turned_on = NULL WHERE name IN ('wa/one', 'wa/two')`)
 	})
 	list := func(query string) string {
 		t.Helper()
@@ -600,6 +600,17 @@ func testRepoKinds(t *testing.T, e *apiEnv) {
 	}
 	if got := count(); got != 0 {
 		t.Errorf("archived: the account counts %d repositories, want 0", got)
+	}
+	// Both are public, but wa/one is archived.
+	e.exec(`UPDATE repositories SET visibility = 'public' WHERE name IN ('wa/one', 'wa/two')`)
+	if got := list("?type=public"); got != "wa/two:false" {
+		t.Errorf("public: repos?type=public = %q, want the public repository not archived", got)
+	}
+	if _, body := e.getBody("member-a", "/api/v1/accounts/github/wa/repos?type=public"); !bytes.Contains(body, []byte(`"visibility":"public"`)) {
+		t.Errorf("public: the row does not say it is public: %s", body)
+	}
+	if status, _ := e.getBody("member-a", "/api/v1/accounts/github/wa/repos?type=secret"); status != 400 {
+		t.Errorf("an unknown kind: status %d, want 400", status)
 	}
 }
 

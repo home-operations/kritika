@@ -211,6 +211,8 @@ export interface Repository {
   defaultBranch: string;
   archived: boolean;
   fork: boolean;
+  // visibility is public, private or internal as GitHub reports it, "" until it has.
+  visibility: string;
   // turnedOn starts false for discovered repositories, then follows the
   // admin's choice; null lets the configuration decide.
   turnedOn: boolean | null;

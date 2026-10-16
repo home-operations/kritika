@@ -446,7 +446,8 @@ func (s *Service) installation(ctx context.Context, req Request) (Outcome, error
 }
 
 // repository records what the forge now says of a repository: that it was
-// created, archived, unarchived, renamed or transferred. A repository
+// created, archived, unarchived, made public or private, renamed or
+// transferred. A repository
 // deleted is disabled, and so is the row of the name one renamed or
 // transferred had, as one the App no longer reaches is. That row is the
 // old owner's, which kritika may not serve; a transfer to an account it
@@ -461,7 +462,7 @@ func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) 
 		if ev.Action == "deleted" {
 			return store.DisableForgeRepositories(ctx, tx, req.Account.ID(), repoID(req, ev.Repository.FullName))
 		}
-		id, err := ensureRepository(ctx, tx, req, ev.Repository)
+		id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), reached(ev.Repository, &ev.Repository.RepoTraits))
 		if err != nil {
 			return err
 		}
@@ -489,29 +490,50 @@ func (s *Service) repository(ctx context.Context, req Request) (Outcome, error) 
 	})
 }
 
+// ensureRepository names repo, with its default branch, and writes none of
+// what the event says of it beyond that: registerAndCheckRepository
+// recorded its traits in a transaction of its own, and a webhook since may
+// know better.
 func ensureRepository(ctx context.Context, tx pgx.Tx, req Request, repo *webhook.Repository) (string, error) {
-	id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), store.ReachedRepository{
-		FullName: repo.FullName, DefaultBranch: repo.DefaultBranch, Traits: &repo.RepoTraits,
-	})
+	id, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), reached(repo, nil))
 	return id, err
 }
 
-// registerAndCheckRepository discovers unknown repositories before checking
-// enablement. Known repositories need only a read until an event is accepted.
+// reached is repo as the store registers it, with traits of it, nil for
+// none.
+func reached(repo *webhook.Repository, traits *configfile.RepoTraits) store.ReachedRepository {
+	return store.ReachedRepository{FullName: repo.FullName, DefaultBranch: repo.DefaultBranch, Traits: traits}
+}
+
+// polled reports whether action is one of the poller's synthetic actions.
+func polled(action string) bool { return action == ActionPoll || action == ActionBaseline }
+
+// registerAndCheckRepository discovers an unknown repository and records
+// what a webhook says of a known one, before the event is judged, so what
+// the forge says of a repository is kept whether or not the event is acted
+// on. It reports whether the repository runs, as the store then knows it:
+// the webhook's report, with the known visibility where the payload names
+// none, and the dashboard's choice. A synthetic event of the poller's
+// carries the traits the store had when the poll read them: it is judged by
+// what the store knows now, and writes none of them back, so a webhook
+// recorded since is not undone.
 func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (bool, error) {
 	repo := req.Event.Repository
-	t := repo.RepoTraits
+	reported := &repo.RepoTraits
+	if polled(req.Event.Action) {
+		reported = nil
+	}
+	var t configfile.RepoTraits
 	err := s.store.WithAccount(ctx, req.Account.ID(), func(tx pgx.Tx) error {
 		id := repoID(req, repo.FullName)
 		var err error
-		t.TurnedOn, err = store.TurnedOn(ctx, tx, id)
-		if !errors.Is(err, store.ErrNotFound) {
+		if t, err = store.RepositoryTraits(ctx, tx, id, reported); !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		if _, err := ensureRepository(ctx, tx, req, repo); err != nil {
+		if _, _, err := store.EnsureRepository(ctx, tx, req.Account.ID(), reached(repo, reported)); err != nil {
 			return err
 		}
-		t.TurnedOn, err = store.TurnedOn(ctx, tx, id)
+		t, err = store.RepositoryTraits(ctx, tx, id, nil)
 		return err
 	})
 	if err != nil {

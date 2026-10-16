@@ -53,7 +53,7 @@ var goldenSummary = AccountSummary{
 }
 
 var goldenRepo = Repository{
-	ID: "repo-1", FullName: "alpha/one", Enabled: true, ManagedBy: "file", DefaultBranch: "main",
+	ID: "repo-1", FullName: "alpha/one", Enabled: true, ManagedBy: "file", DefaultBranch: "main", Visibility: "private",
 	Index:      IndexState{ActiveCommit: "def456", ActiveAt: &t0, LastRunStatus: store.IndexCompleted, LastRunAt: &t1},
 	LastReview: &ReviewRef{ID: "rev-1", Status: store.ReviewCompleted, CreatedAt: t0},
 }

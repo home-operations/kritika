@@ -34,8 +34,8 @@
     replace({ name: 'repos', slug, filter: repoFilter({ ...filter, ...patch }) });
   }
   // Which repositories the list shows: by default those kritika can run,
-  // neither archived nor forks but the forks turned on; or the forks, or
-  // the archived ones.
+  // neither archived nor forks but the forks turned on; or the forks, the
+  // public ones, or the archived ones.
   const kind = $derived(filter?.type ?? '');
   let filterEl = $state<HTMLInputElement | undefined>(undefined);
 
@@ -134,7 +134,7 @@
     setFilter({ type: k || undefined });
   }
 
-  const empty = $derived(kind === 'forks' ? 'No forks.' : kind === 'archived' ? 'No archived repositories.' : 'No repositories yet.');
+  const empty = $derived(kind === 'forks' ? 'No forks.' : kind === 'public' ? 'No public repositories.' : kind === 'archived' ? 'No archived repositories.' : 'No repositories yet.');
 
   const selectedOff = $derived(paged.items.filter((r) => selected.includes(r.fullName) && !isOn(r)).length);
 </script>
@@ -154,6 +154,7 @@
         <select bind:value={() => kind, show} aria-label="Type">
           <option value="">In use</option>
           <option value="forks">Forks</option>
+          <option value="public">Public</option>
           <option value="archived">Archived</option>
         </select>
       </label>
@@ -169,6 +170,8 @@
     </div>
     {#if kind === 'forks'}
       <p class="small muted text-ui-sm">A fork is only reviewed and indexed once turned on here.</p>
+    {:else if kind === 'public'}
+      <p class="small muted text-ui-sm">Anyone on the internet can read the reviews, summaries and inline comments kritika posts on a public repository.</p>
     {:else if kind === 'archived'}
       <p class="small muted text-ui-sm">Archived repositories are inactive. Unarchive on GitHub, resync, then turn it on if it is off.</p>
     {:else}

@@ -400,11 +400,11 @@ test("a repository's row sits on one line: the status with its time, the name wi
   await expect(dashes).not.toHaveClass(/mono/);
 });
 
-test('repositories say which are forks or archived', async ({ page }) => {
-  const copy = { ...g.repoPage.items[0]!, id: 'repo-2', fullName: 'alpha/copy', fork: true, archived: true };
+test('repositories say which are forks, archived or public', async ({ page }) => {
+  const copy = { ...g.repoPage.items[0]!, id: 'repo-2', fullName: 'alpha/copy', fork: true, archived: true, visibility: 'public' };
   await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/repos$`), g.pageOf([g.repoPage.items[0]!, copy])], ...g.defaultApi()]);
   await page.goto(`/${T}/repos`);
-  await expect(page.getByRole('row', { name: /alpha\/copy/ }).locator('.badge')).toHaveText(['fork', 'archived']);
+  await expect(page.getByRole('row', { name: /alpha\/copy/ }).locator('.badge')).toHaveText(['fork', 'archived', 'public']);
   await expect(page.getByRole('row', { name: /alpha\/one/ }).locator('.badge')).toHaveCount(0);
 });
 

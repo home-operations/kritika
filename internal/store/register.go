@@ -40,7 +40,7 @@ func (s *Store) RegisterRepositories(
 	err = s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		ids := make([]string, 0, len(repos))
 		for _, r := range repos {
-			id, isNew, err := EnsureRepository(ctx, tx, accountID, r)
+			id, isNew, err := ensureRepository(ctx, tx, accountID, r, &listedAt)
 			if err != nil {
 				return err
 			}
@@ -67,50 +67,88 @@ func (s *Store) RegisterRepositories(
 // it, but starts turned off until an admin enables it in the dashboard.
 // Existing rows keep their turned_on choice. A row the spec lists keeps its
 // enabled flag. A DefaultBranch of "" leaves the known one, and so does a
-// nil Traits the known traits. A row enabled again loses
+// nil Traits the known traits, and so does a Visibility of "" the known
+// visibility. A row enabled again loses
 // the time the index sweep found it stopped: it may run, and stop again,
 // before the next sweep sees it. updated_at is the time of the write, not
 // of the transaction's start, for RegisterRepositories to leave a row
 // named while a listing ran.
 func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository) (id string, isNew bool, err error) {
+	return ensureRepository(ctx, tx, accountID, r, nil)
+}
+
+// ensureRepository is EnsureRepository for a report taken at listedAt, nil
+// for one just made: what a listing says of a repository, its default
+// branch and traits, is left aside on a row written since the listing was
+// taken, as a webhook saying something newer may have done.
+func ensureRepository(
+	ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository, listedAt *time.Time,
+) (id string, isNew bool, err error) {
 	var archived, fork *bool
+	var visibility string
 	if r.Traits != nil {
-		archived, fork = &r.Traits.Archived, &r.Traits.Fork
+		archived, fork, visibility = &r.Traits.Archived, &r.Traits.Fork, r.Traits.Visibility
 	}
 	// xmax is 0 only on a row the statement inserted, not one it updated.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, turned_on, archived, fork, updated_at)
-		VALUES ($1, $2, $3, $4, 'forge', true, false, coalesce($5, false), coalesce($6, false), clock_timestamp())
+		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, turned_on, archived, fork, visibility, updated_at)
+		VALUES ($1, $2, $3, $4, 'forge', true, false, coalesce($5, false), coalesce($6, false), $7, clock_timestamp())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
-			default_branch = CASE WHEN EXCLUDED.default_branch <> '' THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
+			default_branch = CASE WHEN EXCLUDED.default_branch <> '' AND ($8::timestamptz IS NULL OR repositories.updated_at < $8)
+				THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
 			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
 			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
 			stopped_at = CASE WHEN repositories.managed_by = 'forge' AND NOT repositories.enabled THEN NULL ELSE repositories.stopped_at END,
-			archived = coalesce($5, repositories.archived),
-			fork = coalesce($6, repositories.fork),
+			archived = CASE WHEN $8::timestamptz IS NULL OR repositories.updated_at < $8
+				THEN coalesce($5, repositories.archived) ELSE repositories.archived END,
+			fork = CASE WHEN $8::timestamptz IS NULL OR repositories.updated_at < $8 THEN coalesce($6, repositories.fork) ELSE repositories.fork END,
+			visibility = CASE WHEN EXCLUDED.visibility <> '' AND ($8::timestamptz IS NULL OR repositories.updated_at < $8)
+				THEN EXCLUDED.visibility ELSE repositories.visibility END,
 			updated_at = clock_timestamp()
 		RETURNING id, xmax = 0`,
-		configfile.RepositoryID(accountID, r.FullName), accountID, r.FullName, r.DefaultBranch, archived, fork).Scan(&id, &isNew)
+		configfile.RepositoryID(accountID, r.FullName), accountID, r.FullName, r.DefaultBranch, archived, fork, visibility, listedAt).
+		Scan(&id, &isNew)
 	if err != nil {
 		return "", false, fmt.Errorf("store: ensure repository %s: %w", r.FullName, err)
 	}
 	return id, isNew, nil
 }
 
-// TurnedOn is the repository's dashboard enablement: false for a newly
-// discovered repository, then the admin's choice. It is nil for repositories
-// using the configuration's default. An unknown repository returns ErrNotFound.
-func TurnedOn(ctx context.Context, tx pgx.Tx, id string) (*bool, error) {
-	var on *bool
-	err := tx.QueryRow(ctx, `SELECT turned_on FROM repositories WHERE id = $1`, id).Scan(&on)
+// RepositoryTraits is what is known of the repository with id, the
+// dashboard's choice included, after recording what reported says of it,
+// if anything: that it is archived or a fork, and its visibility when the
+// payload names one; a payload without one leaves the known visibility,
+// which is what it returns. nil records nothing, for a report that only
+// repeats what the store already said. The row is written only when the
+// report changes it, so a pull request's every push does not stamp a known
+// repository. A repository not known returns ErrNotFound.
+func RepositoryTraits(ctx context.Context, tx pgx.Tx, id string, reported *configfile.RepoTraits) (configfile.RepoTraits, error) {
+	var known configfile.RepoTraits
+	if reported != nil {
+		// One statement, so the visibility a payload without one keeps is
+		// the row's as written, not as read a moment before.
+		err := tx.QueryRow(ctx, `UPDATE repositories SET archived = $2, fork = $3,
+				visibility = CASE WHEN $4 <> '' THEN $4 ELSE visibility END, updated_at = clock_timestamp()
+			WHERE id = $1 AND (archived <> $2 OR fork <> $3 OR ($4 <> '' AND visibility <> $4))
+			RETURNING archived, fork, visibility, turned_on`, id, reported.Archived, reported.Fork, reported.Visibility).
+			Scan(&known.Archived, &known.Fork, &known.Visibility, &known.TurnedOn)
+		if err == nil {
+			return known, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return known, fmt.Errorf("store: record repository %s traits: %w", id, err)
+		}
+	}
+	err := tx.QueryRow(ctx, `SELECT archived, fork, visibility, turned_on FROM repositories WHERE id = $1`, id).
+		Scan(&known.Archived, &known.Fork, &known.Visibility, &known.TurnedOn)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return known, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("store: read whether repository %s is turned on: %w", id, err)
+		return known, fmt.Errorf("store: read repository %s: %w", id, err)
 	}
-	return on, nil
+	return known, nil
 }
 
 // PreserveRenamedEnablement carries the old name's enablement within the

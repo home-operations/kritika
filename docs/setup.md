@@ -61,7 +61,7 @@ the App is installed on.
 | Pull request review thread  | a resolved finding thread dismisses its finding, unless its lines changed   |
 | Issue comment               | mentions in the conversation                                                |
 | Push                        | keeping the index of the default branch current                             |
-| Repository                  | a repository created, archived, unarchived, renamed, transferred or deleted |
+| Repository                  | a repository created, archived, unarchived, made public or private, renamed, transferred or deleted |
 
 Installation events arrive without subscribing.
 
