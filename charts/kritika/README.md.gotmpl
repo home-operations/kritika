@@ -140,10 +140,12 @@ their `uri` key for `database.*.existingSecret`, failover and backups.
 Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
-- With `networkPolicy.enabled`, a runner pod reaches nothing but DNS,
-  Postgres and the egress gateway kritika serve runs on
+- With `networkPolicy.enabled`, a runner pod reaches nothing but the
+  cluster's DNS, Postgres and the egress gateway kritika serve runs on
   `service.gatewayPort`, which allows what the configuration file's
-  `egress` lists and is the runner's only way to its model.
+  `egress` lists and is the runner's only way to its model. With the
+  Cilium flavor, it may look up only the names of the cluster's Services
+  and those `networkPolicy.dns.runnerNames` lists.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
