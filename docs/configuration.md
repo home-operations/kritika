@@ -564,11 +564,11 @@ a new title.
   the Job deadline are sized for the parts from the pull request's size as
   the forge reports it, the deadline for running them in the slots taken.
 - **Commands:** the runner's `-tools` image offers `curl`, `fd`, `gh`,
-  `jq`, `rg` and `yq`; the chart's `runner.mise.config` adds any other
-  tool mise installs, such as `crane`, for every repository, and a
-  repository's [`.kritika/mise.toml`](repository-config.md#repository-tools)
-  and lock, read from the merge base, add tools for that repository. Every
-  command those tools provide is offered; `mise` itself never is. On a
+  `jq`, `rg` and `yq`, and a repository's
+  [`.kritika/mise.toml`](repository-config.md#repository-tools) and lock,
+  read from the merge base, add any other tool mise installs, such as
+  `crane`, for that repository. Every command those tools provide is
+  offered; `mise` itself never is. On a
   custom image without mise, the six default commands are offered when
   found on `PATH`, and a repository's mise config is not read, which the
   review summary says. Tool install and command resolution failures also
@@ -697,7 +697,7 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `runner.runtimeClass` | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                                                                                                                   |
 | `runner.imagePullPolicy` | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it                                                                                                    |
 | `runner.resources` | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON in env or a YAML mapping in the file; the chart's `runner.resources` renders it                                                                                                                                                     |
-| `runner.miseConfig` | `KRITIKA_RUNNER_MISE_CONFIG`       | the instance's mise config, layered over the runner image's `/etc/mise/config.toml`, which declares the six image tools; the chart's `runner.mise.config` is empty by default, so the image's tools are what is offered. Replaces [image-mounted tools](security.md#migrating-from-image-mounted-tools). |
+| `runner.miseUrlReplacements` | `KRITIKA_RUNNER_MISE_URL_REPLACEMENTS` | rewrites of the URLs runner tools download from, such as to a mirror: mise's `url_replacements`, a list of `from` and `to` pairs tried in order, as a JSON array in env or a YAML list in the file; the chart's `runner.mise.urlReplacements` renders it ([more tools](security.md#more-tools)). Replaces `runner.miseConfig` ([migrating](security.md#migrating-from-the-instance-mise-config)). |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

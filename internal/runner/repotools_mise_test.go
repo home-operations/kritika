@@ -18,7 +18,7 @@ import (
 func TestMiseRepositoryTools(t *testing.T) {
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
-	t.Setenv("MISE_SYSTEM_CONFIG_DIR", t.TempDir())
+	systemMiseConfig(t, testMiseConfig)
 	artifact := filepath.Join(t.TempDir(), "repo-tool")
 	payload := []byte("#!/bin/sh\nprintf '%s\\n' \"$REPO_ENV\"\n")
 	if err := os.WriteFile(artifact, payload, 0o644); err != nil {
@@ -66,7 +66,7 @@ checksum = "sha256:%x"
 			}
 			home, cache := t.TempDir(), t.TempDir()
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "XDG_CACHE_HOME=" + cache}
-			m, notes, err := newMiseTools(t.Context(), bin, home, base, testMiseConfig, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+			m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -128,7 +128,7 @@ checksum = "sha256:%x"
 func TestMiseRepositoryInstalledTool(t *testing.T) {
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
-	t.Setenv("MISE_SYSTEM_CONFIG_DIR", t.TempDir())
+	systemMiseConfig(t, testMiseConfig)
 	doc := "[tools]\nyq = '" + testYqVersion + "'\n"
 	lock := fmt.Sprintf(`[[tools.yq]]
 version = %q
@@ -159,7 +159,7 @@ checksum = "sha256:abc"
 				home = link
 			}
 			m, notes, err := newMiseTools(t.Context(), bin, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"},
-				testMiseConfig, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+				nil, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}

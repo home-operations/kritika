@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gookit/validate/v2"
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/home-operations/kritika/internal/jobtimeout"
 )
@@ -21,7 +20,11 @@ const minRetention = 24 * time.Hour
 // Validate checks runtime bounds shared by the process and file loaders.
 func (s Settings) Validate() error {
 	if _, set := os.LookupEnv("KRITIKA_RUNNER_TOOLS"); set {
-		return errors.New("config: KRITIKA_RUNNER_TOOLS has been removed; declare tools in runner.miseConfig (Helm: runner.mise.config) instead")
+		return errors.New("config: KRITIKA_RUNNER_TOOLS has been removed; declare tools in a repository's .kritika/mise.toml instead")
+	}
+	if _, set := os.LookupEnv("KRITIKA_RUNNER_MISE_CONFIG"); set {
+		return errors.New("config: KRITIKA_RUNNER_MISE_CONFIG has been removed; declare tools in a repository's .kritika/mise.toml " +
+			"and mirrors in runner.miseUrlReplacements (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS) instead")
 	}
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)
@@ -37,24 +40,25 @@ func (s Settings) Validate() error {
 	v.AddRule("Executor", "enum", []string{string(ExecutorKubernetes), string(ExecutorLocal)})
 	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole,DatabaseRunnerRole", "required")
 	v.AddRule("DatabaseRunnerRole", "neField", "DatabaseAppRole")
-	// The runner hands the mise config to mise as is; a document that does
-	// not parse is refused here, where the message names the setting,
-	// rather than in every run.
-	var tomlErr error
-	if s.RunnerMiseConfig != "" {
-		tomlErr = toml.Unmarshal([]byte(s.RunnerMiseConfig), &map[string]any{})
-	}
-	v.AddValidator("toml", func(string) bool { return tomlErr == nil })
-	v.AddRule("RunnerMiseConfig", "toml")
-	tomlMessage := "{field} must be a TOML document"
-	if tomlErr != nil {
-		tomlMessage += ": " + tomlErr.Error()
-	}
+	// mise reads the rules as one JSON object keyed by from, so a rule
+	// without either half, or a second with the same from, is refused here,
+	// where the message names the setting, rather than in every run.
+	v.AddValidator("replacements", func(rules MiseURLReplacements) bool {
+		seen := map[string]bool{}
+		for _, r := range rules {
+			if r.From == "" || r.To == "" || seen[r.From] {
+				return false
+			}
+			seen[r.From] = true
+		}
+		return true
+	})
+	v.AddRule("RunnerMiseURLReplacements", "replacements")
 	v.WithMessages(map[string]string{
-		"toml": tomlMessage,
-		"gt":   "{field} must be positive",
-		"gte":  "{field} must not be negative",
-		"min":  fmt.Sprintf("{field} must be at least %s", minRetention),
+		"replacements": "{field} must give every rule a from of its own and a to",
+		"gt":           "{field} must be positive",
+		"gte":          "{field} must not be negative",
+		"min":          fmt.Sprintf("{field} must be at least %s", minRetention),
 		"max": fmt.Sprintf("{field} must not exceed %s, or River's %s job timeout cap would cut the runner off early",
 			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout),
 		"LogLevel.enum":  "{field} must be debug, info, warn or error",

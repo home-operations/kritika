@@ -19,19 +19,21 @@ diffRetention: 96h
 runner:
   deadline: 20m
   resources: {limits: {memory: 1Gi}}
-  miseConfig: |
-    [tools]
-    helm = "4.3.0"
+  miseUrlReplacements:
+    - {from: "https://github.com/", to: "https://mirror.example.com/github/"}
 `)
 	deadline, resources := f.RunnerFor()
 	if f.PollInterval() != 0 || f.PollLookback() != 2*time.Hour || f.OnboardWindow() != 8 ||
 		f.DisabledIndexGrace() != 48*time.Hour || f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour ||
-		deadline != 20*time.Minute || resources["limits"] == nil || f.MiseConfig() != "[tools]\nhelm = \"4.3.0\"\n" {
+		deadline != 20*time.Minute || resources["limits"] == nil || len(f.MiseURLReplacements()) != 1 ||
+		f.MiseURLReplacements()[0].From != "https://github.com/" {
 		t.Fatalf("runtime settings = %+v", f.Run)
 	}
 	for _, doc := range []string{
 		"runner: {deadlien: 20m}",
 		"runner: {tools: [{name: helm, image: example.com/helm:test, typo: x}]}",
+		"runner: {miseConfig: \"[tools]\"}",
+		"runner: {miseUrlReplacements: [{from: a, to: b, typo: x}]}",
 		"runner: {deadline: 0s}",
 		"onboardWindow: 0",
 		"transcriptRetention: 1h",

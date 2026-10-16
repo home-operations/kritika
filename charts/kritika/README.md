@@ -139,8 +139,10 @@ chart confines them:
   `egress` lists and is the runner's only way to its model.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
-- `runner.mise.config`, empty by default, adds programs the review's run
-  tool may execute to the six the runner image declares;
+- The review's run tool executes the six programs the runner image
+  declares and those a repository's `.kritika/mise.toml` adds, each
+  download checked against the repository's lock;
+  `runner.mise.urlReplacements` sends the downloads to a mirror.
   `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
   gVisor; `runner.resources` keeps a runaway run in its own cgroup.
 
@@ -149,11 +151,13 @@ gateway, runner tools and the sandbox in full.
 
 ### Migrating runner tools
 
-`runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Declare tools in
-`runner.mise.config` instead; no extra image volume or Kubernetes 1.33
-requirement remains. The runner image declares its six tools itself, so
-the value is empty by default and they stay available. See the
-[migration example](https://kritika.home-operations.com/security/#migrating-from-image-mounted-tools).
+`runner.mise.config` and `KRITIKA_RUNNER_MISE_CONFIG` are removed, as
+`runner.tools` and `KRITIKA_RUNNER_TOOLS` were before them. Declare each
+tool in the `.kritika/mise.toml` of the repositories whose reviews use
+it, pinned by `.kritika/mise.lock`, and move a `url_replacements` mirror
+to `runner.mise.urlReplacements`. The runner image declares its six tools
+itself, so they stay available. See the
+[migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 
 ### Topology
 
@@ -280,7 +284,7 @@ Kubernetes: `>=1.25.0-0`
 | runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
 | runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
 | runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
-| runner.mise.config | string | `""` | The instance's mise config (KRITIKA_RUNNER_MISE_CONFIG), layered over the runner image's `/etc/mise/config.toml`, which declares curl, fd, gh, jq, rg and yq. Empty, the image's tools are what the run tool offers. Set it to add or replace tools and to set instance-wide `[settings]` or `[env]`; the image tools it does not mention remain. |
+| runner.mise.urlReplacements | list | `[]` | Rewrites of the URLs runner tools download from (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS), such as to a caching mirror: mise's `url_replacements`, tried in order until one matches. `from` is a URL prefix, or `regex:` and a pattern whose groups `to` may name as `$1`. The mirror's host must pass the egress gateway; a download is still checked against the repository's lock. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |

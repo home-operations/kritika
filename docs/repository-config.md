@@ -361,9 +361,9 @@ own. kritika reads `.kritika/mise.toml` and `.kritika/mise.lock` from the
 merge base, for reviews and follow-ups, so a pull request changing either
 file uses the previously merged version for its own review. Reading them
 needs a runner image with mise; on one without, the review summary says
-the file was not read. The repository's tools layer over the instance's and the
-image's: an entry replaces the same tool, including its options, while
-unmentioned tools remain available.
+the file was not read. The repository's tools layer over the image's: an
+entry replaces the same tool, including its options, while unmentioned
+tools remain available.
 
 For example, `.kritika/mise.toml` can contain:
 
@@ -390,8 +390,9 @@ only when they are literal strings under non-reserved names. Templates,
 `_.` directives, non-string values and the reserved names listed under
 [runner tools](security.md#runner-tools) are dropped with summary notes.
 `[settings]`, `[tasks]` and hooks are also dropped with notes; other
-sections are ignored. Only the admin controls mise settings, including
-mirrors, and the repository cannot expand network access.
+sections are ignored. Mise settings are not the repository's: the admin
+sets mirrors, in `runner.mise.urlReplacements`, and the repository cannot
+expand network access.
 
 Generate and commit the lock alongside the config:
 

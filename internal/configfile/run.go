@@ -34,6 +34,8 @@ func (f *File) RunnerFor() (deadline time.Duration, resources map[string]any) {
 	return f.Run.RunnerDeadline, f.Run.RunnerResources
 }
 
-// MiseConfig is the instance's mise config for runner Jobs, "" for the
-// runner image's own.
-func (f *File) MiseConfig() string { return f.Run.RunnerMiseConfig }
+// MiseURLReplacements are the rules runner Jobs rewrite tool download
+// URLs by, in the order mise tries them.
+func (f *File) MiseURLReplacements() config.MiseURLReplacements {
+	return f.Run.RunnerMiseURLReplacements
+}

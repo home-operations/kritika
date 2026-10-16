@@ -61,6 +61,19 @@ func TestLoad(t *testing.T) {
 		{name: "zero leader retry", env: map[string]string{"KRITIKA_LEADER_RETRY_INTERVAL": "0"}, wantErr: true},
 		{name: "unknown executor", env: map[string]string{"KRITIKA_EXECUTOR": "docker"}, wantErr: true},
 		{name: "removed runner tools", env: map[string]string{"KRITIKA_RUNNER_TOOLS": "[]"}, wantErr: true},
+		{name: "removed mise config", env: map[string]string{"KRITIKA_RUNNER_MISE_CONFIG": "[tools]"}, wantErr: true},
+		{
+			name: "URL replacements in order",
+			env: map[string]string{"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS": `[{"from":"https://github.com/acme/","to":"https://a.example.com/"},` +
+				`{"from":"https://github.com/","to":"https://b.example.com/"}]`},
+			check: func(t *testing.T, c *Config) {
+				r := c.RunnerMiseURLReplacements
+				if len(r) != 2 || r[0].From != "https://github.com/acme/" || r[1].To != "https://b.example.com/" {
+					t.Fatalf("URL replacements = %+v", r)
+				}
+			},
+		},
+		{name: "URL replacements must be JSON", env: map[string]string{"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS": "https://github.com/"}, wantErr: true},
 		{name: "zero thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "0"}, wantErr: true},
 		{name: "negative thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "-1"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIKA_REVIEW_WORKERS": "0"}, wantErr: true},

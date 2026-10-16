@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
@@ -76,7 +77,7 @@ type miseTool struct {
 }
 
 // miseTools are the tools mise's merged config declares for a run, the
-// image's system config under the instance's, and the environment mise
+// image's system config under the repository's, and the environment mise
 // gives their commands. A tool installs on the first call that needs it.
 // Everything mise writes lives under the run's HOME, which the runner
 // keeps read-only between its own calls to mise, so a command cannot
@@ -125,31 +126,20 @@ func resolved(path string) string {
 	return path
 }
 
-// newMiseTools reads the merged config with mise at bin, after writing
-// config, when set, as the run's global config under home: mise applies
-// a global config's [settings] where it ignores the system config's, so
-// the instance's mirrors and the like take effect there. repo, when set,
+// newMiseTools reads the merged config with mise at bin. repo, when set,
 // is the repository's config, written as the run's local config in home,
-// which mise layers over the global one, with its lock beside it; its
-// tools install at what the lock pins, and one the lock does not pin for
-// this platform is not offered unless the image has that version
-// installed already. credentialed names the commands that run with one
-// of the run's credentials, which a repository's own binary is not
-// offered as. notes say what was not offered and why, for the review's
-// summary.
+// which mise layers over the image's system config, with its lock beside
+// it; its tools install at what the lock pins, and one the lock does not
+// pin for this platform is not offered unless the image has that version
+// installed already. replacements, when set, rewrite the URLs mise
+// downloads from, and reach mise alone. credentialed names the commands
+// that run with one of the run's credentials, which a repository's own
+// binary is not offered as. notes say what was not offered and why, for
+// the review's summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, config string, repo *repoMiseConfig, credentialed []string, secrets Secrets,
-	logger *slog.Logger,
+	ctx context.Context, bin, home string, base []string, replacements []config.MiseURLReplacement, repo *repoMiseConfig,
+	credentialed []string, secrets Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
-	if config != "" {
-		dir := filepath.Join(home, ".config", "mise")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, nil, fmt.Errorf("runner: mise config: %w", err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(config), 0o644); err != nil {
-			return nil, nil, fmt.Errorf("runner: mise config: %w", err)
-		}
-	}
 	if repo != nil {
 		for name, doc := range map[string]string{"mise.toml": repo.config, "mise.lock": repo.lock} {
 			if err := os.WriteFile(filepath.Join(home, name), []byte(doc), 0o644); err != nil {
@@ -179,6 +169,9 @@ func newMiseTools(
 		if v := os.Getenv(name); v != "" {
 			m.env = append(m.env, name+"="+v)
 		}
+	}
+	if len(replacements) > 0 {
+		m.env = append(m.env, "MISE_URL_REPLACEMENTS="+miseURLReplacements(replacements))
 	}
 	notes, err := m.refresh(ctx)
 	if err != nil {
@@ -216,13 +209,34 @@ func newMiseTools(
 			// is the image's binary.
 			if slices.Contains(credentialed, c) && m.fromRepo(t) && !t.installed {
 				notes = append(notes, fmt.Sprintf("%s: %s does not offer %s: it carries one of the run's credentials, "+
-					"so only the image or the instance provides it", RepoMiseConfig, name, c))
+					"so only the image provides it", RepoMiseConfig, name, c))
 				continue
 			}
 			m.byCommand[c] = t
 		}
 	}
 	return m, notes, nil
+}
+
+// miseURLReplacements is MISE_URL_REPLACEMENTS for rules: the JSON object
+// mise reads them from, keyed by from in the rules' order, which mise
+// keeps, trying the rules in turn until one matches. A map would sort them.
+func miseURLReplacements(rules []config.MiseURLReplacement) string {
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, r := range rules {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		// Marshaling a string cannot fail.
+		from, _ := json.Marshal(r.From)
+		to, _ := json.Marshal(r.To)
+		b.Write(from)
+		b.WriteByte(':')
+		b.Write(to)
+	}
+	b.WriteByte('}')
+	return b.String()
 }
 
 // cappedWriter keeps the first max bytes written to it and counts the
@@ -300,7 +314,7 @@ func (m *miseTools) unlocked(ctx context.Context, f func() error) (err error) {
 func (m *miseTools) exec(ctx context.Context, stdout, stderr *cappedWriter, args ...string) error {
 	cmd := exec.CommandContext(ctx, m.bin, args...)
 	// mise reads the configs from its working directory up to the
-	// ceiling; home holds the instance's, as the run's global config.
+	// ceiling; home holds the repository's, as the run's local config.
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = m.home, m.env, stdout, stderr
 	// A child mise leaves holding the output open is not waited for once
 	// mise is killed.
