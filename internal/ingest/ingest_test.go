@@ -175,25 +175,47 @@ func TestHandlerLogsRepositoryAndPullRequest(t *testing.T) {
 			if resp := post(t, srv, "/hooks/bot-ross", tt.event, "s3cret", tt.body); resp.StatusCode != http.StatusAccepted {
 				t.Fatalf("status = %d", resp.StatusCode)
 			}
-			var line map[string]any
-			for raw := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
-				if err := json.Unmarshal([]byte(raw), &line); err != nil {
-					t.Fatal(err)
-				}
-				if line["msg"] == "webhook handled" {
-					break
-				}
-				line = nil
-			}
-			if line == nil {
-				t.Fatalf("no webhook handled line in:\n%s", logs.String())
-			}
+			line := loggedLine(t, &logs, "webhook handled")
 			pr, hasPR := line["pr"]
 			if line["repository"] != "onedr0p/home-ops" || line["reason"] != "disabled" || hasPR != (tt.pr != 0) || (hasPR && pr != tt.pr) {
 				t.Fatalf("webhook handled = %v, want repository onedr0p/home-ops and pr %v", line, tt.pr)
 			}
 		})
 	}
+}
+
+// TestHandlerLogsRepositoryOfServedAccounts: a failed dispatch's line
+// names the repository and pull request too, and the line for an account
+// the instance does not serve names neither.
+func TestHandlerLogsRepositoryOfServedAccounts(t *testing.T) {
+	var logs bytes.Buffer
+	srv := setupLogged(t, &fakeDispatcher{err: errors.New("db down")}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	post(t, srv, "/hooks/bot-ross", "pull_request", "s3cret", prBody)
+	post(t, srv, "/hooks/bot-ross", "pull_request", "s3cret",
+		strings.ReplaceAll(prBody, `"owner":{"login":"onedr0p"}`, `"owner":{"login":"stranger"}`))
+	if failed := loggedLine(t, &logs, "webhook dispatch failed"); failed["repository"] != "onedr0p/home-ops" || failed["pr"] != float64(1) {
+		t.Fatalf("webhook dispatch failed = %v, want repository onedr0p/home-ops and pr 1", failed)
+	}
+	stranger := loggedLine(t, &logs, "webhook for an undeclared account ignored")
+	if _, named := stranger["repository"]; named || stranger["pr"] != nil {
+		t.Fatalf("undeclared account line = %v, want neither repository nor pr", stranger)
+	}
+}
+
+// loggedLine is the JSON line in logs whose message is msg.
+func loggedLine(t *testing.T, logs *bytes.Buffer, msg string) map[string]any {
+	t.Helper()
+	for raw := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		var line map[string]any
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			t.Fatal(err)
+		}
+		if line["msg"] == msg {
+			return line
+		}
+	}
+	t.Fatalf("no %q line in:\n%s", msg, logs.String())
+	return nil
 }
 
 // TestHandlerRecordsUnsigned: a delivery with no signature, which an App
