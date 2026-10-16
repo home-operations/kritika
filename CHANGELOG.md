@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.75](https://github.com/home-operations/kritika/compare/0.0.74...0.0.75) (2026-10-16)
+
+
+### Features
+
+* **comments:** let an admin keep the dashboard's URL out of comments ([#987](https://github.com/home-operations/kritika/issues/987)) ([9b03327](https://github.com/home-operations/kritika/commit/9b03327303d1acd6c188d9ce48f2c2846267a124))
+* **gateway:** cache the tool downloads runners fetch from egress.cache hosts ([#990](https://github.com/home-operations/kritika/issues/990)) ([13761b5](https://github.com/home-operations/kritika/commit/13761b57f30b21ab909d7dfdef182c873772c1ad))
+
+
+### Bug Fixes
+
+* **docs:** align references and comments with current behavior ([#991](https://github.com/home-operations/kritika/issues/991)) ([b853329](https://github.com/home-operations/kritika/commit/b8533294c3309c1ecd99dbbd4b372f4d1f109a22))
+
 ## [0.0.74](https://github.com/home-operations/kritika/compare/0.0.73...0.0.74) (2026-10-16)
 
 
