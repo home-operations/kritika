@@ -20,6 +20,12 @@ tests:
           path: data["config.yaml"]
           pattern: "env: GITHUB_APP_PRIVATE_KEY"
 
+  - it: tells Reloader to ignore it, since the pods' checksum already rolls them
+    asserts:
+      - equal:
+          path: metadata.annotations["reloader.stakater.com/ignore"]
+          value: "true"
+
   - it: renders nothing when an existing ConfigMap is named
     set:
       existingConfigMap: my-config

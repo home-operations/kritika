@@ -74,7 +74,9 @@ The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 - Runner Jobs are configured under `runner`, including `runtimeClass` and
   `deadline`. The chart derives application settings from runner, database
   and service values and rejects duplicates under `config`.
-- A checksum of the rendered file rolls pods when configuration changes.
+- A checksum of the rendered file rolls pods when configuration changes. The
+  ConfigMap carries `reloader.stakater.com/ignore`, so Reloader does not roll
+  them a second time.
 - `existingConfigMap` supplies an external `config.yaml` instead of `config`;
   setting both is an error. Put `webUrl` in that file and omit chart-owned
   deployment settings. The chart supplies those through environment variables.
