@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.0.73](https://github.com/home-operations/kritika/compare/0.0.72...0.0.73) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **runner:** declare runner tools only in the repository's mise config ([#978](https://github.com/home-operations/kritika/issues/978))
+
+### Features
+
+* **repositories:** record and show a repository's visibility ([#982](https://github.com/home-operations/kritika/issues/982)) ([4602779](https://github.com/home-operations/kritika/commit/4602779f91ebf4c6e33121026b9519fea85af491))
+* **runner:** declare runner tools only in the repository's mise config ([#978](https://github.com/home-operations/kritika/issues/978)) ([ed7d792](https://github.com/home-operations/kritika/commit/ed7d79246da06d3023166f6414caec21a358491a))
+
+
+### Bug Fixes
+
+* **ingest:** name the repository and pull request a handled delivery was for ([#979](https://github.com/home-operations/kritika/issues/979)) ([91936b7](https://github.com/home-operations/kritika/commit/91936b7cd1ae658be1ea64252cd14bbec78a14c6))
+
 ## [0.0.72](https://github.com/home-operations/kritika/compare/0.0.71...0.0.72) (2026-10-16)
 
 
