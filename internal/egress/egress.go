@@ -46,6 +46,9 @@ type Proxy struct {
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Transport sends upgraded requests; nil dials through the rules.
 	Transport http.RoundTripper
+	// Cache, when set, keeps the downloads it admits and answers the same
+	// request again from what it kept.
+	Cache *Cache
 	// Observe, if set, is called once per request with its kind (connect,
 	// http) and outcome.
 	Observe func(kind, outcome string)
@@ -135,6 +138,8 @@ const (
 	tunnelIdle = 5 * time.Minute
 	// upgradeTimeout bounds one upgraded request, response body included.
 	upgradeTimeout = 2 * time.Minute
+	// upgradedScheme is what an upgraded request goes out over.
+	upgradedScheme = "https"
 )
 
 func (p *Proxy) observe(kind, outcome string) {
@@ -256,6 +261,9 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		p.refuse(r.Context(), w, "http", r.URL.Host, reason)
 		return
 	}
+	if p.Cache != nil && cacheable(r, host, rules) && p.cached(w, r, host) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
 	defer cancel()
 	proxy := &httputil.ReverseProxy{
@@ -264,7 +272,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		Rewrite: func(req *httputil.ProxyRequest) {
 			// This forward proxy does not interpret query parameters.
 			req.Out.URL.RawQuery = req.In.URL.RawQuery
-			req.Out.URL.Scheme, req.Out.URL.Host = "https", host
+			req.Out.URL.Scheme, req.Out.URL.Host = upgradedScheme, host
 			if strings.Contains(host, ":") {
 				req.Out.URL.Host = "[" + host + "]"
 			}

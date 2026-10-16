@@ -31,7 +31,11 @@ func (s Settings) Validate() error {
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
-	v.AddRule("GatewayTokenTTL,LeaderRetryInterval,ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow,RunnerTTL,RunnerDeadline", "gt", 0)
+	v.AddRule("GatewayTokenTTL,GatewayCacheMaxAge,LeaderRetryInterval,ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow,"+
+		"RunnerTTL,RunnerDeadline", "gt", 0)
+	// The numeric rules do not read a named integer type.
+	v.AddValidator("size", func(b ByteSize) bool { return b > 0 })
+	v.AddRule("GatewayCacheMaxSize", "size")
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
 	v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
 	v.AddRule("RunnerDeadline", "max", jobtimeout.MaxRunnerDeadline)
@@ -57,6 +61,7 @@ func (s Settings) Validate() error {
 	v.WithMessages(map[string]string{
 		"replacements": "{field} must give every rule a from of its own and a to",
 		"gt":           "{field} must be positive",
+		"size":         "{field} must be positive",
 		"gte":          "{field} must not be negative",
 		"min":          fmt.Sprintf("{field} must be at least %s", minRetention),
 		"max": fmt.Sprintf("{field} must not exceed %s, or River's %s job timeout cap would cut the runner off early",

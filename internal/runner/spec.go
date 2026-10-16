@@ -25,7 +25,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 31
+const SpecVersion = 32
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -98,6 +98,11 @@ type AgentLimits struct {
 	// MiseURLReplacements rewrite the URLs mise downloads tools from, in
 	// the order mise tries them; none leaves every URL as it is.
 	MiseURLReplacements []config.MiseURLReplacement `json:"miseUrlReplacements,omitempty"`
+	// CachedHosts are the hosts whose downloads the gateway keeps, as
+	// configfile.EgressCached lists them, which mise reaches through the
+	// gateway's cache after MiseURLReplacements; none sends no download
+	// through it.
+	CachedHosts []string `json:"cachedHosts,omitempty"`
 }
 
 // Prompt is what a review run needs beyond the checkout to write its

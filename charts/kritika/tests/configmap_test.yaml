@@ -112,3 +112,31 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: configFile has moved to config
+
+  - it: renders the gateway cache's settings when it is enabled
+    set:
+      gatewayCache: { enabled: true, maxSize: 512Mi, maxAge: 6h }
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheDir: /var/cache/kritika"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheMaxSize: 512Mi"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheMaxAge: 6h"
+
+  - it: leaves the gateway without a cache by default
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: gatewayCache
+
+  - it: refuses a cache directory in application config when the chart gives the gateway one
+    set:
+      gatewayCache.enabled: true
+      config.gatewayCacheDir: /elsewhere
+    asserts:
+      - failedTemplate:
+          errorPattern: "config.gatewayCacheDir: the chart derives this setting from its deployment values"

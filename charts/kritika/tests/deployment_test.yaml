@@ -433,3 +433,53 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "env.KRITIKA_RUNNER_IMAGE conflicts with config.runner.image"
+
+  - it: gives each replica an emptyDir for the gateway's cache when it is enabled
+    set:
+      gatewayCache.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: gateway-cache, emptyDir: {} }
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: { name: gateway-cache, mountPath: /var/cache/kritika }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_DIR }
+          any: true
+
+  - it: mounts no cache volume by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content: { name: gateway-cache }
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: { name: gateway-cache }
+          any: true
+
+  - it: hands the gateway cache's settings through the environment beside an existing ConfigMap
+    set:
+      config: null
+      existingConfigMap: external-config
+      gatewayCache: { enabled: true, maxSize: 512Mi, maxAge: 6h }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_DIR, value: /var/cache/kritika }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_MAX_SIZE, value: 512Mi }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_MAX_AGE, value: 6h }
+
+  - it: refuses an env entry for a cache setting the file already sets
+    set:
+      config.gatewayCacheMaxAge: 6h
+      env.KRITIKA_GATEWAY_CACHE_MAX_AGE: 1h
+    asserts:
+      - failedTemplate:
+          errorPattern: "env.KRITIKA_GATEWAY_CACHE_MAX_AGE conflicts with config.gatewayCacheMaxAge"

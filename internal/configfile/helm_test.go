@@ -23,7 +23,7 @@ func TestHelmConfiguration(t *testing.T) {
 	cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
 		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.32.0",
 		"--set", "runner.runtimeClass=gvisor", "--set", "runner.deadline=20m",
-		"--set", "config.pollInterval=0s",
+		"--set", "config.pollInterval=0s", "--set", "gatewayCache.enabled=true", "--set", "gatewayCache.maxSize=512Mi",
 		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com")
 	rendered, err := cmd.CombinedOutput()
 	if err != nil {
@@ -59,6 +59,9 @@ func TestHelmConfiguration(t *testing.T) {
 	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseURLReplacements() != nil {
 		t.Fatalf("rendered runtime settings = %+v", f.Run)
 	}
+	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 || f.Run.GatewayCacheMaxAge != 24*time.Hour {
+		t.Fatalf("rendered gateway cache = %q, %d, %s", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize, f.Run.GatewayCacheMaxAge)
+	}
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
@@ -81,7 +84,7 @@ func TestHelmRejectsEmptyDurations(t *testing.T) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skip("helm is required to validate chart values")
 	}
-	for _, key := range []string{"pollInterval", "pollLookback", "leaderRetryInterval", "gatewayTokenTtl", "indexGrace", "transcriptRetention", "diffRetention"} {
+	for _, key := range []string{"pollInterval", "pollLookback", "leaderRetryInterval", "gatewayTokenTtl", "gatewayCacheMaxAge", "indexGrace", "transcriptRetention", "diffRetention"} {
 		t.Run(key, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
 				"--values", "../../charts/kritika/ci/lint-values.yaml", "--set-string", "config."+key+"=")

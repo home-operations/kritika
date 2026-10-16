@@ -69,7 +69,7 @@ func TestDecodeSpec(t *testing.T) {
 			wantErr: "a followup spec needs a base"},
 		{name: "a follow-up without a prompt", in: func() string { s := followUpSpec(); s.Prompt = nil; return encode(s) }(),
 			wantErr: "a followup spec needs a prompt"},
-		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":31`, `"version":32`, 1), wantErr: "version"},
+		{name: "unknown version", in: strings.Replace(encode(reviewSpec()), `"version":32`, `"version":33`, 1), wantErr: "version"},
 		{name: "unknown field", in: strings.Replace(encode(reviewSpec()), `{`, `{"token":"x",`, 1), wantErr: "unknown field"},
 		{name: "bad head sha", in: strings.Replace(encode(reviewSpec()), shaA, "abc", 1), wantErr: "head"},
 		{name: "uppercase sha", in: strings.Replace(encode(reviewSpec()), shaA, strings.ToUpper(shaA), 1), wantErr: "head"},

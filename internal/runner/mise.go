@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/home-operations/kritika/internal/config"
+	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
@@ -97,6 +99,10 @@ type miseTools struct {
 	// path is PATH as mise computes it, its tools' bin directories before
 	// base's, and extra the config's [env] less the reserved names.
 	path, extra []string
+	// uncached is env for an install that failed through the gateway's
+	// cache, its proxy URLs asking the gateway not to answer from it; nil
+	// when the gateway caches nothing.
+	uncached []string
 	// repo is the repository's config, nil when it supplies no tools, and
 	// repoSource the file it is written to, as mise names it.
 	repo       *repoMiseConfig
@@ -132,13 +138,14 @@ func resolved(path string) string {
 // it; its tools install at what the lock pins, and one the lock does not
 // pin for this platform is not offered unless the image has that version
 // installed already. replacements, when set, rewrite the URLs mise
-// downloads from, and reach mise alone. credentialed names the commands
-// that run with one of the run's credentials, which a repository's own
-// binary is not offered as. notes say what was not offered and why, for
-// the review's summary.
+// downloads from, and reach mise alone; cached names the hosts whose
+// downloads the gateway keeps, which mise then reaches through the
+// gateway's cache. credentialed names the commands that run with one of
+// the run's credentials, which a repository's own binary is not offered
+// as. notes say what was not offered and why, for the review's summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, replacements []config.MiseURLReplacement, repo *repoMiseConfig,
-	credentialed []string, secrets Secrets, logger *slog.Logger,
+	ctx context.Context, bin, home string, base []string, replacements []config.MiseURLReplacement, cached []string,
+	repo *repoMiseConfig, credentialed []string, secrets Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if repo != nil {
 		for name, doc := range map[string]string{"mise.toml": repo.config, "mise.lock": repo.lock} {
@@ -170,8 +177,19 @@ func newMiseTools(
 			m.env = append(m.env, name+"="+v)
 		}
 	}
+	common := m.env
 	if len(replacements) > 0 {
-		m.env = append(m.env, "MISE_URL_REPLACEMENTS="+miseURLReplacements(replacements))
+		m.env = append(slices.Clone(common), "MISE_URL_REPLACEMENTS="+miseURLReplacements(replacements))
+	}
+	// The cache's rules send downloads over plain HTTP, which only the
+	// gateway, as the runner's HTTP proxy, may carry. An install made
+	// around the cache keeps them, whatever else reaches a cached host
+	// over plain HTTP too, and tells the gateway by the proxy's username.
+	if len(cached) > 0 && httpProxied(base) {
+		if rules := cacheReplacements(replacements, cached); len(rules) > 0 {
+			m.env = append(slices.Clone(common), "MISE_URL_REPLACEMENTS="+miseURLReplacements(append(slices.Clone(replacements), rules...)))
+		}
+		m.uncached = withProxyUser(m.env, egress.UncachedProxyUser)
 	}
 	notes, err := m.refresh(ctx)
 	if err != nil {
@@ -237,6 +255,50 @@ func miseURLReplacements(rules []config.MiseURLReplacement) string {
 	}
 	b.WriteByte('}')
 	return b.String()
+}
+
+// cacheReplacements are the rules that send a download from one of
+// cached, the hosts whose downloads the gateway keeps, to the gateway as
+// plain HTTP, which it upgrades, so it can keep what it fetches. mise
+// tries them after replacements, so a mirror the admin set still wins,
+// and none repeats a from of theirs, since mise keys the rules by it.
+func cacheReplacements(replacements []config.MiseURLReplacement, cached []string) []config.MiseURLReplacement {
+	var rules []config.MiseURLReplacement
+	for _, host := range cached {
+		from := "https://" + host + "/"
+		if !slices.ContainsFunc(replacements, func(r config.MiseURLReplacement) bool { return r.From == from }) {
+			rules = append(rules, config.MiseURLReplacement{From: from, To: "http://" + host + "/"})
+		}
+	}
+	return rules
+}
+
+// httpProxied reports whether env names an HTTP proxy.
+func httpProxied(env []string) bool {
+	return slices.ContainsFunc(env, func(kv string) bool {
+		name, value, _ := strings.Cut(kv, "=")
+		return strings.EqualFold(name, "HTTP_PROXY") && value != ""
+	})
+}
+
+// withProxyUser is env with the username of each proxy URL, under either
+// spelling, set to user, the password, which is the run token, kept.
+func withProxyUser(env []string, user string) []string {
+	out := slices.Clone(env)
+	for i, kv := range out {
+		name, value, _ := strings.Cut(kv, "=")
+		if !strings.EqualFold(name, "HTTP_PROXY") && !strings.EqualFold(name, "HTTPS_PROXY") {
+			continue
+		}
+		u, err := url.Parse(value)
+		if err != nil || u.User == nil {
+			continue
+		}
+		password, _ := u.User.Password()
+		u.User = url.UserPassword(user, password)
+		out[i] = name + "=" + u.String()
+	}
+	return out
 }
 
 // cappedWriter keeps the first max bytes written to it and counts the
@@ -637,60 +699,84 @@ func (m *miseTools) resolve(ctx context.Context, command string) (string, []stri
 	return bin, m.commandEnv(), nil
 }
 
-// install installs t with mise, which gets the run's GitHub token for
-// its own process, so its GitHub API calls count against the App
-// installation's limit rather than the gateway's one address, then
-// reads the tools and environment again, all within installTimeout and
-// with home unlocked once. Whether t is installed is what mise lists
-// afterwards, not mise's exit status: after an install, mise rebuilds the
-// runtime symlinks of every tool, the image's system installs included,
-// and exits non-zero when one of those directories, which the runner
-// cannot write, needs a link it cannot make; the tool is installed all
-// the same, and mise's output is logged.
+// install installs t with mise, through the gateway's cache when it has
+// one and, should that fail, once more without it: what the cache served
+// may be stale or damaged, which the lock's checksum catches, and the
+// same install without the cache fetches from upstream. Whether t is
+// installed is what mise lists afterwards, not mise's exit status: after
+// an install, mise rebuilds the runtime symlinks of every tool, the
+// image's system installs included, and exits non-zero when one of those
+// directories, which the runner cannot write, needs a link it cannot
+// make; the tool is installed all the same, and mise's output is logged.
 func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 	started := time.Now()
+	a, cached := m.installWith(ctx, t, m.env), m.uncached != nil
+	if !t.installed && ctx.Err() == nil && cached {
+		m.logger.Warn("tool not installed through the gateway's cache, installing it without", "tool", t.name, "version", t.version,
+			"source", t.source, "error", errors.Join(a.exitErr, a.err), "output", a.output)
+		a, cached = m.installWith(ctx, t, m.uncached), false
+	}
+	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case a.err != nil && a.timedOut:
+		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", a.err, "output", a.output)
+		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, installTimeout)
+	case a.err != nil:
+		if a.exitErr != nil {
+			m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", a.exitErr, "output", a.output)
+		}
+		return a.err
+	case !t.installed && a.exitErr != nil:
+		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", a.exitErr, "output", a.output)
+		return fmt.Errorf("%s could not be installed: %s", t.name, a.output)
+	case !t.installed:
+		return fmt.Errorf("%s is not installed after its install: %s", t.name, a.output)
+	case a.exitErr != nil:
+		m.logger.Warn("tool installed, mise exited with an error", "tool", t.name, "version", t.version, "source", t.source,
+			"path", t.installPath, "error", a.exitErr, "output", a.output)
+	}
+	m.logger.Info("tool installed", "tool", t.name, "version", t.version, "source", t.source, "path", t.installPath,
+		"gatewayCache", cached, "elapsed", time.Since(started).Round(time.Millisecond), "output", a.output)
+	return nil
+}
+
+// installAttempt is how one mise install went: exitErr is mise's own
+// exit, err what the attempt as a whole failed with, the reads after mise
+// included, and timedOut whether it ran out of installTimeout.
+type installAttempt struct {
+	exitErr, err error
+	timedOut     bool
+	output       string
+}
+
+// installWith runs mise install for t with env as mise's environment,
+// plus the run's GitHub token for mise's own process, so its GitHub API
+// calls count against the App installation's limit rather than the
+// gateway's one address, then reads the tools and environment again, all
+// within installTimeout and with home unlocked once.
+func (m *miseTools) installWith(ctx context.Context, t *miseTool, env []string) installAttempt {
 	ictx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
-	env := m.env
+	saved := m.env
 	m.env = append(slices.Clone(env), "MISE_GITHUB_TOKEN="+m.secrets.GitToken)
-	defer func() { m.env = env }()
+	defer func() { m.env = saved }()
 	// A repository's tool installs at the URL and checksum its lock pins.
 	args := []string{"install", t.name}
 	if m.fromRepo(t) {
 		args = []string{"install", "--locked", t.name}
 	}
 	out := &cappedWriter{max: installOutputBytes}
-	var exitErr error
-	err := m.unlocked(ctx, func() error {
-		exitErr = m.exec(ictx, out, out, args...)
-		if exitErr != nil && ictx.Err() != nil {
-			return exitErr
+	var a installAttempt
+	a.err = m.unlocked(ctx, func() error {
+		a.exitErr = m.exec(ictx, out, out, args...)
+		if a.exitErr != nil && ictx.Err() != nil {
+			return a.exitErr
 		}
 		_, err := m.refresh(ictx)
 		return err
 	})
-	output := m.secrets.Mask(textcut.Prefix(strings.TrimSpace(string(out.buf)), installOutputBytes))
-	switch {
-	case ctx.Err() != nil:
-		return ctx.Err()
-	case err != nil && ictx.Err() != nil:
-		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", err, "output", output)
-		return fmt.Errorf("%s could not be installed: stopped after %s", t.name, installTimeout)
-	case err != nil:
-		if exitErr != nil {
-			m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", exitErr, "output", output)
-		}
-		return err
-	case !t.installed && exitErr != nil:
-		m.logger.Warn("tool not installed", "tool", t.name, "version", t.version, "source", t.source, "error", exitErr, "output", output)
-		return fmt.Errorf("%s could not be installed: %s", t.name, output)
-	case !t.installed:
-		return fmt.Errorf("%s is not installed after its install: %s", t.name, output)
-	case exitErr != nil:
-		m.logger.Warn("tool installed, mise exited with an error", "tool", t.name, "version", t.version, "source", t.source,
-			"path", t.installPath, "error", exitErr, "output", output)
-	}
-	m.logger.Info("tool installed", "tool", t.name, "version", t.version, "source", t.source, "path", t.installPath,
-		"elapsed", time.Since(started).Round(time.Millisecond), "output", output)
-	return nil
+	a.timedOut = a.err != nil && ictx.Err() != nil
+	a.output = m.secrets.Mask(textcut.Prefix(strings.TrimSpace(string(out.buf)), installOutputBytes))
+	return a
 }
