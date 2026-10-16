@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.72](https://github.com/home-operations/kritika/compare/0.0.71...0.0.72) (2026-10-16)
+
+
+### Bug Fixes
+
+* **agent:** remove crane-specific run tool guidance and argument checks ([#973](https://github.com/home-operations/kritika/issues/973)) ([c7220ec](https://github.com/home-operations/kritika/commit/c7220ec47086576c9eb8cf8b9ece8d5f920ce0f9))
+* **confidence:** rate a grant of access by what it hands out, not by its size ([#975](https://github.com/home-operations/kritika/issues/975)) ([048a6c4](https://github.com/home-operations/kritika/commit/048a6c45bdf0e2a18e9d148ea0a3e0beab97b4c1))
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.9 → 2026.10.11) ([#974](https://github.com/home-operations/kritika/issues/974)) ([0e57be5](https://github.com/home-operations/kritika/commit/0e57be590491875fe0c64f45cd156d01317900f6))
+* **runner:** give commands a writable XDG_CACHE_HOME in the scratch space ([#969](https://github.com/home-operations/kritika/issues/969)) ([8cd4734](https://github.com/home-operations/kritika/commit/8cd47347fc7856d873e616a12ea55622e4b725ce))
+
 ## [0.0.71](https://github.com/home-operations/kritika/compare/0.0.70...0.0.71) (2026-10-15)
 
 
