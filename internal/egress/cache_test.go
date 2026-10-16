@@ -194,6 +194,60 @@ func TestCacheBypass(t *testing.T) {
 	}
 }
 
+// TestCacheKeepsLockedInstalls: a locked install's download is kept from a
+// host the rules do not name as cached, and served again only to another
+// locked install, but never kept from a host they name as uncached or one
+// with a credential; a cached host's entry serves both.
+func TestCacheKeepsLockedInstalls(t *testing.T) {
+	for _, tt := range []struct {
+		name, host  string
+		credentials map[string]string
+		// locked says which of the requests, in turn, are a locked
+		// install's.
+		locked  []bool
+		calls   int32
+		entries int
+	}{
+		{"from any host", "other.example.com", nil, []bool{true, true, false}, 2, 1},
+		{"not a locked install", "other.example.com", nil, []bool{false, false}, 2, 0},
+		{"from an uncached host", "api.example.com", nil, []bool{true, true}, 2, 0},
+		{"from an uncached host with a trailing dot", "api.example.com.", nil, []bool{true, true}, 2, 0},
+		{"from a host with a credential", "other.example.com", map[string]string{"other.example.com": "Bearer configured"}, []bool{true, true}, 2, 0},
+		{"from a host with a credential and a trailing dot", "other.example.com.", map[string]string{"other.example.com": "Bearer configured"},
+			[]bool{true, true}, 2, 0},
+		{"from a cached host", "example.com", nil, []bool{false, true}, 1, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			rules := Rules{
+				Allow: hosts("example.com", "other.example.com", "api.example.com"), Credentials: tt.credentials,
+				Cached: []string{"example.com"}, Uncached: []string{"api.example.com"},
+			}
+			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				_, _ = io.WriteString(w, "tool archive")
+			})
+			for i, locked := range tt.locked {
+				r := httptest.NewRequest(http.MethodGet, "http://"+tt.host+"/tool.tar.gz", nil)
+				if locked {
+					r = r.WithContext(ForLockedInstall(r.Context()))
+				}
+				w := httptest.NewRecorder()
+				p.ServeHTTP(w, r)
+				if w.Code != http.StatusOK || w.Body.String() != "tool archive" {
+					t.Fatalf("request %d: status %d, body %q", i, w.Code, w.Body.String())
+				}
+			}
+			if got := calls.Load(); got != tt.calls {
+				t.Errorf("upstream asked %d times, want %d", got, tt.calls)
+			}
+			if n := entries(t, p.Cache); n != tt.entries {
+				t.Errorf("cache holds %d entries, want %d", n, tt.entries)
+			}
+		})
+	}
+}
+
 func TestCacheKeepsOnlyWholeSharedOKBodies(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -293,6 +347,43 @@ func TestCacheFollowsRedirects(t *testing.T) {
 				if asked := calls.Load() > before; i == 1 && asked == tt.kept {
 					t.Errorf("second request asked upstream: %v, want %v", asked, !tt.kept)
 				}
+			}
+		})
+	}
+}
+
+// TestCacheKeepsNothingRedirectedOut: a fill whose redirect goes to a host
+// the cache keeps nothing from, one the rules name as uncached or one with
+// a credential, however the name is written, is not kept, and the
+// redirect is handed back.
+func TestCacheKeepsNothingRedirectedOut(t *testing.T) {
+	for _, tt := range []struct{ name, location string }{
+		{"to an uncached host", "https://api.example.net/blob"},
+		{"to an uncached host with a trailing dot", "https://api.example.net./blob"},
+		{"to a host with a credential", "https://assets.example.net/blob"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rules := Rules{
+				Allow: hosts("example.com", "api.example.net", "assets.example.net"), Uncached: []string{"api.example.net"},
+				Credentials: map[string]string{"assets.example.net": "Bearer configured"},
+			}
+			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+				if r.Host == "example.com" {
+					http.Redirect(w, r, tt.location, http.StatusFound)
+					return
+				}
+				_, _ = io.WriteString(w, "tool archive")
+			})
+			for i := range 2 {
+				r := httptest.NewRequest(http.MethodGet, "http://example.com/releases/download/tool.tar.gz", nil)
+				w := httptest.NewRecorder()
+				p.ServeHTTP(w, r.WithContext(ForLockedInstall(r.Context())))
+				if w.Code != http.StatusFound || w.Header().Get("Location") != tt.location {
+					t.Fatalf("request %d: status %d, Location %q; want the redirect handed back", i, w.Code, w.Header().Get("Location"))
+				}
+			}
+			if n := entries(t, p.Cache); n != 0 {
+				t.Errorf("cache holds %d entries", n)
 			}
 		})
 	}

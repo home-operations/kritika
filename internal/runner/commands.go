@@ -98,7 +98,7 @@ func commandTool(
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
-		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseURLReplacements, p.Agent.CachedHosts, repo,
+		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.MiseURLReplacements, p.Agent.CachedHosts, p.Agent.CacheLocked, repo,
 			slices.Sorted(maps.Keys(commandEnvs)), secrets, logger)
 		notes = append(notes, miseNotes...)
 		if err != nil {

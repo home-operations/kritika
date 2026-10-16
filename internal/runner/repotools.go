@@ -27,8 +27,10 @@ const (
 type repoMiseConfig struct {
 	config, lock string
 	tools        map[string]any
-	// locked names the tool versions the lock pins for the runner's platform.
+	// locked names the tool versions the lock pins for the runner's
+	// platform, and urls their downloads.
 	locked map[string][]string
+	urls   []string
 }
 
 func readRepoMise(files repoconfig.Files, logger *slog.Logger) (*repoMiseConfig, []string) {
@@ -104,7 +106,7 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 	}
 	r := &repoMiseConfig{config: string(out), lock: files[RepoMiseLock], tools: keptTools}
 	if r.lock != "" {
-		if r.locked, err = lockedTools(r.lock, misePlatform()); err != nil {
+		if r.locked, r.urls, err = lockedTools(r.lock, misePlatform()); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -264,17 +266,17 @@ func misePlatform() string {
 }
 
 // lockedTools names the tools lock pins for platform: those with a URL
-// and checksum under it, which is what a locked install needs. A
-// version's platform entry is the table under the quoted key
-// "platforms.<platform>".
-func lockedTools(lock, platform string) (map[string][]string, error) {
+// and checksum under it, which is what a locked install needs; urls are
+// those URLs, sorted. A version's platform entry is the table under the
+// quoted key "platforms.<platform>".
+func lockedTools(lock, platform string) (versionsByTool map[string][]string, urls []string, err error) {
 	var raw struct {
 		Tools map[string][]map[string]any `toml:"tools"`
 	}
 	if err := toml.Unmarshal([]byte(lock), &raw); err != nil {
-		return nil, fmt.Errorf("runner: %s: %w", RepoMiseLock, err)
+		return nil, nil, fmt.Errorf("runner: %s: %w", RepoMiseLock, err)
 	}
-	versionsByTool := map[string][]string{}
+	versionsByTool = map[string][]string{}
 	for name, versions := range raw.Tools {
 		for _, v := range versions {
 			entry, _ := v["platforms."+platform].(map[string]any)
@@ -283,8 +285,10 @@ func lockedTools(lock, platform string) (map[string][]string, error) {
 			checksum, _ := entry["checksum"].(string)
 			if version != "" && url != "" && checksum != "" {
 				versionsByTool[name] = append(versionsByTool[name], version)
+				urls = append(urls, url)
 			}
 		}
 	}
-	return versionsByTool, nil
+	slices.Sort(urls)
+	return versionsByTool, slices.Compact(urls), nil
 }

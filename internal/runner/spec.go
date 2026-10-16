@@ -25,7 +25,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 32
+const SpecVersion = 33
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -103,6 +103,10 @@ type AgentLimits struct {
 	// gateway's cache after MiseURLReplacements; none sends no download
 	// through it.
 	CachedHosts []string `json:"cachedHosts,omitempty"`
+	// CacheLocked says the gateway keeps downloads, as
+	// configfile.GatewayCaches reports, so a repository's locked install
+	// reaches the hosts its lock pins downloads on through the cache too.
+	CacheLocked bool `json:"cacheLocked,omitempty"`
 }
 
 // Prompt is what a review run needs beyond the checkout to write its

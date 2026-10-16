@@ -102,10 +102,11 @@ type grantKey struct{}
 // admitProxy authenticates a proxy request by the run token a runner is
 // handed as the password of its proxy URL, which git, gh and curl send as
 // Proxy-Authorization, and returns the request with its run's grant in
-// the context, marked egress.WithoutCache when the proxy URL's username
-// asks, or refuses the request and reports false. Only a live run
-// reaches the outside through the gateway, and the credentials it adds,
-// so the port is no relay for whatever else can reach it.
+// the context, marked egress.WithoutCache or egress.ForLockedInstall when
+// the proxy URL's username asks, or refuses the request and reports
+// false. Only a live run reaches the outside through the gateway, and the
+// credentials it adds, so the port is no relay for whatever else can
+// reach it.
 func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	kind := "http"
 	if r.Method == http.MethodConnect {
@@ -128,8 +129,11 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 		return r, false
 	}
 	ctx := context.WithValue(r.Context(), grantKey{}, grant)
-	if user == egress.UncachedProxyUser {
+	switch user {
+	case egress.UncachedProxyUser:
 		ctx = egress.WithoutCache(ctx)
+	case egress.LockedProxyUser:
+		ctx = egress.ForLockedInstall(ctx)
 	}
 	return r.WithContext(ctx), true
 }
@@ -185,7 +189,7 @@ func refusedHost(dest string) string {
 // proxyCredentials are the username and password of a Proxy-Authorization
 // header's Basic credentials, "" for anything else: the password is the
 // run token, and the username asks for no more than egress.UncachedProxyUser
-// says.
+// or egress.LockedProxyUser says.
 func proxyCredentials(header string) (user, token string) {
 	scheme, encoded, _ := strings.Cut(header, " ")
 	if !strings.EqualFold(scheme, "Basic") {

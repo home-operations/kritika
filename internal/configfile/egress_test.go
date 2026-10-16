@@ -161,11 +161,25 @@ func TestEgressCache(t *testing.T) {
 	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 {
 		t.Errorf("cache settings = %q, %d", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize)
 	}
+	if got := f.EgressRules().Uncached; !slices.Equal(got, []string{"api.github.com"}) {
+		t.Errorf("rules never cache %v, want the GitHub API", got)
+	}
+	if !f.GatewayCaches() {
+		t.Error("GatewayCaches = false with a cache directory")
+	}
+	// A cache directory alone keeps what a repository's lock pins.
+	dir, err := loadBytes(t, []byte("gatewayCacheDir: /var/cache/kritika\n"+minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dir.GatewayCaches() || dir.EgressCached() != nil {
+		t.Errorf("a cache directory alone: GatewayCaches = %t, hosts %v", dir.GatewayCaches(), dir.EgressCached())
+	}
 	none, err := loadBytes(t, []byte(minimal))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if none.EgressRules().Cached != nil || none.EgressCached() != nil {
-		t.Errorf("no cache configured: rules %v, hosts %v", none.EgressRules().Cached, none.EgressCached())
+	if none.EgressRules().Cached != nil || none.EgressCached() != nil || none.GatewayCaches() {
+		t.Errorf("no cache configured: rules %v, hosts %v, GatewayCaches = %t", none.EgressRules().Cached, none.EgressCached(), none.GatewayCaches())
 	}
 }

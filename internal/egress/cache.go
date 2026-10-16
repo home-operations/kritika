@@ -24,12 +24,13 @@ import (
 // Cache keeps the bodies of upgraded downloads, so a tool every review
 // installs is fetched from upstream once rather than once a run. It keeps
 // only what any runner could fetch for itself: a GET or HEAD, with no
-// query, to a host the rules name as cached, that carries no credential
-// and gets none from the proxy, answered by a response that does not ask
-// to stay private, so an entry can be handed to every runner that asks
-// for its URL. What it serves is checked downstream, mise checking each
-// download against the run's lock, so a stale or damaged entry fails an
-// install instead of changing one.
+// query, to a host the rules name as cached, or a locked install's to any
+// host they do not keep out, that carries no credential and gets none
+// from the proxy, answered by a response that does not ask to stay
+// private, so an entry can be handed to every runner that asks for its
+// URL. What it serves is checked downstream, mise checking each download
+// against the run's lock, so a stale or damaged entry fails an install
+// instead of changing one.
 type Cache struct {
 	// Dir holds one file per URL, named by the URL's hash. It is the
 	// cache's alone.
@@ -67,6 +68,29 @@ func WithoutCache(ctx context.Context) context.Context {
 func CacheBypassed(ctx context.Context) bool {
 	bypassed, _ := ctx.Value(withoutCacheKey{}).(bool)
 	return bypassed
+}
+
+// LockedProxyUser is the proxy username a runner gives the gateway for a
+// repository's locked install, whose downloads mise checks against the
+// lock: the cache may keep and answer such a request from any host the
+// rules allow, not only the hosts they name as cached. The gateway marks
+// it ForLockedInstall. A command can claim the name too; it then gets what
+// the host serves any run, and what it has the cache keep from a host the
+// rules do not name as cached is served only to a request that claims the
+// name as well.
+const LockedProxyUser = "locked"
+
+type lockedInstallKey struct{}
+
+// ForLockedInstall marks ctx's request as a locked install's.
+func ForLockedInstall(ctx context.Context) context.Context {
+	return context.WithValue(ctx, lockedInstallKey{}, true)
+}
+
+// LockedInstall reports whether ctx's request was marked ForLockedInstall.
+func LockedInstall(ctx context.Context) bool {
+	locked, _ := ctx.Value(lockedInstallKey{}).(bool)
+	return locked
 }
 
 // OpenCache is a cache in dir, which it creates, checks it can write and
@@ -119,16 +143,14 @@ const (
 )
 
 // cacheable reports whether r, an upgraded request to host, may be
-// answered from the cache. A URL with a query is not: a signed URL's
-// query is its credential, and a query would let one asset be kept under
-// any number of names.
+// answered from the cache: one to a host the rules name as cached, or a
+// locked install's to any host they do not name as uncached. A URL with a
+// query is not: a signed URL's query is its credential, and a query would
+// let one asset be kept under any number of names.
 func cacheable(r *http.Request, host string, rules Rules) bool {
-	host = strings.ToLower(host)
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	if r.Method != http.MethodGet && r.Method != http.MethodHead || r.URL.RawQuery != "" || r.URL.ForceQuery ||
-		CacheBypassed(r.Context()) {
-		return false
-	}
-	if _, ok := rules.Credentials[host]; ok {
+		CacheBypassed(r.Context()) || rules.keptOut(host) {
 		return false
 	}
 	for _, h := range []string{"Authorization", "Cookie"} {
@@ -136,7 +158,15 @@ func cacheable(r *http.Request, host string, rules Rules) bool {
 			return false
 		}
 	}
-	return slices.Contains(rules.Cached, host)
+	return slices.Contains(rules.Cached, host) || LockedInstall(r.Context())
+}
+
+// keptOut reports whether the cache keeps nothing from host, as the rules
+// match a name: a host they name as uncached, or one with a credential.
+func (r Rules) keptOut(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	_, credentialed := r.Credentials[host]
+	return credentialed || slices.Contains(r.Uncached, host)
 }
 
 // upstreamURL is the HTTPS URL an upgraded request for u to host goes to.
@@ -268,10 +298,10 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 }
 
 // checkRedirect lets a fill follow a redirect only where the runner's own
-// request could go, over HTTPS on 443 to a host the rules admit, and only
-// as a request with no credential, from a response that does not ask to
-// stay private: Go's client turns a URL's userinfo into Basic
-// authorization.
+// request could go, over HTTPS on 443 to a host the rules admit and the
+// cache does not keep out, and only as a request with no credential, from
+// a response that does not ask to stay private: Go's client turns a URL's
+// userinfo into Basic authorization.
 func (p *Proxy) checkRedirect(req *http.Request, via []*http.Request) error {
 	switch {
 	case len(via) >= maxRedirects:
@@ -285,8 +315,12 @@ func (p *Proxy) checkRedirect(req *http.Request, via []*http.Request) error {
 	case req.URL.Port() != "" && req.URL.Port() != "443":
 		return &refusal{req.URL.Host, "only port 443 is served"}
 	}
-	if reason := p.Rules().refuses(req.URL.Hostname()); reason != "" {
+	rules := p.Rules()
+	if reason := rules.refuses(req.URL.Hostname()); reason != "" {
 		return &refusal{req.URL.Host, reason}
+	}
+	if rules.keptOut(req.URL.Hostname()) {
+		return fmt.Errorf("egress: cache: redirect to %s, which the cache keeps nothing from", req.URL.Host)
 	}
 	return nil
 }
