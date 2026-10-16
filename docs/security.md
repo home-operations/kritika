@@ -416,9 +416,13 @@ config:
   replica keeps, the least recently used going first, and apart from
   that what the fetches under way, at most eight at once, may write: a
   fetch past either bound is forwarded, not kept, so the directory holds
-  at most twice the bound, and a response being served holds its file
-  for at most two minutes. Leave the pod's ephemeral storage room for
-  that. Each replica keeps its own cache, which lasts as long as its pod.
+  at most twice the bound, apart from evicted files still being served.
+  Those files retain disk space until their readers finish, for at most
+  two minutes per response; their total size is not bounded by
+  `gatewayCacheMaxSize`. Allow ephemeral storage for twice the bound
+  plus those files and the pod's other storage use. Twice the bound is
+  not a hard limit on disk usage. Each replica keeps its own cache,
+  which lasts as long as its pod.
 - **A mirror.** mise applies one rule to a URL, so a rule that rewrites
   to a mirror over `https://` skips the cache. To keep a mirror's
   downloads, rewrite to it over `http://`, which the gateway upgrades,
