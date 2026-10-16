@@ -117,10 +117,13 @@ From the top, each part shown only when it has something to say:
 6. **What's good**, left out on a bot's pull request.
 7. **Merge impact**, specific, evidence-backed consequences or operational
    checks, omitted when there are none.
-8. **Sources consulted**, links to what the review's commands fetched: a
+8. **Review context**, collapsed, counting the sources, skills and
+   commands on its line: links to what the review's commands fetched, a
    command's when it succeeded, and a `fetch_repo` that found files or a
-   diff, not a tag listing. Then notes, such as files left out of the
-   prompt or a `.kritika.yaml` value that was dropped.
+   diff, not a tag listing; the repository's skills it read, of those it
+   was offered; and the run tool's commands it ran, of those it was
+   offered. Then notes, such as files left out of the prompt or a
+   `.kritika.yaml` value that was dropped.
 9. The footer: `Reviews (3) · Last reviewed commit: "subject" · <model>`,
    the model as `<model>/<effort>` when a [`review.effort`](models.md#effort)
    is set, ending with the pull request's cost when the admin turns

@@ -1111,8 +1111,8 @@ func checkAgentRunsCommands(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
-	if !strings.Contains(sticky, "<summary>Sources consulted</summary>\n\n- <https://releases.example.com/b/v2>\n") ||
-		!strings.Contains(sticky, "\n_Commands offered: curl; run: curl._\n") {
+	if !strings.Contains(sticky, "<summary>Review context · 1 source · 1/1 commands</summary>\n\n- **Sources:**\n  - <https://releases.example.com/b/v2>\n") ||
+		!strings.Contains(sticky, "\n- **Commands run:** `curl`\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }
@@ -2256,7 +2256,7 @@ func checkAgentReadsSkill(t *testing.T, h *agenticHarness) {
 	h.lf.mu.Lock()
 	sticky := h.lf.comments[commentBase+1]
 	h.lf.mu.Unlock()
-	if !strings.Contains(sticky, "Skills offered: review-go; read: review-go") {
+	if !strings.Contains(sticky, "· 1/1 skills</summary>\n\n- **Skills read:** `review-go`\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }
@@ -2301,7 +2301,7 @@ func checkAgentLoadsSkill(t *testing.T, h *agenticHarness) {
 		strings.Contains(system, "- review-go:") {
 		t.Fatalf("system prompt does not end with the skill given whole:\n%s", system)
 	}
-	if !strings.Contains(sticky, "Skills offered: review-go; read: review-go") {
+	if !strings.Contains(sticky, "· 1/1 skills</summary>\n\n- **Skills read:** `review-go`\n") {
 		t.Fatalf("sticky:\n%s", sticky)
 	}
 }

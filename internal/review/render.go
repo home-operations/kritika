@@ -80,6 +80,10 @@ type RenderData struct {
 	// the runner's record rather than the model's answer, as SourceLinks
 	// gives them.
 	Sources []string
+	// Skills are the repository's skills the review was offered and the
+	// ones it read; Commands the run tool's commands it was offered and
+	// the ones it ran. Each is zero when none were offered.
+	Skills, Commands Offered
 	// Confidence is the score a second model gave the pull request, nil
 	// when the repository asks for none or the scorer did not answer.
 	Confidence *Confidence
@@ -91,6 +95,30 @@ type RenderData struct {
 	// the review; both "" when the dashboard has no public URL. The
 	// default template then leaves the re-run badge out.
 	WebURL, PullURL string
+}
+
+// Offered is one kind of help a review was offered, the repository's
+// skills or the run tool's commands: every name offered, and the names it
+// used, in the order the agent's run records them.
+type Offered struct {
+	Names, Used []string
+}
+
+// maxNamedUsed is how many used names the default template writes before
+// it counts the rest; a repository can offer far more commands than a
+// comment should list.
+const maxNamedUsed = 10
+
+// Named is the used names the default template writes: sorted, and at
+// most maxNamedUsed of them.
+func (o Offered) Named() []string {
+	names := slices.Sorted(slices.Values(o.Used))
+	return names[:min(len(names), maxNamedUsed)]
+}
+
+// More is how many used names Named leaves out.
+func (o Offered) More() int {
+	return max(len(o.Used)-maxNamedUsed, 0)
 }
 
 // Approval is whether the reviewed head stands approved by kritika, and

@@ -354,22 +354,43 @@ func TestRenderSummaryHeldBack(t *testing.T) {
 	}
 }
 
-func TestRenderSummarySources(t *testing.T) {
+func TestRenderSummaryContext(t *testing.T) {
 	d := sampleData()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
-	if strings.Contains(body, "Sources consulted") {
-		t.Fatalf("a review that fetched nothing lists sources:\n%s", body)
+	if strings.Contains(body, "Review context") {
+		t.Fatalf("a review offered nothing that fetched nothing has a context block:\n%s", body)
 	}
 	d.Sources = []string{"https://api.github.com/repos/a/b/releases/tags/v2", "https://github.com/a/b/compare/v1...v2"}
+	d.Skills = Offered{Names: []string{"go-style", "review-renovate-pr"}}
+	d.Commands = Offered{Names: []string{"gh", "helm", "kubectl"}, Used: []string{"helm", "gh"}}
 	body, _ = RenderSummary(t.Context(), Templates{}, d)
-	want := "<details>\n<summary>Sources consulted</summary>\n\n" +
-		"- <https://api.github.com/repos/a/b/releases/tags/v2>\n- <https://github.com/a/b/compare/v1...v2>\n\n</details>\n"
+	want := "<details>\n<summary>Review context · 2 sources · 0/2 skills · 2/3 commands</summary>\n\n" +
+		"- **Sources:**\n  - <https://api.github.com/repos/a/b/releases/tags/v2>\n  - <https://github.com/a/b/compare/v1...v2>\n" +
+		"- **Skills read:** none\n- **Commands run:** `gh` `helm`\n\n</details>\n"
 	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {
 		t.Fatalf("body:\n%s", body)
 	}
-	if strings.Index(body, "`README.md:2`") > strings.Index(body, "Sources consulted") ||
-		strings.Index(body, "Sources consulted") > strings.Index(body, "_1 file") {
+	if strings.Index(body, "`README.md:2`") > strings.Index(body, "Review context") ||
+		strings.Index(body, "Review context") > strings.Index(body, "_1 file") {
 		t.Fatalf("sections out of order:\n%s", body)
+	}
+
+	// Each part of the summary line stands alone, and a long list of used
+	// names is cut to a count.
+	d.Sources, d.Skills = nil, Offered{}
+	d.Commands.Names = []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m"}
+	d.Commands.Used = []string{"m", "l", "k", "j", "i", "h", "g", "f", "e", "d", "c", "b"}
+	body, _ = RenderSummary(t.Context(), Templates{}, d)
+	want = "<summary>Review context · 12/13 commands</summary>\n\n" +
+		"- **Commands run:** `b` `c` `d` `e` `f` `g` `h` `i` `j` `k` and 2 more\n\n</details>\n"
+	if !strings.Contains(body, want) || strings.Contains(body, "Sources") || strings.Contains(body, "Skills") {
+		t.Fatalf("body:\n%s", body)
+	}
+	one := sampleData()
+	one.Sources = []string{"https://example.com/x"}
+	body, _ = RenderSummary(t.Context(), Templates{}, one)
+	if !strings.Contains(body, "<summary>Review context · 1 source</summary>\n\n- **Sources:**\n  - <https://example.com/x>\n\n</details>\n") {
+		t.Fatalf("body:\n%s", body)
 	}
 }
 
