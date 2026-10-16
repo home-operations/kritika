@@ -307,7 +307,15 @@ func startWorker(
 	// a review's runner calls with its run token.
 	gatewayLogger := logger.With("listener", "gateway")
 	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
-	gw.Proxy = &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
+	proxy := &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
+	if cfg.GatewayCacheDir != "" {
+		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize), cfg.GatewayCacheMaxAge)
+		if err != nil {
+			return err
+		}
+		proxy.Cache = cache
+	}
+	gw.Proxy = proxy
 	g.Go(func() error {
 		return server.Serve(server.Lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
 	})

@@ -2,6 +2,10 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v4"
@@ -39,6 +43,21 @@ type Settings struct {
 	// deadline before it expires on its own, in case the worker that
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIKA_GATEWAY_TOKEN_TTL" envDefault:"1h" yaml:"gatewayTokenTtl,omitempty"`
+
+	// GatewayCacheDir is where the gateway keeps the downloads of the hosts
+	// egress.cache names, to serve each again to every runner that asks for
+	// the same URL; empty keeps none. The directory is the cache's alone,
+	// an emptyDir in the chart, so it lasts as long as the pod.
+	GatewayCacheDir string `env:"KRITIKA_GATEWAY_CACHE_DIR" yaml:"gatewayCacheDir,omitempty"`
+	// GatewayCacheMaxSize bounds what the cache keeps, the least recently
+	// used downloads going first, and apart from that what its fetches
+	// under way may write, so the directory holds at most twice it. 2Gi
+	// holds a few dozen release archives.
+	GatewayCacheMaxSize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_SIZE" envDefault:"2Gi" yaml:"gatewayCacheMaxSize,omitempty"`
+	// GatewayCacheMaxAge is how long a kept download is served before it is
+	// fetched again, so an asset replaced upstream is served stale for at
+	// most this long; a day, since release assets rarely change.
+	GatewayCacheMaxAge time.Duration `env:"KRITIKA_GATEWAY_CACHE_MAX_AGE" envDefault:"24h" yaml:"gatewayCacheMaxAge,omitempty"`
 
 	// WebURL is the dashboard's externally reachable origin: an absolute
 	// http(s) URL with a host and no query or fragment. It is how the
@@ -163,6 +182,37 @@ func (o *jsonObject) UnmarshalText(b []byte) error { return json.Unmarshal(b, (*
 
 // UnmarshalYAML accepts native resource maps alongside the environment's JSON.
 func (o *jsonObject) UnmarshalYAML(n *yaml.Node) error { return n.Decode((*map[string]any)(o)) }
+
+// ByteSize is a size in bytes, a whole number of them or one with a
+// binary suffix as Kubernetes writes a quantity: Ki, Mi, Gi or Ti.
+type ByteSize int64
+
+// UnmarshalText parses the variable's value.
+func (b *ByteSize) UnmarshalText(text []byte) error {
+	s := string(text)
+	num, unit := s, int64(1)
+	for i, suffix := range []string{"Ki", "Mi", "Gi", "Ti"} {
+		if n, ok := strings.CutSuffix(s, suffix); ok {
+			num, unit = n, 1<<(10*(i+1))
+			break
+		}
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil || n < 0 || n > math.MaxInt64/unit {
+		return fmt.Errorf("config: %q is not a size: a whole number of bytes, or one followed by Ki, Mi, Gi or Ti", s)
+	}
+	*b = ByteSize(n * unit)
+	return nil
+}
+
+// UnmarshalYAML parses the file's value, a string or a number of bytes.
+func (b *ByteSize) UnmarshalYAML(n *yaml.Node) error {
+	var s string
+	if err := n.Decode(&s); err != nil {
+		return err
+	}
+	return b.UnmarshalText([]byte(s))
+}
 
 // MiseURLReplacement is one of mise's url_replacements rules: a download
 // URL From matches, as a prefix or, after "regex:", a pattern, becomes To.

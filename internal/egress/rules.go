@@ -15,6 +15,9 @@ type Rules struct {
 	// Credentials map a host to the Authorization header value an
 	// upgraded request to it carries.
 	Credentials map[string]string
+	// Cached are the exact hosts whose downloads the proxy's cache keeps
+	// and serves again, when it has a cache.
+	Cached []string
 }
 
 // List is one side of the rules.

@@ -661,16 +661,21 @@ served.
 
 `egress` is what runner pods may reach through kritika's gateway beyond
 `github.com` and `api.github.com`, which an app allows: `allow` and `deny`
-list hosts, IP addresses and CIDRs, and `credentials` names hosts the
-gateway adds a token to. [Security](security.md#the-egress-gateway)
-describes them with the gateway.
+list hosts, IP addresses and CIDRs, `credentials` names hosts the
+gateway adds a token to, and `cache` names hosts whose downloads the
+gateway keeps for every run, in `gatewayCacheDir`.
+[Security](security.md#the-egress-gateway) describes them with the
+gateway, and the cache with [runner tools](security.md#the-gateways-download-cache).
 
 ```yaml
+# The chart's gatewayCache.enabled sets this one.
+gatewayCacheDir: /var/cache/kritika
 egress:
   allow: ["*", 10.10.0.5]
   deny: ["*.pastebin.com", 203.0.113.0/24]
   credentials:
     api.github.com: { env: GITHUB_TOKEN }
+  cache: [get.helm.sh, github.com]
 ```
 
 ## How kritika runs
@@ -692,6 +697,9 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `indexWorkers` | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
 | `leaderRetryInterval` | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
 | `gatewayTokenTtl` | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |
+| `gatewayCacheDir` | `KRITIKA_GATEWAY_CACHE_DIR` | where the gateway keeps the downloads of the hosts `egress.cache` names, a directory of its own; nothing is kept unless set; the chart's `gatewayCache.enabled` renders it ([the gateway's cache](security.md#the-gateways-download-cache)) |
+| `gatewayCacheMaxSize` | `KRITIKA_GATEWAY_CACHE_MAX_SIZE` | the most the gateway's cache keeps, in bytes or with `Ki`, `Mi`, `Gi` or `Ti`, the least recently used downloads going first, and apart from that the most its fetches under way may write; 2Gi unless set |
+| `gatewayCacheMaxAge` | `KRITIKA_GATEWAY_CACHE_MAX_AGE` | how long the gateway serves a kept download before it fetches it again; 24h unless set |
 | `logLevel` | `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                            |
 | `logFormat` | `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                                                                                                              |
 | `runner.deadline` | `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline, at most 2h; 15m unless set                                                                                                                                                                              |

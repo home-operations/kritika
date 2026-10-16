@@ -46,6 +46,9 @@ strategy:
 #   gatewayAddr: { type: string }
 #   gatewayUrl: { type: string }
 #   gatewayTokenTtl: { type: string, minLength: 1 }
+#   gatewayCacheDir: { type: string }
+#   gatewayCacheMaxSize: { type: [string, integer] }
+#   gatewayCacheMaxAge: { type: string, minLength: 1 }
 #   webUrl: { type: string }
 #   databaseAppRole: { type: string }
 #   databaseRunnerRole: { type: string }
@@ -188,6 +191,19 @@ runner:
     name: ""
     # -- Annotations for the runner ServiceAccount.
     annotations: {}
+
+# The gateway's download cache: each kritika serve replica keeps what runner
+# tools download from the hosts `config.egress.cache` names, in an emptyDir,
+# and serves it again to the next run that asks for the same URL, so a tool
+# is fetched once per replica rather than once per run. mise still checks
+# every download against the repository's lock.
+gatewayCache:
+  # -- Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR); `config.egress.cache` names the hosts whose downloads it keeps.
+  enabled: false
+  # -- The most the cache keeps (KRITIKA_GATEWAY_CACHE_MAX_SIZE), in bytes or with Ki, Mi, Gi or Ti, the least recently used downloads going first, and apart from that the most its fetches under way may write, so leave the pod's ephemeral storage room for twice it.
+  maxSize: 2Gi
+  # -- How long a kept download is served before it is fetched again (KRITIKA_GATEWAY_CACHE_MAX_AGE), a Go duration.
+  maxAge: 24h
 
 serviceAccount:
   # -- Create the ServiceAccount kritika serve runs as.

@@ -124,6 +124,11 @@ In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 {{- printf "http://%s-gateway.%s.svc.cluster.local:%d" (include "kritika.fullname" .) .Release.Namespace (int .Values.service.gatewayPort) -}}
 {{- end }}
 
+{{/* Where the gateway's cache emptyDir is mounted, when gatewayCache is enabled. */}}
+{{- define "kritika.gatewayCacheDir" -}}
+/var/cache/kritika
+{{- end }}
+
 {{/*
 The application file, with deployment settings derived from chart values.
 */}}
@@ -152,6 +157,11 @@ addr: {{ printf ":%d" (int .Values.service.port) | quote }}
 metricsAddr: {{ printf ":%d" (int .Values.service.metricsPort) | quote }}
 gatewayAddr: {{ printf ":%d" (int .Values.service.gatewayPort) | quote }}
 gatewayUrl: {{ include "kritika.gatewayURL" . | quote }}
+{{- if .Values.gatewayCache.enabled }}
+gatewayCacheDir: {{ include "kritika.gatewayCacheDir" . | quote }}
+gatewayCacheMaxSize: {{ .Values.gatewayCache.maxSize | quote }}
+gatewayCacheMaxAge: {{ .Values.gatewayCache.maxAge | quote }}
+{{- end }}
 databaseAppRole: {{ .Values.database.app.role | quote }}
 databaseRunnerRole: {{ .Values.database.runner.role | quote }}
 executor: kubernetes
@@ -191,6 +201,14 @@ an `env` key that would duplicate one of them.
   value: {{ printf ":%d" (int .Values.service.gatewayPort) | quote }}
 - name: KRITIKA_GATEWAY_URL
   value: {{ include "kritika.gatewayURL" . | quote }}
+{{- if .Values.gatewayCache.enabled }}
+- name: KRITIKA_GATEWAY_CACHE_DIR
+  value: {{ include "kritika.gatewayCacheDir" . | quote }}
+- name: KRITIKA_GATEWAY_CACHE_MAX_SIZE
+  value: {{ .Values.gatewayCache.maxSize | quote }}
+- name: KRITIKA_GATEWAY_CACHE_MAX_AGE
+  value: {{ .Values.gatewayCache.maxAge | quote }}
+{{- end }}
 - name: KRITIKA_DATABASE_APP_ROLE
   value: {{ .Values.database.app.role | quote }}
 - name: KRITIKA_DATABASE_RUNNER_ROLE
@@ -241,7 +259,7 @@ an `env` key that would duplicate one of them.
 {{/* Environment names corresponding to operational settings present in the file. */}}
 {{- define "kritika.configEnv" -}}
 {{- $names := dict -}}
-{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
+{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxAge" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
 {{- if and (hasKey $ $key) (ne (get $ $key) nil) -}}
 {{- $_ := set $names (printf "KRITIKA_%s" ($key | snakecase | upper)) $key -}}
 {{- end -}}

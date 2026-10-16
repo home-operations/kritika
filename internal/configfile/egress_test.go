@@ -107,20 +107,30 @@ func TestEgressRejects(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "ghp_x")
 	t.Setenv("TEST_EMPTY", "")
 	for name, tt := range map[string]struct{ yaml, want string }{
-		"scheme in host":         {"egress:\n  allow: [\"https://ghcr.io\"]\n", "egress.allow[0]"},
-		"port in host":           {"egress:\n  allow: [\"ghcr.io:443\"]\n", "lowercase hostname"},
-		"uppercase host":         {"egress:\n  allow: [GHCR.io]\n", "lowercase hostname"},
-		"scheme in deny":         {"egress:\n  deny: [\"https://ghcr.io\"]\n", "egress.deny[0]"},
-		"trailing dot in deny":   {"egress:\n  deny: [\"transfer.sh.\"]\n", "egress.deny[0]"},
-		"address with port":      {"egress:\n  allow: [\"10.0.0.5:443\"]\n", "egress.allow[0]"},
-		"bad prefix":             {"egress:\n  allow: [10.0.0.0/33]\n", "egress.allow[0]"},
-		"dot after wildcard":     {"egress:\n  allow: [\"*..example.com\"]\n", "egress.allow[0]"},
-		"forge denied":           {"egress:\n  deny: [\"*.github.com\"]\n", "api.github.com is denied"},
-		"credential not allowed": {"egress:\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not allowed by egress.allow and egress.deny"},
-		"credential denied":      {"egress:\n  allow: [\"*\"]\n  deny: [registry.example.com]\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not allowed by egress.allow and egress.deny"},
-		"credential pattern":     {"egress:\n  allow: [\"*\"]\n  credentials:\n    \"*\": { env: TEST_GH_TOKEN }\n", "one host, not a pattern"},
-		"credential suffix":      {"egress:\n  allow: [\"*.example.com\"]\n  credentials:\n    \"*.example.com\": { env: TEST_GH_TOKEN }\n", "one host, not a pattern"},
-		"empty credential":       {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { env: TEST_EMPTY }\n", "empty value"},
+		"scheme in host":            {"egress:\n  allow: [\"https://ghcr.io\"]\n", "egress.allow[0]"},
+		"port in host":              {"egress:\n  allow: [\"ghcr.io:443\"]\n", "lowercase hostname"},
+		"uppercase host":            {"egress:\n  allow: [GHCR.io]\n", "lowercase hostname"},
+		"scheme in deny":            {"egress:\n  deny: [\"https://ghcr.io\"]\n", "egress.deny[0]"},
+		"trailing dot in deny":      {"egress:\n  deny: [\"transfer.sh.\"]\n", "egress.deny[0]"},
+		"address with port":         {"egress:\n  allow: [\"10.0.0.5:443\"]\n", "egress.allow[0]"},
+		"bad prefix":                {"egress:\n  allow: [10.0.0.0/33]\n", "egress.allow[0]"},
+		"dot after wildcard":        {"egress:\n  allow: [\"*..example.com\"]\n", "egress.allow[0]"},
+		"forge denied":              {"egress:\n  deny: [\"*.github.com\"]\n", "api.github.com is denied"},
+		"credential not allowed":    {"egress:\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not allowed by egress.allow and egress.deny"},
+		"credential denied":         {"egress:\n  allow: [\"*\"]\n  deny: [registry.example.com]\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n", "not allowed by egress.allow and egress.deny"},
+		"credential pattern":        {"egress:\n  allow: [\"*\"]\n  credentials:\n    \"*\": { env: TEST_GH_TOKEN }\n", "one host, not a pattern"},
+		"credential suffix":         {"egress:\n  allow: [\"*.example.com\"]\n  credentials:\n    \"*.example.com\": { env: TEST_GH_TOKEN }\n", "one host, not a pattern"},
+		"empty credential":          {"egress:\n  allow: [api.github.com]\n  credentials:\n    api.github.com: { env: TEST_EMPTY }\n", "empty value"},
+		"cache without a directory": {"egress:\n  allow: [get.helm.sh]\n  cache: [get.helm.sh]\n", "egress.cache needs gatewayCacheDir"},
+		"cache pattern":             {"gatewayCacheDir: /c\negress:\n  allow: [\"*.example.com\"]\n  cache: [\"*.example.com\"]\n", "one host, not a pattern"},
+		"cache every host":          {"gatewayCacheDir: /c\negress:\n  allow: [\"*\"]\n  cache: [\"*\"]\n", "one host, not a pattern"},
+		"cache uppercase host":      {"gatewayCacheDir: /c\negress:\n  allow: [\"*\"]\n  cache: [GET.helm.sh]\n", "egress.cache[0]: \"GET.helm.sh\" must be a lowercase hostname"},
+		"cache listed twice":        {"gatewayCacheDir: /c\negress:\n  allow: [get.helm.sh]\n  cache: [get.helm.sh, get.helm.sh]\n", "egress.cache[1]: get.helm.sh is listed twice"},
+		"cache not allowed":         {"gatewayCacheDir: /c\negress:\n  allow: [ghcr.io]\n  cache: [get.helm.sh]\n", "egress.cache[0]: get.helm.sh is not allowed"},
+		"cache denied":              {"gatewayCacheDir: /c\negress:\n  allow: [\"*\"]\n  deny: [get.helm.sh]\n  cache: [get.helm.sh]\n", "egress.cache[0]: get.helm.sh is not allowed"},
+		"cache with a credential": {"gatewayCacheDir: /c\negress:\n  allow: [registry.example.com]\n  credentials:\n    registry.example.com: { env: TEST_GH_TOKEN }\n" +
+			"  cache: [registry.example.com]\n", "registry.example.com has a credential"},
+		"cache the GitHub API": {"gatewayCacheDir: /c\negress:\n  allow: [api.github.com]\n  cache: [api.github.com]\n", "api.github.com is sent the run's token"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadBytes(t, []byte(tt.yaml+minimal))
@@ -128,5 +138,34 @@ func TestEgressRejects(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestEgressCache: the cached hosts reach the gateway's rules and the
+// runner Jobs as written, and the cache's settings come from the same file.
+func TestEgressCache(t *testing.T) {
+	minimalEnv(t)
+	raw := "gatewayCacheDir: /var/cache/kritika\ngatewayCacheMaxSize: 512Mi\n" +
+		"egress:\n  allow: [get.helm.sh, \"*.githubusercontent.com\"]\n  cache: [get.helm.sh, github.com]\n"
+	f, err := loadBytes(t, []byte(raw+minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"get.helm.sh", "github.com"}
+	if got := f.EgressRules().Cached; !slices.Equal(got, want) {
+		t.Errorf("rules cache %v, want %v", got, want)
+	}
+	if got := f.EgressCached(); !slices.Equal(got, want) {
+		t.Errorf("EgressCached = %v, want %v", got, want)
+	}
+	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 {
+		t.Errorf("cache settings = %q, %d", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize)
+	}
+	none, err := loadBytes(t, []byte(minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if none.EgressRules().Cached != nil || none.EgressCached() != nil {
+		t.Errorf("no cache configured: rules %v, hosts %v", none.EgressRules().Cached, none.EgressCached())
 	}
 }

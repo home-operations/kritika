@@ -62,7 +62,7 @@ func (s *Settings) ReadFile(raw []byte) error {
 	if err := k.UnmarshalWithConf("", &merged, koanf.UnmarshalConf{
 		Tag: "yaml",
 		DecoderConfig: &mapstructure.DecoderConfig{
-			DecodeHook:  durationHook,
+			DecodeHook:  mapstructure.ComposeDecodeHookFunc(durationHook, byteSizeHook),
 			ErrorUnused: true,
 		},
 	}); err != nil {
@@ -81,6 +81,17 @@ func durationHook(from, to reflect.Type, value any) (any, error) {
 		return nil, errors.New("duration must be a string with units")
 	}
 	return time.ParseDuration(value.(string))
+}
+
+// byteSizeHook reads a size the file writes with its unit; a number of
+// bytes decodes as any integer does.
+func byteSizeHook(from, to reflect.Type, value any) (any, error) {
+	if to != reflect.TypeFor[ByteSize]() || from.Kind() != reflect.String {
+		return value, nil
+	}
+	var b ByteSize
+	err := b.UnmarshalText([]byte(value.(string)))
+	return b, err
 }
 
 func checkSources(typ reflect.Type, fields map[string]any, prefix string, fromFile map[string]bool) error {

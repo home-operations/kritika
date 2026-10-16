@@ -102,7 +102,8 @@ type grantKey struct{}
 // admitProxy authenticates a proxy request by the run token a runner is
 // handed as the password of its proxy URL, which git, gh and curl send as
 // Proxy-Authorization, and returns the request with its run's grant in
-// the context, or refuses the request and reports false. Only a live run
+// the context, marked egress.WithoutCache when the proxy URL's username
+// asks, or refuses the request and reports false. Only a live run
 // reaches the outside through the gateway, and the credentials it adds,
 // so the port is no relay for whatever else can reach it.
 func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
@@ -110,7 +111,7 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 	if r.Method == http.MethodConnect {
 		kind = "connect"
 	}
-	token := proxyToken(r.Header.Get("Proxy-Authorization"))
+	user, token := proxyCredentials(r.Header.Get("Proxy-Authorization"))
 	r.Header.Del("Proxy-Authorization")
 	grant, err := g.Store.LookupGatewayToken(r.Context(), token)
 	switch {
@@ -126,7 +127,11 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 		http.Error(w, "egress: the run token could not be checked", http.StatusInternalServerError)
 		return r, false
 	}
-	return r.WithContext(context.WithValue(r.Context(), grantKey{}, grant)), true
+	ctx := context.WithValue(r.Context(), grantKey{}, grant)
+	if user == egress.UncachedProxyUser {
+		ctx = egress.WithoutCache(ctx)
+	}
+	return r.WithContext(ctx), true
 }
 
 // What Refused keeps of a refused destination: the host alone, within
@@ -177,19 +182,21 @@ func refusedHost(dest string) string {
 	return textcut.Prefix(host, refusedHostBytes)
 }
 
-// proxyToken is the password of a Proxy-Authorization header's Basic
-// credentials, "" for anything else.
-func proxyToken(header string) string {
+// proxyCredentials are the username and password of a Proxy-Authorization
+// header's Basic credentials, "" for anything else: the password is the
+// run token, and the username asks for no more than egress.UncachedProxyUser
+// says.
+func proxyCredentials(header string) (user, token string) {
 	scheme, encoded, _ := strings.Cut(header, " ")
 	if !strings.EqualFold(scheme, "Basic") {
-		return ""
+		return "", ""
 	}
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	_, token, _ := strings.Cut(string(decoded), ":")
-	return token
+	user, token, _ = strings.Cut(string(decoded), ":")
+	return user, token
 }
 
 // stepPart is the part of a split review a step is for, as its runner

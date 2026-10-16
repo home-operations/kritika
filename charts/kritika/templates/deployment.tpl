@@ -142,6 +142,10 @@ spec:
             - name: config
               mountPath: /etc/kritika
               readOnly: true
+            {{- if $.Values.gatewayCache.enabled }}
+            - name: gateway-cache
+              mountPath: {{ include "kritika.gatewayCacheDir" $ }}
+            {{- end }}
             {{- with $.Values.volumeMounts }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
@@ -149,6 +153,10 @@ spec:
         - name: config
           configMap:
             name: {{ include "kritika.configMapName" $ | quote }}
+        {{- if $.Values.gatewayCache.enabled }}
+        - name: gateway-cache
+          emptyDir: {}
+        {{- end }}
         {{- with $.Values.volumes }}
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}

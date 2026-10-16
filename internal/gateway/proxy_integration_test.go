@@ -66,8 +66,10 @@ repositories:
 	}
 
 	reached := 0
+	var bypassed []bool
 	proxy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached++
+		bypassed = append(bypassed, egress.CacheBypassed(r.Context()))
 		if r.Header.Get("Proxy-Authorization") != "" {
 			t.Error("the run token reached the proxy")
 		}
@@ -75,13 +77,13 @@ repositories:
 	})
 	srv := httptest.NewServer(&Server{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Proxy: proxy})
 	defer srv.Close()
-	via := func(password string) *http.Client {
+	via := func(user, password string) *http.Client {
 		pu, err := url.Parse(srv.URL)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if password != "" {
-			pu.User = url.UserPassword("", password)
+			pu.User = url.UserPassword(user, password)
 		}
 		return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
 	}
@@ -104,7 +106,7 @@ repositories:
 		{"the run token", token, http.StatusTeapot},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			code, header, err := get(via(tt.password), "http://example.com/")
+			code, header, err := get(via("", tt.password), "http://example.com/")
 			if err != nil || code != tt.want {
 				t.Fatalf("status = %d, %v; want %d", code, err, tt.want)
 			}
@@ -113,15 +115,26 @@ repositories:
 			}
 		})
 	}
+	// The retry of an install around the gateway's cache names the
+	// proxy's user as egress.UncachedProxyUser, and the proxy gets the
+	// request marked so.
+	t.Run("a retry around the gateway's cache", func(t *testing.T) {
+		if code, _, err := get(via(egress.UncachedProxyUser, token), "http://example.com/"); err != nil || code != http.StatusTeapot {
+			t.Fatalf("status = %d, %v; want %d", code, err, http.StatusTeapot)
+		}
+		if len(bypassed) != 2 || bypassed[0] || !bypassed[1] {
+			t.Fatalf("bypassed = %v: want the retry's request alone marked", bypassed)
+		}
+	})
 	// A CONNECT's refusal, and the proxy's own answer, surface as the
 	// transport's error.
 	t.Run("a CONNECT without the token", func(t *testing.T) {
-		if _, _, err := get(via(""), "https://example.com/"); err == nil || !strings.Contains(err.Error(), "Proxy Authentication Required") {
+		if _, _, err := get(via("", ""), "https://example.com/"); err == nil || !strings.Contains(err.Error(), "Proxy Authentication Required") {
 			t.Fatalf("err = %v, want the gateway's refusal", err)
 		}
 	})
 	t.Run("a CONNECT with the run token", func(t *testing.T) {
-		if _, _, err := get(via(token), "https://example.com/"); err == nil || !strings.Contains(err.Error(), "teapot") {
+		if _, _, err := get(via("", token), "https://example.com/"); err == nil || !strings.Contains(err.Error(), "teapot") {
 			t.Fatalf("err = %v, want the proxy's answer", err)
 		}
 	})
@@ -129,12 +142,12 @@ repositories:
 		if err := st.RevokeGatewayTokens(ctx, runID); err != nil {
 			t.Fatal(err)
 		}
-		if code, _, err := get(via(token), "http://example.com/"); err != nil || code != http.StatusProxyAuthRequired {
+		if code, _, err := get(via("", token), "http://example.com/"); err != nil || code != http.StatusProxyAuthRequired {
 			t.Fatalf("status = %d, %v; want %d", code, err, http.StatusProxyAuthRequired)
 		}
 	})
-	if reached != 2 {
-		t.Fatalf("the proxy served %d requests, want the two with the run token", reached)
+	if reached != 3 {
+		t.Fatalf("the proxy served %d requests, want the three with the run token", reached)
 	}
 }
 

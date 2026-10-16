@@ -110,6 +110,8 @@ func TestSettingsTypes(t *testing.T) {
 		{"resources must be a map", "runner: {resources: [1]}", "runner.resources"},
 		{"URL replacements must be a list", "runner: {miseUrlReplacements: {from: a, to: b}}", "miseUrlReplacements"},
 		{"URL replacement keys are known", "runner: {miseUrlReplacements: [{from: a, to: b, too: c}]}", "too"},
+		{"cache size in decimal units", "gatewayCacheMaxSize: 2GB", "gatewayCacheMaxSize"},
+		{"cache size in a fraction", "gatewayCacheMaxSize: 1.5Gi", "gatewayCacheMaxSize"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := LoadSettings([]byte(tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -160,5 +162,38 @@ func TestEnvFormatsStructuredFileSettings(t *testing.T) {
 				t.Fatalf("URL replacements = %+v", e)
 			}
 		}
+	}
+}
+
+func TestByteSize(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want ByteSize
+		ok   bool
+	}{
+		{"0", 0, true},
+		{"1048576", 1 << 20, true},
+		{"512Ki", 512 << 10, true},
+		{"2Gi", 2 << 30, true},
+		{"1Ti", 1 << 40, true},
+		{"", 0, false},
+		{"Gi", 0, false},
+		{"-1Gi", 0, false},
+		{"2G", 0, false},
+		{"2gi", 0, false},
+		{"8388608Ti", 0, false},
+	} {
+		var got ByteSize
+		err := got.UnmarshalText([]byte(tt.in))
+		if (err == nil) != tt.ok || got != tt.want {
+			t.Errorf("ByteSize(%q) = %d, %v; want %d, ok %v", tt.in, got, err, tt.want, tt.ok)
+		}
+	}
+	s, err := LoadSettings([]byte("gatewayCacheMaxSize: 1048576"))
+	if err != nil || s.GatewayCacheMaxSize != 1<<20 {
+		t.Fatalf("a size in bytes from the file = %d, %v", s.GatewayCacheMaxSize, err)
+	}
+	if s, err = LoadSettings(nil); err != nil || s.GatewayCacheMaxSize != 2<<30 || s.GatewayCacheMaxAge != 24*time.Hour || s.GatewayCacheDir != "" {
+		t.Fatalf("defaults: size %d, age %s, dir %q, %v", s.GatewayCacheMaxSize, s.GatewayCacheMaxAge, s.GatewayCacheDir, err)
 	}
 }
