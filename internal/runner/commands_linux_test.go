@@ -195,9 +195,18 @@ func TestCommandToolAdminEnv(t *testing.T) {
 		t.Fatal("no run tool")
 	}
 	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^TestCommandToolAdminEnv$", "adminenv"}}))
-	want := "KONFLATE_URL=https://konflate.internal.example true\nAPI_TOKEN=*** true\nUNSET_KEY= false\nRUNNER_ONLY= false\n"
-	if err != nil || !strings.Contains(out, want) {
-		t.Fatalf("out = %q, %v; want %q", out, err, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stderr shares the output in arrival order, and a coverage build of
+	// this binary warns there that GOCOVERDIR is unset, so each line is
+	// looked for on its own.
+	for _, want := range []string{
+		"KONFLATE_URL=https://konflate.internal.example true\n", "API_TOKEN=*** true\n", "UNSET_KEY= false\n", "RUNNER_ONLY= false\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("out = %q; want a line %q", out, want)
+		}
 	}
 }
 
