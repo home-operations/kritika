@@ -2,8 +2,10 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -115,5 +117,43 @@ func TestDetach(t *testing.T) {
 	deadline, ok := ctx.Deadline()
 	if !ok || time.Until(deadline) > detachTimeout {
 		t.Fatalf("deadline = %v, %v; want one within %v", deadline, ok, detachTimeout)
+	}
+}
+
+// TestDetachUnlessFenced: the job's end leaves the detached context
+// running, unless the job is fenced, before River ends it or after.
+func TestDetachUnlessFenced(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// end ends the job: stop as River does, fence as its heartbeat does.
+		end  func(stop, fence context.CancelCauseFunc)
+		ends bool
+	}{
+		{"the job stops", func(stop, _ context.CancelCauseFunc) { stop(context.Canceled) }, false},
+		{"the job times out", func(stop, _ context.CancelCauseFunc) { stop(context.DeadlineExceeded) }, false},
+		{"the job is fenced", func(stop, fence context.CancelCauseFunc) {
+			fence(errJobFenced)
+			stop(errJobFenced)
+		}, true},
+		{"the job is fenced after it stopped", func(stop, fence context.CancelCauseFunc) {
+			stop(context.Canceled)
+			fence(errJobFenced)
+		}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				fenced, fence := context.WithCancelCause(context.Background())
+				defer fence(nil)
+				parent, stop := context.WithCancelCause(context.WithValue(t.Context(), jobFenceKey{}, fenced))
+				defer stop(nil)
+				ctx, cancel := detachUnlessFenced(parent)
+				defer cancel()
+				tt.end(stop, fence)
+				synctest.Wait()
+				if ended := ctx.Err() != nil; ended != tt.ends || ended && !errors.Is(context.Cause(ctx), errJobFenced) {
+					t.Fatalf("detached ctx ended = %v (%v), want %v", ended, context.Cause(ctx), tt.ends)
+				}
+			})
+		})
 	}
 }

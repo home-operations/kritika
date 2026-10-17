@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/riverqueue/river/rivertype"
@@ -129,6 +130,32 @@ func TestJobHeartbeatFencesTheJobOnceBeatsStopLanding(t *testing.T) {
 	if got := store.count(); got != 1 {
 		t.Fatalf("beats after the fence = %d, want none: a late beat would hide the cut from the leader", got-1)
 	}
+}
+
+// TestJobHeartbeatFencesAJobRiverEnded: a fence that comes after River
+// ended the job's context, whose cause it then cannot change, still shows
+// through jobFence.
+func TestJobHeartbeatFencesAJobRiverEnded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeHeartbeater{}
+		h := &JobHeartbeat{Store: store, Logger: slog.New(slog.DiscardHandler)}
+		ctx, stop := context.WithCancel(t.Context())
+		defer stop()
+		err := h.Work(ctx, &rivertype.JobRow{ID: 9}, func(ctx context.Context) error {
+			stop()
+			store.mu.Lock()
+			store.down = true
+			store.mu.Unlock()
+			<-jobFence(ctx).Done()
+			if errors.Is(context.Cause(ctx), errJobFenced) {
+				return errors.New("the job's context took the fence's cause after River's")
+			}
+			return context.Cause(jobFence(ctx))
+		})
+		if !errors.Is(err, errJobFenced) {
+			t.Fatalf("Work = %v, want the fence seen after River's stop", err)
+		}
+	})
 }
 
 // TestJobHeartbeatFencesTheJobWhileABeatHangs: a beat that never returns

@@ -108,10 +108,15 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if err != nil {
 		logger.Error("follow-up failed", "error", err)
 		// An answered review request keeps its durable marker so a retry
-		// resumes polling. Other failures are recorded best effort, since
-		// River retries even if the record cannot be written.
+		// resumes polling. Any other failure is recorded on past the job's
+		// ctx, whose end may be the failure: River does not retry a job it
+		// cancelled, and the record is the mention's only trace.
 		if outcome != store.FollowupAnswered {
-			_ = f.record(ctx, store.FollowupFailed, err.Error(), 0, "")
+			rctx, cancel := detach(ctx)
+			if rerr := f.record(rctx, store.FollowupFailed, err.Error(), 0, ""); rerr != nil {
+				logger.Error("follow-up not recorded", "error", rerr)
+			}
+			cancel()
 		}
 		if _, final := errors.AsType[finalError](err); final {
 			return river.JobCancel(err)
@@ -280,10 +285,10 @@ func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) 
 	// The reply is posted even once the job's ctx has ended: the agent
 	// has been paid for it. A fenced job is the exception, since another
 	// replica may be answering it by now.
-	if cause := context.Cause(ctx); errors.Is(cause, errJobFenced) {
+	if cause := context.Cause(jobFence(ctx)); errors.Is(cause, errJobFenced) {
 		return store.FollowupFailed, cause
 	}
-	pctx, cancel := detach(ctx)
+	pctx, cancel := detachUnlessFenced(ctx)
 	defer cancel()
 	replyID, err := f.reply(pctx, review.FollowUpBody(reply, agent.Model, string(f.settings.Models.Effort), agent.CommandErrors))
 	if err != nil {
@@ -449,29 +454,39 @@ func (f *followUp) disqualified(ctx context.Context) string {
 	return ""
 }
 
-// rateLimited posts the limit notice once per hour when the pull request
-// has had its share of answers, and records it.
+// rateLimited records the mention limited once the pull request has had
+// its share of answers this hour, and the first it limits posts the limit
+// notice. The record is made before the post, in the transaction that
+// counts: a mention handled at the same time counts it, and a retry finds
+// it, so the notice, which carries no marker to find it by on the forge,
+// is posted at most once.
 func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	var answered, notices int
 	err := f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		answered, notices, err = store.RecentFollowupCounts(ctx, tx, f.pr.id)
-		return err
+		if answered, notices, err = store.RecentFollowupCounts(ctx, tx, f.pr.id); err != nil || answered < followUpsPerHour {
+			return err
+		}
+		return f.recordTx(ctx, tx, store.FollowupLimited, "", 0, "")
 	})
 	if err != nil {
-		return false, fmt.Errorf("worker: count follow-ups: %w", err)
+		return false, fmt.Errorf("worker: limit follow-ups: %w", err)
 	}
 	if answered < followUpsPerHour {
 		return false, nil
 	}
 	var replyID int64
 	if notices == 0 {
-		if replyID, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, review.LimitBody); err != nil {
-			return true, err
+		pctx, cancel := detach(ctx)
+		defer cancel()
+		if replyID, err = f.client.CreateComment(pctx, f.owner, f.repo, f.pr.number, review.LimitBody); err != nil {
+			f.logger.Warn("limit notice not posted", "error", err)
+		} else if err := f.record(pctx, store.FollowupLimited, "", replyID, ""); err != nil {
+			f.logger.Error("limit notice not recorded", "error", err, "reply", replyID)
 		}
 	}
-	f.logger.Info("follow-up rate limited", "answered_last_hour", answered, "notice_posted", notices == 0)
-	return true, f.record(ctx, store.FollowupLimited, "", replyID, "")
+	f.logger.Info("follow-up rate limited", "answered_last_hour", answered, "notice_posted", replyID != 0)
+	return true, nil
 }
 
 // thread returns the messages the model sees. The asking comment is always
@@ -577,13 +592,22 @@ func (f *followUp) repoConfig(ctx context.Context) (string, error) {
 }
 
 // reply posts body, led by its FollowUpMarker, where the mention was made:
-// in its inline thread, or on the conversation.
+// in its inline thread, or on the conversation. A post a fence cut fails
+// with errJobFenced rather than the cancellation, which River would take
+// for its stop and refund the attempt for.
 func (f *followUp) reply(ctx context.Context, body string) (int64, error) {
 	body = review.FollowUpMarker(f.comment.ID) + "\n" + body
+	var id int64
+	var err error
 	if f.comment.Inline {
-		return f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
+		id, err = f.client.ReplyInline(ctx, f.owner, f.repo, f.pr.number, f.comment, body)
+	} else {
+		id, err = f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
 	}
-	return f.client.CreateComment(ctx, f.owner, f.repo, f.pr.number, body)
+	if cause := context.Cause(ctx); err != nil && errors.Is(cause, errJobFenced) {
+		return id, cause
+	}
+	return id, err
 }
 
 func (f *followUp) record(ctx context.Context, status store.FollowupStatus, reason string, replyID int64, modelName string) error {

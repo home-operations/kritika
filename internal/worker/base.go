@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -75,6 +76,26 @@ const detachTimeout = 2 * time.Minute
 // detach is ctx without its cancellation, bounded by detachTimeout.
 func detach(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), detachTimeout)
+}
+
+// detachUnlessFenced is detach, but a fence of the job still ends it, with
+// errJobFenced as its cause, even after River ended the job's context: the
+// job is being handed to another replica, which must find no post of this
+// one's landing after it looked.
+func detachUnlessFenced(ctx context.Context) (context.Context, context.CancelFunc) {
+	dctx, cancelTimeout := detach(ctx)
+	dctx, cancel := context.WithCancelCause(dctx)
+	fence := jobFence(ctx)
+	stop := context.AfterFunc(fence, func() {
+		if errors.Is(context.Cause(fence), errJobFenced) {
+			cancel(errJobFenced)
+		}
+	})
+	return dctx, func() {
+		stop()
+		cancel(nil)
+		cancelTimeout()
+	}
 }
 
 // withLease runs fn while holding one of the account's slots on key,

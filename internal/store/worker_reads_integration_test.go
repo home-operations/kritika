@@ -94,6 +94,70 @@ func TestWorkerReadContracts(t *testing.T) {
 	t.Run("follow-up retry keeps reply and time window", func(t *testing.T) {
 		checkFollowupStoreContracts(t, s, ctx, account, other, prID)
 	})
+	t.Run("follow-up counts take turns", func(t *testing.T) {
+		checkFollowupCountsTakeTurns(t, s, ctx, account, prID)
+	})
+}
+
+// checkFollowupCountsTakeTurns: a count holds the pull request's follow-up
+// lock until its transaction ends, so another waits for it and then counts
+// what the first recorded.
+func checkFollowupCountsTakeTurns(t *testing.T, s *Store, ctx context.Context, account, prID string) {
+	t.Helper()
+	var before int
+	err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		_, notices, err := RecentFollowupCounts(ctx, tx, prID)
+		if err != nil {
+			return err
+		}
+		before = notices
+		blocked := s.WithAccount(ctx, account, func(other pgx.Tx) error {
+			if _, err := other.Exec(ctx, `SET LOCAL lock_timeout = '50ms'`); err != nil {
+				return err
+			}
+			_, _, err := RecentFollowupCounts(ctx, other, prID)
+			return err
+		})
+		if pgerr, ok := errors.AsType[*pgconn.PgError](blocked); !ok || pgerr.Code != "55P03" {
+			t.Fatalf("a second count = %v, want it to wait for the first", blocked)
+		}
+		return RecordFollowup(ctx, tx, FollowupResult{AccountID: account, PullRequestID: prID, CommentID: 200, Status: FollowupLimited})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		_, notices, err := RecentFollowupCounts(ctx, tx, prID)
+		if err == nil && notices != before+1 {
+			t.Fatalf("notices after the first count's record = %d, want %d", notices, before+1)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A mention that failed two hours ago and is limited on a retry counts
+	// from its retry.
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		r := FollowupResult{AccountID: account, PullRequestID: prID, CommentID: 201, Status: FollowupFailed}
+		if err := RecordFollowup(ctx, tx, r); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE followups SET created_at = now() - interval '2 hours' WHERE pull_request_id = $1 AND comment_id = 201`,
+			prID); err != nil {
+			return err
+		}
+		r.Status = FollowupLimited
+		if err := RecordFollowup(ctx, tx, r); err != nil {
+			return err
+		}
+		_, notices, err := RecentFollowupCounts(ctx, tx, prID)
+		if err == nil && notices != before+2 {
+			t.Fatalf("notices after a retry limited = %d, want %d", notices, before+2)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestReviewHistorySelection(t *testing.T) {
