@@ -254,3 +254,79 @@ func TestRegisterRepositoriesLeavesNewerTraits(t *testing.T) {
 		t.Fatalf("traits = %+v, branch %q after a fresh listing, want the listing's", traits, branch)
 	}
 }
+
+// TestRegisterRepositoriesLeavesNewerDisable: a repository a webhook
+// disabled after a listing was taken, its transaction begun before it,
+// stays disabled, its index sweep's clock kept, when that listing is
+// registered; a listing taken since enables it again, whatever else was
+// written to it meanwhile.
+func TestRegisterRepositoriesLeavesNewerDisable(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := parse(t, twoAccounts)
+	if err := s.ApplyConfig(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := f.Account(configfile.ForgeGitHub, "alpha")
+	name := "alpha/removed-listed"
+	id := configfile.RepositoryID(a.ID(), name)
+	t.Cleanup(func() {
+		if _, err := s.owner.Exec(context.Background(), `DELETE FROM repositories WHERE id = $1`, id); err != nil {
+			t.Error(err)
+		}
+	})
+	listing := []ReachedRepository{{FullName: name, DefaultBranch: "main"}}
+	now := func() time.Time {
+		t.Helper()
+		at, err := s.Now(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	register := func(listedAt time.Time) {
+		t.Helper()
+		if _, _, err := s.RegisterRepositories(ctx, a.ID(), listing, listedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := func() (enabled, disabledAt, stoppedAt bool) {
+		t.Helper()
+		if err := s.owner.QueryRow(ctx, `SELECT enabled, disabled_at IS NOT NULL, stopped_at IS NOT NULL FROM repositories WHERE id = $1`, id).
+			Scan(&enabled, &disabledAt, &stoppedAt); err != nil {
+			t.Fatal(err)
+		}
+		return enabled, disabledAt, stoppedAt
+	}
+	register(now())
+	// The webhook's transaction begins, the listing is taken, and then the
+	// webhook disables the repository.
+	var listedAt time.Time
+	if err := s.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
+		listedAt = now()
+		return DisableForgeRepositories(ctx, tx, a.ID(), id)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.owner.Exec(ctx, `UPDATE repositories SET stopped_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	register(listedAt)
+	if enabled, disabledAt, stoppedAt := state(); enabled || !disabledAt || !stoppedAt {
+		t.Fatalf("after a stale listing: enabled %v, disabled_at set %v, stopped_at set %v; want the webhook's disable kept",
+			enabled, disabledAt, stoppedAt)
+	}
+	// An admin's choice, made after the next listing was taken, is not a
+	// disable.
+	listedAt = now()
+	if err := s.WithAccount(ctx, a.ID(), func(tx pgx.Tx) error {
+		return TurnOn(ctx, tx, id, true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	register(listedAt)
+	if enabled, disabledAt, stoppedAt := state(); !enabled || disabledAt || stoppedAt {
+		t.Fatalf("after a fresh listing: enabled %v, disabled_at set %v, stopped_at set %v; want it enabled again",
+			enabled, disabledAt, stoppedAt)
+	}
+}
