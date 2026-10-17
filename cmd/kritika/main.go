@@ -338,21 +338,11 @@ func startWorker(
 	river.AddWorker(workers, &worker.Index{
 		Base: base, Executor: exec, Embedders: embedders, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})
-	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{
-		Logger: logger,
-		// Review and index workers set their own timeouts from the
-		// runner deadline; rescue must wait out the longest of them.
-		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
-		// ctx ending starts a soft stop: running jobs get this long before
-		// their contexts end.
-		SoftStopTimeout: queueDrain,
-		// Every job this replica works carries its heartbeat, so the
-		// leader can hand back the jobs of a replica that dies without
-		// a soft stop long before River's rescuer may.
-		Middleware: []rivertype.Middleware{&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}},
-		Queues:     workerQueues(cfg),
-		Workers:    workers,
-	})
+	// Every job this replica works carries its heartbeat, so the leader can
+	// hand back the jobs of a replica that dies without a soft stop long
+	// before River's rescuer may.
+	middleware := []rivertype.Middleware{&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}}
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), riverConfig(cfg, workers, middleware, logger))
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
@@ -442,6 +432,32 @@ const linger = 5 * time.Second
 // publicDrain is how long a stopping serve lets webhook and dashboard
 // requests finish. Event streams end at once, when the API's Run returns.
 const publicDrain = 10 * time.Second
+
+// riverConfig configures the working client, which runs on the
+// application role's pool.
+func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivertype.Middleware, logger *slog.Logger) *river.Config {
+	return &river.Config{
+		Logger: logger,
+		// Review and index workers set their own timeouts from the
+		// runner deadline; rescue must wait out the longest of them.
+		RescueStuckJobsAfter: jobtimeout.RescueStuckJobsAfter,
+		// ctx ending starts a soft stop: running jobs get this long before
+		// their contexts end.
+		SoftStopTimeout: queueDrain,
+		// A job its timeout cut ends its run on detached contexts, as a
+		// stopping one does, which queueStopHeadroom covers in the usual
+		// case: River would call every such job stuck after ten seconds.
+		JobStuckThreshold: queueStopHeadroom,
+		// River's reindexer would run REINDEX on this pool, whose role owns
+		// none of River's indexes and has no MAINTAIN on its tables, so it
+		// could never succeed: an empty list keeps it off, where nil is
+		// River's default set.
+		ReindexerIndexNames: []string{},
+		Middleware:          middleware,
+		Queues:              workerQueues(cfg),
+		Workers:             workers,
+	}
+}
 
 func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{

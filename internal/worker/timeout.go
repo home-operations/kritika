@@ -47,6 +47,13 @@ func (w *FollowUp) Timeout(job *river.Job[jobs.FollowUpArgs]) time.Duration {
 	return agentRunTimeout(w.Current.Get(), job.Args.AccountID, job.Args.RepositoryID, false)
 }
 
+// threadTimeout bounds a thread job: a few forge requests, each of which
+// may wait out a rate limit for up to a minute, River's default timeout.
+const threadTimeout = 5 * time.Minute
+
+// Timeout implements river.Worker.
+func (w *Thread) Timeout(*river.Job[jobs.ThreadArgs]) time.Duration { return threadTimeout }
+
 // repoSettings resolves a repository's settings from its id, which a job
 // carries instead of the name the configuration is keyed by. A repository
 // the account does not list gets the account's settings, as in Settings.

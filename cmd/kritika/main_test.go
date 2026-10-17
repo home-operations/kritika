@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/riverqueue/river"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -218,6 +219,19 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 		if queue, ok := queues[name]; !ok || queue.MaxWorkers <= 0 {
 			t.Errorf("queue %q has no worker capacity", name)
 		}
+	}
+}
+
+// TestRiverConfig: the working client keeps River's reindexer off, which
+// the application role could never run, and gives a job its timeout cut
+// the headroom its detached end takes before calling it stuck.
+func TestRiverConfig(t *testing.T) {
+	c := riverConfig(&config.Config{}, river.NewWorkers(), nil, slog.New(slog.DiscardHandler))
+	if c.ReindexerIndexNames == nil || len(c.ReindexerIndexNames) != 0 {
+		t.Errorf("reindexer indexes = %#v, want an empty list: nil is River's default set", c.ReindexerIndexNames)
+	}
+	if c.JobStuckThreshold != queueStopHeadroom {
+		t.Errorf("stuck threshold = %s, want %s", c.JobStuckThreshold, queueStopHeadroom)
 	}
 }
 
