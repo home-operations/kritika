@@ -125,9 +125,6 @@ func parse(raw []byte, settings config.Settings) (*File, error) {
 	}
 	slices.Sort(s.env)
 	f.secretEnv = s.env
-	if err := checkPolicyEnv(s.env); err != nil {
-		return nil, err
-	}
 	if err := f.Auth.validate(); err != nil {
 		return nil, err
 	}

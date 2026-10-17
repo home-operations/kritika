@@ -210,9 +210,7 @@ func TestMerge(t *testing.T) {
 			wantErr: "skills.scope.db.when[0]: pr.lines is known to a trigger condition alone",
 		},
 		{name: "a skill scope takes no other key", doc: "skills: { scope: { db: { allowed-tools: [x] } } }\n", wantErr: "field allowed-tools not found"},
-		{name: "a mode is no longer a key", doc: "mode: agentic\n", wantErr: "field mode not found"},
 		{name: "agent limits are the admin's alone", doc: "agent: { steps: 5 }\n", wantErr: "field agent not found"},
-		{name: "settle is no longer a key", doc: "trigger: { settle: 1m }\n", wantErr: "field settle not found"},
 		{name: "a secret reference does not decode", doc: "review: { model: { env: KEY } }\n", wantErr: "cannot construct"},
 		{name: "a file that does not parse leaves the admin's settings", doc: "unknown: 1\n", wantErr: "unknown"},
 	}

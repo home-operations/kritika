@@ -228,11 +228,6 @@ tests:
           content:
             name: KRITIKA_POLL_INTERVAL
           any: true
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_TOOLS
-          any: true
 
   - it: renders the runner templates as JSON for an external configuration
     set:
@@ -341,22 +336,6 @@ tests:
     asserts:
       - notExists:
           path: spec.template.spec.topologySpreadConstraints
-
-  - it: rejects removed tool mounts with migration guidance
-    set:
-      runner.tools: [{ name: helm, image: registry.example/helm:3 }]
-    asserts:
-      - failedTemplate:
-          errorMessage: runner.tools has been removed; declare tools in a repository's .kritika/mise.toml instead
-
-  - it: rejects the removed instance mise config with migration guidance
-    set:
-      runner.mise.config: |
-        [tools]
-        helm = "4.3.0"
-    asserts:
-      - failedTemplate:
-          errorMessage: runner.mise.config has been removed; declare tools in a repository's .kritika/mise.toml instead
 
   - it: supplies only the config path, the pod's name and UID and database credentials before extra env
     asserts:

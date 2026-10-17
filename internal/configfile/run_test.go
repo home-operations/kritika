@@ -49,8 +49,6 @@ func TestRun(t *testing.T) {
 			"KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
 		{"KRITIKA_RUNNER_POD_TEMPLATE", "[1]", "KRITIKA_RUNNER_POD_TEMPLATE"},
 		{"KRITIKA_POLL_LOOKBACK", "soon", "KRITIKA_POLL_LOOKBACK"},
-		{"KRITIKA_RUNNER_TOOLS", "[]", "KRITIKA_RUNNER_TOOLS has been removed"},
-		{"KRITIKA_RUNNER_MISE_CONFIG", "[tools]", "KRITIKA_RUNNER_MISE_CONFIG has been removed"},
 	}
 	for _, tt := range refused {
 		t.Run(tt.env+"="+tt.value, func(t *testing.T) {

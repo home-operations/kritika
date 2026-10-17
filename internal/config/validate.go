@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,12 +16,6 @@ const minRetention = 24 * time.Hour
 
 // Validate checks runtime bounds shared by the process and file loaders.
 func (s Settings) Validate() error {
-	if _, set := os.LookupEnv("KRITIKA_RUNNER_TOOLS"); set {
-		return errors.New("config: KRITIKA_RUNNER_TOOLS has been removed; declare tools in a repository's .kritika/mise.toml instead")
-	}
-	if _, set := os.LookupEnv("KRITIKA_RUNNER_MISE_CONFIG"); set {
-		return errors.New("config: KRITIKA_RUNNER_MISE_CONFIG has been removed; declare tools in a repository's .kritika/mise.toml instead")
-	}
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)
 	v := validate.Struct(s)

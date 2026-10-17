@@ -77,7 +77,6 @@ func TestParseRejectsEntries(t *testing.T) {
 	apps := func(c ...string) string { return "apps:\n" + strings.Join(c, "") }
 	for _, tt := range []struct{ name, yaml, want string }{
 		{"an unknown key", "tenants: []\n", "field tenants not found"},
-		{"connections is now apps", "connections: []\n", "field connections not found"},
 		{"apps as a list", "apps:\n  - { name: a, accounts: [x] }\n", "!!seq"},
 		{"a sealed reference", apps(strings.Replace(fileApp("a", "x"), "{ env: TEST_PRIVATE_KEY }", "{ sealed: abc }", 1)),
 			"field sealed not found"},

@@ -30,8 +30,7 @@ ConfigMap.
 - **Application declarations and policy** use the file: `auth`, `apps`,
   `providers`, `embedding`, review policy, account and repository settings.
   Environment variables only supply values explicitly referenced by these
-  sections. Unreferenced auth, app, provider and policy env variables fail startup with
-  migration guidance. `KRITIKA_REVIEW_WORKERS` remains an operational setting.
+  sections.
 - **Startup** reads and validates the document at startup; changes require
   a restart. Unknown keys and invalid values fail startup. Runtime validation
   reports all failing bounds together, with file paths and environment
@@ -80,8 +79,8 @@ defines how that value is used.
 
 ## Migrating Helm values
 
-Move the contents of `configFile` into `config`; `configFile` is rejected with
-migration guidance. Move flat policy keys into their YAML sections, for example
+Move the contents of `configFile` into `config`. Move flat policy keys into
+their YAML sections, for example
 `config.reviewModel` becomes `config.review.model`, and
 `config.authAdminPassword` becomes `config.auth.admin.password: { env: ADMIN_PASSWORD }`.
 Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.

@@ -650,10 +650,7 @@ func TestParseRejects(t *testing.T) {
 			"configfile: rules[0].when[0]: expr is required"},
 		{"rule condition name given twice", "rules: [{ id: a, rule: x, when: [{ name: n, expr: 'true' }, { name: n, expr: 'true' }] }]\n" + minimal,
 			`configfile: rules[0].when[1]: name "n" is given twice`},
-		{"rule whenExpr is not a key", "rules: [{ id: a, rule: x, whenExpr: 'true' }]\n" + minimal, "field whenExpr not found"},
 		{"rule condition not a bool", "rules: [{ id: a, rule: x, when: [{ expr: pr.title }] }]\n" + minimal, "configfile: rules[0].when[0]"},
-		{"trigger.settle is no longer a key", acme("  acme/x: { trigger: { settle: 30s } }\n"), "field settle not found"},
-		{"indexing role removed", "review:\n  indexing: p/m\n" + minimal, "field indexing not found"},
 		{"bad ignore glob", acme("  acme/x: { ignore: ['['] }\n"), "not a valid glob"},
 		{"include syntax error", "trigger:\n  include: [{ expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.include[0]"},
 		{"exclude syntax error", "trigger:\n  exclude: [{ expr: 'true' }, { expr: 'pr.draft &&' }]\n" + minimal, "configfile: trigger.exclude[1]"},
@@ -951,7 +948,6 @@ func TestRepositoryAgentReview(t *testing.T) {
 	})
 
 	rejects := []struct{ name, repo, want string }{
-		{"a mode", "{ mode: agentic }", "field mode not found"},
 		{"zero steps", "{ agent: { steps: 0 } }", "agent.steps must be positive"},
 		{"zero parts", "{ agent: { parts: 0 } }", "agent.parts must be positive"},
 		{"zero fetches", "{ agent: { fetches: 0 } }", "agent.fetches must be positive"},
