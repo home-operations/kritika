@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.0.76](https://github.com/home-operations/kritika/compare/0.0.75...0.0.76) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **chart:** configure runner Jobs and pods through runner.jobTemplate and runner.podTemplate ([#1022](https://github.com/home-operations/kritika/issues/1022))
+
+### Features
+
+* **chart:** configure runner Jobs and pods through runner.jobTemplate and runner.podTemplate ([#1022](https://github.com/home-operations/kritika/issues/1022)) ([ac68b5f](https://github.com/home-operations/kritika/commit/ac68b5fd1ee55e8a40ff43c96b509d34bc60431c))
+* **chart:** let runner pods reach the Postgres port only where the database is ([#1009](https://github.com/home-operations/kritika/issues/1009)) ([862b682](https://github.com/home-operations/kritika/commit/862b68207c586d5e17abb7c0d5f2f57a6d1ebe56))
+* **chart:** let the cluster refuse kritika serve any Job or Secret but a runner's ([#1020](https://github.com/home-operations/kritika/issues/1020)) ([04c1250](https://github.com/home-operations/kritika/commit/04c1250bc3b5f7ba358a66446aa7c4a125756b1f))
+* **chart:** send DNS only to the cluster's DNS, and filter runner lookups on Cilium ([#1007](https://github.com/home-operations/kritika/issues/1007)) ([a611b02](https://github.com/home-operations/kritika/commit/a611b02f1b876b8ccf08b9d1edecac4399cc36e2))
+* **executor:** create a run's Secret with its Job as owner, and drop the Secret sweep ([#1017](https://github.com/home-operations/kritika/issues/1017)) ([ebde216](https://github.com/home-operations/kritika/commit/ebde216bc6da3408db6b8ed6daf637a6274b0bfd))
+* **executor:** place, prioritize and mark runner pods from runner.pod ([#1018](https://github.com/home-operations/kritika/issues/1018)) ([86a1f42](https://github.com/home-operations/kritika/commit/86a1f42ed5ed03d41ab3451115aeeb02a2136ea0))
+* **executor:** record Kubernetes Events on runner Jobs and serve pods ([#1011](https://github.com/home-operations/kritika/issues/1011)) ([26bad7f](https://github.com/home-operations/kritika/commit/26bad7f82f7603cb04812aa1b9e0e1d4fd6dd707))
+* **executor:** retry a run whose runner pod Kubernetes disrupted ([#1013](https://github.com/home-operations/kritika/issues/1013)) ([0472d65](https://github.com/home-operations/kritika/commit/0472d658713bac908ceef6e75691b10c579d6fab))
+* **executor:** watch runner Jobs and their pods instead of polling each run ([#1015](https://github.com/home-operations/kritika/issues/1015)) ([7b56854](https://github.com/home-operations/kritika/commit/7b56854af0a782940b4c4932c175e50fbd9d3a63))
+* **gateway:** cache what a repository's mise lock pins without egress.cache ([#994](https://github.com/home-operations/kritika/issues/994)) ([671aed6](https://github.com/home-operations/kritika/commit/671aed696d1f24bb9101158d1d5daf295b3cf8a7))
+* **runner:** hand the run tool's commands the admin's variables from runner.podTemplate ([#1026](https://github.com/home-operations/kritika/issues/1026)) ([99d5478](https://github.com/home-operations/kritika/commit/99d547810b9aa79fc7697e017fb005da7521debc))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.11 → 2026.10.12) ([#1014](https://github.com/home-operations/kritika/issues/1014)) ([ac34348](https://github.com/home-operations/kritika/commit/ac34348cdc47dbdd31eec6f659c6536f884325f6))
+* **executor:** give up a runner Job whose pod is never created, and retry its run ([#1012](https://github.com/home-operations/kritika/issues/1012)) ([2ac34d9](https://github.com/home-operations/kritika/commit/2ac34d9d035467760da78300150f7fed1b503e50))
+* **runner:** keep the run tool's curl on the egress gateway ([#1006](https://github.com/home-operations/kritika/issues/1006)) ([a50c3b8](https://github.com/home-operations/kritika/commit/a50c3b8b49a8e623e182898a968e9559f47bdc37))
+
+
+### Code Refactoring
+
+* drop the checks that point removed settings at their replacements ([#1023](https://github.com/home-operations/kritika/issues/1023)) ([32e529b](https://github.com/home-operations/kritika/commit/32e529b69b588b6a34a99a0496196af3d6cff8e3))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool node (24.21.0 → v24.22.0) ([#1016](https://github.com/home-operations/kritika/issues/1016)) ([e80ec2b](https://github.com/home-operations/kritika/commit/e80ec2b86bf15cec3f6f7bb442c7a9b568c36cde))
+
 ## [0.0.75](https://github.com/home-operations/kritika/compare/0.0.74...0.0.75) (2026-10-16)
 
 
