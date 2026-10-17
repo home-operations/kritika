@@ -137,6 +137,14 @@ func (s *Store) SweepStoppedIndexes(
 	}
 	var dropped []string
 	err := pgx.BeginFunc(ctx, s.owner, func(tx pgx.Tx) error {
+		// The index schema's lock, so a rebuild for a new embedder runs
+		// before or after the sweep, not during it. The rebuild holds every
+		// repository's row while its DROP TABLE index_chunks waits for an
+		// exclusive lock on repositories, which the FOR UPDATE below would
+		// hold while waiting for one of those rows.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtext('kritika-index-schema'))`); err != nil {
+			return err
+		}
 		// Locked, so a repository turned on meanwhile is either seen running
 		// or waits until its index is gone, never swept halfway.
 		rows, err := tx.Query(ctx, `SELECT id::text, account_id::text, name, enabled, archived, fork, turned_on,
