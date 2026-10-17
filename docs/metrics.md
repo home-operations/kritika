@@ -144,7 +144,7 @@ on a kritika serve pod, what its leader did.
 | a runner Job        | `Replaced`      | Normal  | a newer review of the pull request replaced the run                                                          |
 | a runner Job        | `Cancelled`     | Normal  | the run was cancelled from the dashboard                                                                     |
 | a runner Job        | `HeartbeatLost` | Warning | the runner's heartbeat went stale, so kritika ended the run                                                  |
-| a runner Job        | `NeverStarted`  | Warning | its pod could not start, as for an image that cannot be pulled or a pod no node takes; the note says why     |
+| a runner Job        | `NeverStarted`  | Warning | its pod could not start, as for an image that cannot be pulled or a pod no node takes, or was never created, as when the namespace refuses it on admission; the note says why |
 | a runner Job        | `Interrupted`   | Normal  | kritika serve stopped, and the job runs again                                                                |
 | a runner Job        | `Interrupted`   | Warning | the job's heartbeat stopped landing, so kritika handed it back to its queue                                  |
 | a runner Job        | `TimedOut`      | Warning | the job ran out of time                                                                                      |

@@ -43,7 +43,7 @@ tests:
           content:
             apiGroups: ["events.k8s.io"]
             resources: ["events"]
-            verbs: ["create"]
+            verbs: ["create", "list"]
         template: rbac.tpl
         documentIndex: 0
       - hasDocuments:

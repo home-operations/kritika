@@ -5,12 +5,14 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -305,6 +307,240 @@ func TestKubeRunReportsFailure(t *testing.T) {
 	res := <-done
 	if res.Err == nil || res.NeverStarted {
 		t.Fatalf("res = %+v, want the error of a job that ran and failed", res)
+	}
+}
+
+// TestKubeRunGivesUpAJobWithNoPod: a Job the namespace never lets create
+// its pod is given up after StartGrace as a run that never started, with
+// the Job controller's latest FailedCreate refusal as the reason, and
+// deleted.
+func TestKubeRunGivesUpAJobWithNoPod(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	k.StartGrace = 200 * time.Millisecond
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	now := time.Now()
+	for _, e := range []eventsv1.Event{
+		{Name: "a", Reason: "FailedCreate", Note: `pods "a" is forbidden: exceeded quota: no-pods`, EventTime: metav1.NewMicroTime(now)},
+		{Name: "b", Reason: "FailedCreate", Note: `pods "b" is forbidden: exceeded quota: no-pods, used: pods=0`,
+			EventTime: metav1.NewMicroTime(now.Add(time.Second))},
+		{Name: "c", Reason: "SuccessfulDelete", Note: "not why", EventTime: metav1.NewMicroTime(now.Add(2 * time.Second))},
+	} {
+		e.Namespace, e.Regarding = "kritika", corev1.ObjectReference{Kind: "Job", Name: j.Name}
+		if _, err := client.EventsV1().Events("kritika").Create(t.Context(), &e, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var res Result
+	select {
+	case res = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not give up a Job with no pod")
+	}
+	want := noPod + `: pods "b" is forbidden: exceeded quota: no-pods, used: pods=0`
+	if !res.NeverStarted || res.TerminationReason != want || res.Err == nil {
+		t.Fatalf("res = %+v, want a run that never started, %q", res, want)
+	}
+	if jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{}); len(jobs.Items) != 0 {
+		t.Fatalf("the Job must be deleted, %d left", len(jobs.Items))
+	}
+}
+
+// TestKubeRunJobFailedWithNoPod: a Job that fails, at its deadline, before
+// any pod was created for it is a run that never started.
+func TestKubeRunJobFailedWithNoPod(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	k.StartGrace = time.Hour
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded",
+		Message: "Job was active longer than specified deadline"}}
+	if _, err := client.BatchV1().Jobs("kritika").UpdateStatus(t.Context(), j, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	res := <-done
+	want := noPod + "; then the Job failed: DeadlineExceeded: Job was active longer than specified deadline"
+	if !res.NeverStarted || res.TerminationReason != want || res.Err == nil || !strings.Contains(res.Err.Error(), "never started") {
+		t.Fatalf("res = %+v, want a run that never started, %q", res, want)
+	}
+}
+
+// runningStatus is a pod whose container has started.
+var runningStatus = corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+	State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+}}}
+
+// TestKubeRunLetsAPodCreatedLateRun: a pod the Job controller creates while
+// the executor reads why there was none runs on, and the run ends with it.
+func TestKubeRunLetsAPodCreatedLateRun(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	k.StartGrace = 50 * time.Millisecond
+	job := jobName(spec().Job.RunID)
+	read := make(chan struct{}, 1)
+	client.PrependReactor("list", "events", func(k8stesting.Action) (bool, runtime.Object, error) {
+		// The tracker has its own lock, which the Fake's reactors do not hold.
+		if err := client.Tracker().Add(runnerPod(job, runningStatus)); err != nil {
+			t.Error(err)
+		}
+		select {
+		case read <- struct{}{}:
+		default:
+		}
+		return false, nil, nil
+	})
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	select {
+	case <-read:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the executor never read why the Job had no pod")
+	}
+	j.Status.Succeeded = 1
+	if _, err := client.BatchV1().Jobs("kritika").UpdateStatus(t.Context(), j, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.Err != nil || res.NeverStarted {
+		t.Fatalf("res = %+v, want the run that went on in its pod", res)
+	}
+}
+
+// TestKubeRunNoPodAfterRunningFailed: a Job whose container was seen
+// running and that fails with no pod left and none counted failed, as a
+// suspended Job's would, ran: it did not never start.
+func TestKubeRunNoPodAfterRunningFailed(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	k := newKube(client)
+	k.StartGrace = time.Hour
+	listed := reacted(client, "list", "pods")
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	pod := runnerPod(j.Name, runningStatus)
+	if _, err := client.CoreV1().Pods("kritika").Create(t.Context(), pod, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// Every list made before the pod was stored is in listed by now: the
+	// Fake holds its lock through a reactor. The next one sees it running.
+	for len(listed) > 0 {
+		<-listed
+	}
+	awaitAction(t, listed, "a pod list")
+	if err := client.CoreV1().Pods("kritika").Delete(t.Context(), pod.Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded"}}
+	if _, err := client.BatchV1().Jobs("kritika").UpdateStatus(t.Context(), j, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.Err == nil || res.NeverStarted {
+		t.Fatalf("res = %+v, want a run that ran and failed", res)
+	}
+}
+
+// TestKubeRunPodFoundAtTheEndRan: a pod finish finds, gone by the next
+// look, is evidence the run ran though no container was seen running and
+// none was counted failed.
+func TestKubeRunPodFoundAtTheEndRan(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	job := jobName(spec().Job.RunID)
+	var failed, seen, found atomic.Bool
+	client.PrependReactor("get", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !failed.Load() {
+			return false, nil, nil
+		}
+		obj, err := client.Tracker().Get(batchv1.SchemeGroupVersion.WithResource("jobs"), "kritika", job)
+		if err != nil {
+			return true, nil, err
+		}
+		j := obj.(*batchv1.Job).DeepCopy()
+		j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded"}}
+		seen.Store(true)
+		return true, j, nil
+	})
+	// The first pod list once the failure is read is finish's: it finds the
+	// pod, which no later list does.
+	terminated := corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+	}}}
+	client.PrependReactor("list", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if seen.Load() && !found.Swap(true) {
+			return true, &corev1.PodList{Items: []corev1.Pod{*runnerPod(job, terminated)}}, nil
+		}
+		return true, &corev1.PodList{}, nil
+	})
+	k := newKube(client)
+	k.StartGrace = time.Hour
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	waitJob(t, client, created)
+	failed.Store(true)
+	if res := <-done; res.Err == nil || res.NeverStarted || res.PodName == "" {
+		t.Fatalf("res = %+v, want a run that ran in the pod finish found", res)
+	}
+}
+
+// TestKubeRunUnreadablePodsFailed: a Job that fails while its pods cannot
+// be read is not taken for one that never had a pod.
+func TestKubeRunUnreadablePodsFailed(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("list", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("the server is currently unable to handle the request")
+	})
+	k := newKube(client)
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded"}}
+	if _, err := client.BatchV1().Jobs("kritika").UpdateStatus(t.Context(), j, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.Err == nil || res.NeverStarted {
+		t.Fatalf("res = %+v, want a run that failed", res)
+	}
+}
+
+// TestWhyNoPod: the latest FailedCreate Event of the Job names why it has
+// no pod, however it says when it was seen: as a series, an Event's time,
+// or the core API's last timestamp; with none to read, noPod alone.
+func TestWhyNoPod(t *testing.T) {
+	now := time.Now()
+	client := fake.NewSimpleClientset()
+	for _, e := range []eventsv1.Event{
+		{Name: "core", Note: "core, newest", DeprecatedLastTimestamp: metav1.NewTime(now.Add(3 * time.Second))},
+		{Name: "series", Note: "series, older", EventTime: metav1.NewMicroTime(now),
+			Series: &eventsv1.EventSeries{Count: 2, LastObservedTime: metav1.NewMicroTime(now.Add(2 * time.Second))}},
+		{Name: "event", Note: "event, oldest", EventTime: metav1.NewMicroTime(now.Add(time.Second))},
+		{Name: "other", Note: "another Job's", EventTime: metav1.NewMicroTime(now.Add(time.Hour)), Regarding: corev1.ObjectReference{Kind: "Job", Name: "other"}},
+	} {
+		e.Namespace, e.Reason = "kritika", "FailedCreate"
+		if e.Regarding.Name == "" {
+			e.Regarding = corev1.ObjectReference{Kind: "Job", Name: "job"}
+		}
+		if _, err := client.EventsV1().Events("kritika").Create(t.Context(), &e, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := newKube(client).whyNoPod(t.Context(), "job"); got != noPod+": core, newest" {
+		t.Fatalf("whyNoPod = %q", got)
+	}
+	refusing := fake.NewSimpleClientset()
+	refusing.PrependReactor("list", "events", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("events is forbidden")
+	})
+	if got := newKube(refusing).whyNoPod(t.Context(), "job"); got != noPod {
+		t.Fatalf("whyNoPod without its Events = %q", got)
 	}
 }
 
@@ -704,7 +940,7 @@ func TestPodStart(t *testing.T) {
 		wantStarted bool
 		wantStuck   string
 	}{
-		{name: "no pod yet"},
+		{name: "no pod yet", wantStuck: noPod},
 		{name: "pulling its image", status: new(waiting("ContainerCreating", ""))},
 		{name: "running", status: &running, wantStarted: true},
 		{name: "an image that cannot be pulled", status: new(waiting("ImagePullBackOff", `Back-off pulling image "img"`)), wantStuck: `ImagePullBackOff: Back-off pulling image "img"`},

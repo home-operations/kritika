@@ -69,7 +69,7 @@ func (e *Events) RunEvent(ctx context.Context, res Result, warning bool, reason,
 	if e == nil || res.JobName == "" {
 		return
 	}
-	job := corev1.ObjectReference{APIVersion: "batch/v1", Kind: "Job", Namespace: e.namespace, Name: res.JobName, UID: types.UID(res.JobUID)}
+	job := corev1.ObjectReference{APIVersion: "batch/v1", Kind: jobKind, Namespace: e.namespace, Name: res.JobName, UID: types.UID(res.JobUID)}
 	e.pending.Go(func() { e.record(ctx, job, warning, reason, "EndRun", note) })
 }
 
