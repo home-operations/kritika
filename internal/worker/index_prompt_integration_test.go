@@ -141,30 +141,102 @@ func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
 	repo := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
-	runs := func() int {
-		t.Helper()
-		var n int
-		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT count(*) FROM index_runs WHERE repository_id = $1`, repo).Scan(&n)
-		}); err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	before := runs()
-	w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler),
-		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder {
-			return indexEmbedFunc(func(context.Context, []string) ([][]float32, int64, error) {
-				return nil, 0, errors.New("a pod on another embedder must not embed")
-			})
-		}}}
+	before := indexRunCount(t, st, account.ID(), repo)
+	w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler), Embedders: refusingEmbedders()}
 	job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{ID: 1, Attempt: 1},
 		Args: jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush}}
 	err := w.Work(ctx, job)
 	if _, ok := errors.AsType[*river.JobSnoozeError](err); !ok {
 		t.Fatalf("Work = %v, want the job snoozed", err)
 	}
-	if after := runs(); after != before {
+	if after := indexRunCount(t, st, account.ID(), repo); after != before {
 		t.Fatalf("index runs = %d, want %d: the job started one", after, before)
 	}
+}
+
+// rebuildingForge is a forge during whose BranchTip the leader applies
+// another embedder.
+type rebuildingForge struct {
+	resumeForge
+	rebuild func()
+}
+
+func (f *rebuildingForge) BranchTip(ctx context.Context, owner, name, branch string) (string, string, error) {
+	f.rebuild()
+	return f.resumeForge.BranchTip(ctx, owner, name, branch)
+}
+
+// TestIndexWaitsForARebuildMidway: the leader applies another embedder
+// while a worker already past its first check asks the forge for the tip.
+// The rebuild supersedes only the runs that exist, so the worker must not
+// start one for the embedder no longer applied.
+func TestIndexWaitsForARebuildMidway(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, ""); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	repo := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
+	queue, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush}
+	inserted, err := queue.Insert(ctx, args, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := st.App().Exec(context.Background(), `DELETE FROM river_job WHERE id=$1`, inserted.Job.ID); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := st.App().Exec(ctx, `UPDATE river_job SET state = 'running', attempt = 1 WHERE id = $1`, inserted.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	inserted.Job.State, inserted.Job.Attempt = "running", 1
+	before := indexRunCount(t, st, account.ID(), repo)
+	f := &rebuildingForge{tip: "midway", rebuild: func() {
+		if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, "passage: "); err != nil {
+			t.Error(err)
+		}
+	}}
+	w := &Index{Store: st, Current: configfile.NewCurrent(file), Forges: &forges{f: f}, Logger: slog.New(slog.DiscardHandler),
+		Executor: &resumeExecutor{st: st, account: account.ID()}, Embedders: refusingEmbedders()}
+	err = w.Work(ctx, &river.Job[jobs.IndexArgs]{JobRow: inserted.Job, Args: args})
+	if _, ok := errors.AsType[*river.JobSnoozeError](err); !ok {
+		t.Fatalf("Work = %v, want the job snoozed", err)
+	}
+	if after := indexRunCount(t, st, account.ID(), repo); after != before {
+		t.Fatalf("index runs = %d, want %d: the job started one for the embedder no longer applied", after, before)
+	}
+}
+
+// refusingEmbedders build an embedder that fails any call: a pod on
+// another embedder than the applied one must not embed.
+func refusingEmbedders() *adapter.Embedders {
+	return &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder {
+		return indexEmbedFunc(func(context.Context, []string) ([][]float32, int64, error) {
+			return nil, 0, errors.New("a pod on another embedder must not embed")
+		})
+	}}
+}
+
+// indexRunCount is how many index runs the repository has.
+func indexRunCount(t *testing.T, st *store.Store, accountID, repo string) int {
+	t.Helper()
+	var n int
+	if err := st.WithAccount(t.Context(), accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT count(*) FROM index_runs WHERE repository_id = $1`, repo).Scan(&n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

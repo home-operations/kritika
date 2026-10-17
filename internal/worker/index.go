@@ -143,7 +143,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	var runID, runnerRunID string
 	var resumed bool
 	err = w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
-		if err := store.LockIndexBuild(ctx, tx, args.AccountID, args.RepositoryID, job.ID, job.Attempt); err != nil {
+		if err := lockAppliedIndexBuild(ctx, tx, job, emb); err != nil {
 			return err
 		}
 		var err error
@@ -211,23 +211,51 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	return nil
 }
 
+// appliedEmbedderWait is how long an index job waits on a pod whose
+// embedder the leader has not applied before it is tried again.
+const appliedEmbedderWait = time.Minute
+
+// embedderApplied reports whether emb is the embedder the leader applied,
+// which index_schema records once it has applied one. A pod on another, as
+// during a rollout, would build an index the gateway never queries, or
+// take one another embedder built for current.
+func embedderApplied(ctx context.Context, tx pgx.Tx, emb *configfile.Embedding) (bool, error) {
+	appliedModel, appliedDims, appliedPrompt, ok, err := store.IndexSchemaIn(ctx, tx)
+	return ok && appliedModel == emb.Model && appliedDims == emb.Dims && appliedPrompt == emb.DocumentPrompt, err
+}
+
 // waitForAppliedEmbedder snoozes the job, as its error, unless emb is the
-// embedder the leader applied, as index_schema records it, or none is
-// recorded yet. A pod on another, as during a rollout, would build an
-// index the gateway never queries, or take one another embedder built for
-// current, so it leaves the job to a pod on the applied one.
+// embedder the leader applied, leaving it to a pod on that one before
+// this pod asks the forge anything or takes an index for current.
 func (w *Index) waitForAppliedEmbedder(ctx context.Context, accountID string, emb *configfile.Embedding, logger *slog.Logger) error {
 	var applied bool
 	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		appliedModel, appliedDims, appliedPrompt, ok, err := store.IndexSchemaIn(ctx, tx)
-		applied = !ok || appliedModel == emb.Model && appliedDims == emb.Dims && appliedPrompt == emb.DocumentPrompt
+		var err error
+		applied, err = embedderApplied(ctx, tx, emb)
 		return err
 	})
 	if err != nil || applied {
 		return err
 	}
 	logger.Info("index waits for a pod on the embedder the leader applied")
-	return river.JobSnooze(time.Minute)
+	return river.JobSnooze(appliedEmbedderWait)
+}
+
+// lockAppliedIndexBuild locks the repository's index build, as
+// store.LockIndexBuild does, and then snoozes the job, as its error,
+// unless emb is the embedder the leader applied. The lock is on the
+// repository's row, which the leader's rebuild for a new embedder updates
+// first: a run started before the rebuild is superseded by it, and a run
+// after sees the new embedder here.
+func lockAppliedIndexBuild(ctx context.Context, tx pgx.Tx, job *river.Job[jobs.IndexArgs], emb *configfile.Embedding) error {
+	if err := store.LockIndexBuild(ctx, tx, job.Args.AccountID, job.Args.RepositoryID, job.ID, job.Attempt); err != nil {
+		return err
+	}
+	applied, err := embedderApplied(ctx, tx, emb)
+	if err != nil || applied {
+		return err
+	}
+	return river.JobSnooze(appliedEmbedderWait)
 }
 
 // activeGeneration reads the repository's active generation, nil when it
