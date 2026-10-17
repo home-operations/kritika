@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -103,10 +104,10 @@ func NewKubeInCluster() (kubernetes.Interface, string, error) {
 	return client, ns, nil
 }
 
-// Run implements Executor: create the run's Secret and Job, wait for the
-// Job, capture the pod's log tail, and report. A finished Job is left to its
-// TTL, and its Secret goes with it. When ctx ends first the Job is deleted,
-// pod included, and the result's error is ctx's cause.
+// Run implements Executor: create the run's Job and its Secret, wait for
+// the Job, capture the pod's log tail, and report. A finished Job is left to
+// its TTL, and its Secret goes with it. When ctx ends first the Job is
+// deleted, pod included, and the result's error is ctx's cause.
 func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err := spec.Job.Validate(); err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
@@ -120,12 +121,8 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err != nil {
 		return Result{Err: err}
 	}
-	// The API refusing the Secret, the Job or the Secret's owner leaves a
-	// run whose container never ran, which the worker retries.
-	secrets := k.Client.CoreV1().Secrets(k.Namespace)
-	if _, err := secrets.Create(ctx, k.secret(spec, runSpec), metav1.CreateOptions{}); err != nil {
-		return Result{NeverStarted: true, Err: setupError(ctx, fmt.Errorf("executor: create secret: %w", err))}
-	}
+	// The API refusing the Job or the Secret leaves a run whose container
+	// never ran, which the worker retries.
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
 	if err != nil {
 		err = setupError(ctx, fmt.Errorf("executor: create job: %w", err))
@@ -133,14 +130,17 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			// The server may have persisted the Job before the call gave up.
 			k.deleteJob(ctx, name, "")
 		}
-		k.deleteSecret(ctx, name)
 		return Result{NeverStarted: true, Err: err}
 	}
 	res := Result{JobName: created.Name, JobUID: string(created.UID)}
-	if err := k.own(ctx, created); err != nil {
-		res.NeverStarted, res.Err = true, setupError(ctx, err)
+	// The Secret is the Job's from the start, so garbage collection deletes
+	// it with the Job whatever becomes of this process; until it exists the
+	// kubelet keeps retrying the Job's pod, which mounts it.
+	if unknown, err := k.createSecret(ctx, k.secret(spec, runSpec, created)); err != nil {
+		// A Secret that may have been stored may have started the pod: the
+		// run surely never started only when the API refused it.
+		res.NeverStarted, res.Err = !unknown, setupError(ctx, err)
 		k.deleteJob(ctx, created.Name, created.UID)
-		k.deleteSecret(ctx, name)
 		return res
 	}
 	wake, done := k.watch.wait(created.Name)
@@ -414,21 +414,32 @@ func jobFailure(j *batchv1.Job) string {
 // before it is given up on: with the default poll, half a minute.
 const maxMissing = 10
 
-// own makes the Job the Secret's owner so garbage collection deletes the
-// Secret with the Job. It is not the controller and must not block the
-// Job's deletion.
-func (k *Kube) own(ctx context.Context, job *batchv1.Job) error {
-	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"ownerReferences": []metav1.OwnerReference{{
-		APIVersion: "batch/v1", Kind: jobKind, Name: job.Name, UID: job.UID,
-		Controller: new(false), BlockOwnerDeletion: new(false),
-	}}}})
-	if err != nil {
-		return fmt.Errorf("executor: encode owner reference: %w", err)
+// createSecret creates the run's Secret. A create that fails without the
+// API refusing it may have stored the Secret all the same, the answer lost:
+// it is sent again, and the API answering that a Secret of its name exists
+// says it was, the name being the run's alone. unknown is whether a failure
+// leaves open that it was stored, and the Job's pod started with it.
+func (k *Kube) createSecret(ctx context.Context, secret *corev1.Secret) (unknown bool, err error) {
+	secrets := k.Client.CoreV1().Secrets(k.Namespace)
+	_, err = secrets.Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil && !refused(err) {
+		unknown = true
+		if ctx.Err() == nil {
+			_, err = secrets.Create(ctx, secret, metav1.CreateOptions{})
+		}
 	}
-	if _, err := k.Client.CoreV1().Secrets(k.Namespace).Patch(ctx, job.Name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
-		return fmt.Errorf("executor: own secret: %w", err)
+	if err == nil || apierrors.IsAlreadyExists(err) {
+		return false, nil
 	}
-	return nil
+	return unknown, fmt.Errorf("executor: create secret: %w", err)
+}
+
+// refused reports whether err is the API's answer that it would not carry
+// out a request, which it then did not, rather than a failure that leaves
+// that unknown.
+func refused(err error) bool {
+	status, ok := errors.AsType[*apierrors.StatusError](err)
+	return ok && status.ErrStatus.Code >= 400 && status.ErrStatus.Code < 500 && status.ErrStatus.Code != http.StatusRequestTimeout
 }
 
 // cancel deletes the Job after ctx ended, then records what the pod got to.
@@ -464,15 +475,6 @@ func (k *Kube) removeJob(ctx context.Context, name string, uid types.UID) error 
 		return fmt.Errorf("executor: delete runner job %s: %w", name, err)
 	}
 	return nil
-}
-
-// deleteSecret removes a Secret no Job owns yet.
-func (k *Kube) deleteSecret(ctx context.Context, name string) {
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
-	defer cancel()
-	if err := k.Client.CoreV1().Secrets(k.Namespace).Delete(dctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-		k.logger().Warn("delete runner secret", "secret", name, "error", err)
-	}
 }
 
 func (k *Kube) logger() *slog.Logger {
@@ -566,6 +568,10 @@ const (
 
 func jobName(runID string) string { return "kritika-run-" + runID[:8] }
 
+// secretName names a run's Secret by the whole run ID, so a Secret of its
+// name can only be the one the run created.
+func secretName(runID string) string { return "kritika-run-" + runID }
+
 // gatewayHost is the host of a gateway URL config has already checked.
 func gatewayHost(raw string) string {
 	u, err := url.Parse(raw)
@@ -597,10 +603,15 @@ func runnerLabels(spec Spec) map[string]string {
 }
 
 // secret builds the run's job-scoped Secret: the credentials and the
-// encoded job document.
-func (k *Kube) secret(spec Spec, runSpec []byte) *corev1.Secret {
+// encoded job document, owned by job. The Job is not its controller and
+// must not wait on it to be deleted.
+func (k *Kube) secret(spec Spec, runSpec []byte, job *batchv1.Job) *corev1.Secret {
 	return &corev1.Secret{
-		Name: jobName(spec.Job.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec),
+		Name: secretName(spec.Job.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec),
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "batch/v1", Kind: jobKind, Name: job.Name, UID: job.UID,
+			Controller: new(false), BlockOwnerDeletion: new(false),
+		}},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
 			secretKeyGitToken: []byte(spec.Secrets.GitToken), secretKeyGatewayToken: []byte(spec.Secrets.GatewayToken),
@@ -626,9 +637,10 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 		annotations["kritika.home-operations.com/"+key] = v
 	}
 	var backoff int32
+	secret := secretName(spec.Job.RunID)
 	secretRef := func(key string) *corev1.EnvVarSource {
 		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-			Name: name, Key: key, Optional: new(false)}}
+			Name: secret, Key: key, Optional: new(false)}}
 	}
 	env := []corev1.EnvVar{
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
@@ -670,7 +682,7 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	volumes := []corev1.Volume{
 		{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		{Name: "spec", Secret: &corev1.SecretVolumeSource{
-			SecretName: name, Items: []corev1.KeyToPath{{Key: secretKeyRunSpec, Path: specFile}},
+			SecretName: secret, Items: []corev1.KeyToPath{{Key: secretKeyRunSpec, Path: specFile}},
 		}},
 	}
 	var runtimeClass *string

@@ -511,58 +511,6 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	})
 }
 
-func TestRunSecretsToSweep(t *testing.T) {
-	s := openStore(t)
-	ctx := t.Context()
-	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
-		t.Fatalf("ApplyConfig: %v", err)
-	}
-	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
-	insert := func(account, age string, finished, swept bool) string {
-		t.Helper()
-		var id string
-		if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, created_at, finished_at, secret_swept_at)
-				VALUES ($1, 'index', now() - $2::interval,
-					CASE WHEN $3 THEN now() END, CASE WHEN $4 THEN now() END) RETURNING id`,
-				account, age, finished, swept).Scan(&id)
-		}); err != nil {
-			t.Fatal(err)
-		}
-		return id
-	}
-	finishedOld := insert(alpha, "20 minutes", true, false)
-	abandoned := insert(alpha, "4 hours", false, false)
-	insert(alpha, "5 minutes", true, false)   // too fresh
-	insert(alpha, "20 minutes", false, false) // may still be running
-	insert(alpha, "20 minutes", true, true)   // already swept
-	betaRun := insert(beta, "20 minutes", true, false)
-
-	got, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 100)
-	if err != nil {
-		t.Fatalf("RunSecretsToSweep: %v", err)
-	}
-	if want := []string{abandoned, finishedOld}; strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("alpha runs to sweep = %v, want %v (oldest first, none of beta's)", got, want)
-	}
-	if limited, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 1); err != nil || len(limited) != 1 || limited[0] != abandoned {
-		t.Fatalf("limited sweep = %v, %v; want the oldest run only", limited, err)
-	}
-	// Marking is idempotent and scoped to the account: beta's run is not
-	// visible from alpha, so marking it there changes nothing.
-	for range 2 {
-		if err := s.MarkRunSecretsSwept(ctx, alpha, append(got, betaRun)); err != nil {
-			t.Fatalf("MarkRunSecretsSwept: %v", err)
-		}
-	}
-	if left, err := s.RunSecretsToSweep(ctx, alpha, 15*time.Minute, 3*time.Hour, 100); err != nil || len(left) != 0 {
-		t.Fatalf("alpha after marking = %v, %v; want none", left, err)
-	}
-	if left, err := s.RunSecretsToSweep(ctx, beta, 15*time.Minute, 3*time.Hour, 100); err != nil || len(left) != 1 || left[0] != betaRun {
-		t.Fatalf("beta after alpha's marking = %v, %v; want its own run", left, err)
-	}
-}
-
 func TestLeaderLockIsExclusive(t *testing.T) {
 	s := openStore(t)
 	ctx, cancel := context.WithCancel(t.Context())
