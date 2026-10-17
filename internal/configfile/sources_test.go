@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -28,8 +27,6 @@ runner:
 	}
 	for _, doc := range []string{
 		"runner: {deadlien: 20m}",
-		"runner: {tools: [{name: helm, image: example.com/helm:test, typo: x}]}",
-		"runner: {miseConfig: \"[tools]\"}",
 		"runner: {jobTemplate: {spec: {activeDeadlineSeconds: 0}}}",
 		"onboardWindow: 0",
 		"transcriptRetention: 1h",
@@ -42,28 +39,4 @@ runner:
 			}
 		})
 	}
-}
-
-func TestPolicyEnvironmentRequiresMigration(t *testing.T) {
-	for _, name := range []string{
-		"KRITIKA_AUTH_SESSION_TTL", "KRITIKA_APPS_NAME", "KRITIKA_PROVIDERS_TYPE",
-		"KRITIKA_REVIEW_APPROVE", "KRITIKA_CONFIDENCE_GATE", "KRITIKA_TRIGGER_LIMIT", "KRITIKA_EMBEDDING_DIMS",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv(name, "private-value")
-			_, err := Parse(nil)
-			if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "configuration file") || strings.Contains(err.Error(), "private-value") {
-				t.Fatalf("Parse = %v", err)
-			}
-		})
-	}
-	t.Run("explicit secret and operational env", func(t *testing.T) {
-		t.Setenv("KRITIKA_AUTH_ADMIN_PASSWORD", "secret")
-		t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
-		f := mustLoad(t, "auth: {admin: {password: {env: KRITIKA_AUTH_ADMIN_PASSWORD}}}\n")
-		_, password, ok := f.Auth.AdminUser()
-		if !ok || password.Value() != "secret" || f.Run.ReviewWorkers != 5 {
-			t.Fatal("referenced secret or operational env was not applied")
-		}
-	})
 }

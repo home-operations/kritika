@@ -153,9 +153,6 @@ In-cluster URL runner Jobs are handed as HTTPS_PROXY and their model endpoint.
 The application file, with deployment settings derived from chart values.
 */}}
 {{- define "kritika.configuration" -}}
-{{- if hasKey .Values "configFile" -}}
-{{- fail "configFile has moved to config; migrate flat config keys to the application YAML schema" -}}
-{{- end -}}
 {{- if and .Values.existingConfigMap .Values.config -}}
 {{- fail "config and existingConfigMap are mutually exclusive" -}}
 {{- end -}}

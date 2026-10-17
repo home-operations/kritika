@@ -113,8 +113,6 @@ func TestSettingsTypes(t *testing.T) {
 		{"duration must be scalar", "pollInterval: [10m]", "pollInterval"},
 		{"workers must be numeric", "reviewWorkers: '4'", "reviewWorkers"},
 		{"no boolean coercion", "logLevel: true", "logLevel"},
-		{"removed tools", "runner: {tools: [{name: flux, image: example.com/flux:test}]}", "tools"},
-		{"removed mise config", "runner: {miseConfig: \"[tools]\\nhelm = '4.3.0'\"}", "miseConfig"},
 		{"templates must be maps", "runner: {podTemplate: [1]}", "runner.podTemplate"},
 		{"cache size in decimal units", "gatewayCacheMaxSize: 2GB", "gatewayCacheMaxSize"},
 		{"cache size in a fraction", "gatewayCacheMaxSize: 1.5Gi", "gatewayCacheMaxSize"},

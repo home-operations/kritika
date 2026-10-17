@@ -117,13 +117,6 @@ tests:
       - failedTemplate:
           errorPattern: "config.runner: the chart derives this setting from its deployment values"
 
-  - it: explains how to migrate configFile
-    set:
-      configFile: { review: { approve: true } }
-    asserts:
-      - failedTemplate:
-          errorPattern: configFile has moved to config
-
   - it: renders the gateway cache's settings when it is enabled
     set:
       gatewayCache: { enabled: true, maxSize: 512Mi, maxAge: 6h }

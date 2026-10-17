@@ -130,7 +130,6 @@ func TestAuthRejects(t *testing.T) {
 		{"bad mapping", rep(`roleMappingExpr: 'login == "user-1" ? "admin" : ""'`, `roleMappingExpr: 'claims.x'`), "auth.github.roleMappingExpr"},
 		{"ttl too short", rep("sessionTTL: 8h", "sessionTTL: 1m"), "auth.sessionTTL"},
 		{"ttl too long", rep("sessionTTL: 8h", "sessionTTL: 800h"), "auth.sessionTTL"},
-		{"the old web block", "web:\n  sessionTTL: 8h\n" + minimal, "field web not found"},
 		{"no way to an admin", `auth:
   github:
     clientId: Iv1.x
