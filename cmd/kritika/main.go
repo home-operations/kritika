@@ -236,11 +236,16 @@ func serve(
 	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
 		sweeper, _ := exec.(*executor.Kube)
+		var events *executor.Events
+		if sweeper != nil {
+			events = sweeper.Events
+		}
 		g.Go(func() error {
 			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
 				m.Leading(true)
 				defer m.Leading(false)
-				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, sweeper, m, configErrors, logger)
+				events.PodEvent(ctx, false, "LeaderElected", "Lead", "this replica took the lead")
+				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, sweeper, events, m, configErrors, logger)
 			})
 		})
 	} else {
@@ -364,7 +369,11 @@ func startWorker(
 			snoozed, unsubscribe = queue.Subscribe(river.EventKindJobSnoozed)
 		}
 	})
-	g.Go(func() error { return workQueues(ctx, st, queue, cfg, logger) })
+	var events *executor.Events
+	if k, ok := exec.(*executor.Kube); ok {
+		events = k.Events
+	}
+	g.Go(func() error { return workQueues(ctx, st, queue, cfg, events, logger) })
 	return nil
 }
 
@@ -376,10 +385,12 @@ func startWorker(
 // still at it when the process is killed is not recorded by River and
 // waits on the rescuer instead. Completed runner answers are checkpointed
 // before merge and confidence calls, so rescue can resume those answers.
-// The two waits fit in the chart's 200s termination grace period.
+// eventsDrain then lets the Events of the runs the stop cut be written. The
+// three waits fit in the chart's 200s termination grace period.
 const (
 	queueDrain        = 100 * time.Second
 	queueStopHeadroom = 90 * time.Second
+	eventsDrain       = 5 * time.Second
 )
 
 // validate checks what command needs of cfg beyond the common set, and
@@ -439,7 +450,9 @@ func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 // from migrations, which the leader runs; on a fresh database that may be
 // this very process a moment from now, or another replica, so it waits for
 // the schema rather than racing it.
-func workQueues(ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], cfg *config.Config, logger *slog.Logger) error {
+func workQueues(
+	ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx], cfg *config.Config, events *executor.Events, logger *slog.Logger,
+) error {
 	if err := st.WaitForSchema(ctx, 2*time.Second); err != nil {
 		return nil // shutdown while waiting
 	}
@@ -451,6 +464,11 @@ func workQueues(ctx context.Context, st *store.Store, queue *river.Client[pgx.Tx
 	<-ctx.Done()
 	select {
 	case <-queue.Stopped():
+		// Every worker has returned, so no run records an Event now; those
+		// of the runs the stop cut may still be on their way.
+		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), eventsDrain)
+		defer cancel()
+		events.Wait(wctx)
 	case <-time.After(queueDrain + queueStopHeadroom):
 		logger.Warn("the queues did not stop in time", "drain", queueDrain)
 	}
@@ -502,7 +520,8 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 		Client: client, Namespace: ns, Image: cfg.RunnerImage, ImagePullPolicy: cfg.RunnerImagePullPolicy,
 		DatabaseRole:   cfg.DatabaseRunnerRole,
 		ServiceAccount: cfg.RunnerServiceAccount, DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
-		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL, Logger: logger,
+		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL,
+		Events: executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
 	}, nil
 }
 
@@ -538,11 +557,12 @@ const secretSweepInterval = 5 * time.Minute
 // then keep the backstop poll, the Secret sweep, onboarding and retention
 // going. While the configuration has an embedder it also keeps the index
 // schema to it and enqueues an onboarding index job for every repository
-// that has none.
+// that has none. events, nil off Kubernetes, records on this replica's pod
+// what became of the configuration.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	svc *ingest.Service, apps *worker.Apps, forges *worker.ForgeCache, sweeper *executor.Kube, m *metrics.Metrics,
-	configErrors *server.ConfigErrorGauge, logger *slog.Logger,
+	svc *ingest.Service, apps *worker.Apps, forges *worker.ForgeCache, sweeper *executor.Kube, events *executor.Events,
+	m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
 		return err
@@ -602,7 +622,7 @@ func lead(
 		// knows its repositories before any webhook names one.
 		poll.SyncRepositories(ctx)
 		return nil
-	}, onboarder.Offer, configErrors, logger); err != nil {
+	}, onboarder.Offer, configErrors, events, logger); err != nil {
 		return err
 	}
 	<-ctx.Done()
@@ -628,14 +648,14 @@ func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *
 // applyConfig applies f to the store once, on election, and calls
 // onApplied on success. A configuration the store refuses for its content
 // (store.IsConfigContentError) must not end leadership, or every replica
-// would crash-loop on it in turn: it is logged and raised on the gauge,
-// the last applied state stays, and the same content would be refused
-// again, so it is not retried before a restart. Any other error is
-// returned, which ends this tenure: the lock is released and competed for
-// again.
+// would crash-loop on it in turn: it is logged, raised on the gauge and
+// recorded as an Event on this replica's pod, the last applied state
+// stays, and the same content would be refused again, so it is not retried
+// before a restart. Any other error is returned, which ends this tenure:
+// the lock is released and competed for again.
 func applyConfig(
 	ctx context.Context, f *configfile.File, apply func(context.Context, *configfile.File) error,
-	onApplied func(context.Context) error, gauge *server.ConfigErrorGauge, logger *slog.Logger,
+	onApplied func(context.Context) error, gauge *server.ConfigErrorGauge, events *executor.Events, logger *slog.Logger,
 ) error {
 	h := f.Hash()
 	err := apply(ctx, f)
@@ -643,12 +663,15 @@ func applyConfig(
 	case err != nil && store.IsConfigContentError(err):
 		gauge.Set(true)
 		logger.Error("configuration refused by the store, keeping the last applied one", "hash", h[:12], "error", err)
+		events.PodEvent(ctx, true, "ConfigRefused", "ApplyConfiguration",
+			fmt.Sprintf("configuration %s refused by the store, keeping the last applied one: %v", h[:12], err))
 		return nil
 	case err != nil:
 		return err
 	}
 	gauge.Set(false)
 	logger.Info("configuration applied to the store", "hash", h[:12])
+	events.PodEvent(ctx, false, "ConfigApplied", "ApplyConfiguration", "configuration "+h[:12]+" applied")
 	return onApplied(ctx)
 }
 

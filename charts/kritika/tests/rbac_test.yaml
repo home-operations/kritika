@@ -38,6 +38,14 @@ tests:
             verbs: ["create", "patch", "delete"]
         template: rbac.tpl
         documentIndex: 0
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["events.k8s.io"]
+            resources: ["events"]
+            verbs: ["create"]
+        template: rbac.tpl
+        documentIndex: 0
       - hasDocuments:
           count: 2
         template: serviceaccount.tpl

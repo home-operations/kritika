@@ -349,8 +349,8 @@ func TestKubeRunGivesUpAnUnreadableJob(t *testing.T) {
 		return true, nil, errors.New("the server is currently unable to handle the request")
 	})
 	res := newKube(client).Run(t.Context(), spec())
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "get job") {
-		t.Fatalf("err = %v, want the unread status surfaced", res.Err)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "get job") || !res.Abandoned {
+		t.Fatalf("err = %v, abandoned = %v; want the unread status surfaced, the Job abandoned", res.Err, res.Abandoned)
 	}
 	if jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{}); len(jobs.Items) != 0 {
 		t.Fatalf("the unreadable Job must be deleted, %d left", len(jobs.Items))
@@ -573,6 +573,43 @@ func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
 	secrets, _ := client.CoreV1().Secrets("kritika").List(t.Context(), metav1.ListOptions{})
 	if len(jobs.Items) != 0 || len(secrets.Items) != 0 {
 		t.Fatalf("left behind: %d jobs, %d secrets", len(jobs.Items), len(secrets.Items))
+	}
+}
+
+// TestKubeRunCancelledInSetupSaysWhy: a run cancelled while it is set up
+// fails the step under way, and its error carries the cancellation's
+// cause beside the step's, so the run's Event says why it ended.
+func TestKubeRunCancelledInSetupSaysWhy(t *testing.T) {
+	cause := errors.New("cancelled from the dashboard")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("patch", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		cancel(cause)
+		return true, nil, context.Canceled
+	})
+	res := newKube(client).Run(ctx, spec())
+	if !res.NeverStarted || !errors.Is(res.Err, cause) || !strings.Contains(res.Err.Error(), "own secret") {
+		t.Fatalf("res = %+v, want the patch's error with the cancellation's cause", res)
+	}
+}
+
+// TestKubeRunRefusedInSetupStaysRefused: a setup step the API refuses
+// keeps its refusal as the run's error though the run is cancelled while
+// the executor cleans up after it.
+func TestKubeRunRefusedInSetupStaysRefused(t *testing.T) {
+	cause := errors.New("cancelled from the dashboard")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	client := fake.NewSimpleClientset()
+	client.PrependReactor("patch", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("secrets is forbidden")
+	})
+	client.PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		cancel(cause)
+		return false, nil, nil
+	})
+	res := newKube(client).Run(ctx, spec())
+	if !res.NeverStarted || errors.Is(res.Err, cause) || !strings.Contains(res.Err.Error(), "forbidden") {
+		t.Fatalf("res = %+v, want the refusal alone", res)
 	}
 }
 

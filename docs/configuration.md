@@ -72,6 +72,7 @@ These inputs have no configuration-file equivalent:
 | `KRITIKA_GIT_TOKEN` | Per-run Git credential |
 | `KRITIKA_GATEWAY_TOKEN` | Per-run model gateway credential |
 | `KRITIKA_DATABASE_TOKEN` | Per-run database credential |
+| `KRITIKA_POD_NAME`, `KRITIKA_POD_UID` | The serve pod's name and UID, from the downward API, which its [Kubernetes Events](metrics.md#kubernetes-events) name; the chart sets both |
 
 The service supplies per-run inputs to runner Jobs. Secret references such as
 `{ env: OPENROUTER_API_KEY }` can use any environment variable name; the file
