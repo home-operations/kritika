@@ -37,3 +37,10 @@ env:
 resources:
   requests: { cpu: 10m, memory: 64Mi }
   limits: { memory: 512Mi }
+# The runner admission, and a runner.pod so that each replica's startup
+# check sends a runner Job, as the executor builds it, through it.
+runner:
+  admission:
+    enforce: true
+  pod:
+    annotations: { example.com/smoke: "true" }

@@ -35,6 +35,12 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create"]
+  # A run Secret's owner reference holds its Job's foreground deletion until
+  # the Secret is gone, which, where owner references' permissions are
+  # enforced, takes update on the Job's finalizers: a check, not an endpoint.
+  - apiGroups: ["batch"]
+    resources: ["jobs/finalizers"]
+    verbs: ["update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

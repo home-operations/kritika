@@ -41,6 +41,14 @@ tests:
       - contains:
           path: rules
           content:
+            apiGroups: ["batch"]
+            resources: ["jobs/finalizers"]
+            verbs: ["update"]
+        template: rbac.tpl
+        documentIndex: 0
+      - contains:
+          path: rules
+          content:
             apiGroups: ["events.k8s.io"]
             resources: ["events"]
             verbs: ["create", "list"]

@@ -226,3 +226,33 @@ for pod in "${pods[@]}"; do
   [ "$restarts" = 0 ] || { echo "$pod restarted $restarts times"; exit 1; }
 done
 log "ok: ${pods[*]} ready, one leader, configuration applied"
+
+log "checking the runner admission refuses from kritika serve what is not a runner's"
+# Each replica's startup check already sent a runner Job, as the executor
+# builds it, through the policies: one they found invalid would have kept it
+# unready, and any other refusal is in its log.
+for pod in "${pods[@]}"; do
+  if kubectl -n "$ns" logs "$pod" | grep 'runner.pod not checked'; then
+    echo "$pod: its runner Job was not admitted"
+    exit 1
+  fi
+done
+warnings="$(kubectl get validatingadmissionpolicies -l app.kubernetes.io/instance=kritika \
+  -o jsonpath='{.items[*].status.typeChecking.expressionWarnings}')"
+[ -z "$warnings" ] || { echo "the runner admission policies do not type-check: $warnings"; exit 1; }
+refused() { # what, then the kubectl arguments
+  local what=$1 out
+  shift
+  if out="$(kubectl -n "$ns" "$@" --dry-run=server --as="system:serviceaccount:${ns}:kritika" -o name 2>&1)"; then
+    echo "kritika serve was let create $what: $out"
+    exit 1
+  fi
+  echo "$out" | grep -q ValidatingAdmissionPolicy || { echo "$what was refused, but not by the runner admission: $out"; exit 1; }
+}
+refused "a Job that is not a runner's" create job not-a-runner --image=busybox:1.37
+refused "a Secret that is not a run's" create secret generic not-a-run --from-literal=x=y
+# A Job deleted but in the foreground would leave its run's Secret behind.
+kubectl -n "$ns" create job orphan-check --image=busybox:1.37 -- true >/dev/null
+refused "to orphan a Job's dependents" delete job orphan-check --cascade=orphan
+kubectl -n "$ns" delete job orphan-check --cascade=foreground >/dev/null
+log "ok: the runner admission refuses them"

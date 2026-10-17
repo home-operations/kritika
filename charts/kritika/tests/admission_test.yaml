@@ -1,0 +1,139 @@
+suite: runner admission
+templates:
+  - admission.tpl
+values:
+  - ../ci/lint-values.yaml
+release:
+  name: kritika
+  namespace: reviews
+tests:
+  - it: renders nothing unless enforced
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: binds a policy for Jobs and one for Secrets to kritika serve's ServiceAccount in its namespace
+    set:
+      runner.admission.enforce: true
+    asserts:
+      - hasDocuments:
+          count: 6
+      - isKind:
+          of: ValidatingAdmissionPolicy
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: reviews.kritika-runner-jobs
+        documentIndex: 0
+      - equal:
+          path: spec.matchConstraints.resourceRules[0].resources
+          value: [jobs]
+        documentIndex: 0
+      - equal:
+          path: spec.matchConditions[0].expression
+          value: request.userInfo.username == 'system:serviceaccount:reviews:kritika'
+        documentIndex: 0
+      - isKind:
+          of: ValidatingAdmissionPolicyBinding
+        documentIndex: 1
+      - equal:
+          path: spec
+          value:
+            policyName: reviews.kritika-runner-jobs
+            validationActions: [Deny]
+            matchResources:
+              namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: reviews
+        documentIndex: 1
+      - equal:
+          path: spec.matchConstraints.resourceRules[0]
+          value: { apiGroups: [batch], apiVersions: [v1], operations: [DELETE], resources: [jobs] }
+        documentIndex: 2
+      - equal:
+          path: spec.validations[0].expression
+          value: has(request.options.propagationPolicy) && request.options.propagationPolicy == 'Foreground'
+        documentIndex: 2
+      - equal:
+          path: spec.policyName
+          value: reviews.kritika-runner-job-deletes
+        documentIndex: 3
+      - equal:
+          path: spec.matchConstraints.resourceRules[0].resources
+          value: [secrets]
+        documentIndex: 4
+      - equal:
+          path: spec.matchConditions[0].expression
+          value: request.userInfo.username == 'system:serviceaccount:reviews:kritika'
+        documentIndex: 4
+      - equal:
+          path: spec.policyName
+          value: reviews.kritika-runner-secrets
+        documentIndex: 5
+
+  - it: pins the runner ServiceAccount, image repository and database Secret the executor uses
+    set:
+      runner.admission.enforce: true
+      runner.image.repository: registry.example/tools
+      runner.image.digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      runner.serviceAccount.name: reviewers
+      database.runner.existingSecret: runner-db
+    asserts:
+      - matchRegex:
+          path: spec.validations[8].expression
+          pattern: "c.image.startsWith\\('registry.example/tools:'\\) \\|\\|\\s+c.image.startsWith\\('registry.example/tools@'\\)"
+        documentIndex: 0
+      - matchRegex:
+          path: spec.validations[3].expression
+          pattern: "variables.pod.serviceAccountName == 'reviewers'"
+        documentIndex: 0
+      - matchRegex:
+          path: spec.validations[12].expression
+          pattern: "e.valueFrom.secretKeyRef.name == 'runner-db'"
+        documentIndex: 0
+
+  - it: lets runner pods carry runner.pod's labels, with their values
+    set:
+      runner.admission.enforce: true
+      runner.pod.labels: { team: reviews }
+    asserts:
+      - contains:
+          path: spec.variables
+          content:
+            name: podLabels
+            expression: "{'team': 'reviews'}"
+        documentIndex: 0
+
+  - it: lets runner pods carry no labels of their own unless runner.pod sets them
+    set:
+      runner.admission.enforce: true
+    asserts:
+      - contains:
+          path: spec.variables
+          content:
+            name: podLabels
+            expression: "{}"
+        documentIndex: 0
+
+  - it: holds runner pods to the runner RuntimeClass, or to none
+    set:
+      runner.admission.enforce: true
+      runner.runtimeClass: gvisor
+    asserts:
+      - contains:
+          path: spec.validations
+          content:
+            expression: "has(variables.pod.runtimeClassName) && variables.pod.runtimeClassName == 'gvisor'"
+            message: a runner pod runs under the runner RuntimeClass
+        documentIndex: 0
+
+  - it: holds runner pods to the cluster's default runtime when no RuntimeClass is set
+    set:
+      runner.admission.enforce: true
+    asserts:
+      - contains:
+          path: spec.validations
+          content:
+            expression: "!has(variables.pod.runtimeClassName)"
+            message: a runner pod runs under the cluster's default runtime
+        documentIndex: 0

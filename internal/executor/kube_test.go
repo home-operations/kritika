@@ -792,7 +792,7 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	}
 	ref := sec.OwnerReferences[0]
 	if ref.Kind != "Job" || ref.APIVersion != "batch/v1" || ref.Name != jobName(spec().Job.RunID) || ref.UID != "this-run" ||
-		ref.Controller == nil || *ref.Controller || ref.BlockOwnerDeletion == nil || *ref.BlockOwnerDeletion {
+		ref.Controller == nil || *ref.Controller || ref.BlockOwnerDeletion == nil || !*ref.BlockOwnerDeletion {
 		t.Fatalf("owner reference = %+v", ref)
 	}
 

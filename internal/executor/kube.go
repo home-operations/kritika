@@ -606,14 +606,15 @@ func runnerLabels(spec Spec) map[string]string {
 }
 
 // secret builds the run's job-scoped Secret: the credentials and the
-// encoded job document, owned by job. The Job is not its controller and
-// must not wait on it to be deleted.
+// encoded job document, owned by job, which is not its controller. The
+// Job's foreground deletion waits for the Secret's, so no new Job of its
+// name can take the Secret up while it is there.
 func (k *Kube) secret(spec Spec, runSpec []byte, job *batchv1.Job) *corev1.Secret {
 	return &corev1.Secret{
 		Name: secretName(spec.Job.RunID), Namespace: k.Namespace, Labels: runnerLabels(spec),
 		OwnerReferences: []metav1.OwnerReference{{
 			APIVersion: "batch/v1", Kind: jobKind, Name: job.Name, UID: job.UID,
-			Controller: new(false), BlockOwnerDeletion: new(false),
+			Controller: new(false), BlockOwnerDeletion: new(true),
 		}},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
