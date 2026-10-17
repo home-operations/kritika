@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.77](https://github.com/home-operations/kritika/compare/0.0.76...0.0.77) (2026-10-17)
+
+
+### Bug Fixes
+
+* **runner:** keep and count only the context chunks a review's prompt was given ([#1028](https://github.com/home-operations/kritika/issues/1028)) ([4a248fb](https://github.com/home-operations/kritika/commit/4a248fb3615096c1fbbfa8ebb9242814e190e367))
+
 ## [0.0.76](https://github.com/home-operations/kritika/compare/0.0.75...0.0.76) (2026-10-17)
 
 
