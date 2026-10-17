@@ -585,7 +585,8 @@ func lead(
 		return err
 	}
 	// Every leader duty ends before lead returns and the lock is released,
-	// so the next leader never runs one alongside this replica's.
+	// so the next leader never runs one alongside this replica's, unless the
+	// server dropped the lock: that goes unnoticed until the next ping.
 	pollCtx, stopPoll := context.WithCancel(ctx)
 	var duties sync.WaitGroup
 	defer duties.Wait()
@@ -595,7 +596,7 @@ func lead(
 		Store: st, Current: current, Forges: forges, Reach: apps.Reach, Dispatcher: svc, Logger: logger, Metrics: m,
 	}
 	duties.Go(func() { poll.Run(pollCtx) })
-	plans := &worker.ChatGPTRefresher{Store: st, Current: current, Logger: logger}
+	plans := &worker.ChatGPTRefresher{Store: st, Current: current, LeaderInterval: cfg.LeaderRetryInterval, Logger: logger}
 	duties.Go(func() { plans.Run(pollCtx) })
 	// So is feeding the index queue its onboarding jobs, a few at a time.
 	onboarder := &worker.Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
