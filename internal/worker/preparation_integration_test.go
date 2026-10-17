@@ -51,31 +51,54 @@ func filteredPreparation(t *testing.T, number int) (*agenticHarness, *river.Job[
 }
 
 func TestFilteredPreparation(t *testing.T) {
-	for i, tt := range []struct {
-		name, labels    string
-		failCompletion  bool
+	for _, tt := range []struct {
+		name, labels string
+		number       int
+		// available has the job no longer running as River's client sees it;
+		// moved has River's row moved on, to a rescue or a newer attempt.
+		available       bool
+		movedState      rivertype.JobState
+		movedAttempt    int
+		wantErr         bool
 		wantStatus      store.ReviewStatus
 		wantJob         rivertype.JobState
+		wantAttempt     int
 		wantDisposition reviewDisposition
 	}{
-		{"stable", `[]`, false, store.ReviewSkipped, rivertype.JobStateCompleted, reviewFinish},
-		{"changed", `["review"]`, false, store.ReviewSkipped, rivertype.JobStateRunning, reviewSnooze},
-		{"completion failure rolls back skip", `[]`, true, store.ReviewRunning, rivertype.JobStateRunning, reviewFinish},
+		{name: "stable", labels: `[]`, number: 986,
+			wantStatus: store.ReviewSkipped, wantJob: rivertype.JobStateCompleted, wantAttempt: 1, wantDisposition: reviewFinish},
+		{name: "changed", labels: `["review"]`, number: 987,
+			wantStatus: store.ReviewSkipped, wantJob: rivertype.JobStateRunning, wantAttempt: 1, wantDisposition: reviewSnooze},
+		{name: "completion failure rolls back skip", labels: `[]`, number: 988, available: true, wantErr: true,
+			wantStatus: store.ReviewRunning, wantJob: rivertype.JobStateRunning, wantAttempt: 1},
+		{name: "a rescued attempt rolls back skip", labels: `[]`, number: 1010,
+			movedState: rivertype.JobStateRetryable, movedAttempt: 1, wantErr: true,
+			wantStatus: store.ReviewRunning, wantJob: rivertype.JobStateRetryable, wantAttempt: 1},
+		{name: "a newer attempt rolls back skip", labels: `[]`, number: 1011,
+			movedState: rivertype.JobStateRunning, movedAttempt: 2, wantErr: true,
+			wantStatus: store.ReviewRunning, wantJob: rivertype.JobStateRunning, wantAttempt: 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			h, job, pr, reviewID, runID := filteredPreparation(t, 986+i)
+			h, job, pr, reviewID, runID := filteredPreparation(t, tt.number)
 			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-				_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET labels = $2 WHERE id = $1`, pr.id, tt.labels)
+				if _, err := tx.Exec(h.ctx, `UPDATE pull_requests SET labels = $2 WHERE id = $1`, pr.id, tt.labels); err != nil {
+					return err
+				}
+				if tt.movedState == "" {
+					return nil
+				}
+				_, err := tx.Exec(h.ctx, `UPDATE river_job SET state = $2::text::river_job_state, attempt = $3 WHERE id = $1`,
+					job.ID, tt.movedState, tt.movedAttempt)
 				return err
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if tt.failCompletion {
+			if tt.available {
 				job.State = rivertype.JobStateAvailable
 			}
 			ctx := rivertest.WorkContext(h.ctx, h.insertOnly)
 			_, decision, err := h.review.recordPreparation(ctx, job, pr.id, reviewID, runID, "", json.RawMessage(`[]`), configfile.Confidence{})
-			if (err != nil) != tt.failCompletion {
+			if (err != nil) != tt.wantErr {
 				t.Fatalf("preparation = %v", err)
 			}
 			if err == nil {
@@ -88,7 +111,7 @@ func TestFilteredPreparation(t *testing.T) {
 				if err := tx.QueryRow(h.ctx, `SELECT r.status, j.state, j.attempt FROM reviews r JOIN river_job j ON j.id = r.river_job_id WHERE r.id = $1`, reviewID).Scan(&status, &state, &attempt); err != nil {
 					return err
 				}
-				if status != tt.wantStatus || state != tt.wantJob || attempt != 1 {
+				if status != tt.wantStatus || state != tt.wantJob || attempt != tt.wantAttempt {
 					t.Fatalf("review=%s job=%s attempt=%d", status, state, attempt)
 				}
 				return nil

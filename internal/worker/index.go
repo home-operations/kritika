@@ -14,8 +14,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/riverdriver/riverpgxv5"
-	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -409,16 +407,7 @@ func (w *Index) embed(
 			}
 			// A forced rebuild repeats even at the same commit, so its
 			// completion must survive a crash immediately after publication.
-			completed, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
-			if err != nil {
-				return fmt.Errorf("worker: complete index job: %w", err)
-			}
-			// River can return an unchanged non-running row or complete a
-			// newer attempt. Neither may commit this attempt's publication.
-			if completed.State != rivertype.JobStateCompleted || completed.Attempt != job.Attempt {
-				return fmt.Errorf("worker: index job ownership changed: state %s, attempt %d (want %d)",
-					completed.State, completed.Attempt, job.Attempt)
-			}
+			return completeJob(ctx, tx, job)
 		}
 		return nil
 	})
