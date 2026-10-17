@@ -117,13 +117,21 @@ func (f *followUp) dismissedFinding(ctx context.Context) (string, error) {
 }
 
 // answer posts body as the reply and records the mention answered, for
-// reason.
+// reason. Both run on past the job's ctx, as run's reply does: a reply cut
+// after the forge created it refunds the attempt when the worker stops,
+// and the rerun, a first attempt again, would not look for it on the forge
+// and post it twice. A fenced job is the exception.
 func (f *followUp) answer(ctx context.Context, body, reason string) (store.FollowupStatus, error) {
-	replyID, err := f.reply(ctx, body)
+	if cause := context.Cause(jobFence(ctx)); errors.Is(cause, errJobFenced) {
+		return store.FollowupFailed, cause
+	}
+	pctx, cancel := detachUnlessFenced(ctx)
+	defer cancel()
+	replyID, err := f.reply(pctx, body)
 	if err != nil {
 		return store.FollowupFailed, err
 	}
-	if err := f.record(ctx, store.FollowupAnswered, reason, replyID, ""); err != nil {
+	if err := f.record(pctx, store.FollowupAnswered, reason, replyID, ""); err != nil {
 		f.logger.Error("follow-up not recorded", "error", err, "reply", replyID)
 	}
 	return store.FollowupAnswered, nil

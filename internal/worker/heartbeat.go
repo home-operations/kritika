@@ -33,6 +33,20 @@ const (
 // could not write the job's heartbeat for jobFenceAfter.
 var errJobFenced = errors.New("worker: job heartbeat not written; the job is handed back")
 
+// jobFenceKey carries, in the context of a job JobHeartbeat works, a
+// context only a fence of the job ends.
+type jobFenceKey struct{}
+
+// jobFence is a context a fence of the job ends, with errJobFenced as its
+// cause, even after River ended the job's own context, whose cause then
+// stays River's. Outside JobHeartbeat it is ctx itself.
+func jobFence(ctx context.Context) context.Context {
+	if f, ok := ctx.Value(jobFenceKey{}).(context.Context); ok {
+		return f
+	}
+	return ctx
+}
+
 // jobHeartbeater stamps a job's heartbeat.
 type jobHeartbeater interface {
 	HeartbeatJob(ctx context.Context, jobID int64) error
@@ -57,16 +71,21 @@ type JobHeartbeat struct {
 // start. Later beats go on past ctx, which a timeout or a cancel ends
 // while the job is still this replica's to finish on detached contexts.
 // The job gets a context of its own, which beats that cannot be written
-// for jobFenceAfter end with errJobFenced.
+// for jobFenceAfter end with errJobFenced, as they end its jobFence.
 func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
 	if err := h.Store.HeartbeatJob(ctx, job.ID); err != nil {
 		return fmt.Errorf("worker: first heartbeat of job %d: %w", job.ID, err)
 	}
-	jctx, fence := context.WithCancelCause(ctx)
+	fenced, markFenced := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer markFenced(nil)
+	jctx, fence := context.WithCancelCause(context.WithValue(ctx, jobFenceKey{}, fenced))
 	defer fence(nil)
 	hctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	done := make(chan struct{})
-	go h.beat(hctx, job.ID, fence, done)
+	go h.beat(hctx, job.ID, func(cause error) {
+		markFenced(cause)
+		fence(cause)
+	}, done)
 	defer func() {
 		cancel()
 		<-done
