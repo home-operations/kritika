@@ -10,7 +10,7 @@ what a pull request could use to weaken its own review out of its reach.
 | Do                                                     | Why                                                                                                                                                                                           |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Install kritika into a namespace of its own            | runner Jobs run in the release namespace, and kritika's Role can create, patch and delete every Secret there, though it can never get or list one                                             |
-| Turn on the chart's `networkPolicy.enabled`            | a runner pod can then reach nothing but DNS, Postgres and the [egress gateway](#the-egress-gateway)                                                                                           |
+| Turn on the chart's `networkPolicy.enabled`            | a runner pod can then reach nothing but the cluster's DNS, Postgres and the [egress gateway](#the-egress-gateway)                                                                             |
 | Set `runner.runtimeClass` to a sandboxed runtime | a kernel vulnerability reachable from the pod is contained by the sandbox rather than the node ([runner sandbox](#runner-sandbox))                                                            |
 | Set `runner.resources`                                 | a runaway run is killed in its own cgroup rather than pressing on its node                                                                                                                    |
 | Map roles on what the IdP controls                     | a role mapping is only as trustworthy as what it reads: map on groups or roles, not on an email or name a user can set on their own profile ([role mappings](configuration.md#role-mappings)) |
@@ -123,6 +123,35 @@ deletes them with the run's transcripts.
 | `address denied`                                      | a `deny` address covers it                                  |
 | `resolves to a private address no allow entry covers` | the name resolves only to addresses off the public internet |
 | `resolves to a denied address`                        | every address the name resolves to is denied                |
+
+### Name lookups
+
+Name lookups do not pass the gateway. With `networkPolicy.enabled`, the
+pods send DNS only to the cluster's DNS: the pods
+`networkPolicy.dns.namespace` and `podSelector` select, `k8s-app:
+kube-dns` in `kube-system` unless set, and the addresses
+`networkPolicy.dns.nodeLocalAddresses` lists, such as NodeLocal
+DNSCache's `169.254.20.10` on each node's own network. The `cilium` flavor
+allows DNS to the node itself for those, since Cilium gives the node's
+addresses the host's identity, which no CIDR selects.
+
+The cluster's DNS forwards the lookup of a name outside the cluster to
+that name's servers, so a lookup alone tells them the name, and `curl`
+looks up an `https://` URL's host even when it fetches the URL through the
+gateway. With the `cilium` flavor, a runner pod may look up only the names
+of the cluster's Services, `<service>.<namespace>.svc.cluster.local`,
+which the cluster's DNS answers itself, the gateway's and an in-cluster
+database's among them, and those `networkPolicy.dns.runnerNames` lists.
+The lookup of an `ExternalName` Service's name goes on to the name the
+Service points at, which its author set, not the runner. Add the host of
+the runner role's database URI to `runnerNames` when the database is
+outside the cluster. Cilium refuses any other name. The `default` and
+`calico` flavors cannot filter names.
+
+Runner pods resolve with `ndots: 4`, so the gateway's name, such as
+`kritika-gateway.kritika.svc.cluster.local`, is looked up as written
+rather than first through the search list, whose expansions of it Cilium
+would refuse: musl's resolver, which mise uses, gives up at a refusal.
 
 ### The model endpoint
 

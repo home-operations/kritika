@@ -135,10 +135,12 @@ their `uri` key for `database.*.existingSecret`, failover and backups.
 Runner Jobs parse untrusted content and run what the model asks, so the
 chart confines them:
 
-- With `networkPolicy.enabled`, a runner pod reaches nothing but DNS,
-  Postgres and the egress gateway kritika serve runs on
+- With `networkPolicy.enabled`, a runner pod reaches nothing but the
+  cluster's DNS, Postgres and the egress gateway kritika serve runs on
   `service.gatewayPort`, which allows what the configuration file's
-  `egress` lists and is the runner's only way to its model.
+  `egress` lists and is the runner's only way to its model. With the
+  Cilium flavor, it may look up only the names of the cluster's Services
+  and those `networkPolicy.dns.runnerNames` lists.
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
@@ -160,6 +162,17 @@ it, pinned by `.kritika/mise.lock`, and move a `url_replacements` mirror
 to `runner.mise.urlReplacements`. The runner image declares its six tools
 itself, so they stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
+
+### Migrating NetworkPolicies
+
+With `networkPolicy.enabled`, the pods send DNS only to the cluster's DNS.
+Before upgrading, set `networkPolicy.dns.namespace` and `podSelector` if
+its pods are not `k8s-app: kube-dns` in `kube-system`, and list a NodeLocal
+DNSCache's address in `networkPolicy.dns.nodeLocalAddresses`. With the
+Cilium flavor, runner pods may look up only the cluster's Service names
+and those `networkPolicy.dns.runnerNames` lists: add the host of a
+database outside the cluster, or runs cannot look it up. See
+[name lookups](https://kritika.home-operations.com/security/#name-lookups).
 
 ### Topology
 
@@ -267,7 +280,11 @@ Kubernetes: `>=1.25.0-0`
 | monitoring.serviceMonitor.relabelings | list | `[]` | Prometheus relabelings. |
 | monitoring.serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout. |
 | nameOverride | string | `""` | Override the chart name used in resource names. |
-| networkPolicy.allowDNS | bool | `true` | Allow DNS egress (UDP/TCP 53); the Cilium flavor allows it to kube-dns alone. |
+| networkPolicy.allowDNS | bool | `true` | Allow DNS egress (UDP/TCP 53) to the cluster's DNS, as `dns` describes it, and nowhere else. |
+| networkPolicy.dns.namespace | string | `"kube-system"` | Namespace of the cluster's DNS pods. |
+| networkPolicy.dns.nodeLocalAddresses | list | `[]` | Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity. |
+| networkPolicy.dns.podSelector | object | `{}` | Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`. |
+| networkPolicy.dns.runnerNames | list | `[]` | With the Cilium flavor, the names runner pods may look up besides those of the cluster's Services, `<service>.<namespace>.svc.cluster.local`, which the cluster's DNS answers itself (an ExternalName Service's goes on to the name its author set): the database's host when it is outside the cluster. Each is a name, or a Cilium `matchPattern` in which `*` stands for part of one label. Cilium refuses any other name; the other flavors do not filter names. |
 | networkPolicy.egressPorts | list | `[443]` | TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone. |
 | networkPolicy.enabled | bool | `false` | Create the NetworkPolicies. |
 | networkPolicy.postgresPort | int | `5432` | Postgres port allowed for egress. |

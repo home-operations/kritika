@@ -59,6 +59,9 @@ func TestJobSpec(t *testing.T) {
 	if pod.ServiceAccountName != "kritika-runner" || *pod.AutomountServiceAccountToken || pod.RestartPolicy != corev1.RestartPolicyNever {
 		t.Fatalf("pod spec = %+v", pod)
 	}
+	if d := pod.DNSConfig; d == nil || len(d.Options) != 1 || d.Options[0].Name != "ndots" || d.Options[0].Value == nil || *d.Options[0].Value != "4" {
+		t.Fatalf("dnsConfig = %+v, want ndots 4", d)
+	}
 	c := pod.Containers[0]
 	if c.Image != "ttl.sh/x:1h" || c.ImagePullPolicy != corev1.PullIfNotPresent || len(c.Args) != 1 || c.Args[0] != "run" {
 		t.Fatalf("container = %+v", c)

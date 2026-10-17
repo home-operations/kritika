@@ -171,6 +171,148 @@ tests:
           value: app.kubernetes.io/name == 'kritika' && app.kubernetes.io/instance == 'RELEASE-NAME'
         documentIndex: 1
 
+  - it: sends DNS to the cluster's DNS alone, from both policies
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[0]
+          value:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+                podSelector:
+                  matchLabels:
+                    k8s-app: kube-dns
+            ports:
+              - port: 53
+                protocol: UDP
+              - port: 53
+                protocol: TCP
+        documentIndex: 0
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels
+          value:
+            k8s-app: kube-dns
+        documentIndex: 1
+
+  - it: takes the cluster's DNS from networkPolicy.dns, its labels replacing kube-dns's
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.dns.namespace: dns
+      networkPolicy.dns.podSelector:
+        app.kubernetes.io/name: coredns
+      networkPolicy.dns.nodeLocalAddresses: [169.254.20.10, "fd00::10"]
+    asserts:
+      - equal:
+          path: spec.egress[0].to
+          value:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: dns
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: coredns
+            - ipBlock:
+                cidr: 169.254.20.10/32
+            - ipBlock:
+                cidr: fd00::10/128
+        documentIndex: 1
+
+  - it: leaves DNS out with allowDNS false
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.allowDNS: false
+    asserts:
+      - notContains:
+          path: spec.egress[0].ports
+          content:
+            port: 53
+            protocol: UDP
+        documentIndex: 1
+      - equal:
+          path: spec.egress[0].ports
+          value:
+            - port: 5432
+              protocol: TCP
+        documentIndex: 1
+
+  - it: on Cilium, lets runner pods look up only the cluster's Services and runnerNames
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.type: cilium
+      networkPolicy.dns.podSelector:
+        "yes": resolver
+      networkPolicy.dns.nodeLocalAddresses: [169.254.20.10]
+      networkPolicy.dns.runnerNames: [db.example.com, "*.db.example.com"]
+    asserts:
+      - equal:
+          path: spec.egress[0].toEndpoints[0].matchLabels
+          value:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            "yes": resolver
+        documentIndex: 1
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*.*.svc.cluster.local"
+            - matchName: db.example.com
+            - matchPattern: "*.db.example.com"
+        documentIndex: 1
+      # A NodeLocal DNSCache on the node has the host's identity.
+      - equal:
+          path: spec.egress[1].toEntities
+          value: [host]
+        documentIndex: 1
+      - equal:
+          path: spec.egress[1].toPorts[0].rules.dns[0].matchPattern
+          value: "*.*.svc.cluster.local"
+        documentIndex: 1
+      # The service pods look up any name, at the same DNS.
+      - notExists:
+          path: spec.egress[0].toPorts[0].rules
+        documentIndex: 0
+      - equal:
+          path: spec.egress[1].toEntities
+          value: [host]
+        documentIndex: 0
+
+  - it: on Calico, sends DNS to the cluster's DNS by selector and to each node-local address by nets
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.type: calico
+      networkPolicy.dns.nodeLocalAddresses: [169.254.20.10, "fd00::10"]
+    asserts:
+      - equal:
+          path: spec.egress[0]
+          value:
+            action: Allow
+            protocol: UDP
+            destination:
+              namespaceSelector: kubernetes.io/metadata.name == 'kube-system'
+              selector: k8s-app == 'kube-dns'
+              ports:
+                - 53
+        documentIndex: 1
+      # One rule an address, as a rule's nets may not mix IPv4 and IPv6.
+      - equal:
+          path: spec.egress[1].destination.nets
+          value: [169.254.20.10/32]
+        documentIndex: 1
+      - equal:
+          path: spec.egress[2].destination.nets
+          value: ["fd00::10/128"]
+        documentIndex: 1
+      - equal:
+          path: spec.egress[3].protocol
+          value: TCP
+        documentIndex: 1
+      - equal:
+          path: spec.egress[5].destination.nets
+          value: ["fd00::10/128"]
+        documentIndex: 1
+
   - it: fails fast on an unknown type
     set:
       networkPolicy.enabled: true

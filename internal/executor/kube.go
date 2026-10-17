@@ -496,6 +496,12 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 					AutomountServiceAccountToken: new(false),
 					RestartPolicy:                corev1.RestartPolicyNever,
 					RuntimeClassName:             runtimeClass,
+					// The chart's gateway name, <service>.<namespace>.svc.cluster.local,
+					// has four dots: with ndots at 4 it is looked up as written
+					// rather than through the search list first, whose expansions
+					// of it the chart's Cilium DNS rule refuses and musl's
+					// resolver, mise's, gives up at.
+					DNSConfig: &corev1.PodDNSConfig{Options: []corev1.PodDNSConfigOption{{Name: "ndots", Value: new("4")}}},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: new(true), RunAsUser: new(int64(65532)), RunAsGroup: new(int64(65532)),
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},

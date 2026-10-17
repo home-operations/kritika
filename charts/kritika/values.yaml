@@ -318,18 +318,42 @@ httpRoute:
 
 # NetworkPolicies (off by default): one for the service pods (ingress to the
 # webhook and metrics ports, and to the gateway port from runner pods;
-# egress to DNS, the forges and models over the egress ports, Postgres and
-# the API server) and one for runner pods (egress only: DNS, Postgres and
-# the gateway port on the service pods, through which everything else is
-# reached). The Postgres port is allowed to any peer because the database
-# may live in another namespace.
+# egress to the cluster's DNS, the forges and models over the egress ports,
+# Postgres and the API server) and one for runner pods (egress only: the
+# cluster's DNS, Postgres and the gateway port on the service pods, through
+# which everything else is reached). The Postgres port is allowed to any
+# peer because the database may live in another namespace.
 networkPolicy:
   # -- Create the NetworkPolicies.
   enabled: false
   # -- Policy flavor for your CNI: "default" (networking.k8s.io/v1 NetworkPolicy), "cilium" (CiliumNetworkPolicy) or "calico" (projectcalico.org/v3 NetworkPolicy).
   type: default
-  # -- Allow DNS egress (UDP/TCP 53); the Cilium flavor allows it to kube-dns alone.
+  # -- Allow DNS egress (UDP/TCP 53) to the cluster's DNS, as `dns` describes it, and nowhere else.
   allowDNS: true
+  # The cluster's DNS, the one peer the pods may send port 53 to.
+  dns:
+    # -- Namespace of the cluster's DNS pods.
+    namespace: kube-system
+    # Empty rather than kube-dns's label: Helm merges maps, so a default here
+    # would stay beside the labels set in its place.
+    # @schema
+    # type: object
+    # additionalProperties: { type: string }
+    # @schema
+    # -- Labels of the cluster's DNS pods; empty stands for `k8s-app: kube-dns`.
+    podSelector: {}
+    # @schema
+    # type: array
+    # items: { type: string, pattern: "^[0-9A-Fa-f.:]+$" }
+    # @schema
+    # -- Addresses of a NodeLocal DNSCache on each node's own network, such as `169.254.20.10`, which the pods query in place of those pods. The Cilium flavor allows DNS to the node itself instead, since Cilium gives the node's addresses the host's identity.
+    nodeLocalAddresses: []
+    # @schema
+    # type: array
+    # items: { type: string, minLength: 1 }
+    # @schema
+    # -- With the Cilium flavor, the names runner pods may look up besides those of the cluster's Services, `<service>.<namespace>.svc.cluster.local`, which the cluster's DNS answers itself (an ExternalName Service's goes on to the name its author set): the database's host when it is outside the cluster. Each is a name, or a Cilium `matchPattern` in which `*` stands for part of one label. Cilium refuses any other name; the other flavors do not filter names.
+    runnerNames: []
   # -- TCP ports the service pods may egress to for forges and model endpoints. Runner pods reach the gateway alone.
   egressPorts:
     - 443
