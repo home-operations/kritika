@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ func (s *Store) Migrate(ctx context.Context, appRole, runnerRole string) error {
 	if s.owner == nil {
 		return errors.New("store: migrate needs the owner DSN")
 	}
-	migrator, err := rivermigrate.New(riverpgxv5.New(s.owner), nil)
+	migrator, err := rivermigrate.New(riverpgxv5.New(s.owner), &rivermigrate.Config{Logger: s.logger})
 	if err != nil {
 		return fmt.Errorf("store: river migrator: %w", err)
 	}
@@ -88,10 +89,11 @@ func (s *Store) applyMigration(ctx context.Context, name, version string) error 
 	return nil
 }
 
-// SchemaReady reports whether every embedded migration has been applied, so
-// a replica that is not the leader knows when it may start working jobs. A
-// fresh database has no schema_migrations table at all, which is "not yet",
-// not an error.
+// SchemaReady reports whether every embedded migration, River's and
+// kritika's, has been applied and River's tables granted, so a replica that
+// is not the leader knows when it may start working jobs: a release may
+// bring a River migration without one of kritika's. A fresh database has no
+// schema_migrations table at all, which is "not yet", not an error.
 func (s *Store) SchemaReady(ctx context.Context) (bool, error) {
 	names, err := fs.Glob(migrationFS, "migrations/*.sql")
 	if err != nil {
@@ -108,7 +110,30 @@ func (s *Store) SchemaReady(ctx context.Context) (bool, error) {
 	if err := s.app.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&applied); err != nil {
 		return false, fmt.Errorf("store: count migrations: %w", err)
 	}
-	return applied >= len(names), nil
+	if applied < len(names) {
+		return false, nil
+	}
+	// The result says what River's migrator would log, at every poll.
+	migrator, err := rivermigrate.New(riverpgxv5.New(s.app), &rivermigrate.Config{Logger: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		return false, fmt.Errorf("store: river migrator: %w", err)
+	}
+	river, err := migrator.Validate(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("store: check river migrations: %w", err)
+	}
+	if !river.OK {
+		return false, nil
+	}
+	// River commits each migration before grant gives the application role
+	// the tables it made.
+	var granted bool
+	if err := s.app.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM pg_tables
+		WHERE schemaname = current_schema() AND tablename LIKE 'river\_%'
+		AND NOT has_table_privilege(format('%I.%I', schemaname, tablename), 'SELECT'))`).Scan(&granted); err != nil {
+		return false, fmt.Errorf("store: check river grants: %w", err)
+	}
+	return granted, nil
 }
 
 // WaitForSchema polls SchemaReady until it is true or ctx ends.
