@@ -93,6 +93,23 @@ tests:
           path: data["config.yaml"]
           pattern: "memory: 1Gi"
 
+  - it: renders runner.pod into the runner configuration
+    set:
+      runner.pod:
+        nodeSelector: { node-role.example.com/runner: "true" }
+        tolerations: [{ key: runner, operator: Exists, effect: NoSchedule }]
+        hostUsers: false
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'pod:\n\s+hostUsers: false\n\s+nodeSelector:\n\s+node-role.example.com/runner: "true"\n\s+tolerations:\n\s+- effect: NoSchedule'
+
+  - it: omits runner.pod by default
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: '\n\s+pod:'
+
   - it: omits URL replacements by default, leaving runner downloads at their URLs
     asserts:
       - notMatchRegex:

@@ -164,6 +164,11 @@ type Runner struct {
 	// verbatim into its pod spec, a JSON object of requests and limits.
 	RunnerDeadline  time.Duration `env:"KRITIKA_RUNNER_DEADLINE" envDefault:"15m" yaml:"deadline,omitempty"`
 	RunnerResources jsonObject    `env:"KRITIKA_RUNNER_RESOURCES" yaml:"resources,omitempty"`
+	// RunnerPod places and marks runner pods, as the Kubernetes fields
+	// spell them: nodeSelector, tolerations, affinity,
+	// topologySpreadConstraints, priorityClassName, labels, annotations and
+	// hostUsers. The executor refuses any other field at startup.
+	RunnerPod jsonObject `env:"KRITIKA_RUNNER_POD" yaml:"pod,omitempty"`
 	// RunnerMiseURLReplacements rewrite the URLs runner tools download
 	// from, such as to a caching mirror, as mise's url_replacements, the
 	// one mise setting an admin sets: mise ignores the [settings] of the

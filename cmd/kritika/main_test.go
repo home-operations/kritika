@@ -221,6 +221,15 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 	}
 }
 
+func TestRunnerPodErrorNamesBothSources(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.RunnerPod = map[string]any{"serviceAccountName": "default"}
+	_, err := newExecutor(t.Context(), cfg, nil, slog.New(slog.DiscardHandler))
+	if err == nil || !strings.Contains(err.Error(), "runner.pod") || !strings.Contains(err.Error(), "KRITIKA_RUNNER_POD") {
+		t.Fatalf("newExecutor = %v", err)
+	}
+}
+
 func TestRunnerResourceErrorNamesBothSources(t *testing.T) {
 	_, err := newExecutor(t.Context(), &config.Config{}, map[string]any{"limits": map[string]any{"memory": "invalid"}}, slog.New(slog.DiscardHandler))
 	if err == nil || !strings.Contains(err.Error(), "runner.resources") || !strings.Contains(err.Error(), "KRITIKA_RUNNER_RESOURCES") {

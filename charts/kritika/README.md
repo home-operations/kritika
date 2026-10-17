@@ -149,7 +149,9 @@ chart confines them:
   download checked against the repository's lock;
   `runner.mise.urlReplacements` sends the downloads to a mirror.
   `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
-  gVisor; `runner.resources` keeps a runaway run in its own cgroup.
+  gVisor; `runner.resources` keeps a runaway run in its own cgroup;
+  `runner.pod` keeps runner pods on nodes of their own, and in a user
+  namespace with `hostUsers: false`.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
@@ -317,6 +319,7 @@ Kubernetes: `>=1.31.0-0`
 | runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
 | runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
 | runner.mise.urlReplacements | list | `[]` | Rewrites of the URLs runner tools download from (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS), such as to a caching mirror: mise's `url_replacements`, tried in order until one matches. `from` is a URL prefix, or `regex:` and a pattern whose groups `to` may name as `$1`. The mirror's host must pass the egress gateway; a download is still checked against the repository's lock. |
+| runner.pod | object | `{}` | Where runner pods are scheduled and how they are marked (KRITIKA_RUNNER_POD), as the pod spec spells it: `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName`, extra `labels` and `annotations` such as `karpenter.sh/do-not-disrupt: "true"`, and `hostUsers: false` to run them in a user namespace, which the cluster and its nodes' runtime must support: an API server without user namespaces, off by default before Kubernetes 1.33, drops it. kritika refuses its own labels, the instance label and the Job controller's, and AppArmor annotations; the ServiceAccount, security context and volumes stay kritika's. |
 | runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
 | runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
