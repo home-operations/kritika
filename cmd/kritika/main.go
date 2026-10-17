@@ -27,6 +27,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
+	"k8s.io/klog/v2"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/auth"
@@ -81,6 +82,9 @@ func run() (err error) {
 		return err
 	}
 	slog.SetDefault(logger)
+	// client-go logs through klog, its informers' list and watch errors
+	// among them: through this logger too.
+	klog.SetSlogLogger(logger)
 	model.Version = version
 
 	logger.Info("starting kritika",
@@ -370,10 +374,14 @@ func startWorker(
 		}
 	})
 	var events *executor.Events
+	stopWatch := func() {}
 	if k, ok := exec.(*executor.Kube); ok {
-		events = k.Events
+		events, stopWatch = k.Events, k.Stop
 	}
-	g.Go(func() error { return workQueues(ctx, st, queue, cfg, events, logger) })
+	g.Go(func() error {
+		defer stopWatch()
+		return workQueues(ctx, st, queue, cfg, events, logger)
+	})
 	return nil
 }
 
@@ -516,13 +524,19 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 	if err != nil {
 		return nil, err
 	}
-	return &executor.Kube{
+	kube := &executor.Kube{
 		Client: client, Namespace: ns, Image: cfg.RunnerImage, ImagePullPolicy: cfg.RunnerImagePullPolicy,
 		DatabaseRole:   cfg.DatabaseRunnerRole,
 		ServiceAccount: cfg.RunnerServiceAccount, DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
 		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL,
 		Events: executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
-	}, nil
+	}
+	// The watch outlasts ctx, which a signal ends while runs still drain:
+	// startWorker stops it once the queues have stopped.
+	if err := kube.Start(ctx); err != nil {
+		return nil, err
+	}
+	return kube, nil
 }
 
 // openStore retries until the database answers, because in a fresh

@@ -150,7 +150,7 @@ func runEnd(jobCause error, res executor.Result) (warning bool, reason, note str
 	case res.Disruption != "":
 		return true, "Disrupted", "Kubernetes disrupted its pod: " + res.Disruption
 	case res.Abandoned:
-		return true, "StatusUnreadable", "kritika could not read the Job's status, so it deleted the Job"
+		return true, "StatusUnreadable", "kritika lost sight of the Job's status, so it deleted the Job"
 	case res.NeverStarted:
 		return true, "NeverStarted", "its pod did not start: " + cmp.Or(res.TerminationReason, res.Err.Error())
 	}

@@ -67,7 +67,8 @@ type Kube struct {
 	RuntimeClass string
 	// TTL is ttlSecondsAfterFinished; the run row outlives the Job.
 	TTL time.Duration
-	// Poll is how often the Job is checked.
+	// Poll is how often a run reads its Job and pod from the watch again,
+	// besides on each change to them, for the time a pod's start is given.
 	Poll time.Duration
 	// StartGrace is how long a pod may stay unable to start before its run
 	// is given up; startGrace unless set.
@@ -75,6 +76,8 @@ type Kube struct {
 	// Events, when set, records the Events on runner Jobs.
 	Events *Events
 	Logger *slog.Logger
+	// watch, which Start sets and Run needs, holds runner Jobs and pods.
+	watch *watches
 }
 
 // RunEvent implements EventRecorder.
@@ -128,7 +131,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		err = setupError(ctx, fmt.Errorf("executor: create job: %w", err))
 		if ctx.Err() != nil {
 			// The server may have persisted the Job before the call gave up.
-			k.deleteJob(ctx, name)
+			k.deleteJob(ctx, name, "")
 		}
 		k.deleteSecret(ctx, name)
 		return Result{NeverStarted: true, Err: err}
@@ -136,14 +139,18 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	res := Result{JobName: created.Name, JobUID: string(created.UID)}
 	if err := k.own(ctx, created); err != nil {
 		res.NeverStarted, res.Err = true, setupError(ctx, err)
-		k.deleteJob(ctx, created.Name)
+		k.deleteJob(ctx, created.Name, created.UID)
 		k.deleteSecret(ctx, name)
 		return res
 	}
+	wake, done := k.watch.wait(created.Name)
+	defer done()
+	// The tick reads the watch again, not the API: for the grace a stuck
+	// pod or a podless Job is given, and a new Job's way to the watch.
 	poll := cmp.Or(k.Poll, 3*time.Second)
 	t := time.NewTicker(poll)
 	defer t.Stop()
-	unread := 0
+	missing := 0
 	started := false
 	// stuckSince is when the pod became unable to start, or the Job went
 	// without one, and podless whether it was the latter: a pod appearing
@@ -151,32 +158,37 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	var stuckSince time.Time
 	var podless bool
 	for {
+		tick := false
 		select {
 		case <-ctx.Done():
 			k.cancel(ctx, &res, spec.Secrets)
 			return res
+		case <-wake:
 		case <-t.C:
+			tick = true
 		}
-		j, err := k.Client.BatchV1().Jobs(k.Namespace).Get(ctx, created.Name, metav1.GetOptions{})
+		j, err := k.watch.jobs.Jobs(k.Namespace).Get(created.Name)
+		if err == nil && j.UID != created.UID {
+			err = fmt.Errorf("another Job of that name, uid %s", j.UID)
+		}
 		if err != nil {
-			if ctx.Err() != nil {
-				k.cancel(ctx, &res, spec.Secrets)
-				return res
+			// A Job not in the watch is on its way there, or was deleted by
+			// someone else; one of its name with another UID is an earlier
+			// one the watch has yet to drop. One still missing after
+			// maxMissing ticks is deleted rather than left to run beside the
+			// retry the worker will start.
+			if tick {
+				missing++
 			}
-			// The API server answering badly says nothing about the run: the
-			// Job is checked again next tick. One that stays unreadable is
-			// deleted rather than left to run beside the retry the worker
-			// will start.
-			if unread++; unread < maxUnreadStatus {
-				k.logger().Warn("runner job status not read, retrying", "job", created.Name, "error", err)
+			if missing < maxMissing {
 				continue
 			}
-			k.deleteJob(ctx, created.Name)
+			k.deleteJob(ctx, created.Name, created.UID)
 			k.finish(ctx, &res, spec.Secrets)
-			res.Abandoned, res.Err = true, fmt.Errorf("executor: get job: %w", err)
+			res.Abandoned, res.Err = true, fmt.Errorf("executor: job %s: %w", created.Name, err)
 			return res
 		}
-		unread = 0
+		missing = 0
 		if j.Status.Succeeded > 0 || j.Status.Failed > 0 || jobFinished(j) {
 			k.finish(ctx, &res, spec.Secrets)
 			k.ended(ctx, &res, j, started)
@@ -186,7 +198,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			continue
 		}
 		var stuck string
-		if started, stuck = k.podStart(ctx, created.Name); stuck == "" {
+		if started, stuck = podStart(k.watchedPods(created)); stuck == "" {
 			stuckSince = time.Time{}
 			continue
 		}
@@ -194,16 +206,25 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			stuckSince, podless = time.Now(), stuck == noPod
 		}
 		if time.Since(stuckSince) >= cmp.Or(k.StartGrace, startGrace) {
+			var why string
 			if stuck == noPod {
-				why := k.whyNoPod(ctx, created.Name)
-				// A pod created while that was read is watched as any other.
-				if started, stuck = k.podStart(ctx, created.Name); stuck != noPod {
-					stuckSince = time.Time{}
-					continue
-				}
-				stuck = why
+				why = k.whyNoPod(ctx, created.Name)
 			}
-			k.deleteJob(ctx, created.Name)
+			// The watch may hold a pod's status from before it recovered, or
+			// no pod created meanwhile: the API is asked before the Job is
+			// given up, and a pod list that fails, or one that no longer
+			// shows what the watch did, gives nothing up.
+			pods, err := k.listedPods(ctx, created)
+			var fresh string
+			if err == nil {
+				started, fresh = podStart(pods)
+			}
+			if err != nil || fresh == "" || (fresh == noPod) != (stuck == noPod) {
+				stuckSince = time.Time{}
+				continue
+			}
+			stuck = cmp.Or(why, fresh)
+			k.deleteJob(ctx, created.Name, created.UID)
 			k.finish(ctx, &res, spec.Secrets)
 			res.TerminationReason, res.NeverStarted = stuck, true
 			res.Err = fmt.Errorf("executor: job %s never started: %s", created.Name, stuck)
@@ -221,7 +242,7 @@ func (k *Kube) ended(ctx context.Context, res *Result, j *batchv1.Job, started b
 	// seen running, no pod for finish and none now, never had one created,
 	// as when the namespace refuses it on admission and its deadline passes
 	// first.
-	case j.Status.Failed == 0 && !started && res.PodName == "" && k.podless(ctx, j.Name):
+	case j.Status.Failed == 0 && !started && res.PodName == "" && k.podless(ctx, j):
 		res.NeverStarted, res.TerminationReason = true, k.whyNoPod(ctx, j.Name)+"; then "+jobFailure(j)
 		res.Err = fmt.Errorf("executor: job %s never started: %s", j.Name, res.TerminationReason)
 	// The Job's pod failure policy fails it for a disrupted pod alone, which
@@ -263,19 +284,14 @@ const noPod = "no pod was created for the Job"
 // kubelet cannot build, as from a Secret or key that does not exist.
 var stuckReasons = []string{"ErrImagePull", "ImagePullBackOff", "InvalidImageName", "CreateContainerConfigError", "CreateContainerError"}
 
-// podStart reports whether the Job's pod has started its container, and
-// otherwise why it cannot, empty while it is only on its way, pulling its
-// image; noPod while there is none. A pod that cannot be read is on its
-// way.
-func (k *Kube) podStart(ctx context.Context, job string) (started bool, stuck string) {
-	pods, err := k.Client.CoreV1().Pods(k.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + job})
-	if err != nil {
-		return false, ""
-	}
-	if len(pods.Items) == 0 {
+// podStart reports whether a Job's pod, the latest of pods, has started its
+// container, and otherwise why it cannot, empty while it is only on its
+// way, pulling its image; noPod while there is none.
+func podStart(pods []*corev1.Pod) (started bool, stuck string) {
+	if len(pods) == 0 {
 		return false, noPod
 	}
-	pod := pods.Items[len(pods.Items)-1]
+	pod := slices.MaxFunc(pods, func(a, b *corev1.Pod) int { return a.CreationTimestamp.Compare(b.CreationTimestamp.Time) })
 	for _, cs := range pod.Status.ContainerStatuses {
 		if cs.State.Running != nil || cs.State.Terminated != nil {
 			return true, ""
@@ -292,13 +308,39 @@ func (k *Kube) podStart(ctx context.Context, job string) (started bool, stuck st
 	return false, ""
 }
 
-// podless reports whether the Job has no pod, false when its pods cannot
-// be read.
-func (k *Kube) podless(ctx context.Context, job string) bool {
+// jobNameLabel names, on a Job's pods, the Job, as the Job controller
+// labels them.
+const jobNameLabel = "job-name"
+
+// ownPods drops, from pods labelled with a Job's name, those another Job
+// controls: one of its name, gone before it.
+func ownPods(pods []*corev1.Pod, job *batchv1.Job) []*corev1.Pod {
+	return slices.DeleteFunc(pods, func(p *corev1.Pod) bool {
+		ref := metav1.GetControllerOfNoCopy(p)
+		return ref != nil && ref.UID != job.UID
+	})
+}
+
+// listedPods are the Job's pods as the API lists them now.
+func (k *Kube) listedPods(ctx context.Context, job *batchv1.Job) ([]*corev1.Pod, error) {
 	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
-	pods, err := k.Client.CoreV1().Pods(k.Namespace).List(lctx, metav1.ListOptions{LabelSelector: "job-name=" + job})
-	return err == nil && len(pods.Items) == 0
+	list, err := k.Client.CoreV1().Pods(k.Namespace).List(lctx, metav1.ListOptions{LabelSelector: jobNameLabel + "=" + job.Name})
+	if err != nil {
+		return nil, err
+	}
+	pods := make([]*corev1.Pod, len(list.Items))
+	for i := range list.Items {
+		pods[i] = &list.Items[i]
+	}
+	return ownPods(pods, job), nil
+}
+
+// podless reports whether the Job has no pod, false when its pods cannot
+// be read.
+func (k *Kube) podless(ctx context.Context, job *batchv1.Job) bool {
+	pods, err := k.listedPods(ctx, job)
+	return err == nil && len(pods) == 0
 }
 
 // whyNoPod is noPod with the latest reason the Job controller recorded for
@@ -368,10 +410,9 @@ func jobFailure(j *batchv1.Job) string {
 	return "the Job failed"
 }
 
-// maxUnreadStatus is how many status reads in a row may fail before the
-// Job is given up on: with the default poll, half a minute of the API
-// server not answering.
-const maxUnreadStatus = 10
+// maxMissing is how many ticks in a row a Job may be missing from the watch
+// before it is given up on: with the default poll, half a minute.
+const maxMissing = 10
 
 // own makes the Job the Secret's owner so garbage collection deletes the
 // Secret with the Job. It is not the controller and must not block the
@@ -393,14 +434,15 @@ func (k *Kube) own(ctx context.Context, job *batchv1.Job) error {
 // cancel deletes the Job after ctx ended, then records what the pod got to.
 func (k *Kube) cancel(ctx context.Context, res *Result, secrets runner.Secrets) {
 	res.Err = context.Cause(ctx)
-	k.deleteJob(ctx, res.JobName)
+	k.deleteJob(ctx, res.JobName, types.UID(res.JobUID))
 	k.finish(ctx, res, secrets)
 }
 
-// deleteJob removes a Job and, with foreground propagation, its pod. It
-// runs without ctx's cancellation because ctx has usually ended.
-func (k *Kube) deleteJob(ctx context.Context, name string) {
-	if err := k.removeJob(ctx, name); err != nil {
+// deleteJob removes a Job and, with foreground propagation, its pod: the
+// Job of uid alone, unless uid is empty, so another Job of its name is left
+// alone. It runs without ctx's cancellation because ctx has usually ended.
+func (k *Kube) deleteJob(ctx context.Context, name string, uid types.UID) {
+	if err := k.removeJob(ctx, name, uid); err != nil {
 		k.logger().Warn("delete runner job", "job", name, "error", err)
 	}
 }
@@ -408,13 +450,16 @@ func (k *Kube) deleteJob(ctx context.Context, name string) {
 // DeleteRun deletes the Job of run runID, pod and Secret with it, for a run
 // whose worker is gone. A Job already gone counts as deleted.
 func (k *Kube) DeleteRun(ctx context.Context, runID string) error {
-	return k.removeJob(ctx, jobName(runID))
+	return k.removeJob(ctx, jobName(runID), "")
 }
 
-func (k *Kube) removeJob(ctx context.Context, name string) error {
+func (k *Kube) removeJob(ctx context.Context, name string, uid types.UID) error {
 	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	opts := metav1.DeleteOptions{PropagationPolicy: new(metav1.DeletePropagationForeground)}
+	if uid != "" {
+		opts.Preconditions = &metav1.Preconditions{UID: &uid}
+	}
 	if err := k.Client.BatchV1().Jobs(k.Namespace).Delete(dctx, name, opts); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("executor: delete runner job %s: %w", name, err)
 	}

@@ -79,7 +79,7 @@ func TestDeleteRunSecret(t *testing.T) {
 					return true, nil, tt.failure
 				})
 			}
-			k := newKube(client)
+			k := newKube(t, client)
 			for range 2 {
 				if err := k.DeleteRunSecret(t.Context(), runA); (err != nil) != tt.wantErr {
 					t.Fatalf("DeleteRunSecret = %v, wantErr %v", err, tt.wantErr)
@@ -98,7 +98,7 @@ func TestSweepRunSecrets(t *testing.T) {
 		pending: map[string][]string{"alpha": {runA, runB}, "beta": {runC}},
 		marked:  map[string][]string{},
 	}
-	n, err := newKube(client).SweepRunSecrets(t.Context(), st, []string{"alpha", "beta"})
+	n, err := newKube(t, client).SweepRunSecrets(t.Context(), st, []string{"alpha", "beta"})
 	if err != nil || n != 3 {
 		t.Fatalf("SweepRunSecrets = %d, %v", n, err)
 	}
@@ -125,7 +125,7 @@ func TestSweepRunSecretsMarksOnlyDeleted(t *testing.T) {
 		return false, nil, nil
 	})
 	st := &fakeRunStore{pending: map[string][]string{"alpha": {runA, runB}}, marked: map[string][]string{}}
-	n, err := newKube(client).SweepRunSecrets(t.Context(), st, []string{"alpha"})
+	n, err := newKube(t, client).SweepRunSecrets(t.Context(), st, []string{"alpha"})
 	if err == nil || n != 1 {
 		t.Fatalf("SweepRunSecrets = %d, %v; want 1 and an error", n, err)
 	}
