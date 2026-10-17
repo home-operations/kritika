@@ -239,17 +239,17 @@ func serve(
 	forges := &worker.ForgeCache{Build: apps.Build}
 	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
-		sweeper, _ := exec.(*executor.Kube)
+		kube, _ := exec.(*executor.Kube)
 		var events *executor.Events
-		if sweeper != nil {
-			events = sweeper.Events
+		if kube != nil {
+			events = kube.Events
 		}
 		g.Go(func() error {
 			return st.RunAsLeader(ctx, cfg.LeaderRetryInterval, func(ctx context.Context) error {
 				m.Leading(true)
 				defer m.Leading(false)
 				events.PodEvent(ctx, false, "LeaderElected", "Lead", "this replica took the lead")
-				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, sweeper, events, m, configErrors, logger)
+				return lead(ctx, st, cfg, current, inserter, svc, apps, forges, kube, events, m, configErrors, logger)
 			})
 		})
 	} else {
@@ -562,20 +562,16 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 	}
 }
 
-// secretSweepInterval is how often the leader deletes the Secrets of runs
-// that no longer need one.
-const secretSweepInterval = 5 * time.Minute
-
 // lead runs for as long as this replica holds the leader lock: migrate,
 // apply the configuration and register the repositories its Apps reach,
-// then keep the backstop poll, the Secret sweep, onboarding and retention
-// going. While the configuration has an embedder it also keeps the index
-// schema to it and enqueues an onboarding index job for every repository
-// that has none. events, nil off Kubernetes, records on this replica's pod
-// what became of the configuration.
+// then keep the backstop poll, onboarding and retention going. While the
+// configuration has an embedder it also keeps the index schema to it and
+// enqueues an onboarding index job for every repository that has none.
+// events, nil off Kubernetes, records on this replica's pod what became of
+// the configuration.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	svc *ingest.Service, apps *worker.Apps, forges *worker.ForgeCache, sweeper *executor.Kube, events *executor.Events,
+	svc *ingest.Service, apps *worker.Apps, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
 	m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {
@@ -594,29 +590,14 @@ func lead(
 	duties.Go(func() { poll.Run(pollCtx) })
 	plans := &worker.ChatGPTRefresher{Store: st, Current: current, Logger: logger}
 	duties.Go(func() { plans.Run(pollCtx) })
-	// So is deleting, by name, run Secrets a dead worker left without an
-	// owner. Like the poller it walks the configured accounts, each under
-	// its own row-level security scope.
-	if sweeper != nil {
-		duties.Go(func() {
-			sweeper.RunSecretSweeper(pollCtx, st, func() []string {
-				accounts := current.Get().Accounts
-				ids := make([]string, 0, len(accounts))
-				for i := range accounts {
-					ids = append(ids, accounts[i].ID())
-				}
-				return ids
-			}, secretSweepInterval)
-		})
-	}
 	// So is feeding the index queue its onboarding jobs, a few at a time.
 	onboarder := &worker.Onboarder{Store: st, Queue: queue, Current: current, Logger: logger}
 	duties.Go(func() { onboarder.Run(pollCtx) })
 	// And so is rescuing the jobs of a replica that died, and reaping the
 	// runner Jobs they left, which only a Kubernetes executor has.
 	rescuer := &worker.Rescuer{Store: st, Current: current, Forges: forges, Logger: logger, Metrics: m}
-	if sweeper != nil {
-		rescuer.Runs = sweeper
+	if kube != nil {
+		rescuer.Runs = kube
 	}
 	duties.Go(func() { rescuer.Run(pollCtx) })
 	// And so is retention: model-call transcripts past their configured

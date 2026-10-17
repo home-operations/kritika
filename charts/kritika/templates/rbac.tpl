@@ -28,13 +28,13 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["create", "list"]
-  # One Secret per runner Job carries that run's credentials, owned by the
-  # Job. No get or list: the worker writes them and never reads any; the
-  # leader deletes one a dead worker left unowned by name, from the run's
-  # database row.
+  # One Secret per runner Job carries that run's credentials, created with
+  # the Job as its owner, so garbage collection deletes it with the Job.
+  # Create alone: the worker writes them and never reads, changes or
+  # deletes any.
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["create", "patch", "delete"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

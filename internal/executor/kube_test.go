@@ -13,6 +13,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -24,6 +25,8 @@ import (
 const (
 	headSHA = "0123456789abcdef0123456789abcdef01234567"
 	baseSHA = "89abcdef0123456789abcdef0123456789abcdef"
+	runA    = "aaaaaaaa-0000-0000-0000-000000000000"
+	runB    = "bbbbbbbb-0000-0000-0000-000000000000"
 )
 
 func spec() Spec {
@@ -191,7 +194,7 @@ func checkRunnerEnv(t *testing.T, vars []corev1.EnvVar) {
 		optional bool
 	}{"KRITIKA_GIT_TOKEN": {"git-token", false}, "KRITIKA_GATEWAY_TOKEN": {"gateway-token", false}, "KRITIKA_DATABASE_TOKEN": {"database-token", false}} {
 		ref := env[name].ValueFrom
-		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritika-run-01234567" || ref.SecretKeyRef.Key != want.key ||
+		if ref == nil || ref.SecretKeyRef == nil || ref.SecretKeyRef.Name != "kritika-run-0123456789abcdef-run" || ref.SecretKeyRef.Key != want.key ||
 			(ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional) != want.optional {
 			t.Fatalf("%s = %+v", name, env[name])
 		}
@@ -230,7 +233,7 @@ func checkSpecMount(t *testing.T, pod corev1.PodSpec, c corev1.Container) {
 			vol = v.Secret
 		}
 	}
-	if !mounted || vol == nil || vol.SecretName != "kritika-run-01234567" || len(vol.Items) != 1 ||
+	if !mounted || vol == nil || vol.SecretName != "kritika-run-0123456789abcdef-run" || len(vol.Items) != 1 ||
 		vol.Items[0].Key != "run-spec.json" || vol.Items[0].Path != "spec.json" {
 		t.Fatalf("spec mount = %v, volume = %+v", mounted, vol)
 	}
@@ -711,18 +714,68 @@ func waitJob(t *testing.T, client *fake.Clientset, created <-chan k8stesting.Act
 	return nil
 }
 
+func TestDeleteRun(t *testing.T) {
+	runJob := func(runID string) *batchv1.Job {
+		return &batchv1.Job{Name: jobName(runID), Namespace: "kritika"}
+	}
+	tests := []struct {
+		name    string
+		objects []runtime.Object
+		failure error
+		wantErr bool
+	}{
+		{name: "present", objects: []runtime.Object{runJob(runA), runJob(runB)}},
+		{name: "already gone", objects: []runtime.Object{runJob(runB)}},
+		{name: "api failure", objects: []runtime.Object{runJob(runA)}, failure: apierrors.NewForbidden(batchv1.Resource("jobs"), "x", errors.New("no")), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewClientset(tt.objects...)
+			if tt.failure != nil {
+				client.PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, tt.failure
+				})
+			}
+			k := &Kube{Client: client, Namespace: "kritika"}
+			err := k.DeleteRun(t.Context(), runA)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("DeleteRun() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			list, err := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, j := range list.Items {
+				if j.Name == jobName(runA) && !tt.wantErr {
+					t.Fatalf("job %s still present", j.Name)
+				}
+			}
+			if len(tt.objects) > 1 && len(list.Items) == 0 {
+				t.Fatal("the other run's Job was deleted too")
+			}
+		})
+	}
+}
+
+// TestKubeRunSecretLifecycle: the run's Secret, named by the whole run ID,
+// is created after its Job, with the Job as its owner from the start, and
+// never changed.
 func TestKubeRunSecretLifecycle(t *testing.T) {
 	client := fake.NewSimpleClientset()
+	client.PrependReactor("create", "jobs", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		a.(k8stesting.CreateAction).GetObject().(*batchv1.Job).UID = "this-run"
+		return false, nil, nil
+	})
 	k := newKube(t, client)
 	ctx, cancel := context.WithCancel(t.Context())
-	created := reacted(client, "create", "jobs")
-	owned := reacted(client, "patch", "secrets")
+	created := reacted(client, "create", "secrets")
 	done := make(chan Result, 1)
 	go func() { done <- k.Run(ctx, spec()) }()
-	j := waitJob(t, client, created)
-
-	awaitAction(t, owned, "the owner reference patch")
-	sec, err := client.CoreV1().Secrets("kritika").Get(t.Context(), j.Name, metav1.GetOptions{})
+	name := awaitAction(t, created, "the Secret's creation").(k8stesting.CreateAction).GetObject().(*corev1.Secret).Name
+	if name != "kritika-run-0123456789abcdef-run" {
+		t.Fatalf("secret name = %q, want the whole run ID in it", name)
+	}
+	sec, err := client.CoreV1().Secrets("kritika").Get(t.Context(), name, metav1.GetOptions{})
 	if err != nil || len(sec.OwnerReferences) != 1 {
 		t.Fatalf("secret = %+v, %v; want one owner reference", sec, err)
 	}
@@ -738,40 +791,116 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 		t.Fatalf("secret labels = %v", sec.Labels)
 	}
 	ref := sec.OwnerReferences[0]
-	if ref.Kind != "Job" || ref.APIVersion != "batch/v1" || ref.Name != j.Name ||
+	if ref.Kind != "Job" || ref.APIVersion != "batch/v1" || ref.Name != jobName(spec().Job.RunID) || ref.UID != "this-run" ||
 		ref.Controller == nil || *ref.Controller || ref.BlockOwnerDeletion == nil || *ref.BlockOwnerDeletion {
 		t.Fatalf("owner reference = %+v", ref)
 	}
 
 	var order []string
-	for _, a := range client.Actions() {
-		if a.GetVerb() == "create" || a.GetVerb() == "patch" {
+	for _, a := range calls(client) {
+		if a.GetVerb() != "get" {
 			order = append(order, a.GetVerb()+" "+a.GetResource().Resource)
 		}
 	}
-	if strings.Join(order, ",") != "create secrets,create jobs,patch secrets" {
+	if strings.Join(order, ",") != "create jobs,create secrets" {
 		t.Fatalf("order = %v", order)
 	}
 	cancel()
 	<-done
 }
 
+// TestKubeRunNeverStartsWhenSecretCreateFails: a Secret the API refuses
+// leaves a run that never started, its Job deleted rather than left waiting
+// for the Secret; a refusal is not sent again.
 func TestKubeRunNeverStartsWhenSecretCreateFails(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	client.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("etcdserver: request timed out")
+	client.PrependReactor("create", "jobs", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		a.(k8stesting.CreateAction).GetObject().(*batchv1.Job).UID = "this-run"
+		return false, nil, nil
 	})
+	sent := 0
+	client.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		sent++
+		return true, nil, apierrors.NewForbidden(corev1.Resource("secrets"), "", errors.New("denied"))
+	})
+	deleted := reacted(client, "delete", "jobs")
 	res := newKube(t, client).Run(t.Context(), spec())
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "request timed out") || !res.NeverStarted {
-		t.Fatalf("res = %+v, want the create error of a run that never started", res)
+	if !apierrors.IsForbidden(res.Err) || !res.NeverStarted || sent != 1 {
+		t.Fatalf("res = %+v after %d creates, want the refusal of a run that never started after 1", res, sent)
 	}
 	jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
 	if len(jobs.Items) != 0 {
-		t.Fatalf("a Job was created without its Secret: %v", jobs.Items)
+		t.Fatalf("a Job was left without its Secret: %v", jobs.Items)
+	}
+	p := awaitAction(t, deleted, "the Job's deletion").(k8stesting.DeleteAction).GetDeleteOptions().Preconditions
+	if p == nil || p.UID == nil || *p.UID != "this-run" {
+		t.Fatalf("delete preconditions = %+v, want the run's Job's UID", p)
 	}
 }
 
-func TestKubeRunDeletesSecretWhenJobCreateFails(t *testing.T) {
+// TestKubeRunCannotSayASecretWasNotStored: a Secret whose creates both
+// failed without the API refusing them, the first stored all the same, may
+// have started the pod: the run, its Job deleted, is not one that never
+// started.
+func TestKubeRunCannotSayASecretWasNotStored(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	sent := 0
+	client.PrependReactor("create", "secrets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		// The tracker has its own lock, which the Fake's reactors do not hold.
+		if sent++; sent == 1 {
+			if err := client.Tracker().Add(a.(k8stesting.CreateAction).GetObject()); err != nil {
+				t.Error(err)
+			}
+		}
+		return true, nil, errors.New("http2: client connection lost")
+	})
+	res := newKube(t, client).Run(t.Context(), spec())
+	if res.NeverStarted || res.Err == nil || !strings.Contains(res.Err.Error(), "connection lost") || sent != 2 {
+		t.Fatalf("res = %+v after %d creates, want a failure not called unstarted after 2", res, sent)
+	}
+	if jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{}); len(jobs.Items) != 0 {
+		t.Fatalf("the Job must be deleted, %d left", len(jobs.Items))
+	}
+}
+
+// TestKubeRunKeepsASecretStoredThoughItsCreateFailed: a Secret the API
+// stored though its create failed, the answer lost, is found by sending it
+// again, and the run goes on in the pod that may be using it already.
+func TestKubeRunKeepsASecretStoredThoughItsCreateFailed(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	sent := 0
+	client.PrependReactor("create", "secrets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if sent++; sent > 1 {
+			return false, nil, nil
+		}
+		// The tracker has its own lock, which the Fake's reactors do not hold.
+		if err := client.Tracker().Add(a.(k8stesting.CreateAction).GetObject()); err != nil {
+			t.Error(err)
+		}
+		return true, nil, errors.New("http2: client connection lost")
+	})
+	k := newKube(t, client)
+	created := reacted(client, "create", "jobs")
+	done := make(chan Result, 1)
+	go func() { done <- k.Run(t.Context(), spec()) }()
+	j := waitJob(t, client, created)
+	j.Status.Succeeded = 1
+	if _, err := client.BatchV1().Jobs("kritika").UpdateStatus(t.Context(), j, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case res := <-done:
+		if res.Err != nil || res.NeverStarted || sent != 2 {
+			t.Fatalf("res = %+v after %d creates, want the run's success after 2", res, sent)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not go on with its stored Secret")
+	}
+}
+
+// TestKubeRunCreatesNoSecretWhenJobCreateFails: a Job the API refuses
+// leaves no Secret to clean up, as none is created without its owner.
+func TestKubeRunCreatesNoSecretWhenJobCreateFails(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	client.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("quota exceeded")
@@ -780,9 +909,10 @@ func TestKubeRunDeletesSecretWhenJobCreateFails(t *testing.T) {
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "quota exceeded") || !res.NeverStarted {
 		t.Fatalf("res = %+v, want the create error of a run that never started", res)
 	}
-	secrets, _ := client.CoreV1().Secrets("kritika").List(t.Context(), metav1.ListOptions{})
-	if len(secrets.Items) != 0 {
-		t.Fatalf("secret left behind: %v", secrets.Items)
+	for _, a := range client.Actions() {
+		if a.GetResource().Resource == "secrets" {
+			t.Fatalf("%s secrets without the Job", a.GetVerb())
+		}
 	}
 }
 
@@ -855,52 +985,36 @@ func TestKubeRunDeletesJobWhenCreateFailsOnCancel(t *testing.T) {
 	if res.Err == nil {
 		t.Fatal("a failed create must produce an error")
 	}
-	var jobDeleted, secretDeleted bool
+	var jobDeleted bool
 	for _, a := range client.Actions() {
-		if d, ok := a.(k8stesting.DeleteAction); ok && d.GetName() == "kritika-run-01234567" {
-			switch a.GetResource().Resource {
-			case "jobs":
-				jobDeleted = true
-			case "secrets":
-				secretDeleted = true
-			}
+		if d, ok := a.(k8stesting.DeleteAction); ok && d.GetName() == "kritika-run-01234567" && a.GetResource().Resource == "jobs" {
+			jobDeleted = true
+		}
+		if a.GetResource().Resource == "secrets" {
+			t.Fatalf("%s secrets for a Job that may not exist", a.GetVerb())
 		}
 	}
-	if !jobDeleted || !secretDeleted {
-		t.Fatalf("job deleted = %v, secret deleted = %v", jobDeleted, secretDeleted)
-	}
-}
-
-func TestKubeRunCleansUpWhenOwnerPatchFails(t *testing.T) {
-	client := fake.NewSimpleClientset()
-	client.PrependReactor("patch", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("conflict")
-	})
-	res := newKube(t, client).Run(t.Context(), spec())
-	if res.Err == nil || !strings.Contains(res.Err.Error(), "conflict") || !res.NeverStarted {
-		t.Fatalf("res = %+v, want the patch error of a run that never started", res)
-	}
-	jobs, _ := client.BatchV1().Jobs("kritika").List(t.Context(), metav1.ListOptions{})
-	secrets, _ := client.CoreV1().Secrets("kritika").List(t.Context(), metav1.ListOptions{})
-	if len(jobs.Items) != 0 || len(secrets.Items) != 0 {
-		t.Fatalf("left behind: %d jobs, %d secrets", len(jobs.Items), len(secrets.Items))
+	if !jobDeleted {
+		t.Fatal("the Job the server may have persisted must be deleted")
 	}
 }
 
 // TestKubeRunCancelledInSetupSaysWhy: a run cancelled while it is set up
 // fails the step under way, and its error carries the cancellation's
-// cause beside the step's, so the run's Event says why it ended.
+// cause beside the step's, so the run's Event says why it ended. A Secret
+// whose create was cut off may have been stored, so the run is not one
+// that surely never started.
 func TestKubeRunCancelledInSetupSaysWhy(t *testing.T) {
 	cause := errors.New("cancelled from the dashboard")
 	ctx, cancel := context.WithCancelCause(t.Context())
 	client := fake.NewSimpleClientset()
-	client.PrependReactor("patch", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+	client.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
 		cancel(cause)
 		return true, nil, context.Canceled
 	})
 	res := newKube(t, client).Run(ctx, spec())
-	if !res.NeverStarted || !errors.Is(res.Err, cause) || !strings.Contains(res.Err.Error(), "own secret") {
-		t.Fatalf("res = %+v, want the patch's error with the cancellation's cause", res)
+	if res.NeverStarted || !errors.Is(res.Err, cause) || !strings.Contains(res.Err.Error(), "create secret") {
+		t.Fatalf("res = %+v, want the Secret's error with the cancellation's cause", res)
 	}
 }
 
@@ -911,8 +1025,8 @@ func TestKubeRunRefusedInSetupStaysRefused(t *testing.T) {
 	cause := errors.New("cancelled from the dashboard")
 	ctx, cancel := context.WithCancelCause(t.Context())
 	client := fake.NewSimpleClientset()
-	client.PrependReactor("patch", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("secrets is forbidden")
+	client.PrependReactor("create", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(corev1.Resource("secrets"), "", errors.New("denied"))
 	})
 	client.PrependReactor("delete", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
 		cancel(cause)
