@@ -99,6 +99,8 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"an embedder too wide for the index", embeddingDoc("dims: 4096"), "embedding.dims must be between 1 and 4000"},
 		{"an embedder with a negative bound", embeddingDoc("maxBatch: -1"), "must not be negative"},
 		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},
+		{"an embedder with a margin above 1", embeddingDoc("similarMargin: 1.5"), "embedding.similarMargin must be between 0 and 1"},
+		{"an embedder with a negative margin", embeddingDoc("similarMargin: -0.1"), "embedding.similarMargin must be between 0 and 1"},
 		{"a query prompt without a floor", embeddingDoc(`queryPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"a document prompt without a floor", embeddingDoc(`documentPrompt: "passage: "`), "need embedding.similarFloor set"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
@@ -142,6 +144,12 @@ func TestParseEmbedding(t *testing.T) {
 	}
 	if f, err := Parse([]byte(embeddingDoc("similarFloor: 0.7"))); err != nil || f.Embedding.Floor() != 0.7 {
 		t.Fatalf("Parse(similarFloor: 0.7) = %v, floor %v", err, f)
+	}
+	if e.Margin() != DefaultSimilarMargin {
+		t.Fatalf("Margin = %g, want the default %g", e.Margin(), DefaultSimilarMargin)
+	}
+	if f, err := Parse([]byte(embeddingDoc("similarMargin: 0.05"))); err != nil || f.Embedding.Margin() != 0.05 {
+		t.Fatalf("Parse(similarMargin: 0.05) = %v, margin %v", err, f)
 	}
 	if e.QueryPrompt != "" || e.DocumentPrompt != "" {
 		t.Fatalf("prompts = %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt)

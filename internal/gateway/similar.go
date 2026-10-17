@@ -23,7 +23,8 @@ import (
 )
 
 // Similarity retrieval bounds: neighbours per query and chunks kept. The
-// floor below which a neighbour is noise is the embedder's.
+// floor and the margin below a query's best match, under which a
+// neighbour is noise, are the embedder's.
 const (
 	similarPerQuery = 4
 	similarMax      = 10
@@ -203,21 +204,36 @@ func (g *Server) similar(
 	if err != nil {
 		return nil, tokens, true, err
 	}
-	chunks = keepSimilar(hits, emb.Floor())
-	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "kept", len(chunks), "tokens", tokens)
+	chunks = keepSimilar(hits, emb.Floor(), emb.Margin())
+	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "margin", emb.Margin(), "kept", len(chunks),
+		"tokens", tokens)
 	return chunks, tokens, true, nil
 }
 
-// keepSimilar is the hits at or above floor, each chunk once, the most
-// similar first and at most similarMax of them, each labelled with its
-// similarity.
-func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
-	hits = slices.Clone(hits)
-	slices.SortStableFunc(hits, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
-	seen := map[string]bool{}
-	chunks := make([]contextpack.Chunk, 0, min(len(hits), similarMax))
+// keepSimilar is the hits at or above floor and within margin of the best
+// hit of their query, each chunk once, the most similar first and at most
+// similarMax of them, each labelled with its similarity. Each query's
+// scores sit at a height of their own, set by the code it is near, so one
+// floor cuts one query's good matches and keeps another's noise; the
+// margin is measured from each query's best instead.
+func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.Chunk {
+	best := map[int]float64{}
 	for _, h := range hits {
-		if h.Similarity < floor || len(chunks) == similarMax {
+		if s, ok := best[h.Query]; !ok || h.Similarity > s {
+			best[h.Query] = h.Similarity
+		}
+	}
+	kept := make([]store.SimilarHit, 0, len(hits))
+	for _, h := range hits {
+		if h.Similarity >= floor && h.Similarity >= best[h.Query]-margin {
+			kept = append(kept, h)
+		}
+	}
+	slices.SortStableFunc(kept, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
+	seen := map[string]bool{}
+	chunks := make([]contextpack.Chunk, 0, min(len(kept), similarMax))
+	for _, h := range kept {
+		if len(chunks) == similarMax {
 			break
 		}
 		key := fmt.Sprintf("%s:%d", h.Chunk.Path, h.Chunk.StartLine)

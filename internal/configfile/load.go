@@ -324,6 +324,10 @@ func (f *File) validateEmbedding() error {
 	if e.SimilarFloor < 0 || e.SimilarFloor > 1 {
 		return fmt.Errorf("configfile: embedding.similarFloor must be between 0 and 1 (a cosine similarity), got %g", e.SimilarFloor)
 	}
+	if e.SimilarMargin < 0 || e.SimilarMargin > 1 {
+		return fmt.Errorf("configfile: embedding.similarMargin must be between 0 and 1 (a difference of cosine similarities), got %g",
+			e.SimilarMargin)
+	}
 	// Prompts move every score, up or down depending on the model, so the
 	// default floor could keep everything or nothing without a sign of it.
 	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "") {

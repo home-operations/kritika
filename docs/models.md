@@ -442,16 +442,22 @@ models.
 | `maxBatch`       | 64      | inputs in one request                                                                                                   |
 | `maxBatchChars`  | 200,000 | characters in one request                                                                                               |
 | `maxItemChars`   | 16,000  | characters in one input                                                                                                 |
-| `similarFloor`   | 0.5     | the cosine similarity a chunk needs to be offered as similar code; required with a [prompt](#prompts)                   |
+| `similarFloor`   | 0.5     | the least cosine similarity a chunk needs to be offered as similar code; required with a [prompt](#prompts)             |
+| `similarMargin`  | 0.1     | how far below the best match of its query a chunk may score and still be offered                                        |
 | `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query                                                       |
 | `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                            |
 
 With an embedder, a review's prompt carries the index's chunks nearest the
-change, and the agent gets a `search_code` tool over the same index; both
-keep only chunks at or above `similarFloor`. Where useful matches part
-from noise depends on the model and the repository: a small embedder on a
-repository of similar files can score nearly everything above 0.5, and a
-floor of about 0.7 keeps the matches that mean something.
+change, and the agent gets a `search_code` tool over the same index. Both
+keep a chunk only when it scores at least `similarFloor` and no more than
+`similarMargin` below the best match of its query: a hunk of the diff, or
+a `search_code` query. How high matches score depends on the model and on
+the code a query is near: a repository of similar files scores nearly
+everything high, one of varied code lower, and the hunks of one diff
+differ too. The margin follows each query's own best match, so one
+setting holds across repositories where a floor can't: keep the floor
+low, under the weakest match worth showing anywhere, and narrow the
+margin to keep fewer.
 
 Without an embedder, indexing is off and reviews run without similar code.
 The index holds one model, dimension and document prompt: a configuration
@@ -498,10 +504,12 @@ what `search_code` does; kritika sends one pair for both. OpenAI's
 
 Prompts move every score, up for some models and down for others, so a
 floor tuned without them stops separating the same chunks, and the
-configuration refuses a prompt without `similarFloor`. A review's **Run
-details** conversation lists each similar chunk with its score,
-`for similarity 0.42`: set the floor just below the chunks worth keeping.
-A prompt counts toward `maxItemChars`, and at the defaults leaves every
+configuration refuses a prompt without `similarFloor`. They can widen or
+narrow the gaps between matches as well, which `similarMargin` measures.
+A review's **Run details** conversation lists each similar chunk with its
+score, `for similarity 0.42`: set the floor under the weakest chunk worth
+keeping, and the margin to the gap that still holds the ones that are. A
+prompt counts toward `maxItemChars`, and at the defaults leaves every
 query and chunk whole.
 
 A new `queryPrompt` applies once kritika restarts with it, as any
