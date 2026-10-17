@@ -23,7 +23,7 @@ func (w *Review) Timeout(job *river.Job[jobs.ReviewArgs]) time.Duration {
 // runs, so its timeout allows for the most parts.
 func agentRunTimeout(file *configfile.File, accountID, repositoryID string, review bool) time.Duration {
 	account, _ := file.AccountByID(accountID)
-	deadline, _ := file.RunnerFor()
+	deadline := file.RunnerDeadline()
 	if account != nil {
 		agent := repoSettings(file, account, repositoryID).Agent
 		timeout := agent.Timeout
@@ -38,8 +38,7 @@ func agentRunTimeout(file *configfile.File, accountID, repositoryID string, revi
 // Timeout implements river.Worker: the runner's deadline plus embedding
 // and writing the generation, which waits on embedding leases.
 func (w *Index) Timeout(*river.Job[jobs.IndexArgs]) time.Duration {
-	deadline, _ := w.Current.Get().RunnerFor()
-	return min(deadline+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
+	return min(w.Current.Get().RunnerDeadline()+jobtimeout.IndexWriteHeadroom, jobtimeout.MaxJobTimeout)
 }
 
 // Timeout implements river.Worker: a follow-up's agent runs in a runner as

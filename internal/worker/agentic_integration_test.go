@@ -386,7 +386,7 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	t.Cleanup(srv.Close)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "model-key")
-	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":60}}`)
 	// Credentials in the provider's URL, which the SDK prints in its errors,
 	// must not reach a runner either.
 	providerURL := strings.Replace(srv.URL, "http://", "http://kritika:provider-secret@", 1)

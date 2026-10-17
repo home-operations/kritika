@@ -40,16 +40,23 @@ func spec() Spec {
 			Agent:  &runner.AgentLimits{}, Model: &runner.ModelEndpoint{GatewayURL: "http://kritika-gateway:8082", Model: "review"},
 			Prompt: &runner.Prompt{Repository: "acme/widgets"},
 		},
-		Secrets:   runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", DatabaseToken: "db_run_token"},
-		Deadline:  5 * time.Minute,
-		Resources: map[string]any{"limits": map[string]any{"memory": "2Gi"}},
+		Secrets:  runner.Secrets{GitToken: "ghs_secret_token", GatewayToken: "krk_run_token", DatabaseToken: "db_run_token"},
+		Deadline: 5 * time.Minute,
 	}
 }
 
+// withImage is a pod template of the runner container alone, running image.
+func withImage(image string) PodTemplate {
+	return PodTemplate{Spec: PodTemplateSpec{Containers: []TemplateContainer{{Name: runnerRole, Image: image}}}}
+}
+
 func TestJobSpec(t *testing.T) {
-	k := &Kube{Namespace: "kritika", Image: "ttl.sh/x:1h", ImagePullPolicy: "IfNotPresent", ServiceAccount: "kritika-runner", DatabaseSecret: "kritika-postgres-runner", DatabaseSecretKey: "uri",
-		DatabaseRole: "custom_runner", GatewayURL: "http://kritika-gateway:8082", RuntimeClass: "gvisor", TTL: 10 * time.Minute}
-	j := mustJob(t, k, spec())
+	k := &Kube{Namespace: "kritika", ServiceAccount: "kritika-runner", DatabaseSecret: "kritika-postgres-runner", DatabaseSecretKey: "uri",
+		DatabaseRole: "custom_runner", GatewayURL: "http://kritika-gateway:8082", PodTemplate: PodTemplate{Spec: PodTemplateSpec{
+			RuntimeClassName: "gvisor",
+			Containers:       []TemplateContainer{{Name: runnerRole, Image: "ttl.sh/x:1h", ImagePullPolicy: corev1.PullIfNotPresent}},
+		}}}
+	j := k.job(spec())
 	if j.Name != "kritika-run-01234567" || j.Namespace != "kritika" {
 		t.Fatalf("name/namespace = %s/%s", j.Name, j.Namespace)
 	}
@@ -71,18 +78,12 @@ func TestJobSpec(t *testing.T) {
 	if c.Image != "ttl.sh/x:1h" || c.ImagePullPolicy != corev1.PullIfNotPresent || len(c.Args) != 1 || c.Args[0] != "run" {
 		t.Fatalf("container = %+v", c)
 	}
-	if bare := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec.Containers[0]; bare.ImagePullPolicy != "" {
-		t.Fatal("a Kube without a pull policy must leave the container on Kubernetes' default")
-	}
 	checkRunnerEnv(t, c.Env)
 	checkProxyEnv(t, c.Env, "http://:$(KRITIKA_GATEWAY_TOKEN)@kritika-gateway:8082")
 	checkSpecMount(t, pod, c)
-	if env := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env,
+	if env := (&Kube{Namespace: "kritika", PodTemplate: withImage("x")}).job(spec()).Spec.Template.Spec.Containers[0].Env; slices.ContainsFunc(env,
 		func(e corev1.EnvVar) bool { return e.Name == "HTTPS_PROXY" }) {
 		t.Fatal("a Kube without a gateway must hand the runner no proxy")
-	}
-	if c.Resources.Limits.Memory().String() != "2Gi" {
-		t.Fatalf("resources = %+v", c.Resources)
 	}
 	if !*c.SecurityContext.ReadOnlyRootFilesystem || !*pod.SecurityContext.RunAsNonRoot {
 		t.Fatal("runner pod must be read-only and non-root")
@@ -90,15 +91,25 @@ func TestJobSpec(t *testing.T) {
 	if pod.RuntimeClassName == nil || *pod.RuntimeClassName != "gvisor" {
 		t.Fatalf("runtimeClassName = %v, want gvisor", pod.RuntimeClassName)
 	}
-	if bare := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec; bare.RuntimeClassName != nil {
-		t.Fatal("a Kube without a RuntimeClass must leave the pod on the default runtime")
+}
+
+// TestJobSpecDefaults: templates that name the runner's image alone leave
+// the pod's runtime, resources, affinity and pull policy to the cluster,
+// and keep a finished Job for the default TTL.
+func TestJobSpecDefaults(t *testing.T) {
+	j := (&Kube{Namespace: "kritika", PodTemplate: withImage("x")}).job(spec())
+	if pod := j.Spec.Template.Spec; pod.RuntimeClassName != nil || pod.Resources != nil || pod.Affinity != nil || pod.Containers[0].ImagePullPolicy != "" {
+		t.Fatalf("pod spec = %+v, want the cluster's defaults", pod)
+	}
+	if *j.Spec.TTLSecondsAfterFinished != int32(defaultTTL/time.Second) {
+		t.Fatalf("ttl = %d, want the default", *j.Spec.TTLSecondsAfterFinished)
 	}
 }
 
 // TestJobSpecPodFailurePolicy: a pod Kubernetes disrupts fails its Job by
 // the pod failure policy, which names the failure once the pod is gone.
 func TestJobSpecPodFailurePolicy(t *testing.T) {
-	j := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec())
+	j := (&Kube{Namespace: "kritika", PodTemplate: withImage("x")}).job(spec())
 	if p := j.Spec.PodFailurePolicy; p == nil || len(p.Rules) != 1 || p.Rules[0].Action != batchv1.PodFailurePolicyActionFailJob ||
 		len(p.Rules[0].OnPodConditions) != 1 || p.Rules[0].OnPodConditions[0] != (batchv1.PodFailurePolicyOnPodConditionsPattern{
 		Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue}) {
@@ -106,46 +117,8 @@ func TestJobSpecPodFailurePolicy(t *testing.T) {
 	}
 }
 
-func TestJobSpecRefusesBadResources(t *testing.T) {
-	for _, r := range []map[string]any{
-		{"limits": map[string]any{"memory": "lots"}},
-		{"limit": map[string]any{"memory": "2Gi"}},
-	} {
-		s := spec()
-		s.Resources = r
-		if _, err := (&Kube{Namespace: "kritika", Image: "x"}).job(s); err == nil || !strings.Contains(err.Error(), "runner.resources") {
-			t.Fatalf("job(%v) = %v, want a runner.resources error", r, err)
-		}
-	}
-}
-
-func TestCheckResources(t *testing.T) {
-	for _, tt := range []struct {
-		resources map[string]any
-		ok        bool
-	}{
-		{nil, true},
-		{map[string]any{"requests": map[string]any{"cpu": "500m", "memory": "1Gi"}, "limits": map[string]any{"memory": "2Gi"}}, true},
-		{map[string]any{"limits": map[string]any{"cpu": "2 cores"}}, false},
-		{map[string]any{"limit": map[string]any{"memory": "2Gi"}}, false},
-	} {
-		if err := CheckResources(tt.resources); (err == nil) != tt.ok {
-			t.Errorf("CheckResources(%v) = %v, want ok %v", tt.resources, err, tt.ok)
-		}
-	}
-}
-
-func mustJob(t *testing.T, k *Kube, s Spec) *batchv1.Job {
-	t.Helper()
-	j, err := k.job(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return j
-}
-
 func TestJobSpecKeepsImagePath(t *testing.T) {
-	pod := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec()).Spec.Template.Spec
+	pod := (&Kube{Namespace: "kritika", PodTemplate: withImage("x")}).job(spec()).Spec.Template.Spec
 	for _, v := range pod.Volumes {
 		if v.Image != nil {
 			t.Fatalf("unexpected image volume: %s", v.Name)
@@ -660,7 +633,7 @@ func TestKubeRunRemembersAStartedPod(t *testing.T) {
 // newKube is an executor over client whose watch has started.
 func newKube(t *testing.T, client *fake.Clientset) *Kube {
 	t.Helper()
-	k := &Kube{Client: client, Namespace: "kritika", Image: "img", ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
+	k := &Kube{Client: client, Namespace: "kritika", PodTemplate: withImage("img"), ServiceAccount: "sa", DatabaseSecret: "s", DatabaseSecretKey: "uri", Poll: 10 * time.Millisecond}
 	t.Cleanup(k.Stop)
 	if err := k.Start(t.Context()); err != nil {
 		t.Fatal(err)

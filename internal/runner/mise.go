@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/textcut"
 )
@@ -139,16 +138,15 @@ func resolved(path string) string {
 // which mise layers over the image's system config, with its lock beside
 // it; its tools install at what the lock pins, and one the lock does not
 // pin for this platform is not offered unless the image has that version
-// installed already. replacements, when set, rewrite the URLs mise
-// downloads from, and reach mise alone; cached names the hosts whose
-// downloads the gateway keeps, which mise then reaches through the
+// installed already. cached names the hosts whose downloads the gateway
+// keeps, which mise then reaches through the
 // gateway's cache, and cacheLocked says the gateway keeps a locked
 // install's downloads from any host, which the repository's tools then
 // reach it for. credentialed names the commands that run with one of the
 // run's credentials, which a repository's own binary is not offered as.
 // notes say what was not offered and why, for the review's summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, replacements []config.MiseURLReplacement, cached []string, cacheLocked bool,
+	ctx context.Context, bin, home string, base []string, cached []string, cacheLocked bool,
 	repo *repoMiseConfig, credentialed []string, secrets Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if repo != nil {
@@ -182,16 +180,13 @@ func newMiseTools(
 		}
 	}
 	common := m.env
-	if len(replacements) > 0 {
-		m.env = append(slices.Clone(common), "MISE_URL_REPLACEMENTS="+miseURLReplacements(replacements))
-	}
 	// The cache's rules send downloads over plain HTTP, which only the
 	// gateway, as the runner's HTTP proxy, may carry. An install made
 	// around the cache keeps them, whatever else reaches a cached host
 	// over plain HTTP too, and tells the gateway by the proxy's username.
 	if len(cached) > 0 && httpProxied(base) {
-		if rules := cacheReplacements(replacements, cached); len(rules) > 0 {
-			m.env = append(slices.Clone(common), "MISE_URL_REPLACEMENTS="+miseURLReplacements(append(slices.Clone(replacements), rules...)))
+		if rules := cacheReplacements(cached); len(rules) > 0 {
+			m.env = append(slices.Clone(common), "MISE_URL_REPLACEMENTS="+miseURLReplacements(rules))
 		}
 		m.uncached = withProxyUser(m.env, egress.UncachedProxyUser)
 	}
@@ -200,7 +195,7 @@ func newMiseTools(
 	// host for a request the proxy's username says is locked; mise checks
 	// each against the lock.
 	if cacheLocked && repo != nil && len(repo.urls) > 0 && httpProxied(base) {
-		m.repoEnv = lockedInstallEnv(common, replacements, cached, repo.urls)
+		m.repoEnv = lockedInstallEnv(common, cached, repo.urls)
 	}
 	notes, err := m.refresh(ctx)
 	if err != nil {
@@ -250,7 +245,7 @@ func newMiseTools(
 // miseURLReplacements is MISE_URL_REPLACEMENTS for rules: the JSON object
 // mise reads them from, keyed by from in the rules' order, which mise
 // keeps, trying the rules in turn until one matches. A map would sort them.
-func miseURLReplacements(rules []config.MiseURLReplacement) string {
+func miseURLReplacements(rules []urlReplacement) string {
 	var b strings.Builder
 	b.WriteByte('{')
 	for i, r := range rules {

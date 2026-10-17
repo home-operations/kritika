@@ -17,24 +17,20 @@ indexGrace: 48h
 transcriptRetention: 72h
 diffRetention: 96h
 runner:
-  deadline: 20m
-  resources: {limits: {memory: 1Gi}}
-  miseUrlReplacements:
-    - {from: "https://github.com/", to: "https://mirror.example.com/github/"}
+  jobTemplate: {spec: {activeDeadlineSeconds: 1200}}
+  podTemplate: {spec: {resources: {limits: {memory: 1Gi}}}}
 `)
-	deadline, resources := f.RunnerFor()
+	spec, _ := f.Run.RunnerPodTemplate["spec"].(map[string]any)
 	if f.PollInterval() != 0 || f.PollLookback() != 2*time.Hour || f.OnboardWindow() != 8 ||
 		f.DisabledIndexGrace() != 48*time.Hour || f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour ||
-		deadline != 20*time.Minute || resources["limits"] == nil || len(f.MiseURLReplacements()) != 1 ||
-		f.MiseURLReplacements()[0].From != "https://github.com/" {
+		f.RunnerDeadline() != 20*time.Minute || spec["resources"] == nil {
 		t.Fatalf("runtime settings = %+v", f.Run)
 	}
 	for _, doc := range []string{
 		"runner: {deadlien: 20m}",
 		"runner: {tools: [{name: helm, image: example.com/helm:test, typo: x}]}",
 		"runner: {miseConfig: \"[tools]\"}",
-		"runner: {miseUrlReplacements: [{from: a, to: b, typo: x}]}",
-		"runner: {deadline: 0s}",
+		"runner: {jobTemplate: {spec: {activeDeadlineSeconds: 0}}}",
 		"onboardWindow: 0",
 		"transcriptRetention: 1h",
 		"webUrll: https://example.com",

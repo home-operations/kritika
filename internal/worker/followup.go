@@ -361,8 +361,7 @@ func (f *followUp) runAgent(
 	ctx context.Context, runID, gitToken string, prompt *runner.Prompt, thread []review.Message, rec reviewRecord,
 ) (*store.AgentRunRow, error) {
 	limits, ref := f.settings.Agent, f.settings.Models.Review
-	deadline, resources := f.file.RunnerFor()
-	deadline = agentDeadline(deadline, limits.Timeout)
+	deadline := agentDeadline(f.file.RunnerDeadline(), limits.Timeout)
 	models := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, f.settings.Models)
 	token, err := f.w.Store.MintGatewayToken(ctx, store.GatewayGrant{
 		RunID: runID, AccountID: f.account.ID(), ReviewID: rec.id, RepositoryID: f.pr.repositoryID, FollowupCommentID: f.comment.ID,
@@ -390,13 +389,11 @@ func (f *followUp) runAgent(
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
 				MaxPromptTokens: limits.MaxPromptTokens, TimeoutSeconds: int(limits.Timeout / time.Second),
 				CommandTimeoutSeconds: int(limits.CommandTimeout / time.Second), Fetches: limits.MaxFetches,
-				Hosts: f.file.EgressHosts(), MiseURLReplacements: f.file.MiseURLReplacements(), CachedHosts: f.file.EgressCached(),
-				CacheLocked: f.file.GatewayCaches(),
+				Hosts: f.file.EgressHosts(), CachedHosts: f.file.EgressCached(), CacheLocked: f.file.GatewayCaches(),
 			},
 		},
-		Secrets:   runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
-		Deadline:  deadline,
-		Resources: resources,
+		Secrets:  runner.Secrets{GitToken: gitToken, GatewayToken: token, DatabaseToken: databaseToken},
+		Deadline: deadline,
 	}, f.account.ID(), runID, ref, f.w.rowWait, f.logger)
 	res, cause, agent, agentErr := out.res, out.cause, out.agent, out.agentErr
 	// The run's record must land even once the job's ctx has ended. A

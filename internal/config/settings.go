@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v4"
+
+	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
 // Settings holds non-secret application settings from the configuration file.
@@ -134,15 +137,6 @@ type Settings struct {
 
 // Runner describes the Jobs created for reviews and indexing.
 type Runner struct {
-	// RunnerImage is the image runner Jobs use, normally the release's
-	// -tools image. Required to serve with the kubernetes executor.
-	RunnerImage string `env:"KRITIKA_RUNNER_IMAGE" yaml:"image,omitempty"`
-
-	// RunnerImagePullPolicy is the runner container's imagePullPolicy:
-	// Always, IfNotPresent or Never. Empty leaves Kubernetes' default for
-	// the image reference.
-	RunnerImagePullPolicy string `env:"KRITIKA_RUNNER_IMAGE_PULL_POLICY" yaml:"imagePullPolicy,omitempty"`
-
 	// RunnerServiceAccount is the permissionless service account runner pods
 	// run as. RunnerDatabaseSecret and RunnerDatabaseSecretKey locate the
 	// runner role's DSN, which the Job injects as KRITIKA_DATABASE_URL.
@@ -150,32 +144,59 @@ type Runner struct {
 	RunnerDatabaseSecret    string `env:"KRITIKA_RUNNER_DATABASE_SECRET" envDefault:"kritika-postgres-runner" yaml:"databaseSecret,omitempty"`
 	RunnerDatabaseSecretKey string `env:"KRITIKA_RUNNER_DATABASE_SECRET_KEY" envDefault:"uri" yaml:"databaseSecretKey,omitempty"`
 
-	// RunnerTTL is how long a finished Job stays for kubectl before
-	// Kubernetes removes it. The run row keeps everything the Job knew.
-	RunnerTTL time.Duration `env:"KRITIKA_RUNNER_TTL" envDefault:"10m" yaml:"ttl,omitempty"`
+	// RunnerJobTemplate is set on every runner Job as a JobTemplateSpec
+	// spells it: its labels and annotations, and its spec's
+	// activeDeadlineSeconds and ttlSecondsAfterFinished. RunnerPodTemplate
+	// is set on its pod as a PodTemplateSpec spells it: labels,
+	// annotations, resources for the whole pod, placement, priority, a
+	// runtime class, hostUsers, and the runner container's image and
+	// imagePullPolicy. The executor refuses any other field at startup.
+	RunnerJobTemplate jsonObject `env:"KRITIKA_RUNNER_JOB_TEMPLATE" yaml:"jobTemplate,omitempty"`
+	RunnerPodTemplate jsonObject `env:"KRITIKA_RUNNER_POD_TEMPLATE" yaml:"podTemplate,omitempty"`
+}
 
-	// RunnerRuntimeClass is the RuntimeClass runner pods run under, such as
-	// a gVisor or Kata class, so a pod that parses untrusted repository
-	// content is kept from the node's kernel. Empty uses the cluster's
-	// default runtime. Advised, not required.
-	RunnerRuntimeClass string `env:"KRITIKA_RUNNER_RUNTIME_CLASS" yaml:"runtimeClass,omitempty"`
+// DefaultRunnerDeadline bounds a runner Job whose jobTemplate sets no
+// activeDeadlineSeconds.
+const DefaultRunnerDeadline = 15 * time.Minute
 
-	// RunnerDeadline bounds a runner Job, and RunnerResources are copied
-	// verbatim into its pod spec, a JSON object of requests and limits.
-	RunnerDeadline  time.Duration `env:"KRITIKA_RUNNER_DEADLINE" envDefault:"15m" yaml:"deadline,omitempty"`
-	RunnerResources jsonObject    `env:"KRITIKA_RUNNER_RESOURCES" yaml:"resources,omitempty"`
-	// RunnerPod places and marks runner pods, as the Kubernetes fields
-	// spell them: nodeSelector, tolerations, affinity,
-	// topologySpreadConstraints, priorityClassName, labels, annotations and
-	// hostUsers. The executor refuses any other field at startup.
-	RunnerPod jsonObject `env:"KRITIKA_RUNNER_POD" yaml:"pod,omitempty"`
-	// RunnerMiseURLReplacements rewrite the URLs runner tools download
-	// from, such as to a caching mirror, as mise's url_replacements, the
-	// one mise setting an admin sets: mise ignores the [settings] of the
-	// image's system config, and a repository's are dropped. mise checks a
-	// locked download against the repository's lock, so a mirror cannot
-	// change what a tool is. Empty leaves every URL as it is.
-	RunnerMiseURLReplacements MiseURLReplacements `env:"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS" yaml:"miseUrlReplacements,omitempty"`
+// RunnerDeadline bounds a runner Job, its jobTemplate's
+// activeDeadlineSeconds, and so the work around it: the job that runs it
+// and the run's gateway token. Validate refuses one that is not a positive
+// whole number of seconds within jobtimeout.MaxRunnerDeadline.
+func (r Runner) RunnerDeadline() time.Duration {
+	d, _ := r.deadline()
+	return d
+}
+
+// deadlineField names the deadline's setting in a refusal.
+const deadlineField = "runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE"
+
+// deadline is RunnerDeadline, and why the jobTemplate's is refused.
+func (r Runner) deadline() (time.Duration, error) {
+	spec, _ := r.RunnerJobTemplate["spec"].(map[string]any)
+	v, set := spec["activeDeadlineSeconds"]
+	if !set || v == nil {
+		return DefaultRunnerDeadline, nil
+	}
+	var seconds float64
+	switch n := v.(type) {
+	case int:
+		seconds = float64(n)
+	case int64:
+		seconds = float64(n)
+	case uint64:
+		seconds = float64(n)
+	case float64:
+		seconds = n
+	default:
+		return DefaultRunnerDeadline, errors.New(deadlineField + " must be a number of seconds")
+	}
+	if seconds != math.Trunc(seconds) || seconds < 1 || seconds > jobtimeout.MaxRunnerDeadline.Seconds() {
+		return DefaultRunnerDeadline, fmt.Errorf("%s must be a whole number of seconds from 1 to %d, "+
+			"or River's %s job timeout cap would cut the runner off early",
+			deadlineField, int64(jobtimeout.MaxRunnerDeadline/time.Second), jobtimeout.MaxJobTimeout)
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 // jsonObject is a JSON object from the environment, kept as loose maps
@@ -217,26 +238,4 @@ func (b *ByteSize) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 	return b.UnmarshalText([]byte(s))
-}
-
-// MiseURLReplacement is one of mise's url_replacements rules: a download
-// URL From matches, as a prefix or, after "regex:", a pattern, becomes To.
-type MiseURLReplacement struct {
-	From string `json:"from" yaml:"from"`
-	To   string `json:"to" yaml:"to"`
-}
-
-// MiseURLReplacements are rules in the order mise tries them, the first
-// that matches a URL rewriting it, so they are a list rather than a map:
-// a JSON array in the environment, a YAML sequence in the file.
-type MiseURLReplacements []MiseURLReplacement
-
-// UnmarshalText decodes the variable's JSON.
-func (r *MiseURLReplacements) UnmarshalText(b []byte) error {
-	return json.Unmarshal(b, (*[]MiseURLReplacement)(r))
-}
-
-// UnmarshalYAML accepts a native sequence alongside the environment's JSON.
-func (r *MiseURLReplacements) UnmarshalYAML(n *yaml.Node) error {
-	return n.Decode((*[]MiseURLReplacement)(r))
 }

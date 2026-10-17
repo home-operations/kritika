@@ -158,7 +158,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 			reviewAttemptFailed(context.Cause(ctx), err, job.Attempt >= job.MaxAttempts)),
 			w.otherReviewRunning(mctx, logger, args.AccountID, pr.id, reviewID))
 	}()
-	deadline, resources := file.RunnerFor()
+	deadline := file.RunnerDeadline()
 	spec := runner.Spec{
 		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, PriorBase: prior.mergeBase,
@@ -180,7 +180,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	if err != nil {
 		return w.agentSpecFailed(ctx, ended, runID, err)
 	}
-	spec.Agent.Hosts, spec.Agent.MiseURLReplacements = file.EgressHosts(), file.MiseURLReplacements()
+	spec.Agent.Hosts = file.EgressHosts()
 	spec.Agent.CachedHosts, spec.Agent.CacheLocked = file.EgressCached(), file.GatewayCaches()
 	b.notes = append(b.notes, promptNotes...)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, reviewID, args.HeadSHA, w.superviseEvery, logger)
@@ -190,7 +190,6 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		Job:         spec,
 		Secrets:     secrets,
 		Deadline:    deadline,
-		Resources:   resources,
 	}, args.AccountID, runID, settings.Models.Review, w.rowWait, logger)
 	// The parts are done with the slots they ran in.
 	releaseExtra()

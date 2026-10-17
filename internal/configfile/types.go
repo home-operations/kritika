@@ -203,10 +203,6 @@ type LimitsSpec struct {
 // DefaultConcurrency applies when no level of the configuration sets one.
 const DefaultConcurrency = 2
 
-// DefaultRunnerDeadline bounds a runner Job when runner.deadline
-// sets none.
-const DefaultRunnerDeadline = 15 * time.Minute
-
 // Defaults are the settings the file writes at its root: they apply to
 // every repository unless an entry overrides them, and Limits to every
 // account unless its entry sets its own.

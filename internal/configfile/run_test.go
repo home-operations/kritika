@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
@@ -17,10 +18,9 @@ func TestRun(t *testing.T) {
 
 	t.Run("defaults when unset", func(t *testing.T) {
 		f := mustLoad(t, minimal)
-		deadline, resources := f.RunnerFor()
 		if f.PollInterval() != 10*time.Minute || f.PollLookback() != 24*time.Hour || f.OnboardWindow() != 4 ||
 			f.DisabledIndexGrace() != 30*24*time.Hour || f.TranscriptRetention() != 30*24*time.Hour || f.DiffRetention() != 30*24*time.Hour ||
-			deadline != DefaultRunnerDeadline || resources != nil {
+			f.RunnerDeadline() != config.DefaultRunnerDeadline {
 			t.Fatalf("run = %+v", f.Run)
 		}
 	})
@@ -28,17 +28,14 @@ func TestRun(t *testing.T) {
 	t.Run("set values, and an interval of 0s turns polling off", func(t *testing.T) {
 		for k, v := range map[string]string{
 			"KRITIKA_POLL_INTERVAL": "0s", "KRITIKA_POLL_LOOKBACK": "1h", "KRITIKA_ONBOARD_WINDOW": "8", "KRITIKA_INDEX_GRACE": "48h",
-			"KRITIKA_TRANSCRIPT_RETENTION": "72h", "KRITIKA_DIFF_RETENTION": "96h", "KRITIKA_RUNNER_DEADLINE": "10m",
-			"KRITIKA_RUNNER_RESOURCES":             `{"limits":{"memory":"1Gi"}}`,
-			"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS": `[{"from":"https://github.com/","to":"https://mirror.example.com/"}]`,
+			"KRITIKA_TRANSCRIPT_RETENTION": "72h", "KRITIKA_DIFF_RETENTION": "96h",
+			"KRITIKA_RUNNER_JOB_TEMPLATE": `{"spec":{"activeDeadlineSeconds":600}}`,
 		} {
 			t.Setenv(k, v)
 		}
 		f := mustLoad(t, minimal)
-		deadline, resources := f.RunnerFor()
 		if f.PollInterval() != 0 || f.PollLookback() != time.Hour || f.OnboardWindow() != 8 || f.DisabledIndexGrace() != 48*time.Hour ||
-			f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour || deadline != 10*time.Minute || resources["limits"] == nil ||
-			len(f.MiseURLReplacements()) != 1 || f.MiseURLReplacements()[0].To != "https://mirror.example.com/" {
+			f.TranscriptRetention() != 72*time.Hour || f.DiffRetention() != 96*time.Hour || f.RunnerDeadline() != 10*time.Minute {
 			t.Fatalf("run = %+v", f.Run)
 		}
 	})
@@ -48,12 +45,12 @@ func TestRun(t *testing.T) {
 		{"KRITIKA_ONBOARD_WINDOW", "0", "KRITIKA_ONBOARD_WINDOW must be positive"},
 		{"KRITIKA_TRANSCRIPT_RETENTION", "1h", "KRITIKA_TRANSCRIPT_RETENTION must be at least 24h"},
 		{"KRITIKA_DIFF_RETENTION", "1h", "KRITIKA_DIFF_RETENTION must be at least 24h"},
-		{"KRITIKA_RUNNER_DEADLINE", fmt.Sprintf("%ds", int64(jobtimeout.MaxRunnerDeadline.Seconds())+1), "KRITIKA_RUNNER_DEADLINE must not exceed"},
-		{"KRITIKA_RUNNER_RESOURCES", "[1]", "KRITIKA_RUNNER_RESOURCES"},
+		{"KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline.Seconds())+1),
+			"KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
+		{"KRITIKA_RUNNER_POD_TEMPLATE", "[1]", "KRITIKA_RUNNER_POD_TEMPLATE"},
 		{"KRITIKA_POLL_LOOKBACK", "soon", "KRITIKA_POLL_LOOKBACK"},
 		{"KRITIKA_RUNNER_TOOLS", "[]", "KRITIKA_RUNNER_TOOLS has been removed"},
 		{"KRITIKA_RUNNER_MISE_CONFIG", "[tools]", "KRITIKA_RUNNER_MISE_CONFIG has been removed"},
-		{"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS", `[{"from":"https://github.com/"}]`, "KRITIKA_RUNNER_MISE_URL_REPLACEMENTS must give every rule"},
 	}
 	for _, tt := range refused {
 		t.Run(tt.env+"="+tt.value, func(t *testing.T) {
@@ -64,7 +61,7 @@ func TestRun(t *testing.T) {
 		})
 	}
 	t.Run("a deadline at the cap", func(t *testing.T) {
-		t.Setenv("KRITIKA_RUNNER_DEADLINE", jobtimeout.MaxRunnerDeadline.String())
+		t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline.Seconds())))
 		mustLoad(t, minimal)
 	})
 }

@@ -43,7 +43,7 @@ func (w *Index) stage(
 	if err != nil {
 		return err
 	}
-	deadline, resources := w.Current.Get().RunnerFor()
+	deadline := w.Current.Get().RunnerDeadline()
 	// The run's token admits its git fetch to the egress proxy and, with
 	// no budget, nothing else. Minted last, so an error leaves none behind.
 	gatewayToken, err := w.Store.MintGatewayToken(ctx, store.GatewayGrant{
@@ -59,7 +59,7 @@ func (w *Index) stage(
 		Labels:      runnerLabels(account.Key(), repository, jobs.QueueIndex, 0),
 		Annotations: runnerAnnotations(job.ID, spec.Head), Job: spec,
 		Secrets:  runner.Secrets{GitToken: token, GatewayToken: gatewayToken, DatabaseToken: databaseToken},
-		Deadline: deadline, Resources: resources,
+		Deadline: deadline,
 	})
 	// Runner accounting survives River cancellation, while sealing staging
 	// requires this attempt to still own the job.

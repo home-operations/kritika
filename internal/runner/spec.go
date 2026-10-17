@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -95,13 +94,9 @@ type AgentLimits struct {
 	// as configfile.EgressHosts lists them, for the tools' descriptions;
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
-	// MiseURLReplacements rewrite the URLs mise downloads tools from, in
-	// the order mise tries them; none leaves every URL as it is.
-	MiseURLReplacements []config.MiseURLReplacement `json:"miseUrlReplacements,omitempty"`
 	// CachedHosts are the hosts whose downloads the gateway keeps, as
 	// configfile.EgressCached lists them, which mise reaches through the
-	// gateway's cache after MiseURLReplacements; none sends no download
-	// through it.
+	// gateway's cache; none sends no download through it.
 	CachedHosts []string `json:"cachedHosts,omitempty"`
 	// CacheLocked says the gateway keeps downloads, as
 	// configfile.GatewayCaches reports, so a repository's locked install

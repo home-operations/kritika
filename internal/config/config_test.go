@@ -62,18 +62,7 @@ func TestLoad(t *testing.T) {
 		{name: "unknown executor", env: map[string]string{"KRITIKA_EXECUTOR": "docker"}, wantErr: true},
 		{name: "removed runner tools", env: map[string]string{"KRITIKA_RUNNER_TOOLS": "[]"}, wantErr: true},
 		{name: "removed mise config", env: map[string]string{"KRITIKA_RUNNER_MISE_CONFIG": "[tools]"}, wantErr: true},
-		{
-			name: "URL replacements in order",
-			env: map[string]string{"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS": `[{"from":"https://github.com/acme/","to":"https://a.example.com/"},` +
-				`{"from":"https://github.com/","to":"https://b.example.com/"}]`},
-			check: func(t *testing.T, c *Config) {
-				r := c.RunnerMiseURLReplacements
-				if len(r) != 2 || r[0].From != "https://github.com/acme/" || r[1].To != "https://b.example.com/" {
-					t.Fatalf("URL replacements = %+v", r)
-				}
-			},
-		},
-		{name: "URL replacements must be JSON", env: map[string]string{"KRITIKA_RUNNER_MISE_URL_REPLACEMENTS": "https://github.com/"}, wantErr: true},
+		{name: "templates must be JSON", env: map[string]string{"KRITIKA_RUNNER_POD_TEMPLATE": "gvisor"}, wantErr: true},
 		{name: "zero thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "0"}, wantErr: true},
 		{name: "negative thread workers", env: map[string]string{"KRITIKA_THREAD_WORKERS": "-1"}, wantErr: true},
 		{name: "zero review workers", env: map[string]string{"KRITIKA_REVIEW_WORKERS": "0"}, wantErr: true},
@@ -159,25 +148,17 @@ func TestCommandValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = cfg.ValidateServe()
-	for _, want := range []string{"KRITIKA_CONFIG_FILE", "KRITIKA_RUNNER_IMAGE", "KRITIKA_WEB_URL", "KRITIKA_GATEWAY_URL"} {
+	for _, want := range []string{"KRITIKA_CONFIG_FILE", "KRITIKA_WEB_URL", "KRITIKA_GATEWAY_URL"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("serve without a runner image, a web URL or the gateway = %v, want %s named", err, want)
+			t.Fatalf("serve without a config file, a web URL or the gateway = %v, want %s named", err, want)
 		}
 	}
 	cfg.ConfigFile = "/etc/kritika/config.yaml"
-	cfg.RunnerImage, cfg.WebURL, cfg.GatewayURL = "img", "https://dash.example.com", "http://kritika-gateway:8082"
+	cfg.WebURL, cfg.GatewayURL = "https://dash.example.com", "http://kritika-gateway:8082"
 	if err := cfg.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}
-	cfg.RunnerImagePullPolicy = "Sometimes"
-	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIKA_RUNNER_IMAGE_PULL_POLICY") {
-		t.Fatalf("serve with an unknown runner pull policy = %v", err)
-	}
-	cfg.RunnerImagePullPolicy = "IfNotPresent"
-	if err := cfg.ValidateServe(); err != nil {
-		t.Fatal(err)
-	}
-	cfg.Executor, cfg.RunnerImage = ExecutorLocal, ""
+	cfg.Executor = ExecutorLocal
 	if err := cfg.ValidateServe(); err == nil || !strings.Contains(err.Error(), "KRITIKA_RUNNER_DATABASE_URL") {
 		t.Fatalf("local executor without a runner DSN = %v", err)
 	}

@@ -25,9 +25,6 @@ type Spec struct {
 	Secrets runner.Secrets
 	// Deadline bounds the whole run.
 	Deadline time.Duration
-	// Resources overrides the pod's resource requirements, as the account's
-	// runner block in the configuration file spells them.
-	Resources map[string]any
 }
 
 // Result is how a run ended, as far as the executor can tell.

@@ -221,8 +221,7 @@ func serve(
 	g.Go(func() error {
 		return reportDrift(ctx, st, current, drift, driftInterval, logger)
 	})
-	_, resources := file.RunnerFor()
-	exec, err := newExecutor(ctx, cfg, resources, logger)
+	exec, err := newExecutor(ctx, cfg, logger)
 	if err != nil {
 		return err
 	}
@@ -504,19 +503,12 @@ func startQueue(ctx context.Context, queue *river.Client[pgx.Tx], logger *slog.L
 	return fmt.Errorf("river: start: %w", err)
 }
 
-// newExecutor builds the runner executor the configuration selects, once
-// the resources every runner Job is given decode as a container's: the
-// Kubernetes types that read them are the executor's, not the
-// configuration's, so this is the earliest a bad value can be refused
-// rather than failing every Job.
-func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]any, logger *slog.Logger) (executor.Executor, error) {
-	if err := executor.CheckResources(resources); err != nil {
-		return nil, fmt.Errorf("runner.resources: KRITIKA_RUNNER_RESOURCES: %w", err)
-	}
-	pod, err := executor.DecodePod(cfg.RunnerPod)
-	if err != nil {
-		return nil, fmt.Errorf("runner.pod: KRITIKA_RUNNER_POD: %w", err)
-	}
+// newExecutor builds the runner executor the configuration selects. A
+// Kubernetes one's templates decode first, then a runner Job built from
+// them is checked by the API: the Kubernetes types that read them are the
+// executor's, not the configuration's, so this is the earliest a bad value
+// can be refused rather than failing every Job.
+func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (executor.Executor, error) {
 	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
 		if err != nil {
@@ -524,19 +516,27 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 		}
 		return &executor.Local{Store: runnerStore}, nil
 	}
+	jobTemplate, err := executor.DecodeJobTemplate(cfg.RunnerJobTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("runner.jobTemplate: KRITIKA_RUNNER_JOB_TEMPLATE: %w", err)
+	}
+	podTemplate, err := executor.DecodePodTemplate(cfg.RunnerPodTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("runner.podTemplate: KRITIKA_RUNNER_POD_TEMPLATE: %w", err)
+	}
 	client, ns, err := executor.NewKubeInCluster()
 	if err != nil {
 		return nil, err
 	}
 	kube := &executor.Kube{
-		Client: client, Namespace: ns, Image: cfg.RunnerImage, ImagePullPolicy: cfg.RunnerImagePullPolicy,
+		Client: client, Namespace: ns, JobTemplate: jobTemplate, PodTemplate: podTemplate,
 		DatabaseRole:   cfg.DatabaseRunnerRole,
 		ServiceAccount: cfg.RunnerServiceAccount, DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
-		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL, Pod: pod,
-		Events: executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
+		GatewayURL: cfg.GatewayURL,
+		Events:     executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
 	}
-	if err := kube.CheckPod(ctx, cfg.RunnerDeadline, resources); err != nil {
-		return nil, fmt.Errorf("runner.pod: KRITIKA_RUNNER_POD: %w", err)
+	if err := kube.CheckJob(ctx, cfg.RunnerDeadline()); err != nil {
+		return nil, fmt.Errorf("runner.jobTemplate, runner.podTemplate: %w", err)
 	}
 	// The watch outlasts ctx, which a signal ends while runs still drain:
 	// startWorker stops it once the queues have stopped.

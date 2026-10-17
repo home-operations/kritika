@@ -71,9 +71,11 @@ It has the same structure as the configuration file and is evaluated with
 The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
 - Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
-- Runner Jobs are configured under `runner`, including `runtimeClass` and
-  `deadline`. The chart derives application settings from runner, database
-  and service values and rejects duplicates under `config`.
+- Runner Jobs are configured under `runner`: `runner.jobTemplate` and
+  `runner.podTemplate` set what kritika takes from a Job's and a pod's
+  template, such as the deadline, resources, placement and runtime class.
+  The chart derives application settings from runner, database and service
+  values and rejects duplicates under `config`.
 - A checksum of the rendered file rolls pods when configuration changes. The
   ConfigMap carries `reloader.stakater.com/ignore`, so Reloader does not roll
   them a second time.
@@ -94,7 +96,8 @@ The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 `config.reviewModel` into `config.review.model`, and password `valueFrom`
 entries into `env` with references in the file. Move
 `config.runnerRuntimeClass` and `config.runnerDeadline` into
-`runner.runtimeClass` and `runner.deadline`. Move automatic auth, app, provider
+`runner.podTemplate.spec.runtimeClassName` and
+`runner.jobTemplate.spec.activeDeadlineSeconds`. Move automatic auth, app, provider
 and policy env configuration into the file, keeping secret values in env with
 explicit file references. See the
 [configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)
@@ -151,12 +154,15 @@ chart confines them:
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
   declares and those a repository's `.kritika/mise.toml` adds, each
-  download checked against the repository's lock;
-  `runner.mise.urlReplacements` sends the downloads to a mirror.
-  `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
-  gVisor; `runner.resources` keeps a runaway run in its own cgroup;
-  `runner.pod` keeps runner pods on nodes of their own, and in a user
-  namespace with `hostUsers: false`.
+  download checked against the repository's lock.
+- `runner.podTemplate` puts runner pods under a sandboxed runtime such as
+  gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
+  with `resources`, and keeps runner pods on nodes of their own, and in a
+  user namespace with `hostUsers: false`.
+- `runner.admissionPolicy.enabled`, on by default, has the cluster refuse,
+  from kritika serve's ServiceAccount, any Job but a runner Job and any
+  Secret but a run's, with ValidatingAdmissionPolicies: cluster-scoped
+  objects the chart's installer must be allowed to create.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
@@ -166,8 +172,7 @@ gateway, runner tools and the sandbox in full.
 `runner.mise.config` and `KRITIKA_RUNNER_MISE_CONFIG` are removed, as
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` were before them. Declare each
 tool in the `.kritika/mise.toml` of the repositories whose reviews use
-it, pinned by `.kritika/mise.lock`, and move a `url_replacements` mirror
-to `runner.mise.urlReplacements`. The runner image declares its six tools
+it, pinned by `.kritika/mise.lock`. The runner image declares its six tools
 itself, so they stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 

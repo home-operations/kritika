@@ -21,8 +21,8 @@ func TestHelmConfiguration(t *testing.T) {
 		t.Skip("helm is required to validate the chart's application configuration")
 	}
 	cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
-		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.32.0",
-		"--set", "runner.runtimeClass=gvisor", "--set", "runner.deadline=20m",
+		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.34.0",
+		"--set", "runner.podTemplate.spec.runtimeClassName=gvisor", "--set", "runner.jobTemplate.spec.activeDeadlineSeconds=1200",
 		"--set", "config.pollInterval=0s", "--set", "gatewayCache.enabled=true", "--set", "gatewayCache.maxSize=512Mi",
 		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com")
 	rendered, err := cmd.CombinedOutput()
@@ -55,9 +55,17 @@ func TestHelmConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered configuration: %v", err)
 	}
-	// The chart sets no URL replacements unless asked to.
-	if f.PollInterval() != 0 || f.Run.RunnerDeadline != 20*time.Minute || f.MiseURLReplacements() != nil {
+	if f.PollInterval() != 0 || f.RunnerDeadline() != 20*time.Minute {
 		t.Fatalf("rendered runtime settings = %+v", f.Run)
+	}
+	// The chart fills the runner container's image, which values leave empty.
+	spec, _ := f.Run.RunnerPodTemplate["spec"].(map[string]any)
+	containers, _ := spec["containers"].([]any)
+	if len(containers) != 1 || spec["runtimeClassName"] != "gvisor" {
+		t.Fatalf("rendered podTemplate = %+v", f.Run.RunnerPodTemplate)
+	}
+	if runner, _ := containers[0].(map[string]any); runner["name"] != "runner" || runner["image"] == "" || runner["image"] == nil {
+		t.Fatalf("rendered runner container = %+v", containers[0])
 	}
 	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 || f.Run.GatewayCacheMaxAge != 24*time.Hour {
 		t.Fatalf("rendered gateway cache = %q, %d, %s", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize, f.Run.GatewayCacheMaxAge)
@@ -75,7 +83,7 @@ func TestHelmConfiguration(t *testing.T) {
 	if err := c.ValidateServe(); err != nil {
 		t.Fatal(err)
 	}
-	if c.RunnerRuntimeClass != "gvisor" || c.RunnerServiceAccount != "kritika-runner" || c.WebURL != "https://kritika.example.com" {
+	if c.RunnerDeadline() != 20*time.Minute || c.RunnerServiceAccount != "kritika-runner" || c.WebURL != "https://kritika.example.com" {
 		t.Fatalf("rendered process settings = %+v", c.Settings)
 	}
 }

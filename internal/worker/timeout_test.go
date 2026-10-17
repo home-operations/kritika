@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -91,7 +92,7 @@ func TestJobTimeouts(t *testing.T) {
 
 	// A runner deadline at configfile's max: the index job lands exactly on
 	// MaxJobTimeout.
-	t.Setenv("KRITIKA_RUNNER_DEADLINE", jobtimeout.MaxRunnerDeadline.String())
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", fmt.Sprintf(`{"spec":{"activeDeadlineSeconds":%d}}`, int64(jobtimeout.MaxRunnerDeadline/time.Second)))
 	current = configfile.NewCurrent(configfiletest.Load(t, timeoutConfigYAML))
 	review, index = &Review{Current: current}, &Index{Current: current}
 	if got, want := review.Timeout(&river.Job[jobs.ReviewArgs]{Args: jobs.ReviewArgs{AccountID: acme.ID(), RepositoryID: acmeRepo("acme/whole")}}),

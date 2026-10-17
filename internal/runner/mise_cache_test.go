@@ -14,29 +14,23 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 func TestCacheReplacements(t *testing.T) {
-	mirror := []config.MiseURLReplacement{{From: "https://github.com/", To: "https://mirror.example.com/github/"}}
 	for _, tt := range []struct {
-		name         string
-		replacements []config.MiseURLReplacement
-		cached       []string
-		want         []config.MiseURLReplacement
+		name   string
+		cached []string
+		want   []urlReplacement
 	}{
-		{"none cached", mirror, nil, nil},
-		{"each host to plain HTTP", nil, []string{"get.helm.sh", "github.com"}, []config.MiseURLReplacement{
+		{"none cached", nil, nil},
+		{"each host to plain HTTP", []string{"get.helm.sh", "github.com"}, []urlReplacement{
 			{From: "https://get.helm.sh/", To: "http://get.helm.sh/"}, {From: "https://github.com/", To: "http://github.com/"},
-		}},
-		{"the admin's rule for a host stands", mirror, []string{"get.helm.sh", "github.com"}, []config.MiseURLReplacement{
-			{From: "https://get.helm.sh/", To: "http://get.helm.sh/"},
 		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := cacheReplacements(tt.replacements, tt.cached); !slices.Equal(got, tt.want) {
+			if got := cacheReplacements(tt.cached); !slices.Equal(got, tt.want) {
 				t.Fatalf("cacheReplacements = %v, want %v", got, tt.want)
 			}
 		})
@@ -61,22 +55,17 @@ func TestWithProxyUser(t *testing.T) {
 	}
 }
 
-// TestMiseToolsCachedHosts: the cached hosts reach mise as rules after the
-// admin's, which keep their place, while the runner has the gateway as
-// its HTTP proxy, and an install made around the cache has the same rules
-// with the proxy's username asking the gateway not to answer from it.
+// TestMiseToolsCachedHosts: the cached hosts reach mise as rules while
+// the runner has the gateway as its HTTP proxy, and an install made around
+// the cache has the same rules with the proxy's username asking the
+// gateway not to answer from it.
 func TestMiseToolsCachedHosts(t *testing.T) {
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, "[tools]\nyq = \""+testYqVersion+"\"\n")
-	rules := []config.MiseURLReplacement{{From: "https://example.com/", To: "https://mirror.example.com/"}}
 	settings := func(t *testing.T, m *miseTools) string {
 		t.Helper()
-		out, err := m.run(t.Context(), "settings", "get", "url_replacements")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(out)
+		return urlReplacementsSetting(t, m, m.env)
 	}
 	const proxy = "http://:krk_token@gateway.example:8082"
 	for _, tt := range []struct {
@@ -89,15 +78,13 @@ func TestMiseToolsCachedHosts(t *testing.T) {
 			if tt.proxy {
 				base = append(base, "HTTP_PROXY="+proxy, "http_proxy="+proxy, "HTTPS_PROXY="+proxy, "https_proxy="+proxy)
 			}
-			m, _, err := newMiseTools(t.Context(), bin, home, base, rules, []string{"get.helm.sh"}, false, nil, nil,
+			m, _, err := newMiseTools(t.Context(), bin, home, base, []string{"get.helm.sh"}, false, nil, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := settings(t, m)
-			mirror, cache := strings.Index(got, `"https://example.com/" = "https://mirror.example.com/"`), strings.Index(got, `"https://get.helm.sh/" = "http://get.helm.sh/"`)
-			if mirror < 0 || (cache < mirror) == tt.proxy {
-				t.Fatalf("mise settings get url_replacements = %s: want the admin's rule, then the cache's only through the gateway", got)
+			if got := settings(t, m); strings.Contains(got, `"https://get.helm.sh/" = "http://get.helm.sh/"`) != tt.proxy {
+				t.Fatalf("mise settings get url_replacements = %q: want the cache's rule only through the gateway", got)
 			}
 			if !tt.proxy {
 				if m.uncached != nil {
@@ -172,7 +159,7 @@ checksum = "sha256:%x"
 	proxy := strings.Replace(gateway.URL, "://", "://:krk_token@", 1)
 	base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy}
 	var logs strings.Builder
-	m, _, err := newMiseTools(t.Context(), bin, home, base, nil, []string{"tools.example.invalid"}, false, repo, nil,
+	m, _, err := newMiseTools(t.Context(), bin, home, base, []string{"tools.example.invalid"}, false, repo, nil,
 		Secrets{Redacted: &Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -248,30 +235,17 @@ checksum = "sha256:%x"
 
 // TestMiseToolsLockedInstalls: while the gateway keeps downloads and is
 // the runner's HTTP proxy, a repository's locked install has a rule for
-// each host its lock pins downloads on, after the admin's rules and the
-// cached hosts', and the proxy's username saying it is locked; every
-// other install has none of those rules, and is made again around the
-// cache only when a cached host's rule sent it through.
+// each host its lock pins downloads on, after the cached hosts', and the
+// proxy's username saying it is locked; every other install has none of
+// those rules, and is made again around the cache only when a cached
+// host's rule sent it through.
 func TestMiseToolsLockedInstalls(t *testing.T) {
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, "[tools]\nyq = \""+testYqVersion+"\"\n")
 	repo := repoToolLock(t, "https://tools.example.invalid/repo-tool", nil)
-	rules := []config.MiseURLReplacement{{From: "https://example.com/", To: "https://mirror.example.com/"}}
-	settings := func(t *testing.T, m *miseTools, env []string) string {
-		t.Helper()
-		saved := m.env
-		m.env = env
-		defer func() { m.env = saved }()
-		out, err := m.run(t.Context(), "settings", "get", "url_replacements")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(out)
-	}
 	const (
 		proxy      = "http://:krk_token@gateway.example:8082"
-		mirrorRule = `"https://example.com/" = "https://mirror.example.com/"`
 		cachedRule = `"https://get.helm.sh/" = "http://get.helm.sh/"`
 		lockRule   = `"https://tools.example.invalid/" = "http://tools.example.invalid/"`
 	)
@@ -291,7 +265,7 @@ func TestMiseToolsLockedInstalls(t *testing.T) {
 			if tt.proxy {
 				base = append(base, "HTTP_PROXY="+proxy, "http_proxy="+proxy, "HTTPS_PROXY="+proxy, "https_proxy="+proxy)
 			}
-			m, _, err := newMiseTools(t.Context(), bin, home, base, rules, tt.cached, tt.cacheLocked, repo, nil,
+			m, _, err := newMiseTools(t.Context(), bin, home, base, tt.cached, tt.cacheLocked, repo, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
@@ -302,19 +276,19 @@ func TestMiseToolsLockedInstalls(t *testing.T) {
 				}
 				return
 			}
-			got := settings(t, m, m.repoEnv)
-			mirror, cached, locked := strings.Index(got, mirrorRule), strings.Index(got, cachedRule), strings.Index(got, lockRule)
-			if mirror < 0 || locked < mirror || (cached >= 0) != (tt.cached != nil) || cached >= 0 && (cached < mirror || locked < cached) {
-				t.Fatalf("a locked install's url_replacements = %s: want the admin's rule, the cached hosts', then the lock's", got)
+			got := urlReplacementsSetting(t, m, m.repoEnv)
+			cached, locked := strings.Index(got, cachedRule), strings.Index(got, lockRule)
+			if locked < 0 || (cached >= 0) != (tt.cached != nil) || cached > locked {
+				t.Fatalf("a locked install's url_replacements = %q: want the cached hosts', then the lock's", got)
 			}
 			for _, kv := range []string{"HTTP_PROXY=http://locked:krk_token@gateway.example:8082", "https_proxy=http://locked:krk_token@gateway.example:8082"} {
 				if !slices.Contains(m.repoEnv, kv) {
 					t.Errorf("a locked install's environment lacks %s: %v", kv, m.repoEnv)
 				}
 			}
-			got = settings(t, m, m.env)
-			if !strings.Contains(got, mirrorRule) || strings.Contains(got, lockRule) || strings.Contains(got, cachedRule) != (tt.cached != nil) {
-				t.Errorf("any other install's url_replacements = %s: want the admin's rule and the cached hosts' alone", got)
+			got = urlReplacementsSetting(t, m, m.env)
+			if strings.Contains(got, lockRule) || strings.Contains(got, cachedRule) != (tt.cached != nil) {
+				t.Errorf("any other install's url_replacements = %q: want the cached hosts' alone", got)
 			}
 			if (m.uncached != nil) != (tt.cached != nil) {
 				t.Errorf("any other install's retry around the cache: %v", m.uncached)
@@ -370,7 +344,7 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			proxy := strings.Replace(gateway.URL, "://", "://:krk_token@", 1)
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy}
 			var logs strings.Builder
-			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, nil, true, repo, nil,
+			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, true, repo, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
 			if err != nil {
 				t.Fatal(err)
@@ -405,4 +379,21 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			}
 		})
 	}
+}
+
+// urlReplacementsSetting is mise's url_replacements setting under env, as
+// mise prints it, or empty when env sets none, which mise refuses to print.
+func urlReplacementsSetting(t *testing.T, m *miseTools, env []string) string {
+	t.Helper()
+	if !slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "MISE_URL_REPLACEMENTS=") }) {
+		return ""
+	}
+	saved := m.env
+	m.env = env
+	defer func() { m.env = saved }()
+	out, err := m.run(t.Context(), "settings", "get", "url_replacements")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }

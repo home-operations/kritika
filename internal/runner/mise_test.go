@@ -13,8 +13,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/home-operations/kritika/internal/config"
 )
 
 func TestReservedEnvName(t *testing.T) {
@@ -202,7 +200,7 @@ func TestMiseTools(t *testing.T) {
 	home := t.TempDir()
 	base := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
 	secrets := Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}
-	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, nil, false, nil, nil, secrets, slog.New(slog.DiscardHandler))
+	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, false, nil, nil, secrets, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +356,7 @@ func TestMiseRunCanceled(t *testing.T) {
 }
 
 func TestMiseURLReplacementsJSON(t *testing.T) {
-	got := miseURLReplacements([]config.MiseURLReplacement{
+	got := miseURLReplacements([]urlReplacement{
 		{From: "https://github.com/", To: "https://mirror.example.com/github/"},
 		{From: `regex:^https://(\w+)\.example\.com/`, To: "http://mirror.example.com/$1/"},
 		{From: "https://get.helm.sh/", To: "https://mirror.example.com/helm/"},
@@ -368,52 +366,6 @@ func TestMiseURLReplacementsJSON(t *testing.T) {
 		`"https://get.helm.sh/":"https://mirror.example.com/helm/"}`
 	if got != want || !json.Valid([]byte(got)) {
 		t.Fatalf("MISE_URL_REPLACEMENTS = %s, want %s", got, want)
-	}
-}
-
-// TestMiseToolsURLReplacements: the admin's rules reach mise as its own
-// setting, in their order, since mise applies the first that matches, and
-// stay out of the commands' environment; the image's system config alone
-// supplies the tools, and nothing is written for the rules.
-func TestMiseToolsURLReplacements(t *testing.T) {
-	bin, dataDir := hostMise(t)
-	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
-	systemMiseConfig(t, "[tools]\nyq = \""+testYqVersion+"\"\n")
-	home := t.TempDir()
-	rules := []config.MiseURLReplacement{
-		{From: "https://github.com/acme/", To: "https://mirror.example.com/acme/"},
-		{From: "https://github.com/", To: "https://mirror.example.com/github/"},
-	}
-	m, notes, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, rules, nil, false, nil, nil,
-		Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(notes) != 0 {
-		t.Fatalf("notes = %v", notes)
-	}
-	if yq := m.tools["yq"]; yq == nil || !yq.installed || !strings.HasPrefix(yq.installPath, dataDir) ||
-		!slices.Equal(slices.Sorted(maps.Keys(m.offered())), []string{"yq"}) {
-		t.Fatalf("yq = %+v, offered = %v", yq, m.offered())
-	}
-	out, err := m.run(t.Context(), "settings", "get", "url_replacements")
-	if err != nil {
-		t.Fatal(err)
-	}
-	acme, github := strings.Index(string(out), `"https://github.com/acme/" = "https://mirror.example.com/acme/"`),
-		strings.Index(string(out), `"https://github.com/" = "https://mirror.example.com/github/"`)
-	if acme < 0 || github < acme {
-		t.Fatalf("mise settings get url_replacements = %s: want both rules, in order", out)
-	}
-	_, env, err := m.resolve(t.Context(), "yq")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "MISE_") }) {
-		t.Fatalf("command env = %v: mise's settings reach the commands", env)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".config")); !os.IsNotExist(err) {
-		t.Fatalf("a mise config was written to home: %v", err)
 	}
 }
 
@@ -458,7 +410,7 @@ func TestMiseInstallSystemLinks(t *testing.T) {
 	home := t.TempDir()
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +469,7 @@ func TestMiseToolsCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scratch, "mise.toml"), []byte("[tools]\njq = \"1.8.2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +488,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, testMiseConfig)
 	home := t.TempDir()
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
