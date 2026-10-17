@@ -313,6 +313,128 @@ tests:
           value: ["fd00::10/128"]
         documentIndex: 1
 
+  - it: lets runner pods reach Postgres in the release namespace alone by default
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[1]
+          value:
+            to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+                podSelector:
+                  matchLabels: {}
+            ports:
+              - port: 5432
+                protocol: TCP
+        documentIndex: 1
+      # The service pods reach it at any address, as they do the egress ports.
+      - equal:
+          path: spec.egress[1]
+          value:
+            ports:
+              - port: 443
+                protocol: TCP
+              - port: 5432
+                protocol: TCP
+        documentIndex: 0
+
+  - it: takes where the database is from networkPolicy.postgres
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.postgres.namespace: db
+      networkPolicy.postgres.podSelector:
+        cnpg.io/cluster: kritika-postgres
+      networkPolicy.postgres.cidrs: [192.0.2.10/32]
+    asserts:
+      - equal:
+          path: spec.egress[1].to
+          value:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: db
+              podSelector:
+                matchLabels:
+                  cnpg.io/cluster: kritika-postgres
+            - ipBlock:
+                cidr: 192.0.2.10/32
+        documentIndex: 1
+
+  - it: leaves the pods out when cidrs alone say where the database is
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.postgres.cidrs: [192.0.2.10/32]
+    asserts:
+      - equal:
+          path: spec.egress[1].to
+          value:
+            - ipBlock:
+                cidr: 192.0.2.10/32
+        documentIndex: 1
+
+  - it: on Cilium, lets runner pods reach Postgres at the database's pods and CIDRs
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.type: cilium
+      networkPolicy.postgres.podSelector:
+        cnpg.io/cluster: kritika-postgres
+      networkPolicy.postgres.cidrs: [192.0.2.10/32]
+    asserts:
+      - equal:
+          path: spec.egress[1]
+          value:
+            toEndpoints:
+              - matchLabels:
+                  k8s:io.kubernetes.pod.namespace: NAMESPACE
+                  cnpg.io/cluster: kritika-postgres
+            toPorts:
+              - ports:
+                  - port: "5432"
+                    protocol: TCP
+        documentIndex: 1
+      - equal:
+          path: spec.egress[2].toCIDR
+          value: [192.0.2.10/32]
+        documentIndex: 1
+      - notContains:
+          path: spec.egress
+          content:
+            toEntities:
+              - cluster
+              - world
+            toPorts:
+              - ports:
+                  - port: "5432"
+                    protocol: TCP
+        documentIndex: 1
+
+  - it: on Calico, lets runner pods reach Postgres at the database's pods and each CIDR
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.type: calico
+      networkPolicy.postgres.podSelector:
+        cnpg.io/cluster: kritika-postgres
+      networkPolicy.postgres.cidrs: [192.0.2.10/32, "2001:db8::10/128"]
+    asserts:
+      - equal:
+          path: spec.egress[2].destination
+          value:
+            namespaceSelector: kubernetes.io/metadata.name == 'NAMESPACE'
+            selector: cnpg.io/cluster == 'kritika-postgres'
+            ports:
+              - 5432
+        documentIndex: 1
+      - equal:
+          path: spec.egress[3].destination.nets
+          value: [192.0.2.10/32]
+        documentIndex: 1
+      - equal:
+          path: spec.egress[4].destination.nets
+          value: ["2001:db8::10/128"]
+        documentIndex: 1
+
   - it: fails fast on an unknown type
     set:
       networkPolicy.enabled: true

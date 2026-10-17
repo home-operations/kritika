@@ -792,7 +792,7 @@
       "type": "string"
     },
     "networkPolicy": {
-      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports, and to the gateway port from runner pods;\negress to the cluster's DNS, the forges and models over the egress ports,\nPostgres and the API server) and one for runner pods (egress only: the\ncluster's DNS, Postgres and the gateway port on the service pods, through\nwhich everything else is reached). The Postgres port is allowed to any\npeer because the database may live in another namespace.",
+      "description": "NetworkPolicies (off by default): one for the service pods (ingress to the\nwebhook and metrics ports, and to the gateway port from runner pods;\negress to the cluster's DNS, the forges and models over the egress ports,\nPostgres and the API server) and one for runner pods (egress only: the\ncluster's DNS, Postgres and the gateway port on the service pods, through\nwhich everything else is reached). Runner pods reach the Postgres port\nonly where `postgres` says the database is; the service pods reach it at\nany address, as they do the egress ports.",
       "properties": {
         "allowDNS": {
           "default": true,
@@ -859,6 +859,38 @@
           "description": "Create the NetworkPolicies.",
           "title": "enabled",
           "type": "boolean"
+        },
+        "postgres": {
+          "description": "Where the database the runner role's URI names is, the one peer runner\npods may reach postgresPort at: every pod in the release namespace unless\nset.",
+          "properties": {
+            "cidrs": {
+              "description": "CIDRs of a database outside the cluster, such as `192.0.2.10/32`.",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "title": "cidrs",
+              "type": "array"
+            },
+            "namespace": {
+              "default": "",
+              "description": "Namespace of the database's pods; the release namespace when empty.",
+              "title": "namespace",
+              "type": "string"
+            },
+            "podSelector": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Labels of the database's pods, such as `cnpg.io/cluster: kritika-postgres` for a CloudNativePG cluster, or of the pods of a session-mode pooler the runner's URI goes through. Empty selects every pod in `namespace`, or none when only `cidrs` is set.",
+              "required": [],
+              "title": "podSelector",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "postgres",
+          "type": "object"
         },
         "postgresPort": {
           "default": 5432,
