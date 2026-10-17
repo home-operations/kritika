@@ -31,7 +31,7 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 	if err := st.ApplyConfig(t.Context(), file); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.EnsureIndexSchema(t.Context(), "kritika_app", "fake-embed", 8); err != nil {
+	if _, err := st.EnsureIndexSchema(t.Context(), "kritika_app", "fake-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
@@ -100,7 +100,7 @@ func TestIndexPublicationCompletesForcedJob(t *testing.T) {
 			})
 			// No River worker acknowledges this attempt after publication, as
 			// when the process exits before its asynchronous completion lands.
-			_, _, err := w.embed(ctx, job, account, embed, file.Embedding.Model, "new", run, runner, nil, file.Settings(account, ""))
+			_, _, err := w.embed(ctx, job, account, embed, file.Embedding, "new", run, runner, nil, file.Settings(account, ""))
 			if tt.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
 					t.Fatalf("embed = %v, want error containing %q", err, tt.wantError)

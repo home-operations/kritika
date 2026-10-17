@@ -4,10 +4,12 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
@@ -53,7 +56,7 @@ repositories:
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8); err != nil {
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "similar-usage")
@@ -156,6 +159,105 @@ repositories:
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// TestSimilarPrompts: a query reaches the embedder led by the query
+// prompt, and only an index built with the document prompt answers it.
+func TestSimilarPrompts(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_SECRET", "test-key")
+	file := configfiletest.Load(t, `providers:
+  test:
+    type: openai
+    baseUrl: http://unused.invalid/v1
+    apiKey: { env: TEST_SECRET }
+review: { model: test/reviewer }
+embedding: { model: test/embed, dims: 8, queryPrompt: "query: ", documentPrompt: "passage: ", similarFloor: 0.5 }
+apps:
+  test:
+    accounts: [similar-prompts]
+    clientId: Iv1.test
+    privateKey: { env: TEST_SECRET }
+    webhookSecret: { env: TEST_SECRET }
+repositories:
+  similar-prompts/repo: {}
+`)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "embed", 8, "passage: "); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "similar-prompts")
+	repo := configfile.RepositoryID(account.ID(), "similar-prompts/repo")
+	var runner string
+	seed := func(prompt string) {
+		t.Helper()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			var run string
+			if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,document_prompt,mode,status)
+   VALUES($1,$2,'abc','embed',8,$3,'full','completed') RETURNING id`, account.ID(), repo, prompt).Scan(&run); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO index_chunks(account_id,repository_id,index_run_id,path,start_line,end_line,text,embedding)
+   VALUES($1,$2,$3,'main.go',1,1,'func f() {}','[1,0,0,0,0,0,0,0]')`, account.ID(), repo, run); err != nil {
+				return err
+			}
+			if err := store.ActivateGeneration(ctx, tx, repo, run); err != nil {
+				return err
+			}
+			if runner != "" {
+				return nil
+			}
+			var err error
+			runner, err = store.InsertRunnerRun(ctx, tx, account.ID(), store.RunnerKindIndex, run, 0)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var embedded []string
+	embed := similarEmbedFunc(func(_ context.Context, inputs []string) ([][]float32, int64, error) {
+		embedded = append(embedded, inputs...)
+		return [][]float32{{1, 0, 0, 0, 0, 0, 0, 0}}, 1, nil
+	})
+	g := Server{Metrics: metrics.New(prometheus.NewRegistry()), Store: st, Current: configfile.NewCurrent(file),
+		Logger:    slog.New(slog.DiscardHandler),
+		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return embed }},
+	}
+	search := func() contextpack.SimilarResponse {
+		t.Helper()
+		token, err := st.MintGatewayToken(ctx, store.GatewayGrant{
+			RunID: runner, AccountID: account.ID(), RepositoryID: repo, Model: "test/reviewer", Budget: 1000,
+		}, time.Now().Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/similar", strings.NewReader(`{"queries":["hello"]}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		out := httptest.NewRecorder()
+		g.ServeHTTP(out, req)
+		if out.Code != http.StatusOK {
+			t.Fatalf("status=%d: %s", out.Code, out.Body.String())
+		}
+		var resp contextpack.SimilarResponse
+		if err := json.Unmarshal(out.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	seed("")
+	if resp := search(); resp.Indexed || len(resp.Chunks) != 0 {
+		t.Fatalf("an index built without the document prompt answered: %+v", resp)
+	}
+	seed("passage: ")
+	if resp := search(); !resp.Indexed || len(resp.Chunks) != 1 {
+		t.Fatalf("the index built with the document prompt did not answer: %+v", resp)
+	}
+	if !slices.Equal(embedded, []string{"query: hello"}) {
+		t.Fatalf("embedded %q, want the query led by its prompt", embedded)
 	}
 }
 

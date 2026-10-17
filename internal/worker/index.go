@@ -174,7 +174,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	} else {
 		logger.Info("index embedding resumed", "run", runID)
 	}
-	n, mode, err := w.embed(ctx, job, account, embedder, emb.Model, commit, runID, runnerRunID, active, settings)
+	n, mode, err := w.embed(ctx, job, account, embedder, emb, commit, runID, runnerRunID, active, settings)
 	if errors.Is(err, store.ErrGenerationChanged) {
 		logger.Info("index again: another run published while it ran")
 		w.Metrics.IndexRun(account.Key(), mode, string(store.IndexSuperseded), n)
@@ -255,7 +255,7 @@ func (w *Index) finish(
 // For a forced rebuild, this transaction also completes the River job;
 // that completion takes precedence over any later Work error or snooze.
 func (w *Index) embed(
-	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, embedModel string,
+	ctx context.Context, job *river.Job[jobs.IndexArgs], account *configfile.Account, embedder model.Embedder, emb *configfile.Embedding,
 	commit, runID, runnerRunID string, active *store.Generation, settings configfile.Settings,
 ) (int, string, error) {
 	args := job.Args
@@ -277,7 +277,7 @@ func (w *Index) embed(
 	if err != nil {
 		return 0, pack.Mode, err
 	}
-	err = w.withLease(ctx, account, "embed:"+embedModel, indexSlots(settings.Limits.Concurrency), job.ID, func(ctx context.Context) error {
+	err = w.withLease(ctx, account, "embed:"+emb.Model, indexSlots(settings.Limits.Concurrency), job.ID, func(ctx context.Context) error {
 		for {
 			var batch []store.StagedChunk
 			err := w.Store.WithAccount(ctx, args.AccountID, func(tx pgx.Tx) error {
@@ -290,17 +290,17 @@ func (w *Index) embed(
 			}
 			texts := make([]string, len(batch))
 			for i, c := range batch {
-				texts[i] = embedText(c)
+				texts[i] = embedText(emb.DocumentPrompt, c)
 			}
 			vectors, used, err := embedder.Embed(ctx, texts)
-			w.Metrics.ModelCall(account.Key(), embedModel, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
+			w.Metrics.ModelCall(account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), used, 0, 0, 0, false)
 			if err == nil || used > 0 {
 				// Provider usage survives cancellation and failures to store its vectors.
 				dctx, cancel := detach(ctx)
 				uerr := w.Store.WithAccount(dctx, args.AccountID, func(tx pgx.Tx) error {
 					return store.InsertUsage(dctx, tx, store.Usage{
 						AccountID: args.AccountID, RepositoryID: args.RepositoryID, RunnerRunID: runnerRunID,
-						Role: store.RoleEmbedding, Model: embedModel, Input: used,
+						Role: store.RoleEmbedding, Model: emb.Model, Input: used,
 					})
 				})
 				cancel()
@@ -375,7 +375,7 @@ func (w *Index) embed(
 }
 
 func indexMatches(g *store.Generation, emb *configfile.Embedding, ignoreHash string) bool {
-	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.IgnoreHash == ignoreHash
+	return g != nil && g.Model == emb.Model && g.Dims == emb.Dims && g.DocumentPrompt == emb.DocumentPrompt && g.IgnoreHash == ignoreHash
 }
 
 // indexIgnoreHash treats ignore rules as a set; order and duplicates do not
@@ -387,15 +387,15 @@ func indexIgnoreHash(ignore []string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%q", patterns))))
 }
 
-// embedText is what the embedder sees: the path and symbol give the
-// vector a little of the file's identity, the way a reader would know
-// where a snippet came from.
-func embedText(c store.StagedChunk) string {
+// embedText is what the embedder sees: the embedder's document prompt,
+// then the path and symbol, which give the vector a little of the file's
+// identity, the way a reader would know where a snippet came from.
+func embedText(prompt string, c store.StagedChunk) string {
 	head := c.Path
 	if c.Symbol != "" {
 		head += " " + c.Kind + " " + c.Symbol
 	}
-	return head + "\n" + c.Text
+	return prompt + head + "\n" + c.Text
 }
 
 // recordRun writes what the executor learned about a runner Job and counts
@@ -431,7 +431,9 @@ func runOutcome(res executor.Result) string {
 
 // indexResumeKey excludes credentials and scheduling limits, which do not
 // change vector contents. The format version invalidates incompatible code
-// changes to staging or embedText.
+// changes to staging or embedText. A field that is empty unless configured
+// is omitted when empty, so adding one leaves the keys of runs in flight
+// valid.
 func indexResumeKey(commit, mode, base string, active *store.Generation, emb *configfile.Embedding, ignoreHash string) string {
 	baseRun := ""
 	if mode == store.IndexModeIncremental && active != nil {
@@ -442,7 +444,8 @@ func indexResumeKey(commit, mode, base string, active *store.Generation, emb *co
 		Version                                              int
 		Commit, Mode, Base, BaseRun, Ignore, Endpoint, Model string
 		Dims, ItemChars                                      int
-	}{1, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars}
+		DocumentPrompt                                       string `json:",omitempty"`
+	}{1, commit, mode, base, baseRun, ignoreHash, emb.BaseURL, emb.Model, emb.Dims, itemChars, emb.DocumentPrompt}
 	data, _ := json.Marshal(identity) // Only strings and integers; encoding cannot fail.
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }

@@ -435,14 +435,16 @@ models.
 
 ## The embedder
 
-| Key             | Default | What                                                                                                                    |
-| --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `model`         |         | a model of an `openrouter` or `openai` provider of the instance, whose endpoint, or the type's default, and key it uses |
-| `dims`          |         | the model's dimension, at most 4000; it must be what the model returns                                                  |
-| `maxBatch`      | 64      | inputs in one request                                                                                                   |
-| `maxBatchChars` | 200,000 | characters in one request                                                                                               |
-| `maxItemChars`  | 16,000  | characters in one input                                                                                                 |
-| `similarFloor`  | 0.5     | the cosine similarity a chunk needs to be offered as similar code                                                       |
+| Key              | Default | What                                                                                                                    |
+| ---------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `model`          |         | a model of an `openrouter` or `openai` provider of the instance, whose endpoint, or the type's default, and key it uses |
+| `dims`           |         | the model's dimension, at most 4000; it must be what the model returns                                                  |
+| `maxBatch`       | 64      | inputs in one request                                                                                                   |
+| `maxBatchChars`  | 200,000 | characters in one request                                                                                               |
+| `maxItemChars`   | 16,000  | characters in one input                                                                                                 |
+| `similarFloor`   | 0.5     | the cosine similarity a chunk needs to be offered as similar code; required with a [prompt](#prompts)                   |
+| `queryPrompt`    |         | text put, exactly as written, in front of each similar-code query                                                       |
+| `documentPrompt` |         | text put, exactly as written, in front of each indexed chunk                                                            |
 
 With an embedder, a review's prompt carries the index's chunks nearest the
 change, and the agent gets a `search_code` tool over the same index; both
@@ -452,11 +454,60 @@ repository of similar files can score nearly everything above 0.5, and a
 floor of about 0.7 keeps the matches that mean something.
 
 Without an embedder, indexing is off and reviews run without similar code.
-The index holds one model and dimension: a configuration that changes
-either drops every repository's index, and the leader builds each again, a
-few at a time, as `KRITIKA_ONBOARD_WINDOW` paces them. Removing the
-embedder keeps the index, and adding back the same model and dimension
-uses it again.
+The index holds one model, dimension and document prompt: a configuration
+that changes any of them drops every repository's index, and the leader
+builds each again, a few at a time, as `KRITIKA_ONBOARD_WINDOW` paces
+them. Removing the embedder keeps the index, and adding back the same
+model, dimension and document prompt uses it again.
+
+### Prompts
+
+Many embedding models are trained with a task prompt in front of what
+they embed, on queries and for some on documents too, and their
+documentation recommends sending it. `queryPrompt` goes in front of every
+similar-code query, the review's diff hunks and the agent's `search_code`
+queries alike, and `documentPrompt` in front of every indexed chunk, ahead
+of the path and symbol the chunk starts with. Each is used exactly as
+written: quote it so YAML keeps a trailing space, and write a newline as
+`\n` inside double quotes. Unset, inputs go as they are. In Helm, both go
+under `config.embedding`.
+
+The model's documentation gives its prompts. These suit a review, where
+both sides are code:
+
+```yaml
+# Voyage models, such as voyageai/voyage-code-4: what Voyage itself adds
+# for an input_type of query and of document
+queryPrompt: "Represent the query for retrieving supporting documents: "
+documentPrompt: "Represent the document for retrieval: "
+
+# Gemini Embedding 2 and EmbeddingGemma 2: the symmetric similarity
+# task, the same on both sides
+queryPrompt: "task: sentence similarity | query: "
+documentPrompt: "task: sentence similarity | query: "
+
+# Qwen3-Embedding: a one-sentence instruction, on queries only
+queryPrompt: "Instruct: Given a code change, retrieve code that implements similar logic\nQuery:"
+```
+
+The similarity task fits how a review compares a change with code like
+it. Their code-search pair, `task: code retrieval | query: ` with
+`title: none | text: `, is for searching code with a query, closer to
+what `search_code` does; kritika sends one pair for both. OpenAI's
+`text-embedding-3` models and Mistral's `codestral-embed` take no prompt.
+
+Prompts move every score, up for some models and down for others, so a
+floor tuned without them stops separating the same chunks, and the
+configuration refuses a prompt without `similarFloor`. A review's **Run
+details** conversation lists each similar chunk with its score,
+`for similarity 0.42`: set the floor just below the chunks worth keeping.
+A prompt counts toward `maxItemChars`, and at the defaults leaves every
+query and chunk whole.
+
+A new `queryPrompt` applies once kritika restarts with it, as any
+configuration change does, and needs no new index. `documentPrompt`
+shapes the stored vectors, so changing it rebuilds every repository's
+index, as a new model does.
 
 ## Local models
 

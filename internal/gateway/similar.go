@@ -64,13 +64,17 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("the request must carry between 1 and %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
 		return
 	}
+	var prompt string
+	if e := c.file.Embedding; e != nil {
+		prompt = e.QueryPrompt
+	}
 	var chars int
 	for i, q := range req.Queries {
 		if strings.TrimSpace(q) == "" {
 			refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("query %d is empty", i))
 			return
 		}
-		req.Queries[i] = textcut.Prefix(q, contextpack.SimilarQueryChars)
+		req.Queries[i] = prompt + textcut.Prefix(q, contextpack.SimilarQueryChars)
 		chars += len(req.Queries[i])
 	}
 	var jobID int64
@@ -123,9 +127,9 @@ type similarRequest struct {
 	// jobID is the review's job, for which the embedding slot is held.
 	jobID int64
 	slots int
-	// queries are the texts to embed, each already within
-	// contextpack.SimilarQueryChars; exclude are the paths left out of the
-	// answer.
+	// queries are the texts to embed: the embedder's query prompt, then a
+	// query cut to contextpack.SimilarQueryChars; exclude are the paths left
+	// out of the answer.
 	queries []string
 	exclude []string
 }
@@ -145,7 +149,7 @@ func (g *Server) similar(
 	var runID string
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		runID, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims)
+		runID, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {

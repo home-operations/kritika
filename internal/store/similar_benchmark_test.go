@@ -90,7 +90,7 @@ func benchmarkVector(rng *rand.Rand, dims, cluster int) []float32 {
 func seedSimilarBenchmark(b *testing.B, s *Store, account, other string, dims, size int) (run, foreign string) {
 	b.Helper()
 	ctx := b.Context()
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "bench-embed", dims); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "bench-embed", dims, ""); err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() {

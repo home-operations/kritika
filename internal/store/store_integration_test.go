@@ -585,7 +585,7 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
 	var method string
@@ -602,8 +602,9 @@ func TestEnsureIndexSchemaUsesVectorChord(t *testing.T) {
 }
 
 // TestEnsureIndexSchemaRebuildsForANewEmbedder: the same embedder leaves
-// the index alone, and another model or dimension drops every generation
-// with the table and leaves each repository to onboard afresh.
+// the index alone, and another document prompt, model or dimension drops
+// every generation with the table and leaves each repository to onboard
+// afresh.
 func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 	ctx := t.Context()
 	s := openStore(t)
@@ -614,15 +615,15 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
 			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	ensure := func(model string, dims int) bool {
+	ensure := func(model string, dims int, prompt string) bool {
 		t.Helper()
-		rebuilt, err := s.EnsureIndexSchema(ctx, "kritika_app", model, dims)
+		rebuilt, err := s.EnsureIndexSchema(ctx, "kritika_app", model, dims, prompt)
 		if err != nil {
-			t.Fatalf("EnsureIndexSchema(%s, %d): %v", model, dims, err)
+			t.Fatalf("EnsureIndexSchema(%s, %d, %q): %v", model, dims, prompt, err)
 		}
 		return rebuilt
 	}
-	if ensure("test-embed", 8) {
+	if ensure("test-embed", 8, "") {
 		t.Fatal("creating the index is not a rebuild")
 	}
 	var run string
@@ -637,15 +638,16 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id RETURNING g.id`).Scan(&run); err != nil {
 		t.Fatalf("seed a generation: %v", err)
 	}
-	if ensure("test-embed", 8) {
+	if ensure("test-embed", 8, "") {
 		t.Fatal("the same embedder must not rebuild the index")
 	}
 	for _, next := range []struct {
-		model string
-		dims  int
-	}{{"other-embed", 8}, {"other-embed", 16}} {
-		if !ensure(next.model, next.dims) {
-			t.Fatalf("%s/%d must rebuild the index", next.model, next.dims)
+		model  string
+		dims   int
+		prompt string
+	}{{"test-embed", 8, "passage: "}, {"other-embed", 8, "passage: "}, {"other-embed", 16, "passage: "}} {
+		if !ensure(next.model, next.dims, next.prompt) {
+			t.Fatalf("%s/%d/%q must rebuild the index", next.model, next.dims, next.prompt)
 		}
 		var active *string
 		var status string
@@ -656,11 +658,11 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 		if active != nil || status != "superseded" {
 			t.Fatalf("after the rebuild: active = %v, status = %s", active, status)
 		}
-		var model string
+		var model, prompt string
 		var dims int
-		if err := s.owner.QueryRow(ctx, `SELECT embed_model, embed_dims FROM index_schema`).Scan(&model, &dims); err != nil ||
-			model != next.model || dims != next.dims {
-			t.Fatalf("index_schema = %s/%d, %v", model, dims, err)
+		if err := s.owner.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt FROM index_schema`).Scan(&model, &dims, &prompt); err != nil ||
+			model != next.model || dims != next.dims || prompt != next.prompt {
+			t.Fatalf("index_schema = %s/%d/%q, %v", model, dims, prompt, err)
 		}
 		var typmod string
 		if err := s.owner.QueryRow(ctx, `SELECT format_type(atttypid, atttypmod) FROM pg_attribute
@@ -691,7 +693,7 @@ func TestSweepStoppedIndexes(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL;
 			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
 	})
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatalf("EnsureIndexSchema: %v", err)
 	}
 	// index gives the repository an active generation with one chunk.
