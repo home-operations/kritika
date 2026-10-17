@@ -80,7 +80,8 @@ func EnsureRepository(ctx context.Context, tx pgx.Tx, accountID string, r Reache
 // ensureRepository is EnsureRepository for a report taken at listedAt, nil
 // for one just made: what a listing says of a repository, its default
 // branch and traits, is left aside on a row written since the listing was
-// taken, as a webhook saying something newer may have done.
+// taken, and that it is reachable on a row disabled since, as a webhook
+// saying something newer may have done.
 func ensureRepository(
 	ctx context.Context, tx pgx.Tx, accountID string, r ReachedRepository, listedAt *time.Time,
 ) (id string, isNew bool, err error) {
@@ -97,9 +98,15 @@ func ensureRepository(
 			name = EXCLUDED.name,
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' AND ($8::timestamptz IS NULL OR repositories.updated_at < $8)
 				THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
-			enabled = CASE WHEN repositories.managed_by = 'forge' THEN true ELSE repositories.enabled END,
-			disabled_at = CASE WHEN repositories.managed_by = 'forge' THEN NULL ELSE repositories.disabled_at END,
-			stopped_at = CASE WHEN repositories.managed_by = 'forge' AND NOT repositories.enabled THEN NULL ELSE repositories.stopped_at END,
+			enabled = CASE WHEN repositories.managed_by = 'forge'
+				AND ($8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8)
+				THEN true ELSE repositories.enabled END,
+			disabled_at = CASE WHEN repositories.managed_by = 'forge'
+				AND ($8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8)
+				THEN NULL ELSE repositories.disabled_at END,
+			stopped_at = CASE WHEN repositories.managed_by = 'forge' AND NOT repositories.enabled
+				AND ($8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8)
+				THEN NULL ELSE repositories.stopped_at END,
 			archived = CASE WHEN $8::timestamptz IS NULL OR repositories.updated_at < $8
 				THEN coalesce($5, repositories.archived) ELSE repositories.archived END,
 			fork = CASE WHEN $8::timestamptz IS NULL OR repositories.updated_at < $8 THEN coalesce($6, repositories.fork) ELSE repositories.fork END,

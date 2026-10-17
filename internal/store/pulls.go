@@ -231,9 +231,11 @@ func RepositoryIndexed(ctx context.Context, tx pgx.Tx, repositoryID string) (boo
 // DisableForgeRepositories disables the forge-reported repositories the
 // App no longer reaches: the one named by repositoryID, or every one of
 // the account when repositoryID is "". Repositories the configuration
-// lists are left alone.
+// lists are left alone. disabled_at is when it was last disabled, at the
+// write rather than the transaction's start, so no listing taken before
+// the write enables it again (see RegisterRepositories).
 func DisableForgeRepositories(ctx context.Context, tx pgx.Tx, accountID, repositoryID string) error {
-	if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
+	if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = clock_timestamp(), updated_at = now()
 		WHERE account_id = $1 AND managed_by = 'forge' AND ($2 = '' OR id = $2::uuid)`, accountID, repositoryID); err != nil {
 		return fmt.Errorf("store: disable repositories: %w", err)
 	}
