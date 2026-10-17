@@ -110,6 +110,35 @@ tests:
             expression: "{'team': 'reviews'}"
         documentIndex: 0
 
+  - it: lets the runner container read the Secrets runner.podTemplate's env names, each once
+    set:
+      runner.podTemplate.spec.containers:
+        - name: runner
+          env:
+            - { name: KONFLATE_URL, value: https://konflate.example.com }
+            - { name: API_TOKEN, valueFrom: { secretKeyRef: { name: tools, key: token } } }
+            - { name: API_USER, valueFrom: { secretKeyRef: { name: tools, key: user } } }
+    asserts:
+      - contains:
+          path: spec.variables
+          content:
+            name: envSecrets
+            expression: "['tools']"
+        documentIndex: 0
+      - matchRegex:
+          path: spec.validations[12].expression
+          pattern: "e.valueFrom.secretKeyRef.name in variables.envSecrets"
+        documentIndex: 0
+
+  - it: lets the runner container read no other Secret unless runner.podTemplate's env names one
+    asserts:
+      - contains:
+          path: spec.variables
+          content:
+            name: envSecrets
+            expression: "[]"
+        documentIndex: 0
+
   - it: lets runner pods carry no labels of their own unless runner.podTemplate sets them
     asserts:
       - contains:

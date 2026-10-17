@@ -68,10 +68,23 @@ type PodTemplateSpec struct {
 }
 
 // TemplateContainer is the runner container as the pod template sets it.
+// Env is the admin's variables for the run tool's commands, each a value
+// or a Secret's key.
 type TemplateContainer struct {
 	Name            string            `json:"name"`
 	Image           string            `json:"image,omitempty"`
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+	Env             []corev1.EnvVar   `json:"env,omitempty"`
+}
+
+// commandEnv names the runner container's variables for the run tool's
+// commands, marking those a Secret's key sets.
+func (t PodTemplate) commandEnv() []runner.CommandEnvVar {
+	env := make([]runner.CommandEnvVar, 0, len(t.runner().Env))
+	for _, e := range t.runner().Env {
+		env = append(env, runner.CommandEnvVar{Name: e.Name, Secret: e.ValueFrom != nil})
+	}
+	return env
 }
 
 // runner is the pod template's runner container, which DecodePodTemplate
@@ -118,7 +131,8 @@ func DecodeJobTemplate(m map[string]any) (JobTemplate, error) {
 
 // DecodePodTemplate decodes the configuration's runner.podTemplate likewise,
 // refusing a label or annotation a runner's isolation rests on, and
-// requiring the one container, named runner, with its image.
+// requiring the one container, named runner, with its image, and its
+// variables named as none the runner keeps for the commands.
 func DecodePodTemplate(m map[string]any) (PodTemplate, error) {
 	var t PodTemplate
 	if err := decodeTemplate(m, &t); err != nil {
@@ -143,6 +157,19 @@ func DecodePodTemplate(m map[string]any) (PodTemplate, error) {
 	case !slices.Contains([]corev1.PullPolicy{"", corev1.PullAlways, corev1.PullIfNotPresent, corev1.PullNever}, c.ImagePullPolicy):
 		return PodTemplate{}, fmt.Errorf(
 			"executor: runner.podTemplate: the runner container's imagePullPolicy %q is not Always, IfNotPresent or Never", c.ImagePullPolicy)
+	}
+	seen := map[string]bool{}
+	for _, e := range t.runner().Env {
+		switch {
+		case runner.ReservedEnvName(e.Name):
+			return PodTemplate{}, fmt.Errorf("executor: runner.podTemplate: env %q is a name the runner keeps for the commands", e.Name)
+		case seen[e.Name]:
+			return PodTemplate{}, fmt.Errorf("executor: runner.podTemplate: env %q is set twice", e.Name)
+		case e.ValueFrom != nil && e.ValueFrom.SecretKeyRef == nil,
+			e.ValueFrom != nil && *e.ValueFrom != (corev1.EnvVarSource{SecretKeyRef: e.ValueFrom.SecretKeyRef}):
+			return PodTemplate{}, fmt.Errorf("executor: runner.podTemplate: env %q takes a value or a Secret's key alone", e.Name)
+		}
+		seen[e.Name] = true
 	}
 	return t, nil
 }

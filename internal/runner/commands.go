@@ -90,6 +90,7 @@ func commandTool(
 		}
 	}
 	env, proxied := commandEnv(home, cache)
+	admin := adminEnv(p.Agent.Env, secrets)
 	// gh reaches GitHub over HTTPS, which the gateway cannot add a
 	// credential to, so it carries the run's read-only token; a command
 	// that carries a credential is never a binary the repository chose.
@@ -98,7 +99,7 @@ func commandTool(
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
-		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, p.Agent.CachedHosts, p.Agent.CacheLocked, repo,
+		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, admin, p.Agent.CachedHosts, p.Agent.CacheLocked, repo,
 			slices.Sorted(maps.Keys(commandEnvs)), secrets, logger)
 		notes = append(notes, miseNotes...)
 		if err != nil {
@@ -169,7 +170,7 @@ func commandTool(
 	// read_file reads of a diff, in line ranges.
 	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
-		Dir: dir, Env: env, CommandEnv: commandEnvs, Commands: found, Resolve: resolve,
+		Dir: dir, Env: append(env, admin...), CommandEnv: commandEnvs, Commands: found, Resolve: resolve,
 		Timeout:        cmp.Or(time.Duration(p.Agent.CommandTimeoutSeconds)*time.Second, configfile.DefaultCommandTimeout),
 		MaxOutputBytes: maxOutput, Proxied: proxied, Hosts: p.Agent.Hosts, Note: note, Logger: logger,
 		Mask: secrets.Mask,
@@ -208,6 +209,31 @@ func markRepository(dir, cloneURL string) error {
 	}
 	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{cloneURL}})
 	return err
+}
+
+// CommandEnvPrefix prefixes, on the runner container, the names of the
+// admin's variables for the commands, so they configure the commands and
+// never the runner itself: a GODEBUG, TMPDIR or PGHOST of theirs would
+// otherwise change how the runner fetches, logs or connects.
+const CommandEnvPrefix = "KRITIKA_COMMAND_ENV_"
+
+// adminEnv is the admin's variables for the commands, read from the
+// runner's own environment under CommandEnvPrefix, where its pod template
+// put them; a value from a Secret joins the masked secrets. A variable
+// from an optional Secret key that is not set is left out.
+func adminEnv(vars []CommandEnvVar, secrets Secrets) []string {
+	var env []string
+	for _, v := range vars {
+		value, ok := os.LookupEnv(CommandEnvPrefix + v.Name)
+		if !ok {
+			continue
+		}
+		if v.Secret {
+			secrets.Redacted.Add(value)
+		}
+		env = append(env, v.Name+"="+value)
+	}
+	return env
 }
 
 // commandEnv is the whole environment of a command: PATH, home as HOME,

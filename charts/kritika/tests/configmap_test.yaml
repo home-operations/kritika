@@ -91,7 +91,19 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: '- image: ghcr.io/home-operations/kritika:\d+\.\d+\.\d+-tools\n\s+imagePullPolicy: IfNotPresent\n\s+name: runner'
+          pattern: '- env: \[\]\n\s+image: ghcr.io/home-operations/kritika:\d+\.\d+\.\d+-tools\n\s+imagePullPolicy: IfNotPresent\n\s+name: runner'
+
+  - it: renders the runner container's env into the runner configuration, with this release's image filled in
+    set:
+      runner.podTemplate.spec.containers:
+        - name: runner
+          env:
+            - { name: KONFLATE_URL, value: "https://konflate.{{ .Release.Namespace }}.example.com" }
+            - { name: API_TOKEN, valueFrom: { secretKeyRef: { name: tools, key: token } } }
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'env:\n\s+- name: KONFLATE_URL\n\s+value: https://konflate.NAMESPACE.example.com\n\s+- name: API_TOKEN\n\s+valueFrom:\n\s+secretKeyRef:\n\s+key: token\n\s+name: tools\n\s+image: ghcr.io/home-operations/kritika:\d+\.\d+\.\d+-tools\n\s+name: runner'
 
   - it: renders runner.podTemplate into the runner configuration, through tpl
     set:

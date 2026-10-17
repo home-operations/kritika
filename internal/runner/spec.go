@@ -24,7 +24,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 33
+const SpecVersion = 34
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -102,6 +102,17 @@ type AgentLimits struct {
 	// configfile.GatewayCaches reports, so a repository's locked install
 	// reaches the hosts its lock pins downloads on through the cache too.
 	CacheLocked bool `json:"cacheLocked,omitempty"`
+	// Env names the variables of the runner's own environment that the
+	// run tool's commands get, the admin's, over a repository's [env].
+	Env []CommandEnvVar `json:"env,omitempty"`
+}
+
+// CommandEnvVar is a variable of the runner's environment its commands
+// get. Secret marks one whose value is a Secret's, which is masked as the
+// run's tokens are.
+type CommandEnvVar struct {
+	Name   string `json:"name"`
+	Secret bool   `json:"secret,omitempty"`
 }
 
 // Prompt is what a review run needs beyond the checkout to write its

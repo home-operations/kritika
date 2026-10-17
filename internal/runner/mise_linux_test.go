@@ -108,3 +108,42 @@ func TestCommandToolMise(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandToolMiseAdminEnv: on an image with mise, the admin's
+// variables reach the commands over the repository's [env], whose value
+// for the same name is dropped with a note.
+func TestCommandToolMiseAdminEnv(t *testing.T) {
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	bin, dataDir := hostMise(t)
+	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
+	systemMiseConfig(t, testMiseConfig)
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv(CommandEnvPrefix+"REPO_MARKER", "the admin's")
+	was := miseBin
+	miseBin = bin
+	t.Cleanup(func() { miseBin = was })
+	head := agent.NewTree(tree(t, map[string]string{"values.yaml": "image: x\n"}), configfile.DefaultIgnore)
+	files, _, err := repoFiles(tree(t, map[string]string{
+		RepoMiseConfig: "[tools]\nhelm = '4.3.0'\n[env]\nREPO_MARKER = 'merge base'\n", RepoMiseLock: repoMiseLockDoc,
+	}), []string{RepoMiseConfig, RepoMiseLock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := reviewSpec()
+	s.Agent.CommandTimeoutSeconds = 10
+	s.Agent.Env = []CommandEnvVar{{Name: "REPO_MARKER"}}
+	run, _, notes, cleanup := commandTool(t.Context(), s, head, files, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096,
+		slog.New(slog.DiscardHandler))
+	defer cleanup()
+	if run == nil {
+		t.Fatalf("no run tool: %v", notes)
+	}
+	if !slices.Contains(notes, "mise env REPO_MARKER not set for the commands: the admin sets it") {
+		t.Fatalf("notes = %v", notes)
+	}
+	out, err := run.Run(t.Context(), json.RawMessage(`{"command":"yq","args":["env(REPO_MARKER)","values.yaml"]}`))
+	if err != nil || !strings.HasPrefix(out, "exit code 0\nthe admin's\n") {
+		t.Fatalf("REPO_MARKER = %q, %v; want the admin's", out, err)
+	}
+}

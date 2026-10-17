@@ -50,3 +50,11 @@ runner:
       resources:
         requests: { cpu: 100m, memory: 256Mi }
         limits: { memory: 1Gi }
+      containers:
+        - name: runner
+          env:
+            - { name: SMOKE_URL, value: https://smoke.example.com }
+            - {
+                name: SMOKE_TOKEN,
+                valueFrom: { secretKeyRef: { name: kritika-smoke-tools, key: token } },
+              }

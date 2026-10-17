@@ -9,9 +9,15 @@
 {{- $podLabels = append $podLabels (printf "'%s': '%s'" $k $v) }}
 {{- end }}
 {{- $image := "" }}
+{{- $envSecrets := list }}
 {{- range (dig "spec" "containers" list $podTemplate) }}
 {{- if eq .name "runner" }}
 {{- $image = .image }}
+{{- range (.env | default list) }}
+{{- with (dig "valueFrom" "secretKeyRef" "name" "" .) }}
+{{- $envSecrets = append $envSecrets (printf "'%s'" .) }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- /* The image's repository: what precedes its tag, whose colon follows the last slash, and its digest. */}}
@@ -48,6 +54,8 @@ spec:
       expression: "'^' + object.metadata.name + '(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'"
     - name: podLabels
       expression: {{ printf "{%s}" (join ", " $podLabels) | quote }}
+    - name: envSecrets
+      expression: {{ printf "[%s]" (join ", " ($envSecrets | uniq)) | quote }}
   validations:
     - expression: "object.metadata.name.matches('^kritika-run-[0-9a-f]{8}$')"
       message: a runner Job is named kritika-run- and the first eight characters of its run's ID
@@ -121,8 +129,9 @@ spec:
         variables.pod.containers.all(c, !has(c.envFrom) &&
           (!has(c.env) || c.env.all(e, !has(e.valueFrom) || !has(e.valueFrom.secretKeyRef) ||
             e.valueFrom.secretKeyRef.name == '{{ tpl .Values.database.runner.existingSecret . }}' ||
-            e.valueFrom.secretKeyRef.name.matches(variables.runSecret))))
-      message: the runner container reads its run's own Secret and the runner database Secret alone
+            e.valueFrom.secretKeyRef.name.matches(variables.runSecret) ||
+            e.valueFrom.secretKeyRef.name in variables.envSecrets)))
+      message: the runner container reads its run's own Secret, the runner database Secret and those runner.podTemplate's env names alone
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

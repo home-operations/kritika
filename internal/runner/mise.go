@@ -56,8 +56,9 @@ var (
 	reservedEnvPrefixes = []string{"GH_", "GIT_", "MISE_", "LD_"}
 )
 
-// reservedEnvName reports whether a config's [env] may not set name.
-func reservedEnvName(name string) bool {
+// ReservedEnvName reports whether a variable the commands get, from a
+// mise config's [env] or the admin, may not be named name.
+func ReservedEnvName(name string) bool {
 	upper := strings.ToUpper(name)
 	return slices.Contains(reservedEnv, upper) ||
 		slices.ContainsFunc(reservedEnvPrefixes, func(p string) bool { return strings.HasPrefix(upper, p) })
@@ -95,8 +96,10 @@ type miseTools struct {
 	tools     map[string]*miseTool
 	byCommand map[string]*miseTool
 	// path is PATH as mise computes it, its tools' bin directories before
-	// base's, and extra the config's [env] less the reserved names.
-	path, extra []string
+	// base's, extra the config's [env] less the reserved names and the
+	// admin's, and admin the admin's variables, which mise itself never
+	// gets.
+	path, extra, admin []string
 	// uncached is env for an install that failed through the gateway's
 	// cache, its proxy URLs asking the gateway not to answer from it; nil
 	// when the gateway caches no host for every install. repoEnv is env
@@ -138,15 +141,16 @@ func resolved(path string) string {
 // which mise layers over the image's system config, with its lock beside
 // it; its tools install at what the lock pins, and one the lock does not
 // pin for this platform is not offered unless the image has that version
-// installed already. cached names the hosts whose downloads the gateway
-// keeps, which mise then reaches through the
+// installed already. admin are the admin's variables, which the commands
+// get over the config's [env]. cached names the hosts whose downloads the
+// gateway keeps, which mise then reaches through the
 // gateway's cache, and cacheLocked says the gateway keeps a locked
 // install's downloads from any host, which the repository's tools then
 // reach it for. credentialed names the commands that run with one of the
 // run's credentials, which a repository's own binary is not offered as.
 // notes say what was not offered and why, for the review's summary.
 func newMiseTools(
-	ctx context.Context, bin, home string, base []string, cached []string, cacheLocked bool,
+	ctx context.Context, bin, home string, base, admin, cached []string, cacheLocked bool,
 	repo *repoMiseConfig, credentialed []string, secrets Secrets, logger *slog.Logger,
 ) (*miseTools, []string, error) {
 	if repo != nil {
@@ -157,7 +161,7 @@ func newMiseTools(
 		}
 	}
 	m := &miseTools{
-		bin: bin, home: home, base: base, secrets: secrets, logger: logger, repo: repo,
+		bin: bin, home: home, base: base, admin: admin, secrets: secrets, logger: logger, repo: repo,
 		tools: map[string]*miseTool{}, byCommand: map[string]*miseTool{},
 	}
 	if repo != nil {
@@ -417,7 +421,7 @@ func (m *miseTools) refresh(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	var notes []string
-	if m.path, m.extra, notes, err = parseMiseEnv(out); err != nil {
+	if m.path, m.extra, notes, err = parseMiseEnv(out, m.admin); err != nil {
 		return nil, err
 	}
 	return notes, nil
@@ -443,9 +447,9 @@ func (m *miseTools) redactions(ctx context.Context) error {
 }
 
 // parseMiseEnv splits mise env --json into PATH's entries, nil when mise
-// sets none, and the other variables it sets, less the reserved names,
-// which the notes name.
-func parseMiseEnv(out []byte) (path, extra, notes []string, err error) {
+// sets none, and the other variables it sets, less the reserved names and
+// those of admin, the admin's variables, which the notes name.
+func parseMiseEnv(out []byte, admin []string) (path, extra, notes []string, err error) {
 	var env map[string]string
 	if err := json.Unmarshal(out, &env); err != nil {
 		return nil, nil, nil, fmt.Errorf("runner: mise env: %w", err)
@@ -456,8 +460,10 @@ func parseMiseEnv(out []byte) (path, extra, notes []string, err error) {
 	for _, name := range slices.Sorted(maps.Keys(env)) {
 		switch {
 		case name == "PATH":
-		case reservedEnvName(name):
+		case ReservedEnvName(name):
 			notes = append(notes, fmt.Sprintf("mise env %s not set for the commands: the name is reserved", name))
+		case slices.ContainsFunc(admin, func(kv string) bool { return strings.HasPrefix(kv, name+"=") }):
+			notes = append(notes, fmt.Sprintf("mise env %s not set for the commands: the admin sets it", name))
 		default:
 			extra = append(extra, name+"="+env[name])
 		}
@@ -626,16 +632,16 @@ func (m *miseTools) pending() bool {
 }
 
 // commandEnv is the commands' environment: base with mise's PATH, when
-// it set one, then the config's [env].
+// it set one, then the config's [env] and the admin's variables.
 func (m *miseTools) commandEnv() []string {
-	env := make([]string, 0, len(m.base)+len(m.extra))
+	env := make([]string, 0, len(m.base)+len(m.extra)+len(m.admin))
 	for _, kv := range m.base {
 		if strings.HasPrefix(kv, "PATH=") && len(m.path) > 0 {
 			kv = "PATH=" + strings.Join(m.path, string(os.PathListSeparator))
 		}
 		env = append(env, kv)
 	}
-	return append(env, m.extra...)
+	return append(append(env, m.extra...), m.admin...)
 }
 
 // resolve is the binary command runs and its environment, installing the
