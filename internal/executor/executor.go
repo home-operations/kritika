@@ -45,7 +45,7 @@ type Result struct {
 	// JobUID is the UID of the run's Job, which its Events name.
 	JobUID string
 	// Abandoned is set when the executor deleted the run's Job because it
-	// could not read the Job's status.
+	// lost sight of the Job: it went missing from the executor's watch.
 	Abandoned bool
 	// Disruption says why Kubernetes stopped the run's pod for its own
 	// reasons, a node drain, a preemption or an eviction, from the pod's

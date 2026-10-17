@@ -19,7 +19,7 @@ tests:
           content:
             apiGroups: ["batch"]
             resources: ["jobs"]
-            verbs: ["create", "get", "delete"]
+            verbs: ["create", "get", "list", "watch", "delete"]
         template: rbac.tpl
         documentIndex: 0
       - contains:
@@ -27,7 +27,7 @@ tests:
           content:
             apiGroups: [""]
             resources: ["pods"]
-            verbs: ["get", "list"]
+            verbs: ["get", "list", "watch"]
         template: rbac.tpl
         documentIndex: 0
       - contains:

@@ -1,0 +1,146 @@
+package executor
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/informers"
+	batchv1listers "k8s.io/client-go/listers/batch/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
+)
+
+// runnerSelector selects runner Jobs and their pods, by the role label a
+// NetworkPolicy selects them by too.
+const runnerSelector = "kritika.home-operations.com/role=" + runnerRole
+
+// watchSync bounds how long Start waits for its trial watches and its
+// first lists.
+const watchSync = time.Minute
+
+// watchCheck names the object Start's trial watches select, which no
+// runner Job or pod is.
+const watchCheck = "kritika-watch-check"
+
+// watches is the executor's watch of runner Jobs and their pods, one list
+// and watch of each per replica however many runs are in flight: Run reads
+// its Job and pod from it, woken by every change to them.
+type watches struct {
+	jobs batchv1listers.JobLister
+	pods corev1listers.PodLister
+	stop context.CancelFunc
+	mu   sync.Mutex
+	// woken is the channel of the run waiting on each Job, by its name.
+	woken map[string]chan struct{}
+}
+
+// Start watches runner Jobs and their pods, which Run needs first, until
+// Stop: the API server sends each change as it happens, rather than the
+// replica asking after every run in flight. It returns once the API has let
+// it watch both and both are listed, waiting at most watchSync, and ctx
+// bounds that wait alone: the watch outlasts ctx, which a signal ends while
+// runs still drain. It watches the role label's Jobs and pods alone, never
+// a Secret.
+func (k *Kube) Start(ctx context.Context) error {
+	sctx, cancel := context.WithTimeout(ctx, watchSync)
+	defer cancel()
+	// A watch refused would leave the informers relisting, which their
+	// first lists succeeding does not show: each is tried once, for no
+	// object.
+	none := metav1.ListOptions{LabelSelector: runnerSelector, FieldSelector: "metadata.name=" + watchCheck}
+	jw, err := k.Client.BatchV1().Jobs(k.Namespace).Watch(sctx, none)
+	if err != nil {
+		return fmt.Errorf("executor: watch runner jobs: %w", err)
+	}
+	jw.Stop()
+	pw, err := k.Client.CoreV1().Pods(k.Namespace).Watch(sctx, none)
+	if err != nil {
+		return fmt.Errorf("executor: watch runner pods: %w", err)
+	}
+	pw.Stop()
+	wctx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	watching := false
+	defer func() {
+		if !watching {
+			stop()
+		}
+	}()
+	factory := informers.NewSharedInformerFactoryWithOptions(k.Client, 0, informers.WithNamespace(k.Namespace),
+		informers.WithTweakListOptions(func(o *metav1.ListOptions) { o.LabelSelector = runnerSelector }))
+	jobs, pods := factory.Batch().V1().Jobs(), factory.Core().V1().Pods()
+	w := &watches{jobs: jobs.Lister(), pods: pods.Lister(), stop: stop, woken: map[string]chan struct{}{}}
+	handler := cache.ResourceEventHandlerFuncs{AddFunc: w.changed, UpdateFunc: func(_, obj any) { w.changed(obj) }, DeleteFunc: w.changed}
+	for _, i := range []cache.SharedIndexInformer{jobs.Informer(), pods.Informer()} {
+		if _, err := i.AddEventHandler(handler); err != nil {
+			return fmt.Errorf("executor: watch runner jobs: %w", err)
+		}
+	}
+	factory.Start(wctx.Done())
+	for kind, synced := range factory.WaitForCacheSync(sctx.Done()) {
+		if !synced {
+			return fmt.Errorf("executor: watch runner jobs: %v not listed within %s", kind, watchSync)
+		}
+	}
+	k.watch, watching = w, true
+	return nil
+}
+
+// Stop ends the watch Start began, once no run reads it: after the queues
+// stop.
+func (k *Kube) Stop() {
+	if k.watch != nil {
+		k.watch.stop()
+	}
+}
+
+// changed wakes the run waiting on the Job obj is, or whose pod it is.
+func (w *watches) changed(obj any) {
+	if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		obj = d.Obj
+	}
+	var job string
+	switch o := obj.(type) {
+	case *batchv1.Job:
+		job = o.Name
+	case *corev1.Pod:
+		job = o.Labels[jobNameLabel]
+	}
+	w.mu.Lock()
+	ch := w.woken[job]
+	w.mu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// wait makes job's changes wake the channel it returns, until done, which
+// leaves alone a later wait on a Job of the same name.
+func (w *watches) wait(job string) (wake <-chan struct{}, done func()) {
+	ch := make(chan struct{}, 1)
+	w.mu.Lock()
+	w.woken[job] = ch
+	w.mu.Unlock()
+	return ch, func() {
+		w.mu.Lock()
+		if w.woken[job] == ch {
+			delete(w.woken, job)
+		}
+		w.mu.Unlock()
+	}
+}
+
+// watchedPods are the Job's pods as the watch holds them.
+func (k *Kube) watchedPods(job *batchv1.Job) []*corev1.Pod {
+	// A selector built from a set always parses.
+	pods, _ := k.watch.pods.Pods(k.Namespace).List(k8slabels.SelectorFromSet(k8slabels.Set{jobNameLabel: job.Name}))
+	return ownPods(pods, job)
+}

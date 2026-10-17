@@ -149,7 +149,7 @@ on a kritika serve pod, what its leader did.
 | a runner Job        | `Interrupted`   | Normal  | kritika serve stopped, and the job runs again                                                                |
 | a runner Job        | `Interrupted`   | Warning | the job's heartbeat stopped landing, so kritika handed it back to its queue                                  |
 | a runner Job        | `TimedOut`      | Warning | the job ran out of time                                                                                      |
-| a runner Job        | `StatusUnreadable` | Warning | kritika could not read the Job's status, so it deleted the Job                                            |
+| a runner Job        | `StatusUnreadable` | Warning | kritika lost sight of the Job's status, as when someone else deleted it, so it deleted the Job           |
 | a kritika serve pod | `LeaderElected` | Normal  | the replica took the lead                                                                                    |
 | a kritika serve pod | `ConfigApplied` | Normal  | the leader applied the configuration, named by its hash                                                      |
 | a kritika serve pod | `ConfigRefused` | Warning | the store refused the configuration, and the last applied one stays live, as `kritika_config_error` says too |
