@@ -106,6 +106,14 @@ func TestJobTimeouts(t *testing.T) {
 	}
 }
 
+// TestThreadTimeout: a thread job's few forge requests may each wait out
+// a rate limit of up to a minute, longer than River's default timeout.
+func TestThreadTimeout(t *testing.T) {
+	if got := (&Thread{}).Timeout(&river.Job[jobs.ThreadArgs]{}); got != 5*time.Minute {
+		t.Fatalf("thread timeout = %s, want 5m: room for a few forge requests that each wait out a rate limit", got)
+	}
+}
+
 func TestDetach(t *testing.T) {
 	parent, cancelParent := context.WithCancel(t.Context())
 	ctx, cancel := detach(parent)
