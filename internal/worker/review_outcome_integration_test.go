@@ -13,11 +13,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -51,6 +54,45 @@ func queuedOutcomeReview(t *testing.T, h *agenticHarness) *river.Job[jobs.Review
 		}
 	})
 	return job
+}
+
+// TestEndedReviewRecordedOnce: a review its job ends before a runner, the
+// job retried as when its first attempt's commit went unacknowledged or its
+// completion unrecorded, is recorded and counted once.
+func TestEndedReviewRecordedOnce(t *testing.T) {
+	h := newAgenticHarness(t, 1009)
+	job := queuedOutcomeReview(t, h)
+	reg := prometheus.NewRegistry()
+	h.review.Metrics = metrics.New(reg)
+	// The pull request moved on, so the job's head is superseded at once.
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(h.ctx, `UPDATE pull_requests SET head_sha = 'moved' WHERE repository_id = $1 AND number = $2`,
+			job.Args.RepositoryID, h.number)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		job.Attempt = attempt
+		if err := h.review.Work(h.ctx, job); err != nil {
+			t.Fatalf("attempt %d: %v", attempt, err)
+		}
+	}
+	var ended int
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT count(*) FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id
+			WHERE p.repository_id = $1 AND p.number = $2 AND r.head_sha = $3 AND r.status = 'superseded'`,
+			job.Args.RepositoryID, h.number, job.Args.HeadSHA).Scan(&ended)
+	}); err != nil || ended != 1 {
+		t.Fatalf("superseded reviews = %d, %v; want 1", ended, err)
+	}
+	want := `# HELP kritika_reviews_total Reviews finished, by terminal status.
+# TYPE kritika_reviews_total counter
+kritika_reviews_total{account="` + h.account.Key() + `",status="superseded"} 1
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(want), "kritika_reviews_total"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestReviewLastAttemptSoftStop(t *testing.T) {
