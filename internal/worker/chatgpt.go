@@ -17,20 +17,42 @@ import (
 const chatGPTRefreshInterval = time.Minute
 
 // ChatGPTRefresher renews configured providers' tokens. Only the elected
-// leader runs it, so rotating refresh tokens have one refresh owner.
+// leader runs it, and a new leader waits out the last one's refreshes, so
+// rotating refresh tokens have one refresh owner.
 type ChatGPTRefresher struct {
 	Store   *store.Store
 	Current *configfile.Current
 	Logger  *slog.Logger
+	// LeaderInterval is how often the leader pings its lock. The wait
+	// before the first refresh takes a previous leader to have pinged as
+	// often, which a rollout that shortens the interval breaks.
+	LeaderInterval time.Duration
 	// Client and TokenURL may point to a token endpoint in tests.
 	Client   *http.Client
 	TokenURL string
 
 	now func() time.Time
+	// after stands in for time.After in the wait before the first refresh,
+	// in tests.
+	after func(time.Duration) <-chan time.Time
 }
 
-// Run refreshes near expiry until this leader's tenure ends.
+// Run refreshes near expiry until this leader's tenure ends. The first
+// refresh waits until a previous leader's last one must have ended: a leader
+// whose lock the server dropped goes on refreshing until it notices, and a
+// refresh it started by then runs on for at most chatGPTRefreshTimeout.
+// Refreshing alongside it would send the refresh token it just spent, and
+// the refusal signs the provider out.
 func (r *ChatGPTRefresher) Run(ctx context.Context) {
+	after := time.After
+	if r.after != nil {
+		after = r.after
+	}
+	select {
+	case <-ctx.Done():
+		return
+	case <-after(store.LeaderStepDown(r.LeaderInterval) + chatGPTRefreshTimeout):
+	}
 	t := time.NewTicker(chatGPTRefreshInterval)
 	defer t.Stop()
 	for {
@@ -90,9 +112,16 @@ func (r *ChatGPTRefresher) Refresh(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (r *ChatGPTRefresher) refresh(ctx context.Context, client *http.Client, key string, c chatgpt.Credentials, now time.Time) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chatGPTRefreshTimeout)
+func (r *ChatGPTRefresher) refresh(
+	leading context.Context, client *http.Client, key string, c chatgpt.Credentials, now time.Time,
+) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(leading), chatGPTRefreshTimeout)
 	defer cancel()
+	// Checked once the timeout runs, so a refresh starts only while its
+	// leader leads and ends within chatGPTRefreshTimeout of that.
+	if err := leading.Err(); err != nil {
+		return err
+	}
 	renewed, err := chatgpt.Refresh(ctx, client, cmp.Or(r.TokenURL, chatgpt.TokenURL), c, now)
 	if errors.Is(err, chatgpt.ErrSignedOut) {
 		r.Logger.Warn("chatgpt provider disconnected; run kritika chatgpt login", "provider", key)

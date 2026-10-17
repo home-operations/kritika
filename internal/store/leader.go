@@ -18,6 +18,11 @@ const leaderKey = "kritika-leader"
 // on TCP retransmissions.
 const lockTimeout = 5 * time.Second
 
+// LeaderStepDown is the longest a leader whose lock the server dropped goes
+// on leading, its duties running, before RunAsLeader notices: until its next
+// ping of the lock, every interval, fails within lockTimeout.
+func LeaderStepDown(interval time.Duration) time.Duration { return interval + lockTimeout }
+
 // RunAsLeader competes for the leader lock and, once held, calls lead with a
 // context that is cancelled if the lock is lost or ctx ends. It returns when
 // ctx ends. Only one replica per database holds the lock at a time; the
