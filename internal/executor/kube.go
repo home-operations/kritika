@@ -1,10 +1,8 @@
 package executor
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,11 +43,11 @@ const noProxy = "localhost,127.0.0.1"
 type Kube struct {
 	Client    kubernetes.Interface
 	Namespace string
-	// Image is the kritika image the Job runs, normally the release's -tools
-	// image.
-	Image string
-	// ImagePullPolicy, when set, is the runner container's imagePullPolicy.
-	ImagePullPolicy string
+	// JobTemplate and PodTemplate are the configuration's runner.jobTemplate
+	// and runner.podTemplate, set on every runner Job and its pod, the
+	// runner container's image among them.
+	JobTemplate JobTemplate
+	PodTemplate PodTemplate
 	// ServiceAccount is the permissionless runner service account.
 	ServiceAccount string
 	// DatabaseSecret and DatabaseSecretKey reference the Secret holding the
@@ -65,18 +63,12 @@ type Kube struct {
 	// Every review needs it, so serve refuses to start without one; the
 	// check here only keeps a test's spec honest.
 	GatewayURL string
-	// RuntimeClass, when set, is the RuntimeClass the pod runs under.
-	RuntimeClass string
-	// TTL is ttlSecondsAfterFinished; the run row outlives the Job.
-	TTL time.Duration
 	// Poll is how often a run reads its Job and pod from the watch again,
 	// besides on each change to them, for the time a pod's start is given.
 	Poll time.Duration
 	// StartGrace is how long a pod may stay unable to start before its run
 	// is given up; startGrace unless set.
 	StartGrace time.Duration
-	// Pod is the configuration's runner.pod, set on every runner pod.
-	Pod Pod
 	// Events, when set, records the Events on runner Jobs.
 	Events *Events
 	Logger *slog.Logger
@@ -120,10 +112,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
-	job, err := k.job(spec)
-	if err != nil {
-		return Result{Err: err}
-	}
+	job := k.job(spec)
 	// The API refusing the Job or the Secret leaves a run whose container
 	// never ran, which the worker retries.
 	created, err := k.Client.BatchV1().Jobs(k.Namespace).Create(ctx, job, metav1.CreateOptions{})
@@ -624,21 +613,27 @@ func (k *Kube) secret(spec Spec, runSpec []byte, job *batchv1.Job) *corev1.Secre
 	}
 }
 
+// defaultTTL is how long a finished Job stays for kubectl when the
+// jobTemplate sets no ttlSecondsAfterFinished; the run row keeps everything
+// the Job knew.
+const defaultTTL = 10 * time.Minute
+
 // job builds the Job for a spec. The runner gets its job document as a
 // read-only file and its credentials as variables, both from the run's
 // Secret, and the runner role's DSN from the database Secret; nothing else.
-func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
-	resources, err := containerResources(spec.Resources)
-	if err != nil {
-		return nil, err
-	}
+func (k *Kube) job(spec Spec) *batchv1.Job {
 	name := jobName(spec.Job.RunID)
 	deadline := int64(spec.Deadline / time.Second)
-	ttl := int32(k.TTL / time.Second)
+	ttl := int32(defaultTTL / time.Second)
+	if t := k.JobTemplate.Spec.TTLSecondsAfterFinished; t != nil {
+		ttl = *t
+	}
 	labels := runnerLabels(spec)
-	podLabels := maps.Clone(labels)
-	maps.Copy(podLabels, k.Pod.Labels)
+	jobLabels, podLabels := maps.Clone(labels), maps.Clone(labels)
+	maps.Copy(jobLabels, k.JobTemplate.Metadata.Labels)
+	maps.Copy(podLabels, k.PodTemplate.Metadata.Labels)
 	annotations := map[string]string{}
+	maps.Copy(annotations, k.JobTemplate.Metadata.Annotations)
 	for key, v := range spec.Annotations {
 		annotations["kritika.home-operations.com/"+key] = v
 	}
@@ -670,11 +665,10 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	}
 	container := corev1.Container{
 		Name:            runnerRole,
-		Image:           k.Image,
-		ImagePullPolicy: corev1.PullPolicy(k.ImagePullPolicy),
+		Image:           k.PodTemplate.runner().Image,
+		ImagePullPolicy: k.PodTemplate.runner().ImagePullPolicy,
 		Args:            []string{"run"},
 		Env:             env,
-		Resources:       resources,
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: new(false),
 			ReadOnlyRootFilesystem:   new(true),
@@ -691,9 +685,14 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 			SecretName: secret, Items: []corev1.KeyToPath{{Key: secretKeyRunSpec, Path: specFile}},
 		}},
 	}
+	pod := k.PodTemplate.Spec
 	var runtimeClass *string
-	if k.RuntimeClass != "" {
-		runtimeClass = new(k.RuntimeClass)
+	if pod.RuntimeClassName != "" {
+		runtimeClass = new(pod.RuntimeClassName)
+	}
+	var resources *corev1.ResourceRequirements
+	if r := pod.Resources; r != nil && (len(r.Requests) > 0 || len(r.Limits) > 0) {
+		resources = r
 	}
 	// A pod Kubernetes disrupts fails the Job, as with no policy, but for
 	// that reason, PodFailurePolicy, which names it once the pod is gone:
@@ -703,25 +702,26 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 		OnPodConditions: []batchv1.PodFailurePolicyOnPodConditionsPattern{{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue}},
 	}}}
 	return &batchv1.Job{
-		Name: name, Namespace: k.Namespace, Labels: labels, Annotations: annotations,
+		Name: name, Namespace: k.Namespace, Labels: jobLabels, Annotations: annotations,
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,
 			ActiveDeadlineSeconds:   &deadline,
 			TTLSecondsAfterFinished: &ttl,
 			PodFailurePolicy:        policy,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: podLabels, Annotations: k.Pod.Annotations},
+				ObjectMeta: metav1.ObjectMeta{Labels: podLabels, Annotations: k.PodTemplate.Metadata.Annotations},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:           k.ServiceAccount,
 					AutomountServiceAccountToken: new(false),
 					RestartPolicy:                corev1.RestartPolicyNever,
+					Resources:                    resources,
 					RuntimeClassName:             runtimeClass,
-					NodeSelector:                 k.Pod.NodeSelector,
-					Tolerations:                  k.Pod.Tolerations,
-					Affinity:                     k.Pod.Affinity,
-					TopologySpreadConstraints:    k.Pod.TopologySpreadConstraints,
-					PriorityClassName:            k.Pod.PriorityClassName,
-					HostUsers:                    k.Pod.HostUsers,
+					NodeSelector:                 pod.NodeSelector,
+					Tolerations:                  pod.Tolerations,
+					Affinity:                     pod.Affinity,
+					TopologySpreadConstraints:    pod.TopologySpreadConstraints,
+					PriorityClassName:            pod.PriorityClassName,
+					HostUsers:                    pod.HostUsers,
 					// The chart's gateway name, <service>.<namespace>.svc.cluster.local,
 					// has four dots: with ndots at 4 it is looked up as written
 					// rather than through the search list first, whose expansions
@@ -737,33 +737,5 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 				},
 			},
 		},
-	}, nil
-}
-
-// CheckResources reports whether the configuration's runner resources
-// decode as a container's, so a value that would refuse every Job is
-// refused at startup instead.
-func CheckResources(m map[string]any) error {
-	_, err := containerResources(m)
-	return err
-}
-
-// containerResources decodes an account's runner.resources, which the
-// configuration keeps as the YAML written, refusing a field the Kubernetes
-// type does not have rather than dropping it.
-func containerResources(m map[string]any) (corev1.ResourceRequirements, error) {
-	var r corev1.ResourceRequirements
-	if m == nil {
-		return r, nil
 	}
-	b, err := json.Marshal(m)
-	if err != nil {
-		return r, fmt.Errorf("executor: runner.resources: %w", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&r); err != nil {
-		return r, fmt.Errorf("executor: runner.resources: %w", err)
-	}
-	return r, nil
 }

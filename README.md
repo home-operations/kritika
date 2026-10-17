@@ -108,8 +108,9 @@ review; the dashboard's setup checklist shows what is still missing.
 
 - **Install kritika into a namespace of its own:** kritika's Role can
   create Secrets in the release namespace.
-- **Set the chart's `runner.admission.enforce`:** the cluster then refuses,
-  from kritika serve, any Job but a runner Job and any Secret but a run's.
+- **Keep the chart's `runner.admissionPolicy.enabled`,** its default: the
+  cluster then refuses, from kritika serve, any Job but a runner Job and any
+  Secret but a run's.
 - **Turn on the chart's NetworkPolicy:** runner pods then reach the
   outside only through kritika's egress gateway.
 - **Run runner Jobs under a sandboxed RuntimeClass** such as gVisor, since

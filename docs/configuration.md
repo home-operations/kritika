@@ -14,8 +14,8 @@ ConfigMap.
   executor, `KRITIKA_RUNNER_DATABASE_URL`.
 - **Deployment settings** belong in Helm's `runner`, `database`, `service` and
   other Kubernetes values. The chart derives the corresponding file settings
-  and rejects duplicates under `config`. In particular, use `runner.runtimeClass`
-  and `runner.deadline` for runner Jobs.
+  and rejects duplicates under `config`. In particular, use `runner.jobTemplate`
+  and `runner.podTemplate` for runner Jobs.
 - **Existing ConfigMaps** can supply `config.yaml` through `existingConfigMap`
   instead of inline `config`. Setting both is an error. The external file
   supplies `webUrl` and application settings; the chart supplies deployment
@@ -85,8 +85,9 @@ migration guidance. Move flat policy keys into their YAML sections, for example
 `config.reviewModel` becomes `config.review.model`, and
 `config.authAdminPassword` becomes `config.auth.admin.password: { env: ADMIN_PASSWORD }`.
 Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.
-Move `config.runnerRuntimeClass` to `runner.runtimeClass` and
-`config.runnerDeadline` to `runner.deadline`. Runtime keys such as
+Move `config.runnerRuntimeClass` to `runner.podTemplate.spec.runtimeClassName`
+and `config.runnerDeadline` to `runner.jobTemplate.spec.activeDeadlineSeconds`,
+in seconds. Runtime keys such as
 `config.logLevel`, `config.reviewWorkers` and `config.pollInterval` keep their names.
 Move automatic auth, app, provider and policy env configuration into the file;
 those env names no longer configure the application implicitly. Existing secret
@@ -114,8 +115,12 @@ config:
   review:
     model: openrouter/vendor/large-model
 runner:
-  runtimeClass: gvisor
-  deadline: 20m
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1200
+  podTemplate:
+    spec:
+      runtimeClassName: gvisor
 env:
   ADMIN_PASSWORD:
     valueFrom:
@@ -706,12 +711,8 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `gatewayCacheMaxAge` | `KRITIKA_GATEWAY_CACHE_MAX_AGE` | how long the gateway serves a kept download before it fetches it again; 24h unless set |
 | `logLevel` | `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                            |
 | `logFormat` | `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                                                                                                              |
-| `runner.deadline` | `KRITIKA_RUNNER_DEADLINE`          | a runner Job's deadline, at most 2h; 15m unless set                                                                                                                                                                              |
-| `runner.runtimeClass` | `KRITIKA_RUNNER_RUNTIME_CLASS`     | the RuntimeClass of runner Jobs, e.g. `gvisor`; the cluster default unless set                                                                                                                                                   |
-| `runner.imagePullPolicy` | `KRITIKA_RUNNER_IMAGE_PULL_POLICY` | the runner container's imagePullPolicy, `Always`, `IfNotPresent` or `Never`; the chart's `runner.image.pullPolicy` renders it                                                                                                    |
-| `runner.resources` | `KRITIKA_RUNNER_RESOURCES`         | a runner pod's resources, as JSON in env or a YAML mapping in the file; the chart's `runner.resources` renders it                                                                                                                                                     |
-| `runner.pod`       | `KRITIKA_RUNNER_POD`               | where runner pods are scheduled and how they are marked: `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName`, `labels`, `annotations` and `hostUsers`, as JSON in env or a YAML mapping in the file; the chart's `runner.pod` renders it |
-| `runner.miseUrlReplacements` | `KRITIKA_RUNNER_MISE_URL_REPLACEMENTS` | rewrites of the URLs runner tools download from, such as to a mirror: mise's `url_replacements`, a list of `from` and `to` pairs tried in order, as a JSON array in env or a YAML list in the file; the chart's `runner.mise.urlReplacements` renders it ([more tools](security.md#more-tools)). Replaces `runner.miseConfig` ([migrating](security.md#migrating-from-the-instance-mise-config)). |
+| `runner.jobTemplate` | `KRITIKA_RUNNER_JOB_TEMPLATE` | what kritika sets on every runner Job, as a Job template spells it: `metadata.labels` and `metadata.annotations`, `spec.activeDeadlineSeconds`, a runner Job's deadline, at most 7200 and 900 unless set, which a review's or follow-up's agent `timeout` lengthens when it needs more, and `spec.ttlSecondsAfterFinished`, at least 1 and 600 unless set; kritika refuses any other field, and its own labels and annotations, at startup; as JSON in env or a YAML mapping in the file; the chart's `runner.jobTemplate` renders it |
+| `runner.podTemplate` | `KRITIKA_RUNNER_POD_TEMPLATE` | what kritika sets on every runner pod, as a pod template spells it: `metadata.labels` and `metadata.annotations`; `spec.resources` for the whole pod, `runtimeClassName`, `priorityClassName`, `hostUsers`, `nodeSelector`, `tolerations`, `affinity` and `topologySpreadConstraints`; and `spec.containers`, one container named `runner` with its `image`, required, and `imagePullPolicy`. kritika refuses any other field, its own labels and AppArmor annotations at startup; as JSON in env or a YAML mapping in the file; the chart's `runner.podTemplate` renders it, with this release's `-tools` image unless it names one |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

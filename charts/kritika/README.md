@@ -66,9 +66,11 @@ It has the same structure as the configuration file and is evaluated with
 The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 
 - Secrets are `{ env: NAME }` references, supplied by `env` or `envFrom`.
-- Runner Jobs are configured under `runner`, including `runtimeClass` and
-  `deadline`. The chart derives application settings from runner, database
-  and service values and rejects duplicates under `config`.
+- Runner Jobs are configured under `runner`: `runner.jobTemplate` and
+  `runner.podTemplate` set what kritika takes from a Job's and a pod's
+  template, such as the deadline, resources, placement and runtime class.
+  The chart derives application settings from runner, database and service
+  values and rejects duplicates under `config`.
 - A checksum of the rendered file rolls pods when configuration changes. The
   ConfigMap carries `reloader.stakater.com/ignore`, so Reloader does not roll
   them a second time.
@@ -89,7 +91,8 @@ The chart's Ingress or HTTPRoute must route `config.webUrl`'s host.
 `config.reviewModel` into `config.review.model`, and password `valueFrom`
 entries into `env` with references in the file. Move
 `config.runnerRuntimeClass` and `config.runnerDeadline` into
-`runner.runtimeClass` and `runner.deadline`. Move automatic auth, app, provider
+`runner.podTemplate.spec.runtimeClassName` and
+`runner.jobTemplate.spec.activeDeadlineSeconds`. Move automatic auth, app, provider
 and policy env configuration into the file, keeping secret values in env with
 explicit file references. See the
 [configuration reference](https://github.com/home-operations/kritika/blob/main/docs/configuration.md)
@@ -146,12 +149,15 @@ chart confines them:
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
   declares and those a repository's `.kritika/mise.toml` adds, each
-  download checked against the repository's lock;
-  `runner.mise.urlReplacements` sends the downloads to a mirror.
-  `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
-  gVisor; `runner.resources` keeps a runaway run in its own cgroup;
-  `runner.pod` keeps runner pods on nodes of their own, and in a user
-  namespace with `hostUsers: false`.
+  download checked against the repository's lock.
+- `runner.podTemplate` puts runner pods under a sandboxed runtime such as
+  gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
+  with `resources`, and keeps runner pods on nodes of their own, and in a
+  user namespace with `hostUsers: false`.
+- `runner.admissionPolicy.enabled`, on by default, has the cluster refuse,
+  from kritika serve's ServiceAccount, any Job but a runner Job and any
+  Secret but a run's, with ValidatingAdmissionPolicies: cluster-scoped
+  objects the chart's installer must be allowed to create.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.
@@ -161,8 +167,7 @@ gateway, runner tools and the sandbox in full.
 `runner.mise.config` and `KRITIKA_RUNNER_MISE_CONFIG` are removed, as
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` were before them. Declare each
 tool in the `.kritika/mise.toml` of the repositories whose reviews use
-it, pinned by `.kritika/mise.lock`, and move a `url_replacements` mirror
-to `runner.mise.urlReplacements`. The runner image declares its six tools
+it, pinned by `.kritika/mise.lock`. The runner image declares its six tools
 itself, so they stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 
@@ -213,7 +218,7 @@ left, and a remaining replica works them.
 
 ## Requirements
 
-Kubernetes: `>=1.31.0-0`
+Kubernetes: `>=1.34.0-0`
 
 ## Values
 
@@ -313,20 +318,25 @@ Kubernetes: `>=1.31.0-0`
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"metrics"},"periodSeconds":10}` | Readiness probe, on the metrics port. A replica is ready once its configuration file has loaded, the database answers and it serves webhooks and the dashboard, so a rollout takes the previous pod down only once the new one can hold a delivery. |
 | replicas | int | `1` | Replicas of kritika serve. Every replica serves webhooks and the dashboard and works jobs; exactly one holds the leader lock at a time. A rollout keeps one serving on its own; set 2 for one to keep serving while a pod or node is lost. |
 | resources | object | `{"limits":{"memory":"512Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits of the kritika serve pods. |
-| runner.admission.enforce | bool | `false` | Have the cluster refuse, from kritika serve's ServiceAccount, any Job that is not a runner Job as kritika builds it, any Secret that is not a run's, and any deletion of a Job but in the foreground, which takes its run's Secret with it, with three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects the chart's installer must be allowed to create. Without them the Role lets kritika serve create any Job in its namespace, whose pod may run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs an older replica starts mid-rollout do too; changing the repository, the runner ServiceAccount, RuntimeClass or database Secret refuses them until the rollout ends, and they are retried. |
-| runner.deadline | string | `""` | Maximum duration of a runner Job; omitted uses the application's default of 15m. |
-| runner.image.digest | string | `""` | Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest. |
-| runner.image.pullPolicy | string | `"IfNotPresent"` | Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY). |
-| runner.image.repository | string | `"ghcr.io/home-operations/kritika"` | Runner image repository. |
-| runner.image.tag | string | `""` | Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended. |
-| runner.mise.urlReplacements | list | `[]` | Rewrites of the URLs runner tools download from (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS), such as to a caching mirror: mise's `url_replacements`, tried in order until one matches. `from` is a URL prefix, or `regex:` and a pattern whose groups `to` may name as `$1`. The mirror's host must pass the egress gateway; a download is still checked against the repository's lock. |
-| runner.pod | object | `{}` | Where runner pods are scheduled and how they are marked (KRITIKA_RUNNER_POD), as the pod spec spells it: `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName`, extra `labels` and `annotations` such as `karpenter.sh/do-not-disrupt: "true"`, and `hostUsers: false` to run them in a user namespace, which the cluster and its nodes' runtime must support: an API server without user namespaces, off by default before Kubernetes 1.33, drops it. kritika refuses its own labels, the instance label and the Job controller's, and AppArmor annotations; the ServiceAccount, security context and volumes stay kritika's. |
-| runner.resources | object | `{}` | Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec. |
-| runner.runtimeClass | string | `""` | RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default. |
+| runner.admissionPolicy.enabled | bool | `true` | Have the cluster refuse, from kritika serve's ServiceAccount, any Job that is not a runner Job as kritika builds it, any Secret that is not a run's, and any deletion of a Job but in the foreground, which takes its run's Secret with it, with three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects the chart's installer must be allowed to create. Without them the Role lets kritika serve create any Job in its namespace, whose pod may run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs an older replica starts mid-rollout do too; changing the repository, the runner ServiceAccount, RuntimeClass or database Secret refuses them until the rollout ends, and they are retried. |
+| runner.jobTemplate.metadata.annotations | object | `{}` | Annotations for runner Jobs. kritika refuses its own, under `kritika.home-operations.com/`. |
+| runner.jobTemplate.metadata.labels | object | `{}` | Labels for runner Jobs. kritika refuses its own, the instance label and the Job controller's. |
+| runner.jobTemplate.spec.activeDeadlineSeconds | int | `900` | How long a runner Job may run, in seconds: at most 7200, or River's job timeout cap would cut the run off early. A review's or follow-up's Job runs as long as its agent's `timeout`, for each part a review is split into, needs, if that is longer. The deadline bounds the work around the run and the run's gateway token too. |
+| runner.jobTemplate.spec.ttlSecondsAfterFinished | int | `600` | How long a finished Job stays for kubectl before Kubernetes removes it, in seconds; the run row keeps everything the Job knew. |
+| runner.podTemplate.metadata.annotations | object | `{}` | Annotations for runner pods, such as `karpenter.sh/do-not-disrupt: "true"`. kritika refuses AppArmor's, which would set the runner's profile. |
+| runner.podTemplate.metadata.labels | object | `{}` | Labels for runner pods. kritika refuses its own, the instance label and the Job controller's. |
+| runner.podTemplate.spec.affinity | object | `{}` | Affinity for runner pods. |
+| runner.podTemplate.spec.containers | list | `[{"image":"","imagePullPolicy":"IfNotPresent","name":"runner"}]` | The runner container, the pod's one, named runner: its `image`, empty for this release's `-tools` image pinned by digest, which adds mise with curl, fd, gh, jq, rg and yq for a review's or follow-up's run tool, and its `imagePullPolicy`. |
+| runner.podTemplate.spec.hostUsers | bool | `true` | Set false to run runner pods in a user namespace of their own, which the nodes' kernel and container runtime must support; true shares the node's, as Kubernetes does by default. |
+| runner.podTemplate.spec.nodeSelector | object | `{}` | Node labels runner pods are scheduled by. |
+| runner.podTemplate.spec.priorityClassName | string | `""` | PriorityClass for runner pods. Empty uses the cluster default. |
+| runner.podTemplate.spec.resources | object | `{}` | Requests and limits of cpu, memory and hugepages for the whole runner pod, the run tool's commands included: pod-level resources, on by default from Kubernetes 1.34. A LimitRange's container defaults in the release namespace still apply to the runner container: its default limit bounds the runner within the pod's, and the API refuses a runner pod whose requests are below its default requests. |
+| runner.podTemplate.spec.runtimeClassName | string | `""` | RuntimeClass for runner pods, such as gvisor or kata. Empty uses the cluster default. |
+| runner.podTemplate.spec.tolerations | list | `[]` | Tolerations for runner pods. |
+| runner.podTemplate.spec.topologySpreadConstraints | list | `[]` | Topology spread constraints for runner pods. |
 | runner.serviceAccount.annotations | object | `{}` | Annotations for the runner ServiceAccount. |
 | runner.serviceAccount.create | bool | `true` | Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry. |
 | runner.serviceAccount.name | string | `""` | Runner ServiceAccount name; generated from the release name if empty. |
-| runner.ttl | string | `"10m"` | How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container securityContext (no privilege escalation, read-only root filesystem, drops ALL capabilities). |
 | service.gatewayPort | int | `8082` | Port of the gateway the kritika serve pods run, on the pods and its Service: the forward proxy runner Jobs are handed as `HTTPS_PROXY`, allowing only the hosts the configuration names (github.com once an app is configured, `egress.allow` less `egress.deny`), so runner pods need no direct internet egress, and the model and similar-code endpoints a runner calls with a per-run token, so no provider key enters a runner pod. |
 | service.metricsPort | int | `8081` | Metrics and probe port. |

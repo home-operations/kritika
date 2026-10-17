@@ -94,16 +94,36 @@ The helm test pod's curl image.
 {{- end }}
 
 {{/*
-Runner image reference, as kritika.image but with the tag defaulting to the
-release's -tools image.
+This release's -tools image from the image repository, pinned by the digest
+the release workflow writes to Chart.yaml.
 */}}
 {{- define "kritika.runnerImage" -}}
-{{- $img := .Values.runner.image -}}
-{{- if $img.digest -}}
-{{- printf "%s@%s" $img.repository $img.digest -}}
-{{- else -}}
-{{- printf "%s:%s" $img.repository ($img.tag | default (printf "%s-tools" .Chart.AppVersion)) -}}
+{{- $image := printf "%s:%s-tools" .Values.image.repository .Chart.AppVersion -}}
+{{- with index .Chart.Annotations "kritika.home-operations.com/runner-image-digest" -}}
+{{- $image = printf "%s@%s" $image . -}}
 {{- end -}}
+{{- $image -}}
+{{- end }}
+
+{{/*
+runner.jobTemplate, rendered through tpl.
+*/}}
+{{- define "kritika.runnerJobTemplate" -}}
+{{- tpl (toYaml .Values.runner.jobTemplate) . -}}
+{{- end }}
+
+{{/*
+runner.podTemplate, rendered through tpl, the runner container given
+kritika.runnerImage when it names no image.
+*/}}
+{{- define "kritika.runnerPodTemplate" -}}
+{{- $template := tpl (toYaml .Values.runner.podTemplate) . | fromYaml -}}
+{{- range (dig "spec" "containers" list $template) -}}
+{{- if and (kindIs "map" .) (eq (get . "name") "runner") (not (get . "image")) -}}
+{{- $_ := set . "image" (include "kritika.runnerImage" $) -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $template -}}
 {{- end }}
 
 {{/*
@@ -166,25 +186,11 @@ databaseAppRole: {{ .Values.database.app.role | quote }}
 databaseRunnerRole: {{ .Values.database.runner.role | quote }}
 executor: kubernetes
 runner:
-  image: {{ include "kritika.runnerImage" . | quote }}
-  imagePullPolicy: {{ .Values.runner.image.pullPolicy | quote }}
   serviceAccount: {{ include "kritika.runnerServiceAccountName" . | quote }}
   databaseSecret: {{ tpl .Values.database.runner.existingSecret . | quote }}
   databaseSecretKey: {{ .Values.database.runner.key | quote }}
-  ttl: {{ tpl (toString .Values.runner.ttl) . | quote }}
-  runtimeClass: {{ tpl .Values.runner.runtimeClass . | quote }}
-  {{- with .Values.runner.deadline }}
-  deadline: {{ . | quote }}
-  {{- end }}
-  {{- with .Values.runner.resources }}
-  resources: {{ toYaml . | nindent 4 }}
-  {{- end }}
-  {{- with .Values.runner.pod }}
-  pod: {{ toYaml . | nindent 4 }}
-  {{- end }}
-  {{- with .Values.runner.mise.urlReplacements }}
-  miseUrlReplacements: {{ toYaml . | nindent 4 }}
-  {{- end }}
+  jobTemplate: {{ include "kritika.runnerJobTemplate" . | nindent 4 }}
+  podTemplate: {{ include "kritika.runnerPodTemplate" . | nindent 4 }}
 {{- end -}}
 
 {{/*
@@ -239,36 +245,16 @@ an `env` key that would duplicate one of them.
 {{- if .Values.existingConfigMap }}
 - name: KRITIKA_EXECUTOR
   value: kubernetes
-- name: KRITIKA_RUNNER_IMAGE
-  value: {{ include "kritika.runnerImage" . | quote }}
-- name: KRITIKA_RUNNER_IMAGE_PULL_POLICY
-  value: {{ .Values.runner.image.pullPolicy | quote }}
 - name: KRITIKA_RUNNER_SERVICE_ACCOUNT
   value: {{ include "kritika.runnerServiceAccountName" . | quote }}
 - name: KRITIKA_RUNNER_DATABASE_SECRET
   value: {{ tpl .Values.database.runner.existingSecret . | quote }}
 - name: KRITIKA_RUNNER_DATABASE_SECRET_KEY
   value: {{ .Values.database.runner.key | quote }}
-- name: KRITIKA_RUNNER_RUNTIME_CLASS
-  value: {{ tpl .Values.runner.runtimeClass . | quote }}
-{{- with .Values.runner.deadline }}
-- name: KRITIKA_RUNNER_DEADLINE
-  value: {{ . | quote }}
-{{- end }}
-- name: KRITIKA_RUNNER_TTL
-  value: {{ tpl (toString .Values.runner.ttl) . | quote }}
-{{- with .Values.runner.resources }}
-- name: KRITIKA_RUNNER_RESOURCES
-  value: {{ toJson . | quote }}
-{{- end }}
-{{- with .Values.runner.pod }}
-- name: KRITIKA_RUNNER_POD
-  value: {{ toJson . | quote }}
-{{- end }}
-{{- with .Values.runner.mise.urlReplacements }}
-- name: KRITIKA_RUNNER_MISE_URL_REPLACEMENTS
-  value: {{ toJson . | quote }}
-{{- end }}
+- name: KRITIKA_RUNNER_JOB_TEMPLATE
+  value: {{ include "kritika.runnerJobTemplate" . | fromYaml | toJson | quote }}
+- name: KRITIKA_RUNNER_POD_TEMPLATE
+  value: {{ include "kritika.runnerPodTemplate" . | fromYaml | toJson | quote }}
 {{- end }}
 {{- end }}
 

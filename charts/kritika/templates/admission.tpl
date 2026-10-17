@@ -1,12 +1,21 @@
-{{- if .Values.runner.admission.enforce }}
+{{- if .Values.runner.admissionPolicy.enabled }}
 {{- /* Namespace names hold no dots, so the pair is unambiguous. */}}
 {{- $name := printf "%s.%s-runner" .Release.Namespace (include "kritika.fullname" .) }}
 {{- $kritika := printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kritika.serviceAccountName" .) }}
-{{- $runtimeClass := tpl .Values.runner.runtimeClass . }}
+{{- $podTemplate := include "kritika.runnerPodTemplate" . | fromYaml }}
+{{- $runtimeClass := dig "spec" "runtimeClassName" "" $podTemplate }}
 {{- $podLabels := list }}
-{{- range $k, $v := (.Values.runner.pod.labels | default dict) }}
+{{- range $k, $v := (dig "metadata" "labels" dict $podTemplate) }}
 {{- $podLabels = append $podLabels (printf "'%s': '%s'" $k $v) }}
 {{- end }}
+{{- $image := "" }}
+{{- range (dig "spec" "containers" list $podTemplate) }}
+{{- if eq .name "runner" }}
+{{- $image = .image }}
+{{- end }}
+{{- end }}
+{{- /* The image's repository: what precedes its tag, whose colon follows the last slash, and its digest. */}}
+{{- $repository := regexReplaceAll "^([^@]+?)(:[^:/@]+)?(@.+)?$" $image "${1}" }}
 # The Role lets kritika serve create Jobs and Secrets in its namespace, and
 # a Job's pod is not checked against its creator's permissions: the cluster
 # refuses, from kritika serve's ServiceAccount, any Job that is not a runner
@@ -53,7 +62,7 @@ spec:
           k.startsWith('kritika.home-operations.com/') ||
           k == 'job-name' || k == 'controller-uid' || k.startsWith('batch.kubernetes.io/') ||
           (k in variables.podLabels && variables.podLabels[k] == variables.labels[k]))
-      message: a runner pod carries kritika's labels, the Job controller's and runner.pod's alone, none another policy or Service selects other pods by
+      message: a runner pod carries kritika's labels, the Job controller's and runner.podTemplate's alone, none another policy or Service selects other pods by
     - expression: >-
         has(variables.pod.serviceAccountName) && variables.pod.serviceAccountName == '{{ include "kritika.runnerServiceAccountName" . }}' &&
         has(variables.pod.automountServiceAccountToken) && !variables.pod.automountServiceAccountToken &&
@@ -84,8 +93,7 @@ spec:
         variables.pod.containers.size() == 1 && !has(variables.pod.initContainers) && !has(variables.pod.ephemeralContainers)
       message: a runner pod has the runner container alone
     - expression: >-
-        variables.pod.containers.all(c, c.image.startsWith('{{ .Values.runner.image.repository }}:') ||
-          c.image.startsWith('{{ .Values.runner.image.repository }}@'))
+        variables.pod.containers.all(c, c.image.matches(r'^{{ regexQuoteMeta $repository }}(:[^:/@]+)?(@[^@]+)?$'))
       message: a runner pod runs an image of the runner repository
     - expression: >-
         variables.pod.containers.all(c, has(c.securityContext) &&

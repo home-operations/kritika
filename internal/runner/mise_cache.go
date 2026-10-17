@@ -5,35 +5,33 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/home-operations/kritika/internal/config"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/egress"
 )
 
+// urlReplacement is one of mise's url_replacements rules: a download URL
+// with the prefix From becomes To.
+type urlReplacement struct{ From, To string }
+
 // cacheReplacements are the rules that send a download from one of
 // cached, the hosts whose downloads the gateway keeps, to the gateway as
-// plain HTTP, which it upgrades, so it can keep what it fetches. mise
-// tries them after replacements, so a mirror the admin set still wins,
-// and none repeats a from of theirs, since mise keys the rules by it.
-func cacheReplacements(replacements []config.MiseURLReplacement, cached []string) []config.MiseURLReplacement {
-	var rules []config.MiseURLReplacement
+// plain HTTP, which it upgrades, so it can keep what it fetches.
+func cacheReplacements(cached []string) []urlReplacement {
+	rules := make([]urlReplacement, 0, len(cached))
 	for _, host := range cached {
-		from := "https://" + host + "/"
-		if !slices.ContainsFunc(replacements, func(r config.MiseURLReplacement) bool { return r.From == from }) {
-			rules = append(rules, config.MiseURLReplacement{From: from, To: "http://" + host + "/"})
-		}
+		rules = append(rules, urlReplacement{From: "https://" + host + "/", To: "http://" + host + "/"})
 	}
 	return rules
 }
 
 // lockedInstallEnv is the environment of a repository's locked install:
-// common, mise's environment before any rule, with the rules of
-// replacements, then those of cached and of the hosts the lock pins
-// downloads on, urls, and the proxy's username saying it is locked.
-func lockedInstallEnv(common []string, replacements []config.MiseURLReplacement, cached, urls []string) []string {
+// common, mise's environment before any rule, with the rules of cached and
+// of the hosts the lock pins downloads on, urls, and the proxy's username
+// saying it is locked.
+func lockedInstallEnv(common []string, cached, urls []string) []string {
 	hosts := append(slices.Clone(cached), lockHosts(urls, cached)...)
 	env := slices.Clone(common)
-	if rules := append(slices.Clone(replacements), cacheReplacements(replacements, hosts)...); len(rules) > 0 {
+	if rules := cacheReplacements(hosts); len(rules) > 0 {
 		env = append(env, "MISE_URL_REPLACEMENTS="+miseURLReplacements(rules))
 	}
 	return withProxyUser(env, egress.LockedProxyUser)

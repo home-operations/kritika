@@ -9,7 +9,7 @@ tests:
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
-            name: KRITIKA_RUNNER_RUNTIME_CLASS
+            name: KRITIKA_RUNNER_POD_TEMPLATE
           any: true
       # The pod's name and UID, for the Events kritika records on it.
       - contains:
@@ -192,53 +192,34 @@ tests:
     asserts:
       # The tag floats with the release-please-stamped appVersion.
       - matchRegex:
-          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_IMAGE")].value
-          pattern: ^ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+-tools$
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_IMAGE_PULL_POLICY
-            value: IfNotPresent
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_POD_TEMPLATE")].value
+          pattern: '"containers":\[\{"image":"ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+-tools","imagePullPolicy":"IfNotPresent","name":"runner"\}\]'
 
-  - it: takes the runner repository, tag and pull policy apart from the chart's image
+  - it: takes the runner image from the chart's image repository, not its tag or digest
     set:
       config: null
       existingConfigMap: external-config
+      image.repository: registry.example/kritika
       image.tag: 1.2.3
-      runner.image.repository: registry.example/kritika-tools
-      runner.image.tag: 24h
-      runner.image.pullPolicy: Always
+      image.digest: sha256:deadbeef
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/home-operations/kritika:1.2.3
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_IMAGE
-            value: registry.example/kritika-tools:24h
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_IMAGE_PULL_POLICY
-            value: Always
+          value: registry.example/kritika@sha256:deadbeef
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_POD_TEMPLATE")].value
+          pattern: '"image":"registry\.example/kritika:\d+\.\d+\.\d+-tools"'
 
-  - it: pins the runner image by its own digest
+  - it: takes the runner container's image and pull policy from runner.podTemplate
     set:
       config: null
       existingConfigMap: external-config
-      image.digest: sha256:deadbeef
-      runner.image.digest: sha256:cafef00d
-      runner.image.tag: ignored
+      runner.podTemplate.spec.containers:
+        - { name: runner, image: registry.example/kritika-tools:24h, imagePullPolicy: Always }
     asserts:
-      - equal:
-          path: spec.template.spec.containers[0].image
-          value: ghcr.io/home-operations/kritika@sha256:deadbeef
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_IMAGE
-            value: ghcr.io/home-operations/kritika@sha256:cafef00d
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_POD_TEMPLATE")].value
+          pattern: '"containers":\[\{"image":"registry\.example/kritika-tools:24h","imagePullPolicy":"Always","name":"runner"\}\]'
 
   - it: leaves how kritika runs to its defaults unless values set it
     asserts:
@@ -252,33 +233,23 @@ tests:
           content:
             name: KRITIKA_RUNNER_TOOLS
           any: true
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: KRITIKA_RUNNER_MISE_URL_REPLACEMENTS
-          any: true
 
-  - it: renders the runner pods' resources and settings and the URL replacements as JSON, the rules in order
+  - it: renders the runner templates as JSON for an external configuration
     set:
       config: null
       existingConfigMap: external-config
-      runner.resources: { limits: { memory: 1Gi } }
-      runner.pod: { priorityClassName: kritika-runner }
-      runner.mise.urlReplacements:
-        - { from: "https://github.com/acme/", to: "https://mirror.example.com/acme/" }
-        - { from: "https://github.com/", to: "https://mirror.example.com/github/" }
+      runner.jobTemplate.spec.activeDeadlineSeconds: 1200
+      runner.podTemplate.spec.resources: { limits: { memory: 1Gi } }
+      runner.podTemplate.spec.priorityClassName: kritika-runner
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_POD, value: '{"priorityClassName":"kritika-runner"}' }
-      - contains:
-          path: spec.template.spec.containers[0].env
           content:
-            name: KRITIKA_RUNNER_MISE_URL_REPLACEMENTS
-            value: '[{"from":"https://github.com/acme/","to":"https://mirror.example.com/acme/"},{"from":"https://github.com/","to":"https://mirror.example.com/github/"}]'
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_RESOURCES, value: '{"limits":{"memory":"1Gi"}}' }
+            name: KRITIKA_RUNNER_JOB_TEMPLATE
+            value: '{"metadata":{"annotations":{},"labels":{}},"spec":{"activeDeadlineSeconds":1200,"ttlSecondsAfterFinished":600}}'
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_POD_TEMPLATE")].value
+          pattern: '"priorityClassName":"kritika-runner","resources":\{"limits":\{"memory":"1Gi"\}\}'
 
   - it: hands kritika serve the dashboard's URL, and one public port for the webhooks and the dashboard
     set:
@@ -385,7 +356,7 @@ tests:
         helm = "4.3.0"
     asserts:
       - failedTemplate:
-          errorMessage: runner.mise.config has been removed; declare tools in a repository's .kritika/mise.toml and mirrors in runner.mise.urlReplacements instead
+          errorMessage: runner.mise.config has been removed; declare tools in a repository's .kritika/mise.toml instead
 
   - it: supplies only the config path, the pod's name and UID and database credentials before extra env
     asserts:
@@ -412,19 +383,14 @@ tests:
     set:
       config: null
       existingConfigMap: external-config
-      runner.runtimeClass: gvisor
-      runner.deadline: 20m
+      runner.podTemplate.spec.runtimeClassName: gvisor
     asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_POD_TEMPLATE")].value
+          pattern: '"runtimeClassName":"gvisor"'
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_RUNTIME_CLASS, value: gvisor }
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_DEADLINE, value: 20m }
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_RUNNER_MISE_URL_REPLACEMENTS }
-          any: true
+          content: { name: KRITIKA_RUNNER_SERVICE_ACCOUNT, value: RELEASE-NAME-kritika-runner }
       - contains:
           path: spec.template.spec.volumes
           content:
@@ -448,10 +414,10 @@ tests:
 
   - it: refuses env duplicating a nested runner file setting
     set:
-      env.KRITIKA_RUNNER_IMAGE: example.com/other:test
+      env.KRITIKA_RUNNER_POD_TEMPLATE: "{}"
     asserts:
       - failedTemplate:
-          errorPattern: "env.KRITIKA_RUNNER_IMAGE conflicts with config.runner.image"
+          errorPattern: "env.KRITIKA_RUNNER_POD_TEMPLATE conflicts with config.runner.podTemplate"
 
   - it: gives each replica an emptyDir for the gateway's cache when it is enabled
     set:

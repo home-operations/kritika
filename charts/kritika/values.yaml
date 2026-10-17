@@ -145,63 +145,145 @@ database:
 # serve in the release namespace from the release's -tools image, running as a
 # service account with no permissions and a database role that can only touch
 # its own run. The server's Role reaches every Secret in the release namespace,
-# so install kritika into a namespace of its own. Their deadline and
-# RuntimeClass are `runner.deadline` and `runner.runtimeClass`; a
-# sandboxed RuntimeClass (gVisor, Kata) is advised, since a runner parses
-# untrusted repository content and runs what the model asks.
+# so install kritika into a namespace of its own. A sandboxed RuntimeClass
+# (gVisor, Kata), `runner.podTemplate.spec.runtimeClassName`, is advised,
+# since a runner parses untrusted repository content and runs what the model
+# asks.
 runner:
-  # -- RuntimeClass for runner Jobs, such as gvisor or kata. Empty uses the cluster default.
-  runtimeClass: ""
-  # -- Maximum duration of a runner Job; omitted uses the application's default of 15m.
-  deadline: ""
-  # Image for runner Jobs: the release's `-tools` image, which adds mise
-  # with curl, fd, gh, jq, rg and yq for a review's or follow-up's run tool.
-  image:
-    # -- Runner image repository.
-    repository: ghcr.io/home-operations/kritika
-    # -- Runner image pull policy (KRITIKA_RUNNER_IMAGE_PULL_POLICY).
-    pullPolicy: IfNotPresent
-    # -- Overrides the runner image tag; defaults to the chart appVersion with `-tools` appended.
-    tag: ""
-    # -- Pin the runner image by digest (sha256:…); when set, overrides the tag. The release pipeline fills it with the published `-tools` image's digest.
-    digest: ""
-  # -- How long a finished Job stays for kubectl before Kubernetes removes it (Go duration); the run row keeps everything the Job knew.
-  ttl: 10m
-  # -- Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.
-  resources: {}
   # @schema
   # type: object
   # additionalProperties: false
-  # properties:
-  #   labels: { type: object, additionalProperties: { type: string } }
-  #   annotations: { type: object, additionalProperties: { type: string } }
-  #   nodeSelector: { type: object, additionalProperties: { type: string } }
-  #   tolerations: { type: array, items: { type: object } }
-  #   affinity: { type: object }
-  #   topologySpreadConstraints: { type: array, items: { type: object } }
-  #   priorityClassName: { type: string }
-  #   hostUsers: { type: boolean }
   # @schema
-  # -- Where runner pods are scheduled and how they are marked (KRITIKA_RUNNER_POD), as the pod spec spells it: `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName`, extra `labels` and `annotations` such as `karpenter.sh/do-not-disrupt: "true"`, and `hostUsers: false` to run them in a user namespace, which the cluster and its nodes' runtime must support: an API server without user namespaces, off by default before Kubernetes 1.33, drops it. kritika refuses its own labels, the instance label and the Job controller's, and AppArmor annotations; the ServiceAccount, security context and volumes stay kritika's.
-  pod: {}
-  # The runner image declares curl, fd, gh, jq, rg and yq; a repository adds
-  # tools for its own reviews in `.kritika/mise.toml`, pinned by its lock.
-  mise:
+  # What kritika sets on every runner Job (KRITIKA_RUNNER_JOB_TEMPLATE), as
+  # a Job template spells it. The Job's retries, its pod failure policy and
+  # its pod stay kritika's.
+  jobTemplate:
     # @schema
-    # type: array
-    # items:
-    #   type: object
-    #   additionalProperties: false
-    #   required: [from, to]
-    #   properties:
-    #     from: { type: string, minLength: 1 }
-    #     to: { type: string, minLength: 1 }
+    # type: object
+    # additionalProperties: false
     # @schema
-    # -- Rewrites of the URLs runner tools download from (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS), such as to a caching mirror: mise's `url_replacements`, tried in order until one matches. `from` is a URL prefix, or `regex:` and a pattern whose groups `to` may name as `$1`. The mirror's host must pass the egress gateway; a download is still checked against the repository's lock.
-    urlReplacements: []
-  admission:
+    metadata:
+      # @schema
+      # type: object
+      # additionalProperties: { type: string }
+      # @schema
+      # -- Labels for runner Jobs. kritika refuses its own, the instance label and the Job controller's.
+      labels: {}
+      # @schema
+      # type: object
+      # additionalProperties: { type: string }
+      # @schema
+      # -- Annotations for runner Jobs. kritika refuses its own, under `kritika.home-operations.com/`.
+      annotations: {}
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # @schema
+    spec:
+      # @schema
+      # type: integer
+      # minimum: 1
+      # maximum: 7200
+      # @schema
+      # -- How long a runner Job may run, in seconds: at most 7200, or River's job timeout cap would cut the run off early. A review's or follow-up's Job runs as long as its agent's `timeout`, for each part a review is split into, needs, if that is longer. The deadline bounds the work around the run and the run's gateway token too.
+      activeDeadlineSeconds: 900
+      # @schema
+      # type: integer
+      # minimum: 1
+      # maximum: 2147483647
+      # @schema
+      # -- How long a finished Job stays for kubectl before Kubernetes removes it, in seconds; the run row keeps everything the Job knew.
+      ttlSecondsAfterFinished: 600
+  # @schema
+  # type: object
+  # additionalProperties: false
+  # @schema
+  # What kritika sets on every runner pod (KRITIKA_RUNNER_POD_TEMPLATE), as
+  # a pod template spells it. What keeps a runner isolated, its
+  # ServiceAccount, the token it does not mount, its security contexts, its
+  # volumes and its command, stays kritika's.
+  podTemplate:
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # @schema
+    metadata:
+      # @schema
+      # type: object
+      # additionalProperties: { type: string }
+      # @schema
+      # -- Labels for runner pods. kritika refuses its own, the instance label and the Job controller's.
+      labels: {}
+      # @schema
+      # type: object
+      # additionalProperties: { type: string }
+      # @schema
+      # -- Annotations for runner pods, such as `karpenter.sh/do-not-disrupt: "true"`. kritika refuses AppArmor's, which would set the runner's profile.
+      annotations: {}
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # @schema
+    spec:
+      # @schema
+      # type: object
+      # additionalProperties: false
+      # properties:
+      #   requests: { type: object, additionalProperties: { type: [string, number] } }
+      #   limits: { type: object, additionalProperties: { type: [string, number] } }
+      # @schema
+      # -- Requests and limits of cpu, memory and hugepages for the whole runner pod, the run tool's commands included: pod-level resources, on by default from Kubernetes 1.34. A LimitRange's container defaults in the release namespace still apply to the runner container: its default limit bounds the runner within the pod's, and the API refuses a runner pod whose requests are below its default requests.
+      resources: {}
+      # -- RuntimeClass for runner pods, such as gvisor or kata. Empty uses the cluster default.
+      runtimeClassName: ""
+      # -- PriorityClass for runner pods. Empty uses the cluster default.
+      priorityClassName: ""
+      # -- Set false to run runner pods in a user namespace of their own, which the nodes' kernel and container runtime must support; true shares the node's, as Kubernetes does by default.
+      hostUsers: true
+      # @schema
+      # type: object
+      # additionalProperties: { type: string }
+      # @schema
+      # -- Node labels runner pods are scheduled by.
+      nodeSelector: {}
+      # @schema
+      # type: array
+      # items: { type: object }
+      # @schema
+      # -- Tolerations for runner pods.
+      tolerations: []
+      # @schema
+      # type: object
+      # @schema
+      # -- Affinity for runner pods.
+      affinity: {}
+      # @schema
+      # type: array
+      # items: { type: object }
+      # @schema
+      # -- Topology spread constraints for runner pods.
+      topologySpreadConstraints: []
+      # @schema
+      # type: array
+      # minItems: 1
+      # maxItems: 1
+      # items:
+      #   type: object
+      #   additionalProperties: false
+      #   required: [name]
+      #   properties:
+      #     name: { const: runner }
+      #     image: { type: string }
+      #     imagePullPolicy: { enum: ["", Always, IfNotPresent, Never] }
+      # @schema
+      # -- The runner container, the pod's one, named runner: its `image`, empty for this release's `-tools` image pinned by digest, which adds mise with curl, fd, gh, jq, rg and yq for a review's or follow-up's run tool, and its `imagePullPolicy`.
+      containers:
+        - name: runner
+          image: ""
+          imagePullPolicy: IfNotPresent
+  admissionPolicy:
     # -- Have the cluster refuse, from kritika serve's ServiceAccount, any Job that is not a runner Job as kritika builds it, any Secret that is not a run's, and any deletion of a Job but in the foreground, which takes its run's Secret with it, with three ValidatingAdmissionPolicies and their bindings: cluster-scoped objects the chart's installer must be allowed to create. Without them the Role lets kritika serve create any Job in its namespace, whose pod may run as another ServiceAccount and mount another Secret. Any tag or digest of the runner image's repository passes, so the runs an older replica starts mid-rollout do too; changing the repository, the runner ServiceAccount, RuntimeClass or database Secret refuses them until the rollout ends, and they are retried.
-    enforce: false
+    enabled: true
   serviceAccount:
     # -- Create the runner ServiceAccount: no permissions, no token mounted, and the chart's `imagePullSecrets` so runner Jobs can pull from a private registry.
     create: true

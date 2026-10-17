@@ -7,14 +7,14 @@ release:
   name: kritika
   namespace: reviews
 tests:
-  - it: renders nothing unless enforced
+  - it: renders nothing when disabled
+    set:
+      runner.admissionPolicy.enabled: false
     asserts:
       - hasDocuments:
           count: 0
 
   - it: binds a policy for Jobs and one for Secrets to kritika serve's ServiceAccount in its namespace
-    set:
-      runner.admission.enforce: true
     asserts:
       - hasDocuments:
           count: 6
@@ -73,15 +73,15 @@ tests:
 
   - it: pins the runner ServiceAccount, image repository and database Secret the executor uses
     set:
-      runner.admission.enforce: true
-      runner.image.repository: registry.example/tools
-      runner.image.digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      runner.podTemplate.spec.containers:
+        - name: runner
+          image: registry.example:5000/team/tools:1.2@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       runner.serviceAccount.name: reviewers
       database.runner.existingSecret: runner-db
     asserts:
-      - matchRegex:
+      - equal:
           path: spec.validations[8].expression
-          pattern: "c.image.startsWith\\('registry.example/tools:'\\) \\|\\|\\s+c.image.startsWith\\('registry.example/tools@'\\)"
+          value: variables.pod.containers.all(c, c.image.matches(r'^registry\.example:5000/team/tools(:[^:/@]+)?(@[^@]+)?$'))
         documentIndex: 0
       - matchRegex:
           path: spec.validations[3].expression
@@ -92,10 +92,16 @@ tests:
           pattern: "e.valueFrom.secretKeyRef.name == 'runner-db'"
         documentIndex: 0
 
-  - it: lets runner pods carry runner.pod's labels, with their values
+  - it: pins the repository of this release's -tools image by default
+    asserts:
+      - equal:
+          path: spec.validations[8].expression
+          value: variables.pod.containers.all(c, c.image.matches(r'^ghcr\.io/home-operations/kritika(:[^:/@]+)?(@[^@]+)?$'))
+        documentIndex: 0
+
+  - it: lets runner pods carry runner.podTemplate's labels, with their values
     set:
-      runner.admission.enforce: true
-      runner.pod.labels: { team: reviews }
+      runner.podTemplate.metadata.labels: { team: reviews }
     asserts:
       - contains:
           path: spec.variables
@@ -104,9 +110,7 @@ tests:
             expression: "{'team': 'reviews'}"
         documentIndex: 0
 
-  - it: lets runner pods carry no labels of their own unless runner.pod sets them
-    set:
-      runner.admission.enforce: true
+  - it: lets runner pods carry no labels of their own unless runner.podTemplate sets them
     asserts:
       - contains:
           path: spec.variables
@@ -117,8 +121,7 @@ tests:
 
   - it: holds runner pods to the runner RuntimeClass, or to none
     set:
-      runner.admission.enforce: true
-      runner.runtimeClass: gvisor
+      runner.podTemplate.spec.runtimeClassName: gvisor
     asserts:
       - contains:
           path: spec.validations
@@ -128,8 +131,6 @@ tests:
         documentIndex: 0
 
   - it: holds runner pods to the cluster's default runtime when no RuntimeClass is set
-    set:
-      runner.admission.enforce: true
     asserts:
       - contains:
           path: spec.validations

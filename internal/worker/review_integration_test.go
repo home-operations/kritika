@@ -1417,7 +1417,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	// Long enough that masking it out of the transcripts leaves the prompts
 	// they are checked against intact.
 	t.Setenv("TEST_SECRET", "test-provider-key")
-	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":60}}`)
 	file := configfiletest.Load(t, configYAML)
 	if err := appStore.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
@@ -3573,7 +3573,7 @@ func TestStartReviewOwnership(t *testing.T) {
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
-	t.Setenv("KRITIKA_RUNNER_DEADLINE", "60s")
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":60}}`)
 	file := configfiletest.Load(t, configYAML)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)

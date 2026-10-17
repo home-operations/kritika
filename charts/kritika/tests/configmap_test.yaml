@@ -68,57 +68,51 @@ tests:
 
   - it: derives the runner configuration from runner values
     set:
-      runner.runtimeClass: gvisor
-      runner.deadline: 20m
-      runner.image.repository: registry.example/tools
-      runner.image.tag: custom
-      runner.resources: { limits: { memory: 1Gi } }
-      runner.mise.urlReplacements:
-        - { from: "https://github.com/acme/", to: "https://mirror.example.com/acme/" }
-        - { from: "https://github.com/", to: "https://mirror.example.com/github/" }
+      runner.jobTemplate.spec.activeDeadlineSeconds: 1200
+      runner.podTemplate.spec.runtimeClassName: gvisor
+      runner.podTemplate.spec.resources: { limits: { memory: 1Gi } }
+      runner.podTemplate.spec.containers:
+        - { name: runner, image: registry.example/tools:custom }
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "runtimeClass: gvisor"
+          pattern: "activeDeadlineSeconds: 1200"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'miseUrlReplacements:\n\s+- from: https://github.com/acme/\n\s+to: https://mirror.example.com/acme/\n\s+- from: https://github.com/\n\s+to: https://mirror.example.com/github/'
+          pattern: "runtimeClassName: gvisor"
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "deadline: 20m"
+          pattern: '- image: registry.example/tools:custom\n\s+name: runner'
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "image: registry.example/tools:custom"
-      - matchRegex:
-          path: data["config.yaml"]
-          pattern: "memory: 1Gi"
+          pattern: 'resources:\n\s+limits:\n\s+memory: 1Gi'
 
-  - it: renders runner.pod into the runner configuration
+  - it: fills the runner container's image with this release's -tools image
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- image: ghcr.io/home-operations/kritika:\d+\.\d+\.\d+-tools\n\s+imagePullPolicy: IfNotPresent\n\s+name: runner'
+
+  - it: renders runner.podTemplate into the runner configuration, through tpl
     set:
-      runner.pod:
-        nodeSelector: { node-role.example.com/runner: "true" }
-        tolerations: [{ key: runner, operator: Exists, effect: NoSchedule }]
-        hostUsers: false
+      runner.podTemplate.metadata.labels: { release: "{{ .Release.Name }}" }
+      runner.podTemplate.spec.nodeSelector: { node-role.example.com/runner: "true" }
+      runner.podTemplate.spec.tolerations: [{ key: runner, operator: Exists, effect: NoSchedule }]
+      runner.podTemplate.spec.hostUsers: false
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: 'pod:\n\s+hostUsers: false\n\s+nodeSelector:\n\s+node-role.example.com/runner: "true"\n\s+tolerations:\n\s+- effect: NoSchedule'
-
-  - it: omits runner.pod by default
-    asserts:
-      - notMatchRegex:
+          pattern: 'labels:\n\s+release: RELEASE-NAME'
+      - matchRegex:
           path: data["config.yaml"]
-          pattern: '\n\s+pod:'
-
-  - it: omits URL replacements by default, leaving runner downloads at their URLs
-    asserts:
-      - notMatchRegex:
+          pattern: 'hostUsers: false\n\s+nodeSelector:\n\s+node-role.example.com/runner: "true"'
+      - matchRegex:
           path: data["config.yaml"]
-          pattern: miseUrlReplacements
+          pattern: 'tolerations:\n\s+- effect: NoSchedule'
 
   - it: refuses runner configuration duplicated in application config
     set:
-      config.runner.runtimeClass: gvisor
+      config.runner.podTemplate: { spec: { runtimeClassName: gvisor } }
     asserts:
       - failedTemplate:
           errorPattern: "config.runner: the chart derives this setting from its deployment values"

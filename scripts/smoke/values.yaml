@@ -37,10 +37,16 @@ env:
 resources:
   requests: { cpu: 10m, memory: 64Mi }
   limits: { memory: 512Mi }
-# The runner admission, and a runner.pod so that each replica's startup
-# check sends a runner Job, as the executor builds it, through it.
+# Each replica's startup check sends a runner Job, as the executor builds it
+# from these templates, through the runner admission policies.
 runner:
-  admission:
-    enforce: true
-  pod:
-    annotations: { example.com/smoke: "true" }
+  jobTemplate:
+    metadata:
+      labels: { example.com/smoke: "true" }
+  podTemplate:
+    metadata:
+      annotations: { example.com/smoke: "true" }
+    spec:
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits: { memory: 1Gi }

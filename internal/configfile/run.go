@@ -29,13 +29,5 @@ func (f *File) TranscriptRetention() time.Duration { return f.Run.TranscriptRete
 // are kept.
 func (f *File) DiffRetention() time.Duration { return f.Run.DiffRetention }
 
-// RunnerFor resolves a runner Job's deadline and resources.
-func (f *File) RunnerFor() (deadline time.Duration, resources map[string]any) {
-	return f.Run.RunnerDeadline, f.Run.RunnerResources
-}
-
-// MiseURLReplacements are the rules runner Jobs rewrite tool download
-// URLs by, in the order mise tries them.
-func (f *File) MiseURLReplacements() config.MiseURLReplacements {
-	return f.Run.RunnerMiseURLReplacements
-}
+// RunnerDeadline bounds a runner Job, as its jobTemplate says.
+func (f *File) RunnerDeadline() time.Duration { return f.Run.RunnerDeadline() }

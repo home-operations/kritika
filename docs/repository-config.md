@@ -391,9 +391,8 @@ only when they are literal strings under non-reserved names. Templates,
 `_.` directives, non-string values and the reserved names listed under
 [runner tools](security.md#runner-tools) are dropped with summary notes.
 `[settings]`, `[tasks]` and hooks are also dropped with notes; other
-sections are ignored. Mise settings are not the repository's: the admin
-sets mirrors, in `runner.mise.urlReplacements`, and the repository cannot
-expand network access.
+sections are ignored. Mise settings are not the repository's, and the
+repository cannot expand network access.
 
 Generate and commit the lock alongside the config:
 

@@ -192,7 +192,8 @@ kubectl apply --server-side --field-manager kritika-dev -k .private/deploy
 # Split at the last colon: a registry host may carry a port.
 helm upgrade --install kritika charts/kritika -n kritika --values .private/values.yaml \
   --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
-  --set runner.image.repository="${runner%:*}" --set runner.image.tag="${runner##*:}" --wait --timeout 10m
+  --set 'runner.podTemplate.spec.containers[0].name=runner' --set "runner.podTemplate.spec.containers[0].image=$runner" \
+  --wait --timeout 10m
 """
 
 [tasks.undeploy]

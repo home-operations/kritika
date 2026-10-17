@@ -10,10 +10,10 @@ what a pull request could use to weaken its own review out of its reach.
 | Do                                                     | Why                                                                                                                                                                                           |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Install kritika into a namespace of its own            | runner Jobs run in the release namespace, and kritika's Role can create Secrets there, though it can never get, list, change or delete one                                                    |
-| Set `runner.admission.enforce`                         | the cluster then refuses, from kritika serve's ServiceAccount, any Job but a runner Job as kritika builds it and any Secret but a run's; without it the Role lets kritika serve create a Job whose pod runs as another ServiceAccount, mounts another Secret, or, where Pod Security is not enforced, reaches the node itself |
+| Keep `runner.admissionPolicy.enabled`, the default     | the cluster then refuses, from kritika serve's ServiceAccount, any Job but a runner Job as kritika builds it and any Secret but a run's; without it the Role lets kritika serve create a Job whose pod runs as another ServiceAccount, mounts another Secret, or, where Pod Security is not enforced, reaches the node itself |
 | Turn on the chart's `networkPolicy.enabled`            | a runner pod can then reach nothing but the cluster's DNS, the database `networkPolicy.postgres` locates ([Postgres](database.md#secrets-and-connection-uris)) and the [egress gateway](#the-egress-gateway) |
-| Set `runner.runtimeClass` to a sandboxed runtime | a kernel vulnerability reachable from the pod is contained by the sandbox rather than the node ([runner sandbox](#runner-sandbox))                                                            |
-| Set `runner.resources`                                 | a runaway run is killed in its own cgroup rather than pressing on its node                                                                                                                    |
+| Set `runner.podTemplate.spec.runtimeClassName` to a sandboxed runtime | a kernel vulnerability reachable from the pod is contained by the sandbox rather than the node ([runner sandbox](#runner-sandbox))                                                            |
+| Set `runner.podTemplate.spec.resources`                | a runaway run is killed in its own cgroup rather than pressing on its node                                                                                                                    |
 | Map roles on what the IdP controls                     | a role mapping is only as trustworthy as what it reads: map on groups or roles, not on an email or name a user can set on their own profile ([role mappings](configuration.md#role-mappings)) |
 
 ## What a runner holds
@@ -199,8 +199,9 @@ the tools or download pins used to review itself. A tool at the image's
 version runs from its system install; any other downloads on the first
 run that uses it, into the run's own scratch space, at the URL and
 checksum the lock pins. The run tool offers every command the merged
-config's tools provide, `mise` itself excepted. An image set in
-`runner.image` without mise offers the six default commands its builder
+config's tools provide, `mise` itself excepted. An image set as the runner
+container's in `runner.podTemplate` without mise offers the six default
+commands its builder
 put on its `PATH`, and reads no repository config, which the review
 summary says. A follow-up posts no summary, so its reply carries such
 notes, and a command's setup failure, instead.
@@ -210,9 +211,8 @@ image built on the `-tools` image, with the tool added to its
 `/etc/mise/config.toml` and to `/etc/mise/mise.lock`, which the runner's
 user must be able to read (`mise lock` writes it mode 0600), and
 installed with `mise install --system --locked` as the release's
-Dockerfile installs the six, set in `runner.image`. The admin's one mise
-setting is a mirror for the downloads, `runner.mise.urlReplacements`
-(see [more tools](#more-tools)).
+Dockerfile installs the six, set as the runner container's image in
+`runner.podTemplate`.
 
 The runner keeps of a repository's `[tools]` entry its version and the
 options that select, verify and extract its download. The options that
@@ -223,8 +223,8 @@ renders templates, `exec()` among them, when it reads the config and
 runs install hooks with the run's GitHub token in their environment.
 Repository `[env]` permits only literal strings under non-reserved names;
 templates and `_.` directives are dropped. `[tasks]`, `[settings]` and
-hooks are dropped too, with summary notes. Mirrors and egress
-permissions remain the admin's. The filtered config and its lock live
+hooks are dropped too, with summary notes. Egress permissions remain
+the admin's. The filtered config and its lock live
 outside the checkout in the run's read-only `HOME`, trusted only for the
 runner's own mise calls. A tool without a locked version, URL and
 checksum for the runner's platform is not offered, unless the image has
@@ -393,31 +393,10 @@ against glibc, libgcc and libstdc++, which is all the image carries, so a
 backend that builds or needs a runtime (`npm:`, `pipx:`, `cargo:`, `go:`)
 does not work there.
 
-`runner.mise.urlReplacements` sends every runner's tool downloads to a
-mirror, whose host must pass the gateway like any other; what `curl`,
-`gh` and `fetch_repo` reach is left as it is. The rules are
-mise's `url_replacements`, tried in order until one rewrites the URL: a
-`from` is a URL prefix, or `regex:` and a pattern whose groups `to` names
-as `$1`:
-
-```yaml
-runner:
-  mise:
-    urlReplacements:
-      - from: https://github.com/
-        to: https://mirror.example.internal/github/
-```
-
-A download from the mirror is checked against the checksum the
-repository's lock pins, so the mirror cannot change what a tool is.
-Outside Helm, the application key is `runner.miseUrlReplacements`, a list
-of the same `from` and `to` pairs, or use
-`KRITIKA_RUNNER_MISE_URL_REPLACEMENTS`, a JSON array of them.
-
 ### The gateway's download cache
 
-A run installs the tools its repository declares, so without a mirror
-each run downloads them again. The gateway can keep those downloads
+A run installs the tools its repository declares, so each run downloads
+them again. The gateway can keep those downloads
 instead: with `gatewayCacheDir` set, an emptyDir under Helm, each replica
 keeps what a repository's locked installs download from the hosts its
 `.kritika/mise.lock` pins, and serves it to the next run that asks for
@@ -437,8 +416,8 @@ config:
 
 - **What is kept.** A repository's locked install reaches each host its
   lock pins a download on over plain HTTP, `https://github.com/`
-  rewritten to `http://github.com/` after `runner.mise.urlReplacements`,
-  with the proxy URL's username `locked`; every install does the same for
+  rewritten to `http://github.com/`, with the proxy URL's username
+  `locked`; every install does the same for
   a host `egress.cache` names. The gateway fetches such a request over
   HTTPS, as it does any plain HTTP request, following redirects itself,
   each through the egress rules: a GitHub release download that
@@ -481,11 +460,6 @@ config:
   plus those files and the pod's other storage use. Twice the bound is
   not a hard limit on disk usage. Each replica keeps its own cache,
   which lasts as long as its pod.
-- **A mirror.** mise applies one rule to a URL, so a rule that rewrites
-  to a mirror over `https://` skips the cache. To keep a mirror's
-  downloads, rewrite to it over `http://`, which the gateway upgrades; a
-  locked install's are kept then, and the other installs' once its host
-  is in `egress.cache`.
 
 ### Migrating from image-mounted tools
 
@@ -516,14 +490,12 @@ it held:
   `mise -C .kritika lock --platform linux-x64,linux-arm64`; a tool every
   repository needs goes into a runner image built on the `-tools` image
   (see [runner tools](#runner-tools)).
-- **`url_replacements`:** into `runner.mise.urlReplacements`, one `from`
-  and `to` pair per rule, in the order the rules were written.
 - **`[env]`:** a plain value into each repository's `[env]`, as a
   literal string. A value marked `redact = true` is a secret and does
   not belong in a repository: a token a tool sends to a host goes in
   [`egress.credentials`](#the-egress-gateway), which the gateway adds to
   the tool's plain `http://` requests, so the runner never holds it.
-- **Other `[settings]`:** no longer apply.
+- **`[settings]`:** no longer apply.
 
 The image's `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`,
 `rg` and `yq`, and every review offers those and the repository's tools.
@@ -534,32 +506,41 @@ directory, not `/usr/local/bin`.
 ## Runner sandbox
 
 A runner parses untrusted content and runs what the model asks. Set
-`runner.runtimeClass` to a sandboxed runtime the cluster offers
+`runner.podTemplate.spec.runtimeClassName` to a sandboxed runtime the
+cluster offers
 (`gvisor` with runsc, or a Kata class), so a kernel vulnerability
 reachable from the pod is contained by the sandbox rather than the node.
 It is advised, not required: without it the pod's other bounds still hold,
 but the container runtime alone separates it from the node.
 
-Set `runner.resources` too. Without them runner pods are BestEffort, with
-no memory limit, so a runaway run presses on its whole node rather than
-being killed in its own cgroup. Index and review runs have stayed under
-100 MiB of working set so far, so a `128Mi` request with a `1Gi` limit
-leaves ample room:
+Set `runner.podTemplate.spec.resources` too, which bound the whole pod:
+the runner and every command its run tool starts. Without them runner
+pods are BestEffort, with no memory limit, so a runaway run presses on
+its whole node rather than being killed in its own cgroup. Index and
+review runs have stayed under 100 MiB of working set so far, so a
+`128Mi` request with a `1Gi` limit leaves ample room:
 
 ```yaml
 runner:
-  resources:
-    requests: { cpu: 10m, memory: 128Mi }
-    limits: { memory: 1Gi }
+  podTemplate:
+    spec:
+      resources:
+        requests: { cpu: 10m, memory: 128Mi }
+        limits: { memory: 1Gi }
 ```
 
-`runner.pod` keeps runner pods, which run untrusted content, on nodes of
-their own with `nodeSelector` and `tolerations`. Where the cluster and its
-nodes' container runtime support user namespaces, `hostUsers: false` maps
-the runner's users to unprivileged IDs on the node, a further layer where
-there is no sandbox RuntimeClass. User namespaces are on by default from
-Kubernetes 1.33; an API server without them drops the field, and the pod
-runs in the node's user namespace as before.
+A LimitRange's container defaults in the release namespace still apply to
+the runner container, which sets no resources of its own: its default
+limit bounds the runner within the pod's, and the API refuses a runner pod
+whose requests are below its default requests, so every run fails to start.
+
+`runner.podTemplate` keeps runner pods, which run untrusted content, on
+nodes of their own with `nodeSelector` and `tolerations`. Where the nodes'
+kernel and container runtime support user namespaces, `hostUsers: false`
+maps the runner's users to unprivileged IDs on the node, a further layer
+where there is no sandbox RuntimeClass. An API server with user
+namespaces turned off drops the field, and the pod runs in the node's
+user namespace as before.
 
 ## What people can read
 

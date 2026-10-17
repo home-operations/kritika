@@ -221,18 +221,24 @@ func TestWorkerQueuesAreMonitored(t *testing.T) {
 	}
 }
 
-func TestRunnerPodErrorNamesBothSources(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.RunnerPod = map[string]any{"serviceAccountName": "default"}
-	_, err := newExecutor(t.Context(), cfg, nil, slog.New(slog.DiscardHandler))
-	if err == nil || !strings.Contains(err.Error(), "runner.pod") || !strings.Contains(err.Error(), "KRITIKA_RUNNER_POD") {
-		t.Fatalf("newExecutor = %v", err)
-	}
-}
-
-func TestRunnerResourceErrorNamesBothSources(t *testing.T) {
-	_, err := newExecutor(t.Context(), &config.Config{}, map[string]any{"limits": map[string]any{"memory": "invalid"}}, slog.New(slog.DiscardHandler))
-	if err == nil || !strings.Contains(err.Error(), "runner.resources") || !strings.Contains(err.Error(), "KRITIKA_RUNNER_RESOURCES") {
-		t.Fatalf("newExecutor = %v", err)
+func TestRunnerTemplateErrorsNameBothSources(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		cfg  config.Config
+		want []string
+	}{
+		{"jobTemplate", config.Config{RunnerJobTemplate: map[string]any{"spec": map[string]any{"template": map[string]any{}}}},
+			[]string{"runner.jobTemplate", "KRITIKA_RUNNER_JOB_TEMPLATE"}},
+		{"podTemplate", config.Config{RunnerPodTemplate: map[string]any{"spec": map[string]any{"serviceAccountName": "default"}}},
+			[]string{"runner.podTemplate", "KRITIKA_RUNNER_POD_TEMPLATE"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newExecutor(t.Context(), &tt.cfg, slog.New(slog.DiscardHandler))
+			for _, want := range tt.want {
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("newExecutor = %v, want %s named", err, want)
+				}
+			}
+		})
 	}
 }

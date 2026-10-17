@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/gookit/validate/v2"
-
-	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
 // minRetention keeps transcripts and diffs available for at least a day.
@@ -23,49 +21,29 @@ func (s Settings) Validate() error {
 		return errors.New("config: KRITIKA_RUNNER_TOOLS has been removed; declare tools in a repository's .kritika/mise.toml instead")
 	}
 	if _, set := os.LookupEnv("KRITIKA_RUNNER_MISE_CONFIG"); set {
-		return errors.New("config: KRITIKA_RUNNER_MISE_CONFIG has been removed; declare tools in a repository's .kritika/mise.toml " +
-			"and mirrors in runner.miseUrlReplacements (KRITIKA_RUNNER_MISE_URL_REPLACEMENTS) instead")
+		return errors.New("config: KRITIKA_RUNNER_MISE_CONFIG has been removed; declare tools in a repository's .kritika/mise.toml instead")
 	}
 	s.LogLevel = strings.ToLower(s.LogLevel)
 	s.LogFormat = strings.ToLower(s.LogFormat)
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
-	v.AddRule("GatewayTokenTTL,GatewayCacheMaxAge,LeaderRetryInterval,ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow,"+
-		"RunnerTTL,RunnerDeadline", "gt", 0)
+	v.AddRule("GatewayTokenTTL,GatewayCacheMaxAge,LeaderRetryInterval,ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
 	// The numeric rules do not read a named integer type.
 	v.AddValidator("size", func(b ByteSize) bool { return b > 0 })
 	v.AddRule("GatewayCacheMaxSize", "size")
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
 	v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
-	v.AddRule("RunnerDeadline", "max", jobtimeout.MaxRunnerDeadline)
 	v.AddRule("LogLevel", "enum", []string{"debug", "info", "warn", "warning", "error"})
 	v.AddRule("LogFormat", "enum", []string{"json", "text"})
 	v.AddRule("Executor", "enum", []string{string(ExecutorKubernetes), string(ExecutorLocal)})
 	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole,DatabaseRunnerRole", "required")
 	v.AddRule("DatabaseRunnerRole", "neField", "DatabaseAppRole")
-	// mise reads the rules as one JSON object keyed by from, so a rule
-	// without either half, or a second with the same from, is refused here,
-	// where the message names the setting, rather than in every run.
-	v.AddValidator("replacements", func(rules MiseURLReplacements) bool {
-		seen := map[string]bool{}
-		for _, r := range rules {
-			if r.From == "" || r.To == "" || seen[r.From] {
-				return false
-			}
-			seen[r.From] = true
-		}
-		return true
-	})
-	v.AddRule("RunnerMiseURLReplacements", "replacements")
 	v.WithMessages(map[string]string{
-		"replacements": "{field} must give every rule a from of its own and a to",
-		"gt":           "{field} must be positive",
-		"size":         "{field} must be positive",
-		"gte":          "{field} must not be negative",
-		"min":          fmt.Sprintf("{field} must be at least %s", minRetention),
-		"max": fmt.Sprintf("{field} must not exceed %s, or River's %s job timeout cap would cut the runner off early",
-			jobtimeout.MaxRunnerDeadline, jobtimeout.MaxJobTimeout),
+		"gt":             "{field} must be positive",
+		"size":           "{field} must be positive",
+		"gte":            "{field} must not be negative",
+		"min":            fmt.Sprintf("{field} must be at least %s", minRetention),
 		"LogLevel.enum":  "{field} must be debug, info, warn or error",
 		"LogFormat.enum": "{field} must be json or text",
 		"enum":           "{field} must be kubernetes or local",
@@ -85,7 +63,11 @@ func (s Settings) Validate() error {
 		labels[f.Name] = path + ": " + name
 	}
 	v.WithTranslates(labels)
-	return validationError(v)
+	var extra []string
+	if _, err := s.deadline(); err != nil {
+		extra = append(extra, err.Error())
+	}
+	return validationError(v, extra...)
 }
 
 // ValidateServe checks what serve needs beyond the common set.
@@ -95,37 +77,32 @@ func (c *Config) ValidateServe() error {
 	v.SkipOnEmpty = false
 	v.AddRule("ConfigFile,WebURL,GatewayURL", "required")
 	// Executor is a named string type; requiredIf compares it to a plain string.
-	v.AddRule("RunnerImage,RunnerDatabaseSecret,RunnerDatabaseSecretKey", "required").SetBeforeFunc(func(*validate.Validation) bool {
+	v.AddRule("RunnerDatabaseSecret,RunnerDatabaseSecretKey", "required").SetBeforeFunc(func(*validate.Validation) bool {
 		return c.Executor == ExecutorKubernetes
 	})
 	v.AddRule("RunnerDatabaseURL", "required").SetBeforeFunc(func(*validate.Validation) bool {
 		return c.Executor == ExecutorLocal
 	})
-	v.AddRule("RunnerImagePullPolicy", "enum", []string{"", "Always", "IfNotPresent", "Never"})
 	v.WithTranslates(map[string]string{
 		"ConfigFile":              "KRITIKA_CONFIG_FILE",
 		"WebURL":                  "webUrl: KRITIKA_WEB_URL",
 		"GatewayURL":              "gatewayUrl: KRITIKA_GATEWAY_URL",
-		"RunnerImage":             "runner.image: KRITIKA_RUNNER_IMAGE",
 		"RunnerDatabaseSecret":    "runner.databaseSecret: KRITIKA_RUNNER_DATABASE_SECRET",
 		"RunnerDatabaseSecretKey": "runner.databaseSecretKey: KRITIKA_RUNNER_DATABASE_SECRET_KEY",
 		"RunnerDatabaseURL":       "KRITIKA_RUNNER_DATABASE_URL",
-		"RunnerImagePullPolicy":   "runner.imagePullPolicy: KRITIKA_RUNNER_IMAGE_PULL_POLICY",
 	})
 	v.WithMessages(map[string]string{
 		"required":                   "{field} is required to serve",
-		"RunnerImage.required":       "{field} is required with the kubernetes executor",
 		"RunnerDatabaseURL.required": "{field} is required with the local executor",
-		"enum":                       "{field} must be Always, IfNotPresent or Never when set",
 	})
 	return validationError(v)
 }
 
-func validationError(v *validate.Validation) error {
-	if v.Validate() {
+func validationError(v *validate.Validation, extra ...string) error {
+	if v.Validate() && len(extra) == 0 {
 		return nil
 	}
-	var messages []string
+	messages := slices.Clone(extra)
 	for _, rules := range v.Errors {
 		for _, message := range rules {
 			messages = append(messages, message)

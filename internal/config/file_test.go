@@ -13,13 +13,15 @@ func TestFileSettings(t *testing.T) {
 	for _, tt := range []struct {
 		name, doc, env, value, wantErr string
 	}{
-		{name: "file", doc: "webUrl: https://kritika.example.com/\nlogLevel: debug\nreviewWorkers: 4\npollInterval: 0s\nrunner: {runtimeClass: gvisor, deadline: 20m}"},
+		{name: "file", doc: "webUrl: https://kritika.example.com/\nlogLevel: debug\nreviewWorkers: 4\npollInterval: 0s\n" +
+			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: 1200}}, podTemplate: {spec: {runtimeClassName: gvisor}}}"},
 		{name: "conflicting scalar", doc: "logLevel: debug", env: "KRITIKA_LOG_LEVEL", value: "debug", wantErr: "logLevel conflicts with KRITIKA_LOG_LEVEL"},
 		{name: "conflicting zero", doc: "pollInterval: 0s", env: "KRITIKA_POLL_INTERVAL", value: "1h", wantErr: "pollInterval conflicts"},
-		{name: "conflicting runner", doc: "runner: {runtimeClass: gvisor}", env: "KRITIKA_RUNNER_RUNTIME_CLASS", value: "", wantErr: "runner.runtimeClass conflicts"},
+		{name: "conflicting runner", doc: "runner: {podTemplate: {spec: {runtimeClassName: gvisor}}}", env: "KRITIKA_RUNNER_POD_TEMPLATE", value: "{}",
+			wantErr: "runner.podTemplate conflicts"},
 		{name: "invalid workers", doc: "reviewWorkers: 0", wantErr: "must be positive"},
 		{name: "invalid log level", doc: "logLevel: loud", wantErr: "KRITIKA_LOG_LEVEL"},
-		{name: "invalid duration", doc: "runner: {ttl: tomorrow}", wantErr: "runner.ttl"},
+		{name: "invalid duration", doc: "gatewayTokenTtl: tomorrow", wantErr: "gatewayTokenTtl"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.yaml")
@@ -41,8 +43,9 @@ func TestFileSettings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			spec, _ := c.RunnerPodTemplate["spec"].(map[string]any)
 			if c.WebURL != "https://kritika.example.com" || c.LogLevel != "debug" || c.ReviewWorkers != 4 ||
-				c.PollInterval != 0 || c.RunnerRuntimeClass != "gvisor" || c.RunnerDeadline != 20*time.Minute || c.IndexWorkers != 1 {
+				c.PollInterval != 0 || spec["runtimeClassName"] != "gvisor" || c.RunnerDeadline() != 20*time.Minute || c.IndexWorkers != 1 {
 				t.Fatalf("file settings not applied: %+v", c.Settings)
 			}
 			for _, e := range c.Env() {
@@ -54,81 +57,65 @@ func TestFileSettings(t *testing.T) {
 	}
 }
 
-func TestRunnerPodFromEnvironment(t *testing.T) {
-	t.Setenv("KRITIKA_RUNNER_POD", `{"priorityClassName":"kritika-runner","hostUsers":false}`)
+func TestRunnerTemplatesFromEnvironment(t *testing.T) {
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"ttlSecondsAfterFinished":60}}`)
+	t.Setenv("KRITIKA_RUNNER_POD_TEMPLATE", `{"spec":{"priorityClassName":"kritika-runner","hostUsers":false}}`)
 	s, err := LoadSettings(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (jsonObject{"priorityClassName": "kritika-runner", "hostUsers": false}); !reflect.DeepEqual(s.RunnerPod, want) {
-		t.Fatalf("pod = %#v, want %#v", s.RunnerPod, want)
+	if want := (jsonObject{"spec": map[string]any{"ttlSecondsAfterFinished": float64(60)}}); !reflect.DeepEqual(s.RunnerJobTemplate, want) {
+		t.Fatalf("jobTemplate = %#v, want %#v", s.RunnerJobTemplate, want)
+	}
+	if want := (jsonObject{"spec": map[string]any{"priorityClassName": "kritika-runner", "hostUsers": false}}); !reflect.DeepEqual(s.RunnerPodTemplate, want) {
+		t.Fatalf("podTemplate = %#v, want %#v", s.RunnerPodTemplate, want)
 	}
 }
 
 func TestSettingsSources(t *testing.T) {
 	t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
-	t.Setenv("KRITIKA_RUNNER_IMAGE", "example.com/runner:test")
+	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":1200}}`)
 	s, err := LoadSettings([]byte(`pollInterval: 0s
 runner:
   serviceAccount: ""
-  runtimeClass: gvisor
-  resources:
-    requests:
-      cpu: 10m
-    limits:
-      example.com/device: "1"
-  pod:
-    nodeSelector:
-      node-role.example.com/runner: "true"
-    hostUsers: false
-  miseUrlReplacements:
-    - from: https://github.com/acme/
-      to: https://mirror.example.com/acme/
-    - from: https://github.com/
-      to: https://mirror.example.com/github/
+  podTemplate:
+    spec:
+      resources:
+        requests:
+          cpu: 10m
+      nodeSelector:
+        node-role.example.com/runner: "true"
+      hostUsers: false
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.ReviewWorkers != 5 || s.IndexWorkers != 1 || s.PollInterval != 0 ||
-		s.RunnerImage != "example.com/runner:test" || s.RunnerServiceAccount != "" ||
-		s.RunnerRuntimeClass != "gvisor" || s.RunnerTTL != 10*time.Minute {
+	if s.ReviewWorkers != 5 || s.IndexWorkers != 1 || s.PollInterval != 0 || s.RunnerServiceAccount != "" || s.RunnerDeadline() != 20*time.Minute {
 		t.Fatalf("merged settings = %+v", s)
 	}
-	wantReplacements := MiseURLReplacements{
-		{From: "https://github.com/acme/", To: "https://mirror.example.com/acme/"},
-		{From: "https://github.com/", To: "https://mirror.example.com/github/"},
+	wantPod := jsonObject{"spec": map[string]any{
+		"resources":    map[string]any{"requests": map[string]any{"cpu": "10m"}},
+		"nodeSelector": map[string]any{"node-role.example.com/runner": "true"},
+		"hostUsers":    false,
+	}}
+	if !reflect.DeepEqual(s.RunnerPodTemplate, wantPod) {
+		t.Fatalf("podTemplate = %#v", s.RunnerPodTemplate)
 	}
-	if !reflect.DeepEqual(s.RunnerMiseURLReplacements, wantReplacements) {
-		t.Fatalf("URL replacements = %#v", s.RunnerMiseURLReplacements)
-	}
-	wantResources := jsonObject{
-		"requests": map[string]any{"cpu": "10m"},
-		"limits":   map[string]any{"example.com/device": "1"},
-	}
-	if !reflect.DeepEqual(s.RunnerResources, wantResources) {
-		t.Fatalf("resources = %#v", s.RunnerResources)
-	}
-	wantPod := jsonObject{"nodeSelector": map[string]any{"node-role.example.com/runner": "true"}, "hostUsers": false}
-	if !reflect.DeepEqual(s.RunnerPod, wantPod) {
-		t.Fatalf("pod = %#v", s.RunnerPod)
-	}
-	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_MISE_URL_REPLACEMENTS"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] {
+	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_POD_TEMPLATE"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] ||
+		s.fileEnv["KRITIKA_RUNNER_JOB_TEMPLATE"] {
 		t.Fatalf("file provenance = %v", s.fileEnv)
 	}
 }
 
 func TestSettingsTypes(t *testing.T) {
 	for _, tt := range []struct{ name, doc, want string }{
-		{"duration requires units", "runner: {ttl: 600}", "runner.ttl"},
+		{"duration requires units", "gatewayTokenTtl: 600", "gatewayTokenTtl"},
 		{"duration must be scalar", "pollInterval: [10m]", "pollInterval"},
 		{"workers must be numeric", "reviewWorkers: '4'", "reviewWorkers"},
 		{"no boolean coercion", "logLevel: true", "logLevel"},
 		{"removed tools", "runner: {tools: [{name: flux, image: example.com/flux:test}]}", "tools"},
 		{"removed mise config", "runner: {miseConfig: \"[tools]\\nhelm = '4.3.0'\"}", "miseConfig"},
-		{"resources must be a map", "runner: {resources: [1]}", "runner.resources"},
-		{"URL replacements must be a list", "runner: {miseUrlReplacements: {from: a, to: b}}", "miseUrlReplacements"},
-		{"URL replacement keys are known", "runner: {miseUrlReplacements: [{from: a, to: b, too: c}]}", "too"},
+		{"templates must be maps", "runner: {podTemplate: [1]}", "runner.podTemplate"},
 		{"cache size in decimal units", "gatewayCacheMaxSize: 2GB", "gatewayCacheMaxSize"},
 		{"cache size in a fraction", "gatewayCacheMaxSize: 1.5Gi", "gatewayCacheMaxSize"},
 	} {
@@ -141,29 +128,28 @@ func TestSettingsTypes(t *testing.T) {
 }
 
 func TestNullSettingsAreOmitted(t *testing.T) {
-	for _, doc := range []string{"pollInterval: null", "pollInterval:", "runner: null", "runner: {deadline: null}"} {
+	for _, doc := range []string{"pollInterval: null", "pollInterval:", "runner: null", "runner: {jobTemplate: null}"} {
 		t.Run(doc, func(t *testing.T) {
 			t.Setenv("KRITIKA_POLL_INTERVAL", "5m")
-			t.Setenv("KRITIKA_RUNNER_DEADLINE", "20m")
+			t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":1200}}`)
 			s, err := LoadSettings([]byte(doc))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if s.PollInterval != 5*time.Minute || s.RunnerDeadline != 20*time.Minute || len(s.fileEnv) != 0 {
+			if s.PollInterval != 5*time.Minute || s.RunnerDeadline() != 20*time.Minute || len(s.fileEnv) != 0 {
 				t.Fatalf("null changed settings or provenance: %+v", s)
 			}
 		})
 	}
-	s, err := LoadSettings([]byte("pollInterval: null\nrunner: {deadline: null}"))
-	if err != nil || s.PollInterval != 10*time.Minute || s.RunnerDeadline != 15*time.Minute || len(s.fileEnv) != 0 {
+	s, err := LoadSettings([]byte("pollInterval: null\nrunner: {jobTemplate: null}"))
+	if err != nil || s.PollInterval != 10*time.Minute || s.RunnerDeadline() != 15*time.Minute || len(s.fileEnv) != 0 {
 		t.Fatalf("null changed defaults: %+v, %v", s, err)
 	}
 }
 
 func TestEnvFormatsStructuredFileSettings(t *testing.T) {
 	s, err := LoadSettings([]byte(`runner:
-  resources: {requests: {cpu: 10m}}
-  miseUrlReplacements: [{from: "https://github.com/", to: "https://mirror.example.com/"}]
+  podTemplate: {spec: {resources: {requests: {cpu: 10m}}}}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -171,14 +157,9 @@ func TestEnvFormatsStructuredFileSettings(t *testing.T) {
 	cfg := Config{Settings: s}
 	for _, e := range cfg.Env() {
 		switch e.Name {
-		case "KRITIKA_RUNNER_RESOURCES":
-			if e.Value != `{"requests":{"cpu":"10m"}}` || !e.File || e.Path != "runner.resources" {
-				t.Fatalf("resources = %+v", e)
-			}
-		case "KRITIKA_RUNNER_MISE_URL_REPLACEMENTS":
-			if e.Value != `[{"from":"https://github.com/","to":"https://mirror.example.com/"}]` || !e.File ||
-				e.Path != "runner.miseUrlReplacements" {
-				t.Fatalf("URL replacements = %+v", e)
+		case "KRITIKA_RUNNER_POD_TEMPLATE":
+			if e.Value != `{"spec":{"resources":{"requests":{"cpu":"10m"}}}}` || !e.File || e.Path != "runner.podTemplate" {
+				t.Fatalf("podTemplate = %+v", e)
 			}
 		}
 	}

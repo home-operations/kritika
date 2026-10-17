@@ -232,7 +232,7 @@ log "checking the runner admission refuses from kritika serve what is not a runn
 # builds it, through the policies: one they found invalid would have kept it
 # unready, and any other refusal is in its log.
 for pod in "${pods[@]}"; do
-  if kubectl -n "$ns" logs "$pod" | grep 'runner.pod not checked'; then
+  if kubectl -n "$ns" logs "$pod" | grep 'runner Job not checked'; then
     echo "$pod: its runner Job was not admitted"
     exit 1
   fi
