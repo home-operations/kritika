@@ -223,8 +223,8 @@ renders templates, `exec()` among them, when it reads the config and
 runs install hooks with the run's GitHub token in their environment.
 Repository `[env]` permits only literal strings under non-reserved names;
 templates and `_.` directives are dropped. `[tasks]`, `[settings]` and
-hooks are dropped too, with summary notes. Mirrors and egress
-permissions remain the admin's. The filtered config and its lock live
+hooks are dropped too, with summary notes. Egress permissions remain
+the admin's. The filtered config and its lock live
 outside the checkout in the run's read-only `HOME`, trusted only for the
 runner's own mise calls. A tool without a locked version, URL and
 checksum for the runner's platform is not offered, unless the image has
@@ -460,11 +460,6 @@ config:
   plus those files and the pod's other storage use. Twice the bound is
   not a hard limit on disk usage. Each replica keeps its own cache,
   which lasts as long as its pod.
-- **A mirror.** mise applies one rule to a URL, so a rule that rewrites
-  to a mirror over `https://` skips the cache. To keep a mirror's
-  downloads, rewrite to it over `http://`, which the gateway upgrades; a
-  locked install's are kept then, and the other installs' once its host
-  is in `egress.cache`.
 
 ### Migrating from image-mounted tools
 
