@@ -387,9 +387,11 @@ other option is dropped with a summary note, among them `postinstall`,
 `install_env`, `depends`, `api_url` and `headers`, as is any option whose
 value holds a template: an install only downloads and unpacks, and the
 lock pins the version, so a `url` must be literal. It keeps `[env]` values
-only when they are literal strings under non-reserved names. Templates,
-`_.` directives, non-string values and the reserved names listed under
-[runner tools](security.md#runner-tools) are dropped with summary notes.
+only when they are literal strings under non-reserved names that the
+admin's variables, set in the chart's `runner.podTemplate`, do not set.
+Templates, `_.` directives, non-string values, the reserved names listed
+under [runner tools](security.md#runner-tools) and the admin's names are
+dropped with summary notes.
 `[settings]`, `[tasks]` and hooks are also dropped with notes; other
 sections are ignored. Mise settings are not the repository's, and the
 repository cannot expand network access.

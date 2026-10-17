@@ -224,7 +224,32 @@ runs install hooks with the run's GitHub token in their environment.
 Repository `[env]` permits only literal strings under non-reserved names;
 templates and `_.` directives are dropped. `[tasks]`, `[settings]` and
 hooks are dropped too, with summary notes. Egress permissions remain
-the admin's. The filtered config and its lock live
+the admin's, and so do the variables the runner container's `env` in
+`runner.podTemplate` sets, which the commands get over the repository's
+`[env]`, each from a literal value or a Secret's key:
+
+```yaml
+runner:
+  podTemplate:
+    spec:
+      containers:
+        - name: runner
+          env:
+            - name: KONFLATE_URL
+              value: https://konflate.example.internal
+            - name: KONFLATE_TOKEN
+              valueFrom:
+                secretKeyRef: { name: konflate, key: token }
+```
+
+A value from a Secret is masked out of what the commands print and of
+the review, as the run's tokens are; a literal value is not. The Secret
+must be in the release namespace, and the runner admission policies let
+the runner pod read it. kritika sets the variables on the runner
+container as `KRITIKA_COMMAND_ENV_<name>` and hands them to the commands
+under their own names, so they configure the commands and never the
+runner itself: a `GODEBUG` or `TMPDIR` meant for a tool does not change
+how the runner fetches, logs or connects. The filtered config and its lock live
 outside the checkout in the run's read-only `HOME`, trusted only for the
 runner's own mise calls. A tool without a locked version, URL and
 checksum for the runner's platform is not offered, unless the image has
@@ -270,7 +295,7 @@ What bounds a command:
   none either.
 - **A bare environment:** `PATH`, with the tools' directories first, its
   own `HOME`, `XDG_CACHE_HOME` and the gateway, the mise config's `[env]`,
-  and for `gh` the run's token as `GH_TOKEN`. The pod's `NO_PROXY` is not
+  the admin's variables, and for `gh` the run's token as `GH_TOKEN`. The pod's `NO_PROXY` is not
   passed on, so `curl` reaches even `localhost` and the gateway's own host
   through the gateway, and its `--connect-to` or an `--alt-svc` cache only
   changes what it asks the gateway for. The runner makes itself
@@ -285,13 +310,14 @@ What bounds a command:
   than a success whose output is the refusal. It also limits `curl` to
   `http` and `https`, the schemes the proxy variables cover, so a URL of
   any other, given or redirected to, is refused rather than reached
-  without the gateway. A config's `[env]` may not
-  set what the runner sets or what would point a tool past the argument
-  checks:
+  without the gateway. Neither a config's `[env]` nor the admin's
+  variables may set what the runner sets or what would point a tool past
+  the argument checks:
   `HOME`, `PATH`, the proxy variables, `GH_*`, `GIT_*`, `MISE_*`, `LD_*`,
   `GITHUB_TOKEN`, `CURL_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`,
   `RIPGREP_CONFIG_PATH`, `DOCKER_CONFIG`, `PAGER`, `BROWSER`, `EDITOR` and
-  `VISUAL` are dropped, and the review's summary says so.
+  `VISUAL` are dropped from a config, and the review's summary says so,
+  and kritika serve refuses to start with them among the admin's.
 - **Few writable places:** `HOME`, with the binaries and config mise keeps
   there, is read-only once the commands are offered, and so is the scratch
   directory holding it. A command writes to the checkout, to the
@@ -491,10 +517,13 @@ it held:
   repository needs goes into a runner image built on the `-tools` image
   (see [runner tools](#runner-tools)).
 - **`[env]`:** a plain value into each repository's `[env]`, as a
-  literal string. A value marked `redact = true` is a secret and does
-  not belong in a repository: a token a tool sends to a host goes in
-  [`egress.credentials`](#the-egress-gateway), which the gateway adds to
-  the tool's plain `http://` requests, so the runner never holds it.
+  literal string, or into the runner container's `env` in
+  `runner.podTemplate` when the repository must not hold it (see
+  [runner tools](#runner-tools)). A value marked `redact = true` is a
+  secret and does not belong in a repository: a token a tool sends to a
+  host goes in [`egress.credentials`](#the-egress-gateway), which the
+  gateway adds to the tool's plain `http://` requests, so the runner
+  never holds it, or else in a Secret the runner container's `env` names.
 - **`[settings]`:** no longer apply.
 
 The image's `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`,

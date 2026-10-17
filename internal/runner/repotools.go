@@ -81,7 +81,7 @@ func keptRepoMiseConfig(files repoconfig.Files) (*repoMiseConfig, []string, erro
 			switch {
 			case name == "_" || strings.HasPrefix(name, "_."):
 				notes = append(notes, fmt.Sprintf("%s: env %s dropped: directives are not read", RepoMiseConfig, name))
-			case reservedEnvName(name):
+			case ReservedEnvName(name):
 				notes = append(notes, fmt.Sprintf("%s: env %s dropped: the name is reserved", RepoMiseConfig, name))
 			case !isString:
 				notes = append(notes, fmt.Sprintf("%s: env %s dropped: only a plain string is kept", RepoMiseConfig, name))

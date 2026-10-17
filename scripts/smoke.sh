@@ -109,6 +109,9 @@ role_secret kritika-postgres-app kritika_app
 role_secret kritika-postgres-runner kritika_runner
 kubectl -n "$ns" create secret generic kritika-smoke-auth --from-literal=password="$(password)" \
   --dry-run=client -o yaml | kubectl apply -f -
+# A variable the runner container's env takes from a Secret.
+kubectl -n "$ns" create secret generic kritika-smoke-tools --from-literal=token="$(password)" \
+  --dry-run=client -o yaml | kubectl apply -f -
 # The configuration file names an app, whose key must be a PEM; nothing
 # here ever signs with it.
 kubectl -n "$ns" create secret generic kritika-smoke-bot \

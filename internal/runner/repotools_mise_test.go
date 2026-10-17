@@ -66,7 +66,7 @@ checksum = "sha256:%x"
 			}
 			home, cache := t.TempDir(), t.TempDir()
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "XDG_CACHE_HOME=" + cache}
-			m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, false, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+			m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, nil, false, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -159,7 +159,7 @@ checksum = "sha256:abc"
 				home = link
 			}
 			m, notes, err := newMiseTools(t.Context(), bin, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin"},
-				nil, false, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+				nil, nil, false, repo, []string{"gh"}, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
 			}

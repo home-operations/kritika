@@ -107,6 +107,11 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 	if err := spec.Job.Validate(); err != nil {
 		return Result{Err: fmt.Errorf("executor: %w", err)}
 	}
+	if a := spec.Job.Agent; a != nil {
+		agent := *a
+		agent.Env = k.PodTemplate.commandEnv()
+		spec.Job.Agent = &agent
+	}
 	name := jobName(spec.Job.RunID)
 	runSpec, err := runner.EncodeSpec(spec.Job)
 	if err != nil {
@@ -643,7 +648,16 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: secret, Key: key, Optional: new(false)}}
 	}
-	env := []corev1.EnvVar{
+	// The admin's variables are the commands', named for the runner to
+	// hand on alone, and come first: the kubelet expands a $(NAME) in a
+	// value to a variable defined before it alone, so none of theirs can
+	// take in a credential of the run's.
+	var env []corev1.EnvVar
+	for _, e := range k.PodTemplate.runner().Env {
+		e.Name = runner.CommandEnvPrefix + e.Name
+		env = append(env, e)
+	}
+	env = append(env, []corev1.EnvVar{
 		{Name: "KRITIKA_RUN_SPEC_FILE", Value: specDir + "/" + specFile},
 		{Name: "KRITIKA_GIT_TOKEN", ValueFrom: secretRef(secretKeyGitToken)},
 		{Name: "KRITIKA_GATEWAY_TOKEN", ValueFrom: secretRef(secretKeyGatewayToken)},
@@ -652,7 +666,7 @@ func (k *Kube) job(spec Spec) *batchv1.Job {
 		{Name: "KRITIKA_LOG_FORMAT", Value: "json"},
 		{Name: "KRITIKA_DATABASE_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 			Name: k.DatabaseSecret, Key: k.DatabaseSecretKey}}},
-	}
+	}...)
 	if k.GatewayURL != "" {
 		proxy := proxyEnv(k.GatewayURL)
 		env = append(env,

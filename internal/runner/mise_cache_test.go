@@ -78,7 +78,7 @@ func TestMiseToolsCachedHosts(t *testing.T) {
 			if tt.proxy {
 				base = append(base, "HTTP_PROXY="+proxy, "http_proxy="+proxy, "HTTPS_PROXY="+proxy, "https_proxy="+proxy)
 			}
-			m, _, err := newMiseTools(t.Context(), bin, home, base, []string{"get.helm.sh"}, false, nil, nil,
+			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, []string{"get.helm.sh"}, false, nil, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
@@ -159,7 +159,7 @@ checksum = "sha256:%x"
 	proxy := strings.Replace(gateway.URL, "://", "://:krk_token@", 1)
 	base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy}
 	var logs strings.Builder
-	m, _, err := newMiseTools(t.Context(), bin, home, base, []string{"tools.example.invalid"}, false, repo, nil,
+	m, _, err := newMiseTools(t.Context(), bin, home, base, nil, []string{"tools.example.invalid"}, false, repo, nil,
 		Secrets{Redacted: &Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +265,7 @@ func TestMiseToolsLockedInstalls(t *testing.T) {
 			if tt.proxy {
 				base = append(base, "HTTP_PROXY="+proxy, "http_proxy="+proxy, "HTTPS_PROXY="+proxy, "https_proxy="+proxy)
 			}
-			m, _, err := newMiseTools(t.Context(), bin, home, base, tt.cached, tt.cacheLocked, repo, nil,
+			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, tt.cached, tt.cacheLocked, repo, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 			if err != nil {
 				t.Fatal(err)
@@ -344,7 +344,7 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			proxy := strings.Replace(gateway.URL, "://", "://:krk_token@", 1)
 			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy}
 			var logs strings.Builder
-			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, true, repo, nil,
+			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, nil, true, repo, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
 			if err != nil {
 				t.Fatal(err)

@@ -740,10 +740,13 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 		return false, nil, nil
 	})
 	k := newKube(t, client)
+	k.PodTemplate.Spec.Containers[0].Env = []corev1.EnvVar{{Name: "KONFLATE_URL", Value: "https://konflate.internal.example"},
+		{Name: "API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Key: "token"}}}}
 	ctx, cancel := context.WithCancel(t.Context())
 	created := reacted(client, "create", "secrets")
 	done := make(chan Result, 1)
-	go func() { done <- k.Run(ctx, spec()) }()
+	s := spec()
+	go func() { done <- k.Run(ctx, s) }()
 	name := awaitAction(t, created, "the Secret's creation").(k8stesting.CreateAction).GetObject().(*corev1.Secret).Name
 	if name != "kritika-run-0123456789abcdef-run" {
 		t.Fatalf("secret name = %q, want the whole run ID in it", name)
@@ -759,6 +762,11 @@ func TestKubeRunSecretLifecycle(t *testing.T) {
 	got, err := runner.DecodeSpec(sec.Data["run-spec.json"])
 	if err != nil || got.Head != headSHA || got.Base != baseSHA || strings.Join(got.Ignore, ",") != "vendor/**,**/*.lock" {
 		t.Fatalf("run spec = %+v, %v", got, err)
+	}
+	// The run's commands get the admin's variables by name, the Secret's
+	// masked; the worker's own spec is left as it was.
+	if !slices.Equal(got.Agent.Env, []runner.CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}}) || s.Job.Agent.Env != nil {
+		t.Fatalf("run spec env = %+v, worker's = %+v", got.Agent.Env, s.Job.Agent.Env)
 	}
 	if sec.Labels["kritika.home-operations.com/role"] != "runner" || sec.Labels["kritika.home-operations.com/account"] != "acme" {
 		t.Fatalf("secret labels = %v", sec.Labels)

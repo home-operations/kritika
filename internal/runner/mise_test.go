@@ -21,15 +21,15 @@ func TestReservedEnvName(t *testing.T) {
 		"GIT_EDITOR": true, "MISE_YES": true, "LD_PRELOAD": true, "CURL_HOME": true, "XDG_CONFIG_HOME": true, "XDG_CACHE_HOME": true, "RIPGREP_CONFIG_PATH": true,
 		"PAGER": true, "NO_COLOR": false, "HELM_DRIVER": false, "GHX": false, "LDFLAGS": false,
 	} {
-		if got := reservedEnvName(name); got != want {
-			t.Errorf("reservedEnvName(%q) = %v, want %v", name, got, want)
+		if got := ReservedEnvName(name); got != want {
+			t.Errorf("ReservedEnvName(%q) = %v, want %v", name, got, want)
 		}
 	}
 }
 
 func TestParseMiseEnv(t *testing.T) {
 	out := []byte(`{"PATH":"/installs/helm/4.3.0/bin:/usr/local/bin:/usr/bin","NO_COLOR":"1","HOME":"/evil","gh_token":"x","HELM_DRIVER":"configmap"}`)
-	path, extra, notes, err := parseMiseEnv(out)
+	path, extra, notes, err := parseMiseEnv(out, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,25 +45,31 @@ func TestParseMiseEnv(t *testing.T) {
 	}) {
 		t.Fatalf("notes = %v", notes)
 	}
-	if _, _, _, err := parseMiseEnv([]byte("not json")); err == nil {
+	if _, _, _, err := parseMiseEnv([]byte("not json"), nil); err == nil {
 		t.Fatal("no error for a non-JSON env")
 	}
 	// An env without PATH gives none, not one empty entry, which would
 	// name the working directory.
-	if path, _, _, err := parseMiseEnv([]byte(`{"NO_COLOR":"1"}`)); err != nil || path != nil {
+	if path, _, _, err := parseMiseEnv([]byte(`{"NO_COLOR":"1"}`), nil); err != nil || path != nil {
 		t.Fatalf("path = %#v, %v", path, err)
+	}
+	// The admin's variables win over the config's.
+	_, extra, notes, err = parseMiseEnv([]byte(`{"HELM_DRIVER":"configmap","NO_COLOR":"1"}`), []string{"HELM_DRIVER=secret"})
+	if err != nil || !slices.Equal(extra, []string{"NO_COLOR=1"}) ||
+		!slices.Equal(notes, []string{"mise env HELM_DRIVER not set for the commands: the admin sets it"}) {
+		t.Fatalf("with the admin's HELM_DRIVER: extra = %v, notes = %v, %v", extra, notes, err)
 	}
 }
 
 // TestMiseCommandEnvPath: the commands' PATH is mise's when it set one,
-// else the runner's own.
+// else the runner's own, and the admin's variables come last.
 func TestMiseCommandEnvPath(t *testing.T) {
-	m := &miseTools{base: []string{"PATH=/usr/bin", "HOME=/h"}, extra: []string{"X=1"}}
-	if got := m.commandEnv(); !slices.Equal(got, []string{"PATH=/usr/bin", "HOME=/h", "X=1"}) {
+	m := &miseTools{base: []string{"PATH=/usr/bin", "HOME=/h"}, extra: []string{"X=1"}, admin: []string{"Y=2"}}
+	if got := m.commandEnv(); !slices.Equal(got, []string{"PATH=/usr/bin", "HOME=/h", "X=1", "Y=2"}) {
 		t.Fatalf("env without a mise PATH = %v", got)
 	}
 	m.path = []string{"/tool/bin", "/usr/bin"}
-	if got := m.commandEnv(); !slices.Equal(got, []string{"PATH=/tool/bin:/usr/bin", "HOME=/h", "X=1"}) {
+	if got := m.commandEnv(); !slices.Equal(got, []string{"PATH=/tool/bin:/usr/bin", "HOME=/h", "X=1", "Y=2"}) {
 		t.Fatalf("env with a mise PATH = %v", got)
 	}
 }
@@ -200,7 +206,7 @@ func TestMiseTools(t *testing.T) {
 	home := t.TempDir()
 	base := []string{"PATH=/usr/bin:/bin", "HOME=" + home}
 	secrets := Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}
-	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, false, nil, nil, secrets, slog.New(slog.DiscardHandler))
+	m, notes, err := newMiseTools(t.Context(), bin, home, base, nil, nil, false, nil, nil, secrets, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +416,7 @@ func TestMiseInstallSystemLinks(t *testing.T) {
 	home := t.TempDir()
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=" + t.TempDir(), "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +475,7 @@ func TestMiseToolsCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scratch, "mise.toml"), []byte("[tools]\njq = \"1.8.2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +494,7 @@ func TestMiseToolsBroken(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, testMiseConfig)
 	home := t.TempDir()
-	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
+	m, _, err := newMiseTools(t.Context(), bin, home, []string{"PATH=/usr/bin", "HOME=" + home}, nil, nil, false, nil, nil, Secrets{Redacted: &Redactions{}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

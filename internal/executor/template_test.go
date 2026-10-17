@@ -2,6 +2,7 @@ package executor
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+
+	"github.com/home-operations/kritika/internal/runner"
 )
 
 func TestDecodeJobTemplate(t *testing.T) {
@@ -94,9 +97,20 @@ func fullPodTemplate() map[string]any {
 				"maxSkew": 1, "topologyKey": "kubernetes.io/hostname", "whenUnsatisfiable": "ScheduleAnyway",
 				"labelSelector": map[string]any{"matchLabels": map[string]any{"kritika.home-operations.com/role": "runner"}},
 			}},
-			"containers": []any{map[string]any{"name": "runner", "image": "registry.example/tools:1", "imagePullPolicy": "Always"}},
+			"containers": []any{map[string]any{"name": "runner", "image": "registry.example/tools:1", "imagePullPolicy": "Always",
+				"env": []any{
+					map[string]any{"name": "KONFLATE_URL", "value": "https://konflate.internal.example"},
+					map[string]any{"name": "API_TOKEN", "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "tools", "key": "token"}}},
+				},
+			}},
 		},
 	}
+}
+
+// adminEnv is the variables fullPodTemplate gives the runner container.
+var adminEnv = []corev1.EnvVar{
+	{Name: "KONFLATE_URL", Value: "https://konflate.internal.example"},
+	{Name: "API_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Name: "tools", Key: "token"}}},
 }
 
 func TestDecodePodTemplate(t *testing.T) {
@@ -107,6 +121,9 @@ func TestDecodePodTemplate(t *testing.T) {
 			spec["containers"] = []any{map[string]any{"name": "runner", "image": "x"}}
 		}
 		return map[string]any{"spec": spec}
+	}
+	runnerEnv := func(env ...any) map[string]any {
+		return podSpec(map[string]any{"containers": []any{map[string]any{"name": "runner", "image": "x", "env": env}}})
 	}
 	labels := func(labels map[string]any) map[string]any {
 		return map[string]any{"metadata": map[string]any{"labels": labels}, "spec": podSpec(map[string]any{})["spec"]}
@@ -138,6 +155,21 @@ func TestDecodePodTemplate(t *testing.T) {
 			wantErr: `unknown field "keyy"`},
 		{name: "a quantity that is none", template: podSpec(map[string]any{"resources": map[string]any{"limits": map[string]any{"memory": "lots"}}}),
 			wantErr: "runner.podTemplate"},
+		{name: "a variable of the commands' own", template: runnerEnv(map[string]any{"name": "HTTPS_PROXY", "value": "http://elsewhere"}),
+			wantErr: `env "HTTPS_PROXY" is a name the runner keeps`},
+		{name: "a credential's variable, in lower case", template: runnerEnv(map[string]any{"name": "gh_token", "value": "x"}),
+			wantErr: `env "gh_token" is a name the runner keeps`},
+		{name: "a variable set twice", template: runnerEnv(map[string]any{"name": "X", "value": "1"}, map[string]any{"name": "X", "value": "2"}),
+			wantErr: `env "X" is set twice`},
+		{name: "a variable from a ConfigMap", template: runnerEnv(map[string]any{"name": "X",
+			"valueFrom": map[string]any{"configMapKeyRef": map[string]any{"name": "c", "key": "k"}}}), wantErr: `env "X" takes a value or a Secret's key alone`},
+		{name: "a variable from a field", template: runnerEnv(map[string]any{"name": "X",
+			"valueFrom": map[string]any{"fieldRef": map[string]any{"fieldPath": "spec.nodeName"}}}), wantErr: `env "X" takes a value or a Secret's key alone`},
+		{name: "a variable from a Secret and a ConfigMap", template: runnerEnv(map[string]any{"name": "X", "valueFrom": map[string]any{
+			"secretKeyRef": map[string]any{"name": "s", "key": "k"}, "configMapKeyRef": map[string]any{"name": "c", "key": "k"}}}),
+			wantErr: `env "X" takes a value or a Secret's key alone`},
+		{name: "a misspelt Secret key field", template: runnerEnv(map[string]any{"name": "X",
+			"valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "s", "keys": "k"}}}), wantErr: `unknown field "keys"`},
 		{name: "kritika's name label", template: labels(map[string]any{"app.kubernetes.io/name": "x"}), wantErr: "label app.kubernetes.io/name"},
 		{name: "kritika's component label", template: labels(map[string]any{"app.kubernetes.io/component": "x"}),
 			wantErr: "label app.kubernetes.io/component"},
@@ -176,7 +208,7 @@ func TestDecodePodTemplate(t *testing.T) {
 				s.NodeSelector["node-role.example.com/runner"] != "true" || len(s.Tolerations) != 1 ||
 				s.Tolerations[0].Operator != corev1.TolerationOpExists || s.Affinity == nil || s.Affinity.NodeAffinity == nil ||
 				len(s.TopologySpreadConstraints) != 1 || s.TopologySpreadConstraints[0].MaxSkew != 1 ||
-				p.runner() != (TemplateContainer{Name: "runner", Image: "registry.example/tools:1", ImagePullPolicy: corev1.PullAlways}) {
+				!reflect.DeepEqual(p.runner(), TemplateContainer{Name: "runner", Image: "registry.example/tools:1", ImagePullPolicy: corev1.PullAlways, Env: adminEnv}) {
 				t.Fatalf("DecodePodTemplate = %+v", p)
 			}
 		})
@@ -243,6 +275,17 @@ func TestJobSpecPodTemplate(t *testing.T) {
 	if c := ps.Containers[0]; c.Image != "registry.example/tools:1" || c.ImagePullPolicy != corev1.PullAlways ||
 		len(c.Resources.Requests) != 0 || len(c.Resources.Limits) != 0 {
 		t.Fatalf("runner container = %+v, want the template's image and pull policy, and the pod's resources alone", c)
+	}
+	// The admin's variables come before kritika's, whose values a $(NAME)
+	// in theirs then cannot take in, and under the prefix the runner hands
+	// on, so none of them configures the runner itself.
+	want := slices.Clone(adminEnv)
+	for i := range want {
+		want[i].Name = runner.CommandEnvPrefix + want[i].Name
+	}
+	if env := ps.Containers[0].Env; len(env) <= len(want) || !reflect.DeepEqual(env[:len(want)], want) ||
+		env[len(want)].Name != "KRITIKA_RUN_SPEC_FILE" {
+		t.Fatalf("runner env = %+v, want the admin's variables first, prefixed", env)
 	}
 	if ps.ServiceAccountName != "sa" || ps.AutomountServiceAccountToken == nil || *ps.AutomountServiceAccountToken ||
 		ps.SecurityContext == nil || ps.SecurityContext.RunAsNonRoot == nil || !*ps.SecurityContext.RunAsNonRoot {

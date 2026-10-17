@@ -153,6 +153,54 @@ func TestCommandTool(t *testing.T) {
 
 }
 
+// TestCommandToolAdminEnv: the admin's variables reach a command from the
+// runner's own environment, where they are prefixed, never one of the
+// runner's own of the same name, and what it prints of a Secret's is
+// masked.
+func TestCommandToolAdminEnv(t *testing.T) {
+	// The run tool runs this binary as rg with the argument "adminenv":
+	// report the variables it was given.
+	if flag.Arg(0) == "adminenv" {
+		for _, name := range []string{"KONFLATE_URL", "API_TOKEN", "UNSET_KEY", "RUNNER_ONLY"} {
+			v, ok := os.LookupEnv(name)
+			fmt.Printf("%s=%s %v\n", name, v, ok)
+		}
+		os.Exit(0)
+	}
+	t.Cleanup(func() { _, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(bin, "rg")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv(CommandEnvPrefix+"KONFLATE_URL", "https://konflate.internal.example")
+	t.Setenv(CommandEnvPrefix+"API_TOKEN", "admin-secret-token")
+	t.Setenv("KONFLATE_URL", "the runner's own")
+	t.Setenv("RUNNER_ONLY", "not the commands'")
+	was := miseBin
+	miseBin = filepath.Join(t.TempDir(), "no-mise")
+	t.Cleanup(func() { miseBin = was })
+	head := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
+	s := reviewSpec()
+	s.Agent.CommandTimeoutSeconds = 5
+	s.Agent.Env = []CommandEnvVar{{Name: "KONFLATE_URL"}, {Name: "API_TOKEN", Secret: true}, {Name: "UNSET_KEY", Secret: true}}
+	run, _, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 1024, slog.New(slog.DiscardHandler))
+	defer cleanup()
+	if run == nil {
+		t.Fatal("no run tool")
+	}
+	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^TestCommandToolAdminEnv$", "adminenv"}}))
+	want := "KONFLATE_URL=https://konflate.internal.example true\nAPI_TOKEN=*** true\nUNSET_KEY= false\nRUNNER_ONLY= false\n"
+	if err != nil || !strings.Contains(out, want) {
+		t.Fatalf("out = %q, %v; want %q", out, err, want)
+	}
+}
+
 // TestCommandToolCache: a command writes under XDG_CACHE_HOME, the cache
 // directory of the run's scratch space, where a tool that keeps a cache
 // there, as flate does, has it; HOME still takes no write.

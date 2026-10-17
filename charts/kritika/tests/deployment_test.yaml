@@ -193,7 +193,7 @@ tests:
       # The tag floats with the release-please-stamped appVersion.
       - matchRegex:
           path: spec.template.spec.containers[0].env[?(@.name == "KRITIKA_RUNNER_POD_TEMPLATE")].value
-          pattern: '"containers":\[\{"image":"ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+-tools","imagePullPolicy":"IfNotPresent","name":"runner"\}\]'
+          pattern: '"containers":\[\{"env":\[\],"image":"ghcr\.io/home-operations/kritika:\d+\.\d+\.\d+-tools","imagePullPolicy":"IfNotPresent","name":"runner"\}\]'
 
   - it: takes the runner image from the chart's image repository, not its tag or digest
     set:
