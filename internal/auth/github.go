@@ -33,7 +33,7 @@ func (githubAPI) identity(ctx context.Context, c apiClient) (Identity, error) {
 		Email     string `json:"email"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if err := c.getOK(ctx, "/user", &u); err != nil {
+	if err := githubGetOK(ctx, c, "/user", &u); err != nil {
 		return Identity{}, err
 	}
 	if u.ID == 0 || u.Login == "" {
@@ -54,11 +54,11 @@ func (githubAPI) member(ctx context.Context, c apiClient, org string) (bool, err
 		State string `json:"state"`
 		Role  string `json:"role"`
 	}
-	status, header, err := c.get(ctx, "/user/memberships/orgs/"+url.PathEscape(org), &m)
+	status, header, refusal, err := c.get(ctx, "/user/memberships/orgs/"+url.PathEscape(org), &m)
 	switch {
 	case err != nil:
 		return false, err
-	case status == http.StatusForbidden && githubRateLimited(header):
+	case githubRateLimited(status, header, refusal):
 		return false, fmt.Errorf("%w: organization membership: rate limited", ErrForgeAPI)
 	case notMember(status):
 		return false, nil
@@ -128,7 +128,7 @@ func githubPages(ctx context.Context, c apiClient, path string, fn func(json.Raw
 	}
 	for page := 1; page <= githubMaxPages; page++ {
 		var raw json.RawMessage
-		if err := c.getOK(ctx, fmt.Sprintf("%s%sper_page=100&page=%d", path, sep, page), &raw); err != nil {
+		if err := githubGetOK(ctx, c, fmt.Sprintf("%s%sper_page=100&page=%d", path, sep, page), &raw); err != nil {
 			return err
 		}
 		var items []json.RawMessage
@@ -145,8 +145,37 @@ func githubPages(ctx context.Context, c apiClient, path string, fn func(json.Raw
 	return nil
 }
 
-// githubRateLimited reports whether a 403 is GitHub's primary or secondary
-// rate limit rather than a refusal to disclose membership.
-func githubRateLimited(h http.Header) bool {
-	return h.Get("X-RateLimit-Remaining") == "0" || h.Get("Retry-After") != ""
+// githubGetOK fetches path into v as apiClient.get does, for a call that
+// must succeed, and names GitHub's rate limit as such.
+func githubGetOK(ctx context.Context, c apiClient, path string, v any) error {
+	status, header, refusal, err := c.get(ctx, path, v)
+	switch {
+	case err != nil:
+		return err
+	case githubRateLimited(status, header, refusal):
+		return fmt.Errorf("%w: GET %s: rate limited", ErrForgeAPI, path)
+	case status/100 != 2:
+		return fmt.Errorf("%w: GET %s: status %d", ErrForgeAPI, path, status)
+	}
+	return nil
+}
+
+// githubRateLimited reports whether an answer is GitHub's primary or
+// secondary rate limit, rather than a refusal such as one to disclose
+// membership. A 403 for the secondary limit need not carry Retry-After; its
+// body's documentation URL names it, as go-github reads it.
+func githubRateLimited(status int, h http.Header, refusal []byte) bool {
+	switch {
+	case status == http.StatusTooManyRequests:
+		return true
+	case status != http.StatusForbidden:
+		return false
+	case h.Get("X-RateLimit-Remaining") == "0" || h.Get("Retry-After") != "":
+		return true
+	}
+	var e struct {
+		DocumentationURL string `json:"documentation_url"`
+	}
+	return json.Unmarshal(refusal, &e) == nil &&
+		(strings.HasSuffix(e.DocumentationURL, "#abuse-rate-limits") || strings.HasSuffix(e.DocumentationURL, "secondary-rate-limits"))
 }

@@ -91,6 +91,10 @@ func (p *oidcProvider) Exchange(ctx context.Context, code, pkceVerifier, nonce s
 	if err != nil {
 		return Identity{}, Facts{}, fmt.Errorf("%w: %w", ErrOIDC, err)
 	}
+	// go-oidc does not require one, and an identity without it is no one's.
+	if idt.Subject == "" {
+		return Identity{}, Facts{}, fmt.Errorf("%w: id_token has no subject", ErrOIDC)
+	}
 	// go-oidc leaves the nonce to the caller.
 	if nonce == "" || subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(nonce)) != 1 {
 		return Identity{}, Facts{}, fmt.Errorf("%w: nonce mismatch", ErrOIDC)
@@ -114,6 +118,11 @@ func (p *oidcProvider) Exchange(ctx context.Context, code, pkceVerifier, nonce s
 			info, err := p.discovered.UserInfo(oidc.ClientContext(ctx, p.client), oauth2.StaticTokenSource(tok))
 			if err != nil {
 				return nil, fmt.Errorf("%w: userinfo: %w", ErrOIDC, err)
+			}
+			// OpenID Connect Core 5.3.2: claims for another subject must
+			// not be used, and go-oidc leaves the check to the caller.
+			if info.Subject != idt.Subject {
+				return nil, fmt.Errorf("%w: userinfo is for another subject", ErrOIDC)
 			}
 			more := map[string]any{}
 			if err := info.Claims(&more); err != nil {

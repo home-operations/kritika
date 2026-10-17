@@ -341,6 +341,21 @@ func TestOIDCSignIn(t *testing.T) {
 		stranger := &fakeUser{Login: "stranger-" + randomHex(t), Email: "s@oidc.example", EmailVerified: true, Groups: []string{"other"}}
 		assertFailed(t, e.signIn("oidc", e.oidc, stranger, ""), http.StatusForbidden, "not_allowed")
 	})
+	t.Run("an admin by a role UserInfo adds", func(t *testing.T) {
+		op := &fakeUser{Login: "op-info-" + randomHex(t), Email: "op@oidc.example", Groups: []string{"staff"}, UserInfoGroups: []string{"ops"}}
+		if p := e.principal(e.mustSignIn("oidc", e.oidc, op)); p == nil || !p.Admin {
+			t.Fatalf("principal = %+v, want an admin", p)
+		}
+	})
+	t.Run("UserInfo for another subject is not used", func(t *testing.T) {
+		member := &fakeUser{Login: "member-" + randomHex(t), Email: "m@oidc.example", Groups: []string{"staff"},
+			UserInfoSub: "someone-else", UserInfoGroups: []string{"ops"}}
+		assertFailed(t, e.signIn("oidc", e.oidc, member, ""), http.StatusBadGateway, "membership_failed")
+	})
+	t.Run("an ID token without a subject", func(t *testing.T) {
+		assertFailed(t, e.signIn("oidc", e.oidc, &fakeUser{Email: "nobody@oidc.example", Groups: []string{"staff"}}, ""),
+			http.StatusBadGateway, "exchange_failed")
+	})
 }
 
 func TestGitHubSignInGrants(t *testing.T) {

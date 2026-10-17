@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -35,6 +36,10 @@ type fakeUser struct {
 	Orgs map[string]string
 	// Groups is the OIDC groups claim.
 	Groups []string
+	// UserInfoSub, when set, is the subject the OIDC UserInfo response
+	// names instead of Login, and UserInfoGroups groups it adds.
+	UserInfoSub    string
+	UserInfoGroups []string
 }
 
 // pendingAuth is what the fake's authorize step would have recorded for a
@@ -156,7 +161,7 @@ func newFakeOIDC(t *testing.T) *fakeOAuth {
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
 		writeFakeJSON(w, map[string]any{
 			"issuer": iss, "authorization_endpoint": iss + "/authorize", "token_endpoint": iss + "/token",
-			"jwks_uri": iss + "/jwks", "id_token_signing_alg_values_supported": []string{"RS256"},
+			"jwks_uri": iss + "/jwks", "userinfo_endpoint": iss + "/userinfo", "id_token_signing_alg_values_supported": []string{"RS256"},
 			"response_types_supported": []string{"code"}, "subject_types_supported": []string{"public"},
 		})
 	})
@@ -164,6 +169,17 @@ func newFakeOIDC(t *testing.T) *fakeOAuth {
 		writeFakeJSON(w, jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"}}})
 	})
 	mux.HandleFunc("POST /token", f.token)
+	mux.HandleFunc("GET /userinfo", func(w http.ResponseWriter, r *http.Request) {
+		u := f.user(w, r)
+		if u == nil {
+			return
+		}
+		info := map[string]any{"sub": cmp.Or(u.UserInfoSub, u.Login)}
+		if u.UserInfoGroups != nil {
+			info["groups"] = u.UserInfoGroups
+		}
+		writeFakeJSON(w, info)
+	})
 	f.idTok = func(p pendingAuth) string {
 		nonce := p.nonce
 		if p.nonceOverride != "" {
