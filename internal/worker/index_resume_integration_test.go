@@ -268,7 +268,7 @@ func changeIndexResumeInputs(
 		}
 		next.Embedding = &embedding
 		current.Set(&next)
-		if _, err := st.EnsureIndexSchema(ctx, "kritika_app", embedding.Model, embedding.Dims); err != nil {
+		if _, err := st.EnsureIndexSchema(ctx, "kritika_app", embedding.Model, embedding.Dims, embedding.DocumentPrompt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -294,7 +294,7 @@ func setupIndexResume(t *testing.T, scenario string) *resumeSetup {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", file.Embedding.Model, 8); err != nil {
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", file.Embedding.Model, 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")

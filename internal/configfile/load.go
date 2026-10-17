@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"os"
 	"path"
 	"regexp"
@@ -307,8 +308,9 @@ func (f *File) validate(accounts []Account) error {
 	return f.validateAccounts(accounts)
 }
 
-// validateEmbedding checks the embedder's dimension fits the index column
-// and its bounds are not negative; its provider is checked with the rest.
+// validateEmbedding checks the embedder's dimension fits the index column,
+// its bounds are not negative and prompts come with a floor of their own;
+// its provider is checked with the rest.
 func (f *File) validateEmbedding() error {
 	e := f.Embedding
 	if e == nil {
@@ -320,8 +322,18 @@ func (f *File) validateEmbedding() error {
 	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
 		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
 	}
-	if e.SimilarFloor < 0 || e.SimilarFloor > 1 {
+	// NaN passes any comparison's negation, and would then keep no chunk.
+	if math.IsNaN(e.SimilarFloor) || e.SimilarFloor < 0 || e.SimilarFloor > 1 {
 		return fmt.Errorf("configfile: embedding.similarFloor must be between 0 and 1 (a cosine similarity), got %g", e.SimilarFloor)
+	}
+	if m := e.SimilarMargin; m != nil && (math.IsNaN(*m) || *m < 0 || *m > 1) {
+		return fmt.Errorf("configfile: embedding.similarMargin must be between 0 and 1 (a difference of cosine similarities), got %g", *m)
+	}
+	// Prompts move every score, up or down depending on the model, so the
+	// default floor could keep everything or nothing without a sign of it.
+	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "") {
+		return errors.New("configfile: embedding.queryPrompt and documentPrompt need embedding.similarFloor set, " +
+			"since prompts move the scores the floor compares")
 	}
 	return nil
 }

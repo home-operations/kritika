@@ -54,6 +54,18 @@ tests:
           path: data["config.yaml"]
           pattern: '\{\{ .Release.Name \}\}'
 
+  - it: keeps the embedder's prompts exactly as written, trailing space and newline included
+    set:
+      config.embedding.queryPrompt: "Instruct: Given a code change, retrieve similar code\nQuery:"
+      config.embedding.documentPrompt: "task: sentence similarity | query: "
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "documentPrompt: 'task: sentence similarity \\| query: '\n"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'queryPrompt: \|-\n\s+Instruct: Given a code change, retrieve similar code\n\s+Query:\n'
+
   - it: evaluates application config with the release and values context
     set:
       config.webUrl: "https://{{ .Release.Name }}.turbo.ac"

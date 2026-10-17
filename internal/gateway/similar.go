@@ -23,7 +23,8 @@ import (
 )
 
 // Similarity retrieval bounds: neighbours per query and chunks kept. The
-// floor below which a neighbour is noise is the embedder's.
+// floor and the margin below a query's best match, under which a
+// neighbour is noise, are the embedder's.
 const (
 	similarPerQuery = 4
 	similarMax      = 10
@@ -64,13 +65,17 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("the request must carry between 1 and %d queries, not %d", contextpack.SimilarQueries, len(req.Queries)))
 		return
 	}
+	var prompt string
+	if e := c.file.Embedding; e != nil {
+		prompt = e.QueryPrompt
+	}
 	var chars int
 	for i, q := range req.Queries {
 		if strings.TrimSpace(q) == "" {
 			refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("query %d is empty", i))
 			return
 		}
-		req.Queries[i] = textcut.Prefix(q, contextpack.SimilarQueryChars)
+		req.Queries[i] = prompt + textcut.Prefix(q, contextpack.SimilarQueryChars)
 		chars += len(req.Queries[i])
 	}
 	var jobID int64
@@ -123,9 +128,9 @@ type similarRequest struct {
 	// jobID is the review's job, for which the embedding slot is held.
 	jobID int64
 	slots int
-	// queries are the texts to embed, each already within
-	// contextpack.SimilarQueryChars; exclude are the paths left out of the
-	// answer.
+	// queries are the texts to embed: the embedder's query prompt, then a
+	// query cut to contextpack.SimilarQueryChars; exclude are the paths left
+	// out of the answer.
 	queries []string
 	exclude []string
 }
@@ -145,7 +150,7 @@ func (g *Server) similar(
 	var runID string
 	err = g.Store.WithAccount(ctx, r.account.ID(), func(tx pgx.Tx) error {
 		var err error
-		runID, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims)
+		runID, err = store.ActiveGenerationFor(ctx, tx, r.repositoryID, emb.Model, emb.Dims, emb.DocumentPrompt)
 		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {
@@ -199,21 +204,38 @@ func (g *Server) similar(
 	if err != nil {
 		return nil, tokens, true, err
 	}
-	chunks = keepSimilar(hits, emb.Floor())
-	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "kept", len(chunks), "tokens", tokens)
+	chunks = keepSimilar(hits, emb.Floor(), emb.Margin())
+	logger.Info("similar chunks", "queries", len(r.queries), "floor", emb.Floor(), "margin", emb.Margin(), "kept", len(chunks),
+		"tokens", tokens)
 	return chunks, tokens, true, nil
 }
 
-// keepSimilar is the hits at or above floor, each chunk once, the most
-// similar first and at most similarMax of them, each labelled with its
-// similarity.
-func keepSimilar(hits []store.SimilarHit, floor float64) []contextpack.Chunk {
-	hits = slices.Clone(hits)
-	slices.SortStableFunc(hits, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
-	seen := map[string]bool{}
-	chunks := make([]contextpack.Chunk, 0, min(len(hits), similarMax))
+// keepSimilar is the hits at or above floor and within margin of the best
+// hit of their query, each chunk once, the most similar first and at most
+// similarMax of them, each labelled with its similarity. Each query's
+// scores sit at a height of their own, set by the code it is near, so one
+// floor cuts one query's good matches and keeps another's noise; the
+// margin is measured from each query's best instead.
+func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.Chunk {
+	best := map[int]float64{}
 	for _, h := range hits {
-		if h.Similarity < floor || len(chunks) == similarMax {
+		if s, ok := best[h.Query]; !ok || h.Similarity > s {
+			best[h.Query] = h.Similarity
+		}
+	}
+	kept := make([]store.SimilarHit, 0, len(hits))
+	for _, h := range hits {
+		// The tolerance keeps a hit right at the margin, which the
+		// subtraction's rounding can put a hair below it.
+		if h.Similarity >= floor && h.Similarity >= best[h.Query]-margin-1e-9 {
+			kept = append(kept, h)
+		}
+	}
+	slices.SortStableFunc(kept, func(a, b store.SimilarHit) int { return cmp.Compare(b.Similarity, a.Similarity) })
+	seen := map[string]bool{}
+	chunks := make([]contextpack.Chunk, 0, min(len(kept), similarMax))
+	for _, h := range kept {
+		if len(chunks) == similarMax {
 			break
 		}
 		key := fmt.Sprintf("%s:%d", h.Chunk.Path, h.Chunk.StartLine)

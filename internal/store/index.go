@@ -13,13 +13,15 @@ import (
 )
 
 // EnsureIndexSchema makes index_chunks match the instance's embedder: it
-// creates the table at dims on first use and records model and dims in
-// index_schema. When either differs from what is recorded, every
-// generation is dropped with the table and it is rebuilt, so each
+// creates the table at dims on first use and records model, dims and the
+// document prompt in index_schema. When any differs from what is recorded,
+// every generation is dropped with the table and it is rebuilt, so each
 // repository is indexed afresh by the onboarding that follows; rebuilt
 // reports that. The dashboard asks the admin to confirm such a change
 // before it is saved. Leader only.
-func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, dims int) (rebuilt bool, err error) {
+func (s *Store) EnsureIndexSchema(
+	ctx context.Context, appRole, model string, dims int, documentPrompt string,
+) (rebuilt bool, err error) {
 	if s.owner == nil {
 		return false, errors.New("store: EnsureIndexSchema needs the owner connection")
 	}
@@ -30,13 +32,13 @@ func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, di
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('kritika-index-schema'))`); err != nil {
 			return fmt.Errorf("store: lock index schema: %w", err)
 		}
-		curModel, curDims, ok, err := IndexSchemaIn(ctx, tx)
+		curModel, curDims, curPrompt, ok, err := IndexSchemaIn(ctx, tx)
 		switch {
 		case err != nil:
 			return err
 		case !ok:
-			return createIndexChunks(ctx, tx, appRole, model, dims)
-		case curModel == model && curDims == dims:
+			return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
+		case curModel == model && curDims == dims && curPrompt == documentPrompt:
 			return nil
 		}
 		// No generation is valid for a different embedder, so detach every
@@ -53,25 +55,27 @@ func (s *Store) EnsureIndexSchema(ctx context.Context, appRole, model string, di
 			}
 		}
 		rebuilt = true
-		return createIndexChunks(ctx, tx, appRole, model, dims)
+		return createIndexChunks(ctx, tx, appRole, model, dims, documentPrompt)
 	})
 	return rebuilt && err == nil, err
 }
 
-// IndexSchemaIn is the embedding model and dimension index_chunks was built
-// for, read in tx; ok is false when it was never built.
-func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (model string, dims int, ok bool, err error) {
-	err = tx.QueryRow(ctx, `SELECT embed_model, embed_dims FROM index_schema WHERE id = 1`).Scan(&model, &dims)
+// IndexSchemaIn is the embedding model, dimension and document prompt
+// index_chunks was built for, read in tx; ok is false when it was never
+// built.
+func IndexSchemaIn(ctx context.Context, tx pgx.Tx) (model string, dims int, documentPrompt string, ok bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT embed_model, embed_dims, document_prompt FROM index_schema WHERE id = 1`).
+		Scan(&model, &dims, &documentPrompt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", 0, false, nil
+		return "", 0, "", false, nil
 	}
 	if err != nil {
-		return "", 0, false, fmt.Errorf("store: read index schema: %w", err)
+		return "", 0, "", false, fmt.Errorf("store: read index schema: %w", err)
 	}
-	return model, dims, true, nil
+	return model, dims, documentPrompt, true, nil
 }
 
-func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int) error {
+func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, dims int, documentPrompt string) error {
 	app := pgx.Identifier{appRole}.Sanitize()
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS index_chunks (
@@ -109,7 +113,8 @@ func createIndexChunks(ctx context.Context, tx pgx.Tx, appRole, model string, di
 			return fmt.Errorf("store: create index_chunks: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims) VALUES (1, $1, $2)`, model, dims); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO index_schema (id, embed_model, embed_dims, document_prompt) VALUES (1, $1, $2, $3)`,
+		model, dims, documentPrompt); err != nil {
 		return fmt.Errorf("store: record index schema: %w", err)
 	}
 	return nil
@@ -211,10 +216,14 @@ func (s *Store) OnboardingInFlight(ctx context.Context) (int, error) {
 }
 
 // OnboardCandidates lists up to limit enabled repositories, of those
-// enabled also admits by account ID, full name and traits, with no active index
-// generation, no index job queued or running, and no onboarding job
-// that finished within retryAfter without building an index: one that
-// failed or was skipped would fail or be skipped again. Accounts take turns,
+// enabled also admits by account ID, full name and traits, whose active index
+// generation is missing or was built by another embedder than index_schema
+// records, with no index job queued or running, and no onboarding job that
+// finished within retryAfter without building an index: one that failed or
+// was skipped would fail or be skipped again. A pod still on the previous
+// configuration during a rollout can publish a generation of another
+// embedder, which the gateway never queries and a repository without pushes
+// would otherwise keep. Accounts take turns,
 // and within an account the repositories whose pull requests moved last come
 // first, as the ones a review is likeliest to need soon. Owner connection:
 // it spans every account.
@@ -228,7 +237,10 @@ func (s *Store) OnboardCandidates(
 			SELECT r.id, r.account_id, r.name, r.archived, r.fork, r.turned_on, r.created_at,
 				(SELECT max(p.updated_at) FROM pull_requests p WHERE p.repository_id = r.id) AS active
 			FROM repositories r
-			WHERE r.enabled AND r.turned_on IS DISTINCT FROM false AND r.active_index_run_id IS NULL
+			WHERE r.enabled AND r.turned_on IS DISTINCT FROM false
+			  AND (r.active_index_run_id IS NULL OR EXISTS (SELECT 1 FROM index_runs g, index_schema s
+			      WHERE g.id = r.active_index_run_id AND (g.embed_model, g.embed_dims, g.document_prompt)
+			        IS DISTINCT FROM (s.embed_model, s.embed_dims, s.document_prompt)))
 			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE `+liveIndexJob+` AND j.args->>'repository_id' = r.id::text)
 			  AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = 'index' AND j.args->>'repository_id' = r.id::text
 			                  AND j.args->>'trigger' = 'onboard' AND j.finalized_at > now() - make_interval(secs => $1)

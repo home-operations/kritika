@@ -339,8 +339,23 @@ type Embedding struct {
 	// SimilarFloor is the cosine similarity an index chunk needs to count
 	// as similar code, for the review's similar-code stage and the agent's
 	// search_code tool alike. Where useful matches part from noise depends
-	// on the model and the repository; unset is DefaultSimilarFloor.
+	// on the model, its prompts and the repository; unset is
+	// DefaultSimilarFloor, which only fits inputs without prompts.
 	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
+	// SimilarMargin is how far below the best match of its query, in cosine
+	// similarity, a chunk may score and still count as similar code. A
+	// query's scores sit at a height set by the code it is near, which
+	// differs between repositories and between the hunks of one diff, so
+	// the margin follows each query's best where a floor cannot; unset is
+	// DefaultSimilarMargin, and 0 keeps only each query's best.
+	SimilarMargin *float64 `yaml:"similarMargin,omitempty"`
+	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
+	// each similar-code query and each indexed chunk: the task prompts many
+	// embedding models are trained with. Unset, inputs go as they are.
+	// DocumentPrompt shapes the stored vectors, so a change of it rebuilds
+	// every repository's index, as a change of the model does.
+	QueryPrompt    string `yaml:"queryPrompt,omitempty"`
+	DocumentPrompt string `yaml:"documentPrompt,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load:
 	// its endpoint, the model's id on it, and its key.
@@ -368,6 +383,19 @@ const DefaultSimilarFloor = 0.5
 
 // Floor returns SimilarFloor, DefaultSimilarFloor when unset.
 func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimilarFloor) }
+
+// DefaultSimilarMargin is the similar-code margin when the embedder sets
+// none: wide enough to keep the matches close to a query's best and drop
+// only those well below it.
+const DefaultSimilarMargin = 0.1
+
+// Margin returns SimilarMargin, DefaultSimilarMargin when unset.
+func (e *Embedding) Margin() float64 {
+	if e.SimilarMargin == nil {
+		return DefaultSimilarMargin
+	}
+	return *e.SimilarMargin
+}
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and

@@ -28,18 +28,20 @@ func TestErrText(t *testing.T) {
 
 func TestEmbedText(t *testing.T) {
 	tests := []struct {
-		name  string
-		chunk store.StagedChunk
-		want  string
+		name, prompt string
+		chunk        store.StagedChunk
+		want         string
 	}{
 		{name: "with a symbol", chunk: store.StagedChunk{Path: "a/b.go", Symbol: "Build", Kind: "function", Text: "func Build() {}"},
 			want: "a/b.go function Build\nfunc Build() {}"},
 		{name: "without a symbol", chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "values.yaml\na: 1"},
+		{name: "with a document prompt", prompt: "Represent the document for retrieval: ",
+			chunk: store.StagedChunk{Path: "values.yaml", Text: "a: 1"}, want: "Represent the document for retrieval: values.yaml\na: 1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := embedText(tt.chunk); got != tt.want {
-				t.Errorf("embedText(%+v) = %q, want %q", tt.chunk, got, tt.want)
+			if got := embedText(tt.prompt, tt.chunk); got != tt.want {
+				t.Errorf("embedText(%q, %+v) = %q, want %q", tt.prompt, tt.chunk, got, tt.want)
 			}
 		})
 	}

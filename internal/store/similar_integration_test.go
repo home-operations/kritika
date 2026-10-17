@@ -17,7 +17,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("review-similar"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -52,5 +52,16 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+	// Each hit says which query it is near.
+	if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+		v := []float32{1, 0, 0, 0, 0, 0, 0, 0}
+		hits, err := SimilarChunks(ctx, tx, run, [][]float32{v, v}, nil, 4)
+		if err == nil && (len(hits) != 2 || hits[0].Query != 0 || hits[1].Query != 1) {
+			t.Errorf("hits = %+v; want one near each query, in their order", hits)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

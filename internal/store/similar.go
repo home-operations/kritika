@@ -13,10 +13,11 @@ import (
 
 // ActiveGenerationFor is the repository's active, completed index
 // generation built with the given embedder, or ErrNotFound.
-func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedModel string, dims int) (string, error) {
+func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedModel string, dims int, documentPrompt string) (string, error) {
 	var runID string
 	err := tx.QueryRow(ctx, `SELECT r.active_index_run_id::text FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
-		WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2 AND g.embed_dims = $3`, repositoryID, embedModel, dims).Scan(&runID)
+		WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2 AND g.embed_dims = $3 AND g.document_prompt = $4`,
+		repositoryID, embedModel, dims, documentPrompt).Scan(&runID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
@@ -30,6 +31,8 @@ func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedMode
 type SimilarHit struct {
 	Chunk      contextpack.Chunk
 	Similarity float64
+	// Query is the index of the query vector it is near.
+	Query int
 }
 
 const similarChunksSQL = `SELECT path, start_line, end_line, language, symbol, kind, scope, text, 1 - (embedding <=> $1::halfvec)
@@ -51,13 +54,13 @@ func SimilarChunks(
 		return nil, fmt.Errorf("store: enable prefilter: %w", err)
 	}
 	var hits []SimilarHit
-	for _, v := range vectors {
+	for i, v := range vectors {
 		rows, err := tx.Query(ctx, similarChunksSQL, model.VectorLiteral(v), runID, exclude, perQuery)
 		if err != nil {
 			return nil, fmt.Errorf("store: similar chunks: %w", err)
 		}
 		hits, err = pgx.AppendRows(hits, rows, func(row pgx.CollectableRow) (SimilarHit, error) {
-			var h SimilarHit
+			h := SimilarHit{Query: i}
 			c := &h.Chunk
 			err := row.Scan(&c.Path, &c.StartLine, &c.EndLine, &c.Language, &c.Symbol, &c.Kind, &c.Scope, &c.Text, &h.Similarity)
 			c.Stage = contextpack.StageSimilar

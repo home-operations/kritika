@@ -48,6 +48,8 @@ func TestIndexResumeIdentity(t *testing.T) {
 		{"replacement base", indexResumeKey("head", store.IndexModeIncremental, "base", &store.Generation{ID: "other"}, emb, "ignore"), false},
 		{"batch limits", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxBatch: 1, MaxBatchChars: 100}, "ignore"), true},
 		{"input truncation", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, MaxItemChars: 12}, "ignore"), false},
+		{"document prompt", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, DocumentPrompt: "text: "}, "ignore"), false},
+		{"query prompt", indexResumeKey("head", store.IndexModeIncremental, "base", active, &configfile.Embedding{BaseURL: emb.BaseURL, Model: emb.Model, Dims: 8, QueryPrompt: "query: "}, "ignore"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if (tc.key == key) != tc.same {
@@ -57,5 +59,38 @@ func TestIndexResumeIdentity(t *testing.T) {
 	}
 	if indexResumeKey("head", store.IndexModeFull, "", active, emb, "ignore") != indexResumeKey("head", store.IndexModeFull, "", nil, emb, "ignore") {
 		t.Fatal("full build depends on the active generation")
+	}
+}
+
+// TestIndexMatches: an index is kept, and stepped incrementally, only when
+// the embedder that built it would build the same vectors; the query
+// prompt changes no stored vector.
+func TestIndexMatches(t *testing.T) {
+	emb := &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: "}
+	built := store.Generation{Model: "model", Dims: 8, DocumentPrompt: "text: ", IgnoreHash: "ignore"}
+	for _, tc := range []struct {
+		name string
+		edit func(*store.Generation)
+		want bool
+	}{
+		{"same embedder", func(*store.Generation) {}, true},
+		{"another model", func(g *store.Generation) { g.Model = "other" }, false},
+		{"another dimension", func(g *store.Generation) { g.Dims = 16 }, false},
+		{"another document prompt", func(g *store.Generation) { g.DocumentPrompt = "" }, false},
+		{"other ignore rules", func(g *store.Generation) { g.IgnoreHash = "other" }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := built
+			tc.edit(&g)
+			if got := indexMatches(&g, emb, "ignore"); got != tc.want {
+				t.Fatalf("indexMatches = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if !indexMatches(&built, &configfile.Embedding{Model: "model", Dims: 8, DocumentPrompt: "text: ", QueryPrompt: "query: "}, "ignore") {
+		t.Fatal("a query prompt must not rebuild the index")
+	}
+	if indexMatches(nil, emb, "ignore") {
+		t.Fatal("no generation matches")
 	}
 }

@@ -45,6 +45,7 @@ repositories:
   east/failed: {}
   east/queued: {}
   east/indexed: {}
+  east/stale: {}
   east/off: {}
   west/one: {}
   west/old-failure: {}
@@ -52,13 +53,21 @@ repositories:
 
 // TestOnboardCandidates checks which repositories the onboarding feeder is
 // offered and in what order: accounts take turns, and an account's repositories
-// whose pull requests moved last go first.
+// whose pull requests moved last go first. A repository whose index another
+// embedder built is offered again.
 func TestOnboardCandidates(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
 	if err := s.ApplyConfig(ctx, parse(t, onboardAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "m", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
 	ids := map[string]string{}
 	names := map[string]string{}
 	rows, err := s.owner.Query(ctx, `SELECT id, name FROM repositories WHERE name LIKE 'east/%' OR name LIKE 'west/%'`)
@@ -72,7 +81,7 @@ func TestOnboardCandidates(t *testing.T) {
 		}
 		ids[name], names[id] = id, name
 	}
-	if rows.Err() != nil || len(ids) != 11 {
+	if rows.Err() != nil || len(ids) != 12 {
 		t.Fatalf("repositories = %v, %v", ids, rows.Err())
 	}
 	exec := func(sql string, args ...any) {
@@ -94,10 +103,13 @@ func TestOnboardCandidates(t *testing.T) {
 		exec(`INSERT INTO pull_requests (account_id, repository_id, number, head_sha, updated_at)
 			SELECT account_id, id, 1, 'abc', now() - $2::interval FROM repositories WHERE id = $1`, ids[name], age)
 	}
+	// east/stale's index was built with another document prompt.
 	exec(`WITH g AS (
-			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
-			SELECT account_id, id, 'abc', 'm', 8, 'full', 'completed' FROM repositories WHERE id = $1 RETURNING id, repository_id)
-		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"])
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, document_prompt, mode, status)
+			SELECT r.account_id, r.id, 'abc', 'm', 8, p.prompt, 'full', 'completed'
+			FROM repositories r JOIN (VALUES ($1::uuid, ''), ($2::uuid, 'passage: ')) p (id, prompt) ON p.id = r.id
+			RETURNING id, repository_id)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`, ids["east/indexed"], ids["east/stale"])
 
 	before, err := s.OnboardingInFlight(ctx)
 	if err != nil {
@@ -142,7 +154,7 @@ func TestOnboardCandidates(t *testing.T) {
 			got = append(got, name)
 		}
 	}
-	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt"}
+	want := []string{"east/busy", "west/one", "east/quiet", "west/old-failure", "east/later", "east/rebuilt", "east/stale"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("candidates = %v, want %v", got, want)
 	}

@@ -60,16 +60,16 @@ func RecordDefaultBranch(ctx context.Context, tx pgx.Tx, repositoryID, branch st
 // Generation is a repository's active index generation: what it covers
 // and the embedder it was built with.
 type Generation struct {
-	ID, Commit, Model, IgnoreHash string
-	Dims                          int
+	ID, Commit, Model, IgnoreHash, DocumentPrompt string
+	Dims                                          int
 }
 
 // FindGeneration reads a completed index generation, or ErrNotFound.
 func FindGeneration(ctx context.Context, tx pgx.Tx, runID string) (Generation, error) {
 	g := Generation{ID: runID}
-	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash FROM index_runs
+	err := tx.QueryRow(ctx, `SELECT commit_sha, embed_model, embed_dims, ignore_hash, document_prompt FROM index_runs
 		WHERE id = $1 AND status = 'completed'`, runID).
-		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash)
+		Scan(&g.Commit, &g.Model, &g.Dims, &g.IgnoreHash, &g.DocumentPrompt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -105,9 +105,11 @@ func StartIndexRun(ctx context.Context, tx pgx.Tx, r NewIndexRun) (runID, runner
 		return "", "", fmt.Errorf("store: drop stray chunks: %w", err)
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO index_runs
-		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, mode, status, trigger, ignore_hash, resume_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8, $9, $10) RETURNING id`,
-		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Mode, r.Trigger, r.IgnoreHash, r.ResumeKey).
+		(account_id, repository_id, commit_sha, base_sha, embed_model, embed_dims, document_prompt, mode, status, trigger,
+		 ignore_hash, resume_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10, $11) RETURNING id`,
+		r.AccountID, r.RepositoryID, r.Commit, r.Base, r.Embedding.Model, r.Embedding.Dims, r.Embedding.DocumentPrompt, r.Mode, r.Trigger,
+		r.IgnoreHash, r.ResumeKey).
 		Scan(&runID); err != nil {
 		return "", "", fmt.Errorf("store: insert index run: %w", err)
 	}
