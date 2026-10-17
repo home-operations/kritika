@@ -134,10 +134,11 @@ func TestJobSpecPod(t *testing.T) {
 // created as a dry run; one the API finds invalid stops serve, any other
 // refusal does not, and no runner.pod sends nothing.
 func TestKubeCheckPod(t *testing.T) {
-	invalid := apierrors.NewInvalid(schema.GroupKind{Group: "batch", Kind: "Job"}, "kritika-run-check-x", field.ErrorList{
+	invalid := apierrors.NewInvalid(schema.GroupKind{Group: "batch", Kind: "Job"}, "kritika-run-00000000", field.ErrorList{
 		field.NotSupported(field.NewPath("spec", "template", "spec", "tolerations").Index(0).Child("operator"), "Exist", []string{"Equal", "Exists"}),
 	})
 	noDryRun := apierrors.NewBadRequest(`admission webhook "policy.example.com" does not support dry run`)
+	taken := apierrors.NewAlreadyExists(schema.GroupResource{Group: "batch", Resource: "jobs"}, "kritika-run-00000000")
 	tests := []struct {
 		name    string
 		pod     Pod
@@ -149,6 +150,7 @@ func TestKubeCheckPod(t *testing.T) {
 		{name: "accepted", pod: Pod{PriorityClassName: "kritika-runner"}, sent: true},
 		{name: "invalid", pod: Pod{PriorityClassName: "kritika-runner"}, answer: invalid, wantErr: true, sent: true},
 		{name: "a webhook that cannot take a dry run", pod: Pod{PriorityClassName: "kritika-runner"}, answer: noDryRun, sent: true},
+		{name: "a run's Job of the same name", pod: Pod{PriorityClassName: "kritika-runner"}, answer: taken, sent: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -168,10 +170,10 @@ func TestKubeCheckPod(t *testing.T) {
 			if (sent != nil) != tt.sent {
 				t.Fatalf("a Job was sent: %v, want %v", sent != nil, tt.sent)
 			}
-			if sent != nil && (sent.Name != "" || sent.GenerateName == "" || len(opts.DryRun) != 1 || opts.DryRun[0] != metav1.DryRunAll ||
+			if sent != nil && (sent.Name != "kritika-run-00000000" || len(opts.DryRun) != 1 || opts.DryRun[0] != metav1.DryRunAll ||
 				sent.Spec.Template.Spec.PriorityClassName != "kritika-runner") {
-				t.Fatalf("sent %s/%s with %+v and priority class %q, want a dry run of the runner Job",
-					sent.Name, sent.GenerateName, opts, sent.Spec.Template.Spec.PriorityClassName)
+				t.Fatalf("sent %s with %+v and priority class %q, want a dry run of the runner Job",
+					sent.Name, opts, sent.Spec.Template.Spec.PriorityClassName)
 			}
 			// A policy judges the dry run as a run's Job: the same deadline and resources.
 			if sent != nil && (sent.Spec.ActiveDeadlineSeconds == nil || *sent.Spec.ActiveDeadlineSeconds != 1200 ||

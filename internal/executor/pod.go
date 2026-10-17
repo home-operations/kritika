@@ -71,11 +71,12 @@ func DecodePod(m map[string]any) (Pod, error) {
 
 // CheckPod has the API validate a runner Job carrying the configuration's
 // runner.pod, created as a dry run, for what decoding it cannot check: an
-// enum, a required field, a label's syntax. The Job has the deadline and
-// resources every run's has, so a cluster's policy judges it as it would
-// theirs. One the API finds invalid stops serve at startup rather than
-// failing every run; any other refusal, such as a webhook that cannot take
-// a dry run, is only logged.
+// enum, a required field, a label's syntax. The Job is a run's as the
+// executor builds it, its name, deadline and resources included, so a
+// cluster's policy, the chart's runner admission among them, judges it as
+// it would theirs. One the API finds invalid stops serve at startup rather
+// than failing every run; any other refusal, such as a webhook that cannot
+// take a dry run, or a run's Job of the same name, is only logged.
 func (k *Kube) CheckPod(ctx context.Context, deadline time.Duration, resources map[string]any) error {
 	if reflect.DeepEqual(k.Pod, Pod{}) {
 		return nil
@@ -84,7 +85,6 @@ func (k *Kube) CheckPod(ctx context.Context, deadline time.Duration, resources m
 	if err != nil {
 		return err
 	}
-	job.Name, job.GenerateName = "", "kritika-run-check-"
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	_, err = k.Client.BatchV1().Jobs(k.Namespace).Create(cctx, job, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
