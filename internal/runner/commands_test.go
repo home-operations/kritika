@@ -1,6 +1,10 @@
 package runner
 
 import (
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,16 +31,69 @@ func TestCommandEnv(t *testing.T) {
 
 	t.Setenv("HTTPS_PROXY", "http://gateway:8082")
 	t.Setenv("HTTP_PROXY", "http://gateway:8082")
-	t.Setenv("no_proxy", "localhost")
+	t.Setenv("no_proxy", "localhost,gateway")
 	env, proxied = commandEnv("/tmp/home", "/tmp/cache")
+	// No NO_PROXY: curl reaches even those hosts through the gateway.
 	want := []string{
 		"PATH=/usr/local/bin:/usr/bin", "HOME=/tmp/home", "XDG_CACHE_HOME=/tmp/cache",
 		"HTTP_PROXY=http://gateway:8082", "http_proxy=http://gateway:8082",
 		"HTTPS_PROXY=http://gateway:8082", "https_proxy=http://gateway:8082",
-		"NO_PROXY=localhost", "no_proxy=localhost",
 	}
 	if !proxied || !slices.Equal(env, want) {
 		t.Fatalf("with the gateway: env = %q, proxied = %v", env, proxied)
+	}
+}
+
+// TestCurlrcSchemes: the host's curl, given the runner's .curlrc, fetches
+// an http:// URL and refuses one of any other scheme, given or redirected
+// to, before connecting: curl's exit code 1, an unsupported protocol,
+// where a connection to the closed port would fail with 7.
+func TestCurlrcSchemes(t *testing.T) {
+	bin, err := exec.LookPath("curl")
+	if err != nil {
+		t.Skip(err)
+	}
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".curlrc"), []byte(curlrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "ftp://"+closed+"/", http.StatusFound)
+		}
+	}))
+	defer srv.Close()
+	for _, tt := range []struct {
+		url  string
+		code int
+	}{
+		{srv.URL + "/", 0},
+		{"telnet://" + closed, 1},
+		{"ftp://" + closed + "/", 1},
+		{"dict://" + closed + "/d:x", 1},
+		{"tftp://" + closed + "/x", 1},
+		{srv.URL + "/redirect", 1},
+	} {
+		cmd := exec.CommandContext(t.Context(), bin, "-sS", "--max-time", "5", tt.url)
+		cmd.Env = []string{"HOME=" + home}
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if code != tt.code {
+			t.Errorf("curl %s: exit code %d, want %d\n%s", tt.url, code, tt.code, out)
+		}
 	}
 }
 

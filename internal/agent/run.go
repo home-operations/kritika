@@ -394,10 +394,40 @@ func ghFlagTakesValue(a string) bool {
 // of short flags: what follows one in the same argument is its value.
 const fdValueFlags = "dEteSocjC"
 
+// curlValueFlags are curl's short options that take a value, which ends a
+// group of short options as fdValueFlags does fd's.
+const curlValueFlags = "AbCcDdEeFHhKmoPQrTtUuwXxYyz"
+
+// curlRefused are curl's options the run tool refuses, by long name or
+// short letter, and why. A trace wraps the sent headers at 64 bytes, in
+// hex with --trace, so the proxy credential comes out in pieces the output
+// mask cannot match; -v prints each header whole. A config file from the
+// checkout could set any option. The proxy options, --resolve, which
+// points the proxy's name at another address, and a Unix socket, which
+// curl prefers to the proxy, connect around the gateway. The rest would
+// lift the limit to http and https the runner's .curlrc sets: --next
+// starts options anew without it, and -q or --disable first skips it.
+var curlRefused = map[string]string{
+	"trace": curlPrints, "trace-ascii": curlPrints, "trace-config": curlPrints,
+	"config": curlReads, "K": curlReads,
+	"proxy": curlAround, "x": curlAround, "noproxy": curlAround, "preproxy": curlAround, "proxy1.0": curlAround,
+	"socks4": curlAround, "socks4a": curlAround, "socks5": curlAround, "socks5-hostname": curlAround, "resolve": curlAround,
+	"unix-socket": curlAround, "abstract-unix-socket": curlAround,
+	"proto": curlUnlimits, "next": curlUnlimits, ":": curlUnlimits, "disable": curlUnlimits, "q": curlUnlimits,
+}
+
+const (
+	curlPrints   = "it prints the proxy credential; use -v"
+	curlReads    = "it reads options from a file"
+	curlAround   = "it connects around the egress gateway"
+	curlUnlimits = "it lifts curl's limit to http and https URLs"
+)
+
 // refusedArgs says why command must not run with args, or "": the
 // commands are an allowlist, and these arguments would have one run a
-// program outside it or print a credential. The model's arguments are
-// steered by the content under review, so they are not trusted.
+// program outside it, print a credential or reach the network around the
+// egress gateway. The model's arguments are steered by the content under
+// review, so they are not trusted.
 func refusedArgs(command string, args []string) string {
 	switch command {
 	case "gh":
@@ -445,22 +475,27 @@ func refusedArgs(command string, args []string) string {
 			}
 		}
 	case "curl":
-		// A trace wraps the sent headers at 64 bytes, in hex with --trace,
-		// so the proxy credential comes out in pieces the output mask
-		// cannot match; -v prints each header whole. A config file from
-		// the checkout could turn a trace on too. A short group holding K
-		// is refused whether or not it is a value, as -XK would be.
+		// curl reads --expand-<option> as <option>, with variables
+		// expanded in its value.
 		for _, a := range args {
 			name, _, _ := strings.Cut(a, "=")
-			switch {
-			case name == "--trace" || name == "--trace-ascii" || name == "--trace-config":
-				return name + " is not offered: it prints the proxy credential; use -v"
-			case name == "--config":
-				return name + " is not offered: it reads options from a file"
-			case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):
+			if long, ok := strings.CutPrefix(name, "--"); ok {
+				long = strings.TrimPrefix(long, "expand-")
+				if why, ok := curlRefused[long]; ok {
+					return "--" + long + " is not offered: " + why
+				}
 				continue
-			case strings.ContainsRune(a[1:], 'K'):
-				return "-K is not offered: it reads options from a file"
+			}
+			if !strings.HasPrefix(a, "-") {
+				continue
+			}
+			for _, f := range a[1:] {
+				if why, ok := curlRefused[string(f)]; ok {
+					return "-" + string(f) + " is not offered: " + why
+				}
+				if strings.ContainsRune(curlValueFlags, f) {
+					break
+				}
 			}
 		}
 	}

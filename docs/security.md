@@ -240,7 +240,10 @@ What bounds a command:
   none either.
 - **A bare environment:** `PATH`, with the tools' directories first, its
   own `HOME`, `XDG_CACHE_HOME` and the gateway, the mise config's `[env]`,
-  and for `gh` the run's token as `GH_TOKEN`. The runner makes itself
+  and for `gh` the run's token as `GH_TOKEN`. The pod's `NO_PROXY` is not
+  passed on, so `curl` reaches even `localhost` and the gateway's own host
+  through the gateway, and its `--connect-to` or an `--alt-svc` cache only
+  changes what it asks the gateway for. The runner makes itself
   unreadable to the command first, so it cannot read the runner's
   credentials from `/proc`, and runs mise with the same bare environment,
   so neither a tool's install hooks nor a config's templates see them.
@@ -249,7 +252,10 @@ What bounds a command:
   which would otherwise land in the result, follows the redirects the
   gateway hands back, and fails on an HTTP error with its body kept, so a
   host the gateway refuses is a failed command naming the reason rather
-  than a success whose output is the refusal. A config's `[env]` may not
+  than a success whose output is the refusal. It also limits `curl` to
+  `http` and `https`, the schemes the proxy variables cover, so a URL of
+  any other, given or redirected to, is refused rather than reached
+  without the gateway. A config's `[env]` may not
   set what the runner sets or what would point a tool past the argument
   checks:
   `HOME`, `PATH`, the proxy variables, `GH_*`, `GIT_*`, `MISE_*`, `LD_*`,
@@ -276,12 +282,19 @@ What bounds a command:
   attestation; mise also asks `mise-versions.jdx.dev` for a tool's
   versions, and falls back to the GitHub API when the gateway refuses it.
 - **Refused arguments:** the run tool refuses the arguments that would
-  print a credential or run a program outside the list: `gh auth`,
-  `alias`, `config` and `extension`, `fd -x` and `-X`,
-  `rg --pre` and `--hostname-bin`, and `curl --trace`, `--trace-ascii`,
-  `--trace-config` and `--config`/`-K`, which would print the proxy
-  credential in pieces the mask cannot match. It masks the token in a
-  command's output and in the submitted review.
+  print a credential, run a program outside the list or reach the
+  network around the gateway: `gh auth`, `alias`, `config` and
+  `extension`; `fd -x` and `-X`; `rg --pre` and `--hostname-bin`;
+  `curl --trace`, `--trace-ascii`, `--trace-config` and `--config`/`-K`,
+  which would print the proxy credential in pieces the mask cannot
+  match; `curl`'s proxy options (`-x`/`--proxy`, `--noproxy`,
+  `--preproxy`, `--proxy1.0`, `--socks4`, `--socks4a`, `--socks5` and
+  `--socks5-hostname`), `--resolve`, `--unix-socket` and
+  `--abstract-unix-socket`, which would connect around the gateway; and
+  `--proto`, `--next`/`-:` and `-q`/`--disable`, which would
+  lift the `.curlrc`'s limit to `http` and `https`. A `curl` option is
+  refused in its `--expand-` form too. It masks the token in a command's
+  output and in the submitted review.
 - **A plain checkout:** the files are written without execute bits,
   preventing direct execution. An interpreter or plugin loader can still
   read and run them. An empty `.git` whose
