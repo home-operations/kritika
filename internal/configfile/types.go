@@ -339,8 +339,16 @@ type Embedding struct {
 	// SimilarFloor is the cosine similarity an index chunk needs to count
 	// as similar code, for the review's similar-code stage and the agent's
 	// search_code tool alike. Where useful matches part from noise depends
-	// on the model and the repository; unset is DefaultSimilarFloor.
+	// on the model, its prompts and the repository; unset is
+	// DefaultSimilarFloor, which only fits inputs without prompts.
 	SimilarFloor float64 `yaml:"similarFloor,omitempty"`
+	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
+	// each similar-code query and each indexed chunk: the task prompts many
+	// embedding models are trained with. Unset, inputs go as they are.
+	// DocumentPrompt shapes the stored vectors, so a change of it rebuilds
+	// every repository's index, as a change of the model does.
+	QueryPrompt    string `yaml:"queryPrompt,omitempty"`
+	DocumentPrompt string `yaml:"documentPrompt,omitempty"`
 
 	// BaseURL, Model and the key are the provider's, resolved at load:
 	// its endpoint, the model's id on it, and its key.

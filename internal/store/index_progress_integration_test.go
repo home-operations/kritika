@@ -22,7 +22,7 @@ func TestIndexProgressIsolationAndRetention(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "progress-test", 8); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "progress-test", 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	account, other := accountID(t, s, "alpha"), accountID(t, s, "beta")

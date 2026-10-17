@@ -34,7 +34,7 @@ func TestIndexBatchUsage(t *testing.T) {
 	if err := st.ApplyConfig(t.Context(), file); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.EnsureIndexSchema(t.Context(), "kritika_app", "fake-embed", 8); err != nil {
+	if _, err := st.EnsureIndexSchema(t.Context(), "kritika_app", "fake-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
@@ -121,7 +121,7 @@ func TestIndexBatchUsage(t *testing.T) {
 			base := Base{Store: st, Logger: slog.New(slog.DiscardHandler)}
 			w := Index{Base: base, batch: 1}
 			_, _, err = w.embed(ctx, &river.Job[jobs.IndexArgs]{JobRow: job.Job, Args: args}, account, embed,
-				file.Embedding.Model, "abc", run, runner, nil, file.Settings(account, ""))
+				file.Embedding, "abc", run, runner, nil, file.Settings(account, ""))
 			if (err != nil) != tt.wantError {
 				t.Fatalf("embed error = %v, want error %v", err, tt.wantError)
 			}

@@ -17,7 +17,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("review-similar"))); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8); err != nil {
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

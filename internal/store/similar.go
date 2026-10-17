@@ -13,10 +13,11 @@ import (
 
 // ActiveGenerationFor is the repository's active, completed index
 // generation built with the given embedder, or ErrNotFound.
-func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedModel string, dims int) (string, error) {
+func ActiveGenerationFor(ctx context.Context, tx pgx.Tx, repositoryID, embedModel string, dims int, documentPrompt string) (string, error) {
 	var runID string
 	err := tx.QueryRow(ctx, `SELECT r.active_index_run_id::text FROM repositories r JOIN index_runs g ON g.id = r.active_index_run_id
-		WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2 AND g.embed_dims = $3`, repositoryID, embedModel, dims).Scan(&runID)
+		WHERE r.id = $1 AND g.status = 'completed' AND g.embed_model = $2 AND g.embed_dims = $3 AND g.document_prompt = $4`,
+		repositoryID, embedModel, dims, documentPrompt).Scan(&runID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}

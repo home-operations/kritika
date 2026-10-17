@@ -2431,7 +2431,7 @@ func checkGatewaySimilar(t *testing.T, h *agenticHarness) {
 // other.go and at main.go, which the pull request changes.
 func seedIndex(t *testing.T, h *agenticHarness, emb *configfile.Embedding, repoID, code string) {
 	t.Helper()
-	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritika_app", emb.Model, emb.Dims); err != nil {
+	if _, err := h.st.EnsureIndexSchema(h.ctx, "kritika_app", emb.Model, emb.Dims, emb.DocumentPrompt); err != nil {
 		t.Fatal(err)
 	}
 	vectors, _, err := h.fe.Embed(h.ctx, []string{code})

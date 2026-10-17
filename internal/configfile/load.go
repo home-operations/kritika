@@ -307,8 +307,9 @@ func (f *File) validate(accounts []Account) error {
 	return f.validateAccounts(accounts)
 }
 
-// validateEmbedding checks the embedder's dimension fits the index column
-// and its bounds are not negative; its provider is checked with the rest.
+// validateEmbedding checks the embedder's dimension fits the index column,
+// its bounds are not negative and prompts come with a floor of their own;
+// its provider is checked with the rest.
 func (f *File) validateEmbedding() error {
 	e := f.Embedding
 	if e == nil {
@@ -322,6 +323,12 @@ func (f *File) validateEmbedding() error {
 	}
 	if e.SimilarFloor < 0 || e.SimilarFloor > 1 {
 		return fmt.Errorf("configfile: embedding.similarFloor must be between 0 and 1 (a cosine similarity), got %g", e.SimilarFloor)
+	}
+	// Prompts move every score, up or down depending on the model, so the
+	// default floor could keep everything or nothing without a sign of it.
+	if e.SimilarFloor == 0 && (e.QueryPrompt != "" || e.DocumentPrompt != "") {
+		return errors.New("configfile: embedding.queryPrompt and documentPrompt need embedding.similarFloor set, " +
+			"since prompts move the scores the floor compares")
 	}
 	return nil
 }

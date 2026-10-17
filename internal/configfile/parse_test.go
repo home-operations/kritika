@@ -99,6 +99,8 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"an embedder too wide for the index", embeddingDoc("dims: 4096"), "embedding.dims must be between 1 and 4000"},
 		{"an embedder with a negative bound", embeddingDoc("maxBatch: -1"), "must not be negative"},
 		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},
+		{"a query prompt without a floor", embeddingDoc(`queryPrompt: "query: "`), "need embedding.similarFloor set"},
+		{"a document prompt without a floor", embeddingDoc(`documentPrompt: "passage: "`), "need embedding.similarFloor set"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -140,6 +142,14 @@ func TestParseEmbedding(t *testing.T) {
 	}
 	if f, err := Parse([]byte(embeddingDoc("similarFloor: 0.7"))); err != nil || f.Embedding.Floor() != 0.7 {
 		t.Fatalf("Parse(similarFloor: 0.7) = %v, floor %v", err, f)
+	}
+	if e.QueryPrompt != "" || e.DocumentPrompt != "" {
+		t.Fatalf("prompts = %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt)
+	}
+	f, err = Parse([]byte(strings.Replace(embeddingDoc("similarFloor: 0.3"), "embedding:\n",
+		"embedding:\n  queryPrompt: \"Instruct: find similar code\\nQuery:\"\n  documentPrompt: \"text: \"\n", 1)))
+	if err != nil || f.Embedding.QueryPrompt != "Instruct: find similar code\nQuery:" || f.Embedding.DocumentPrompt != "text: " {
+		t.Fatalf("prompts = %+v, %v; want them exactly as written", f.Embedding, err)
 	}
 	f, err = Parse([]byte("providers:\n  gw: { type: openai, baseUrl: https://gw.example/v1, apiKey: { env: TEST_KEY } }\n" +
 		"embedding: { model: gw/embed-large, dims: 8 }\n"))
