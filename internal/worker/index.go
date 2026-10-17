@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -83,6 +84,9 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return err
 	}
 	logger := w.Logger.With("account", account.Key(), "repository", repo.Name, "trigger", args.Trigger)
+	if err := w.waitForAppliedEmbedder(ctx, args.AccountID, emb, logger); err != nil {
+		return err
+	}
 	settings := file.Settings(account, repo.Name)
 	if !repo.Enabled || !file.Runs(account, repo.Name, repo.Traits) {
 		logger.Info("index skipped, repository disabled")
@@ -205,6 +209,25 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return river.JobSnooze(0)
 	}
 	return nil
+}
+
+// waitForAppliedEmbedder snoozes the job, as its error, unless emb is the
+// embedder the leader applied, as index_schema records it, or none is
+// recorded yet. A pod on another, as during a rollout, would build an
+// index the gateway never queries, or take one another embedder built for
+// current, so it leaves the job to a pod on the applied one.
+func (w *Index) waitForAppliedEmbedder(ctx context.Context, accountID string, emb *configfile.Embedding, logger *slog.Logger) error {
+	var applied bool
+	err := w.Store.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		appliedModel, appliedDims, appliedPrompt, ok, err := store.IndexSchemaIn(ctx, tx)
+		applied = !ok || appliedModel == emb.Model && appliedDims == emb.Dims && appliedPrompt == emb.DocumentPrompt
+		return err
+	})
+	if err != nil || applied {
+		return err
+	}
+	logger.Info("index waits for a pod on the embedder the leader applied")
+	return river.JobSnooze(time.Minute)
 }
 
 // activeGeneration reads the repository's active generation, nil when it

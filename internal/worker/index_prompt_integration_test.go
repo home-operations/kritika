@@ -14,10 +14,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/store/storetest"
 )
@@ -117,5 +120,51 @@ func TestIndexDocumentPrompt(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestIndexWaitsForTheAppliedEmbedder: a pod on another embedder than the
+// one the leader applied, as during a rollout, snoozes the job instead of
+// indexing with it.
+func TestIndexWaitsForTheAppliedEmbedder(t *testing.T) {
+	ctx := t.Context()
+	st := storetest.Open(t)
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "test-provider-key")
+	file := configfiletest.Load(t, configYAML)
+	if err := st.ApplyConfig(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	// The leader applied the same model with a document prompt.
+	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", "fake-embed", 8, "passage: "); err != nil {
+		t.Fatal(err)
+	}
+	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	repo := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
+	runs := func() int {
+		t.Helper()
+		var n int
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM index_runs WHERE repository_id = $1`, repo).Scan(&n)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := runs()
+	w := &Index{Store: st, Current: configfile.NewCurrent(file), Logger: slog.New(slog.DiscardHandler),
+		Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder {
+			return indexEmbedFunc(func(context.Context, []string) ([][]float32, int64, error) {
+				return nil, 0, errors.New("a pod on another embedder must not embed")
+			})
+		}}}
+	job := &river.Job[jobs.IndexArgs]{JobRow: &rivertype.JobRow{ID: 1, Attempt: 1},
+		Args: jobs.IndexArgs{AccountID: account.ID(), RepositoryID: repo, Trigger: jobs.TriggerPush}}
+	err := w.Work(ctx, job)
+	if _, ok := errors.AsType[*river.JobSnoozeError](err); !ok {
+		t.Fatalf("Work = %v, want the job snoozed", err)
+	}
+	if after := runs(); after != before {
+		t.Fatalf("index runs = %d, want %d: the job started one", after, before)
 	}
 }

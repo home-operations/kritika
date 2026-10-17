@@ -507,7 +507,10 @@ query and chunk whole.
 A new `queryPrompt` applies once kritika restarts with it, as any
 configuration change does, and needs no new index. `documentPrompt`
 shapes the stored vectors, so changing it rebuilds every repository's
-index, as a new model does.
+index, as a new model does. Set it in a rollout of its own, once every
+pod runs a release that reads it, and before going back to a release
+that doesn't, unset it and let the index rebuild: a pod that doesn't read
+it would add chunks embedded without it to an index built with it.
 
 ## Local models
 
