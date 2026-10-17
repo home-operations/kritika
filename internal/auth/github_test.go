@@ -26,6 +26,9 @@ func TestGitHubMember(t *testing.T) {
 		{name: "forbidden: OAuth app access restricted", status: 403},
 		{name: "forbidden: primary rate limit", status: 403, header: map[string]string{"X-RateLimit-Remaining": "0"}, wantErr: true},
 		{name: "forbidden: secondary rate limit", status: 403, header: map[string]string{"Retry-After": "60"}, wantErr: true},
+		{name: "too many requests", status: 429, wantErr: true},
+		{name: "forbidden: secondary rate limit by its body", status: 403,
+			body: `{"message":"You have exceeded a secondary rate limit.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`, wantErr: true},
 		{name: "server error", status: 502, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -46,6 +49,56 @@ func TestGitHubMember(t *testing.T) {
 				t.Fatalf("member = %v, %v; want %v, error %v", got, err, tt.want, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestGitHubGetOKNamesRateLimits: every call a sign-in cannot do without,
+// not only the membership check, reports GitHub's rate limit as such.
+func TestGitHubGetOKNamesRateLimits(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		status  int
+		header  map[string]string
+		body    string
+		limited bool
+	}{
+		{"primary", 403, map[string]string{"X-RateLimit-Remaining": "0"}, "", true},
+		{"secondary", 403, map[string]string{"Retry-After": "60"}, "", true},
+		{"secondary by its body", 403, nil, `{"documentation_url":"https://docs.github.com/rest#abuse-rate-limits"}`, true},
+		{"too many requests", 429, nil, "", true},
+		{"forbidden", 403, nil, `{"message":"Resource not accessible"}`, false},
+		{"server error", 502, map[string]string{"Retry-After": "60"}, "", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				for k, v := range tt.header {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+			err := githubGetOK(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "/user", nil)
+			if !errors.Is(err, ErrForgeAPI) || strings.Contains(err.Error(), "rate limited") != tt.limited {
+				t.Fatalf("githubGetOK = %v, want a forge error that names a rate limit: %v", err, tt.limited)
+			}
+		})
+	}
+}
+
+// TestGitHubMemberRefusalCutShort: a refusal whose body the connection cut
+// cannot be told from a rate limit, so the membership check fails rather
+// than read it as no membership.
+func TestGitHubMemberRefusalCutShort(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "200")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"documentation_url":"https://docs.github.com/rest#secondary-rate`))
+	}))
+	defer srv.Close()
+	got, err := githubAPI{}.member(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "acme")
+	if got || !errors.Is(err, ErrForgeAPI) {
+		t.Fatalf("member = %v, %v; want a forge error", got, err)
 	}
 }
 
