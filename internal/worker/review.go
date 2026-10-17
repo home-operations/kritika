@@ -324,6 +324,7 @@ type earlyEnd struct {
 	carried *review.Confidence
 	gate    bool
 	started time.Time
+	jobID   int64
 	logger  *slog.Logger
 	// client reports the end on the head commit, under owner/repo; nil
 	// until begin has built it, when a superseded head is the only end.
@@ -334,17 +335,23 @@ type earlyEnd struct {
 // end records a review that never ran as status, for reason, counts it,
 // and says so on the head commit, so a head no runner was spent on does
 // not read as one still waiting for its review. A failed one marks the
-// pull request as one whose review ran does.
+// pull request as one whose review ran does. A retry of its job that ends
+// it the same way records and counts nothing new, but says so again.
 func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus, reason string) error {
-	w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
+	var recorded bool
 	err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
-		return store.RecordEndedReview(ctx, tx, store.EndedReview{
+		var err error
+		recorded, err = store.RecordEndedReview(ctx, tx, store.EndedReview{
 			AccountID: e.args.AccountID, PullRequestID: e.pr.id, HeadSHA: e.args.HeadSHA, MergeBaseSHA: e.mergeBase,
-			ForgePatchID: e.forgePatch, Status: status, SkipReason: e.skip, Trigger: e.args.Trigger, Error: reason,
+			ForgePatchID: e.forgePatch, Status: status, SkipReason: e.skip, Trigger: e.args.Trigger, Error: reason, JobID: e.jobID,
 		})
+		return err
 	})
 	if err != nil {
 		return err
+	}
+	if recorded {
+		w.Metrics.Review(e.accountKey, string(status), time.Since(e.started))
 	}
 	state, desc := e.status(status, reason)
 	if state == "" || e.client == nil {
@@ -445,7 +452,7 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
-	e := earlyEnd{args: args, pr: pr, accountKey: account.Key(), started: started, logger: logger}
+	e := earlyEnd{args: args, pr: pr, accountKey: account.Key(), started: started, jobID: job.ID, logger: logger}
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", review.ShortSHA(pr.headSHA))
 		return begun{}, true, w.end(ctx, e, store.ReviewSuperseded, "")

@@ -149,18 +149,31 @@ type EndedReview struct {
 	// SkipReason is why a skipped review was: one of the repository's own
 	// (a repoconfig.SkipReason) or of the runner's (runner.Skip*).
 	SkipReason string
+	// JobID is the River job that ended it.
+	JobID int64
 }
 
 // RecordEndedReview records a review that never ran, as its terminal
-// status says.
-func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) error {
-	if _, err := tx.Exec(ctx, `INSERT INTO reviews
-		(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
-		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Status, r.SkipReason, r.Trigger, r.Error); err != nil {
-		return fmt.Errorf("store: record ended review: %w", err)
+// status says, and reports whether it did. A job ends a head's review before
+// its runner once: its retry, after the first attempt's commit went
+// unacknowledged or its completion unrecorded, records nothing, however it
+// ends this time. The job's lock has a stale attempt and its retry take
+// turns at the check.
+func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) (bool, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('kritika-ended-review:' || $1::bigint, 0))`,
+		r.JobID); err != nil {
+		return false, fmt.Errorf("store: lock ended review: %w", err)
 	}
-	return nil
+	tag, err := tx.Exec(ctx, `INSERT INTO reviews
+		(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at, river_job_id)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10
+		WHERE NOT EXISTS (SELECT 1 FROM reviews v WHERE v.pull_request_id = $2 AND v.river_job_id = $10 AND v.head_sha = $3
+			AND NOT EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = v.id))`,
+		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Status, r.SkipReason, r.Trigger, r.Error, r.JobID)
+	if err != nil {
+		return false, fmt.Errorf("store: record ended review: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // HeadSkipped reports whether the latest review of the pull request's

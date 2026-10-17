@@ -130,7 +130,9 @@ type JobHead struct {
 }
 
 // JobHead returns the head the reviews of River job jobID were of, false
-// when the job started none. Owner connection.
+// when the job started none: a review it ended before a runner is not its
+// head to report, which that end did, if anything was to be said. Owner
+// connection.
 func (s *Store) JobHead(ctx context.Context, jobID int64) (JobHead, bool, error) {
 	if s.owner == nil {
 		return JobHead{}, false, errors.New("store: JobHead needs the owner connection")
@@ -142,7 +144,8 @@ func (s *Store) JobHead(ctx context.Context, jobID int64) (JobHead, bool, error)
 				SELECT 1 FROM reviews n JOIN runner_runs rr ON rr.review_id = n.id
 				WHERE n.pull_request_id = r.pull_request_id AND (n.created_at, n.id) > (r.created_at, r.id))
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
-		WHERE r.river_job_id = $1 ORDER BY r.created_at DESC LIMIT 1`, jobID).
+		WHERE r.river_job_id = $1 AND EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = r.id)
+		ORDER BY r.created_at DESC LIMIT 1`, jobID).
 		Scan(&h.AccountID, &h.PullRequestID, &h.Repository, &h.HeadSHA, &h.Statusless, &h.Ceded)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return JobHead{}, false, nil

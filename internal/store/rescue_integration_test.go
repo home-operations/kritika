@@ -4,11 +4,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/riverqueue/river/rivertype"
 )
 
@@ -300,12 +302,30 @@ func TestJobHead(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
 	f := newRescueFixture(t, ctx, s)
+	// The job started its review, which StartReview does with a runner run.
+	insertRun(t, ctx, s, f.alpha, f.review, f.silent)
 	head, ok, err := s.JobHead(ctx, f.silent)
 	if err != nil || !ok || head.AccountID != f.alpha || head.Repository == "" || head.HeadSHA == "" {
 		t.Fatalf("JobHead = %+v, %v, %v; want the head of the job's review", head, ok, err)
 	}
 	if _, ok, err := s.JobHead(ctx, f.lastTry); err != nil || ok {
 		t.Fatalf("JobHead of a job with no review = %v, %v; want none", ok, err)
+	}
+	// A review the job ended before a runner is not its head to report.
+	if err := s.WithAccount(ctx, f.alpha, func(tx pgx.Tx) error {
+		var prID string
+		if err := tx.QueryRow(ctx, `SELECT pull_request_id::text FROM reviews WHERE id = $1`, f.review).Scan(&prID); err != nil {
+			return err
+		}
+		_, err := RecordEndedReview(ctx, tx, EndedReview{
+			AccountID: f.alpha, PullRequestID: prID, HeadSHA: "ended", Status: ReviewSuperseded, JobID: f.lastTry,
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.JobHead(ctx, f.lastTry); err != nil || ok {
+		t.Fatalf("JobHead of a job that only ended a review = %v, %v; want none", ok, err)
 	}
 	if head.Statusless {
 		t.Fatal("the review of an open pull request is statusless")
@@ -324,6 +344,74 @@ func TestJobHead(t *testing.T) {
 		if head, _, err := s.JobHead(ctx, f.silent); err != nil || head.Statusless != tt.want {
 			t.Fatalf("closed %s from the review's start: statusless = %v, %v; want %v", tt.closed, head.Statusless, err, tt.want)
 		}
+	}
+}
+
+// TestRecordEndedReviewOncePerJob: a job ends a head's review before its
+// runner once, whatever its retry ends it as, while a review it started a
+// runner for, another head and another job each record their own; a second
+// record of the job waits for the first's transaction.
+func TestRecordEndedReviewOncePerJob(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	f := newRescueFixture(t, ctx, s)
+	var prID string
+	if err := s.owner.QueryRow(ctx, `SELECT pull_request_id::text FROM reviews WHERE id = $1`, f.review).Scan(&prID); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's review is one f.silent started a runner for, at "abc".
+	insertRun(t, ctx, s, f.alpha, f.review, f.silent)
+	record := func(job int64, head string, status ReviewStatus) bool {
+		t.Helper()
+		var recorded bool
+		if err := s.WithAccount(ctx, f.alpha, func(tx pgx.Tx) error {
+			var err error
+			recorded, err = RecordEndedReview(ctx, tx, EndedReview{
+				AccountID: f.alpha, PullRequestID: prID, HeadSHA: head, Status: status, JobID: job,
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return recorded
+	}
+	for _, tt := range []struct {
+		what   string
+		job    int64
+		head   string
+		status ReviewStatus
+		want   bool
+	}{
+		{"the job's first end", f.lastTry, "def", ReviewFailed, true},
+		{"its retry ending otherwise", f.lastTry, "def", ReviewSkipped, false},
+		{"its end of another head", f.lastTry, "ghi", ReviewSuperseded, true},
+		{"another job's end", f.beating, "def", ReviewSkipped, true},
+		{"the end of a head the job started a runner for", f.silent, "abc", ReviewSuperseded, true},
+	} {
+		if got := record(tt.job, tt.head, tt.status); got != tt.want {
+			t.Fatalf("%s recorded = %v, want %v", tt.what, got, tt.want)
+		}
+	}
+	err := s.WithAccount(ctx, f.alpha, func(tx pgx.Tx) error {
+		if _, err := RecordEndedReview(ctx, tx, EndedReview{AccountID: f.alpha, PullRequestID: prID, HeadSHA: "jkl",
+			Status: ReviewSkipped, JobID: f.fresh}); err != nil {
+			return err
+		}
+		blocked := s.WithAccount(ctx, f.alpha, func(other pgx.Tx) error {
+			if _, err := other.Exec(ctx, `SET LOCAL lock_timeout = '50ms'`); err != nil {
+				return err
+			}
+			_, err := RecordEndedReview(ctx, other, EndedReview{AccountID: f.alpha, PullRequestID: prID, HeadSHA: "jkl",
+				Status: ReviewSkipped, JobID: f.fresh})
+			return err
+		})
+		if pgerr, ok := errors.AsType[*pgconn.PgError](blocked); !ok || pgerr.Code != "55P03" {
+			t.Fatalf("a second record of the job = %v, want it to wait for the first", blocked)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
