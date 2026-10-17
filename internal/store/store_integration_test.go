@@ -860,6 +860,93 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	check("archived past the grace, however often the forge names it", "alpha/forge", forge, true, false)
 }
 
+// TestSweepStoppedIndexesWaitsForARebuild: a sweep that starts while a
+// rebuild for a new embedder holds every repository's row waits for the
+// rebuild to commit, rather than holding the repositories table the
+// rebuild's DROP TABLE must take and deadlocking with it.
+func TestSweepStoppedIndexesWaitsForARebuild(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	s := openStore(t)
+	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL;
+			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
+	})
+	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	// alpha/one holds an index, so the sweep locks its row.
+	if _, err := s.owner.Exec(ctx, `WITH g AS (
+			INSERT INTO index_runs (account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)
+			SELECT account_id, id, 'abc', 'test-embed', 8, 'full', 'completed' FROM repositories WHERE name = 'alpha/one'
+			RETURNING id, repository_id
+		)
+		UPDATE repositories r SET active_index_run_id = g.id FROM g WHERE r.id = g.repository_id`); err != nil {
+		t.Fatalf("seed a generation: %v", err)
+	}
+	// waitFor returns the backend that waits for pid, polling until one does
+	// or done reports that what was to wait ended first.
+	waitFor := func(pid uint32, what string, done <-chan error) uint32 {
+		t.Helper()
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			var waiting uint32
+			err := s.owner.QueryRow(ctx, `SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))`, pid).Scan(&waiting)
+			switch {
+			case err == nil:
+				return waiting
+			case !errors.Is(err, pgx.ErrNoRows):
+				t.Fatal(err)
+			}
+			select {
+			case err := <-done:
+				t.Fatalf("%s ended without waiting: %v", what, err)
+			case <-ticker.C:
+			case <-ctx.Done():
+				t.Fatalf("%s did not wait", what)
+			}
+		}
+	}
+	// Holding index_chunks stops the rebuild at its DROP TABLE, with every
+	// repository's row already updated.
+	hold, err := s.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := hold.Rollback(context.Background()); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			t.Error(err)
+		}
+	}()
+	if _, err := hold.Exec(ctx, `LOCK TABLE index_chunks IN ACCESS SHARE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, swept := make(chan error, 1), make(chan error, 1)
+	go func() {
+		_, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, "passage: ")
+		rebuilt <- err
+	}()
+	rebuild := waitFor(hold.Conn().PgConn().PID(), "the rebuild", rebuilt)
+	go func() {
+		_, err := s.SweepStoppedIndexes(ctx, time.Hour, func(string, string, configfile.RepoTraits) bool { return true })
+		swept <- err
+	}()
+	waitFor(rebuild, "the sweep", swept)
+	if err := hold.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-rebuilt; err != nil {
+		t.Fatalf("EnsureIndexSchema: %v", err)
+	}
+	if err := <-swept; err != nil {
+		t.Fatalf("SweepStoppedIndexes: %v", err)
+	}
+}
+
 // TestFindRepo: a repository is found by its full name within the account
 // the transaction reads.
 func TestFindRepo(t *testing.T) {
