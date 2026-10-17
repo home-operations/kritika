@@ -154,7 +154,9 @@ chart confines them:
   download checked against the repository's lock;
   `runner.mise.urlReplacements` sends the downloads to a mirror.
   `runner.runtimeClass` puts runner Jobs under a sandboxed runtime such as
-  gVisor; `runner.resources` keeps a runaway run in its own cgroup.
+  gVisor; `runner.resources` keeps a runaway run in its own cgroup;
+  `runner.pod` keeps runner pods on nodes of their own, and in a user
+  namespace with `hostUsers: false`.
 
 [Security](https://kritika.home-operations.com/security/) covers the
 gateway, runner tools and the sandbox in full.

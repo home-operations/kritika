@@ -1159,6 +1159,60 @@
           "title": "mise",
           "type": "object"
         },
+        "pod": {
+          "additionalProperties": false,
+          "description": "Where runner pods are scheduled and how they are marked (KRITIKA_RUNNER_POD), as the pod spec spells it: `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName`, extra `labels` and `annotations` such as `karpenter.sh/do-not-disrupt: \"true\"`, and `hostUsers: false` to run them in a user namespace, which the cluster and its nodes' runtime must support: an API server without user namespaces, off by default before Kubernetes 1.33, drops it. kritika refuses its own labels, the instance label and the Job controller's, and AppArmor annotations; the ServiceAccount, security context and volumes stay kritika's.",
+          "properties": {
+            "affinity": {
+              "required": [],
+              "type": "object"
+            },
+            "annotations": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "required": [],
+              "type": "object"
+            },
+            "hostUsers": {
+              "type": "boolean"
+            },
+            "labels": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "required": [],
+              "type": "object"
+            },
+            "nodeSelector": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "required": [],
+              "type": "object"
+            },
+            "priorityClassName": {
+              "type": "string"
+            },
+            "tolerations": {
+              "items": {
+                "required": [],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "topologySpreadConstraints": {
+              "items": {
+                "required": [],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "pod",
+          "type": "object"
+        },
         "resources": {
           "description": "Resources for runner pods (KRITIKA_RUNNER_RESOURCES), copied into the pod spec.",
           "required": [],

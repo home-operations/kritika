@@ -258,15 +258,19 @@ tests:
             name: KRITIKA_RUNNER_MISE_URL_REPLACEMENTS
           any: true
 
-  - it: renders the runner pods' resources and the URL replacements as JSON, the rules in order
+  - it: renders the runner pods' resources and settings and the URL replacements as JSON, the rules in order
     set:
       config: null
       existingConfigMap: external-config
       runner.resources: { limits: { memory: 1Gi } }
+      runner.pod: { priorityClassName: kritika-runner }
       runner.mise.urlReplacements:
         - { from: "https://github.com/acme/", to: "https://mirror.example.com/acme/" }
         - { from: "https://github.com/", to: "https://mirror.example.com/github/" }
     asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_RUNNER_POD, value: '{"priorityClassName":"kritika-runner"}' }
       - contains:
           path: spec.template.spec.containers[0].env
           content:

@@ -54,6 +54,17 @@ func TestFileSettings(t *testing.T) {
 	}
 }
 
+func TestRunnerPodFromEnvironment(t *testing.T) {
+	t.Setenv("KRITIKA_RUNNER_POD", `{"priorityClassName":"kritika-runner","hostUsers":false}`)
+	s, err := LoadSettings(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (jsonObject{"priorityClassName": "kritika-runner", "hostUsers": false}); !reflect.DeepEqual(s.RunnerPod, want) {
+		t.Fatalf("pod = %#v, want %#v", s.RunnerPod, want)
+	}
+}
+
 func TestSettingsSources(t *testing.T) {
 	t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
 	t.Setenv("KRITIKA_RUNNER_IMAGE", "example.com/runner:test")
@@ -66,6 +77,10 @@ runner:
       cpu: 10m
     limits:
       example.com/device: "1"
+  pod:
+    nodeSelector:
+      node-role.example.com/runner: "true"
+    hostUsers: false
   miseUrlReplacements:
     - from: https://github.com/acme/
       to: https://mirror.example.com/acme/
@@ -93,6 +108,10 @@ runner:
 	}
 	if !reflect.DeepEqual(s.RunnerResources, wantResources) {
 		t.Fatalf("resources = %#v", s.RunnerResources)
+	}
+	wantPod := jsonObject{"nodeSelector": map[string]any{"node-role.example.com/runner": "true"}, "hostUsers": false}
+	if !reflect.DeepEqual(s.RunnerPod, wantPod) {
+		t.Fatalf("pod = %#v", s.RunnerPod)
 	}
 	if !s.fileEnv["KRITIKA_POLL_INTERVAL"] || !s.fileEnv["KRITIKA_RUNNER_MISE_URL_REPLACEMENTS"] || s.fileEnv["KRITIKA_REVIEW_WORKERS"] {
 		t.Fatalf("file provenance = %v", s.fileEnv)

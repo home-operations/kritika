@@ -552,6 +552,14 @@ runner:
     limits: { memory: 1Gi }
 ```
 
+`runner.pod` keeps runner pods, which run untrusted content, on nodes of
+their own with `nodeSelector` and `tolerations`. Where the cluster and its
+nodes' container runtime support user namespaces, `hostUsers: false` maps
+the runner's users to unprivileged IDs on the node, a further layer where
+there is no sandbox RuntimeClass. User namespaces are on by default from
+Kubernetes 1.33; an API server without them drops the field, and the pod
+runs in the node's user namespace as before.
+
 ## What people can read
 
 - A transcript may contain repository content the agent read, and every

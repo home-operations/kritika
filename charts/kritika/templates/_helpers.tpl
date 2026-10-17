@@ -179,6 +179,9 @@ runner:
   {{- with .Values.runner.resources }}
   resources: {{ toYaml . | nindent 4 }}
   {{- end }}
+  {{- with .Values.runner.pod }}
+  pod: {{ toYaml . | nindent 4 }}
+  {{- end }}
   {{- with .Values.runner.mise.urlReplacements }}
   miseUrlReplacements: {{ toYaml . | nindent 4 }}
   {{- end }}
@@ -256,6 +259,10 @@ an `env` key that would duplicate one of them.
   value: {{ tpl (toString .Values.runner.ttl) . | quote }}
 {{- with .Values.runner.resources }}
 - name: KRITIKA_RUNNER_RESOURCES
+  value: {{ toJson . | quote }}
+{{- end }}
+{{- with .Values.runner.pod }}
+- name: KRITIKA_RUNNER_POD
   value: {{ toJson . | quote }}
 {{- end }}
 {{- with .Values.runner.mise.urlReplacements }}

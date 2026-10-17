@@ -513,6 +513,10 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 	if err := executor.CheckResources(resources); err != nil {
 		return nil, fmt.Errorf("runner.resources: KRITIKA_RUNNER_RESOURCES: %w", err)
 	}
+	pod, err := executor.DecodePod(cfg.RunnerPod)
+	if err != nil {
+		return nil, fmt.Errorf("runner.pod: KRITIKA_RUNNER_POD: %w", err)
+	}
 	if cfg.Executor == config.ExecutorLocal {
 		runnerStore, err := store.Open(ctx, store.Options{AppURL: cfg.RunnerDatabaseURL, ExpectedRole: cfg.DatabaseRunnerRole, Logger: logger})
 		if err != nil {
@@ -528,8 +532,11 @@ func newExecutor(ctx context.Context, cfg *config.Config, resources map[string]a
 		Client: client, Namespace: ns, Image: cfg.RunnerImage, ImagePullPolicy: cfg.RunnerImagePullPolicy,
 		DatabaseRole:   cfg.DatabaseRunnerRole,
 		ServiceAccount: cfg.RunnerServiceAccount, DatabaseSecret: cfg.RunnerDatabaseSecret, DatabaseSecretKey: cfg.RunnerDatabaseSecretKey,
-		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL,
+		GatewayURL: cfg.GatewayURL, RuntimeClass: cfg.RunnerRuntimeClass, TTL: cfg.RunnerTTL, Pod: pod,
 		Events: executor.NewEvents(client, ns, cfg.PodName, cfg.PodUID, logger), Logger: logger,
+	}
+	if err := kube.CheckPod(ctx, cfg.RunnerDeadline, resources); err != nil {
+		return nil, fmt.Errorf("runner.pod: KRITIKA_RUNNER_POD: %w", err)
 	}
 	// The watch outlasts ctx, which a signal ends while runs still drain:
 	// startWorker stops it once the queues have stopped.

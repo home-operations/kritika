@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -74,6 +75,8 @@ type Kube struct {
 	// StartGrace is how long a pod may stay unable to start before its run
 	// is given up; startGrace unless set.
 	StartGrace time.Duration
+	// Pod is the configuration's runner.pod, set on every runner pod.
+	Pod Pod
 	// Events, when set, records the Events on runner Jobs.
 	Events *Events
 	Logger *slog.Logger
@@ -632,6 +635,8 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	deadline := int64(spec.Deadline / time.Second)
 	ttl := int32(k.TTL / time.Second)
 	labels := runnerLabels(spec)
+	podLabels := maps.Clone(labels)
+	maps.Copy(podLabels, k.Pod.Labels)
 	annotations := map[string]string{}
 	for key, v := range spec.Annotations {
 		annotations["kritika.home-operations.com/"+key] = v
@@ -704,12 +709,18 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 			TTLSecondsAfterFinished: &ttl,
 			PodFailurePolicy:        policy,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				ObjectMeta: metav1.ObjectMeta{Labels: podLabels, Annotations: k.Pod.Annotations},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:           k.ServiceAccount,
 					AutomountServiceAccountToken: new(false),
 					RestartPolicy:                corev1.RestartPolicyNever,
 					RuntimeClassName:             runtimeClass,
+					NodeSelector:                 k.Pod.NodeSelector,
+					Tolerations:                  k.Pod.Tolerations,
+					Affinity:                     k.Pod.Affinity,
+					TopologySpreadConstraints:    k.Pod.TopologySpreadConstraints,
+					PriorityClassName:            k.Pod.PriorityClassName,
+					HostUsers:                    k.Pod.HostUsers,
 					// The chart's gateway name, <service>.<namespace>.svc.cluster.local,
 					// has four dots: with ndots at 4 it is looked up as written
 					// rather than through the search list first, whose expansions
