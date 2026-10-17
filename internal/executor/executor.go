@@ -47,6 +47,10 @@ type Result struct {
 	// Abandoned is set when the executor deleted the run's Job because it
 	// could not read the Job's status.
 	Abandoned bool
+	// Disruption says why Kubernetes stopped the run's pod for its own
+	// reasons, a node drain, a preemption or an eviction, from the pod's
+	// DisruptionTarget condition; empty when it did not.
+	Disruption string
 	// Err is set when the run did not complete successfully.
 	Err error
 }

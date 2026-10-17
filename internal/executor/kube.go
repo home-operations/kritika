@@ -179,18 +179,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		unread = 0
 		if j.Status.Succeeded > 0 || j.Status.Failed > 0 || jobFinished(j) {
 			k.finish(ctx, &res, spec.Secrets)
-			switch {
-			case j.Status.Succeeded > 0:
-			// A Job that failed with no failed pod, none of whose containers
-			// was seen running, no pod for finish and none now, never had
-			// one created, as when the namespace refuses it on admission and
-			// its deadline passes first.
-			case j.Status.Failed == 0 && !started && res.PodName == "" && k.podless(ctx, created.Name):
-				res.NeverStarted, res.TerminationReason = true, k.whyNoPod(ctx, created.Name)+"; then "+jobFailure(j)
-				res.Err = fmt.Errorf("executor: job %s never started: %s", created.Name, res.TerminationReason)
-			default:
-				res.Err = fmt.Errorf("executor: job %s failed: %s", created.Name, res.TerminationReason)
-			}
+			k.ended(ctx, &res, j, started)
 			return res
 		}
 		if started {
@@ -220,6 +209,28 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 			res.Err = fmt.Errorf("executor: job %s never started: %s", created.Name, stuck)
 			return res
 		}
+	}
+}
+
+// ended says how a Job that finished went, in res, which finish has filled
+// from its pod; started is whether one of its containers was seen running.
+func (k *Kube) ended(ctx context.Context, res *Result, j *batchv1.Job, started bool) {
+	switch {
+	case j.Status.Succeeded > 0:
+	// A Job that failed with no failed pod, none of whose containers was
+	// seen running, no pod for finish and none now, never had one created,
+	// as when the namespace refuses it on admission and its deadline passes
+	// first.
+	case j.Status.Failed == 0 && !started && res.PodName == "" && k.podless(ctx, j.Name):
+		res.NeverStarted, res.TerminationReason = true, k.whyNoPod(ctx, j.Name)+"; then "+jobFailure(j)
+		res.Err = fmt.Errorf("executor: job %s never started: %s", j.Name, res.TerminationReason)
+	// The Job's pod failure policy fails it for a disrupted pod alone, which
+	// may be gone by the time finish looks for it.
+	case res.Disruption != "" || failedBy(j, batchv1.JobReasonPodFailurePolicy):
+		res.Disruption = cmp.Or(res.Disruption, jobFailure(j))
+		res.Err = fmt.Errorf("executor: job %s's pod was disrupted: %s", j.Name, res.Disruption)
+	default:
+		res.Err = fmt.Errorf("executor: job %s failed: %s", j.Name, res.TerminationReason)
 	}
 }
 
@@ -329,12 +340,30 @@ func eventSeen(e eventsv1.Event) time.Time {
 	return e.DeprecatedLastTimestamp.Time
 }
 
-// jobFailure is the Job's failed condition, its reason and message.
-func jobFailure(j *batchv1.Job) string {
-	for _, c := range j.Status.Conditions {
-		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
-			return strings.TrimSuffix("the Job failed: "+c.Reason+": "+c.Message, ": ")
+// failure is the Job's failed condition, or its FailureTarget, which the
+// Job controller sets first and may count the failed pod under before it
+// adds the other; ok is false when the Job has neither.
+func failure(j *batchv1.Job) (c batchv1.JobCondition, ok bool) {
+	for _, t := range []batchv1.JobConditionType{batchv1.JobFailed, batchv1.JobFailureTarget} {
+		if i := slices.IndexFunc(j.Status.Conditions, func(c batchv1.JobCondition) bool {
+			return c.Type == t && c.Status == corev1.ConditionTrue
+		}); i >= 0 {
+			return j.Status.Conditions[i], true
 		}
+	}
+	return batchv1.JobCondition{}, false
+}
+
+// failedBy reports whether the Job failed, or is failing, for reason.
+func failedBy(j *batchv1.Job, reason string) bool {
+	c, ok := failure(j)
+	return ok && c.Reason == reason
+}
+
+// jobFailure is the Job's failure, its reason and message.
+func jobFailure(j *batchv1.Job) string {
+	if c, ok := failure(j); ok {
+		return strings.TrimSuffix("the Job failed: "+c.Reason+": "+c.Message, ": ")
 	}
 	return "the Job failed"
 }
@@ -424,8 +453,11 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runner.Secrets) 
 	pod := pods.Items[len(pods.Items)-1]
 	res.PodName, res.NodeName = pod.Name, pod.Spec.NodeName
 	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionTrue {
+		switch {
+		case c.Type == corev1.PodScheduled && c.Status == corev1.ConditionTrue:
 			res.ScheduledAt = c.LastTransitionTime.Time
+		case c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue:
+			res.Disruption = strings.TrimSuffix(c.Reason+": "+c.Message, ": ")
 		}
 	}
 	if pod.Status.StartTime != nil {
@@ -600,12 +632,20 @@ func (k *Kube) job(spec Spec) (*batchv1.Job, error) {
 	if k.RuntimeClass != "" {
 		runtimeClass = new(k.RuntimeClass)
 	}
+	// A pod Kubernetes disrupts fails the Job, as with no policy, but for
+	// that reason, PodFailurePolicy, which names it once the pod is gone:
+	// the worker runs such a run again.
+	policy := &batchv1.PodFailurePolicy{Rules: []batchv1.PodFailurePolicyRule{{
+		Action:          batchv1.PodFailurePolicyActionFailJob,
+		OnPodConditions: []batchv1.PodFailurePolicyOnPodConditionsPattern{{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue}},
+	}}}
 	return &batchv1.Job{
 		Name: name, Namespace: k.Namespace, Labels: labels, Annotations: annotations,
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,
 			ActiveDeadlineSeconds:   &deadline,
 			TTLSecondsAfterFinished: &ttl,
+			PodFailurePolicy:        policy,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{

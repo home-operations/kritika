@@ -210,6 +210,8 @@ func TestRunEnd(t *testing.T) {
 			want: "true NeverStarted: its pod did not start: ImagePullBackOff: back-off"},
 		{name: "never started, with no waiting reason", res: executor.Result{NeverStarted: true, Err: errors.New("executor: own secret: refused")},
 			want: "true NeverStarted: its pod did not start: executor: own secret: refused"},
+		{name: "disrupted", res: executor.Result{Disruption: "EvictionByEvictionAPI: Eviction API: evicting", Err: failed},
+			want: "true Disrupted: Kubernetes disrupted its pod: EvictionByEvictionAPI: Eviction API: evicting"},
 		{name: "abandoned", res: executor.Result{Abandoned: true, Err: fmt.Errorf("executor: get job: %w", context.DeadlineExceeded)},
 			want: "true StatusUnreadable: kritika could not read the Job's status, so it deleted the Job"},
 		{name: "cancelled from the dashboard while it was set up", jobCause: river.ErrJobCancelledRemotely,

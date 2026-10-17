@@ -147,6 +147,8 @@ func runEnd(jobCause error, res executor.Result) (warning bool, reason, note str
 		return true, "TimedOut", "the job ran out of time"
 	case jobCause != nil && errors.Is(res.Err, jobCause):
 		return false, "Interrupted", "kritika serve stopped, and the job runs again"
+	case res.Disruption != "":
+		return true, "Disrupted", "Kubernetes disrupted its pod: " + res.Disruption
 	case res.Abandoned:
 		return true, "StatusUnreadable", "kritika could not read the Job's status, so it deleted the Job"
 	case res.NeverStarted:

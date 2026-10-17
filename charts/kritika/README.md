@@ -211,7 +211,7 @@ left, and a remaining replica works them.
 
 ## Requirements
 
-Kubernetes: `>=1.25.0-0`
+Kubernetes: `>=1.31.0-0`
 
 ## Values
 
