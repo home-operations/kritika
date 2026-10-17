@@ -118,8 +118,9 @@ func newPromptInputs(p Spec, files repoconfig.Files, found []repoconfig.Skill, c
 // message, and the tool it answers with, whose input validate checks and
 // fallback, when set, holds to be an answer validate refused only for a
 // slip. omitted names the diff files, and contextOmitted counts the chunks, the
-// budget left out of the message. carried, when set, is the conversation
-// the agent carries on, and user then its next turn.
+// budget left out of the message; context is the chunks it holds. carried,
+// when set, is the conversation the agent carries on, and user then its
+// next turn, which holds no context.
 type agentPrompt struct {
 	system, user      string
 	submit            model.ToolDef
@@ -127,6 +128,7 @@ type agentPrompt struct {
 	fallback          func(json.RawMessage) bool
 	omitted           []string
 	contextOmitted    int
+	context           []contextpack.Chunk
 	referencesOmitted int
 	references        []review.Reference
 	carried           *agent.Conversation
@@ -185,10 +187,12 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 		Incremental: incremental, Earlier: earlier, Dismissed: p.Prompt.Dismissed, References: in.references, Part: pack.Part,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	})
+	// Build writes the context in order until the budget is spent, so the
+	// chunks it left out are the last.
 	return agentPrompt{
 		system: system, user: user, submit: SubmitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram), validate: review.Check,
 		fallback: review.Lenient(review.Check), omitted: omitted, contextOmitted: contextOmitted,
-		references: in.references, referencesOmitted: referencesOmitted,
+		context: pack.Context[:len(pack.Context)-contextOmitted], references: in.references, referencesOmitted: referencesOmitted,
 	}
 }
 

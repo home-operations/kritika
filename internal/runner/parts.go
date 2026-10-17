@@ -60,7 +60,6 @@ func partPrompts(
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
 	diffs := make([]string, len(split))
 	chunks := make([][]contextpack.Chunk, len(split))
-	all := []contextpack.Chunk{}
 	for i, paths := range split {
 		diffs[i] = review.PartDiff(res.Diff, paths)
 		var err error
@@ -73,7 +72,6 @@ func partPrompts(
 			chunks[i] = append(chunks[i], out.Chunks...)
 			tools.search = newSearchTool(p, secrets, res.Changed)
 		}
-		all = append(all, chunks[i]...)
 	}
 	ins := make([]promptInputs, len(split))
 	var skills []repoconfig.Skill
@@ -102,6 +100,7 @@ func partPrompts(
 		tools.skills = &skillTool{base: base, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: loaded}
 	}
 	parts := make([]reviewPart, len(split))
+	all := []contextpack.Chunk{}
 	for i, paths := range split {
 		pack := packView{
 			Diff: diffs[i], Changed: res.Changed, Context: chunks[i], DeltaDiff: review.PartDiff(res.DeltaDiff, paths), Scope: scope,
@@ -115,6 +114,7 @@ func partPrompts(
 		prompt.validate = review.CheckPart(paths, slices.Concat(slices.Concat(split[:i]...), slices.Concat(split[i+1:]...)))
 		prompt.fallback = review.Lenient(prompt.validate)
 		parts[i] = reviewPart{paths: paths, prompt: prompt}
+		all = append(all, prompt.context...)
 	}
 	return parts, all, rules, nil
 }

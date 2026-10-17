@@ -312,7 +312,7 @@ type ContextPackRecord struct {
 	// states about the repository's files.
 	RuleIDs, Notes []string
 	Files          repoconfig.Files
-	// StageCounts is how many chunks each stage contributed.
+	// StageCounts is how many chunks of each stage the prompt was given.
 	StageCounts map[string]int
 }
 

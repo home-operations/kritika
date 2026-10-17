@@ -18,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/gitfetch"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -161,6 +162,44 @@ func TestPartPrompts(t *testing.T) {
 	}
 	if rules == nil || len(rules) != 0 {
 		t.Fatalf("rules of a split with none = %#v, want an empty list", rules)
+	}
+}
+
+// TestPartPromptsContext: the context a split review returns for its pack
+// is what its parts' prompts hold, not the similar code that a part's
+// budget leaves out, which the summary's note counts instead.
+func TestPartPromptsContext(t *testing.T) {
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req contextpack.SimilarRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		text := "func z() {}"
+		if len(req.Queries) > 0 && strings.HasPrefix(req.Queries[0], "b/y.go") {
+			text = strings.Repeat("x", 60_000)
+		}
+		_ = json.NewEncoder(w).Encode(contextpack.SimilarResponse{Indexed: true, Chunks: []contextpack.Chunk{
+			{Stage: contextpack.StageSimilar, Path: "lib/z.go", StartLine: 1, EndLine: 1, Text: text},
+		}})
+	}))
+	t.Cleanup(gw.Close)
+	s := reviewSpec()
+	s.Model.GatewayURL = gw.URL
+	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
+	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
+	var tools agentTools
+	parts, chunks, _, err := partPrompts(t.Context(), s, Secrets{GatewayToken: "t"}, head, head, res, repoconfig.Files{}, nil,
+		[][]string{{"a/x.go"}, {"b/y.go"}}, review.ScopeFull, &tools, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 1 || chunks[0].Text != "func z() {}" || !slices.Equal(chunks, parts[0].prompt.context) || len(parts[1].prompt.context) != 0 {
+		t.Fatalf("context = %d chunk(s), part 1's %d, part 2's %d; want part 1's similar code alone", len(chunks),
+			len(parts[0].prompt.context), len(parts[1].prompt.context))
+	}
+	if strings.Contains(parts[1].prompt.user, "### similar: lib/z.go") {
+		t.Fatalf("part 2's prompt holds the similar code its budget left out:\n%.2000s", parts[1].prompt.user)
+	}
+	if notes := splitNotes(parts); !slices.Contains(notes, "1 context chunk(s) left out of the prompt to fit its budget") {
+		t.Fatalf("notes = %q", notes)
 	}
 }
 
