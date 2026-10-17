@@ -632,6 +632,41 @@ func TestAgentPromptBudget(t *testing.T) {
 	}
 }
 
+// TestAgentPromptContext: a prompt holds the context its budget keeps,
+// the chunks before the first that does not fit, and those alone are the
+// context it was given.
+func TestAgentPromptContext(t *testing.T) {
+	chunk := func(stage, path string, size int) contextpack.Chunk {
+		return contextpack.Chunk{Stage: stage, Path: path, StartLine: 1, EndLine: 1, Text: strings.Repeat("x", size)}
+	}
+	pack := packView{Diff: agentDiff, Changed: []string{"main.go"}, Scope: review.ScopeFull, Context: []contextpack.Chunk{
+		chunk(contextpack.StageOverlay, "main.go", 100), chunk(contextpack.StageDefinition, "util.go", 100),
+		chunk(contextpack.StageCaller, "caller.go", 40_000), chunk(contextpack.StageSimilar, "other.go", 100),
+	}}
+	for _, tt := range []struct {
+		name   string
+		budget int
+		given  int
+	}{
+		{name: "every chunk fits", budget: 60_000, given: 4},
+		{name: "a chunk past the budget leaves out the ones after it", budget: 8_000, given: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := agentPromptSpec()
+			s.Agent.MaxPromptTokens = tt.budget
+			prompt := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
+			if !slices.Equal(prompt.context, pack.Context[:tt.given]) || prompt.contextOmitted != len(pack.Context)-tt.given {
+				t.Fatalf("context given %d chunk(s), %d left out; want %d given", len(prompt.context), prompt.contextOmitted, tt.given)
+			}
+			for i, c := range pack.Context {
+				if strings.Contains(prompt.user, "### "+c.Stage+": "+c.Path) != (i < tt.given) {
+					t.Fatalf("chunk %d (%s) in the message = %t, want %t:\n%s", i, c.Stage, i >= tt.given, i < tt.given, prompt.user)
+				}
+			}
+		})
+	}
+}
+
 func TestAgentPromptNotesReferenceOmissions(t *testing.T) {
 	s := agentPromptSpec()
 	s.Agent.MaxPromptTokens = 8_000

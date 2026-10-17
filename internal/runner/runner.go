@@ -156,7 +156,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if skip == "" {
 		split = splitReview(p, res, scope)
 	}
-	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, split, logger)
+	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, split, logger)
 	if err != nil {
 		return err
 	}
@@ -195,6 +195,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		} else {
 			notes = append(notes, splitNotes(parts)...)
 		}
+	}
+	if chunks == nil {
+		chunks = []contextpack.Chunk{}
 	}
 	stagesJSON, err := json.Marshal(chunks)
 	if err != nil {
@@ -253,11 +256,13 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 }
 
 // wholeContext is the context stages over the whole diff, or none for a
-// split review, whose parts build theirs from their own diffs.
+// skipped review, which has no prompt, or a split one, whose parts build
+// theirs from their own diffs.
 func wholeContext(
-	ctx context.Context, head, base *object.Tree, res *gitfetch.Result, ignore []string, split [][]string, logger *slog.Logger,
+	ctx context.Context, head, base *object.Tree, res *gitfetch.Result, ignore []string, skip string, split [][]string,
+	logger *slog.Logger,
 ) ([]contextpack.Chunk, error) {
-	if split != nil {
+	if skip != "" || split != nil {
 		return []contextpack.Chunk{}, nil
 	}
 	chunks, stats, err := stages(ctx, head, base, res, ignore)
@@ -287,7 +292,7 @@ func wholePrompt(
 	if p.Prompt.Continue != nil && scope == review.ScopeIncremental {
 		prompt = carryOn(ctx, p, secrets, prompt, offeredTools(p, head, ignore, tools.extra()), res.DeltaDiff, logger)
 	}
-	return prompt, chunks
+	return prompt, prompt.context
 }
 
 // similarContext is context stage 4, best effort: the code elsewhere in

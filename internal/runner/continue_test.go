@@ -5,18 +5,21 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
 )
 
 // TestCarryOn: a review carries on the conversation the gateway serves it
-// only when it would send that conversation's system prompt and tools;
-// otherwise, or when the gateway serves none, it starts afresh.
+// only when it would send that conversation's system prompt and tools,
+// and its next turn is given no context; otherwise, or when the gateway
+// serves none, it starts afresh with the context of a fresh prompt.
 func TestCarryOn(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Continue = &Continuation{RunID: "run-0", Session: "run-0"}
@@ -25,8 +28,12 @@ func TestCarryOn(t *testing.T) {
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	tools := offeredTools(s, head, nil, nil)
 	s.Prompt.Context = []configfile.ContextFile{{Path: "web/AGENTS.md", Description: "frontend conventions", Paths: []string{"web/**"}}}
-	pack := packView{Diff: agentDiff, Changed: []string{"main.go", "web/app.ts"}, Scope: review.ScopeIncremental}
+	pack := packView{Diff: agentDiff, Changed: []string{"main.go", "web/app.ts"}, Scope: review.ScopeIncremental,
+		Context: []contextpack.Chunk{{Stage: contextpack.StageDefinition, Path: "util.go", StartLine: 1, EndLine: 1, Text: "func u() {}"}}}
 	fresh := newAgentPrompt(s, newPromptInputs(s, nil, nil, pack.Changed), pack, nil, false, false)
+	if len(fresh.context) != 1 {
+		t.Fatalf("a fresh prompt's context = %+v", fresh.context)
+	}
 	pr := s.Prompt.PullRequest
 	opening := func(body string) string {
 		msg, _, _, _ := review.Build(review.Input{Repository: s.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author,
@@ -82,12 +89,13 @@ func TestCarryOn(t *testing.T) {
 				t.Fatalf("request = %s with %q", path, auth)
 			}
 			if !tc.carried {
-				if got.carried != nil || got.user != fresh.user {
+				if got.carried != nil || got.user != fresh.user || !slices.Equal(got.context, fresh.context) {
 					t.Fatalf("a conversation that cannot be carried on was: %+v", got)
 				}
 				return
 			}
-			if got.carried == nil || got.carried.Tokens != 900 || got.system != fresh.system || got.submit.Name != fresh.submit.Name {
+			if got.carried == nil || got.carried.Tokens != 900 || got.system != fresh.system || got.submit.Name != fresh.submit.Name ||
+				len(got.context) != 0 || strings.Contains(got.user, "### definition: util.go") {
 				t.Fatalf("prompt = %+v", got)
 			}
 			for _, want := range []string{"main.go changes startup.", "### web/AGENTS.md: frontend conventions", "moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
