@@ -341,7 +341,9 @@ func startWorker(
 	// Every job this replica works carries its heartbeat, so the leader can
 	// hand back the jobs of a replica that dies without a soft stop long
 	// before River's rescuer may.
-	middleware := []rivertype.Middleware{&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}}
+	middleware := []rivertype.Middleware{
+		&worker.JobMetrics{Metrics: m}, &worker.JobHeartbeat{Store: st, Logger: logger}, &worker.ForgeRateLimit{Logger: logger},
+	}
 	queue, err := river.NewClient(riverpgxv5.New(st.App()), riverConfig(cfg, workers, middleware, logger))
 	if err != nil {
 		return fmt.Errorf("river: %w", err)

@@ -221,6 +221,7 @@ func TestFollowUpFailure(t *testing.T) {
 		{"retried", boom, 1, unanswered},
 		{"the last attempt", boom, 3, failed},
 		{"final on the first attempt", finalError{boom}, 1, failed},
+		{"a rate limit on the last attempt is snoozed", rateLimited(time.Minute), 3, unanswered},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

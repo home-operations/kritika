@@ -184,6 +184,7 @@ func TestReviewAttemptFailed(t *testing.T) {
 		{name: "fencing is not shutdown", cause: errJobFenced, err: errJobFenced, final: true, want: true},
 		{name: "deadline is not shutdown", cause: context.DeadlineExceeded, err: context.Canceled, final: true, want: true},
 		{name: "remote cancel is not shutdown", cause: river.ErrJobCancelledRemotely, err: context.Canceled, final: true, want: true},
+		{name: "a rate limit on the last attempt is snoozed", err: fmt.Errorf("publish: %w", rateLimited(time.Minute)), final: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := reviewAttemptFailed(tt.cause, tt.err, tt.final); got != tt.want {

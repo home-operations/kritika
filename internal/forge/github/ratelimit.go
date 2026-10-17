@@ -1,11 +1,31 @@
 package github
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
+
+	gh "github.com/google/go-github/v92/github"
 )
+
+// RetryAfter reports how long to wait before trying again after err, when
+// err is GitHub's rate limit as go-github reports it: until the primary
+// limit resets, with the second of grace rateLimitWait gives, or for the
+// secondary limit's Retry-After, rateLimitMaxWait when it names none.
+// go-github refuses every request until then without asking GitHub, so a
+// job retried sooner only spends an attempt.
+func RetryAfter(err error, now time.Time) (time.Duration, bool) {
+	if e, ok := errors.AsType[*gh.RateLimitError](err); ok {
+		return max(e.Rate.Reset.Sub(now)+time.Second, time.Second), true
+	}
+	if e, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
+		return max(cmp.Or(e.GetRetryAfter(), rateLimitMaxWait), time.Second), true
+	}
+	return 0, false
+}
 
 // rateLimitMaxWait bounds how long a request waits out a rate limit before
 // it is sent again. A longer wait is not worth holding a worker for: the

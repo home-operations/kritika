@@ -17,6 +17,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/executor"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -308,8 +309,12 @@ func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) 
 func (f *followUp) marks() marks { return commentMarks(f.client, f.owner, f.repo, f.comment, f.logger) }
 
 // failure is what the marks say of an answer that ended in err: failed
-// once no attempt follows it, unanswered while River retries the job.
+// once no attempt follows it, unanswered while River retries the job, or
+// snoozes it for GitHub's rate limit (see ForgeRateLimit).
 func (f *followUp) failure(err error) outcome {
+	if _, limited := github.RetryAfter(err, time.Now()); limited {
+		return unanswered
+	}
 	if _, final := errors.AsType[finalError](err); final || f.attempt >= f.maxAttempts {
 		return failed
 	}
