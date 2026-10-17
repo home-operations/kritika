@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.77](https://github.com/home-operations/kritika/compare/0.0.76...0.0.77) (2026-10-17)
+
+
+### Features
+
+* **embedding:** add embedding prompts and a per-query similarity margin ([#1031](https://github.com/home-operations/kritika/issues/1031)) ([0e409d3](https://github.com/home-operations/kritika/commit/0e409d3e69a69af852ef535994fb0c52c07ec0bd))
+
+
+### Bug Fixes
+
+* **runner:** keep and count only the context chunks a review's prompt was given ([#1028](https://github.com/home-operations/kritika/issues/1028)) ([4a248fb](https://github.com/home-operations/kritika/commit/4a248fb3615096c1fbbfa8ebb9242814e190e367))
+
 ## [0.0.76](https://github.com/home-operations/kritika/compare/0.0.75...0.0.76) (2026-10-17)
 
 
