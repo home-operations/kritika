@@ -55,6 +55,44 @@ func openStore(t testing.TB) *Store {
 	return s
 }
 
+// TestSchemaReadyWaitsForRiver: a River migration a release brings without
+// one of kritika's keeps the schema unready until the leader applies it and
+// grants the application role River's tables.
+func TestSchemaReadyWaitsForRiver(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	// River's migration 8 is a no-op, so applying it again changes nothing.
+	if _, err := s.owner.Exec(ctx, `DELETE FROM river_migration WHERE line = 'main' AND version = 8`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := s.owner.Exec(context.Background(), `INSERT INTO river_migration (line, version) VALUES ('main', 8)
+			ON CONFLICT DO NOTHING`); err != nil {
+			t.Error(err)
+		}
+	})
+	ready := func(want bool, when string) {
+		t.Helper()
+		if got, err := s.SchemaReady(ctx); err != nil || got != want {
+			t.Fatalf("SchemaReady %s = %v, %v; want %v", when, got, err, want)
+		}
+	}
+	ready(false, "with River's migration 8 unapplied")
+	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	ready(true, "once migrated")
+	// A table a River migration made, before the grants that follow it.
+	if _, err := s.owner.Exec(ctx, `REVOKE ALL ON river_queue FROM kritika_app`); err != nil {
+		t.Fatal(err)
+	}
+	ready(false, "with a River table not yet granted")
+	if err := s.Migrate(ctx, "kritika_app", "kritika_runner"); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	ready(true, "once granted")
+}
+
 // TestPoolStatementTimeouts: both pools bound their statements, the
 // application pool tightly since everything serving shares it.
 func TestPoolStatementTimeouts(t *testing.T) {
