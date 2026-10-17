@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -130,8 +129,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 			if moved = !bytes.Equal(labels, judged.Labels); moved {
 				return nil
 			}
-			_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
-			return err
+			return completeJob(ctx, tx, job)
 		}); err != nil {
 			return true, err
 		}

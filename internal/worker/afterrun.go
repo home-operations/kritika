@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
@@ -163,9 +162,9 @@ func (w *Review) recordPreparation(
 			return err
 		}
 		if filtered && decision.disposition == reviewFinish {
-			_, err = river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+			return completeJob(ctx, tx, job)
 		}
-		return err
+		return nil
 	})
 	return pack, decision, err
 }

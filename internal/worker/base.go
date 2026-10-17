@@ -8,7 +8,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
@@ -72,6 +75,22 @@ const releaseTimeout = 10 * time.Second
 // still finish then, but a hung forge or database call must not hold the
 // job forever.
 const detachTimeout = 2 * time.Minute
+
+// completeJob completes job in tx while River still runs this attempt of
+// it. River returns a row no longer running unchanged, and completes
+// whichever attempt is running, so either way what tx holds of this
+// attempt must not commit.
+func completeJob[T river.JobArgs](ctx context.Context, tx pgx.Tx, job *river.Job[T]) error {
+	completed, err := river.JobCompleteTx[*riverpgxv5.Driver](ctx, tx, job)
+	if err != nil {
+		return fmt.Errorf("worker: complete %s job: %w", job.Kind, err)
+	}
+	if completed.State != rivertype.JobStateCompleted || completed.Attempt != job.Attempt {
+		return fmt.Errorf("worker: %s job ownership changed: state %s, attempt %d (want %d)",
+			job.Kind, completed.State, completed.Attempt, job.Attempt)
+	}
+	return nil
+}
 
 // detach is ctx without its cancellation, bounded by detachTimeout.
 func detach(ctx context.Context) (context.Context, context.CancelFunc) {
