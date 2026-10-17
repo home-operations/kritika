@@ -60,9 +60,11 @@ const (
 // baseFuncs are the functions a template may call: sprout's registries
 // less those that reach outside the render (env, filesystem, network),
 // that make a render unrepeatable (random, uniqueid) or that have no use
-// in a comment (checksum, crypto), and less set and unset, which mutate a
-// dict in place and could make it contain itself. printf, print and
-// println are redefined so the guard sees them like any other function.
+// in a comment (checksum, crypto), and less those that change a dict in
+// place (set, unset and the merges), which could make it contain itself:
+// printing such a dict overflows the stack, which no recover survives.
+// printf, print and println are redefined so the guard sees them like any
+// other function.
 var baseFuncs = func() template.FuncMap {
 	h := sprout.New()
 	if err := h.AddRegistries(
@@ -81,8 +83,9 @@ var baseFuncs = func() template.FuncMap {
 		panic("review: sprout registries: " + err.Error())
 	}
 	fm := h.Build()
-	delete(fm, "set")
-	delete(fm, "unset")
+	for _, name := range []string{"set", "unset", "merge", "mergeOverwrite", "mustMerge", "mustMergeOverwrite"} {
+		delete(fm, name)
+	}
 	fm["printf"], fm["print"], fm["println"] = fmt.Sprintf, fmt.Sprint, fmt.Sprintln
 	return fm
 }()

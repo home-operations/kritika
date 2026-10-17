@@ -443,6 +443,10 @@ func TestRenderSummaryCustom(t *testing.T) {
 		{name: "integer range", template: `{{ range 1000000000 }}{{ end }}`, note: "summary template"},
 		{name: "reserved names", template: `{{ __kritika_iter 1 }}`, note: "summary template"},
 		{name: "mutating a dict", template: `{{ $d := dict "a" 1 }}{{ set $d "b" $d }}`, note: "summary template"},
+		{name: "merging a dict into itself", template: `{{ $d := dict "a" 1 }}{{ $_ := merge $d (dict "b" $d) }}{{ $d }}`, note: "summary template"},
+		{name: "merging over a dict", template: `{{ $d := dict "a" 1 }}{{ $_ := mergeOverwrite $d (dict "b" $d) }}{{ $d }}`, note: "summary template"},
+		{name: "mustMerge is not defined", template: `{{ $d := dict "a" 1 }}{{ $_ := mustMerge $d (dict "b" $d) }}{{ $d }}`, note: "summary template"},
+		{name: "mustMergeOverwrite is not defined", template: `{{ $d := dict "a" 1 }}{{ $_ := mustMergeOverwrite $d (dict "b" $d) }}{{ $d }}`, note: "summary template"},
 		{name: "random is not defined", template: `{{ randAlpha 8 }}`, note: "summary template"},
 	}
 	for _, tt := range tests {
