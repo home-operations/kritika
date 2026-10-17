@@ -413,6 +413,10 @@ func (f *followUp) runAgent(
 	// A runner whose pod never started spent nothing: the job is retried.
 	case res.Err != nil && res.NeverStarted:
 		return nil, fmt.Errorf("worker: runner did not start: %w", res.Err)
+	// One whose pod Kubernetes disrupted did not fail on its own: the job is
+	// retried too, paying the model again for its answer.
+	case res.Err != nil && res.Disruption != "":
+		return nil, fmt.Errorf("worker: runner pod disrupted: %w", res.Err)
 	case res.Err != nil && errors.Is(cause, errHeartbeatLost):
 		return nil, finalError{errors.New("worker: runner heartbeat lost")}
 	case res.Err != nil:

@@ -92,6 +92,17 @@ func TestJobSpec(t *testing.T) {
 	}
 }
 
+// TestJobSpecPodFailurePolicy: a pod Kubernetes disrupts fails its Job by
+// the pod failure policy, which names the failure once the pod is gone.
+func TestJobSpecPodFailurePolicy(t *testing.T) {
+	j := mustJob(t, &Kube{Namespace: "kritika", Image: "x"}, spec())
+	if p := j.Spec.PodFailurePolicy; p == nil || len(p.Rules) != 1 || p.Rules[0].Action != batchv1.PodFailurePolicyActionFailJob ||
+		len(p.Rules[0].OnPodConditions) != 1 || p.Rules[0].OnPodConditions[0] != (batchv1.PodFailurePolicyOnPodConditionsPattern{
+		Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue}) {
+		t.Fatalf("podFailurePolicy = %+v, want a disrupted pod to fail the Job by the policy", p)
+	}
+}
+
 func TestJobSpecRefusesBadResources(t *testing.T) {
 	for _, r := range []map[string]any{
 		{"limits": map[string]any{"memory": "lots"}},
@@ -487,6 +498,53 @@ func TestKubeRunPodFoundAtTheEndRan(t *testing.T) {
 	failed.Store(true)
 	if res := <-done; res.Err == nil || res.NeverStarted || res.PodName == "" {
 		t.Fatalf("res = %+v, want a run that ran in the pod finish found", res)
+	}
+}
+
+// TestKubeRunDisruptedPod: a pod Kubernetes disrupted is reported as such,
+// with its DisruptionTarget condition, or, once it is gone, with the
+// failure the Job's pod failure policy gave the Job.
+func TestKubeRunDisruptedPod(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		pod       bool
+		reason    string
+		condition batchv1.JobConditionType
+		want      string
+	}{
+		{name: "the pod is there", pod: true, reason: batchv1.JobReasonBackoffLimitExceeded, condition: batchv1.JobFailed,
+			want: "EvictionByEvictionAPI: Eviction API: evicting"},
+		{name: "the pod is gone", reason: batchv1.JobReasonPodFailurePolicy, condition: batchv1.JobFailed,
+			want: "the Job failed: PodFailurePolicy: Pod kritika/kritika-run-01234567-abcde has condition DisruptionTarget matching FailJob rule at index 0"},
+		{name: "the pod is gone, the Job counted it before it failed", reason: batchv1.JobReasonPodFailurePolicy, condition: batchv1.JobFailureTarget,
+			want: "the Job failed: PodFailurePolicy: Pod kritika/kritika-run-01234567-abcde has condition DisruptionTarget matching FailJob rule at index 0"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := fake.NewSimpleClientset()
+			k := newKube(client)
+			created := reacted(client, "create", "jobs")
+			done := make(chan Result, 1)
+			go func() { done <- k.Run(t.Context(), spec()) }()
+			j := waitJob(t, client, created)
+			if tt.pod {
+				evicted := corev1.PodStatus{Phase: corev1.PodFailed, Conditions: []corev1.PodCondition{{
+					Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue, Reason: "EvictionByEvictionAPI", Message: "Eviction API: evicting",
+				}}}
+				if _, err := client.CoreV1().Pods("kritika").Create(t.Context(), runnerPod(j.Name, evicted), metav1.CreateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			j.Status.Failed = 1
+			j.Status.Conditions = []batchv1.JobCondition{{Type: tt.condition, Status: corev1.ConditionTrue, Reason: tt.reason,
+				Message: "Pod kritika/" + j.Name + "-abcde has condition DisruptionTarget matching FailJob rule at index 0"}}
+			if _, err := client.BatchV1().Jobs("kritika").UpdateStatus(t.Context(), j, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			res := <-done
+			if res.Disruption != tt.want || res.Err == nil || !strings.Contains(res.Err.Error(), "pod was disrupted") || res.NeverStarted {
+				t.Fatalf("res = %+v, want a disrupted run, %q", res, tt.want)
+			}
+		})
 	}
 }
 

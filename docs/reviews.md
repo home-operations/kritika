@@ -47,6 +47,14 @@ of a head whose review is already queued or running: the request is
 refused as busy ([actions](dashboard.md#actions)), and the running review
 stands in for it.
 
+A review whose runner never starts, its pod refused by the namespace or
+unable to start for three minutes, or whose runner pod Kubernetes stops
+for its own reasons, by a node drain, a preemption or an eviction, ends
+superseded and runs again in a new pod until its job's attempts run out;
+one that starts over pays for its model calls again. A runner that fails
+on its own, by its commands, its deadline or its memory limit, fails the
+review. A mention's answer is retried the same way.
+
 ## What it posts
 
 | What              | Where                                                                                                                                                                |
