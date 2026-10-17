@@ -53,6 +53,13 @@ func TestKeepSimilar(t *testing.T) {
 		}, 0.5, 0.1, []string{"x.go:1:similarity 0.95", "z.go:1:similarity 0.70", "s.go:1:similarity 0.66"}},
 		{"the floor holds within the margin", []store.SimilarHit{near(0, "a.go", 0.55), near(0, "b.go", 0.48)},
 			0.5, 0.1, []string{"a.go:1:similarity 0.55"}},
+		// 0.8 - 0.1 rounds to 0.7000000000000001.
+		{"a hit at the margin is kept", []store.SimilarHit{near(0, "a.go", 0.8), near(0, "b.go", 0.7)},
+			0.5, 0.1, []string{"a.go:1:similarity 0.80", "b.go:1:similarity 0.70"}},
+		{"a hit past the margin is not", []store.SimilarHit{near(0, "a.go", 0.8), near(0, "b.go", 0.69)},
+			0.5, 0.1, []string{"a.go:1:similarity 0.80"}},
+		{"no margin keeps each query's best", []store.SimilarHit{near(0, "a.go", 0.8), near(0, "b.go", 0.79), near(1, "c.go", 0.6)},
+			0.5, 0, []string{"a.go:1:similarity 0.80", "c.go:1:similarity 0.60"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

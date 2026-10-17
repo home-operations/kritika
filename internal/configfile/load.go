@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"os"
 	"path"
 	"regexp"
@@ -321,12 +322,12 @@ func (f *File) validateEmbedding() error {
 	if e.MaxBatch < 0 || e.MaxBatchChars < 0 || e.MaxItemChars < 0 {
 		return errors.New("configfile: embedding.maxBatch, maxBatchChars and maxItemChars must not be negative")
 	}
-	if e.SimilarFloor < 0 || e.SimilarFloor > 1 {
+	// NaN passes any comparison's negation, and would then keep no chunk.
+	if math.IsNaN(e.SimilarFloor) || e.SimilarFloor < 0 || e.SimilarFloor > 1 {
 		return fmt.Errorf("configfile: embedding.similarFloor must be between 0 and 1 (a cosine similarity), got %g", e.SimilarFloor)
 	}
-	if e.SimilarMargin < 0 || e.SimilarMargin > 1 {
-		return fmt.Errorf("configfile: embedding.similarMargin must be between 0 and 1 (a difference of cosine similarities), got %g",
-			e.SimilarMargin)
+	if m := e.SimilarMargin; m != nil && (math.IsNaN(*m) || *m < 0 || *m > 1) {
+		return fmt.Errorf("configfile: embedding.similarMargin must be between 0 and 1 (a difference of cosine similarities), got %g", *m)
 	}
 	// Prompts move every score, up or down depending on the model, so the
 	// default floor could keep everything or nothing without a sign of it.

@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -101,6 +102,8 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"an embedder with a floor above 1", embeddingDoc("similarFloor: 1.5"), "embedding.similarFloor must be between 0 and 1"},
 		{"an embedder with a margin above 1", embeddingDoc("similarMargin: 1.5"), "embedding.similarMargin must be between 0 and 1"},
 		{"an embedder with a negative margin", embeddingDoc("similarMargin: -0.1"), "embedding.similarMargin must be between 0 and 1"},
+		{"an embedder with a margin that is not a number", embeddingDoc("similarMargin: .nan"), "embedding.similarMargin must be between 0 and 1"},
+		{"an embedder with a floor that is not a number", embeddingDoc("similarFloor: .nan"), "embedding.similarFloor must be between 0 and 1"},
 		{"a query prompt without a floor", embeddingDoc(`queryPrompt: "query: "`), "need embedding.similarFloor set"},
 		{"a document prompt without a floor", embeddingDoc(`documentPrompt: "passage: "`), "need embedding.similarFloor set"},
 		{"an embedder with an endpoint of its own", embeddingDoc("baseUrl: https://embed.example/v1"), "field baseUrl not found"},
@@ -148,8 +151,11 @@ func TestParseEmbedding(t *testing.T) {
 	if e.Margin() != DefaultSimilarMargin {
 		t.Fatalf("Margin = %g, want the default %g", e.Margin(), DefaultSimilarMargin)
 	}
-	if f, err := Parse([]byte(embeddingDoc("similarMargin: 0.05"))); err != nil || f.Embedding.Margin() != 0.05 {
-		t.Fatalf("Parse(similarMargin: 0.05) = %v, margin %v", err, f)
+	for _, margin := range []float64{0.05, 0} {
+		doc := embeddingDoc(fmt.Sprintf("similarMargin: %g", margin))
+		if f, err := Parse([]byte(doc)); err != nil || f.Embedding.Margin() != margin {
+			t.Fatalf("Parse(similarMargin: %g) = %v, margin %v", margin, err, f)
+		}
 	}
 	if e.QueryPrompt != "" || e.DocumentPrompt != "" {
 		t.Fatalf("prompts = %q, %q; want none unless set", e.QueryPrompt, e.DocumentPrompt)

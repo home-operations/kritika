@@ -347,8 +347,8 @@ type Embedding struct {
 	// query's scores sit at a height set by the code it is near, which
 	// differs between repositories and between the hunks of one diff, so
 	// the margin follows each query's best where a floor cannot; unset is
-	// DefaultSimilarMargin.
-	SimilarMargin float64 `yaml:"similarMargin,omitempty"`
+	// DefaultSimilarMargin, and 0 keeps only each query's best.
+	SimilarMargin *float64 `yaml:"similarMargin,omitempty"`
 	// QueryPrompt and DocumentPrompt go, exactly as written, in front of
 	// each similar-code query and each indexed chunk: the task prompts many
 	// embedding models are trained with. Unset, inputs go as they are.
@@ -390,7 +390,12 @@ func (e *Embedding) Floor() float64 { return cmp.Or(e.SimilarFloor, DefaultSimil
 const DefaultSimilarMargin = 0.1
 
 // Margin returns SimilarMargin, DefaultSimilarMargin when unset.
-func (e *Embedding) Margin() float64 { return cmp.Or(e.SimilarMargin, DefaultSimilarMargin) }
+func (e *Embedding) Margin() float64 {
+	if e.SimilarMargin == nil {
+		return DefaultSimilarMargin
+	}
+	return *e.SimilarMargin
+}
 
 // DefaultIgnore is always skipped by chunking and the caller search, on top
 // of whatever the admin's file and the in-repo file add. Vendored and

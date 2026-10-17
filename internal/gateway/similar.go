@@ -225,7 +225,9 @@ func keepSimilar(hits []store.SimilarHit, floor, margin float64) []contextpack.C
 	}
 	kept := make([]store.SimilarHit, 0, len(hits))
 	for _, h := range hits {
-		if h.Similarity >= floor && h.Similarity >= best[h.Query]-margin {
+		// The tolerance keeps a hit right at the margin, which the
+		// subtraction's rounding can put a hair below it.
+		if h.Similarity >= floor && h.Similarity >= best[h.Query]-margin-1e-9 {
 			kept = append(kept, h)
 		}
 	}
