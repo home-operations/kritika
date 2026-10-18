@@ -1,6 +1,8 @@
 package github
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -13,7 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 func testKeyPEM(t *testing.T) (*rsa.PrivateKey, string) {
@@ -32,26 +35,57 @@ func TestAppJWTClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var claims jwt.RegisteredClaims
-	parsed, err := jwt.ParseWithClaims(tok, &claims, func(*jwt.Token) (any, error) { return &key.PublicKey, nil },
-		jwt.WithTimeFunc(func() time.Time { return now }))
-	if err != nil || !parsed.Valid {
+	parsed, err := jwt.ParseSigned(tok, []jose.SignatureAlgorithm{jose.RS256})
+	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if claims.Issuer != "Iv1.abc" {
-		t.Fatalf("issuer = %q", claims.Issuer)
+	if h := parsed.Headers[0]; h.ExtraHeaders[jose.HeaderType] != "JWT" {
+		t.Fatalf("header = %+v, want typ JWT", h)
 	}
-	if got := claims.IssuedAt.Time; !got.Equal(now.Add(-30 * time.Second)) {
+	var claims jwt.Claims
+	if err := parsed.Claims(&key.PublicKey, &claims); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if err := claims.ValidateWithLeeway(jwt.Expected{Issuer: "Iv1.abc", Time: now}, 0); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if got := claims.IssuedAt.Time(); !got.Equal(now.Add(-30 * time.Second)) {
 		t.Fatalf("iat = %v, want 30s backdated", got)
 	}
-	if got := claims.ExpiresAt.Time; !got.Equal(now.Add(9 * time.Minute)) {
+	if got := claims.Expiry.Time(); !got.Equal(now.Add(9 * time.Minute)) {
 		t.Fatalf("exp = %v, want now+9m (under GitHub's 10m cap)", got)
 	}
 }
 
-func TestNewAppRejectsBadKey(t *testing.T) {
-	if _, err := NewApp("Iv1.abc", "not a key", ""); err == nil {
-		t.Fatal("expected an error for an unparsable key")
+func TestNewAppKeys(t *testing.T) {
+	key, pkcs1 := testKeyPEM(t)
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkcs8 := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if der, err = x509.MarshalPKCS8PrivateKey(ec); err != nil {
+		t.Fatal(err)
+	}
+	ecPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	for _, tt := range []struct {
+		name, pem string
+		ok        bool
+	}{
+		{"a PKCS #1 key, as GitHub issues one", pkcs1, true},
+		{"a PKCS #8 RSA key", pkcs8, true},
+		{"not PEM", "not a key", false},
+		{"an EC key", ecPEM, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewApp("Iv1.abc", tt.pem, ""); (err == nil) != tt.ok {
+				t.Fatalf("NewApp = %v, want ok = %v", err, tt.ok)
+			}
+		})
 	}
 }
 
