@@ -4,8 +4,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -35,17 +37,16 @@ func TestAuthenticationOrigins(t *testing.T) {
 			{"HTTP default port", "http://ghe.example.org:80", "http://ghe.example.org/api/graphql", true},
 		} {
 			t.Run(kind+"/"+tt.name, func(t *testing.T) {
-				app, err := NewApp("Iv1.test", pemKey, tt.base)
-				if err != nil {
-					t.Fatal(err)
-				}
 				var auth string
 				calls := 0
-				app.limited.base = authRoundTripper(func(r *http.Request) (*http.Response, error) {
+				app, err := newApp("Iv1.test", pemKey, tt.base, authRoundTripper(func(r *http.Request) (*http.Response, error) {
 					calls++
 					auth = r.Header.Get("Authorization")
 					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
-				})
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
 				api := app.apps
 				if kind == "installation" {
 					tokens := app.InstallationTokens(7)
@@ -143,4 +144,48 @@ func TestAuthenticationRedirects(t *testing.T) {
 			})
 		}
 	}
+}
+
+// A request sent again after a rate limit is authorized again, so it
+// carries the token the installation holds after the wait, not the one it
+// went out with.
+func TestRateLimitRetryIsAuthorizedAgain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		_, pemKey := testKeyPEM(t)
+		var tokens *InstallationTokens
+		var sent []string
+		app, err := newApp("Iv1.test", pemKey, "", authRoundTripper(func(r *http.Request) (*http.Response, error) {
+			sent = append(sent, r.Header.Get("Authorization"))
+			if len(sent) > 1 {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+			}
+			tokens.mu.Lock()
+			tokens.tok = "ghs_refreshed"
+			tokens.mu.Unlock()
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {"30"}}, Body: http.NoBody, Request: r,
+			}, nil
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokens = app.InstallationTokens(7)
+		tokens.tok, tokens.exp = "ghs_first", time.Now().Add(time.Hour)
+		api, err := app.Client(tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/o/r", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := api.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if want := []string{"Bearer ghs_first", "Bearer ghs_refreshed"}; !slices.Equal(sent, want) {
+			t.Fatalf("sent %q, want %q", sent, want)
+		}
+	})
 }
