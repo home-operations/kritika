@@ -598,6 +598,31 @@ func TestCheckout(t *testing.T) {
 			t.Fatalf("stats = %+v, err = %v", stats, err)
 		}
 	})
+
+	// go-git's tree walk refuses a ".." entry before Checkout sees it, so
+	// the write is tried with one directly.
+	t.Run("a path out of dir is refused", func(t *testing.T) {
+		parent := t.TempDir()
+		dir := filepath.Join(parent, "checkout")
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = root.Close() })
+		f, err := testTree(t).File("main.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := writeFile(root, filepath.Join("..", "escape.go"), f); err == nil {
+			t.Fatal("../escape.go written")
+		}
+		if _, err := os.Stat(filepath.Join(parent, "escape.go")); !os.IsNotExist(err) {
+			t.Fatalf("escape.go beside dir: %v", err)
+		}
+	})
 }
 
 // symlinkTree is a commit holding a file and a symlink out of the tree.

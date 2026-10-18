@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/storage/memory"
 
 	"github.com/home-operations/kritika/internal/gittest"
 )
@@ -484,5 +485,47 @@ func TestNewerFirst(t *testing.T) {
 	want := []string{"v1.10.0-rc.1", "v1.10.0", "v1.9.0", "latest", "gpu-v0.12.1", "gpu-v0.12.0-chart", "gpu-v0.12.0", "0.0.10", "0.0.7"}
 	if !slices.Equal(tags, want) {
 		t.Fatalf("sorted = %q, want %q", tags, want)
+	}
+}
+
+// TestWriteBlobStaysInDest writes a ".." path directly: go-git's tree walk
+// refuses one before write sees it.
+func TestWriteBlobStaysInDest(t *testing.T) {
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	st := memory.NewStorage()
+	o := st.NewEncodedObject()
+	o.SetType(plumbing.BlobObject)
+	w, err := o.Writer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("escaped\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h, err := st.SetEncodedObject(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := object.GetBlob(st, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeBlob(root, filepath.Join("..", "escape"), blob); err == nil {
+		t.Fatal("../escape written")
+	}
+	if _, err := os.Stat(filepath.Join(parent, "escape")); !os.IsNotExist(err) {
+		t.Fatalf("escape beside dest: %v", err)
 	}
 }

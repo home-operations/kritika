@@ -29,12 +29,18 @@ type CheckoutStats struct {
 // Checkout writes the tree's files under dir, an empty directory, for the
 // commands the run tool executes. It skips ignored paths, files over the
 // read_file size cap and symlinks, which could point out of dir, and stops
-// before the total would pass maxBytes. Every file is written 0644,
+// before the total would pass maxBytes. Every file is written through an
+// os.Root on dir, which refuses a path that leads out of it, and 0644,
 // whatever mode git recorded: the commands read the checkout, and nothing
 // in it is meant to run.
 func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (CheckoutStats, error) {
 	var stats CheckoutStats
-	err := t.root.Files().ForEach(func(f *object.File) error {
+	dst, err := os.OpenRoot(dir)
+	if err != nil {
+		return stats, fmt.Errorf("agent: checkout: %w", err)
+	}
+	defer func() { _ = dst.Close() }()
+	err = t.root.Files().ForEach(func(f *object.File) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -46,12 +52,8 @@ func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (Checko
 			stats.Truncated = true
 			return storer.ErrStop
 		}
-		name, err := cleanPath(f.Name)
-		if err != nil {
-			return err
-		}
-		if err := writeFile(filepath.Join(dir, filepath.FromSlash(name)), f); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		if err := writeFile(dst, filepath.FromSlash(f.Name), f); err != nil {
+			return fmt.Errorf("%s: %w", f.Name, err)
 		}
 		stats.Files++
 		stats.Bytes += f.Size
@@ -63,8 +65,8 @@ func (t *Tree) Checkout(ctx context.Context, dir string, maxBytes int64) (Checko
 	return stats, nil
 }
 
-func writeFile(name string, f *object.File) error {
-	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+func writeFile(dst *os.Root, name string, f *object.File) error {
+	if err := dst.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
 	r, err := f.Reader()
@@ -73,7 +75,7 @@ func writeFile(name string, f *object.File) error {
 	}
 	defer func() { _ = r.Close() }()
 	// O_EXCL: a path is written once, never through whatever is there.
-	out, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	out, err := dst.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
