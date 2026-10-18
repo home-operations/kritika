@@ -15,6 +15,11 @@ import (
 // minRetention keeps transcripts and diffs available for at least a day.
 const minRetention = 24 * time.Hour
 
+// The comparison rules do not convert ByteSize, unlike time.Duration.
+func init() {
+	validate.AddCustomType(func(field reflect.Value) any { return field.Int() }, ByteSize(0))
+}
+
 // Validate checks runtime bounds shared by the process and file loaders.
 func (s Settings) Validate() error {
 	s.LogLevel = strings.ToLower(s.LogLevel)
@@ -22,10 +27,8 @@ func (s Settings) Validate() error {
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
-	v.AddRule("GatewayTokenTTL,GatewayCacheMaxAge,LeaderRetryInterval,ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
-	// The numeric rules do not read a named integer type.
-	v.AddValidator("size", func(b ByteSize) bool { return b > 0 })
-	v.AddRule("GatewayCacheMaxSize", "size")
+	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxAge,LeaderRetryInterval", "gt", 0)
+	v.AddRule("ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
 	v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
 	v.AddRule("LogLevel", "enum", slices.Sorted(maps.Keys(logLevels)))
@@ -35,7 +38,6 @@ func (s Settings) Validate() error {
 	v.AddRule("DatabaseRunnerRole", "neField", "DatabaseAppRole")
 	v.WithMessages(map[string]string{
 		"gt":             "{field} must be positive",
-		"size":           "{field} must be positive",
 		"gte":            "{field} must not be negative",
 		"min":            fmt.Sprintf("{field} must be at least %s", minRetention),
 		"LogLevel.enum":  "{field} must be debug, info, warn or error",

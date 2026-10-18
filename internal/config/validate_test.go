@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,25 @@ func TestSettingsValidation(t *testing.T) {
 				}
 			} else if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("LoadSettings = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
+// Parsing rejects a negative size, so the bounds are set directly.
+func TestCacheSizeBounds(t *testing.T) {
+	s, _, err := LoadSettings(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		size ByteSize
+		ok   bool
+	}{{math.MinInt64, false}, {-1, false}, {0, false}, {1, true}, {math.MaxInt64, true}} {
+		t.Run(fmt.Sprint(int64(tt.size)), func(t *testing.T) {
+			s.GatewayCacheMaxSize = tt.size
+			if err := s.Validate(); (err == nil) != tt.ok {
+				t.Fatalf("Validate = %v, want ok %t", err, tt.ok)
 			}
 		})
 	}
