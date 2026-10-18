@@ -18,6 +18,7 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
+	"cel.dev/cel-go/interpreter"
 )
 
 // Role is an instance-wide role a mapping may yield.
@@ -83,8 +84,9 @@ var (
 )
 
 // Compile parses and type-checks expr for kind. It fails when the
-// expression is not valid CEL, names a variable kind does not have, or
-// cannot yield a string or a map.
+// expression is not valid CEL, names a variable kind does not have, cannot
+// yield a string or a map, or gives matches() a constant pattern that is not
+// a valid regular expression.
 func Compile(kind Kind, expr string) (*Program, error) {
 	var newEnv func() (*cel.Env, error)
 	switch kind {
@@ -108,7 +110,9 @@ func Compile(kind Kind, expr string) (*Program, error) {
 	default:
 		return nil, fmt.Errorf("rolemap: expression must yield a role or a map of accounts to roles, got %s", ast.OutputType())
 	}
-	prg, err := env.Program(ast, cel.CostLimit(evalCostLimit))
+	// OptimizeRegex compiles a constant pattern here, so a malformed one
+	// fails Compile instead of every Eval.
+	prg, err := env.Program(ast, cel.CostLimit(evalCostLimit), cel.OptimizeRegex(interpreter.MatchesRegexOptimization))
 	if err != nil {
 		return nil, fmt.Errorf("rolemap: program: %w", err)
 	}

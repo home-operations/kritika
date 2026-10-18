@@ -15,6 +15,7 @@ func TestCompile_Invalid(t *testing.T) {
 		{"int literal not bool", "42"},
 		{"string literal not bool", `"main"`},
 		{"arithmetic not bool", "pr.number + 1"},
+		{"malformed regex", `pr.title.matches("(")`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -74,6 +75,7 @@ func TestEval(t *testing.T) {
 		{"exclude forks", "!pr.fork", sampleVars(map[string]any{"fork": true}), false},
 		{"label name in list", `"area/storage" in pr.labels.map(l, l.name)`, sampleVars(nil), true},
 		{"title prefix", `pr.title.startsWith("feat")`, sampleVars(nil), true},
+		{"title regex", `pr.title.matches("^feat\\(rook\\)")`, sampleVars(nil), true},
 		{"negated label combo", `pr.labels.exists(l, l.name == "cluster/production") && !pr.draft`, sampleVars(nil), true},
 		{"createdAt is a timestamp", `pr.createdAt < timestamp("2030-01-01T00:00:00Z")`, sampleVars(nil), true},
 	}

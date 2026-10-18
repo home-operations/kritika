@@ -178,6 +178,8 @@ func TestFiltersCompile(t *testing.T) {
 		{name: "exclude not a bool", filters: Filters{Exclude: []Filter{{Expr: "true"}, {Expr: "pr.title"}}}, want: "exclude[1]: "},
 		{name: "exclude fails the smoke test", filters: Filters{Exclude: []Filter{{Expr: `pr.labels[5].name == "x"`}}},
 			want: "exclude[0]: smoke test against a sample pull request"},
+		{name: "exclude with a malformed regex the smoke test does not reach", filters: Filters{Exclude: []Filter{{Expr: `pr.draft && pr.title.matches("(")`}}},
+			want: "exclude[0]: prfilter: program: error parsing regexp"},
 		{name: "include name given twice", filters: Filters{Include: []Filter{{Name: "a", Expr: "true"}, {Expr: "true"}, {Name: "a", Expr: "false"}}},
 			want: `include[2]: name "a" is given twice`},
 		{name: "exclude name given twice", filters: Filters{Exclude: []Filter{{Name: "a", Expr: "true"}, {Name: "a", Expr: "false"}}},

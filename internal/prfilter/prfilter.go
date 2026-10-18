@@ -23,6 +23,7 @@ import (
 	celast "cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/operators"
 	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/interpreter"
 )
 
 // Program is a compiled, type-checked PR-filter expression.
@@ -51,7 +52,8 @@ var newEnv = sync.OnceValues(func() (*cel.Env, error) {
 
 // Compile parses and type-checks expr and returns a runnable Program. It fails
 // when the expression is syntactically invalid, references unknown
-// variables/functions, or cannot produce a boolean.
+// variables/functions, cannot produce a boolean, or gives matches() a
+// constant pattern that is not a valid regular expression.
 func Compile(expr string) (*Program, error) {
 	env, err := newEnv()
 	if err != nil {
@@ -70,7 +72,9 @@ func Compile(expr string) (*Program, error) {
 	default:
 		return nil, fmt.Errorf("prfilter: expression must evaluate to a boolean, got %s", ast.OutputType())
 	}
-	prg, err := env.Program(ast, cel.CostLimit(evalCostLimit))
+	// OptimizeRegex compiles a constant pattern here, so a malformed one
+	// fails Compile instead of every Eval.
+	prg, err := env.Program(ast, cel.CostLimit(evalCostLimit), cel.OptimizeRegex(interpreter.MatchesRegexOptimization))
 	if err != nil {
 		return nil, fmt.Errorf("prfilter: program: %w", err)
 	}

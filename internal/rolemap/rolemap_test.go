@@ -17,6 +17,7 @@ func TestCompileRejects(t *testing.T) {
 		{"a variable of the other kind", OIDC, `login == "a" ? "admin" : ""`, "undeclared reference to 'login'"},
 		{"a boolean", GitHub, `"org-1" in orgs`, "must yield a role or a map"},
 		{"a number", GitHub, `1`, "must yield a role or a map"},
+		{"a malformed regex", GitHub, `login.matches("(") ? "admin" : ""`, "missing closing )"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := Compile(tt.kind, tt.expr); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -47,6 +48,7 @@ func TestEval(t *testing.T) {
 		{"nobody", OIDC, `"kritika-admin" in roles ? "admin" : ""`, oidc("other"), Result{}},
 		{"a claim", OIDC, `claims.sub == "x" ? "member" : ""`, oidc(), Result{Role: RoleMember}},
 		{"an admin by login", GitHub, `login == "user-1" ? "admin" : ""`, github("user-1"), Result{Role: RoleAdmin}},
+		{"an admin by login pattern", GitHub, `login.matches("^user-[0-9]+$") ? "admin" : ""`, github("user-1"), Result{Role: RoleAdmin}},
 		{"accounts by map", GitHub, `{"github/Org-2": "member", "github/org-3": ""}`, github("x"),
 			Result{Accounts: map[string]bool{"github/org-2": true}}},
 		{"every account", OIDC, `{"*": "member"}`, oidc(), Result{Accounts: map[string]bool{AllAccounts: true}}},
