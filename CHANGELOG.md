@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.80](https://github.com/home-operations/kritika/compare/0.0.79...0.0.80) (2026-10-18)
+
+
+### Code Refactoring
+
+* **config:** compare the cache size with the built-in rule ([#1073](https://github.com/home-operations/kritika/issues/1073)) ([917269d](https://github.com/home-operations/kritika/commit/917269d9cec5deb26a981656bd611b3317d8a917))
+* **web:** draw the select-all, diff scope and refused-host bars on Bits UI ([#1075](https://github.com/home-operations/kritika/issues/1075)) ([a333c58](https://github.com/home-operations/kritika/commit/a333c5809f86c48d52afd7d0323955fd6fbc822f))
+
 ## [0.0.79](https://github.com/home-operations/kritika/compare/0.0.78...0.0.79) (2026-10-18)
 
 
