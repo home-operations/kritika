@@ -638,13 +638,25 @@ func TestOpenAIPartHeader(t *testing.T) {
 func TestOpenAIClientsDropEnvironmentHeaders(t *testing.T) {
 	t.Setenv("OPENAI_ORG_ID", "org-env")
 	t.Setenv("OPENAI_PROJECT_ID", "proj-env")
-	t.Setenv("OPENAI_CUSTOM_HEADERS", "X-From-Env: leaked\nX-Also: leaked")
+	t.Setenv("OPENAI_CUSTOM_HEADERS", "X-From-Env: leaked\nX-Also: leaked\ncontent-type: text/plain\nAccept: text/plain\nAuthorization: Bearer env\nUser-Agent: env")
 	check := func(t *testing.T, h http.Header) {
 		t.Helper()
 		for _, name := range []string{"OpenAI-Organization", "OpenAI-Project", "X-From-Env", "X-Also"} {
 			if v := h.Get(name); v != "" {
 				t.Errorf("%s = %q came from the environment", name, v)
 			}
+		}
+		if got := h.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", got)
+		}
+		if got := h.Get("Accept"); got != "application/json" {
+			t.Errorf("Accept = %q, want application/json", got)
+		}
+		if got := h.Get("User-Agent"); got != userAgent() {
+			t.Errorf("User-Agent = %q, want %q", got, userAgent())
+		}
+		if got := h.Get("Authorization"); got == "" || got == "Bearer env" {
+			t.Errorf("Authorization = %q, want the configured credential", got)
 		}
 	}
 	t.Run("openai", func(t *testing.T) {
