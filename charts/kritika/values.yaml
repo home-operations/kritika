@@ -361,7 +361,7 @@ gatewayCache:
     region: ""
     # -- Address buckets in the URL path instead of requiring wildcard bucket DNS.
     forcePathStyle: true
-    # -- Secret containing accessKeyId and secretAccessKey. Empty uses the SDK's IAM credentials. Only serve receives these credentials.
+    # -- Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY keys, as a Rook ObjectBucketClaim or the AWS tooling writes them. Empty uses the SDK's IAM credentials. Only serve receives these credentials.
     existingSecret: ""
 
 serviceAccount:

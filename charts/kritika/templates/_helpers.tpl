@@ -230,12 +230,12 @@ an `env` key that would duplicate one of them.
   valueFrom:
     secretKeyRef:
       name: {{ tpl .Values.gatewayCache.storage.existingSecret . | quote }}
-      key: accessKeyId
+      key: AWS_ACCESS_KEY_ID
 - name: KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY
   valueFrom:
     secretKeyRef:
       name: {{ tpl .Values.gatewayCache.storage.existingSecret . | quote }}
-      key: secretAccessKey
+      key: AWS_SECRET_ACCESS_KEY
 {{- end }}
 - name: KRITIKA_DATABASE_URL
   valueFrom:

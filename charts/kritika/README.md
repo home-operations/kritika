@@ -244,7 +244,7 @@ Kubernetes: `>=1.34.0-0`
 | gatewayCache.maxEntrySize | string | `"256Mi"` | Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi. |
 | gatewayCache.storage.bucket | string | `""` | Existing S3 bucket. Provision its credentials and retention outside this chart. |
 | gatewayCache.storage.endpoint | string | `""` | S3 API origin, including http:// or https:// and an optional port; no bucket path. |
-| gatewayCache.storage.existingSecret | string | `""` | Secret containing accessKeyId and secretAccessKey. Empty uses the SDK's IAM credentials. Only serve receives these credentials. |
+| gatewayCache.storage.existingSecret | string | `""` | Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY keys, as a Rook ObjectBucketClaim or the AWS tooling writes them. Empty uses the SDK's IAM credentials. Only serve receives these credentials. |
 | gatewayCache.storage.forcePathStyle | bool | `true` | Address buckets in the URL path instead of requiring wildcard bucket DNS. |
 | gatewayCache.storage.maxSize | string | `"2Gi"` | Filesystem storage only: retained-entry budget, and separately the aggregate fill budget. Allow twice this plus evicted files still being served. S3's private local cache instead uses eight times maxEntrySize for each budget; this does not bound bucket usage. |
 | gatewayCache.storage.prefix | string | `"gateway/"` | Object prefix dedicated to this instance. Kritika appends the storage format version. |

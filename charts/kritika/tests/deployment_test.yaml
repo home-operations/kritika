@@ -464,13 +464,13 @@ tests:
           content:
             name: KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY
             valueFrom:
-              secretKeyRef: { name: cache-credentials, key: accessKeyId }
+              secretKeyRef: { name: cache-credentials, key: AWS_ACCESS_KEY_ID }
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY
             valueFrom:
-              secretKeyRef: { name: cache-credentials, key: secretAccessKey }
+              secretKeyRef: { name: cache-credentials, key: AWS_SECRET_ACCESS_KEY }
       - contains:
           path: spec.template.spec.volumes
           content: { name: gateway-cache, emptyDir: {} }

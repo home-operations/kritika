@@ -510,7 +510,9 @@ gatewayCache:
     existingSecret: kritika-cache-s3
 ```
 
-The existing Secret has `accessKeyId` and `secretAccessKey` keys. Without it, the
+The existing Secret has `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` keys, the
+names a Rook `ObjectBucketClaim` and the AWS tooling write, so a claim's generated
+Secret can be named directly. Without it, the
 SDK uses IAM credentials, including web identity where configured. Credentials
 are never passed to runner Jobs or stored in application configuration. The
 chart permits the endpoint's TCP port in serve's network policy; runner egress

@@ -357,7 +357,7 @@
             },
             "existingSecret": {
               "default": "",
-              "description": "Secret containing accessKeyId and secretAccessKey. Empty uses the SDK's IAM credentials. Only serve receives these credentials.",
+              "description": "Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY keys, as a Rook ObjectBucketClaim or the AWS tooling writes them. Empty uses the SDK's IAM credentials. Only serve receives these credentials.",
               "title": "existingSecret",
               "type": "string"
             },
