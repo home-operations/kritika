@@ -189,7 +189,7 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 		return errS3CircuitOpen
 	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, s3UploadTimeout)
+	ctx, cancel := context.WithTimeout(ctx, uploadDeadline(entry.Size))
 	defer cancel()
 	started := time.Now()
 	defer func() {

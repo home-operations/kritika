@@ -321,6 +321,16 @@ func TestS3UploadDeadlineAndRecovery(t *testing.T) {
 		if err := c.upload(t.Context(), key); err != nil {
 			t.Fatalf("upload recovery: %v", err)
 		}
+		// A large entry gets a deadline it can meet at s3UploadRate.
+		healthy.Store(false)
+		large := cacheEntry{URL: "https://example.com/large", Size: 3 << 20, Stored: time.Now().UnixMilli()}
+		if err := c.store(cacheKey(large.URL), large, strings.NewReader(strings.Repeat("x", int(large.Size)))); err != nil {
+			t.Fatal(err)
+		}
+		started := time.Now()
+		if err := c.upload(t.Context(), cacheKey(large.URL)); err == nil || time.Since(started) != s3UploadTimeout+3*time.Second {
+			t.Fatalf("large upload: %v after %s", err, time.Since(started))
+		}
 	})
 }
 

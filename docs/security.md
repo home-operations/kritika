@@ -542,8 +542,9 @@ streamed, not added to local storage.
 Uploads use two workers and a queue of at most 16 keys per replica. A full queue,
 failed upload or entry evicted before upload leaves the download usable locally
 when still present. The requesting install never waits for publication. Each
-upload has a 30-second deadline; shutdown cancels active uploads and drops queued
-keys. Failed or skipped uploads are not retried in the background.
+upload has a deadline of 30 seconds plus one second per MiB of the entry, so a
+slow link fails only below about 1 MiB/s; shutdown cancels active uploads and
+drops queued keys. Failed or skipped uploads are not retried in the background.
 
 Metadata lookups have a two-second total deadline. Credential discovery has its
 own two-second budget, including SDK refreshes detached from the request.

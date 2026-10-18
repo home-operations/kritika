@@ -15,6 +15,10 @@ const (
 	s3LookupTimeout = 2 * time.Second
 	s3ReadTimeout   = 10 * time.Second
 	s3UploadTimeout = 30 * time.Second
+	// s3UploadRate is the slowest upload allowed past the fixed budget: one
+	// second per MiB, so a 256Mi entry has about five minutes and the 5Gi
+	// cap about ninety, instead of a deadline no large entry could meet.
+	s3UploadRate    = 1 << 20
 	s3Cooldown      = 30 * time.Second
 	s3Failures      = 3
 	s3UploadWorkers = 2
@@ -22,6 +26,11 @@ const (
 )
 
 var errS3CircuitOpen = errors.New("egress: cache: S3 circuit is open")
+
+// uploadDeadline is the fixed budget plus what size bytes take at s3UploadRate.
+func uploadDeadline(size int64) time.Duration {
+	return s3UploadTimeout + time.Duration(size/s3UploadRate)*time.Second
+}
 
 // The SDK detaches credential refresh from request cancellation and holds its
 // credential mutex during retrieval, so discovery needs its own total budget.

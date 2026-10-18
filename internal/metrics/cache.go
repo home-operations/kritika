@@ -38,7 +38,7 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		}, []string{"source", lblOutcome}),
 		operations: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_cache_operation_seconds", Help: "Cache operation wall time, including failed operations and canceled reads.",
-			Buckets: []float64{0.005, 0.025, 0.1, 0.5, 1, 5, 15, 30, 60, 120},
+			Buckets: []float64{0.005, 0.025, 0.1, 0.5, 1, 5, 15, 30, 60, 120, 300, 600},
 		}, []string{"operation", lblOutcome}),
 		active: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "kritika_cache_active_fills", Help: "Origin fills currently in progress on this replica, excluding background S3 uploads.",
