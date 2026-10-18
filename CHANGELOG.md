@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.82](https://github.com/home-operations/kritika/compare/0.0.81...0.0.82) (2026-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cache:** add shared S3 storage and usage observability ([#1088](https://github.com/home-operations/kritika/issues/1088))
+
+### Features
+
+* **cache:** add shared S3 storage and usage observability ([#1088](https://github.com/home-operations/kritika/issues/1088)) ([0e7d1ad](https://github.com/home-operations/kritika/commit/0e7d1ad5af5cc48bbe430d59783d74eca08e163e))
+
 ## [0.0.81](https://github.com/home-operations/kritika/compare/0.0.80...0.0.81) (2026-10-18)
 
 
