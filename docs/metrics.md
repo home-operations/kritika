@@ -1,5 +1,18 @@
 # Metrics
 
+For a basic monitoring setup, enable the chart's ServiceMonitor and use its
+[alerts](#alerts) and [Grafana dashboards](#grafana-dashboard).
+
+```yaml
+monitoring:
+  serviceMonitor:
+    enabled: true
+```
+
+This requires the Prometheus Operator. For a failed or stuck review, the
+[dashboard Queue](dashboard.md#queue) is usually the quickest place to start.
+The tables below are the metric reference for custom queries and alerts.
+
 The management port serves `/metrics` alongside `/healthz` and `/readyz`.
 Beyond the Go runtime and process collectors and
 `promhttp_metric_handler_errors_total`, every series is prefixed `kritika_`,

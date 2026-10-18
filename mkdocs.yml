@@ -117,19 +117,19 @@ plugins:
   - search
 
 nav:
-  - Introduction: index.md
-  - Getting started:
-      - Setup: setup.md
-      - Postgres with CloudNativePG: database.md
-      - Security: security.md
-  - Configuration:
-      - Configuration file: configuration.md
-      - Models: models.md
-      - Repository settings: repository-config.md
-      - Helm chart values: chart-values.md
+  - Start here: index.md
+  - Setup: setup.md
   - Using kritika:
-      - Reviews: reviews.md
-      - Confidence and approvals: confidence.md
+      - Reviews and commands: reviews.md
       - Dashboard: dashboard.md
-      - Metrics: metrics.md
+      - Repository settings: repository-config.md
+      - Confidence and approvals: confidence.md
+  - Operations:
+      - Database: database.md
+      - Security: security.md
+      - Monitoring: metrics.md
+  - Reference:
+      - Configuration: configuration.md
+      - Models and providers: models.md
+      - Helm values: chart-values.md
   - Development: development.md

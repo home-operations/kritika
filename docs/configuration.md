@@ -1,47 +1,42 @@
 # Configuration
 
-The YAML configuration file is the primary interface for application settings:
-sign-in, GitHub Apps, providers, review policy, logging, workers, polling and
-retention. `KRITIKA_CONFIG_FILE` names the file and is required by `serve` and `chatgpt login`.
-Helm's `config` uses exactly that document structure and renders it into a
-ConfigMap.
+For a first installation, use [Setup](setup.md). This page is the full settings
+reference.
 
-- **Secrets** are references such as `{ env: ADMIN_PASSWORD }`, never literal
-  values in the file. Helm's `env` and `envFrom` supply those variables from
-  existing Secrets. kritika removes secret variables from its environment
-  after reading them. Database connection strings remain bootstrap variables:
-  `KRITIKA_DATABASE_URL`, `KRITIKA_DATABASE_OWNER_URL`, and, for the local
-  executor, `KRITIKA_RUNNER_DATABASE_URL`.
-- **Deployment settings** belong in Helm's `runner`, `database`, `service` and
-  other Kubernetes values. The chart derives the corresponding file settings
-  and rejects duplicates under `config`. In particular, use `runner.jobTemplate`
-  and `runner.podTemplate` for runner Jobs.
-- **Existing ConfigMaps** can supply `config.yaml` through `existingConfigMap`
-  instead of inline `config`. Setting both is an error. The external file
-  supplies `webUrl` and application settings; the chart supplies deployment
-  settings through environment variables. Omit chart-owned keys from that file:
-  `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
-  `databaseRunnerRole`, `executor`, and `runner`.
-- **Operational settings** support either file or environment: logging, listen
-  addresses, workers, polling, retention, database role names, executor and
-  runner settings. A setting cannot appear in both sources, even with the same
-  value. Conflicts fail startup with the relevant names. Omitted settings use
-  application defaults; explicit `false` and `0` remain explicit values.
-- **Application declarations and policy** use the file: `auth`, `apps`,
-  `providers`, `embedding`, review policy, account and repository settings.
-  Environment variables only supply values explicitly referenced by these
-  sections.
-- **Startup** reads and validates the document at startup; changes require
-  a restart. Unknown keys and invalid values fail startup. Runtime validation
-  reports all failing bounds together, with file paths and environment
-  variable names. Durations use strings such as `10m` or `0s`.
-  The chart rolls pods
-  when its rendered configuration changes. External ConfigMap and Secret changes
-  require a restart or a controller such as Reloader.
+## Where settings go
 
-The dashboard controls whether each repository is enabled. A repository's own
-[`.kritika.yaml`](repository-config.md) narrows the configured policy.
-CEL expression keys end in `Expr`, or use `expr` within a condition.
+| What you want to change | Where to put it |
+| --- | --- |
+| Sign-in, GitHub Apps, providers and review policy | Helm's `config`, or the application YAML file. |
+| Database connections, ingress and runner pods | Helm values such as `database`, `ingress` and `runner`. |
+| Passwords and API keys | Kubernetes Secrets, exposed through `env` or `envFrom`. |
+| Rules for one repository | An optional [`.kritika.yaml`](repository-config.md). |
+| Enable or disable a repository | The dashboard's Repositories page. |
+
+Examples on this page use application YAML unless they show a `config` wrapper.
+For Helm, put that YAML under `config` in your values file.
+
+Secrets use references such as `{ env: ADMIN_PASSWORD }`. Do not put secret
+values in the file. The [setup example](setup.md#deploy) shows the wiring.
+
+## Applying changes
+
+kritika reads configuration at startup. Helm rolls pods when `config` changes.
+External ConfigMap changes and secret rotations need a restart or Reloader.
+Unknown keys, invalid values and duplicate file/environment settings fail startup.
+Use durations such as `10m`; omit a setting to use its default. Explicit `false`
+and `0` are preserved.
+
+For an external ConfigMap, set `existingConfigMap` instead of `config`. It must
+contain `config.yaml` with `webUrl` and application settings. Omit chart-owned
+keys: `addr`, `metricsAddr`, `gatewayAddr`, `gatewayUrl`, `databaseAppRole`,
+`databaseRunnerRole`, `executor` and `runner`.
+
+Outside Helm, `KRITIKA_CONFIG_FILE` names the file and is required by `serve`
+and `chatgpt login`. Operational settings can also come from environment
+variables, but the same setting cannot appear in both sources. Application
+policy uses the file; environment variables supply only explicitly referenced
+values. CEL expression keys end in `Expr`, or use `expr` inside a condition.
 
 ## Helm templates
 
@@ -79,58 +74,6 @@ These inputs have no configuration-file equivalent:
 The service supplies per-run inputs to runner Jobs. Secret references such as
 `{ env: OPENROUTER_API_KEY }` can use any environment variable name; the file
 defines how that value is used.
-
-## Migrating Helm values
-
-Move the contents of `configFile` into `config`. Move flat policy keys into
-their YAML sections, for example
-`config.reviewModel` becomes `config.review.model`, and
-`config.authAdminPassword` becomes `config.auth.admin.password: { env: ADMIN_PASSWORD }`.
-Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.
-Move `config.runnerRuntimeClass` to `runner.podTemplate.spec.runtimeClassName`
-and `config.runnerDeadline` to `runner.jobTemplate.spec.activeDeadlineSeconds`,
-in seconds. Runtime keys such as
-`config.logLevel`, `config.reviewWorkers` and `config.pollInterval` keep their names.
-Move automatic auth, app, provider and policy env configuration into the file;
-those env names no longer configure the application implicitly. Existing secret
-variable names can still be used in explicit `{ env: NAME }` references.
-Remove old empty-string duration placeholders such as `config.pollInterval: ""`;
-omit the key to use its default. The chart rejects empty duration strings.
-Operational env settings remain supported. Remove their corresponding variables
-from `env` or `envFrom` when moving them into the file, to avoid duplicates.
-
-Example Helm values:
-
-```yaml
-config:
-  webUrl: https://kritika.example.com
-  logLevel: info
-  reviewWorkers: 2
-  pollInterval: 10m
-  auth:
-    admin:
-      password: { env: ADMIN_PASSWORD }
-  providers:
-    openrouter:
-      type: openrouter
-      apiKey: { env: OPENROUTER_API_KEY }
-  review:
-    model: openrouter/vendor/large-model
-runner:
-  jobTemplate:
-    spec:
-      activeDeadlineSeconds: 1200
-  podTemplate:
-    spec:
-      runtimeClassName: gvisor
-env:
-  ADMIN_PASSWORD:
-    valueFrom:
-      secretKeyRef: { name: kritika-auth, key: password }
-  OPENROUTER_API_KEY:
-    valueFrom:
-      secretKeyRef: { name: kritika-models, key: openrouter }
-```
 
 ## `auth`
 
@@ -747,3 +690,55 @@ Other file settings are `webUrl` (required public URL), `addr`, `metricsAddr`,
 values. The `runner` section also accepts `image`, `serviceAccount`,
 `databaseSecret`, `databaseSecretKey` and `ttl`; the chart derives these from
 its runner and database values. Database Secret names are references, not DSNs.
+
+## Migrating Helm values
+
+Move the contents of `configFile` into `config`. Move flat policy keys into
+their YAML sections, for example
+`config.reviewModel` becomes `config.review.model`, and
+`config.authAdminPassword` becomes `config.auth.admin.password: { env: ADMIN_PASSWORD }`.
+Move the old password's `valueFrom` into `env.ADMIN_PASSWORD`.
+Move `config.runnerRuntimeClass` to `runner.podTemplate.spec.runtimeClassName`
+and `config.runnerDeadline` to `runner.jobTemplate.spec.activeDeadlineSeconds`,
+in seconds. Runtime keys such as
+`config.logLevel`, `config.reviewWorkers` and `config.pollInterval` keep their names.
+Move automatic auth, app, provider and policy env configuration into the file;
+those env names no longer configure the application implicitly. Existing secret
+variable names can still be used in explicit `{ env: NAME }` references.
+Remove old empty-string duration placeholders such as `config.pollInterval: ""`;
+omit the key to use its default. The chart rejects empty duration strings.
+Operational env settings remain supported. Remove their corresponding variables
+from `env` or `envFrom` when moving them into the file, to avoid duplicates.
+
+Example Helm values:
+
+```yaml
+config:
+  webUrl: https://kritika.example.com
+  logLevel: info
+  reviewWorkers: 2
+  pollInterval: 10m
+  auth:
+    admin:
+      password: { env: ADMIN_PASSWORD }
+  providers:
+    openrouter:
+      type: openrouter
+      apiKey: { env: OPENROUTER_API_KEY }
+  review:
+    model: openrouter/vendor/large-model
+runner:
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1200
+  podTemplate:
+    spec:
+      runtimeClassName: gvisor
+env:
+  ADMIN_PASSWORD:
+    valueFrom:
+      secretKeyRef: { name: kritika-auth, key: password }
+  OPENROUTER_API_KEY:
+    valueFrom:
+      secretKeyRef: { name: kritika-models, key: openrouter }
+```

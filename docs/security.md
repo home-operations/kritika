@@ -1,20 +1,27 @@
 # Security
 
-A review feeds untrusted content, a pull request's code and description
-and whatever its commands fetch, to a model that can run tools. kritika
-does that in a runner pod that holds little and reaches little, and keeps
-what a pull request could use to weaken its own review out of its reach.
+Reviews process untrusted code and text. Each review runs in a separate pod
+with limited credentials. Use the deployment controls below to restrict what
+that pod can reach.
 
 ## Hardening an install
 
-| Do                                                     | Why                                                                                                                                                                                           |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Install kritika into a namespace of its own            | runner Jobs run in the release namespace, and kritika's Role can create Secrets there, though it can never get, list, change or delete one                                                    |
-| Keep `runner.admissionPolicy.enabled`, the default     | the cluster then refuses, from kritika serve's ServiceAccount, any Job but a runner Job as kritika builds it and any Secret but a run's; without it the Role lets kritika serve create a Job whose pod runs as another ServiceAccount, mounts another Secret, or, where Pod Security is not enforced, reaches the node itself |
-| Turn on the chart's `networkPolicy.enabled`            | a runner pod can then reach nothing but the cluster's DNS, the database `networkPolicy.postgres` locates ([Postgres](database.md#secrets-and-connection-uris)) and the [egress gateway](#the-egress-gateway) |
-| Set `runner.podTemplate.spec.runtimeClassName` to a sandboxed runtime | a kernel vulnerability reachable from the pod is contained by the sandbox rather than the node ([runner sandbox](#runner-sandbox))                                                            |
-| Set `runner.podTemplate.spec.resources`                | a runaway run is killed in its own cgroup rather than pressing on its node                                                                                                                    |
-| Map roles on what the IdP controls                     | a role mapping is only as trustworthy as what it reads: map on groups or roles, not on an email or name a user can set on their own profile ([role mappings](configuration.md#role-mappings)) |
+| Setting or action | Why it matters |
+| --- | --- |
+| Use a dedicated namespace. | kritika can create Jobs and Secrets in its namespace. |
+| Keep `runner.admissionPolicy.enabled` on. | Restricts the Jobs and Secrets the service can create to the expected runner forms. |
+| Enable `networkPolicy.enabled`. | Restricts runners to DNS, Postgres and the gateway. Configure [database](database.md#secrets-and-connection-uris) and [DNS](#name-lookups) destinations for your cluster. |
+| Set `runner.podTemplate.spec.runtimeClassName`. | Uses an installed sandboxed runtime, such as gVisor, to isolate untrusted work. |
+| Set `runner.podTemplate.spec.resources`. | Limits the CPU and memory a runner can consume. |
+| Map sign-in roles from trusted groups or roles. | Avoids granting access from profile fields users can change themselves. See [role mappings](configuration.md#role-mappings). |
+
+Without the admission policy, the service's Role can create Jobs that mount
+other Secrets or use other ServiceAccounts. Without enforced Pod Security,
+those Jobs may also reach the node. A dedicated namespace alone does not
+replace these controls.
+
+The rest of this page explains credentials, network access and runner tools.
+For runner resource and runtime examples, go to [Runner sandbox](#runner-sandbox).
 
 ## What a runner holds
 
