@@ -14,6 +14,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -33,10 +34,16 @@ type Management struct {
 
 // NewManagement builds a management listener bound to addr with its own
 // Prometheus registry, so tests can construct several without colliding on
-// the default global registry.
-func NewManagement(addr string, logger *slog.Logger) *Management {
+// the default global registry. The registry starts with the Go runtime and
+// process collectors, and kritika_build_info for version and commit.
+func NewManagement(addr, version, commit string, logger *slog.Logger) *Management {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "kritika_build_info",
+		Help:        "Always 1; the labels name the running build.",
+		ConstLabels: prometheus.Labels{"version": version, "revision": commit},
+	}, func() float64 { return 1 })
 	return &Management{addr: addr, registry: reg, logger: logger}
 }
 
@@ -60,7 +67,10 @@ func (m *Management) Handler() http.Handler {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.Handle("GET /metrics", promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{}))
+	mux.Handle("GET /metrics", promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
+		ErrorLog: slog.NewLogLogger(m.logger.With("listener", "management").Handler(), slog.LevelError),
+		Registry: m.registry,
+	}))
 	return mux
 }
 

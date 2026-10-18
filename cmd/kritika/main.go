@@ -121,7 +121,7 @@ func run() (err error) {
 
 	// The management listener comes up first so liveness answers while the
 	// database is still starting.
-	mgmt := server.NewManagement(cfg.MetricsAddr, logger)
+	mgmt := server.NewManagement(cfg.MetricsAddr, version, commit, logger)
 	g, ctx := errgroup.WithContext(ctx)
 	// Whatever ends run ends the group's goroutines first, and run waits
 	// for them before the store closes: the close waits for every

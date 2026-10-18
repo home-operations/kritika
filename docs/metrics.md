@@ -1,8 +1,11 @@
 # Metrics
 
 The management port serves `/metrics` alongside `/healthz` and `/readyz`.
-Beyond the Go runtime and process collectors, every series is prefixed
-`kritika_`, and none is labelled by pull request or commit. The chart's
+Beyond the Go runtime and process collectors and
+`promhttp_metric_handler_errors_total`, every series is prefixed `kritika_`,
+and none is labelled by a reviewed pull request or commit. A scrape that
+fails is logged at error level and counted in
+`promhttp_metric_handler_errors_total` by cause: gathering or encoding. The chart's
 `monitoring.serviceMonitor.enabled` creates a Prometheus Operator
 `ServiceMonitor` for it.
 
@@ -38,6 +41,7 @@ Beyond the Go runtime and process collectors, every series is prefixed
 | `kritika_config_drift`                  |                                | 1 while this replica's file differs from the applied one                                                                                                                                                              |
 | `kritika_config_error`                  |                                | 1 while the leader's latest attempt to apply the configuration to the store was refused; the last applied configuration stays live meanwhile                                                                          |
 | `kritika_leader`                        |                                | 1 while this replica holds the leader lock                                                                                                                                                                            |
+| `kritika_build_info`                    | version, revision              | always 1, labelled with the running build's version and the commit it was built from                                                                                                                                  |
 
 ## Queue and vector-search measurements
 

@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -10,10 +12,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestManagementHandler(t *testing.T) {
-	m := NewManagement(":0", slog.New(slog.DiscardHandler))
+	m := NewManagement(":0", "v1.2.3", "abc1234", slog.New(slog.DiscardHandler))
 	srv := httptest.NewServer(m.Handler())
 	defer srv.Close()
 
@@ -57,6 +62,49 @@ func TestManagementHandler(t *testing.T) {
 			t.Fatal("expected go_goroutines in /metrics output")
 		}
 	})
+
+	t.Run("metrics has the build info", func(t *testing.T) {
+		want := `# HELP kritika_build_info Always 1; the labels name the running build.
+# TYPE kritika_build_info gauge
+kritika_build_info{revision="abc1234",version="v1.2.3"} 1
+`
+		if err := testutil.GatherAndCompare(m.Registry(), strings.NewReader(want), "kritika_build_info"); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// brokenCollector fails every gather.
+type brokenCollector struct{ desc *prometheus.Desc }
+
+func (c brokenCollector) Describe(ch chan<- *prometheus.Desc) { ch <- c.desc }
+
+func (c brokenCollector) Collect(ch chan<- prometheus.Metric) {
+	ch <- prometheus.NewInvalidMetric(c.desc, errors.New("broken"))
+}
+
+func TestManagementMetricsGatherError(t *testing.T) {
+	var logs bytes.Buffer
+	m := NewManagement(":0", "dev", "unknown", slog.New(slog.NewTextHandler(&logs, nil)))
+	broken := brokenCollector{desc: prometheus.NewDesc("test_broken", "Fails every gather.", nil, nil)}
+	m.Registry().MustRegister(broken)
+	rec := httptest.NewRecorder()
+	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("GET /metrics = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if !strings.Contains(logs.String(), "level=ERROR") || !strings.Contains(logs.String(), "broken") {
+		t.Fatalf("log = %q, want the gather error at ERROR", logs.String())
+	}
+	m.Registry().Unregister(broken)
+	want := `# HELP promhttp_metric_handler_errors_total Total number of internal errors encountered by the promhttp metric handler.
+# TYPE promhttp_metric_handler_errors_total counter
+promhttp_metric_handler_errors_total{cause="encoding"} 0
+promhttp_metric_handler_errors_total{cause="gathering"} 1
+`
+	if err := testutil.GatherAndCompare(m.Registry(), strings.NewReader(want), "promhttp_metric_handler_errors_total"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPublicRouting(t *testing.T) {
