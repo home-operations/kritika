@@ -1,197 +1,118 @@
 # Reviews
 
-What kritika does on a pull request: when it reviews one, what it posts,
-and the commands that steer it.
-
-## When a review runs
-
-| What happens                                           | What kritika reviews                                                                                                                              |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The pull request opens, reopens or is ready for review | its head, unless a review has already seen it                                                                                                     |
-| A push                                                 | the new head, at once: only what changed since the last review, unless more files moved than `review.incremental` allows                          |
-| A label is added or removed                            | the head, only if it has no review yet: the trigger lists kept it out, or its review failed                                                       |
-| A poll finds a push the webhook missed                 | the new head, or a head whose review failed, once                                                                                                 |
-| `@<bot> review`, or a re-run from the dashboard        | the whole pull request at its head, even one the admin's trigger lists keep out, that is paused, or that is merged or closed                      |
-
-Drafts, forks and bots' pull requests are reviewed like any other unless a
-`trigger.exclude` condition keeps them out
-([which pull requests are reviewed](configuration.md#which-pull-requests-are-reviewed)).
-A bot's rebase that leaves its patch unchanged is skipped, unless a
-confidence score is asked for and its last review has none. A pull request
-stops getting automatic reviews after `trigger.limit` of them, or once
-someone comments `@<bot> pause`, and gets none once it is merged or
-closed. A review asked for then is a look back at its last head, for what
-a review missed: it posts its summary and findings, but sets no commit
-status and approves nothing. Where a merge commit or a fast-forward put
-the head in its base branch, it diffs against the merge base the last
-review used; with none, nothing is left to review, and kritika says so.
-
-### Overlapping reviews
-
-The last review to start owns the pull request. A review that starts
-while an older review of the same pull request is still running or
-publishing, whatever head either is of, cancels it: the older runner is
-stopped and its model slot freed, it posts nothing more and leaves the
-commit status and approval to the newer review, and the dashboard shows
-it canceled with a link to the review that replaced it. What it spent is
-still recorded. A review that is only queued, waiting for a slot or for a
-retry, cancels nothing until it starts, and a queued review of a head the
-pull request has moved past ends superseded instead of starting. A
-canceled review stays canceled: it is not retried, and when the review
-that replaced it fails, that failure is what is reported.
-
-A start that finds the pull request's previous review posting its result
-waits for that to finish, so a review either posts in full or never
-posts. `@<bot> review` and a dashboard re-run do not start a second review
-of a head whose review is already queued or running: the request is
-refused as busy ([actions](dashboard.md#actions)), and the running review
-stands in for it.
-
-A review whose runner never starts, its pod refused by the namespace or
-unable to start for three minutes, or whose runner pod Kubernetes stops
-for its own reasons, by a node drain, a preemption or an eviction, ends
-superseded and runs again in a new pod until its job's attempts run out;
-one that starts over pays for its model calls again. A runner that fails
-on its own, by its commands, its deadline or its memory limit, fails the
-review. A mention's answer is retried the same way.
-
-## What it posts
-
-| What              | Where                                                                                                                                                                |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The summary       | one comment, which each review edits                                                                                                                                 |
-| Findings          | inline comments on the lines they concern, each with its severity, category, explanation, a one-click suggestion where it has a fix, and a prompt for a coding agent |
-| The commit status | `Kritika / Review`, on the head commit                                                                                                                               |
-| Reactions         | 👀 on the pull request while a review runs, then 👍 once one is posted or 😕 when it failed, until `@<bot> review` or a re-run posts one; a mention kritika answers gets the same, and an `@<bot> review` comment the same for the review it asked for ([permissions](setup.md#register-the-github-app)) |
-| An approval       | with `review.approve` on ([approvals](confidence.md#approvals))                                                                                                      |
-
-Once the findings, summary and confidence score are finalized, kritika saves
-what it needs to publish them. If delivery fails or the worker restarts,
-the job resumes publication from that checkpoint without running the agent
-or scoring the review again. It finds comments already posted before
-creating more, and records the findings and automatic-review count together.
-A retry for an older head, or one overtaken by a newer completed review,
-is superseded. Canceling a publication waiting for retry clears its pending
-commit status without publishing the saved answer. A checkpoint that cannot
-be saved fails that review; it does not trigger another model run. Terminal
-reviews retain only a small completion marker in place of the checkpoint.
-
-### Findings
-
-A review comments on every line a maintainer could act on: bugs and risks,
-and also smaller improvements, missing tests and questions. Each finding
-is posted inline wherever the diff shows its line, with a one-click
-suggestion wherever the fix changes those lines or adds lines after them,
-unless `comments.inline` is off; the summary lists every finding.
-
-A finding's severity, `p0`, `p1` or `p2`, leads its comment as a badge,
-an image the dashboard serves under `config.webUrl`, so the forge must
-reach it; where the admin turns
-[`comments.dashboard`](configuration.md#what-only-the-admin-sets) off, the
-badge is the label in text. The
-dashboard's `severity:` filter, the API and `kritika_findings_total`
-carry the same names:
-
-| Severity | Meaning                      |
-| -------- | ---------------------------- |
-| `p0`     | must be fixed before merging |
-| `p1`     | should be fixed              |
-| `p2`     | optional polish              |
-
-Every finding carries a category beside its severity, what kind of problem
-it is: `correctness`, `security`, `performance`, `reliability`,
-`maintainability` or `tests`. The comments show it, the dashboard filters
-by it, and `kritika_findings_total` counts by it.
-
-### The summary comment
-
-From the top, each part shown only when it has something to say:
-
-1. The headline and the count of findings by severity.
-2. The confidence score and risk, with the scorer's reason, when the
-   review was scored.
-3. **Approved**, or **Not approved** with the reason, when
-   `review.approve` is on.
-4. **Findings**, each linking to its lines and its inline thread, an
-   earlier one a re-review neither reported again nor found resolved
-   marked not rechecked since the head it was last reported at; **Outside
-   the diff**, findings on lines the diff does not show, which get no
-   inline comment but are recorded like the others and linked to the
-   thread an earlier report opened, if any; **Held back**, a re-review's
-   new findings away from what changed since the last review
-   ([incremental reviews](configuration.md#incremental-reviews)); and
-   **Earlier findings**, the last review's findings since resolved or
-   dismissed, wherever they were reported.
-5. **Summary**, the review's take, followed by the change's flow as a
-   Mermaid diagram when `review.diagram` is on.
-6. **What's good**, left out on a bot's pull request.
-7. **Merge impact**, specific, evidence-backed consequences or operational
-   checks, omitted when there are none.
-8. **Review context**, collapsed, counting the sources, skills and
-   commands on its line: links to what the review's commands fetched, a
-   command's when it succeeded, and a `fetch_repo` that found files or a
-   diff, not a tag listing; the repository's skills it read, of those it
-   was offered; and the run tool's commands it ran, of those it was
-   offered. Then notes, such as files left out of the prompt or a
-   `.kritika.yaml` value that was dropped.
-9. The footer: `Reviews (3) · Last reviewed commit: "subject" · <model>`,
-   the model as `<model>/<effort>` when a [`review.effort`](models.md#effort)
-   is set, ending with the pull request's cost when the admin turns
-   `review.cost` on.
-
-The re-run badge at the top opens the pull request's page on the
-dashboard. Where `comments.dashboard` is off the summary has none, and
-`@<bot> review` re-runs instead ([commands](#commands)). A repository can
-replace the comment with its own template
-([`comments.summary`](repository-config.md#comment-templates)).
-
-Merge impact needs no configuration. It appears only when the review
-establishes something material: when a change takes effect, what it
-reaches or interrupts, what a revert cannot undo, or a concrete check and
-its expected result. Each note names supporting repository evidence or
-an upstream source the reviewer read. Skills can guide which evidence
-matters for the repository. Routine changes with nothing specific to
-report have no section, and a suggested check does not claim it passed.
-
-Impact notes are separate from findings and checked lines. They are shown
-to the confidence scorer as claims to assess, and can inform its risk
-rating; their presence alone does not lower the score. Re-reviews
-reassess earlier notes against the current head, while manual re-runs
-look afresh. The dashboard and API expose the same notes as
-`summary.impact`, an optional list of at most five short paragraphs.
-
-### The commit status
-
-| State   | Description                                                                                                       | When                                                                  |
-| ------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| pending | `kritika: review running`                                                                                         | a review is running                                                   |
-| success | `kritika: 2 finding(s)`, or `kritika: confidence 4/5, 2 finding(s)` when scored                                   | the review posted, and its score passed or is not gated               |
-| failure | `kritika: confidence 2/5, below 4, 3 finding(s)`                                                                  | `confidence.gate` is on and the score is under the threshold          |
-| error   | `kritika: review failed`, `kritika: review incomplete (<reason>)`, `kritika: confidence not scored, 2 finding(s)` | the review failed, or a gated review went unscored                    |
-| success | `kritika: skipped (<reason>)`, such as `skipped (filtered: skip-label)`                                           | the review was skipped; a score it carries still decides under a gate |
+kritika reviews enabled repositories when pull requests open or change. It
+updates one summary comment and adds findings beside the relevant lines.
 
 ## Commands
 
-Mention the bot by its App's slug in a comment on the pull request. Only
-someone with write access to the repository gets an answer.
+Mention the bot using your GitHub App's slug. You need write access to the
+repository, and webhooks must be working.
 
-| Comment                   | What it does                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@<bot> <question>`       | An agent with a review's tools and commands reads the code, looks things up, and answers in the thread.                                                                                                 |
-| `@<bot> review`           | Queues a review of the head, even one the admin's trigger lists keep out, such as a fork's where forks are excluded, or a paused pull request's. A review of the head already queued or running stands in for it. kritika answers with reactions rather than a reply: 👀 on the comment until the review ends, then 👍 once it is posted or 😕 when it failed. |
-| `@<bot> pause`            | Stops the pull request's automatic reviews.                                                                                                                                                             |
-| `@<bot> resume`           | Starts them again.                                                                                                                                                                                      |
-| `@<bot> dismiss <reason>` | As a reply in one of kritika's finding threads: resolves the thread, tells later reviews of the pull request not to raise the finding again, and lists it dismissed, with the reason, on the dashboard. |
+| Comment | What it does |
+| --- | --- |
+| `@<bot> <question>` | Reads the code and answers in the thread. |
+| `@<bot> review` | Requests a full review of the current commit. |
+| `@<bot> pause` | Stops automatic reviews for this pull request. |
+| `@<bot> resume` | Resumes automatic reviews. |
+| `@<bot> dismiss <reason>` | Dismisses a finding when posted in its thread. |
 
-Resolving one of kritika's finding threads on GitHub, as someone with
-write access, dismisses its finding too, unless a push has changed the
-lines it was made on (GitHub shows the thread as outdated): then
-resolving it counts as fixed, nothing is recorded, and a later review may
-raise the finding again should the fix be lost, as when a rebase drops a
-committed suggestion. To dismiss a finding after such a push, reply
-`@<bot> dismiss` instead. Unresolving a thread takes the dismissal back.
-kritika resolves a thread only when its App has write access to contents;
-otherwise it leaves the thread open for a person to resolve.
+A manual review also works on paused, filtered, merged or closed pull requests.
+It does not start a duplicate review if the current commit is already queued
+or running. Reviews of merged or closed pull requests post comments but do not
+set a commit status or approve the pull request.
 
-kritika answers at most five mentions of a pull request an hour, commands
-included, and says so once when it stops.
+kritika handles at most five mentions per pull request per hour, including commands.
+
+## What it posts
+
+| Item | What to expect |
+| --- | --- |
+| Summary | One comment updated after each review. |
+| Findings | Inline comments with an explanation and a suggested fix when available. |
+| Commit status | `Kritika / Review` on the reviewed commit. |
+| Reactions | 👀 while working, 👍 when posted, 😕 on failure. |
+| Approval | Only when [automatic approvals](confidence.md#approvals) are enabled. |
+
+Reactions and automatic thread resolution need the relevant
+[GitHub App permissions](setup.md#register-the-github-app).
+
+### Findings
+
+| Severity | Meaning |
+| --- | --- |
+| `p0` | Must be fixed before merging. |
+| `p1` | Should be fixed. |
+| `p2` | Optional polish. |
+
+Findings also have a category: correctness, security, performance, reliability,
+maintainability or tests. The summary includes findings outside the visible
+diff, which cannot get an inline comment.
+
+A later review can mark a finding fixed. To dismiss one you disagree with,
+reply `@<bot> dismiss <reason>` in its thread. Later reviews of that pull
+request will not raise it again.
+
+Resolving the thread on GitHub also dismisses it, unless GitHub marks the
+thread outdated because its lines changed. In that case, resolution counts
+as a fix; use the dismiss command if you want a lasting dismissal.
+Unresolving a thread takes back its dismissal. Without Contents write
+permission, kritika records dismissals but leaves thread resolution to you.
+
+### The summary comment
+
+Start with the findings and suggested fixes. The summary also includes:
+
+- a confidence score and approval decision, when enabled;
+- earlier findings that were fixed, dismissed or not rechecked;
+- merge impact, when the review identifies a concrete operational concern;
+- expandable review context, including sources, skills and commands used.
+
+Merge impact notes explain consequences or checks to make. A suggested check
+is not evidence that it passed. Optional [flow diagrams](repository-config.md#flow-diagrams)
+and [comment templates](repository-config.md#comment-templates) change presentation.
+
+### The commit status
+
+**Findings alone do not fail the check.** To block merges based on a score,
+enable [confidence gating](confidence.md#the-commit-status) and make the check
+required in GitHub.
+
+| State | Meaning |
+| --- | --- |
+| Pending | Review running. |
+| Success | Review posted and passed any configured score gate. |
+| Failure | Confidence score below the configured threshold. |
+| Error | Review failed, was incomplete, or a gated review could not be scored. |
+
+Skipped reviews normally pass. If a skipped review carries an earlier score,
+that score still determines whether it passes the gate.
+
+## When a review runs
+
+| Event | Behavior |
+| --- | --- |
+| Open, reopen or mark ready | Reviews the current commit unless already reviewed. |
+| Push | Reviews changes since the previous review, or the full pull request for larger updates. |
+| Add or remove a label | Can trigger a first review or retry a failed one. |
+| Poll | Catches updates missed by webhooks. |
+| Manual review | Reviews the whole pull request again. |
+
+Drafts, forks and bot pull requests are included unless
+[trigger rules](configuration.md#which-pull-requests-are-reviewed) exclude them.
+An unchanged bot rebase is usually skipped; it is reviewed again if scoring
+is enabled but the previous review had no score.
+
+Automatic reviews stop when the pull request closes, is paused, or reaches
+`trigger.limit`. See [incremental reviews](configuration.md#incremental-reviews)
+for how later reviews handle earlier findings.
+
+### Overlapping reviews
+
+When a newer review starts, it replaces an older running review of the same
+pull request. Queued work for an outdated commit is skipped. The dashboard
+links canceled reviews to their replacements; money already spent still counts.
+
+If posting a completed review fails, kritika retries publication from the
+saved result without calling the model again. Infrastructure interruptions
+can restart a runner and repeat model calls. Check the dashboard's
+[Queue](dashboard.md#queue) for retries and errors.

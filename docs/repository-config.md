@@ -1,60 +1,32 @@
-# `.kritika.yaml` reference
+# Repository settings
 
-A repository may commit an optional `.kritika.yaml` at its root to tune how
-kritika reviews it. It is read from the merge-base commit, never the pull
-request's own tree, so a pull request cannot use its own copy to weaken the
-review applied to it. kritika reads it before the review starts, and applies
-it to follow-ups (from the pull request's merge base) and to indexing (from
-the commit indexed) too.
+A repository works without any configuration file. Add `.kritika.yaml` at its
+root when you want custom review rules, ignored paths or trigger conditions.
 
-The file holds nothing secret: no field takes a credential, a URL, a host
-or a secret reference, and a model it names is a `<provider>/<model>` of a
-provider an admin configured.
-
-Repositories may also declare review tools in
-[`.kritika/mise.toml`](#repository-tools), when an admin enables them.
-
-[`kritika.schema.json`](kritika.schema.json) is its JSON Schema. An editor
-using the YAML language server validates the file as it is written when
-its first line names the schema:
+Start small:
 
 ```yaml
 # yaml-language-server: $schema=https://kritika.home-operations.com/kritika.schema.json
+ignore: ["web/src/generated/**"]
+rules:
+  - id: wrap-errors
+    rule: 'Wrap errors with fmt.Errorf("<package>: %w", err).'
+    paths: ["**/*.go"]
 ```
+
+kritika reads this file from the **merge base**, the shared ancestor of the pull
+request and its target branch. A pull request cannot change its own review rules.
+Merge a configuration change before expecting it to apply to later reviews.
+Indexing uses the configuration at the commit being indexed.
+
+The file contains no credentials. Models must use a provider the admin configured.
+The [JSON Schema](kritika.schema.json) provides editor completion and validation.
+For custom tools, see [repository tools](#repository-tools).
 
 ## What it may set
 
-The file takes the review keys the configuration file's root and its
-repository entries take, in the same groups:
-
-```yaml
-review:
-  model: openrouter/anthropic/claude-opus-5.5
-trigger:
-  exclude:
-    - expr: pr.draft
-    - { name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }
-ignore: ["web/src/generated/**", "docs/**"]
-comments: { inline: true }
-rules:
-  - {
-      id: wrap-errors,
-      rule: 'Wrap errors with fmt.Errorf("<package>: %w", err).',
-      paths: ["**/*.go"],
-    }
-  - { id: house-style, file: .kritika/review.md }
-  - id: renovate
-    rule: Say what the update breaks, from the release notes in the body.
-    when: [{ expr: pr.headRef.startsWith("renovate/") }]
-context:
-  - { path: ARCHITECTURE.md, description: how the services fit together }
-skills:
-  scope:
-    review-renovate-pr:
-      when: [{ expr: pr.headRef.startsWith("renovate/") }]
-    migrations: { paths: ["db/migrations/**"] }
-    go-reference: { paths: ["**/*.go"], load: false }
-```
+Use only the settings you need. This table shows how each interacts with the
+admin's policy; detailed examples follow.
 
 | Key                                                          | What it sets                                                       | Against the admin's value                       |
 | ------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |

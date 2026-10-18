@@ -1,8 +1,14 @@
 # Confidence and approvals
 
-Two opt-in features judge a reviewed pull request beyond its findings: a
-second model's confidence score, which can gate the commit status, and
-approvals, which kritika posts when the review allows it.
+These features are optional and off by default:
+
+- **Confidence scoring** asks a second model how ready a pull request is to merge.
+- **Gating** fails the commit status when the score is too low.
+- **Automatic approval** posts a GitHub approval when the review meets your policy.
+
+Scoring can run without gating or approvals. Approvals can also work without
+a score. This example enables all three: it requires at least 4 out of 5 and
+approves changes rated at most medium risk:
 
 ```yaml
 review:
@@ -12,26 +18,88 @@ confidence:
   threshold: 4
   gate: true
   risk: medium
-  instructions: anything under db/migrations is critical
 ```
+
+Use a model from a provider you configured. These settings belong under Helm's
+`config`, or at the root of the application configuration file.
 
 ## The score
 
-With a `confidence.model`, a second model scores every reviewed pull
-request from 0 to 5: how ready it is to merge, from the pull request's
-description and diff, the findings the review reported, and the review's
-account of itself: its summary, merge impact, what it checked beyond the
-diff and the sources it read. Impact notes are claims to assess, not
-findings or completed checks. A post-merge check that cannot be completed
-before deployment does not lower the score by itself, and neither does a
-step the description sets for a release after the merge. A concern of the
-scorer's own is one no reported finding raises, at any severity, and needs
-concrete evidence: a defect, a prerequisite for merging that is unmet or
-unverified, a release note no check covers, or changed lines that depend
-on an upstream interface or version step that no check or source covers.
-The review lists only a selection of what it checked, so a changed line
-the list leaves out is no sign the review skipped it. A different vendor's
-model than the review's makes it a second opinion.
+The scorer reads the pull request description, diff, findings and review summary.
+It returns a score from **0 to 5** and a reason. A model from a different vendor
+can provide a second opinion.
+
+- A **P0** finding caps the score at **2**.
+- A **P1** finding caps it at **3**.
+- **P2** findings do not reduce it by themselves.
+- Dismissed findings stop counting at the next review.
+
+The scorer can raise its own evidence-backed concerns. Merge impact notes and
+post-deployment checks do not lower the score by themselves.
+
+Scoring uses tokens and adds cost. It has no tools and sees only the supplied
+prompt. If retries and `confidence.fallback` fail, the review remains unscored.
+The scorer gets two minutes, including time waiting for a model slot.
+
+## The commit status
+
+| Configuration | Result after a completed review |
+| --- | --- |
+| No confidence model | Success, regardless of findings. |
+| Scoring enabled, gate off | Shows the score and passes. |
+| Scoring enabled, gate on | Fails below the threshold; errors if no score is available. |
+
+To block merging, also make **Kritika / Review** a required check in GitHub.
+Risk does not affect this check. A high-risk change can pass its score gate
+without receiving an automatic approval.
+
+## Approvals
+
+Set `review.approve: true` to enable approvals.
+
+| Configuration | Approves when… |
+| --- | --- |
+| No confidence model | There are no P0 or P1 findings. |
+| Confidence model set | The score meets `confidence.threshold` and risk is at most `confidence.risk`. |
+
+An unscored review does not approve when a confidence model is configured.
+A later review that no longer qualifies withdraws kritika's approval, as does
+a reviewer requesting changes. Reviews of merged or closed pull requests
+neither approve nor withdraw an approval.
+
+The summary says **Approved** or **Not approved**, with a reason. A repository's
+`.kritika.yaml` can turn approvals on or off.
+
+## Risk
+
+Risk describes the damage a change could cause if something was missed.
+It controls automatic approval, independently of the confidence score.
+
+| Risk | Typical impact |
+| --- | --- |
+| `low` | Documentation, tests, formatting or small changes that leave behavior alone. |
+| `medium` | Routine application changes that a revert can undo. |
+| `high` | Breaking changes to something other systems depend on, or expanded access. |
+| `critical` | Data loss, exposed secrets, administrative access or outages a revert cannot quickly fix. |
+
+Dependency updates are rated by both the version step and the dependency's role.
+Major changes and widely shared dependencies generally carry more risk. Breaking
+release notes can raise that rating. Updates below 1.0 and unversioned tags need
+extra care; being a bot-generated update does not reduce risk.
+
+Admins can add local guidance with `confidence.instructions`, for example:
+
+```yaml
+confidence:
+  instructions: anything under db/migrations is critical
+```
+
+Repository settings cannot change these instructions or raise the allowed risk.
+A later push normally keeps the earlier risk rating unless the change's impact
+changes. Manual re-runs, re-runs of the same commit, and changes to scoring
+instructions trigger a fresh rating.
+
+## Settings reference
 
 | Key                       | Default                 | What                                                                                       | From a `.kritika.yaml`                     |
 | ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
@@ -42,142 +110,3 @@ model than the review's makes it a second opinion.
 | `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check          | replaces, either way                       |
 | `confidence.risk`         | `low`                   | the highest [risk](#risk) a change may be rated and still be approved                      | may only lower it; a higher one is dropped |
 | `confidence.instructions` |                         | the admin's guidance to the scorer on [rating risk](#risk) in your code                    | the admin's alone                          |
-
-How the score is reached and used:
-
-- **Findings cap it:** the findings set the most a pull request can score,
-  however the scorer reads them: 2 with a P0 finding, 3 with a
-  P1; P2s take nothing off, even one the scorer would rate higher: it
-  says so in its reason instead.
-- **Dismissals:** a dismissed finding stops counting at the next review,
-  which a push or `@<app slug> review` starts.
-- **Unchanged rebases:** a bot's rebase that leaves its patch unchanged is
-  skipped when its last review was scored, and keeps that score; one whose
-  last review has no score is reviewed again.
-- **Retries and fallback:** the scorer's call is tried again as a review's
-  step is, with its provider's [`retries`](models.md#retries), and once
-  those are spent `confidence.fallback` takes it, as `review.fallback`
-  takes a review's step ([fallback](models.md#fallback)), all within the
-  two minutes a score gets, the wait for a slot on the model included.
-  With a fallback on another provider, the confidence model's attempts
-  get at most half of what is left, so the fallback always gets a turn. A
-  call that still fails leaves the review unscored. The scorer's fallback
-  is its own, not `review.fallback`, which is often the review model
-  through another provider: the second opinion stays one.
-- **Cost:** the scorer's call counts towards the account's
-  `tokensPerMonth`, and shows in the review's transcript. It asks for no
-  prompt caching: no later call reads it back, and writing a prompt to a
-  provider's cache can cost more than sending it uncached.
-- **Prompt size:** the scorer is sent a prompt of
-  [`agent.prompt`](configuration.md#the-agent) tokens, without tools, so a
-  file left out of the prompt is one it never sees. A `confidence.model`
-  with a smaller context window than the review's refuses a prompt it
-  cannot take, and the review then has no score.
-
-## The commit status
-
-| Setting                          | The commit status                                                                         |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| no `confidence.model`            | reports success whatever the review found                                                 |
-| a model, `confidence.gate` off   | reports the score and passes whatever it is                                               |
-| a model, `confidence.gate: true` | fails under the threshold; a review the scorer did not answer for is an error, not a pass |
-
-A score blocks a merge only where someone asked it to. The Reviews page
-lists the [statuses' descriptions](reviews.md#the-commit-status).
-
-## Risk
-
-The same call rates the change's risk, how much damage it could do if the
-review missed something. Authentication, authorization, secrets, billing,
-data and its migrations, infrastructure, CI, public interfaces, and build
-or runtime configuration are where damage tends to come from, but a change
-there is rated by what it can do there, not by the area it touches:
-
-| Risk       | What the change can do                                                                                                                          |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `low`      | nothing that matters: documentation, tests, formatting, comments, and small changes that leave behavior alone                                   |
-| `medium`   | a routine change that a revert undoes, such as ordinary application logic or a single setting                                                   |
-| `high`     | a breaking or major change to something much else depends on                                                                                    |
-| `critical` | cause an outage a revert does not quickly fix, or lose or corrupt data, delete managed resources or secrets, widen administrative access, or expose a secret |
-
-A change to who or what may do something, a role, its rules, a grant,
-permission, policy or group membership, is rated by the access it adds or
-removes in effect, not by the size of the edit. Granting access to
-principals that did not have it, by binding them to a role or by widening
-a role they hold, rates at least `high`, and `critical` when the access is
-administrative, reaches secrets or production data, or cannot be quickly
-reverted. A revert that removes the grant lowers nothing: the access was
-held until then. A rename, or a replacement that leaves what each
-principal may do unchanged, grants nothing. Narrowing or removing access
-rates by what it breaks.
-
-A dependency update is rated by what the dependency does and how far its
-version moves, not as a class of its own:
-
-| Update                                     | Risk                                                                                                                                                                                               |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| major                                      | `medium` for an application nothing else depends on, `high` otherwise; `critical` when it can do what the critical row names, such as migrating stored data to a form an older version cannot read |
-| minor                                      | `low` for an application nothing else depends on, `medium` for one that other things do, `high` for one much else depends on                                                                       |
-| patch, or a new digest of the same version | `low`; `medium` for one much else depends on                                                                                                                                                       |
-
-A version under 1.0 promises nothing from one release to the next, but
-many projects, Helm charts among them, move its first non-zero component
-for routine releases, so 0.1 to 0.2 and 0.0.1 to 0.0.2 rate as minor
-updates, and at least `medium`. A new digest under a tag that names no
-version, such as `latest`, rates as a minor update unless the description
-shows the step. Release notes that show an update does more than its step
-says, such as a breaking change in a minor release, rate it as the bigger
-step; a digest pinned beside its tag, a bot author or a description that
-calls the update safe never rates it below its step.
-
-An unverified prerequisite for merging, such as an upstream change whose
-release notes the description does not carry, may take the score down as
-a concern of the scorer's own, but never raises the risk: risk is what the
-change can do, however much of it could be checked.
-
-A review of a new head is shown the risk the last review was rated, with
-its reason, and keeps that rating unless the change now does something
-the reason does not account for, so a second reading of the same change
-does not move it. A re-run of the same head rates afresh, as does one
-someone asked for with `@<app slug> review` or from the dashboard, and the
-first review after kritika's scoring instructions or
-`confidence.instructions` change.
-
-`confidence.instructions` is plain guidance to the scorer on rating risk
-in your code, such as "the media apps under `kubernetes/apps/default` are
-low whatever moves" or "anything under `db/migrations` is critical"; it
-refines the tables above and changes nothing else about the score. It is
-the admin's alone, so a pull request cannot talk its own risk down. The
-[`kritika_confidence_scores_total`](metrics.md) series counts the scored
-reviews by score and risk, so what a change to the instructions does
-shows over time.
-
-Risk bears on approvals alone, never on the commit status: a risky change
-that scores well passes its check and waits for a person.
-
-## Approvals
-
-With `review.approve: true`, kritika approves a pull request its review
-allows, as a review pinned to the head it saw. Off unless set; a
-repository's `.kritika.yaml` replaces the admin's in either direction, so
-a repository can turn it on where the instance leaves it off.
-
-| Setting               | A pull request is approved when                                                                                            |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| no `confidence.model` | its review finds nothing at P0 or P1; P2s alone do not withhold it                                                         |
-| a `confidence.model`  | its score reaches `confidence.threshold` and its risk is within `confidence.risk`; a review left unscored approves nothing |
-
-So one threshold decides the approval and, where gated, the check: a
-repository can have kritika approve what scores well without ever failing
-a check, or fail the check and leave approving to people.
-
-- **Withdrawn:** a later review of the same pull request whose verdict no
-  longer allows it dismisses kritika's approval, as does a reviewer who
-  stands as requesting changes. A head that moved while it was reviewed is
-  left to its own review.
-- **Merged or closed:** a review someone asks for of a merged or closed
-  pull request neither approves it nor withdraws an approval.
-- **Unchanged rebases:** a bot's unchanged rebase, skipped with the score
-  it carries, has that score decide its approval the same way.
-- **Reported:** the summary says which way it went: `Approved`, or
-  `Not approved` with the reason.

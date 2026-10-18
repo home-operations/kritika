@@ -1,24 +1,8 @@
-# Models
+# Models and providers
 
-kritika calls models through the providers the configuration file
-declares, each with its own credentials. A model is named `<provider>/<model>`, on
-a provider the file declares:
-
-| Setting            | The model that                                                                                  |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| `review.model`     | reviews pull requests and answers follow-ups                                                    |
-| `review.fallback`  | takes over a review's or a follow-up's step when the review model fails ([fallback](#fallback)) |
-| `confidence.model` | scores a reviewed pull request ([confidence and approvals](confidence.md))                      |
-| `confidence.fallback` | takes over the scorer's call when the confidence model fails ([fallback](#fallback))         |
-| `embedding.model`  | builds each repository's similar-code index ([the embedder](#the-embedder))                     |
-
-The review models can differ by repository, in the admin's `repositories`
-entries or a repository's own [`.kritika.yaml`](repository-config.md#models),
-which may name only a provider the instance or the repository's account
-declares. `review.effort` and `confidence.effort` set how hard each model
-reasons ([effort](#effort)).
-
-## Providers
+You need a provider credential and a `review.model` to start reviewing.
+A model name has the form `<provider>/<model>`: the first part matches a key
+under `providers`, and the rest is the provider's model ID.
 
 ```yaml
 providers:
@@ -27,10 +11,23 @@ providers:
     apiKey: { env: OPENROUTER_API_KEY }
 review:
   model: openrouter/vendor/large-model
-embedding:
-  model: openrouter/voyageai/voyage-code-4
-  dims: 1024
 ```
+
+Replace `vendor/large-model` with the model you want to use. In Helm, put these
+settings under `config` and supply the key from a Secret as shown in [Setup](setup.md#deploy).
+
+Everything else is optional:
+
+| I want to… | Setting and details |
+| --- | --- |
+| Try another model when a call fails | [`review.fallback`](#fallback) |
+| Retry temporary failures | Provider [`retries`](#retries) |
+| Adjust reasoning effort | [`review.effort`](#effort) |
+| Score reviews or approve pull requests | [`confidence.model`](confidence.md) |
+| Search for similar code | [`embedding.model`](#the-embedder) |
+| Use a different model for one repository | [Repository settings](repository-config.md#models) |
+
+## Providers
 
 | Key       | What                                                                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
