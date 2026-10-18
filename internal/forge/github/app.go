@@ -7,6 +7,7 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
@@ -14,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +29,7 @@ import (
 type App struct {
 	clientID string
 	apiBase  string // "" for api.github.com
+	origin   *url.URL
 	apps     *gh.Client
 	// limited is the transport under every client of the App, which waits
 	// out a rate limit that resets soon.
@@ -52,9 +55,13 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
 	}
-	a := &App{clientID: clientID, apiBase: apiBase}
+	origin, err := url.Parse(cmp.Or(apiBase, "https://api.github.com"))
+	if err != nil {
+		return nil, fmt.Errorf("github: parse API origin: %w", err)
+	}
+	a := &App{clientID: clientID, apiBase: apiBase, origin: origin}
 	a.limited = &rateLimitTransport{base: baseTransport, maxWait: rateLimitMaxWait, observe: a.rateLimited}
-	client, err := newClient(&appJWTTransport{base: a.limited, clientID: clientID, key: key}, apiBase)
+	client, err := newClient(&appJWTTransport{base: a.limited, origin: origin, clientID: clientID, key: key}, apiBase)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +233,7 @@ func (a *App) Uninstall(ctx context.Context, id int64) error {
 
 // Client returns a go-github client authenticated as the installation.
 func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
-	return newClient(&installTransport{base: a.limited, tokens: tokens}, a.apiBase)
+	return newClient(&installTransport{base: a.limited, origin: a.origin, tokens: tokens}, a.apiBase)
 }
 
 func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
@@ -281,6 +288,7 @@ func parseRSAKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
 // JWT as it nears expiry.
 type appJWTTransport struct {
 	base     http.RoundTripper
+	origin   *url.URL
 	clientID string
 	key      *rsa.PrivateKey
 
@@ -290,11 +298,15 @@ type appJWTTransport struct {
 }
 
 func (t *appJWTTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.Header.Del("Authorization")
+	if !sameOrigin(req.URL, t.origin) {
+		return t.base.RoundTrip(r)
+	}
 	tok, err := t.jwt()
 	if err != nil {
 		return nil, err
 	}
-	r := req.Clone(req.Context())
 	r.Header.Set("Authorization", "Bearer "+tok)
 	return t.base.RoundTrip(r)
 }
@@ -374,15 +386,41 @@ func (t *InstallationTokens) ReadOnly(ctx context.Context, repo string) (string,
 // installTransport injects the installation token as the bearer.
 type installTransport struct {
 	base   http.RoundTripper
+	origin *url.URL
 	tokens *InstallationTokens
 }
 
 func (t *installTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.Header.Del("Authorization")
+	if !sameOrigin(req.URL, t.origin) {
+		return t.base.RoundTrip(r)
+	}
 	tok, err := t.tokens.Token(req.Context())
 	if err != nil {
 		return nil, err
 	}
-	r := req.Clone(req.Context())
 	r.Header.Set("Authorization", "Bearer "+tok)
 	return t.base.RoundTrip(r)
+}
+
+// Redirects can retain Authorization across ports or subdomains, so a
+// hostname alone cannot determine whether credentials may be sent.
+func sameOrigin(u, origin *url.URL) bool {
+	return origin != nil && strings.EqualFold(u.Scheme, origin.Scheme) &&
+		strings.EqualFold(u.Hostname(), origin.Hostname()) && originPort(u) == originPort(origin)
+}
+
+func originPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
+	}
 }
