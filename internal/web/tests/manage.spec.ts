@@ -10,6 +10,49 @@ const ADMIN = `#/a/${S}/admin`;
 const adminMe: T.Me = { ...g.me, admin: true };
 const memberMe: T.Me = { ...g.me, admin: false, accounts: [S] };
 
+test('most used tools graph shows executions and switches period', async ({ page }) => {
+  const seen = await setup(page, adminMe);
+  await page.goto('/#/admin');
+  const panel = page.getByRole('region', { name: 'Most used tools', exact: true });
+  await expect(panel).toContainText('60 executions');
+  await expect(panel).toContainText('12 recorded runs');
+  await expect(panel).toContainText('2 runs without execution counts excluded');
+  const rows = panel.locator('tbody tr');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText('rg');
+  await expect(rows.first()).toContainText('40');
+  const bars = panel.locator('.tool-bar');
+  const width = async (index: number) => (await bars.nth(index).boundingBox())!.width;
+  expect(await width(0)).toBeGreaterThan(0);
+  expect(await width(0) / await width(1)).toBeCloseTo(2, 1);
+  for (const days of [7, 90]) {
+    await panel.getByRole('radio', { name: `${days} days`, exact: true }).click();
+    await expect.poll(() => {
+      const from = seen.filter((u) => u.pathname.endsWith('/admin/tools')).at(-1)?.searchParams.get('from');
+      return from ? Math.round((Date.now() - Date.parse(from)) / 86_400_000) : 0;
+    }).toBe(days);
+    await expect(panel.getByRole('table')).toHaveAccessibleName(`Most used tools by executions in the last ${days} days`);
+  }
+});
+
+test('most used tools graph distinguishes empty history and read failures', async ({ page }) => {
+  await setup(page, adminMe, [[/\/api\/v1\/admin\/tools$/, { ...g.toolUsage, tools: [], totalExecutions: 0, recordedRuns: 0 }]]);
+  await page.goto('/#/admin');
+  const panel = page.getByRole('region', { name: 'Most used tools', exact: true });
+  await expect(panel).toContainText('No tool executions recorded in this period.');
+  await expect(panel).toContainText('2 runs without execution counts excluded');
+  await expect(panel.locator('.tool-bar')).toHaveCount(0);
+  await page.route('**/api/v1/admin/tools?*', (route) => route.fulfill({
+    status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'internal', message: 'Could not read tool usage' }),
+  }));
+  await panel.getByRole('radio', { name: '7 days', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('Could not read tool usage');
+  await expect(panel).not.toContainText('No tool executions recorded');
+  await page.unroute('**/api/v1/admin/tools?*');
+  await panel.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(panel).toContainText('No tool executions recorded in this period.');
+});
+
 async function setup(page: Page, who: T.Me, rows: [RegExp, unknown][] = []): Promise<URL[]> {
   return g.mockApi(page, [[/\/api\/v1\/me$/, who], ...rows, ...g.defaultApi()]);
 }
@@ -470,3 +513,35 @@ test.describe('repository switches', () => {
     await expect(page.getByRole('switch', { name: 'Review and index alpha/one' })).not.toBeChecked();
   });
 });
+
+for (const backend of ['s3', 'filesystem', 'disabled']) {
+  test(`download cache summary: ${backend}`, async ({ page }) => {
+    const settings: T.InstanceSetting[] = [
+      { section: 'file', key: 'gatewayCacheDir', value: backend === 'disabled' ? '' : '/var/cache/kritika', source: 'file' },
+      { section: 'environment', key: 'KRITIKA_GATEWAY_CACHE_STORAGE', value: backend, source: 'env' },
+      { section: 'file', key: 'gatewayCacheRefreshAfter', value: '24h0m0s', source: 'file' },
+      { section: 'file', key: 'gatewayCacheMaxEntrySize', value: '268435456', source: 'file' },
+      { section: 'file', key: 'gatewayCacheMaxSize', value: '2147483648', source: 'file' },
+      { section: 'file', key: 'gatewayCacheS3Bucket', value: 'cache-bucket', source: 'file' },
+      { section: 'file', key: 'gatewayCacheS3Prefix', value: 'gateway/', source: 'file' },
+    ];
+    await setup(page, adminMe, [[/\/api\/v1\/admin\/instance$/, settings]]);
+    await page.goto('/#/admin');
+    const panel = page.getByRole('region', { name: 'Download cache', exact: true });
+    await expect(panel).toContainText(backend === 'disabled' ? 'Disabled' : 'Enabled');
+    await expect(panel.locator('.tone-ok')).toHaveCount(0);
+    if (backend === 's3') {
+      await expect(panel).toContainText('cache-bucket');
+      await expect(panel).toContainText('gateway/');
+      await expect(panel).toContainText('managed externally');
+    } else if (backend === 'filesystem') {
+      await expect(panel).toContainText('private to each replica');
+      await expect(panel).not.toContainText('cache-bucket');
+    }
+    if (backend !== 'disabled') {
+      await expect(panel).toContainText('24h0m0s');
+      await expect(panel).toContainText('256');
+      await expect(panel).toContainText('Storage availability is not tested');
+    }
+  });
+}

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gookit/validate/v2"
+
+	"github.com/home-operations/kritika/internal/egress"
 )
 
 // minRetention keeps transcripts and diffs available for at least a day.
@@ -27,8 +29,9 @@ func (s Settings) Validate() error {
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
-	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxAge,LeaderRetryInterval", "gt", 0)
+	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxEntrySize,GatewayCacheRefreshAfter,LeaderRetryInterval", "gt", 0)
 	v.AddRule("ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
+	v.AddRule("GatewayCacheStorage", "enum", []string{"filesystem", "s3"})
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
 	v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
 	v.AddRule("LogLevel", "enum", slices.Sorted(maps.Keys(logLevels)))
@@ -37,14 +40,15 @@ func (s Settings) Validate() error {
 	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole,DatabaseRunnerRole", "required")
 	v.AddRule("DatabaseRunnerRole", "neField", "DatabaseAppRole")
 	v.WithMessages(map[string]string{
-		"gt":             "{field} must be positive",
-		"gte":            "{field} must not be negative",
-		"min":            fmt.Sprintf("{field} must be at least %s", minRetention),
-		"LogLevel.enum":  "{field} must be debug, info, warn or error",
-		"LogFormat.enum": "{field} must be json or text",
-		"enum":           "{field} must be kubernetes or local",
-		"required":       "{field} must be set",
-		"neField":        "{field} must be distinct from databaseAppRole",
+		"gt":                       "{field} must be positive",
+		"gte":                      "{field} must not be negative",
+		"min":                      fmt.Sprintf("{field} must be at least %s", minRetention),
+		"LogLevel.enum":            "{field} must be debug, info, warn or error",
+		"LogFormat.enum":           "{field} must be json or text",
+		"enum":                     "{field} must be kubernetes or local",
+		"required":                 "{field} must be set",
+		"neField":                  "{field} must be distinct from databaseAppRole",
+		"GatewayCacheStorage.enum": "{field} must be filesystem or s3",
 	})
 	labels := map[string]string{}
 	for _, f := range reflect.VisibleFields(reflect.TypeFor[Settings]()) {
@@ -62,6 +66,18 @@ func (s Settings) Validate() error {
 	var extra []string
 	if _, err := s.deadline(); err != nil {
 		extra = append(extra, err.Error())
+	}
+	if s.GatewayCacheStorage == "s3" {
+		if s.GatewayCacheDir == "" {
+			extra = append(extra, "gatewayCacheDir: S3 needs a private local staging directory")
+		}
+		if s.GatewayCacheMaxEntrySize > 5<<30 {
+			extra = append(extra, "gatewayCacheMaxEntrySize: S3 single-request uploads must not exceed 5Gi")
+		}
+		if err := (egress.S3Options{Endpoint: s.GatewayCacheS3Endpoint, Region: s.GatewayCacheS3Region,
+			Bucket: s.GatewayCacheS3Bucket}).Validate(); err != nil {
+			extra = append(extra, err.Error())
+		}
 	}
 	return validationError(v, extra...)
 }
@@ -91,6 +107,9 @@ func (c *Config) ValidateServe() error {
 		"required":                   "{field} is required to serve",
 		"RunnerDatabaseURL.required": "{field} is required with the local executor",
 	})
+	if (c.GatewayCacheS3AccessKey == "") != (c.GatewayCacheS3SecretKey == "") {
+		return validationError(v, "both KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY and KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY must be set")
+	}
 	return validationError(v)
 }
 

@@ -104,11 +104,12 @@ func (b *WriteBudget) Spend(n int64) { b.left -= n }
 // records as a source the review consulted every http(s) URL curl is given
 // and what each gh call reads, and which commands it ran.
 type RunTool struct {
-	cfg     RunConfig
-	names   []string
-	schema  json.RawMessage
-	sources []string
-	ran     []string
+	cfg        RunConfig
+	names      []string
+	schema     json.RawMessage
+	sources    []string
+	ran        []string
+	executions map[string]int
 	// errors are the setup failure notes, one per command in failed.
 	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
@@ -129,7 +130,7 @@ func NewRunTool(c RunConfig) *RunTool {
 	"required": ["command"],
 	"additionalProperties": false
 }`, enum)
-	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema)}
+	return &RunTool{cfg: c, names: names, schema: json.RawMessage(schema), executions: map[string]int{}}
 }
 
 // Names are the commands the tool offers, sorted.
@@ -142,6 +143,10 @@ func (rt *RunTool) Sources() []string { return append([]string{}, rt.sources...)
 // Ran are the commands the model ran, each once in first-use order, never
 // nil.
 func (rt *RunTool) Ran() []string { return append([]string{}, rt.ran...) }
+
+// Executions counts processes started, including nonzero exits and timeouts,
+// but excluding rejected commands and installation or process-start failures.
+func (rt *RunTool) Executions() map[string]int { return maps.Clone(rt.executions) }
 
 // Errors are masked command setup failures, the first per command, for
 // the review summary.
@@ -290,6 +295,9 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	// not waited for.
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
+	if cmd.Process != nil {
+		rt.executions[req.Command]++
+	}
 	switch {
 	case ctx.Err() != nil:
 		return "", fmt.Errorf("agent: run: %w", ctx.Err())

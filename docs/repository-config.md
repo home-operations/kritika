@@ -415,8 +415,9 @@ one it is not offered, and the review summary says why. Tools that need
 downloading install on first use with `mise install --locked`; a failed
 install fails that tool call without stopping the review. Release hosts
 still need the admin's `egress.allow` permission. Once the admin gives
-the gateway a download cache, what the lock pins is fetched once per
-replica rather than once per run
+the gateway a download cache, later runs reuse what the lock pins. Filesystem
+storage keeps downloads per replica; S3 storage shares completed downloads
+across replicas and rollouts
 ([the gateway's cache](security.md#the-gateways-download-cache)).
 
 Renovate's [mise manager](https://docs.renovatebot.com/modules/manager/mise/)

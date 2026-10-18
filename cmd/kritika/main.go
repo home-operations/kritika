@@ -327,11 +327,26 @@ func startWorker(
 	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
 	proxy := &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
 	if cfg.GatewayCacheDir != "" {
-		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize), cfg.GatewayCacheMaxAge)
+		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize), cfg.GatewayCacheRefreshAfter)
 		if err != nil {
 			return err
 		}
 		proxy.Cache = cache
+		cache.MaxEntryBytes = int64(cfg.GatewayCacheMaxEntrySize)
+		if cfg.GatewayCacheStorage == "s3" {
+			if err := cache.UseS3(egress.S3Options{
+				Endpoint: cfg.GatewayCacheS3Endpoint, Region: cfg.GatewayCacheS3Region,
+				Bucket: cfg.GatewayCacheS3Bucket, Prefix: cfg.GatewayCacheS3Prefix,
+				ForcePathStyle: cfg.GatewayCacheS3ForcePathStyle,
+				AccessKey:      cfg.GatewayCacheS3AccessKey, SecretKey: cfg.GatewayCacheS3SecretKey,
+			}); err != nil {
+				return err
+			}
+		}
+		cache.Observe(m, gatewayLogger)
+		if cfg.GatewayCacheStorage == "s3" {
+			g.Go(func() error { return cache.RunUploads(ctx) })
+		}
 	}
 	gw.Proxy = proxy
 	g.Go(func() error {

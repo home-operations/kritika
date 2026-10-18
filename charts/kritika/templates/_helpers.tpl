@@ -175,9 +175,7 @@ metricsAddr: {{ printf ":%d" (int .Values.service.metricsPort) | quote }}
 gatewayAddr: {{ printf ":%d" (int .Values.service.gatewayPort) | quote }}
 gatewayUrl: {{ include "kritika.gatewayURL" . | quote }}
 {{- if .Values.gatewayCache.enabled }}
-gatewayCacheDir: {{ include "kritika.gatewayCacheDir" . | quote }}
-gatewayCacheMaxSize: {{ .Values.gatewayCache.maxSize | quote }}
-gatewayCacheMaxAge: {{ .Values.gatewayCache.maxAge | quote }}
+{{ include "kritika.gatewayCacheSettings" . }}
 {{- end }}
 databaseAppRole: {{ .Values.database.app.role | quote }}
 databaseRunnerRole: {{ .Values.database.runner.role | quote }}
@@ -217,17 +215,27 @@ an `env` key that would duplicate one of them.
 - name: KRITIKA_GATEWAY_URL
   value: {{ include "kritika.gatewayURL" . | quote }}
 {{- if .Values.gatewayCache.enabled }}
-- name: KRITIKA_GATEWAY_CACHE_DIR
-  value: {{ include "kritika.gatewayCacheDir" . | quote }}
-- name: KRITIKA_GATEWAY_CACHE_MAX_SIZE
-  value: {{ .Values.gatewayCache.maxSize | quote }}
-- name: KRITIKA_GATEWAY_CACHE_MAX_AGE
-  value: {{ .Values.gatewayCache.maxAge | quote }}
+{{- range $key, $value := (include "kritika.gatewayCacheSettings" . | fromYaml) }}
+- name: {{ printf "KRITIKA_%s" ($key | snakecase | upper) }}
+  value: {{ $value | toString | quote }}
+{{- end }}
 {{- end }}
 - name: KRITIKA_DATABASE_APP_ROLE
   value: {{ .Values.database.app.role | quote }}
 - name: KRITIKA_DATABASE_RUNNER_ROLE
   value: {{ .Values.database.runner.role | quote }}
+{{- end }}
+{{- if and .Values.gatewayCache.enabled (eq .Values.gatewayCache.storage.type "s3") .Values.gatewayCache.storage.existingSecret }}
+- name: KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ tpl .Values.gatewayCache.storage.existingSecret . | quote }}
+      key: AWS_ACCESS_KEY_ID
+- name: KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ tpl .Values.gatewayCache.storage.existingSecret . | quote }}
+      key: AWS_SECRET_ACCESS_KEY
 {{- end }}
 - name: KRITIKA_DATABASE_URL
   valueFrom:
@@ -258,7 +266,7 @@ an `env` key that would duplicate one of them.
 {{/* Environment names corresponding to operational settings present in the file. */}}
 {{- define "kritika.configEnv" -}}
 {{- $names := dict -}}
-{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheMaxAge" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
+{{- range $key := list "addr" "metricsAddr" "gatewayAddr" "gatewayUrl" "gatewayTokenTtl" "gatewayCacheDir" "gatewayCacheMaxSize" "gatewayCacheRefreshAfter" "gatewayCacheMaxEntrySize" "gatewayCacheStorage" "gatewayCacheS3Endpoint" "gatewayCacheS3Region" "gatewayCacheS3Bucket" "gatewayCacheS3Prefix" "gatewayCacheS3ForcePathStyle" "webUrl" "databaseAppRole" "databaseRunnerRole" "leaderRetryInterval" "reviewWorkers" "indexWorkers" "threadWorkers" "executor" "logLevel" "logFormat" "pollInterval" "pollLookback" "onboardWindow" "indexGrace" "transcriptRetention" "diffRetention" -}}
 {{- if and (hasKey $ $key) (ne (get $ $key) nil) -}}
 {{- $_ := set $names (printf "KRITIKA_%s" ($key | snakecase | upper)) $key -}}
 {{- end -}}

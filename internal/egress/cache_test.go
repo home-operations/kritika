@@ -37,7 +37,7 @@ func cacheProxy(t *testing.T, rules Rules, maxBytes int64, upstream http.Handler
 	}
 	return &Proxy{
 		Rules: func() Rules { return rules }, Logger: slog.New(slog.DiscardHandler), Transport: transport,
-		Cache: &Cache{Dir: t.TempDir(), MaxBytes: maxBytes, MaxAge: time.Hour},
+		Cache: &Cache{Dir: t.TempDir(), MaxBytes: maxBytes, RefreshAfter: time.Hour},
 	}
 }
 
@@ -482,7 +482,7 @@ func TestCacheRefetchesExpiredEntry(t *testing.T) {
 	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
 	})
-	p.Cache.MaxAge = 200 * time.Millisecond
+	p.Cache.RefreshAfter = 200 * time.Millisecond
 	const target = "http://example.com/tool.tar.gz"
 	for i, want := range []string{"archive 1", "archive 1"} {
 		if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != want {
@@ -491,7 +491,7 @@ func TestCacheRefetchesExpiredEntry(t *testing.T) {
 	}
 	time.Sleep(300 * time.Millisecond)
 	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" {
-		t.Fatalf("after MaxAge: body %q, want a fresh fetch", w.Body.String())
+		t.Fatalf("after RefreshAfter: body %q, want a fresh fetch", w.Body.String())
 	}
 }
 
@@ -511,7 +511,7 @@ func TestOpenCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Dir != dir || c.MaxBytes != 1<<20 || c.MaxAge != time.Hour {
+	if c.Dir != dir || c.MaxBytes != 1<<20 || c.RefreshAfter != time.Hour {
 		t.Errorf("cache = %+v", c)
 	}
 	if _, err := os.Stat(leftover); !os.IsNotExist(err) {

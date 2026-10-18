@@ -66,6 +66,8 @@ These inputs have no configuration-file equivalent:
 | `KRITIKA_CONFIG_FILE` | Configuration file path, required by `serve` and `chatgpt login` |
 | `KRITIKA_DATABASE_URL` | Application DSN for `serve`; runner DSN for `run` |
 | `KRITIKA_DATABASE_OWNER_URL` | Owner DSN for migrations and leader work |
+| `KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY` | S3 access key for serve only; paired with the secret key |
+| `KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY` | S3 secret key for serve only; when both keys are absent, use IAM credentials |
 | `KRITIKA_RUNNER_DATABASE_URL` | Runner DSN for the local executor |
 | `KRITIKA_RUN_SPEC_FILE` | Per-run job document path |
 | `KRITIKA_GIT_TOKEN` | Per-run Git credential |
@@ -707,8 +709,15 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `leaderRetryInterval` | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
 | `gatewayTokenTtl` | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |
 | `gatewayCacheDir` | `KRITIKA_GATEWAY_CACHE_DIR` | where the gateway keeps downloads, a directory of its own: what a repository's lock pins, from any host the egress rules allow, and the downloads of the hosts `egress.cache` names; nothing is kept unless set; the chart's `gatewayCache.enabled` renders it ([the gateway's cache](security.md#the-gateways-download-cache)) |
-| `gatewayCacheMaxSize` | `KRITIKA_GATEWAY_CACHE_MAX_SIZE` | the most the gateway's cache keeps, in bytes or with `Ki`, `Mi`, `Gi` or `Ti`, the least recently used downloads going first, and apart from that the most its fetches under way may write; 2Gi unless set |
-| `gatewayCacheMaxAge` | `KRITIKA_GATEWAY_CACHE_MAX_AGE` | how long the gateway serves a kept download before it fetches it again; 24h unless set |
+| `gatewayCacheMaxSize` | `KRITIKA_GATEWAY_CACHE_MAX_SIZE` | filesystem backend only: the most the gateway's cache keeps, in bytes or with `Ki`, `Mi`, `Gi` or `Ti`, the least recently used downloads going first, and apart from that the most its fetches under way may write; 2Gi unless set |
+| `gatewayCacheRefreshAfter` | `KRITIKA_GATEWAY_CACHE_REFRESH_AFTER` | how long the gateway serves a kept download before it fetches its URL again, a staleness bound rather than retention; 24h unless set |
+| `gatewayCacheStorage` | `KRITIKA_GATEWAY_CACHE_STORAGE` | `filesystem` (default) or `s3`; both require a private `gatewayCacheDir`, used for completed local fills |
+| `gatewayCacheMaxEntrySize` | `KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE` | largest eligible download; 256Mi by default, at most 5Gi for S3 |
+| `gatewayCacheS3Endpoint` | `KRITIKA_GATEWAY_CACHE_S3_ENDPOINT` | S3 API origin including scheme and optional port; required for S3 |
+| `gatewayCacheS3Region` | `KRITIKA_GATEWAY_CACHE_S3_REGION` | signing region; required for S3 |
+| `gatewayCacheS3Bucket` | `KRITIKA_GATEWAY_CACHE_S3_BUCKET` | existing bucket; required for S3 |
+| `gatewayCacheS3Prefix` | `KRITIKA_GATEWAY_CACHE_S3_PREFIX` | instance-specific object prefix; `gateway/` by default |
+| `gatewayCacheS3ForcePathStyle` | `KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE` | use path-style bucket addressing; true by default |
 | `logLevel` | `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                            |
 | `logFormat` | `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                                                                                                              |
 | `runner.jobTemplate` | `KRITIKA_RUNNER_JOB_TEMPLATE` | what kritika sets on every runner Job, as a Job template spells it: `metadata.labels` and `metadata.annotations`, `spec.activeDeadlineSeconds`, a runner Job's deadline, at most 7200 and 900 unless set, which a review's or follow-up's agent `timeout` lengthens when it needs more, and `spec.ttlSecondsAfterFinished`, at least 1 and 600 unless set; kritika refuses any other field, and its own labels and annotations, at startup; as JSON in env or a YAML mapping in the file; the chart's `runner.jobTemplate` renders it |

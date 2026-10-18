@@ -19,8 +19,8 @@ func TestSettingsValidation(t *testing.T) {
 		{"zero workers", "reviewWorkers: 0", "reviewWorkers: KRITIKA_REVIEW_WORKERS must be positive"},
 		{"zero gateway lifetime", "gatewayTokenTtl: 0s", "gatewayTokenTtl: KRITIKA_GATEWAY_TOKEN_TTL must be positive"},
 		{"zero cache size", "gatewayCacheMaxSize: 0", "gatewayCacheMaxSize: KRITIKA_GATEWAY_CACHE_MAX_SIZE must be positive"},
-		{"zero cache age", "gatewayCacheMaxAge: 0s", "gatewayCacheMaxAge: KRITIKA_GATEWAY_CACHE_MAX_AGE must be positive"},
-		{"gateway cache", "gatewayCacheDir: /var/cache/kritika\ngatewayCacheMaxSize: 512Mi\ngatewayCacheMaxAge: 6h", ""},
+		{"zero cache age", "gatewayCacheRefreshAfter: 0s", "gatewayCacheRefreshAfter: KRITIKA_GATEWAY_CACHE_REFRESH_AFTER must be positive"},
+		{"gateway cache", "gatewayCacheDir: /var/cache/kritika\ngatewayCacheMaxSize: 512Mi\ngatewayCacheRefreshAfter: 6h", ""},
 		{"zero runner deadline", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: 0}}}",
 			"runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200"},
 		{"fractional runner deadline", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: 1.5}}}", "must be a whole number of seconds"},
@@ -133,5 +133,34 @@ func TestRunnerDeadline(t *testing.T) {
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":600}}`)
 	if s, _, err := LoadSettings(nil); err != nil || s.RunnerDeadline() != 10*time.Minute {
 		t.Fatalf("from the environment: RunnerDeadline = %s, %v; want 10m", s.RunnerDeadline(), err)
+	}
+}
+
+func TestS3CacheSettings(t *testing.T) {
+	const base = "gatewayCacheStorage: s3\ngatewayCacheDir: /cache\ngatewayCacheS3Endpoint: https://s3.example.com\ngatewayCacheS3Region: garage\ngatewayCacheS3Bucket: kritika\n"
+	for _, tt := range []struct{ name, doc, want string }{
+		{"valid", base, ""},
+		{"unknown backend", "gatewayCacheStorage: other", "must be filesystem or s3"},
+		{"zero entry", "gatewayCacheMaxEntrySize: 0", "must be positive"},
+		{"oversize entry", base + "gatewayCacheMaxEntrySize: 6Gi\n", "must not exceed 5Gi"},
+		{"no staging", strings.ReplaceAll(base, "gatewayCacheDir: /cache\n", ""), "private local staging"},
+		{"no bucket", strings.ReplaceAll(base, "gatewayCacheS3Bucket: kritika\n", ""), "S3 bucket"},
+		{"no region", strings.ReplaceAll(base, "gatewayCacheS3Region: garage\n", ""), "S3 region"},
+		{"endpoint credential", strings.ReplaceAll(base, "https://s3.example.com", "https://user:password@s3.example.com"), "without credentials"},
+		{"endpoint path", strings.ReplaceAll(base, "https://s3.example.com", "https://s3.example.com/bucket"), "without credentials"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _, err := LoadSettings([]byte(tt.doc))
+			if tt.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !s.GatewayCacheS3ForcePathStyle || s.GatewayCacheMaxEntrySize != 256<<20 {
+					t.Fatalf("defaults = %+v", s)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("got %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

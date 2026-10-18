@@ -50,15 +50,36 @@ type Settings struct {
 	// the same URL; empty keeps none. The directory is the cache's alone,
 	// an emptyDir in the chart, so it lasts as long as the pod.
 	GatewayCacheDir string `env:"KRITIKA_GATEWAY_CACHE_DIR" yaml:"gatewayCacheDir,omitempty"`
-	// GatewayCacheMaxSize bounds what the cache keeps, the least recently
+	// GatewayCacheMaxSize bounds what filesystem storage keeps, the least recently
 	// used downloads going first, and apart from that what its fetches
 	// under way may write, so the directory holds at most twice it. 2Gi
 	// holds a few dozen release archives.
 	GatewayCacheMaxSize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_SIZE" envDefault:"2Gi" yaml:"gatewayCacheMaxSize,omitempty"`
-	// GatewayCacheMaxAge is how long a kept download is served before it is
-	// fetched again, so an asset replaced upstream is served stale for at
-	// most this long; a day, since release assets rarely change.
-	GatewayCacheMaxAge time.Duration `env:"KRITIKA_GATEWAY_CACHE_MAX_AGE" envDefault:"24h" yaml:"gatewayCacheMaxAge,omitempty"`
+	// GatewayCacheRefreshAfter is how long a kept download is served before
+	// its URL is fetched again, so an asset replaced upstream is served
+	// stale for at most this long. It deletes nothing; a day, since release
+	// assets rarely change.
+	GatewayCacheRefreshAfter time.Duration `env:"KRITIKA_GATEWAY_CACHE_REFRESH_AFTER" envDefault:"24h" yaml:"gatewayCacheRefreshAfter,omitempty"` //nolint:lll // the setting's three names are user-facing
+	// GatewayCacheStorage selects filesystem or s3. Filesystem needs no
+	// external storage and remains the default.
+	GatewayCacheStorage string `env:"KRITIKA_GATEWAY_CACHE_STORAGE" envDefault:"filesystem" yaml:"gatewayCacheStorage,omitempty"`
+	// GatewayCacheMaxEntrySize bounds one cached download. 256Mi accommodates
+	// typical release archives while bounding each fill's temporary storage.
+	GatewayCacheMaxEntrySize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE" envDefault:"256Mi" yaml:"gatewayCacheMaxEntrySize,omitempty"`
+	// GatewayCacheS3Endpoint is the object store's http(s) origin; it has no
+	// default because each installation supplies its own storage service.
+	GatewayCacheS3Endpoint string `env:"KRITIKA_GATEWAY_CACHE_S3_ENDPOINT" yaml:"gatewayCacheS3Endpoint,omitempty"`
+	// GatewayCacheS3Region is the signing region. It is explicit because S3
+	// compatible servers can use region names other than AWS's defaults.
+	GatewayCacheS3Region string `env:"KRITIKA_GATEWAY_CACHE_S3_REGION" yaml:"gatewayCacheS3Region,omitempty"`
+	// GatewayCacheS3Bucket is an existing bucket, never created by serve.
+	GatewayCacheS3Bucket string `env:"KRITIKA_GATEWAY_CACHE_S3_BUCKET" yaml:"gatewayCacheS3Bucket,omitempty"`
+	// GatewayCacheS3Prefix isolates this instance's entries. The default
+	// keeps them under gateway/; the storage format adds its own version.
+	GatewayCacheS3Prefix string `env:"KRITIKA_GATEWAY_CACHE_S3_PREFIX" envDefault:"gateway/" yaml:"gatewayCacheS3Prefix,omitempty"`
+	// GatewayCacheS3ForcePathStyle avoids requiring wildcard bucket DNS,
+	// which is uncommon for storage services inside a cluster.
+	GatewayCacheS3ForcePathStyle bool `env:"KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE" envDefault:"true" yaml:"gatewayCacheS3ForcePathStyle"`
 
 	// WebURL is the dashboard's externally reachable origin: an absolute
 	// http(s) URL with a host and no query or fragment. It is how the

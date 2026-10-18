@@ -89,6 +89,11 @@ type Config struct {
 	// the local executor, which runs the runner inside the serve process.
 	RunnerDatabaseURL string `env:"KRITIKA_RUNNER_DATABASE_URL,unset"`
 
+	// GatewayCacheS3AccessKey and GatewayCacheS3SecretKey authenticate only
+	// serve to the cache bucket. Empty selects the SDK's IAM credentials.
+	GatewayCacheS3AccessKey string `env:"KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY,unset"`
+	GatewayCacheS3SecretKey string `env:"KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY,unset"`
+
 	// PodName and PodUID are serve's own pod's, from the downward API: its
 	// Kubernetes Events name the pod by them, and kubectl describe matches a
 	// pod's Events by its UID. A pod's hostname is not always its name.

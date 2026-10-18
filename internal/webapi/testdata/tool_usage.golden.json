@@ -1,0 +1,17 @@
+{
+  "from": "2026-09-01T12:00:00Z",
+  "to": "2026-09-01T12:01:30Z",
+  "recordedRuns": 12,
+  "uncountedRuns": 2,
+  "totalExecutions": 60,
+  "tools": [
+    {
+      "name": "rg",
+      "executions": 40
+    },
+    {
+      "name": "jq",
+      "executions": 20
+    }
+  ]
+}

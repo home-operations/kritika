@@ -239,9 +239,17 @@ Kubernetes: `>=1.34.0-0`
 | envFrom | list | `[]` | Secrets and ConfigMaps loaded as environment variables in bulk. Keys must match the secret references in config. Application settings must not also be set in the file. |
 | existingConfigMap | string | `""` | Existing ConfigMap containing config.yaml instead of inline config. Put webUrl in that file. Changes require a restart, for example through a Reloader annotation. |
 | fullnameOverride | string | `""` | Override the full release name. |
-| gatewayCache.enabled | bool | `false` | Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR), which keeps what a repository's `.kritika/mise.lock` pins; `config.egress.cache` names more hosts whose downloads it keeps. |
-| gatewayCache.maxAge | string | `"24h"` | How long a kept download is served before it is fetched again (KRITIKA_GATEWAY_CACHE_MAX_AGE), a Go duration. |
-| gatewayCache.maxSize | string | `"2Gi"` | The most the cache keeps (KRITIKA_GATEWAY_CACHE_MAX_SIZE), in bytes or with Ki, Mi, Gi or Ti, the least recently used downloads going first, and apart from that the most its fetches under way may write. Allow ephemeral storage for twice this size plus evicted files still being served and the pod's other storage use. Evicted files retain disk space until their readers finish, for up to two minutes; their total size is not bounded by this setting. |
+| gatewayCache.enabled | bool | `false` | Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica; S3 shares completed objects across replicas and rollouts. |
+| gatewayCache.maxEntrySize | string | `"256Mi"` | Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi. |
+| gatewayCache.refreshAfter | string | `"24h"` | How long a cached download is served before the gateway fetches its URL again (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention. |
+| gatewayCache.storage.bucket | string | `""` | Existing S3 bucket. Provision its credentials and retention outside this chart. |
+| gatewayCache.storage.endpoint | string | `""` | S3 API origin, including http:// or https:// and an optional port; no bucket path. |
+| gatewayCache.storage.existingSecret | string | `""` | Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY keys, as a Rook ObjectBucketClaim or the AWS tooling writes them. Empty uses the SDK's IAM credentials. Only serve receives these credentials. |
+| gatewayCache.storage.forcePathStyle | bool | `true` | Address buckets in the URL path instead of requiring wildcard bucket DNS. |
+| gatewayCache.storage.maxSize | string | `"2Gi"` | Filesystem storage only: retained-entry budget, and separately the aggregate fill budget. Allow twice this plus evicted files still being served. S3's private local cache instead uses eight times maxEntrySize for each budget; this does not bound bucket usage. |
+| gatewayCache.storage.prefix | string | `"gateway/"` | Object prefix dedicated to this instance. Kritika appends the storage format version. |
+| gatewayCache.storage.region | string | `""` | Signing region configured on the S3 server. |
+| gatewayCache.storage.type | string | `"filesystem"` | Cache storage backend. |
 | httpRoute.additionalRules | list | `[]` | Custom rules prepended before the default rule (templated). |
 | httpRoute.annotations | object | `{}` | HTTPRoute annotations. |
 | httpRoute.apiVersion | string | `""` | HTTPRoute apiVersion; empty defaults to gateway.networking.k8s.io/v1. |
@@ -276,6 +284,7 @@ Kubernetes: `>=1.34.0-0`
 | monitoring.prometheusRule.additionalRuleAnnotations | object | `{}` | Extra annotations on every alert rule. |
 | monitoring.prometheusRule.additionalRuleLabels | object | `{}` | Extra labels on every alert rule, e.g. a routing label for Alertmanager. The rule's own `severity` wins. |
 | monitoring.prometheusRule.annotations | object | `{}` | PrometheusRule annotations. |
+| monitoring.prometheusRule.cacheStorageErrorsFor | string | `"10m"` | How long sustained S3 cache errors must persist before alerting. Cold misses and client cancellations are excluded. |
 | monitoring.prometheusRule.configDriftFor | string | `"15m"` | How long a replica's configuration file may differ from the applied one before KritikaConfigDrift fires; a rollout drifts briefly until the new leader applies its file. |
 | monitoring.prometheusRule.configErrorFor | string | `"5m"` | How long the leader's latest apply of the configuration may stay refused before KritikaConfigError fires. |
 | monitoring.prometheusRule.enabled | bool | `false` | Create a Prometheus Operator PrometheusRule with kritika's alerts (requires its CRDs): no leader, more than one leader, a configuration the leader could not apply, configuration drift, delayed queues, unavailable queue metrics and vector-search errors. |

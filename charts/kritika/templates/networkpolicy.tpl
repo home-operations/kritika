@@ -95,6 +95,11 @@ them, the host's identity, which no CIDR selects. */}}
 {{- $gateway := int .Values.service.gatewayPort }}
 {{- $postgres := int $np.postgresPort }}
 {{- $serverPorts := concat $np.egressPorts (list $postgres) }}
+{{- if and .Values.gatewayCache.enabled (eq .Values.gatewayCache.storage.type "s3") }}
+{{- $endpoint := urlParse (tpl .Values.gatewayCache.storage.endpoint .) }}
+{{- $port := trimPrefix ":" (regexFind ":[0-9]+$" $endpoint.host) | default (ternary "443" "80" (eq $endpoint.scheme "https")) }}
+{{- $serverPorts = append $serverPorts (int $port) | uniq }}
+{{- end }}
 {{- $serverSelector := printf "app.kubernetes.io/name == '%s' && app.kubernetes.io/instance == '%s'" (include "kritika.name" .) .Release.Name }}
 {{- $dns := dict "namespace" $np.dns.namespace "podSelector" ($np.dns.podSelector | default (dict "k8s-app" "kube-dns")) "nodeLocalAddresses" $np.dns.nodeLocalAddresses }}
 {{- $pg := $np.postgres }}

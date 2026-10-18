@@ -442,3 +442,27 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: 'networkPolicy.type must be one of: default, cilium, calico (got "bogus")'
+
+  - it: permits the S3 endpoint port for serve without granting it to runners
+    set:
+      networkPolicy.enabled: true
+      gatewayCache:
+        enabled: true
+        storage:
+          type: s3
+          endpoint: http://garage.storage.svc:3900
+          region: garage
+          bucket: kritika
+    asserts:
+      - contains:
+          path: spec.egress[1].ports
+          content: { port: 3900, protocol: TCP }
+        documentIndex: 0
+      - equal:
+          path: spec.egress[1].ports
+          value: [{ port: 5432, protocol: TCP }]
+        documentIndex: 1
+      - equal:
+          path: spec.egress[2].ports
+          value: [{ port: 8082, protocol: TCP }]
+        documentIndex: 1

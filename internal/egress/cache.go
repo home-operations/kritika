@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,9 +17,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/singleflight"
+
+	"github.com/home-operations/kritika/internal/metrics"
 )
 
 // Cache keeps the bodies of upgraded downloads, so a tool every review
@@ -39,9 +43,15 @@ type Cache struct {
 	// going first, and apart from that what the fills under way may write,
 	// so Dir holds at most twice it. A body that would not fit is not kept.
 	MaxBytes int64
-	// MaxAge is how long an entry is served before it is fetched again,
-	// so an asset replaced upstream is not served stale for longer.
-	MaxAge time.Duration
+	// RefreshAfter is how long an entry is served before its URL is fetched
+	// again, so an asset replaced upstream is not served stale for longer.
+	RefreshAfter time.Duration
+	// MaxEntryBytes bounds one download, independently of the local budget.
+	MaxEntryBytes int64
+	s3            *s3Cache
+	metrics       *metrics.Metrics
+	logger        *slog.Logger
+	lastWarning   atomic.Int64
 
 	fills    singleflight.Group
 	evicting sync.Mutex
@@ -95,7 +105,7 @@ func LockedInstall(ctx context.Context) bool {
 
 // OpenCache is a cache in dir, which it creates, checks it can write and
 // clears of the fills a previous process left unfinished.
-func OpenCache(dir string, maxBytes int64, maxAge time.Duration) (*Cache, error) {
+func OpenCache(dir string, maxBytes int64, refreshAfter time.Duration) (*Cache, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
@@ -115,7 +125,7 @@ func OpenCache(dir string, maxBytes int64, maxAge time.Duration) (*Cache, error)
 	if err := errors.Join(probe.Close(), os.Remove(probe.Name())); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
-	return &Cache{Dir: dir, MaxBytes: maxBytes, MaxAge: maxAge}, nil
+	return &Cache{Dir: dir, MaxBytes: maxBytes, RefreshAfter: refreshAfter}, nil
 }
 
 // cacheEntry is the first line of an entry's file, before the body.
@@ -129,8 +139,16 @@ type cacheEntry struct {
 	LastModified string `json:"lastModified,omitempty"`
 }
 
-// errExpired is an entry older than the cache's MaxAge.
-var errExpired = errors.New("egress: cache entry: expired")
+// errExpired is an entry older than the cache's RefreshAfter.
+var (
+	errExpired      = errors.New("egress: cache entry: expired")
+	errFillBusy     = errors.New("egress: cache: all fill slots are occupied")
+	errFillCapacity = errors.New("egress: cache: the fills under way hold the cache's bound")
+	errEntrySize    = errors.New("egress: cache: body exceeds the entry limit")
+	errPrivate      = errors.New("egress: cache: the response asks not to be shared")
+	errEncoded      = errors.New("egress: cache: response is encoded")
+	errLength       = errors.New("egress: cache: response has no length")
+)
 
 const (
 	// maxEntryHeader bounds an entry's first line.
@@ -189,33 +207,50 @@ func cacheKey(target string) string {
 // having written nothing, when the entry cannot be had, and r is then
 // forwarded as any other request is.
 func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool {
+	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
+	defer cancel()
 	target := upstreamURL(r.URL, host)
 	key := cacheKey(target)
-	outcome := "hit"
-	f, entry, offset, err := p.Cache.open(key)
+	outcome, reason := "bypass", "fill_error"
+	defer func() { p.Cache.metrics.CacheRequest(outcome, reason) }()
+	// A failed or circuit-open S3 lookup is a miss too: the replica then
+	// fills its own directory, as the filesystem backend does, rather than
+	// forwarding every download for as long as the bucket is unreachable.
+	f, entry, err := p.Cache.load(ctx, key)
 	if err != nil {
-		outcome = "miss"
 		fill := p.Cache.fills.DoChan(key, func() (any, error) {
 			// A fill that finished between this request's miss and its
-			// joining is not repeated.
-			if f, _, _, err := p.Cache.open(key); err == nil {
-				return nil, f.Close()
+			// joining is not repeated. Only this directory is checked: the
+			// bucket was asked a moment ago, and may be unreachable. An
+			// entry over the limit, kept from before it was lowered, does
+			// not count: load refuses it, so a fill must replace it.
+			if f, entry, _, err := p.Cache.open(key); err == nil {
+				_ = f.Close()
+				if p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes {
+					return nil, nil
+				}
 			}
 			return nil, p.fill(r.Context(), key, target)
 		})
 		select {
 		case <-r.Context().Done():
+			reason = cacheCanceled
 			return true
 		case res := <-fill:
 			if res.Err != nil {
+				reason = fillBypassReason(res.Err)
 				p.Logger.Debug("egress cache bypassed", "host", host, "path", r.URL.Path, "error", res.Err)
 				return false
 			}
 		}
-		if f, entry, offset, err = p.Cache.open(key); err != nil {
+		reason = "entry_unavailable"
+		if f, entry, err = p.Cache.load(ctx, key); err != nil {
 			p.Logger.Debug("egress cache bypassed", "host", host, "path", r.URL.Path, "error", err)
 			return false
 		}
+		outcome = "miss"
+	} else {
+		outcome = f.source + "_hit"
 	}
 	defer func() { _ = f.Close() }()
 	h := w.Header()
@@ -237,7 +272,7 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(upgradeTimeout))
 	p.observe("http", OutcomeAllowed)
 	p.Logger.Debug("egress cache", "outcome", outcome, "host", host, "method", r.Method, "path", r.URL.Path, "bytes", entry.Size)
-	http.ServeContent(w, r, "", modified, io.NewSectionReader(f, offset, entry.Size))
+	p.serveCached(w, r, key, f, modified)
 	return true
 }
 
@@ -251,7 +286,7 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 // request that happened to start it.
 func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	if !p.Cache.begin() {
-		return fmt.Errorf("egress: cache: %d fills are under way", maxFills)
+		return errFillBusy
 	}
 	var reserved int64
 	defer func() { p.Cache.end(reserved) }()
@@ -269,28 +304,49 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	started := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		p.Cache.metrics.CacheOperation("origin_fetch", operationResult(err), time.Since(started), 0)
 		return fmt.Errorf("egress: cache: %w", err)
 	}
+	body := &countedReader{Reader: resp.Body}
+	originResult := "skipped"
+	originDone := false
+	finishOrigin := func() {
+		if !originDone {
+			p.Cache.metrics.CacheOperation("origin_fetch", originResult, time.Since(started), body.bytes)
+			originDone = true
+		}
+	}
+
+	defer finishOrigin()
 	defer func() { _ = resp.Body.Close() }()
 	switch {
 	case resp.StatusCode != http.StatusOK:
+		originResult = OutcomeError
 		return fmt.Errorf("egress: cache: %s", resp.Status)
 	case private(resp.Header):
-		return errors.New("egress: cache: the response asks not to be shared")
+		return errPrivate
 	case resp.Header.Get("Content-Encoding") != "":
-		return errors.New("egress: cache: response is encoded")
+		return errEncoded
 	case resp.ContentLength < 0:
-		return errors.New("egress: cache: response has no length")
+		return errLength
 	case resp.ContentLength > p.Cache.MaxBytes:
-		return fmt.Errorf("egress: cache: %d bytes is over the cache's bound", resp.ContentLength)
+		return errEntrySize
+	case p.Cache.MaxEntryBytes > 0 && resp.ContentLength > p.Cache.MaxEntryBytes:
+		return errEntrySize
 	case !p.Cache.reserve(resp.ContentLength):
-		return errors.New("egress: cache: the fills under way hold the cache's bound")
+		return errFillCapacity
 	}
 	reserved = resp.ContentLength
 	entry := cacheEntry{URL: target, Stored: time.Now().UnixMilli(), Size: resp.ContentLength, ContentType: resp.Header.Get("Content-Type"),
 		ETag: resp.Header.Get("Etag"), LastModified: resp.Header.Get("Last-Modified")}
-	if err := p.Cache.store(key, entry, resp.Body); err != nil {
+	if err := p.Cache.store(key, entry, body); err != nil {
+		originResult = operationResult(err)
 		return err
+	}
+	originResult = "ok"
+	finishOrigin()
+	if p.Cache.s3 != nil {
+		p.Cache.queueUpload(key)
 	}
 	p.Logger.Debug("egress cache fill", "url", target, "from", resp.Request.URL.Host, "bytes", entry.Size,
 		"elapsed", time.Since(started).Round(time.Millisecond))
@@ -353,6 +409,7 @@ func (c *Cache) begin() bool {
 		return false
 	}
 	c.filling++
+	c.metrics.CacheFill(1)
 	return true
 }
 
@@ -373,13 +430,14 @@ func (c *Cache) end(reserved int64) {
 	c.underway.Lock()
 	defer c.underway.Unlock()
 	c.filling--
+	c.metrics.CacheFill(-1)
 	c.reserved -= reserved
 }
 
 // open opens the entry under key and marks it used, returning its file,
 // what its first line records and where its body starts. An entry whose
 // file does not hold what its first line says is removed, to be fetched
-// again; one past MaxAge is left for the fill that replaces it.
+// again; one past RefreshAfter is left for the fill that replaces it.
 func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 	path := filepath.Join(c.Dir, key)
 	f, err := os.Open(path)
@@ -396,7 +454,7 @@ func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 		}
 		return nil, cacheEntry{}, 0, err
 	}
-	if c.MaxAge > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.MaxAge {
+	if c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter {
 		_ = f.Close()
 		return nil, cacheEntry{}, 0, errExpired
 	}
@@ -498,12 +556,15 @@ func (c *Cache) evict(keep string) {
 		}
 	}
 	slices.SortFunc(files, func(a, b file) int { return a.used.Compare(b.used) })
+	evictions := 0
 	for _, f := range files {
 		if total <= c.MaxBytes {
 			break
 		}
 		if os.Remove(filepath.Join(c.Dir, f.name)) == nil {
 			total -= f.size
+			evictions++
 		}
 	}
+	c.metrics.CacheLocal(total, c.MaxBytes, evictions)
 }

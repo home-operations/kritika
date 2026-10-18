@@ -200,6 +200,8 @@ func TestParseCommand(t *testing.T) {
 
 func TestEnv(t *testing.T) {
 	t.Setenv("KRITIKA_DATABASE_URL", "postgres://app:secret@db/kritika")
+	t.Setenv("KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY", "secret-access")
+	t.Setenv("KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY", "secret-key")
 	t.Setenv("KRITIKA_ADDR", ":9090")
 	cfg, err := Load()
 	if err != nil {
@@ -210,9 +212,11 @@ func TestEnv(t *testing.T) {
 		vars[e.Name] = e
 	}
 	for name, want := range map[string]EnvVar{
-		"KRITIKA_ADDR":         {Name: "KRITIKA_ADDR", Value: ":9090", Set: true},
-		"KRITIKA_METRICS_ADDR": {Name: "KRITIKA_METRICS_ADDR", Value: ":8081"},
-		"KRITIKA_DATABASE_URL": {Name: "KRITIKA_DATABASE_URL", Value: "set", Secret: true, Set: true},
+		"KRITIKA_ADDR":                        {Name: "KRITIKA_ADDR", Value: ":9090", Set: true},
+		"KRITIKA_METRICS_ADDR":                {Name: "KRITIKA_METRICS_ADDR", Value: ":8081"},
+		"KRITIKA_DATABASE_URL":                {Name: "KRITIKA_DATABASE_URL", Value: "set", Secret: true, Set: true},
+		"KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY": {Name: "KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY", Value: "set", Secret: true, Set: true},
+		"KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY": {Name: "KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY", Value: "set", Secret: true, Set: true},
 	} {
 		if vars[name] != want {
 			t.Errorf("%s = %+v, want %+v", name, vars[name], want)

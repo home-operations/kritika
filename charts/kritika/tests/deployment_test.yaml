@@ -428,7 +428,7 @@ tests:
     set:
       config: null
       existingConfigMap: external-config
-      gatewayCache: { enabled: true, maxSize: 512Mi, maxAge: 6h }
+      gatewayCache: { enabled: true, storage: { maxSize: 512Mi }, refreshAfter: 6h }
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -438,12 +438,66 @@ tests:
           content: { name: KRITIKA_GATEWAY_CACHE_MAX_SIZE, value: 512Mi }
       - contains:
           path: spec.template.spec.containers[0].env
-          content: { name: KRITIKA_GATEWAY_CACHE_MAX_AGE, value: 6h }
+          content: { name: KRITIKA_GATEWAY_CACHE_REFRESH_AFTER, value: 6h }
 
   - it: refuses an env entry for a cache setting the file already sets
     set:
-      config.gatewayCacheMaxAge: 6h
-      env.KRITIKA_GATEWAY_CACHE_MAX_AGE: 1h
+      config.gatewayCacheRefreshAfter: 6h
+      env.KRITIKA_GATEWAY_CACHE_REFRESH_AFTER: 1h
     asserts:
       - failedTemplate:
-          errorPattern: "env.KRITIKA_GATEWAY_CACHE_MAX_AGE conflicts with config.gatewayCacheMaxAge"
+          errorPattern: "env.KRITIKA_GATEWAY_CACHE_REFRESH_AFTER conflicts with config.gatewayCacheRefreshAfter"
+
+  - it: supplies S3 credentials from the existing secret and keeps private local staging
+    set:
+      gatewayCache:
+        enabled: true
+        storage:
+          type: s3
+          endpoint: https://s3.example.com
+          region: garage
+          bucket: kritika
+          existingSecret: cache-credentials
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_GATEWAY_CACHE_S3_ACCESS_KEY
+            valueFrom:
+              secretKeyRef: { name: cache-credentials, key: AWS_ACCESS_KEY_ID }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY
+            valueFrom:
+              secretKeyRef: { name: cache-credentials, key: AWS_SECRET_ACCESS_KEY }
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: gateway-cache, emptyDir: {} }
+
+  - it: supplies S3 settings beside an external application config
+    set:
+      config: null
+      existingConfigMap: external-config
+      gatewayCache:
+        enabled: true
+        storage:
+          type: s3
+          endpoint: http://s3.example.com:9000
+          region: garage
+          bucket: kritika
+          forcePathStyle: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_STORAGE, value: s3 }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_S3_ENDPOINT, value: "http://s3.example.com:9000" }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_S3_FORCE_PATH_STYLE, value: "false" }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: { name: KRITIKA_GATEWAY_CACHE_S3_SECRET_KEY }
+          any: true

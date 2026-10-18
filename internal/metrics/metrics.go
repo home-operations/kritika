@@ -15,6 +15,7 @@ import (
 // (accounts, connections, models) or by fixed vocabularies (status,
 // stage, outcome); nothing per PR or per commit is ever a label.
 type Metrics struct {
+	cache          cacheMetrics
 	webhooks       *prometheus.CounterVec
 	polls          *prometheus.CounterVec
 	polled         *prometheus.CounterVec
@@ -59,6 +60,7 @@ const (
 func New(reg prometheus.Registerer) *Metrics {
 	f := promauto.With(reg)
 	m := &Metrics{
+		cache: newCacheMetrics(reg),
 		webhooks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_webhooks_total", Help: "Webhook deliveries by connection and what became of them.",
 		}, []string{lblConnection, lblOutcome}),
@@ -341,7 +343,7 @@ func (m *Metrics) QueueWait(queue string, took time.Duration) {
 // error following a scrape is visible to rate/increase.
 func (m *Metrics) InitVectorSearch(account string) {
 	if m != nil {
-		for _, outcome := range []string{"ok", "error", "canceled"} {
+		for _, outcome := range []string{"ok", outcomeError, outcomeCanceled} {
 			m.vectorSearch.WithLabelValues(account, outcome)
 		}
 	}

@@ -140,6 +140,7 @@ const (
 	upgradeTimeout = 2 * time.Minute
 	// upgradedScheme is what an upgraded request goes out over.
 	upgradedScheme = "https"
+	plainScheme    = "http"
 )
 
 func (p *Proxy) observe(kind, outcome string) {
@@ -243,7 +244,7 @@ func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
 // upgrade forwards an absolute-URI http:// request to the same host over
 // HTTPS, adding the host's credential.
 func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
-	if !r.URL.IsAbs() || r.URL.Scheme != "http" {
+	if !r.URL.IsAbs() || r.URL.Scheme != plainScheme {
 		p.observe("http", OutcomeRefused)
 		http.Error(w, "egress: only absolute http:// requests and CONNECT are served", http.StatusBadRequest)
 		return
@@ -258,8 +259,18 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 		p.refuse(r.Context(), w, "http", r.URL.Host, reason)
 		return
 	}
-	if p.Cache != nil && cacheable(r, host, rules) && p.cached(w, r, host) {
-		return
+	if p.Cache != nil {
+		if cacheable(r, host, rules) {
+			if p.cached(w, r, host) {
+				return
+			}
+		} else {
+			reason := "ineligible"
+			if CacheBypassed(r.Context()) {
+				reason = "retry"
+			}
+			p.Cache.metrics.CacheRequest("bypass", reason)
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
 	defer cancel()
@@ -335,7 +346,7 @@ func ProxyURL(raw string) (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("egress: gateway url: %w", err)
 	}
-	if u.Scheme != "http" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
+	if u.Scheme != plainScheme || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") {
 		return nil, errors.New("egress: gateway url must be http://host:port")
 	}
 	return u, nil

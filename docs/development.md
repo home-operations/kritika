@@ -28,6 +28,35 @@ with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
 
+## S3 cache compatibility
+
+`mise run test-s3` runs the gateway cache against a real S3 endpoint. It checks
+sharing across replicas with empty local directories, origin response headers,
+HEAD and range requests, concurrent fills, and reads during object replacement.
+Use a disposable, unversioned bucket and credentials with bucket creation,
+listing and deletion permissions as well as object read/write permissions:
+
+```sh
+env KRITIKA_TEST_S3_ENDPOINT=http://127.0.0.1:9000 \
+  KRITIKA_TEST_S3_REGION=us-east-1 \
+  KRITIKA_TEST_S3_BUCKET=kritika-test \
+  KRITIKA_TEST_S3_ACCESS_KEY=test-access \
+  KRITIKA_TEST_S3_SECRET_KEY=test-secret \
+  mise run test-s3
+```
+
+The suite creates the bucket if missing, writes under a unique test prefix,
+and removes that prefix on completion. It removes the bucket only if it created
+it. A pre-provisioned bucket works with credentials scoped to that bucket;
+Garage's region must match its `s3_region`. Run the same suite against MinIO,
+Ceph RGW, Garage and VersityGW before changing the SDK or storage protocol.
+Production serve only needs object read/write access, not the test suite's
+bucket management permissions.
+
+The initial compatibility run passed against MinIO
+`RELEASE.2025-10-15T17-29-55Z` built from source, Ceph RGW 19.2.0,
+Garage 2.4.1 and VersityGW 1.9.0 with its POSIX backend.
+
 ## Docs
 
 This site is MkDocs Material, declared in `pyproject.toml`, pinned in

@@ -423,7 +423,7 @@ does not work there.
 
 A run installs the tools its repository declares, so each run downloads
 them again. The gateway can keep those downloads
-instead: with `gatewayCacheDir` set, an emptyDir under Helm, each replica
+instead: with `gatewayCacheDir` set, a private emptyDir under Helm, each replica
 keeps what a repository's locked installs download from the hosts its
 `.kritika/mise.lock` pins, and serves it to the next run that asks for
 the same URL. `egress.cache` names more hosts whose downloads it keeps
@@ -459,7 +459,7 @@ config:
   token too, stay on HTTPS. A cached host's URLs must not carry a
   credential in their path.
   The fetch is the gateway's own, with its own User-Agent, and runs that
-  ask for the same URL at once share it. A command's plain HTTP request
+  ask the same replica for the same URL at once share it. A command's plain HTTP request
   to a cached host, such as `curl http://get.helm.sh/...`, is answered
   and kept the same way.
 - **Integrity.** mise checks every download against the checksum the
@@ -468,14 +468,14 @@ config:
   once more, asking the gateway, by the proxy URL's username `uncached`,
   not to answer from its cache; a locked install's retry also leaves
   its lock's hosts on HTTPS, as it would go without the cache. The
-  gateway fetches a kept download again after `gatewayCacheMaxAge`, 24h
+  gateway fetches a kept download again after `gatewayCacheRefreshAfter`, 24h
   unless set, so an asset replaced upstream costs retries for at most
   that long. No run can write the cache, only have the gateway fetch a
   URL a cached host serves or, by naming the proxy's user `locked`, a URL
   any other allowed host serves; what the gateway keeps from a host
   `egress.cache` does not name is served only to a request named
   `locked` too, which a locked install checks against its lock.
-- **Size.** `gatewayCacheMaxSize`, 2Gi unless set, bounds what each
+- **Filesystem size.** `gatewayCacheMaxSize`, 2Gi unless set, bounds what each
   replica keeps, the least recently used going first, and apart from
   that what the fetches under way, at most eight at once, may write: a
   fetch past either bound is forwarded, not kept, so the directory holds
@@ -486,6 +486,125 @@ config:
   plus those files and the pod's other storage use. Twice the bound is
   not a hard limit on disk usage. Each replica keeps its own cache,
   which lasts as long as its pod.
+
+#### Shared S3 storage
+
+Use an existing S3-compatible bucket to reuse completed downloads across replicas
+and rollouts. Mise still downloads through the gateway and verifies locked tools;
+only serve receives bucket credentials. The initial targets are MinIO, Ceph RGW,
+Garage and VersityGW. Use the same configuration for each, with its endpoint and
+signing region:
+
+```yaml
+gatewayCache:
+  enabled: true
+  refreshAfter: 24h
+  maxEntrySize: 256Mi
+  storage:
+    type: s3
+    endpoint: https://s3.example.internal
+    region: us-east-1
+    bucket: kritika-cache
+    prefix: gateway/
+    forcePathStyle: true
+    existingSecret: kritika-cache-s3
+```
+
+The existing Secret has `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` keys, the
+names a Rook `ObjectBucketClaim` and the AWS tooling write, so a claim's generated
+Secret can be named directly. Without it, the
+SDK uses IAM credentials, including web identity where configured. Credentials
+are never passed to runner Jobs or stored in application configuration. The
+chart permits the endpoint's TCP port in serve's network policy; runner egress
+continues to go through the gateway.
+
+Entries are complete objects under `<prefix>/v1/<hash-of-original-HTTPS-URL>`.
+The object's metadata records the fetch time, body size and origin response
+headers. Its key identifies a URL, not a content checksum. The gateway retains
+its checks for credentials, privacy and redirect destinations. Bucket writers
+are trusted: protect the bucket from runner pods and unrelated workloads,
+particularly because instance tools can install without a repository lock.
+
+Each replica first checks its bounded local cache, then the bucket. A cold fill
+is staged locally and queued for a background single-request upload;
+`maxEntrySize` cannot exceed 5Gi. No conditional writes, shared locks, bucket versioning, tagging or
+multipart operations are required. Concurrent misses on different replicas can
+fetch and upload the same URL twice. Completed objects are reused thereafter;
+there is no promise of exactly one upstream download.
+
+The local emptyDir remains private to each pod. In S3 mode its retained-entry
+budget and, separately, its aggregate fill budget are each eight times
+`maxEntrySize`. With 256Mi entries, allow 4Gi plus evicted files still being
+served or uploaded and the pod's other storage use. Two active uploads can hold
+up to another 512Mi of evicted files open; queued uploads retain only keys.
+`storage.maxSize` applies only to the filesystem backend. Hits read from S3 are
+streamed, not added to local storage.
+Uploads use two workers and a queue of at most 16 keys per replica. A full queue,
+failed upload or entry evicted before upload leaves the download usable locally
+when still present. The requesting install never waits for publication. Each
+upload has a deadline of 30 seconds plus one second per MiB of the entry, so a
+slow link fails only below about 1 MiB/s; shutdown cancels active uploads and
+drops queued keys. Failed or skipped uploads are not retried in the background.
+
+Metadata lookups have a two-second total deadline. Credential discovery has its
+own two-second budget, including SDK refreshes detached from the request.
+S3 connection, TLS handshake and response-header waits are also capped at two
+seconds; a body read with no
+progress for ten seconds fails. The existing overall download deadline remains.
+Read and write circuit breakers are separate: three consecutive failures pause
+that direction for 30 seconds, then one eligible request probes recovery while
+others skip the bucket. A successful read probe, including a normal missing
+object, or upload reopens access; a failed probe starts another cooldown. Client
+cancellation does not count as a storage failure. Local hits remain available
+through an S3 outage, and failed uploads do not suppress healthy S3 reads.
+
+A failed or circuit-open lookup is a miss: the replica fills its own directory
+and serves that copy to later requests, as the filesystem backend does, so an
+outage costs each replica one origin fetch per URL rather than one per run. The
+fill's upload is skipped while the write circuit is open. A failure reading an
+opened S3 object can cost the runner its existing uncached retry. Startup does
+not contact S3 and never creates the bucket. Missing buckets, unavailable hosts
+and denied credentials recover through subsequent requests once the storage
+problem is corrected.
+
+`refreshAfter` is checked by kritika, independently of physical object deletion. It is
+not a bucket size or retention limit. Provision retention outside the chart,
+using lifecycle expiration where supported or an external cleanup job. Include
+noncurrent versions if bucket versioning is enabled. Without cleanup, unused
+entries remain in the bucket. Use a dedicated prefix per instance, shared only
+by its replicas.
+
+The bucket may also live outside the cluster, at a provider such as Cloudflare
+R2, Backblaze B2 or Wasabi. Nothing in the gateway assumes it is nearby: the same
+bounded lookups, circuits and local fallback apply, and an unreachable bucket
+leaves each replica caching in its own directory. The deadlines are chosen for
+a bucket in the cluster, though, and an external one meets them with less
+margin. A metadata lookup has two seconds in total, including a TLS handshake
+on a cold connection; a link that regularly needs longer opens the read circuit
+and shows up on the `KritikaCacheStorageErrors` alert as `s3_lookup` errors
+while downloads keep working from local fills. A cold replica streams a hit
+over one connection, so a large entry may arrive more slowly than from its
+origin. Uploads are off the request path and their deadline grows with size.
+Run `mise run test-s3` against the provider before relying on it; the
+[compatibility suite](development.md#s3-cache-compatibility) was only run
+against the servers it names.
+
+Costs follow the request pattern: a HEAD per eligible request, a GET per cold
+replica hit, a PUT per fill, plus egress for the GETs. Providers with a minimum
+storage duration bill an object for that period however soon lifecycle
+expiration or a `refreshAfter` overwrite removes it, so set the lifecycle
+expiry at or above the minimum rather than close to `refreshAfter`. Give an
+`https://` endpoint, so credentials and bodies are encrypted in transit; scope
+the key to this bucket alone and keep the bucket private, since
+a key that works from anywhere widens what a leak exposes, and the gateway
+serves an unlocked instance tool from the bucket without a checksum. Use the
+provider's signing region, `auto` for R2; the chart's network policy already
+allows serve's egress on 443.
+
+For the filesystem backend, the Helm capacity setting is now
+`gatewayCache.storage.maxSize`; migrate the former `gatewayCache.maxSize` value.
+`storage.type` defaults to `filesystem`, retaining the per-replica emptyDir.
+`maxEntrySize` applies to either backend; larger downloads are forwarded.
 
 ### Migrating from image-mounted tools
 
