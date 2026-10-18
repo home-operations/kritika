@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -8,6 +10,8 @@ import (
 
 	"github.com/go-git/go-billy/v6/memfs"
 	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
 
@@ -119,6 +123,30 @@ func TestRepoFiles(t *testing.T) {
 				t.Fatalf("files=%v notes=%q", got, notes)
 			}
 		})
+	}
+}
+
+// A tree can name a blob the store does not hold, as after a partial
+// fetch; reading it is fs.ErrNotExist, like a path the tree lacks.
+func TestTreeReaderMissingBlob(t *testing.T) {
+	st := memory.NewStorage()
+	obj := st.NewEncodedObject()
+	missing := object.Tree{Entries: []object.TreeEntry{{
+		Name: repoconfig.FileName, Mode: filemode.Regular, Hash: plumbing.NewHash("0123456789abcdef0123456789abcdef01234567"),
+	}}}
+	if err := missing.Encode(obj); err != nil {
+		t.Fatal(err)
+	}
+	h, err := st.SetEncodedObject(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, err := object.GetTree(st, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := treeReader(tr)(repoconfig.FileName); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("read = %v, want fs.ErrNotExist", err)
 	}
 }
 

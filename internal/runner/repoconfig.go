@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"slices"
 
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 
 	"github.com/home-operations/kritika/internal/repoconfig"
@@ -35,8 +36,8 @@ func treeReader(tree *object.Tree) func(string) ([]byte, error) {
 		if err != nil || !e.Mode.IsFile() {
 			return nil, fmt.Errorf("runner: %s: %w", name, fs.ErrNotExist)
 		}
-		f, err := tree.File(name)
-		if errors.Is(err, object.ErrFileNotFound) {
+		f, err := tree.TreeEntryFile(e)
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
 			return nil, fmt.Errorf("runner: %s: %w", name, fs.ErrNotExist)
 		}
 		if err != nil {
