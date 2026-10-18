@@ -54,6 +54,17 @@ const defaultMaxBytes = 1 << 20
 // parseTimeout stops a pathological parse.
 const parseTimeout = 5 * time.Second
 
+// parseMemoryBudget bounds one parse's arena and scratch memory, where the
+// library's default, the larger of 512 MiB and 512 bytes per input byte,
+// is past a runner pod's memory limit for a file of the size defaultMaxBytes
+// lets through. A parse it stops falls back to fixed windows.
+const parseMemoryBudget = 256 << 20
+
+// parseStackDepthLimit stops a parse whose stack runs deep, as a long run of
+// open brackets drives it: the library recovers at the end of such a file
+// without heeding parseTimeout, for minutes.
+const parseStackDepthLimit = 4096
+
 // Parser cuts files. It caches one tree-sitter parser per language and
 // serialises every parse, since parsers are not safe for concurrent use.
 type Parser struct {
@@ -146,6 +157,8 @@ func (p *Parser) language(path string) *languageParser {
 	lang := entry.Language()
 	parser := gotreesitter.NewParser(lang)
 	parser.SetTimeoutMicros(uint64(parseTimeout.Microseconds()))
+	parser.SetMemoryBudgetBytes(parseMemoryBudget)
+	parser.SetParseWorkLimits(gotreesitter.ParseWorkLimits{StackDepthLimit: parseStackDepthLimit})
 	lp := &languageParser{entry: *entry, lang: lang, parser: parser}
 	if q := strings.TrimSpace(grammars.ResolveTagsQuery(*entry)); q != "" {
 		// A tags query that fails to compile leaves the language without

@@ -1,10 +1,12 @@
 package chunk
 
 import (
+	"bytes"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFileWindow(t *testing.T) {
@@ -198,4 +200,24 @@ func TestWindows(t *testing.T) {
 
 func contains(ss []string, s string) bool {
 	return slices.Contains(ss, s)
+}
+
+// TestParseBounds: every parser has its memory budget, and a file built to
+// drive the parse stack deep falls back to fixed windows within the parse
+// timeout, which alone does not stop it.
+func TestParseBounds(t *testing.T) {
+	var p Parser
+	for _, path := range []string{"x.go", "x.js"} {
+		if got := p.language(path).parser.MemoryBudgetBytes(); got != parseMemoryBudget {
+			t.Errorf("%s: memory budget = %d, want %d", path, got, parseMemoryBudget)
+		}
+	}
+	start := time.Now()
+	f := p.Parse("deep.js", bytes.Repeat([]byte("("), 128<<10))
+	if took := time.Since(start); took > parseTimeout {
+		t.Errorf("a deep parse took %s, past the %s timeout", took, parseTimeout)
+	}
+	if len(f.Decls) != 0 {
+		t.Errorf("a deep parse found %d declarations", len(f.Decls))
+	}
 }
