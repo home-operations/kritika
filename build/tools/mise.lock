@@ -35,22 +35,22 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
 [[tools."github:stunnel/static-curl"]]
-version = "8.22.0"
+version = "8.23.0"
 backend = "github:stunnel/static-curl"
-specifiers = ["8.22.0"]
+specifiers = ["8.23.0"]
 
 [tools."github:stunnel/static-curl".options]
 matching = "glibc"
 
 [tools."github:stunnel/static-curl"."platforms.linux-arm64"]
-checksum = "sha256:fa4de50f80fb2fbbf77a7bf8385891b6cb1a501a2e28b1ed18cf25e11fd66b66"
-url = "https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-aarch64-glibc-8.22.0.tar.xz"
-url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/543753115"
+checksum = "sha256:852e62a0b8635e275e3732115b555c45530c2aa1f39bccfc95619c210cf284b2"
+url = "https://github.com/stunnel/static-curl/releases/download/8.23.0/curl-linux-aarch64-glibc-8.23.0.tar.xz"
+url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/640278793"
 
 [tools."github:stunnel/static-curl"."platforms.linux-x64"]
-checksum = "sha256:d74460e43c0e6eaf40ec1fdda92c53dee94da8a6e6db066711541ada5aab0fa6"
-url = "https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-glibc-8.22.0.tar.xz"
-url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/543753112"
+checksum = "sha256:89c482c0f4a64876866c0450534fcdd187ec139c25bfcf16894f99b368ef21e2"
+url = "https://github.com/stunnel/static-curl/releases/download/8.23.0/curl-linux-x86_64-glibc-8.23.0.tar.xz"
+url_api = "https://api.github.com/repos/stunnel/static-curl/releases/assets/640278752"
 
 [[tools.jq]]
 version = "1.8.2"
