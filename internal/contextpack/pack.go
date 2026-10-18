@@ -161,11 +161,18 @@ func (b *builder) read(tree *object.Tree, path string) []byte {
 		return nil
 	}
 	f, err := tree.File(path)
-	if err != nil || f.Size > int64(b.opts.MaxFileBytes) {
+	if err != nil {
 		return nil
 	}
-	// Read once, as bytes; a binary file, which holds a NUL, is nothing to
-	// read.
+	return b.readFile(f)
+}
+
+// readFile reads f once, as bytes. A file over the size cap, or a binary
+// file, which holds a NUL, is nothing to read.
+func (b *builder) readFile(f *object.File) []byte {
+	if f.Size > int64(b.opts.MaxFileBytes) {
+		return nil
+	}
 	r, err := f.Reader()
 	if err != nil {
 		return nil
@@ -312,7 +319,7 @@ func (b *builder) scan(ctx context.Context) error {
 		if _, decls := chunk.Language(f.Name); !decls {
 			return nil
 		}
-		src := b.read(b.in.Head, f.Name)
+		src := b.readFile(f)
 		if src == nil {
 			return nil
 		}

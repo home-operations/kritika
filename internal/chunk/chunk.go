@@ -438,10 +438,12 @@ func Windows(src []byte, size, overlap int) []Decl {
 	return out
 }
 
-// Matches reports whether path matches any of the doublestar globs.
+// Matches reports whether path matches any of the doublestar globs. Every
+// glob a setting or repository file takes is validated where it is read, so
+// they are not validated again here.
 func Matches(globs []string, path string) bool {
 	for _, g := range globs {
-		if ok, _ := doublestar.Match(g, path); ok {
+		if doublestar.MatchUnvalidated(g, path) {
 			return true
 		}
 	}

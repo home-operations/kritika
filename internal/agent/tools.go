@@ -200,7 +200,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		if gt.tree.ignored(f.Name) {
 			return nil
 		}
-		if ok, _ := doublestar.Match(glob, f.Name); !ok {
+		if !doublestar.MatchUnvalidated(glob, f.Name) {
 			return nil
 		}
 		if f.Size > MaxBlobBytes {
@@ -284,7 +284,7 @@ func (lt *listFilesTool) Run(ctx context.Context, input json.RawMessage) (string
 		if lt.tree.ignored(f.Name) {
 			return nil
 		}
-		if ok, _ := doublestar.Match(glob, f.Name); !ok {
+		if !doublestar.MatchUnvalidated(glob, f.Name) {
 			return nil
 		}
 		paths = append(paths, f.Name)
