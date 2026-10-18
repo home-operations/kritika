@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"slices"
 	"strings"
@@ -45,7 +44,7 @@ repositories:
 type baseForge struct{ forge.Client }
 
 func (baseForge) PullRequest(context.Context, string, string, int) (forge.OpenPullRequest, error) {
-	return forge.OpenPullRequest{}, fs.ErrNotExist
+	return forge.OpenPullRequest{}, forge.ErrNotFound
 }
 
 // The reactions of reviews other suites left on the shared database are
@@ -78,7 +77,7 @@ func (f *listForge) PullRequest(_ context.Context, _, _ string, number int) (for
 	if pr, ok := f.byNumber[number]; ok {
 		return pr, nil
 	}
-	return forge.OpenPullRequest{}, fs.ErrNotExist
+	return forge.OpenPullRequest{}, forge.ErrNotFound
 }
 
 func (f *listForge) ListOpenPullRequests(_ context.Context, _, _ string, since time.Time) ([]forge.OpenPullRequest, error) {

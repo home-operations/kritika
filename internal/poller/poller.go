@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"strings"
 	"sync"
@@ -310,7 +309,7 @@ func (p *Poller) closeMissed(
 			break
 		}
 		pr, err := client.PullRequest(ctx, owner, name, number)
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, forge.ErrNotFound) {
 			p.Logger.Warn("pull request held open is unknown to the forge", "connection", in.Name, "repository", r.Name, "pr", number)
 			p.markUnknown(key)
 			continue

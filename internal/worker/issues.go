@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 
 	"github.com/home-operations/kritika/internal/forge"
@@ -23,7 +22,7 @@ func linkedIssues(ctx context.Context, client forge.Client, owner, repo, body st
 	for _, n := range numbers {
 		is, err := client.Issue(ctx, owner, repo, n)
 		switch {
-		case errors.Is(err, fs.ErrNotExist), err == nil && is.PullRequest:
+		case errors.Is(err, forge.ErrNotFound), err == nil && is.PullRequest:
 			continue
 		case err != nil:
 			logger.Warn("linked issue not read", "issue", n, "error", err)

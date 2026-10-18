@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"slices"
 	"strings"
@@ -645,7 +644,7 @@ func (p *publishPhase) writeSticky(ctx context.Context, stored int64, body strin
 		if err == nil {
 			return stored, nil
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
+		if !errors.Is(err, forge.ErrNotFound) {
 			return 0, err
 		}
 		p.logger.Warn("sticky comment no longer on the forge", "comment", stored)

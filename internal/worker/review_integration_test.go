@@ -190,7 +190,7 @@ func (l *localForge) FileAt(_ context.Context, _, _, ref, path string) ([]byte, 
 
 func (l *localForge) CloneURL(string, string) string { return l.dir }
 func (l *localForge) Issue(_ context.Context, _, _ string, number int) (forge.Issue, error) {
-	return forge.Issue{}, fmt.Errorf("issue %d: %w", number, fs.ErrNotExist)
+	return forge.Issue{}, fmt.Errorf("issue %d: %w", number, forge.ErrNotFound)
 }
 func (l *localForge) GitToken(context.Context, string) (string, error) { return "", nil }
 func (l *localForge) BotLogin(context.Context) (string, error)         { return "kritika[bot]", nil }
@@ -333,7 +333,7 @@ func (l *localForge) PullRequest(context.Context, string, string, int) (forge.Op
 	if l.size.ChangedFiles > 0 {
 		return l.size, nil
 	}
-	return forge.OpenPullRequest{}, fs.ErrNotExist
+	return forge.OpenPullRequest{}, forge.ErrNotFound
 }
 
 // setSize makes PullRequest report a pull request of size's lines and
@@ -444,7 +444,7 @@ func (l *localForge) UpdateComment(_ context.Context, _, _ string, id int64, bod
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.comments[id]; !ok {
-		return fmt.Errorf("local forge: comment %d: %w", id, fs.ErrNotExist)
+		return fmt.Errorf("local forge: comment %d: %w", id, forge.ErrNotFound)
 	}
 	l.comments[id] = body
 	return nil
