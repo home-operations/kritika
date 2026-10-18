@@ -202,6 +202,7 @@ func TestActionsJobs(t *testing.T) {
 	t.Run("cancel of a non-running review is 409", func(t *testing.T) { testCancelNotCancelable(t, e) })
 	t.Run("cancel stops a running review's job", func(t *testing.T) { testCancelRunning(t, e) })
 	t.Run("cancel of a review whose job already ended is 409", func(t *testing.T) { testCancelEndedJob(t, e) })
+	t.Run("a review id in another spelling is not found", func(t *testing.T) { testNonCanonicalReviewIDs(t, e) })
 	t.Run("reindex enqueues a full index job, then dedupes", func(t *testing.T) { testReindexJob(t, e) })
 	t.Run("a repository is turned off and on, audited", func(t *testing.T) { testTurnOn(t, e) })
 	t.Run("a discovered repository is enabled through the UI", func(t *testing.T) { testEnableDiscovered(t, e) })
@@ -446,4 +447,26 @@ func testReindexJob(t *testing.T, e *actionsEnv) {
 	if n := e.audits(AuditRepoReindex, "aj/one"); n != 1 {
 		t.Errorf("repo.reindex audit rows after dedup = %d, want still 1", n)
 	}
+}
+
+// testNonCanonicalReviewIDs: a review id is Postgres's own spelling of it,
+// the one the API hands out. Any other spelling uuid.Validate allows, some
+// of which $1::uuid refuses, is not found rather than a server error, and
+// a cursor carrying one is not valid.
+func testNonCanonicalReviewIDs(t *testing.T, e *actionsEnv) {
+	review := e.scalar(`INSERT INTO reviews (account_id, pull_request_id, head_sha, status)
+		VALUES ($1, $2, 'headC', 'running') RETURNING id::text`, e.accountID, e.prID)
+	base := "/api/v1/accounts/github/aj/reviews/"
+	if status, body := e.send(http.MethodGet, base+review, ""); status != http.StatusOK {
+		t.Fatalf("the review in its own spelling = %d: %s", status, body)
+	}
+	for _, id := range []string{"urn:uuid:" + review, strings.ToUpper(review), "{" + review + "}", strings.ReplaceAll(review, "-", "")} {
+		status, body := e.send(http.MethodGet, base+url.PathEscape(id), "")
+		e.expect(status, body, http.StatusNotFound, "")
+		status, body = e.do(base + url.PathEscape(id) + "/cancel")
+		e.expect(status, body, http.StatusNotFound, "")
+	}
+	cursor := encodeCursor(store.Cursor{T: time.Now(), ID: "urn:uuid:" + review})
+	status, body := e.send(http.MethodGet, "/api/v1/accounts/github/aj/findings?cursor="+cursor, "")
+	e.expect(status, body, http.StatusBadRequest, CodeInvalidCursor)
 }

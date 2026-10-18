@@ -105,7 +105,9 @@ func queuedMessage(j *store.JobRow) string {
 
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request, t *accountScope) error {
 	ctx, tid, id := r.Context(), t.account.ID(), r.PathValue("id")
-	if uuid.Validate(id) != nil {
+	// Postgres's own spelling, the one the API hands out: uuid.Validate
+	// allows spellings $1::uuid refuses, and the audit records the id.
+	if u, err := uuid.Parse(id); err != nil || u.String() != id {
 		return errNotFound("review")
 	}
 	err := s.read(ctx, t, func(tx pgx.Tx) error {

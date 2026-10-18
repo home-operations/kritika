@@ -147,7 +147,7 @@ func PullQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, 
 // The row update and the JobCancelTx call share tx, so a rollback undoes
 // both together.
 func RequestCancel(ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], reviewID string) error {
-	if _, err := uuid.Parse(reviewID); err != nil {
+	if u, err := uuid.Parse(reviewID); err != nil || u.String() != reviewID {
 		return ErrNotCancelable
 	}
 	var jobID int64
