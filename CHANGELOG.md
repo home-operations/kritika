@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.0.78](https://github.com/home-operations/kritika/compare/0.0.77...0.0.78) (2026-10-18)
+
+
+### Bug Fixes
+
+* **agent:** write checked-out trees through an os.Root ([#1055](https://github.com/home-operations/kritika/issues/1055)) ([04a9ad3](https://github.com/home-operations/kritika/commit/04a9ad3e73755f7acc521222ba2d729f2ad60e0a))
+* **api:** answer 404 for a review id in another spelling ([#1052](https://github.com/home-operations/kritika/issues/1052)) ([f2f30a0](https://github.com/home-operations/kritika/commit/f2f30a0f6eb81e5dcbaf8a375ec2facd9d7c59fa))
+* **auth:** verify UserInfo's subject and name GitHub's rate limits ([#1045](https://github.com/home-operations/kritika/issues/1045)) ([229d43d](https://github.com/home-operations/kritika/commit/229d43d7b9e349725bf6e864c1caf55f5105a4e1))
+* **chatgpt:** keep a new leader from reusing the last leader's refresh token ([#1037](https://github.com/home-operations/kritika/issues/1037)) ([771a072](https://github.com/home-operations/kritika/commit/771a072ab7fdff9677055cce404c9a3b747d4314))
+* **chunk:** bound a parse's memory and stack depth ([#1053](https://github.com/home-operations/kritika/issues/1053)) ([9c7b8cc](https://github.com/home-operations/kritika/commit/9c7b8cc2ca824a233bf5efe646bf00958361913a))
+* **config:** decode operational settings once with koanf ([#1065](https://github.com/home-operations/kritika/issues/1065)) ([27d545d](https://github.com/home-operations/kritika/commit/27d545d9828eaa07a7d8bdab1c92847cdebfc0a1))
+* **config:** use yaml v4's strictness for references and documents ([#1054](https://github.com/home-operations/kritika/issues/1054)) ([44f5019](https://github.com/home-operations/kritika/commit/44f5019a56003e43bf446bd48ea37fd3759dd481))
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.12 → 2026.10.13) ([#1047](https://github.com/home-operations/kritika/issues/1047)) ([7e9ea2a](https://github.com/home-operations/kritika/commit/7e9ea2a4be5bb6218f41fc510b495eac2f3fa449))
+* **executor:** report a run's own pod when it finishes ([#1049](https://github.com/home-operations/kritika/issues/1049)) ([665b54a](https://github.com/home-operations/kritika/commit/665b54a1ed8322d5bff45306aa075f40da799aa2))
+* **followup:** post the limit notice and command replies once ([#1038](https://github.com/home-operations/kritika/issues/1038)) ([4182296](https://github.com/home-operations/kritika/commit/4182296b1c04b8678d0f1cc019422da467f17a85))
+* **forge:** say "not found" with a forge sentinel, not fs.ErrNotExist ([#1059](https://github.com/home-operations/kritika/issues/1059)) ([19a0385](https://github.com/home-operations/kritika/commit/19a0385022f25491a56b83b8a7f89ce140f64029))
+* **github:** snooze a job GitHub's rate limit refused until the reset ([#1046](https://github.com/home-operations/kritika/issues/1046)) ([e8213f8](https://github.com/home-operations/kritika/commit/e8213f888f114d75f78bf9c339b2914497a39c14))
+* **github:** snooze GraphQL limits and restrict credential origins ([#1067](https://github.com/home-operations/kritika/issues/1067)) ([643589e](https://github.com/home-operations/kritika/commit/643589ec7596acf2e0ba4893d6036c4cf2a7ec7a))
+* **go:** update module github.com/go-jose/go-jose/v4 (v4.1.5 → v4.1.6) ([#1063](https://github.com/home-operations/kritika/issues/1063)) ([421b46c](https://github.com/home-operations/kritika/commit/421b46c2d385aa78641fa0d744bde5314799359d))
+* **index:** keep the stopped-index sweep from deadlocking with an index rebuild ([#1034](https://github.com/home-operations/kritika/issues/1034)) ([ad6412c](https://github.com/home-operations/kritika/commit/ad6412c530c420840b863f778827e18d1318a045))
+* **main:** log startup as JSON on stdout and refresh GOMEMLIMIT ([#1057](https://github.com/home-operations/kritika/issues/1057)) ([c7ef9c2](https://github.com/home-operations/kritika/commit/c7ef9c28dd209fd0c263c17aa3f283b763b6e162))
+* **metrics:** extend duration buckets to the longest each measures ([#1048](https://github.com/home-operations/kritika/issues/1048)) ([f699a6e](https://github.com/home-operations/kritika/commit/f699a6e18f252ffb84e038dc340fb9eb56a3dcc1))
+* **model:** read providers' retry headers as their SDKs do ([#1051](https://github.com/home-operations/kritika/issues/1051)) ([9d67d5b](https://github.com/home-operations/kritika/commit/9d67d5b6d4d5d59a0bf71982c684bedfa03db9f4))
+* **npm:** update dependency @playwright/test (1.64.0 → 1.64.1) ([#1064](https://github.com/home-operations/kritika/issues/1064)) ([31c513c](https://github.com/home-operations/kritika/commit/31c513c9a44fe62cd3013ebe8321e370a679427f))
+* **repositories:** keep a newer disable when a stale listing is registered ([#1039](https://github.com/home-operations/kritika/issues/1039)) ([8a12e4e](https://github.com/home-operations/kritika/commit/8a12e4ee6cf220c4b9ce878531056e81171c1667))
+* **review:** keep sprout's merge functions out of the template sandbox ([#1036](https://github.com/home-operations/kritika/issues/1036)) ([1d42350](https://github.com/home-operations/kritika/commit/1d42350982e274069b237a7f5f92904b22b2a7aa))
+* **review:** record and count a review ended before its runner once ([#1041](https://github.com/home-operations/kritika/issues/1041)) ([226565d](https://github.com/home-operations/kritika/commit/226565d56c89a92ce3b055c5daec3dc69fc9d4c0))
+* **river:** turn off the reindexer and fit job timeouts ([#1042](https://github.com/home-operations/kritika/issues/1042)) ([e278877](https://github.com/home-operations/kritika/commit/e27887714464ac8c324bb75b6f61412546b7d535))
+* **store:** wait for River's migrations before working jobs ([#1043](https://github.com/home-operations/kritika/issues/1043)) ([336ff9c](https://github.com/home-operations/kritika/commit/336ff9c06c8c7bd687a84392156d3017e383bf02))
+* **worker:** commit a job's completion only for the attempt River runs ([#1044](https://github.com/home-operations/kritika/issues/1044)) ([48a8c22](https://github.com/home-operations/kritika/commit/48a8c225ff8cce0be207f5154474c158d4697fc1))
+* **worker:** keep log messages constant and keys snake_case ([#1058](https://github.com/home-operations/kritika/issues/1058)) ([ec03725](https://github.com/home-operations/kritika/commit/ec03725f9cadf6a60b4504430a5a61a134cbbdd7))
+* **worker:** wait for slot wake checks and log failed lease renewals ([#1056](https://github.com/home-operations/kritika/issues/1056)) ([5964935](https://github.com/home-operations/kritika/commit/5964935123c1109feff3fc226a706fc15bbf35f9))
+
+
+### Code Refactoring
+
+* **github:** sign the App JWT with go-jose and drop golang-jwt ([#1062](https://github.com/home-operations/kritika/issues/1062)) ([74a1918](https://github.com/home-operations/kritika/commit/74a19188a41e9246ed55b62165eed2a783ce2173))
+* settle test-only variables and small leftovers ([#1061](https://github.com/home-operations/kritika/issues/1061)) ([afe0ff5](https://github.com/home-operations/kritika/commit/afe0ff5fc9d6e8c2b7afd6f4d25ac01b1f17ed9f))
+
+
+### Tests
+
+* **worker:** run the job heartbeat tests on synctest ([#1060](https://github.com/home-operations/kritika/issues/1060)) ([06477f2](https://github.com/home-operations/kritika/commit/06477f2ece01eb340f889c74f606287c6b7c7a6c))
+
+
+### Miscellaneous Chores
+
+* **mise:** update mise tools ([#1066](https://github.com/home-operations/kritika/issues/1066)) ([a1f51eb](https://github.com/home-operations/kritika/commit/a1f51ebaf729c890f6bb024bf382f9333bb76967))
+
 ## [0.0.77](https://github.com/home-operations/kritika/compare/0.0.76...0.0.77) (2026-10-17)
 
 
