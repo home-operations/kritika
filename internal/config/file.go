@@ -33,17 +33,23 @@ type Document struct {
 func LoadSettings(raw []byte) (Settings, Document, error) {
 	s, err := env.ParseAs[Settings]()
 	if err != nil {
-		if pe, ok := errors.AsType[env.ParseError](err); ok {
-			f, _ := reflect.TypeFor[Settings]().FieldByName(pe.Name)
-			return Settings{}, Document{}, fmt.Errorf("config: environment variable %s: %w", f.Tag.Get("env"), pe.Err)
-		}
-		return Settings{}, Document{}, fmt.Errorf("config: %w", err)
+		return Settings{}, Document{}, envError[Settings](err)
 	}
 	doc, err := s.readFile(raw)
 	if err != nil {
 		return Settings{}, Document{}, err
 	}
 	return s, doc, s.Validate()
+}
+
+// envError names the environment variable a value of T failed to parse from:
+// env reports the Go field.
+func envError[T any](err error) error {
+	if pe, ok := errors.AsType[env.ParseError](err); ok {
+		f, _ := reflect.TypeFor[T]().FieldByName(pe.Name)
+		return fmt.Errorf("config: environment variable %s: %w", f.Tag.Get("env"), pe.Err)
+	}
+	return fmt.Errorf("config: %w", err)
 }
 
 // readFile reads the process settings from a complete application document.
