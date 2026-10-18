@@ -13,6 +13,7 @@
   import Segmented from '../components/Segmented.svelte';
   import StatTile from '../components/StatTile.svelte';
   import ColumnChart from '../components/ColumnChart.svelte';
+  import Meter from '../components/Meter.svelte';
   import SeverityCounts from '../components/SeverityCounts.svelte';
 
   // No slug is the instance: every readable account added up, which has
@@ -285,7 +286,7 @@
                         <td class="mono name-fill" title={h.host}>{h.host}</td>
                         <td class="num">
                           {wholeNumber(h.count)}
-                          <span class="meter block min-w-20 mt-1" role="meter" aria-label="Share of the most refused host" aria-valuemin="0" aria-valuemax={most} aria-valuenow={h.count}><span class="meter-fill block h-full bg-[var(--chart-ink)]" style:width="{most ? (h.count / most) * 100 : 0}%"></span></span>
+                          <Meter value={h.count} max={most} label="Share of the most refused host" color="var(--chart-ink)" />
                         </td>
                         <td class="num">{wholeNumber(h.runs)}</td>
                         <td class="small text-ui-sm">{h.reasons}</td>

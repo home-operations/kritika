@@ -7,6 +7,7 @@
   import { parseDiff } from '../../diff';
   import type { Finding, ReviewDetail, ReviewDiff } from '../../types';
   import StateView from '../../components/StateView.svelte';
+  import Segmented from '../../components/Segmented.svelte';
   import FindingCard from './FindingCard.svelte';
   import DiffFileView from './DiffFileView.svelte';
 
@@ -24,6 +25,10 @@
   } = $props();
   const res = Resource.json<ReviewDiff>(() => `${base}/diff`);
   let delta = $state(false);
+  const SCOPES = [
+    { value: 'full', label: 'Full' },
+    { value: 'delta', label: 'Since last review' },
+  ] as const;
   let navigatorShown = $state(true);
   $effect(() => {
     void version;
@@ -139,10 +144,7 @@
       <button class="btn" aria-expanded={navigatorShown} aria-controls="review-navigator" onclick={() => (navigatorShown = !navigatorShown)}>{navigatorShown ? 'Hide navigator' : 'Show navigator'}</button>
       {#if files.length}<span class="small muted text-ui-sm">{visibleFiles.length} of {files.length} {files.length === 1 ? 'file' : 'files'}</span>{/if}
       {#if x.deltaDiff}
-        <div class="view-toggle inline-flex border border-solid border-line rounded-md overflow-hidden" role="group" aria-label="Diff scope">
-          <button class:active={!delta} aria-pressed={!delta} onclick={() => (delta = false)}>Full</button>
-          <button class:active={delta} aria-pressed={delta} onclick={() => (delta = true)}>Since last review</button>
-        </div>
+        <Segmented label="Diff scope" options={SCOPES} value={delta ? 'delta' : 'full'} onchange={(v) => (delta = v === 'delta')} />
       {/if}
       <div class="finding-controls ml-auto flex items-center flex-wrap gap-y-2 gap-x-3" role="group" aria-label="Finding navigation">
         <button class="btn" disabled={selectedIndex <= 0} onclick={() => step(-1)}>← Previous finding</button>

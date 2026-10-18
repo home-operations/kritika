@@ -221,28 +221,40 @@
 }
 /* Shared component defaults yield to explicit utility overrides. */
 @layer components {
-  input[type="checkbox"] {
+  input[type="checkbox"],
+  .checkbox {
     @apply appearance-none inline-grid place-content-center shrink-0 size-[18px] m-0 p-0 align-middle rounded-sm border border-solid border-muted bg-panel text-on-accent cursor-pointer;
     transition: background-color 120ms, border-color 120ms;
   }
-  input[type="checkbox"]::before {
+  input[type="checkbox"]::before,
+  .checkbox::before {
     content: "";
     @apply w-[5px] h-[9px] border-r-2 border-b-2 border-solid border-current rotate-45 -translate-y-px invisible;
   }
-  input[type="checkbox"]:checked {
+  input[type="checkbox"]:checked,
+  .checkbox[data-state="checked"],
+  .checkbox[data-state="indeterminate"] {
     @apply bg-accent border-accent;
   }
-  input[type="checkbox"]:checked::before {
+  input[type="checkbox"]:checked::before,
+  .checkbox[data-state="checked"]::before,
+  .checkbox[data-state="indeterminate"]::before {
     @apply visible;
   }
-  input[type="checkbox"]:enabled:hover {
+  .checkbox[data-state="indeterminate"]::before {
+    @apply w-[9px] h-0 border-r-0 rotate-0 translate-y-0;
+  }
+  input[type="checkbox"]:enabled:hover,
+  .checkbox:enabled:hover {
     @apply border-accent;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
   }
-  input[type="checkbox"]:focus-visible {
+  input[type="checkbox"]:focus-visible,
+  .checkbox:focus-visible {
     @apply [outline:2px_solid_var(--accent)] outline-offset-2;
   }
-  input[type="checkbox"]:disabled {
+  input[type="checkbox"]:disabled,
+  .checkbox:disabled {
     @apply opacity-60 cursor-default;
   }
   @media (forced-colors: active) {
@@ -624,6 +636,9 @@
   .account-breakdown .meter {
     @apply mt-1;
   }
+  .refused-hosts .meter {
+    @apply min-w-20 mt-1;
+  }
   .deflist dt {
     @apply text-muted;
   }
@@ -749,15 +764,6 @@
   }
   .select select {
     @apply w-auto max-w-55 cursor-pointer;
-  }
-  .view-toggle button {
-    @apply border-0 bg-panel text-muted py-1 px-2.5 text-ui-sm cursor-pointer;
-  }
-  .view-toggle button + button {
-    @apply border-l border-solid border-l-line;
-  }
-  .view-toggle button.active {
-    @apply bg-accent text-panel font-semibold;
   }
   .panel .rows {
     @apply border-0 rounded-[0];

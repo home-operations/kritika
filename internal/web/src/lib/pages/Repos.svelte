@@ -11,6 +11,7 @@
   import { toast } from '../toast.svelte';
   import type { AccountDetail, RegisterResult, Repository, TurnOnRequest } from '../types';
   import StateView from '../components/StateView.svelte';
+  import Checkbox from '../components/Checkbox.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
   import ReviewStatusTile from '../components/ReviewStatusTile.svelte';
@@ -192,11 +193,11 @@
                 {#if manage}
                   <th scope="col">
                     {#if rows.some((r) => !r.archived)}
-                      <input
-                        type="checkbox"
-                        aria-label="Select every repository shown"
+                      <Checkbox
+                        label="Select every repository shown"
                         checked={rows.every((r) => r.archived || selected.includes(r.fullName))}
-                        onchange={(e) => pickAll(rows, e.currentTarget.checked)}
+                        indeterminate={!rows.every((r) => r.archived || selected.includes(r.fullName)) && rows.some((r) => !r.archived && selected.includes(r.fullName))}
+                        onchange={(on) => pickAll(rows, on)}
                       />
                     {/if}
                   </th>
