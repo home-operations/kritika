@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	gh "github.com/google/go-github/v92/github"
 )
 
 func TestRateLimitWait(t *testing.T) {
@@ -191,5 +194,56 @@ func TestRateLimitTransport(t *testing.T) {
 				t.Errorf("error = %v, want context.Canceled", err)
 			}
 		})
+	}
+}
+
+// TestRetryAfter: go-github's rate limit errors, wrapped as the client wraps
+// them, say how long a job waits; any other error is no limit.
+func TestRetryAfter(t *testing.T) {
+	now := time.Now()
+	twoMinutes := 2 * time.Minute
+	for _, tt := range []struct {
+		name    string
+		err     error
+		want    time.Duration
+		limited bool
+	}{
+		{"primary", fmt.Errorf("github: pull request: %w", &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: now.Add(10 * time.Minute)}}}),
+			10*time.Minute + time.Second, true},
+		{"primary already reset", &gh.RateLimitError{Rate: gh.Rate{Reset: gh.Timestamp{Time: now.Add(-time.Minute)}}}, time.Second, true},
+		{"secondary", fmt.Errorf("github: comment: %w", &gh.AbuseRateLimitError{RetryAfter: &twoMinutes}), 2 * time.Minute, true},
+		{"secondary with no wait", &gh.AbuseRateLimitError{}, rateLimitMaxWait, true},
+		{"other", errors.New("github: boom"), 0, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, limited := RetryAfter(tt.err, now); got != tt.want || limited != tt.limited {
+				t.Fatalf("RetryAfter = %s, %v; want %s, %v", got, limited, tt.want, tt.limited)
+			}
+		})
+	}
+}
+
+// TestRetryAfterOfAClient: a request GitHub refused for its primary limit,
+// and the next one, which go-github refuses itself until the reset, both
+// fail with an error RetryAfter reads.
+func TestRetryAfterOfAClient(t *testing.T) {
+	f, c := newFakeAPI(t)
+	reset := time.Now().Add(10 * time.Minute)
+	f.mux.HandleFunc("GET /api/v3/repos/o/r/pulls/7", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "5000")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	})
+	for range 2 {
+		_, err := c.PullRequest(t.Context(), "o", "r", 7)
+		if wait, limited := RetryAfter(err, time.Now()); !limited || wait < 9*time.Minute {
+			t.Fatalf("PullRequest = %v: RetryAfter = %s, %v; want about ten minutes", err, wait, limited)
+		}
+	}
+	if len(f.requests) != 1 {
+		t.Fatalf("requests = %v, want one: go-github refuses the second itself", f.requests)
 	}
 }

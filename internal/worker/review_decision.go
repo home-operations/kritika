@@ -9,6 +9,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -57,6 +58,10 @@ func shutdownCause(cause error) bool {
 
 func reviewAttemptFailed(cause, err error, finalAttempt bool) bool {
 	if _, snoozed := errors.AsType[*river.JobSnoozeError](err); snoozed {
+		return false
+	}
+	// ForgeRateLimit snoozes it, so no attempt is spent.
+	if _, limited := github.RetryAfter(err, time.Now()); limited {
 		return false
 	}
 	// River refunds a shutdown attempt only when the returned error carries
