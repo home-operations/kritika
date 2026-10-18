@@ -27,6 +27,10 @@ func TestTransient(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"a 502 from the provider", &openai.Error{StatusCode: http.StatusBadGateway}, true},
+		// The gateway sets X-Should-Retry false on its refusals for the
+		// runner's SDK; the runner's loop still waits a 502 out.
+		{"the gateway's 502 that its SDK must not retry", &openai.Error{StatusCode: http.StatusBadGateway,
+			Response: &http.Response{Header: http.Header{"X-Should-Retry": {"false"}}}}, true},
 		{"a 503 from the provider, wrapped", fmt.Errorf("model: x: %w", &openai.Error{StatusCode: http.StatusServiceUnavailable}), true},
 		{"a 429 from the provider", &anthropic.Error{StatusCode: http.StatusTooManyRequests}, true},
 		{"a 408 from the provider", &anthropic.Error{StatusCode: http.StatusRequestTimeout}, true},

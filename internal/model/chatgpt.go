@@ -116,10 +116,10 @@ func NewChatGPT(cfg ChatGPTConfig) (*ChatGPT, error) {
 	}
 	// The empty key keeps the client from reading OPENAI_API_KEY; each
 	// request carries the plan's token instead.
-	opts := []option.RequestOption{
+	opts := append(withoutEnvironment(),
 		option.WithBaseURL(baseURL), option.WithAPIKey(""), option.WithHeader("User-Agent", userAgent()),
 		option.WithMaxRetries(0), option.WithRequestTimeout(StepTimeout),
-	}
+	)
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}

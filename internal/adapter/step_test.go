@@ -63,6 +63,10 @@ func TestStepRetries(t *testing.T) {
 		{"transient failures past the retries", []error{transient, transient, transient}, 2, true, 3, 2},
 		{"no retries", []error{transient}, 0, true, 1, 0},
 		{"a final failure is not tried again", []error{final}, 3, true, 1, 0},
+		{"a transient failure its provider says not to retry", []error{&openai.Error{StatusCode: http.StatusServiceUnavailable,
+			Response: &http.Response{Header: http.Header{"X-Should-Retry": {"false"}}}}}, 3, true, 1, 0},
+		{"a refusal its provider says to retry", []error{&openai.Error{StatusCode: http.StatusConflict,
+			Response: &http.Response{Header: http.Header{"X-Should-Retry": {"true"}}}}}, 3, false, 2, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
