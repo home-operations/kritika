@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // Metrics holds the collectors. Labels are bounded by configuration
@@ -54,112 +55,107 @@ const (
 	lblQueue      = "queue"
 )
 
-// New registers the collectors on reg.
+// New builds the collectors, each registered on reg as it is made.
 func New(reg prometheus.Registerer) *Metrics {
+	f := promauto.With(reg)
 	m := &Metrics{
-		webhooks: prometheus.NewCounterVec(prometheus.CounterOpts{
+		webhooks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_webhooks_total", Help: "Webhook deliveries by connection and what became of them.",
 		}, []string{lblConnection, lblOutcome}),
-		polls: prometheus.NewCounterVec(prometheus.CounterOpts{
+		polls: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_polls_total", Help: "Backstop polls per connection, by outcome (ok, error).",
 		}, []string{lblConnection, lblOutcome}),
-		polled: prometheus.NewCounterVec(prometheus.CounterOpts{
+		polled: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_polled_pull_requests_total", Help: "Open pull requests the backstop poll handed to ingest.",
 		}, []string{lblConnection}),
-		reviews: prometheus.NewCounterVec(prometheus.CounterOpts{
+		reviews: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_reviews_total", Help: "Reviews finished, by terminal status.",
 		}, []string{lblAccount, "status"}),
-		forgeLimits: prometheus.NewCounterVec(prometheus.CounterOpts{
+		forgeLimits: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_forge_rate_limits_total",
 			Help: "Responses the forge refused for a rate limit, by connection and whether the wait was taken.",
 		}, []string{lblConnection, lblOutcome}),
-		egress: prometheus.NewCounterVec(prometheus.CounterOpts{
+		egress: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_egress_requests_total",
 			Help: "Requests runner pods made through the gateway, by kind (connect, http) and outcome (allowed, refused, error).",
 		}, []string{lblKind, lblOutcome}),
-		leader: prometheus.NewGauge(prometheus.GaugeOpts{
+		leader: f.NewGauge(prometheus.GaugeOpts{
 			Name: "kritika_leader", Help: "1 while this replica holds the leader lock, else 0.",
 		}),
-		transcripts: prometheus.NewCounterVec(prometheus.CounterOpts{
+		transcripts: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_transcript_writes_total",
 			Help: "Model calls recorded for the transcript view, by kind (agent_step, confidence, merge) and outcome (ok, error).",
 		}, []string{lblKind, lblOutcome}),
-		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		reviewDuration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
 		}, []string{lblAccount}),
-		followups: prometheus.NewCounterVec(prometheus.CounterOpts{
+		followups: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
-		threads: prometheus.NewCounterVec(prometheus.CounterOpts{
+		threads: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_threads_total",
 			Help: "Finding threads a person resolved or unresolved, by outcome: dismissed, addressed, restored, ignored, failed.",
 		}, []string{lblAccount, lblOutcome}),
-		findings: prometheus.NewCounterVec(prometheus.CounterOpts{
+		findings: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_findings_total", Help: "Findings posted, by severity and category.",
 		}, []string{lblAccount, "severity", "category"}),
-		confidence: prometheus.NewCounterVec(prometheus.CounterOpts{
+		confidence: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_confidence_scores_total",
 			Help: "Reviews the confidence model scored, by score (0 to 5) and risk (low, medium, high, critical).",
 		}, []string{lblAccount, "score", "risk"}),
-		indexRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
+		indexRuns: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
-		indexChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
+		indexChunks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_chunks_total", Help: "Chunks embedded into the index.",
 		}, []string{lblAccount}),
-		contextChunks: prometheus.NewCounterVec(prometheus.CounterOpts{
+		contextChunks: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_context_chunks_total",
 			Help: "Context chunks a review's prompt was given, by stage (overlay, definition, caller, similar).",
 		}, []string{lblAccount, "stage"}),
-		runnerRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
+		runnerRuns: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_runner_runs_total", Help: "Runner Jobs finished, by kind and outcome.",
 		}, []string{lblAccount, "kind", lblOutcome}),
-		runnerDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		runnerDuration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_runner_duration_seconds", Help: "Runner Job time from start to finish.",
 			Buckets: []float64{2, 5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
 		}, []string{"kind"}),
-		queueWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		queueWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_queue_wait_seconds", Help: "Time from scheduled eligibility to worker start, per pickup including retries and snoozes.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300, 600, 1800},
 		}, []string{lblQueue}),
-		vectorSearch: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		vectorSearch: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "kritika_vector_search_seconds",
 			Help:    "Database vector-search transaction time per request, excluding embedding and model-slot waits.",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 15, 60},
 		}, []string{lblAccount, lblOutcome}),
-		leaseWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		leaseWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
 			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600},
 		}, []string{lblAccount, lblModel}),
-		reviewSnoozes: prometheus.NewCounterVec(prometheus.CounterOpts{
+		reviewSnoozes: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
 		}, []string{lblAccount, lblModel}),
-		jobsRescued: prometheus.NewCounterVec(prometheus.CounterOpts{
+		jobsRescued: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_jobs_rescued_total", Help: "Jobs of a dead replica handed back to the queue by the leader, by kind and state.",
 		}, []string{lblKind, "state"}),
-		modelCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
+		modelCalls: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_model_calls_total", Help: "Model calls, by the model that answered, role and outcome.",
 		}, []string{lblAccount, lblModel, lblRole, lblOutcome}),
-		modelTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
+		modelTokens: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_model_tokens_total",
 			Help: "Tokens spent, by role and direction (input, cached, output); " +
 				"cached is the part of input the provider served from its prompt cache.",
 		}, []string{lblAccount, lblModel, lblRole, "direction"}),
-		modelCost: prometheus.NewCounterVec(prometheus.CounterOpts{
+		modelCost: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_model_cost_usd_total", Help: "Provider-reported cost in US dollars, by role.",
 		}, []string{lblAccount, lblModel, lblRole}),
-		modelUnpriced: prometheus.NewCounterVec(prometheus.CounterOpts{
+		modelUnpriced: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_model_unpriced_calls_total",
 			Help: "Model calls with no reported cost and no configured price, by role; kritika_model_cost_usd_total leaves them out.",
 		}, []string{lblAccount, lblModel, lblRole}),
 	}
-	reg.MustRegister(m.webhooks, m.polls, m.polled, m.reviews, m.reviewDuration, m.followups, m.threads, m.findings, m.confidence,
-		m.indexRuns, m.indexChunks, m.contextChunks, m.queueWait, m.vectorSearch,
-		m.runnerRuns, m.runnerDuration, m.leaseWait, m.reviewSnoozes, m.jobsRescued, m.modelCalls, m.modelTokens, m.modelCost, m.modelUnpriced,
-		m.egress,
-		m.forgeLimits, m.transcripts,
-		m.leader)
 	return m
 }
 
