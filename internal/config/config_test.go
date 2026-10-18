@@ -31,7 +31,7 @@ func TestLoad(t *testing.T) {
 				if c.DatabaseOwnerURL != "" {
 					t.Fatalf("owner should be unset by default: %+v", c)
 				}
-				if lvl, _ := c.Level(); lvl != slog.LevelInfo {
+				if lvl := c.Level(); lvl != slog.LevelInfo {
 					t.Fatalf("level default = %v", lvl)
 				}
 				if c.WebURL != "" || c.WebURLParsed() != nil {
@@ -49,7 +49,7 @@ func TestLoad(t *testing.T) {
 				if c.Addr != ":9090" {
 					t.Fatalf("addr = %q", c.Addr)
 				}
-				if lvl, _ := c.Level(); lvl != slog.LevelDebug {
+				if lvl := c.Level(); lvl != slog.LevelDebug {
 					t.Fatalf("level = %v", lvl)
 				}
 			},

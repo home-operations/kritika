@@ -108,6 +108,7 @@ type Config struct {
 	// DatabaseToken authenticates this run to its database rows; it has no default.
 	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
 	webURL        *url.URL
+	logLevel      slog.Level
 	// fileData is the startup snapshot shared with the policy loader.
 	fileData []byte
 }
@@ -194,24 +195,17 @@ func (c *Config) validate() error {
 	if err := c.parseWebURL(); err != nil {
 		return err
 	}
+	c.logLevel = logLevels[strings.ToLower(c.LogLevel)]
 	return nil
 }
 
-// Level returns the slog level named by LogLevel.
-func (c *Config) Level() (slog.Level, error) {
-	switch strings.ToLower(c.LogLevel) {
-	case "debug":
-		return slog.LevelDebug, nil
-	case "info":
-		return slog.LevelInfo, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	default:
-		return 0, fmt.Errorf("config: logLevel: KRITIKA_LOG_LEVEL must be debug, info, warn or error, got %q", c.LogLevel)
-	}
+// logLevels are the slog levels LogLevel may name.
+var logLevels = map[string]slog.Level{
+	"debug": slog.LevelDebug, "info": slog.LevelInfo, "warn": slog.LevelWarn, "warning": slog.LevelWarn, "error": slog.LevelError,
 }
+
+// Level is the slog level LogLevel names.
+func (c *Config) Level() slog.Level { return c.logLevel }
 
 // EnvVar is one environment variable Config reads, as this process has it.
 // A secret, one the process unsets once read, shows only whether it is

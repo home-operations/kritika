@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -27,7 +28,7 @@ func (s Settings) Validate() error {
 	v.AddRule("GatewayCacheMaxSize", "size")
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)
 	v.AddRule("TranscriptRetention,DiffRetention", "min", minRetention)
-	v.AddRule("LogLevel", "enum", []string{"debug", "info", "warn", "warning", "error"})
+	v.AddRule("LogLevel", "enum", slices.Sorted(maps.Keys(logLevels)))
 	v.AddRule("LogFormat", "enum", []string{"json", "text"})
 	v.AddRule("Executor", "enum", []string{string(ExecutorKubernetes), string(ExecutorLocal)})
 	v.AddRule("Addr,MetricsAddr,GatewayAddr,DatabaseAppRole,DatabaseRunnerRole", "required")

@@ -10,23 +10,19 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	// Blank import: its init() sets GOMEMLIMIT to 90% of the container's cgroup
-	// memory limit (honoring an explicit GOMEMLIMIT / AUTOMEMLIMIT=off). The GC
-	// is otherwise unaware of the cgroup limit, so a parse of a large repository
-	// could OOM-kill the pod before the GC reclaims.
-	_ "github.com/KimMachineGun/automemlimit"
-	"golang.org/x/sync/errgroup"
-
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 
 	"github.com/home-operations/kritika/internal/adapter"
@@ -56,7 +52,13 @@ var (
 	commit  = "unknown"
 )
 
+// memLimitRefresh is how often GOMEMLIMIT follows the cgroup memory limit.
+const memLimitRefresh = time.Minute
+
 func main() {
+	// A failure before run sets the configured logger logs as JSON on
+	// stdout too, not as the log package's text on stderr.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(); err != nil {
 		slog.Error("kritika exited", "error", err)
 		os.Exit(1)
@@ -77,10 +79,7 @@ func run() (err error) {
 		return err
 	}
 
-	logger, err := newLogger(cfg)
-	if err != nil {
-		return err
-	}
+	logger := newLogger(cfg)
 	slog.SetDefault(logger)
 	// client-go logs through klog, its informers' list and watch errors
 	// among them: through this logger too.
@@ -105,6 +104,17 @@ func run() (err error) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	context.AfterFunc(ctx, stop)
+	// GOMEMLIMIT at 90% of the container's cgroup memory limit, unless
+	// GOMEMLIMIT is set or AUTOMEMLIMIT=off: the GC is otherwise unaware of
+	// the limit, so a parse of a large repository could OOM-kill the pod
+	// before it reclaims. On Linux it is refreshed, for a pod resized in
+	// place; elsewhere there is no cgroup, and each refresh would log its
+	// failure. Set logs its own failure, which leaves the limit as it was.
+	memOpts := []memlimit.Option{memlimit.WithLogger(logger)}
+	if runtime.GOOS == "linux" {
+		memOpts = append(memOpts, memlimit.WithRefreshInterval(ctx, memLimitRefresh))
+	}
+	_, _ = memlimit.Set(memOpts...)
 	if command == config.CommandChatGPTLogin {
 		return loginChatGPT(ctx, cfg, os.Args[3:], logger)
 	}
@@ -729,14 +739,10 @@ func logConfig(logger *slog.Logger, f *configfile.File, msg string) {
 	logger.Info(msg, "providers", len(f.Providers), "accounts", len(f.Accounts), "connections", len(f.Connections))
 }
 
-func newLogger(cfg *config.Config) (*slog.Logger, error) {
-	level, err := cfg.Level()
-	if err != nil {
-		return nil, err
-	}
-	opts := &slog.HandlerOptions{Level: level}
+func newLogger(cfg *config.Config) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: cfg.Level()}
 	if strings.EqualFold(cfg.LogFormat, "text") {
-		return slog.New(slog.NewTextHandler(os.Stdout, opts)), nil
+		return slog.New(slog.NewTextHandler(os.Stdout, opts))
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, opts)), nil
+	return slog.New(slog.NewJSONHandler(os.Stdout, opts))
 }
