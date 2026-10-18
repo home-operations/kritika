@@ -120,7 +120,7 @@ type File struct {
 	Skills configfile.SkillsSpec `yaml:"skills,omitempty"`
 }
 
-// Parse decodes data as .kritika.yaml. Unknown fields, invalid glob patterns
+// Parse decodes data as .kritika.yaml. A second document, unknown fields, invalid glob patterns
 // and a filter that fails to compile or that fails a smoke test against
 // configfile.SamplePR are rejected, as is any referenced path (a rule's
 // file, a template or a context file) that is absolute or escapes the
@@ -135,6 +135,10 @@ func Parse(data []byte) (File, error) {
 			return File{}, nil
 		}
 		return File{}, fmt.Errorf("repoconfig: parse: %w", err)
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return File{}, errors.New("repoconfig: parse: the file must hold one document")
 	}
 
 	for i, g := range f.Ignore {

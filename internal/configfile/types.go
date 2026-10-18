@@ -10,7 +10,6 @@ package configfile
 import (
 	"cmp"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -63,14 +62,8 @@ func (v *ValueOrRef) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
 		return n.Decode(&v.Value)
 	}
-	// Node.Decode drops the strictness Parse asked for, so unknown keys are
-	// refused here.
-	for i := 0; n.Kind == yaml.MappingNode && i < len(n.Content); i += 2 {
-		if k := n.Content[i]; k.Value != "env" {
-			return fmt.Errorf("line %d: field %s not found in type configfile.SecretRef", k.Line, k.Value)
-		}
-	}
-	return n.Decode(&v.Ref)
+	// Node.Decode drops the strictness Parse asked for, so Load asks again.
+	return n.Load(&v.Ref, yaml.WithKnownFields())
 }
 
 // resolve is the value, read from its reference when it has one.
