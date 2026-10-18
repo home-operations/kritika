@@ -2,19 +2,26 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
@@ -101,6 +108,60 @@ func TestForgeRateLimit(t *testing.T) {
 			}
 			if snoozed && (snooze.Duration < 9*time.Minute || snooze.Duration > 11*time.Minute) {
 				t.Fatalf("snoozed %s, want until the reset", snooze.Duration)
+			}
+		})
+	}
+}
+
+func TestForgeRateLimitGraphQL(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemKey := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	for _, tt := range []struct {
+		name   string
+		status int
+		wait   time.Duration
+	}{
+		{"primary HTTP 200", http.StatusOK, 10 * time.Minute},
+		{"secondary HTTP 403", http.StatusForbidden, 2 * time.Minute},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /api/v3/app/installations/42/access_tokens", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"token":"ghs_test","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+			})
+			mux.HandleFunc("POST /api/graphql", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if tt.status == http.StatusOK {
+					w.Header().Set("X-RateLimit-Remaining", "0")
+					w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(tt.wait).Unix(), 10))
+				} else {
+					w.Header().Set("Retry-After", "120")
+				}
+				w.WriteHeader(tt.status)
+				_, _ = fmt.Fprint(w, `{"errors":[{"type":"RATE_LIMITED","message":"slow down"}]}`)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+			app, err := github.NewApp("Iv1.test", string(pemKey), srv.URL+"/api/v3")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := github.NewClient(app, 42)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := &ForgeRateLimit{Logger: slog.New(slog.DiscardHandler)}
+			err = m.Work(t.Context(), &rivertype.JobRow{ID: 1, Kind: "thread", Attempt: 8, MaxAttempts: 8}, func(ctx context.Context) error {
+				_, _, err := client.ThreadResolved(ctx, "o", "r", 7, 11)
+				return err
+			})
+			snooze, ok := errors.AsType[*river.JobSnoozeError](err)
+			if !ok || snooze.Duration < tt.wait-time.Second || snooze.Duration > tt.wait+time.Second {
+				t.Fatalf("Work = %v, want snooze for %s", err, tt.wait)
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -241,6 +242,70 @@ func TestThreadResolved(t *testing.T) {
 			}
 			if len(api.resolved) != 0 {
 				t.Fatal("read mutated a thread")
+			}
+		})
+	}
+}
+
+func TestGraphQLRateLimits(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	reset := strconv.FormatInt(now.Add(10*time.Minute).Unix(), 10)
+	primary := map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset}
+	secondary := map[string]string{"Retry-After": "120"}
+	const refused = `{"errors":[{"type":"RATE_LIMITED","message":"slow down"}]}`
+	const other = `{"errors":[{"type":"FORBIDDEN","message":"permission denied"}]}`
+	for _, tt := range []struct {
+		name    string
+		status  int
+		headers map[string]string
+		body    string
+		wait    time.Duration
+		wantErr bool
+	}{
+		{"primary HTTP 200", 200, primary, refused, 10*time.Minute + time.Second, true},
+		{"primary HTTP 403", 403, primary, refused, 10*time.Minute + time.Second, true},
+		{"primary HTTP 429", 429, primary, refused, 10*time.Minute + time.Second, true},
+		{"primary without error type", 200, primary, `{"errors":[{"message":"slow down"}]}`, 0, true},
+		{"secondary HTTP 200", 200, secondary, refused, 2 * time.Minute, true},
+		{"secondary HTTP 403", 403, secondary, refused, 2 * time.Minute, true},
+		{"secondary HTTP 429", 429, secondary, refused, 2 * time.Minute, true},
+		{"secondary without error type", 200, secondary, `{"errors":[{"message":"slow down"}]}`, 0, true},
+		{"typed limit without headers", 200, nil, refused, time.Minute, true},
+		{"typed HTTP 403 without headers", 403, nil, refused, time.Minute, true},
+		{"secondary HTTP 403 without headers", 403, nil, `{"message":"slow down","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`, time.Minute, true},
+		{"legacy secondary HTTP 403 without headers", 403, nil, `{"message":"slow down","documentation_url":"https://docs.github.com/rest/overview/resources-in-the-rest-api#abuse-rate-limits"}`, time.Minute, true},
+		{"plain HTTP 429", 429, nil, "slow down", time.Minute, true},
+		{"invalid reset", 200, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "later"}, refused, time.Minute, true},
+		{"invalid retry after", 200, map[string]string{"Retry-After": "later"}, refused, time.Minute, true},
+		{"zero retry after", 200, map[string]string{"Retry-After": "0"}, refused, time.Second, true},
+		{"partial data and rate limit", 200, primary, `{"data":{"repository":null},"errors":[{"type":"RATE_LIMITED","message":"slow down"}]}`, 10*time.Minute + time.Second, true},
+		{"success consuming last quota", 200, primary, `{"data":{"repository":null}}`, 0, false},
+		{"permission HTTP 200", 200, nil, other, 0, true},
+		{"permission consuming last quota", 200, primary, other, 0, true},
+		{"not found consuming last quota", 200, primary, `{"errors":[{"type":"NOT_FOUND","message":"not found"}]}`, 0, true},
+		{"permission with retry header", 200, secondary, other, 0, true},
+		{"permission HTTP 403", 403, nil, other, 0, true},
+		{"unrelated HTTP error with retry header", 503, secondary, "unavailable", 0, true},
+		{"malformed response", 200, nil, "not JSON", 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, c := newFakeAPI(t)
+			f.mux.HandleFunc("POST /api/graphql", func(w http.ResponseWriter, _ *http.Request) {
+				for k, v := range tt.headers {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, tt.body)
+			})
+			_, _, err := c.ThreadResolved(t.Context(), "o", "r", 7, 11)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ThreadResolved error = %v, want error %v", err, tt.wantErr)
+			}
+			if wait, limited := RetryAfter(err, now); wait != tt.wait || limited != (tt.wait > 0) {
+				t.Fatalf("RetryAfter(%v) = %s, %v; want %s", err, wait, limited, tt.wait)
+			}
+			if tt.wait > 0 && !strings.Contains(err.Error(), "slow down") {
+				t.Errorf("error lost the response message: %v", err)
 			}
 		})
 	}
