@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"slices"
@@ -405,18 +406,54 @@ func Transient(err error) bool {
 }
 
 // RetryAfter is how long the provider that failed a step asked to wait
-// before the next request, from the Retry-After header of its answer, in
-// seconds as the model providers send it; zero when it asked nothing.
+// before the next request, read as openai-go and anthropic-sdk-go read it:
+// Retry-After-Ms in milliseconds, else Retry-After in seconds, fractions
+// allowed, or as an HTTP date. Zero when it asked nothing usable.
 func RetryAfter(err error) time.Duration {
 	_, resp := providerResponse(err)
 	if resp == nil {
 		return 0
 	}
-	secs, err := strconv.Atoi(resp.Header.Get("Retry-After"))
-	if err != nil || secs <= 0 {
+	if ms, err := strconv.ParseFloat(resp.Header.Get("Retry-After-Ms"), 64); err == nil {
+		return retryWait(ms / 1000)
+	}
+	v := resp.Header.Get("Retry-After")
+	if secs, err := strconv.ParseFloat(v, 64); err == nil {
+		return retryWait(secs)
+	}
+	if at, err := http.ParseTime(v); err == nil {
+		return max(time.Until(at), 0)
+	}
+	return 0
+}
+
+// retryWaitCeiling bounds a provider's wait before it becomes a Duration,
+// which a huge float would overflow; callers wait far less.
+const retryWaitCeiling = time.Hour
+
+// retryWait is secs as a Duration, zero unless it is a positive, finite
+// number.
+func retryWait(secs float64) time.Duration {
+	if !(secs > 0) || math.IsInf(secs, 1) {
 		return 0
 	}
-	return time.Duration(secs) * time.Second
+	return time.Duration(min(secs, retryWaitCeiling.Seconds()) * float64(time.Second))
+}
+
+// ShouldRetry reports what the provider's answer in err says of retrying
+// the step, in its x-should-retry header, and whether it says anything.
+func ShouldRetry(err error) (retry, set bool) {
+	_, resp := providerResponse(err)
+	if resp == nil {
+		return false, false
+	}
+	switch resp.Header.Get("X-Should-Retry") {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }
 
 // providerResponse is the status and the response of the provider's error

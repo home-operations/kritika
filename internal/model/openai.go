@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -87,12 +89,28 @@ type OpenAI struct {
 	catalogCache modelCatalog[string]
 }
 
+// withoutEnvironment deletes the headers openai.NewClient adds from the
+// environment, OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS,
+// which would reach every OpenAI-compatible provider, the ChatGPT backend
+// and the gateway alike. openai-go has no opt-out like anthropic-sdk-go's
+// WithoutEnvironmentDefaults; the key and base URL, kritika always sets.
+// It goes before kritika's own headers, which a custom header could name.
+func withoutEnvironment() []option.RequestOption {
+	opts := []option.RequestOption{option.WithHeaderDel("OpenAI-Organization"), option.WithHeaderDel("OpenAI-Project")}
+	for line := range strings.SplitSeq(os.Getenv("OPENAI_CUSTOM_HEADERS"), "\n") {
+		if name, _, ok := strings.Cut(line, ":"); ok {
+			opts = append(opts, option.WithHeaderDel(strings.TrimSpace(name)))
+		}
+	}
+	return opts
+}
+
 // NewOpenAI builds the adapter.
 func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("model: openai: an API key is required")
 	}
-	opts := []option.RequestOption{option.WithAPIKey(cfg.APIKey)}
+	opts := append(withoutEnvironment(), option.WithAPIKey(cfg.APIKey))
 	if cfg.BaseURL != "" {
 		if err := checkBaseURL(cfg.BaseURL); err != nil {
 			return nil, fmt.Errorf("model: openai: %w", err)

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -69,7 +70,7 @@ func TestAdaptersSendOnce(t *testing.T) {
 }
 
 func TestRetryAfter(t *testing.T) {
-	with := func(v string) *http.Response { return &http.Response{Header: http.Header{"Retry-After": {v}}} }
+	with := func(name, v string) *http.Response { return &http.Response{Header: http.Header{name: {v}}} }
 	tests := []struct {
 		name string
 		err  error
@@ -78,15 +79,51 @@ func TestRetryAfter(t *testing.T) {
 		{"nil", nil, 0},
 		{"no response", &openai.Error{StatusCode: 429}, 0},
 		{"no header", &openai.Error{StatusCode: 429, Response: &http.Response{Header: http.Header{}}}, 0},
-		{"seconds from openai", &openai.Error{StatusCode: 429, Response: with("45")}, 45 * time.Second},
-		{"seconds from anthropic", &anthropic.Error{StatusCode: 529, Response: with("7")}, 7 * time.Second},
-		{"a date is not read", &openai.Error{StatusCode: 429, Response: with("Wed, 21 Oct 2026 07:28:00 GMT")}, 0},
-		{"zero asks nothing", &openai.Error{StatusCode: 429, Response: with("0")}, 0},
+		{"seconds from openai", &openai.Error{StatusCode: 429, Response: with("Retry-After", "45")}, 45 * time.Second},
+		{"seconds from anthropic", &anthropic.Error{StatusCode: 529, Response: with("Retry-After", "7")}, 7 * time.Second},
+		{"a fraction of seconds", &openai.Error{StatusCode: 429, Response: with("Retry-After", "2.5")}, 2500 * time.Millisecond},
+		{"milliseconds", &anthropic.Error{StatusCode: 429, Response: with("Retry-After-Ms", "1500")}, 1500 * time.Millisecond},
+		{"a date past", &openai.Error{StatusCode: 429, Response: with("Retry-After", "Wed, 21 Oct 2015 07:28:00 GMT")}, 0},
+		{"zero asks nothing", &openai.Error{StatusCode: 429, Response: with("Retry-After", "0")}, 0},
+		{"a negative wait", &openai.Error{StatusCode: 429, Response: with("Retry-After", "-3")}, 0},
+		{"NaN", &openai.Error{StatusCode: 429, Response: with("Retry-After", "NaN")}, 0},
+		{"infinity", &openai.Error{StatusCode: 429, Response: with("Retry-After-Ms", "Inf")}, 0},
+		{"a wait past any use", &openai.Error{StatusCode: 429, Response: with("Retry-After", "1e30")}, retryWaitCeiling},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := RetryAfter(tt.err); got != tt.want {
 				t.Fatalf("RetryAfter = %s, want %s", got, tt.want)
+			}
+		})
+	}
+	t.Run("a date ahead", func(t *testing.T) {
+		at := time.Now().Add(30 * time.Second).UTC().Format(http.TimeFormat)
+		if got := RetryAfter(&openai.Error{StatusCode: 429, Response: with("Retry-After", at)}); got <= 28*time.Second || got > 30*time.Second {
+			t.Fatalf("RetryAfter = %s, want about 30s", got)
+		}
+	})
+}
+
+// TestShouldRetry: the provider's x-should-retry, when it sends one.
+func TestShouldRetry(t *testing.T) {
+	with := func(v string) error {
+		return &openai.Error{StatusCode: http.StatusServiceUnavailable, Response: &http.Response{Header: http.Header{"X-Should-Retry": {v}}}}
+	}
+	for _, tt := range []struct {
+		name       string
+		err        error
+		retry, set bool
+	}{
+		{"true", with("true"), true, true},
+		{"false", with("false"), false, true},
+		{"anything else", with("maybe"), false, false},
+		{"no response", &openai.Error{StatusCode: 503}, false, false},
+		{"not a provider's", errors.New("boom"), false, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if retry, set := ShouldRetry(tt.err); retry != tt.retry || set != tt.set {
+				t.Fatalf("ShouldRetry = %v, %v; want %v, %v", retry, set, tt.retry, tt.set)
 			}
 		})
 	}

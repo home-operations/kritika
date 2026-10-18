@@ -41,8 +41,7 @@ var EmbedTimeout = time.Minute
 // vectors match the table; models that ignore it return their native size
 // and the caller must check.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
-	opts := make([]option.RequestOption, 0, 4+len(attribution))
-	opts = append(opts, option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
+	opts := append(withoutEnvironment(), option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
 		option.WithRequestTimeout(EmbedTimeout))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))

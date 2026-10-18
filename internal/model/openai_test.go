@@ -631,3 +631,51 @@ func TestOpenAIPartHeader(t *testing.T) {
 		}
 	}
 }
+
+// TestOpenAIClientsDropEnvironmentHeaders: the headers openai-go would add
+// from OPENAI_ORG_ID, OPENAI_PROJECT_ID and OPENAI_CUSTOM_HEADERS never
+// leave kritika, whichever OpenAI client sends the request.
+func TestOpenAIClientsDropEnvironmentHeaders(t *testing.T) {
+	t.Setenv("OPENAI_ORG_ID", "org-env")
+	t.Setenv("OPENAI_PROJECT_ID", "proj-env")
+	t.Setenv("OPENAI_CUSTOM_HEADERS", "X-From-Env: leaked\nX-Also: leaked")
+	check := func(t *testing.T, h http.Header) {
+		t.Helper()
+		for _, name := range []string{"OpenAI-Organization", "OpenAI-Project", "X-From-Env", "X-Also"} {
+			if v := h.Get(name); v != "" {
+				t.Errorf("%s = %q came from the environment", name, v)
+			}
+		}
+	}
+	t.Run("openai", func(t *testing.T) {
+		srv, got := fakeProvider(t, http.StatusOK, chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""))
+		if _, err := newTestOpenAI(t, srv, false, nil).Step(t.Context(), StepRequest{Model: "m"}); err != nil {
+			t.Fatal(err)
+		}
+		check(t, got.header)
+	})
+	t.Run("embedder", func(t *testing.T) {
+		srv, got := fakeProvider(t, http.StatusOK,
+			`{"object":"list","model":"emb","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}`)
+		if _, _, err := NewOpenAIEmbedder(srv.URL, "k", "emb", 1).Embed(t.Context(), []string{"x"}); err != nil {
+			t.Fatal(err)
+		}
+		check(t, got.header)
+	})
+	t.Run("chatgpt", func(t *testing.T) {
+		var sent http.Header
+		client := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+			sent = r.Header.Clone()
+			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+		})}
+		c, err := NewChatGPT(ChatGPTConfig{Tokens: &tokens{token: "at-1"}, HTTPClient: client})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = c.Step(t.Context(), StepRequest{Model: "m"})
+		if sent == nil {
+			t.Fatal("no request was sent")
+		}
+		check(t, sent)
+	})
+}

@@ -37,7 +37,7 @@ func step(
 ) (model.StepResponse, int, error) {
 	for attempt := 0; ; attempt++ {
 		resp, err := stepper.Step(ctx, req)
-		if err == nil || attempt >= retries || ctx.Err() != nil || !model.Transient(err) {
+		if err == nil || attempt >= retries || ctx.Err() != nil || !retryable(err) {
 			return resp, attempt + 1, err
 		}
 		failed(err)
@@ -45,6 +45,18 @@ func step(
 			return resp, attempt + 1, err
 		}
 	}
+}
+
+// retryable reports whether a step the provider failed with err is worth
+// sending again: as its x-should-retry header says, when it says, else as
+// Transient judges. Transient itself leaves the header alone, since the
+// gateway sets it false on its refusals for the runner's SDK, and the
+// runner's loop waits those out by Transient.
+func retryable(err error) bool {
+	if retry, set := model.ShouldRetry(err); set {
+		return retry
+	}
+	return model.Transient(err)
 }
 
 // sleep waits d, or until ctx ends, and reports whether it waited d out.
