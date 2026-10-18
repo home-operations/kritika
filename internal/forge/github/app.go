@@ -9,13 +9,17 @@ package github
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	gh "github.com/google/go-github/v92/github"
 )
 
@@ -44,7 +48,7 @@ type App struct {
 // for installation lookup and token minting. apiBase is empty for
 // api.github.com; tests point it at a server of their own.
 func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
-	key, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyPEM))
+	key, err := parseRSAKey(privateKeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
 	}
@@ -241,11 +245,36 @@ func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
 // 9-minute lifetime stays under GitHub's 10-minute cap; the backdated iat
 // absorbs minor clock skew.
 func appJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error) {
-	return jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{
-		Issuer:    clientID,
-		IssuedAt:  jwt.NewNumericDate(now.Add(-30 * time.Second)),
-		ExpiresAt: jwt.NewNumericDate(now.Add(9 * time.Minute)),
-	}).SignedString(key)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, (&jose.SignerOptions{}).WithType("JWT"))
+	if err != nil {
+		return "", err
+	}
+	return jwt.Signed(signer).Claims(jwt.Claims{
+		Issuer:   clientID,
+		IssuedAt: jwt.NewNumericDate(now.Add(-30 * time.Second)),
+		Expiry:   jwt.NewNumericDate(now.Add(9 * time.Minute)),
+	}).Serialize()
+}
+
+// parseRSAKey reads a PEM RSA private key, PKCS #1 as GitHub issues one or
+// PKCS #8.
+func parseRSAKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(privateKeyPEM))
+	if block == nil {
+		return nil, errors.New("no PEM block")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("a %T, not an RSA key", key)
+	}
+	return rsaKey, nil
 }
 
 // appJWTTransport signs each request as the App itself, regenerating the
