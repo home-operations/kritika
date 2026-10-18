@@ -9,11 +9,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// RefusalsPerRun bounds the refusal rows a run has, one per kind, host
+// refusalsPerRun bounds the refusal rows a run has, one per kind, host
 // and reason: past it a run's further refusals are counted on the rows it
 // has and new ones go unrecorded, so a looping agent cannot fill the
 // table. A variable for the tests.
-var RefusalsPerRun = 100
+var refusalsPerRun = 100
 
 // EgressRefusal is one proxy request the gateway refused a run, with the
 // host as the agent asked for it.
@@ -26,7 +26,7 @@ type EgressRefusal struct {
 
 // RecordEgressRefusal counts r against its run: a row for the first
 // refusal of a host for a reason, and that row's count after. It reports
-// false when the run already has RefusalsPerRun rows and this would be
+// false when the run already has refusalsPerRun rows and this would be
 // another. The run's refusals are recorded one at a time, under an
 // advisory lock the transaction holds, so two at once cannot both pass
 // the bound.
@@ -39,7 +39,7 @@ func RecordEgressRefusal(ctx context.Context, tx pgx.Tx, r EgressRefusal) (bool,
 		WHERE EXISTS (SELECT 1 FROM egress_refusals WHERE runner_run_id = $1 AND kind = $4 AND host = $5 AND reason = $6)
 		   OR (SELECT count(*) FROM egress_refusals WHERE runner_run_id = $1) < $7
 		ON CONFLICT (runner_run_id, kind, host, reason) DO UPDATE SET count = egress_refusals.count + 1, last_seen_at = now()`,
-		r.RunID, r.AccountID, r.RepositoryID, r.Kind, r.Host, r.Reason, RefusalsPerRun)
+		r.RunID, r.AccountID, r.RepositoryID, r.Kind, r.Host, r.Reason, refusalsPerRun)
 	if err != nil {
 		return false, fmt.Errorf("store: record egress refusal: %w", err)
 	}

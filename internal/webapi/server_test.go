@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -169,7 +170,7 @@ func TestResolveAccount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sc, err := resolveAccount(f, tt.p, "github", tt.slug)
 			if tt.wantErr {
-				e, ok := err.(*apiError)
+				e, ok := errors.AsType[*apiError](err)
 				if !ok || e.status != http.StatusNotFound {
 					t.Fatalf("err = %v, want a 404", err)
 				}

@@ -141,27 +141,23 @@ func RandomToken() string {
 // email seen on two providers never links their users, since either
 // provider may let anyone claim any address.
 func (s *Store) UpsertIdentity(ctx context.Context, id SignInIdentity) (User, error) {
-	tx, err := s.app.Begin(ctx)
+	var u User
+	err := pgx.BeginFunc(ctx, s.app, func(tx pgx.Tx) error {
+		userID, err := identityUser(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE identities SET login = $4 WHERE provider = $1 AND origin = $2 AND subject = $3`,
+			id.Provider, id.Origin, id.Subject, id.Login); err != nil {
+			return err
+		}
+		u = User{ID: userID}
+		return tx.QueryRow(ctx, `UPDATE users SET display_name = $2, email = $3, email_verified = $4, avatar_url = $5
+			WHERE id = $1 RETURNING display_name, email, email_verified, avatar_url`,
+			userID, id.DisplayName, id.Email, id.EmailVerified, id.AvatarURL).
+			Scan(&u.DisplayName, &u.Email, &u.EmailVerified, &u.AvatarURL)
+	})
 	if err != nil {
-		return User{}, fmt.Errorf("store: upsert identity: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
-	userID, err := identityUser(ctx, tx, id)
-	if err != nil {
-		return User{}, fmt.Errorf("store: upsert identity: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `UPDATE identities SET login = $4 WHERE provider = $1 AND origin = $2 AND subject = $3`,
-		id.Provider, id.Origin, id.Subject, id.Login); err != nil {
-		return User{}, fmt.Errorf("store: upsert identity: %w", err)
-	}
-	u := User{ID: userID}
-	if err := tx.QueryRow(ctx, `UPDATE users SET display_name = $2, email = $3, email_verified = $4, avatar_url = $5
-		WHERE id = $1 RETURNING display_name, email, email_verified, avatar_url`,
-		userID, id.DisplayName, id.Email, id.EmailVerified, id.AvatarURL).
-		Scan(&u.DisplayName, &u.Email, &u.EmailVerified, &u.AvatarURL); err != nil {
-		return User{}, fmt.Errorf("store: upsert identity: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return User{}, fmt.Errorf("store: upsert identity: %w", err)
 	}
 	return u, nil

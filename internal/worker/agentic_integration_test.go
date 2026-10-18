@@ -1155,8 +1155,8 @@ func checkGatewayEndpoint(t *testing.T, h *agenticHarness) {
 	h.sm.mu.Lock()
 	asked := h.sm.maxTokens[len(h.sm.maxTokens)-1]
 	h.sm.mu.Unlock()
-	if asked != gateway.MaxStepOutput {
-		t.Fatalf("the provider was asked for %d tokens, want the step cap %d", asked, gateway.MaxStepOutput)
+	if limit := agent.DefaultLimits.MaxOutputTokensPerStep; asked != limit {
+		t.Fatalf("the provider was asked for %d tokens, want the step cap %d", asked, limit)
 	}
 	if grant, err := h.st.LookupGatewayToken(h.ctx, token); err != nil || grant.Spent != 110 {
 		t.Fatalf("spent after a step = %d, %v; want the step's actual spend", grant.Spent, err)

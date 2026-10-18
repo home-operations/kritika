@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -33,16 +34,16 @@ const (
 	DefaultEmbedMaxItemChars  = 16_000
 )
 
-// EmbedTimeout bounds one embeddings request, a batch of at most MaxBatch
-// short texts. A variable for the tests.
-var EmbedTimeout = time.Minute
+// embedTimeout bounds one embeddings request, a batch of at most MaxBatch
+// short texts.
+const embedTimeout = time.Minute
 
 // NewOpenAIEmbedder builds an embedder. dims is sent to the server so the
 // vectors match the table; models that ignore it return their native size
 // and the caller must check.
 func NewOpenAIEmbedder(baseURL, apiKey, model string, dims int) *OpenAIEmbedder {
 	opts := append(withoutEnvironment(), option.WithBaseURL(baseURL), option.WithAPIKey(apiKey), option.WithHeader("User-Agent", userAgent()),
-		option.WithRequestTimeout(EmbedTimeout))
+		option.WithRequestTimeout(embedTimeout))
 	for k, v := range attribution {
 		opts = append(opts, option.WithHeader(k, v))
 	}
@@ -94,7 +95,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, inputs []string) ([][]float3
 			if positional && d.JSON.Index.Raw() == "" {
 				index = int64(i)
 			} else if positional || !d.JSON.Index.Valid() {
-				return nil, tokens, fmt.Errorf("model: embed returned mixed or invalid index fields")
+				return nil, tokens, errors.New("model: embed returned mixed or invalid index fields")
 			}
 			if index < 0 || index >= int64(len(batch)) || vectors[index] != nil {
 				return nil, tokens, fmt.Errorf("model: embed returned invalid or duplicate index %d", index)
