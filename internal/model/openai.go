@@ -99,7 +99,14 @@ func withoutEnvironment() []option.RequestOption {
 	opts := []option.RequestOption{option.WithHeaderDel("OpenAI-Organization"), option.WithHeaderDel("OpenAI-Project")}
 	for line := range strings.SplitSeq(os.Getenv("OPENAI_CUSTOM_HEADERS"), "\n") {
 		if name, _, ok := strings.Cut(line, ":"); ok {
-			opts = append(opts, option.WithHeaderDel(strings.TrimSpace(name)))
+			name = strings.TrimSpace(name)
+			if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Accept") {
+				// These defaults describe the SDK's JSON requests; deleting
+				// the environment override would also delete the default.
+				opts = append(opts, option.WithHeader(name, "application/json"))
+			} else {
+				opts = append(opts, option.WithHeaderDel(name))
+			}
 		}
 	}
 	return opts
