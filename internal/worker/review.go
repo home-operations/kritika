@@ -547,7 +547,7 @@ func (w *Review) admit(
 	if status == "" {
 		return a, false, nil
 	}
-	e.logger.Warn("review "+string(status), "reason", reason)
+	e.logger.Warn("review not admitted", "status", status, "reason", reason)
 	return admission{}, true, w.end(ctx, e, status, reason)
 }
 

@@ -27,12 +27,12 @@ type structuredCall struct {
 }
 
 // structured builds the call to ref, falling back to fallback, recorded
-// as kind and charged as role. what names the call in its log lines, and
-// modelName the model it is of: a fallback the configuration no longer
-// has is logged and done without. halve gives a fallback on another
-// provider half of what is left of the call's time.
+// as kind and charged as role. what names the call in its log lines: a
+// fallback the configuration no longer has is logged and done without.
+// halve gives a fallback on another provider half of what is left of the
+// call's time.
 func (p *publishPhase) structured(
-	ctx context.Context, ref, fallback configfile.ModelRef, kind store.ModelCallKind, role, what, modelName string, halve bool,
+	ctx context.Context, ref, fallback configfile.ModelRef, kind store.ModelCallKind, role, what string, halve bool,
 ) (structuredCall, error) {
 	route, err := p.w.Steppers.Route(p.file, p.account, ref, p.logger)
 	if err != nil {
@@ -43,10 +43,10 @@ func (p *publishPhase) structured(
 	routed := adapter.Call{Route: route, Halve: halve, Failed: func(err error, on, next adapter.Route) {
 		msg := adapter.Mask(p.file, on.Provider)(err.Error())
 		if next.Ref != on.Ref {
-			p.logger.Warn(what+" call failed on the "+modelName+" model; trying the fallback", "fallback", next.Ref, "error", msg)
+			p.logger.Warn("model call failed; trying the fallback", "call", what, "model", on.Ref, "fallback", next.Ref, "error", msg)
 			return
 		}
-		p.logger.Warn(what+" call failed; trying again", "model", on.Ref, "error", msg)
+		p.logger.Warn("model call failed; trying again", "call", what, "model", on.Ref, "error", msg)
 	}}
 	// A fallback on the call's provider goes to the provider with the
 	// call; one on another provider gets the call once the model's
@@ -58,7 +58,7 @@ func (p *publishPhase) structured(
 		fallbacks = []string{fallback.Model()}
 	default:
 		if fb, err := p.w.Steppers.Route(p.file, p.account, fallback, p.logger); err != nil {
-			p.logger.Error("no adapter for the "+modelName+" fallback", "fallback", fallback, "error", err)
+			p.logger.Error("no adapter for the fallback model", "call", what, "fallback", fallback, "error", err)
 		} else {
 			routed.Fallback = &fb
 		}

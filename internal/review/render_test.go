@@ -3,6 +3,8 @@ package review
 import (
 	"context"
 	"net/url"
+	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	"strings"
@@ -685,5 +687,27 @@ func TestCallLimitsMatchTheDocs(t *testing.T) {
 				t.Fatalf("out = %q, err = %v", out, err)
 			}
 		})
+	}
+}
+
+// TestDeprecatedFunctionLogsNothing renders a call of a function sprout
+// deprecates in a child process: sprout's own handler writes to the
+// process's stdout, taken when the package's functions are built.
+func TestDeprecatedFunctionLogsNothing(t *testing.T) {
+	const helperEnv = "KRITIKA_REVIEW_TEST_HELPER"
+	if os.Getenv(helperEnv) != "" {
+		if _, err := execute(t.Context(), `{{ toJson "x" }}`, sampleData(), MaxRenderBytes); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDeprecatedFunctionLogsNothing$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("helper: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "deprecated") {
+		t.Fatalf("helper logged:\n%s", out)
 	}
 }

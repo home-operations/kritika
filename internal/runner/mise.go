@@ -712,7 +712,7 @@ func (m *miseTools) install(ctx context.Context, t *miseTool) error {
 			"path", t.installPath, "error", a.exitErr, "output", a.output)
 	}
 	m.logger.Info("tool installed", "tool", t.name, "version", t.version, "source", t.source, "path", t.installPath,
-		"gatewayCache", cached, "elapsed", time.Since(started).Round(time.Millisecond), "output", a.output)
+		"gateway_cache", cached, "elapsed", time.Since(started).Round(time.Millisecond), "output", a.output)
 	return nil
 }
 

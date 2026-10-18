@@ -176,7 +176,7 @@ checksum = "sha256:%x"
 	if first, retry := slices.Index(served, ""), slices.Index(served, egress.UncachedProxyUser); first < 0 || retry < first {
 		t.Fatalf("the gateway was asked as %q: want the cache's answer, then a retry around it", served)
 	}
-	for _, want := range []string{"installing it without", "gatewayCache=false"} {
+	for _, want := range []string{"installing it without", "gateway_cache=false"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Errorf("log lacks %q:\n%s", want, logs.String())
 		}
@@ -362,7 +362,7 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 				if out, err := exec.Command(path).Output(); err != nil || string(out) != "upstream\n" {
 					t.Fatalf("installed tool printed %q, %v", out, err)
 				}
-				if !strings.Contains(logs.String(), "gatewayCache=true") {
+				if !strings.Contains(logs.String(), "gateway_cache=true") {
 					t.Errorf("log does not say the install went through the cache:\n%s", logs.String())
 				}
 				return

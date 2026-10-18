@@ -672,7 +672,7 @@ func ensureIndexSchema(ctx context.Context, st *store.Store, appRole string, e *
 	rebuilt, err := st.EnsureIndexSchema(ctx, appRole, e.Model, e.Dims, e.DocumentPrompt)
 	if rebuilt {
 		logger.Warn("index rebuilt for a new embedder: every repository is indexed again",
-			"model", e.Model, "dims", e.Dims, "documentPrompt", e.DocumentPrompt)
+			"model", e.Model, "dims", e.Dims, "document_prompt", e.DocumentPrompt)
 	}
 	return err
 }

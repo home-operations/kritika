@@ -57,12 +57,12 @@ func (r *Retention) Run(ctx context.Context) {
 	report := func(what, unit string, n int64, err error) {
 		if err != nil {
 			if ctx.Err() == nil {
-				r.Logger.Warn(what+" not swept", "error", err)
+				r.Logger.Warn("retention sweep failed", "sweep", what, "error", err)
 			}
 			return
 		}
 		if n > 0 {
-			r.Logger.Info(what+" swept", unit, n)
+			r.Logger.Info("retention sweep removed", "sweep", what, "removed", n, "unit", unit)
 		}
 	}
 	for {

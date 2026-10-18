@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -66,7 +67,10 @@ const (
 // printf, print and println are redefined so the guard sees them like any
 // other function.
 var baseFuncs = func() template.FuncMap {
-	h := sprout.New()
+	// sprout's notices, a warning on each call of a deprecated function,
+	// would go to a text handler of its own on stdout, as often as a
+	// template loops.
+	h := sprout.New(sprout.WithLogger(slog.New(slog.DiscardHandler)))
 	if err := h.AddRegistries(
 		std.NewRegistry(),
 		sproutstrings.NewRegistry(),
