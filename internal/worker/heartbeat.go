@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -61,9 +60,6 @@ type JobHeartbeat struct {
 	river.MiddlewareDefaults
 	Store  jobHeartbeater
 	Logger *slog.Logger
-	// every and fence override jobHeartbeatInterval and jobFenceAfter in
-	// tests.
-	every, fence time.Duration
 }
 
 // Work implements rivertype.WorkerMiddleware. A first beat that cannot be
@@ -101,9 +97,8 @@ func (h *JobHeartbeat) Work(ctx context.Context, job *rivertype.JobRow, doInner 
 // dropped, must not hold the fence back.
 func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.CancelCauseFunc, done chan<- struct{}) {
 	defer close(done)
-	t := time.NewTicker(cmp.Or(h.every, jobHeartbeatInterval))
+	t := time.NewTicker(jobHeartbeatInterval)
 	defer t.Stop()
-	fenceAfter := cmp.Or(h.fence, jobFenceAfter)
 	written := time.Now()
 	for {
 		select {
@@ -111,7 +106,7 @@ func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.Canc
 			return
 		case <-t.C:
 		}
-		bctx, cancel := context.WithDeadline(ctx, written.Add(fenceAfter))
+		bctx, cancel := context.WithDeadline(ctx, written.Add(jobFenceAfter))
 		err := h.Store.HeartbeatJob(bctx, jobID)
 		cancel()
 		if err == nil {
@@ -125,7 +120,7 @@ func (h *JobHeartbeat) beat(ctx context.Context, jobID int64, fence context.Canc
 		// them has the leader rescue it, and this replica let go of it.
 		unwritten := time.Since(written)
 		h.Logger.Warn("job heartbeat not written", "job", jobID, "error", err, "unwritten_for", unwritten)
-		if unwritten >= fenceAfter {
+		if unwritten >= jobFenceAfter {
 			h.Logger.Error("job heartbeat not written for too long; the job is cut before the leader hands it back", "job", jobID)
 			fence(errJobFenced)
 			return
