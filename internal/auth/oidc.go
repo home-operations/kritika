@@ -19,7 +19,7 @@ import (
 )
 
 // oidcScopes ask for the claims Identity is built from.
-var oidcScopes = []string{oidc.ScopeOpenID, "profile", "email"}
+var oidcScopes = []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail}
 
 // ErrOIDC is an ID token that is missing, invalid or not for this request.
 var ErrOIDC = errors.New("auth: oidc")
