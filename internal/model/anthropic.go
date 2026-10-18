@@ -24,8 +24,6 @@ type AnthropicConfig struct {
 	// HTTPClient may be nil.
 	HTTPClient *http.Client
 	Pricing    Pricing
-	// Retries is the SDK client's own retries, as OpenAIConfig.Retries.
-	Retries int
 }
 
 // Anthropic is a Stepper over the Anthropic Messages API.
@@ -44,7 +42,8 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 	}
 	opts := []option.RequestOption{
 		option.WithoutEnvironmentDefaults(), option.WithAPIKey(cfg.APIKey), option.WithHeader("User-Agent", userAgent()),
-		option.WithMaxRetries(cfg.Retries), option.WithRequestTimeout(StepTimeout),
+		// The gateway owns retrying; the SDK's own would multiply its attempts.
+		option.WithMaxRetries(0), option.WithRequestTimeout(StepTimeout),
 	}
 	if cfg.BaseURL != "" {
 		if err := checkBaseURL(cfg.BaseURL); err != nil {

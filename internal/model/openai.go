@@ -349,11 +349,11 @@ func (o *OpenAI) params(req StepRequest) (openai.ChatCompletionNewParams, error)
 	}
 	switch req.ToolChoice.Mode {
 	case ToolChoiceRequired:
-		p.ToolChoice.OfAuto = openai.String(string(ToolChoiceRequired))
+		p.ToolChoice.OfAuto = openai.String(string(openai.ChatCompletionToolChoiceOptionAutoRequired))
 	case ToolChoiceTool:
 		p.ToolChoice = openai.ToolChoiceOptionFunctionToolChoice(openai.ChatCompletionNamedToolChoiceFunctionParam{Name: req.ToolChoice.Name})
 	default:
-		p.ToolChoice.OfAuto = openai.String(string(ToolChoiceAuto))
+		p.ToolChoice.OfAuto = openai.String(string(openai.ChatCompletionToolChoiceOptionAutoAuto))
 	}
 	return p, nil
 }
