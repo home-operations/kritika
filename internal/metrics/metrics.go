@@ -86,7 +86,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblKind, lblOutcome}),
 		reviewDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
-			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900},
+			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
 		}, []string{lblAccount}),
 		followups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_followups_total", Help: "Follow-up mentions handled, by outcome: answered, limited, ignored, failed.",
@@ -117,7 +117,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, "kind", lblOutcome}),
 		runnerDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_runner_duration_seconds", Help: "Runner Job time from start to finish.",
-			Buckets: []float64{2, 5, 10, 20, 30, 60, 120, 300, 600, 900},
+			Buckets: []float64{2, 5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
 		}, []string{"kind"}),
 		queueWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_queue_wait_seconds", Help: "Time from scheduled eligibility to worker start, per pickup including retries and snoozes.",
@@ -130,7 +130,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		}, []string{lblAccount, lblOutcome}),
 		leaseWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_lease_wait_seconds", Help: "Time spent waiting for a model concurrency slot.",
-			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300},
+			Buckets: []float64{0.01, 0.1, 1, 5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600},
 		}, []string{lblAccount, lblModel}),
 		reviewSnoozes: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_review_snoozes_total", Help: "Reviews put back on the queue because every model slot was held.",
