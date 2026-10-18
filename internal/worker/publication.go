@@ -293,7 +293,7 @@ func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.Revie
 	if err == nil {
 		if status != "" {
 			w.Metrics.Review(p.account.Key(), string(status), time.Since(started))
-			p.logger.Info("review " + string(status))
+			p.logger.Info("review ended", "status", status)
 		}
 		return nil
 	}

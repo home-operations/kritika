@@ -152,14 +152,14 @@ func (w *Review) finishInterrupted(ctx context.Context, e endedReview, decision 
 		return err
 	}
 	if decision.err != nil {
-		e.logger.Info("review "+decision.end.Error, "job", e.jobName)
+		e.logger.Info("review interrupted", "reason", decision.end.Error, "job", e.jobName)
 		w.Metrics.Review(e.accountKey, string(decision.end.Status), time.Since(e.started))
 		return decision.jobError()
 	}
 	if !finished {
 		return decision.jobError()
 	}
-	e.logger.Info("review "+string(decision.end.Status)+" as its job ended", "cause", context.Cause(ctx), "job", e.jobName)
+	e.logger.Info("review ended with its job", "status", decision.end.Status, "cause", context.Cause(ctx), "job", e.jobName)
 	w.reportEnd(cctx, e, decision.description)
 	w.Metrics.Review(e.accountKey, string(decision.end.Status), time.Since(e.started))
 	return decision.jobError()

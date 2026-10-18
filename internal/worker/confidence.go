@@ -86,7 +86,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	// attempts get at most half of what is left. One the model answered
 	// without the score is billed all the same.
 	call, err := p.structured(ctx, ref, p.settings.Confidence.Fallback, store.ModelCallConfidence, store.RoleConfidence,
-		"confidence", "confidence", true)
+		"confidence", true)
 	if err != nil {
 		return review.Confidence{}, err
 	}

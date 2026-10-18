@@ -103,7 +103,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	outcome, err := f.run(ctx)
 	w.Metrics.FollowUp(account.Key(), string(outcome))
 	if _, waits := errors.AsType[*river.JobSnoozeError](err); waits {
-		logger.Info("follow-up " + string(outcome))
+		logger.Info("follow-up handled", "outcome", outcome)
 		return err
 	}
 	if err != nil {
@@ -124,7 +124,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		}
 		return err
 	}
-	logger.Info("follow-up " + string(outcome))
+	logger.Info("follow-up handled", "outcome", outcome)
 	return nil
 }
 
