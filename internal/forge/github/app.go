@@ -31,9 +31,8 @@ type App struct {
 	apiBase  string // "" for api.github.com
 	origin   *url.URL
 	apps     *gh.Client
-	// limited is the transport under every client of the App, which waits
-	// out a rate limit that resets soon.
-	limited *rateLimitTransport
+	// base is under the authentication of every client of the App.
+	base http.RoundTripper
 
 	// OnRateLimit, when set, is told of every response GitHub refused for a
 	// rate limit: the wait it asked for, and whether the request waited it
@@ -51,6 +50,11 @@ type App struct {
 // for installation lookup and token minting. apiBase is empty for
 // api.github.com; tests point it at a server of their own.
 func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
+	return newApp(clientID, privateKeyPEM, apiBase, baseTransport)
+}
+
+// newApp is NewApp over base, which tests replace.
+func newApp(clientID, privateKeyPEM, apiBase string, base http.RoundTripper) (*App, error) {
 	key, err := parseRSAKey(privateKeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("github: parse App private key: %w", err)
@@ -59,9 +63,8 @@ func NewApp(clientID, privateKeyPEM, apiBase string) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("github: parse API origin: %w", err)
 	}
-	a := &App{clientID: clientID, apiBase: apiBase, origin: origin}
-	a.limited = &rateLimitTransport{base: baseTransport, maxWait: rateLimitMaxWait, observe: a.rateLimited}
-	client, err := newClient(&appJWTTransport{base: a.limited, origin: origin, clientID: clientID, key: key}, apiBase)
+	a := &App{clientID: clientID, apiBase: apiBase, origin: origin, base: base}
+	client, err := newClient(a.limit(&appJWTTransport{base: base, origin: origin, clientID: clientID, key: key}), apiBase)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +86,13 @@ var baseTransport = func() *http.Transport {
 	t.ResponseHeaderTimeout = responseHeaderTimeout
 	return t
 }()
+
+// limit puts the wait for a rate limit that resets soon above rt, a
+// client's authentication, so a request sent again after the wait is
+// authorized again, with a token refreshed while it waited.
+func (a *App) limit(rt http.RoundTripper) http.RoundTripper {
+	return &rateLimitTransport{base: rt, maxWait: rateLimitMaxWait, observe: a.rateLimited}
+}
 
 func (a *App) rateLimited(wait time.Duration, waited bool) {
 	if a.OnRateLimit != nil {
@@ -233,7 +243,7 @@ func (a *App) Uninstall(ctx context.Context, id int64) error {
 
 // Client returns a go-github client authenticated as the installation.
 func (a *App) Client(tokens *InstallationTokens) (*gh.Client, error) {
-	return newClient(&installTransport{base: a.limited, origin: a.origin, tokens: tokens}, a.apiBase)
+	return newClient(a.limit(&installTransport{base: a.base, origin: a.origin, tokens: tokens}), a.apiBase)
 }
 
 func newClient(rt http.RoundTripper, apiBase string) (*gh.Client, error) {
