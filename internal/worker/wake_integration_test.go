@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -17,7 +18,8 @@ import (
 // TestSlotWakeChecksSnoozedReview: a review saved as snoozed for a model
 // slot is woken when a slot is free by then, and left to its snooze while
 // every slot is held; a job snoozed for anything else, of another kind, or
-// of an account that is not running, is left alone.
+// of an account that is not running, is left alone. Run returns only once
+// the checks it started have.
 func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 	ctx := t.Context()
 	appStore := storetest.Open(t)
@@ -85,4 +87,20 @@ func TestSlotWakeChecksSnoozedReview(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Run returns once the checks it started have", func(t *testing.T) {
+		job := insert(t, "review", account.ID(), waiting)
+		events := make(chan *river.Event)
+		ran := make(chan struct{})
+		go func() {
+			defer close(ran)
+			wake.Run(ctx, events)
+		}()
+		events <- &river.Event{Kind: river.EventKindJobSnoozed, Job: job}
+		close(events)
+		<-ran
+		if state, due := jobState(t, job.ID); state != "available" || !due {
+			t.Fatalf("job is %s and due = %v once Run returned, want available now", state, due)
+		}
+	})
 }

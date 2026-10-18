@@ -134,12 +134,15 @@ func (l *Lease) heartbeat(ctx context.Context) {
 			// A failed renewal is not fatal here: the slot expires and
 			// another process may take it, which only means one extra
 			// concurrent call for a while.
-			_ = l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) error {
+			err := l.st.WithAccount(ctx, l.accountID, func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, `UPDATE model_leases SET expires_at = now() + $4::interval
 					WHERE account_id = $1 AND model_key = $2 AND slot = $3 AND job_id = $5`,
 					l.accountID, l.modelKey, l.slot, leaseExpiry, l.jobID)
 				return err
 			})
+			if err != nil && ctx.Err() == nil {
+				l.st.logger.Warn("model lease not renewed", "job", l.jobID, "model", l.modelKey, "slot", l.slot, "error", err)
+			}
 		}
 	}
 }
