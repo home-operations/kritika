@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.0.81](https://github.com/home-operations/kritika/compare/0.0.80...0.0.81) (2026-10-18)
+
+
+### Features
+
+* **metrics:** export kritika_build_info and log failed scrapes ([#1080](https://github.com/home-operations/kritika/issues/1080)) ([cbf4bb6](https://github.com/home-operations/kritika/commit/cbf4bb6633967bd5f183fc438deae712dda19abd))
+
+
+### Bug Fixes
+
+* **config:** name the environment variable a value failed to parse from ([#1078](https://github.com/home-operations/kritika/issues/1078)) ([0bd48f3](https://github.com/home-operations/kritika/commit/0bd48f365f1798be84199b09e6b09be4b6cae849))
+* **config:** reject a malformed regex in a CEL expression at load ([#1077](https://github.com/home-operations/kritika/issues/1077)) ([49ce13b](https://github.com/home-operations/kritika/commit/49ce13b3929e384af6c48dbd3f0a58d2cd31a826))
+* **executor:** name kritika's build to the API server and every kind a watch could not list ([#1083](https://github.com/home-operations/kritika/issues/1083)) ([69163a7](https://github.com/home-operations/kritika/commit/69163a7b4f3442cca4dff859b233dc062278e1ec))
+* **github:** authorize a request again when it is resent after a rate limit ([#1082](https://github.com/home-operations/kritika/issues/1082)) ([e93e1b6](https://github.com/home-operations/kritika/commit/e93e1b654b7d9aa99c594537e2c7da13adc391d9))
+
+
+### Code Refactoring
+
+* **chatgpt:** build the authorize URL with oauth2.Config.AuthCodeURL ([#1084](https://github.com/home-operations/kritika/issues/1084)) ([4496a7b](https://github.com/home-operations/kritika/commit/4496a7bb4ccb940799fbd7972ad876b109c50453))
+* **model:** send openai-go's tool choice values and drop an unused retries setting ([#1085](https://github.com/home-operations/kritika/issues/1085)) ([10e7112](https://github.com/home-operations/kritika/commit/10e7112aca95b87a0d500857ac05aff109e6a5cc))
+* read files from the tree entries in hand and skip re-validating globs ([#1081](https://github.com/home-operations/kritika/issues/1081)) ([311315e](https://github.com/home-operations/kritika/commit/311315ec9cb993fe9c90915a5f96ee3395d02025))
+
+
+### Documentation
+
+* document GOMEMLIMIT and AUTOMEMLIMIT, and why the sandbox keeps the time helpers ([#1086](https://github.com/home-operations/kritika/issues/1086)) ([fe0a607](https://github.com/home-operations/kritika/commit/fe0a60743535c775ef1528c7fe8894e28374048d))
+
 ## [0.0.80](https://github.com/home-operations/kritika/compare/0.0.79...0.0.80) (2026-10-18)
 
 
