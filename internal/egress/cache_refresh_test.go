@@ -131,7 +131,7 @@ func TestCacheRevalidationRefusals(t *testing.T) {
 			up := &versionedUpstream{version: `"v1"`}
 			var requests atomic.Int32
 			var redirect atomic.Pointer[string]
-			rules := Rules{Allow: hosts("example.com", "objects.githubusercontent.com"), Cached: []string{"example.com"}}
+			rules := Rules{Allow: hosts("example.com", "objects.githubusercontent.com")}
 			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 				n := requests.Add(1)
 				if to := redirect.Load(); to != nil && r.URL.Path == "/tool.tar.gz" {
@@ -211,7 +211,7 @@ func TestCacheRevalidationFetchesWhenCopyIsGone(t *testing.T) {
 	const target = "https://example.com/tool.tar.gz"
 	key := cacheKey(target)
 	stale := cacheEntry{URL: target, Stored: 1, Size: 12, ETag: `"v1"`, LastModified: modifiedOn, Via: target}
-	if err := p.fill(t.Context(), key, target, stale); err != nil {
+	if err := p.fill(t.Context(), key, target, stale, false); err != nil {
 		t.Fatal(err)
 	}
 	if up.unchanged.Load() != 1 || up.bodies.Load() != 1 {

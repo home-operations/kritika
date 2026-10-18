@@ -27,14 +27,14 @@ import (
 
 // Cache keeps the bodies of upgraded downloads, so a tool every review
 // installs is fetched from upstream once rather than once a run. It keeps
-// only what any runner could fetch for itself: a GET or HEAD, with no
-// query, to a host the rules name as cached, or a locked install's to any
-// host they do not keep out, that carries no credential and gets none
-// from the proxy, answered by a response that does not ask to stay
-// private, so an entry can be handed to every runner that asks for its
-// URL. What it serves is checked downstream, mise checking each download
-// against the run's lock, so a stale or damaged entry fails an install
-// instead of changing one.
+// only what any runner could fetch for itself: a locked install's GET or
+// HEAD, with no query, to a host the rules do not keep out, that carries
+// no credential and gets none from the proxy, answered by a response that
+// does not ask to stay private, so an entry can be handed to every runner
+// that asks for its URL. What it serves is checked downstream, mise
+// checking each download against the run's lock, so a stale or damaged
+// entry fails an install instead of changing one, and the install's
+// retry has the entry fetched again.
 type Cache struct {
 	// Dir holds one file per URL, named by the URL's hash. It is the
 	// cache's alone.
@@ -43,9 +43,6 @@ type Cache struct {
 	// going first, and apart from that what the fills under way may write,
 	// so Dir holds at most twice it. A body that would not fit is not kept.
 	MaxBytes int64
-	// RefreshAfter is how long an entry is served before its URL is fetched
-	// again, so an asset replaced upstream is not served stale for longer.
-	RefreshAfter time.Duration
 	// MaxEntryBytes bounds one download, independently of the local budget.
 	MaxEntryBytes int64
 	s3            *s3Cache
@@ -55,6 +52,13 @@ type Cache struct {
 
 	fills    singleflight.Group
 	evicting sync.Mutex
+	// entries serializes the fills of one entry, so a fill that started
+	// before a retry's cannot put an older body in the retry's place.
+	entries keyLocks
+	// refilled is when a retry last replaced each entry, guarded by
+	// refilling and pruned as it is read; it holds a minute of refills.
+	refilling sync.Mutex
+	refills   map[string]time.Time
 	// filling counts the fills under way and reserved the bytes they may
 	// write, guarded by underway.
 	underway sync.Mutex
@@ -63,31 +67,33 @@ type Cache struct {
 }
 
 // UncachedProxyUser is the proxy username a runner gives the gateway for
-// a request the cache must not answer: the retry of an install that
-// failed through it. The gateway marks such a request WithoutCache.
+// the retry of a locked install that failed through the cache: the entry
+// it was served did not match the lock, so the cache answers from the
+// origin and keeps that in the entry's place. The gateway marks such a
+// request ForRefill.
 const UncachedProxyUser = "uncached"
 
-type withoutCacheKey struct{}
+type refillKey struct{}
 
-// WithoutCache marks ctx's request as one the cache must not answer.
-func WithoutCache(ctx context.Context) context.Context {
-	return context.WithValue(ctx, withoutCacheKey{}, true)
+// ForRefill marks ctx's request as one the cache answers from the origin,
+// replacing its entry.
+func ForRefill(ctx context.Context) context.Context {
+	return context.WithValue(ctx, refillKey{}, true)
 }
 
-// CacheBypassed reports whether ctx's request was marked WithoutCache.
-func CacheBypassed(ctx context.Context) bool {
-	bypassed, _ := ctx.Value(withoutCacheKey{}).(bool)
-	return bypassed
+// Refill reports whether ctx's request was marked ForRefill.
+func Refill(ctx context.Context) bool {
+	refill, _ := ctx.Value(refillKey{}).(bool)
+	return refill
 }
 
 // LockedProxyUser is the proxy username a runner gives the gateway for a
 // repository's locked install, whose downloads mise checks against the
-// lock: the cache may keep and answer such a request from any host the
-// rules allow, not only the hosts they name as cached. The gateway marks
-// it ForLockedInstall. A command can claim the name too; it then gets what
-// the host serves any run, and what it has the cache keep from a host the
-// rules do not name as cached is served only to a request that claims the
-// name as well.
+// lock: the cache keeps and answers such a request from any host the
+// rules allow. The gateway marks it ForLockedInstall. A command can claim
+// the name too; it then gets what the host serves any run, and what it
+// has the cache keep is served only to a request that claims the name as
+// well.
 const LockedProxyUser = "locked"
 
 type lockedInstallKey struct{}
@@ -105,7 +111,7 @@ func LockedInstall(ctx context.Context) bool {
 
 // OpenCache is a cache in dir, which it creates, checks it can write and
 // clears of the fills a previous process left unfinished.
-func OpenCache(dir string, maxBytes int64, refreshAfter time.Duration) (*Cache, error) {
+func OpenCache(dir string, maxBytes int64) (*Cache, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
@@ -125,7 +131,7 @@ func OpenCache(dir string, maxBytes int64, refreshAfter time.Duration) (*Cache, 
 	if err := errors.Join(probe.Close(), os.Remove(probe.Name())); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
-	return &Cache{Dir: dir, MaxBytes: maxBytes, RefreshAfter: refreshAfter}, nil
+	return &Cache{Dir: dir, MaxBytes: maxBytes}, nil
 }
 
 // cacheEntry is the first line of an entry's file, before the body.
@@ -197,6 +203,7 @@ var (
 	errPrivate      = errors.New("egress: cache: the response asks not to be shared")
 	errEncoded      = errors.New("egress: cache: response is encoded")
 	errLength       = errors.New("egress: cache: response has no length")
+	errRefill       = errors.New("egress: cache: a retry has the entry fetched again")
 )
 
 const (
@@ -207,17 +214,29 @@ const (
 	// maxFills bounds the fills under way at once, each holding an
 	// upstream connection; a request past them is forwarded.
 	maxFills = 8
+	// refillCooldown is how long after a retry has an entry replaced a
+	// further retry for its URL is served the entry instead: a retry is a
+	// runner's word, and this bounds what one runner can have fetched and
+	// published again. maxRefills bounds what is remembered of them; past
+	// it the oldest is forgotten, which only lets its URL be refilled early.
+	refillCooldown = time.Minute
+	maxRefills     = 1024
+	// refreshAfter is how long an entry is served before its origin is
+	// asked whether it changed, with the validators the entry kept: one
+	// small request a week, since release assets rarely change and a
+	// retry has a stale entry replaced in between.
+	refreshAfter = 7 * 24 * time.Hour
 )
 
 // cacheable reports whether r, an upgraded request to host, may be
-// answered from the cache: one to a host the rules name as cached, or a
-// locked install's to any host they do not name as uncached. A URL with a
-// query is not: a signed URL's query is its credential, and a query would
-// let one asset be kept under any number of names.
+// answered from the cache: a locked install's, or its retry's, to any
+// host the rules do not name as uncached. A URL with a query is not: a
+// signed URL's query is its credential, and a query would let one asset
+// be kept under any number of names.
 func cacheable(r *http.Request, host string, rules Rules) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	locked := LockedInstall(r.Context()) || Refill(r.Context()) && r.Method == http.MethodGet
 	if r.Method != http.MethodGet && r.Method != http.MethodHead || r.URL.RawQuery != "" || r.URL.ForceQuery ||
-		CacheBypassed(r.Context()) || rules.keptOut(host) {
+		rules.keptOut(host) || !locked {
 		return false
 	}
 	for _, h := range []string{"Authorization", "Cookie"} {
@@ -225,7 +244,7 @@ func cacheable(r *http.Request, host string, rules Rules) bool {
 			return false
 		}
 	}
-	return slices.Contains(rules.Cached, host) || LockedInstall(r.Context())
+	return true
 }
 
 // keptOut reports whether the cache keeps nothing from host, as the rules
@@ -265,25 +284,30 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	// A failed or circuit-open S3 lookup is a miss too: the replica then
 	// fills its own directory, as the filesystem backend does, rather than
 	// forwarding every download for as long as the bucket is unreachable.
-	f, entry, err := p.Cache.load(ctx, key)
+	// A retry's request is not looked up at all: what the cache had did
+	// not match the lock, and the origin's answer takes its place, unless
+	// a retry had it replaced a moment ago.
+	var f *cacheBody
+	var entry cacheEntry
+	err := errRefill
+	refill := Refill(r.Context()) && !p.Cache.recentlyRefilled(key)
+	if !refill {
+		f, entry, err = p.Cache.load(ctx, key)
+	}
 	if err != nil {
 		var stale cacheEntry
 		if errors.Is(err, errExpired) {
 			stale = entry
 		}
-		fill := p.Cache.fills.DoChan(key, func() (any, error) {
-			// A fill that finished between this request's miss and its
-			// joining is not repeated. Only this directory is checked: the
-			// bucket was asked a moment ago, and may be unreachable. An
-			// entry over the limit, kept from before it was lowered, does
-			// not count: load refuses it, so a fill must replace it.
-			if f, entry, _, err := p.Cache.open(key); err == nil {
-				_ = f.Close()
-				if !p.Cache.expired(entry) && (p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes) {
-					return nil, nil
-				}
-			}
-			return nil, p.fill(r.Context(), key, target, stale)
+		// Retries share one fill of their own: joining another request's
+		// fill, or its revalidation, could hand a retry the very body it
+		// refused.
+		fillKey := key
+		if refill {
+			fillKey = "refill " + key
+		}
+		fill := p.Cache.fills.DoChan(fillKey, func() (any, error) {
+			return nil, p.fill(r.Context(), key, target, stale, refill)
 		})
 		select {
 		case <-r.Context().Done():
@@ -302,6 +326,9 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 			return false
 		}
 		outcome = "miss"
+		if refill {
+			outcome = "refill"
+		}
 	} else {
 		outcome = f.source + "_hit"
 	}
@@ -339,7 +366,24 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 // request that happened to start it. A stale entry's validators go with
 // the fetch: an origin that answers 304 keeps the entry's body under a new
 // fetch time, and only a changed body is downloaded again.
-func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry) error {
+func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry, force bool) error {
+	lock := p.Cache.entries.lock(key)
+	defer p.Cache.entries.unlock(key, lock)
+	// A fill that finished between a request's miss and this one is not
+	// repeated, unless a retry forces it. Only this directory is checked:
+	// the bucket was asked a moment ago, and may be unreachable. An entry
+	// over the limit, kept from before it was lowered, does not count:
+	// load refuses it, so a fill must replace it.
+	if f, entry, _, err := p.Cache.open(key); err == nil {
+		_ = f.Close()
+		if !force && !p.Cache.expired(entry) && (p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes) {
+			return nil
+		}
+	}
+	// A retry that waited for another's refill of this entry is done too.
+	if force && p.Cache.recentlyRefilled(key) {
+		return nil
+	}
 	if !p.Cache.begin() {
 		return errFillBusy
 	}
@@ -406,6 +450,9 @@ func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry) 
 	}
 	originResult = "ok"
 	finishOrigin()
+	if force {
+		p.Cache.refilled(key)
+	}
 	if p.Cache.s3 != nil {
 		p.Cache.queueUpload(key)
 	}
@@ -587,10 +634,10 @@ func (c *Cache) end(reserved int64) {
 	c.reserved -= reserved
 }
 
-// expired reports whether entry is past RefreshAfter, so its URL is asked
+// expired reports whether entry is past refreshAfter, so its URL is asked
 // about before it is served again.
 func (c *Cache) expired(entry cacheEntry) bool {
-	return c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter
+	return time.Since(time.UnixMilli(entry.Stored)) > refreshAfter
 }
 
 // open opens the entry under key and marks it used, returning its file,

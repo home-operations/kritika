@@ -32,6 +32,9 @@ type s3Cache struct {
 	prefix        string
 	uploads       chan string
 	reads, writes s3Circuit
+	// publishing serializes the uploads of one key, so an upload that read
+	// an entry before a retry replaced it cannot overwrite the replacement's.
+	publishing keyLocks
 }
 
 // Validate checks configuration without contacting the object store.
@@ -207,6 +210,8 @@ func s3Gone(err error) bool {
 }
 
 func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
+	lock := c.s3.publishing.lock(key)
+	defer c.s3.publishing.unlock(key, lock)
 	f, entry, offset, err := c.open(key)
 	if err != nil {
 		c.metrics.CacheUploadSkipped("entry_unavailable")
@@ -231,6 +236,20 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 	ctx, cancel := context.WithTimeout(ctx, uploadDeadline(entry.Size))
 	defer cancel()
 	started := time.Now()
+	// Another replica may have published a newer entry, after a retry or
+	// a fill of its own: the bucket's wins, and this upload is not made.
+	// The check spends from the upload's own budget, and failing it does
+	// not stop the upload, which the circuit bounds.
+	statCtx, cancelStat := context.WithTimeout(ctx, s3LookupTimeout)
+	info, err := c.s3.client.StatObject(statCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
+	cancelStat()
+	if err == nil {
+		if remote, ok := c.s3Entry(info, key); ok && remote.Stored > entry.Stored {
+			c.metrics.CacheUploadSkipped("superseded")
+			c.s3.writes.complete(attempt, nil, time.Now())
+			return nil
+		}
+	}
 	defer func() {
 		circuitErr := uploadErr
 		if parent.Err() != nil {

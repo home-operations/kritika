@@ -15,11 +15,8 @@ type Rules struct {
 	// Credentials map a host to the Authorization header value an
 	// upgraded request to it carries.
 	Credentials map[string]string
-	// Cached are the exact hosts whose downloads the proxy's cache keeps
-	// and serves again, when it has a cache.
-	Cached []string
-	// Uncached are the exact hosts the cache keeps nothing from, a locked
-	// install's downloads included.
+	// Uncached are the exact hosts the cache keeps nothing from, when it
+	// has a cache: a locked install's downloads from them stay its own.
 	Uncached []string
 }
 

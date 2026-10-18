@@ -31,7 +31,6 @@
           <dt>Bucket</dt><dd class="mono break-all">{value('gatewayCacheS3Bucket', 'S3_BUCKET') ?? 'Unavailable'}</dd>
           <dt>Prefix</dt><dd class="mono break-all">{value('gatewayCacheS3Prefix', 'S3_PREFIX') || '(bucket root)'}</dd>
         {/if}
-        <dt>Refresh after</dt><dd>{value('gatewayCacheRefreshAfter', 'REFRESH_AFTER') ?? 'Unavailable'}</dd>
         <dt>Maximum download size</dt><dd>{size(entrySize)}</dd>
         {#if backend === 'filesystem'}
           <dt>Local entry budget</dt><dd>{size(value('gatewayCacheMaxSize', 'MAX_SIZE'))}</dd>

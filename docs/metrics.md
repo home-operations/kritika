@@ -122,7 +122,7 @@ replica's configuration, without probing storage or claiming it is healthy.
 
 | Metric | Labels | Meaning |
 | --- | --- | --- |
-| `kritika_cache_requests_total` | outcome | One decision per admitted HTTP request while caching is enabled: `local_hit`, `s3_hit`, `miss`, or `bypass` |
+| `kritika_cache_requests_total` | outcome | One decision per admitted HTTP request while caching is enabled: `local_hit`, `s3_hit`, `miss`, `refill` for a locked install's retry fetched from origin in place of the entry it refused, or `bypass` |
 | `kritika_cache_bypasses_total` | reason | Why a request was forwarded without the cache |
 | `kritika_cache_operation_seconds` | operation, outcome | Duration histogram for `origin_fetch`, `s3_lookup`, `s3_read`, and `s3_upload` |
 | `kritika_cache_transfer_bytes_total` | operation | Actual body bytes consumed by cache fills, S3 reads/uploads, or accepted by response writers (`response_local`, `response_s3`) |
@@ -131,9 +131,9 @@ replica's configuration, without probing storage or claiming it is healthy.
 | `kritika_cache_local_bytes` | | Retained files at the latest directory scan |
 | `kritika_cache_local_limit_bytes` | | Retained-entry budget, not a hard disk limit |
 | `kritika_cache_evictions_total` | | Local entries evicted to meet the budget |
-| `kritika_cache_upload_skips_total` | reason | Publications skipped for `queue_full`, `circuit_open`, or `entry_unavailable` |
+| `kritika_cache_upload_skips_total` | reason | Publications skipped for `queue_full`, `circuit_open`, `entry_unavailable`, or `superseded` by a newer object another replica published |
 
-Bypass reasons are bounded: `ineligible`, `retry`, `fill_error`,
+Bypass reasons are bounded: `ineligible`, `fill_error`,
 `entry_unavailable`, `canceled`, `fill_busy`, `fill_capacity`, `too_large`,
 `private`, `encoded`, and `unknown_length`. URLs, object keys, run IDs and
 arbitrary errors are not metric labels. CONNECT tunnels are excluded.

@@ -85,10 +85,6 @@
             "integer"
           ]
         },
-        "gatewayCacheRefreshAfter": {
-          "minLength": 1,
-          "type": "string"
-        },
         "gatewayCacheS3Bucket": {
           "type": "string"
         },
@@ -323,12 +319,6 @@
           "default": "256Mi",
           "description": "Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi.",
           "title": "maxEntrySize",
-          "type": "string"
-        },
-        "refreshAfter": {
-          "default": "168h",
-          "description": "How long a cached download is served before the gateway asks its origin whether it changed (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. An unchanged download is kept for another period; a changed one is fetched again. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention.",
-          "title": "refreshAfter",
           "type": "string"
         },
         "storage": {

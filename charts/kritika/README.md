@@ -241,7 +241,6 @@ Kubernetes: `>=1.34.0-0`
 | fullnameOverride | string | `""` | Override the full release name. |
 | gatewayCache.enabled | bool | `false` | Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica; S3 shares completed objects across replicas and rollouts. |
 | gatewayCache.maxEntrySize | string | `"256Mi"` | Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi. |
-| gatewayCache.refreshAfter | string | `"168h"` | How long a cached download is served before the gateway asks its origin whether it changed (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. An unchanged download is kept for another period; a changed one is fetched again. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention. |
 | gatewayCache.storage.bucket | string | `""` | Existing S3 bucket. Provision its credentials and retention outside this chart. |
 | gatewayCache.storage.endpoint | string | `""` | S3 API origin, including http:// or https:// and an optional port; no bucket path. |
 | gatewayCache.storage.existingSecret | string | `""` | Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY keys, as a Rook ObjectBucketClaim or the AWS tooling writes them. Empty uses the SDK's IAM credentials. Only serve receives these credentials. |

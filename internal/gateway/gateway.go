@@ -98,7 +98,7 @@ type grantKey struct{}
 // admitProxy authenticates a proxy request by the run token a runner is
 // handed as the password of its proxy URL, which git, gh and curl send as
 // Proxy-Authorization, and returns the request with its run's grant in
-// the context, marked egress.WithoutCache or egress.ForLockedInstall when
+// the context, marked egress.ForRefill or egress.ForLockedInstall when
 // the proxy URL's username asks, or refuses the request and reports
 // false. Only a live run reaches the outside through the gateway, and the
 // credentials it adds, so the port is no relay for whatever else can
@@ -127,7 +127,7 @@ func (g *Server) admitProxy(w http.ResponseWriter, r *http.Request) (*http.Reque
 	ctx := context.WithValue(r.Context(), grantKey{}, grant)
 	switch user {
 	case egress.UncachedProxyUser:
-		ctx = egress.WithoutCache(ctx)
+		ctx = egress.ForRefill(ctx)
 	case egress.LockedProxyUser:
 		ctx = egress.ForLockedInstall(ctx)
 	}

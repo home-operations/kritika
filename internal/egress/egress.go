@@ -265,11 +265,7 @@ func (p *Proxy) upgrade(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			reason := "ineligible"
-			if CacheBypassed(r.Context()) {
-				reason = "retry"
-			}
-			p.Cache.metrics.CacheRequest("bypass", reason)
+			p.Cache.metrics.CacheRequest("bypass", "ineligible")
 		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)

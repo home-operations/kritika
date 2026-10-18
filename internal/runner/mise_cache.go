@@ -13,25 +13,24 @@ import (
 // with the prefix From becomes To.
 type urlReplacement struct{ From, To string }
 
-// cacheReplacements are the rules that send a download from one of
-// cached, the hosts whose downloads the gateway keeps, to the gateway as
-// plain HTTP, which it upgrades, so it can keep what it fetches.
-func cacheReplacements(cached []string) []urlReplacement {
-	rules := make([]urlReplacement, 0, len(cached))
-	for _, host := range cached {
+// cacheReplacements are the rules that send a download from one of hosts
+// to the gateway as plain HTTP, which it upgrades, so it can keep what it
+// fetches.
+func cacheReplacements(hosts []string) []urlReplacement {
+	rules := make([]urlReplacement, 0, len(hosts))
+	for _, host := range hosts {
 		rules = append(rules, urlReplacement{From: "https://" + host + "/", To: "http://" + host + "/"})
 	}
 	return rules
 }
 
 // lockedInstallEnv is the environment of a repository's locked install:
-// common, mise's environment before any rule, with the rules of cached and
-// of the hosts the lock pins downloads on, urls, and the proxy's username
-// saying it is locked.
-func lockedInstallEnv(common []string, cached, urls []string) []string {
-	hosts := append(slices.Clone(cached), lockHosts(urls, cached)...)
+// common, mise's environment before any rule, with the rules of the hosts
+// the lock pins downloads on, urls, and the proxy's username saying it is
+// locked.
+func lockedInstallEnv(common, urls []string) []string {
 	env := slices.Clone(common)
-	if rules := cacheReplacements(hosts); len(rules) > 0 {
+	if rules := cacheReplacements(lockHosts(urls)); len(rules) > 0 {
 		env = append(env, "MISE_URL_REPLACEMENTS="+miseURLReplacements(rules))
 	}
 	return withProxyUser(env, egress.LockedProxyUser)
@@ -42,12 +41,12 @@ func lockedInstallEnv(common []string, cached, urls []string) []string {
 var miseTokenHosts = []string{configfile.GitHubAPIHost, "raw.githubusercontent.com"}
 
 // lockHosts are the hosts of urls, the downloads a lock pins, whose
-// downloads the gateway's cache can keep and cached does not name already,
-// sorted: those of the https:// URLs on the default port, with no
-// credentials or query, less the hosts mise sends the run's token and any
-// named with a trailing dot. A rule's from is matched against the URL as
-// mise writes it, with the host in lowercase.
-func lockHosts(urls, cached []string) []string {
+// downloads the gateway's cache can keep, sorted: those of the https://
+// URLs on the default port, with no credentials or query, less the hosts
+// mise sends the run's token and any named with a trailing dot. A rule's
+// from is matched against the URL as mise writes it, with the host in
+// lowercase.
+func lockHosts(urls []string) []string {
 	var hosts []string
 	for _, raw := range urls {
 		u, err := url.Parse(raw)
@@ -59,7 +58,7 @@ func lockHosts(urls, cached []string) []string {
 		// An IPv6 address would need its brackets in a rule's from, and a
 		// name with a trailing dot is another name to mise.
 		if host == "" || strings.Contains(host, ":") || strings.HasSuffix(host, ".") ||
-			slices.Contains(miseTokenHosts, host) || slices.Contains(cached, host) {
+			slices.Contains(miseTokenHosts, host) {
 			continue
 		}
 		hosts = append(hosts, host)

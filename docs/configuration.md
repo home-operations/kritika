@@ -629,7 +629,6 @@ egress:
   deny: ["*.pastebin.com", 203.0.113.0/24]
   credentials:
     api.github.com: { env: GITHUB_TOKEN }
-  cache: [get.helm.sh, github.com]
 ```
 
 ## How kritika runs
@@ -651,9 +650,8 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `indexWorkers` | `KRITIKA_INDEX_WORKERS`            | index jobs one replica runs at once; 1 unless set                                                                                                                                                                                |
 | `leaderRetryInterval` | `KRITIKA_LEADER_RETRY_INTERVAL`    | how often a replica retries the leader lock, and the holder checks it still has it; 15s unless set                                                                                                                               |
 | `gatewayTokenTtl` | `KRITIKA_GATEWAY_TOKEN_TTL`        | how long a run's gateway token outlives its Job's deadline, in case the replica that minted it dies first; 1h unless set                                                                                                         |
-| `gatewayCacheDir` | `KRITIKA_GATEWAY_CACHE_DIR` | where the gateway keeps downloads, a directory of its own: what a repository's lock pins, from any host the egress rules allow, and the downloads of the hosts `egress.cache` names; nothing is kept unless set; the chart's `gatewayCache.enabled` renders it ([the gateway's cache](security.md#the-gateways-download-cache)) |
+| `gatewayCacheDir` | `KRITIKA_GATEWAY_CACHE_DIR` | where the gateway keeps downloads, a directory of its own: what a repository's lock pins, from any host the egress rules allow; nothing is kept unless set; the chart's `gatewayCache.enabled` renders it ([the gateway's cache](security.md#the-gateways-download-cache)) |
 | `gatewayCacheMaxSize` | `KRITIKA_GATEWAY_CACHE_MAX_SIZE` | filesystem backend only: the most the gateway's cache keeps, in bytes or with `Ki`, `Mi`, `Gi` or `Ti`, the least recently used downloads going first, and apart from that the most its fetches under way may write; 2Gi unless set |
-| `gatewayCacheRefreshAfter` | `KRITIKA_GATEWAY_CACHE_REFRESH_AFTER` | how long the gateway serves a kept download before it asks the origin whether it changed, keeping an unchanged one for another period and fetching a changed one again; a staleness bound rather than retention; 168h unless set |
 | `gatewayCacheStorage` | `KRITIKA_GATEWAY_CACHE_STORAGE` | `filesystem` (default) or `s3`; both require a private `gatewayCacheDir`, used for completed local fills |
 | `gatewayCacheMaxEntrySize` | `KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE` | largest eligible download; 256Mi by default, at most 5Gi for S3 |
 | `gatewayCacheS3Endpoint` | `KRITIKA_GATEWAY_CACHE_S3_ENDPOINT` | S3 API origin including scheme and optional port; required for S3 |
