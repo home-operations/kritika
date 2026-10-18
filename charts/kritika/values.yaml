@@ -328,8 +328,8 @@ runner:
 gatewayCache:
   # -- Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica; S3 shares completed objects across replicas and rollouts.
   enabled: false
-  # -- How long a cached download is served before the gateway fetches its URL again (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention.
-  refreshAfter: 24h
+  # -- How long a cached download is served before the gateway asks its origin whether it changed (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. An unchanged download is kept for another period; a changed one is fetched again. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention.
+  refreshAfter: 168h
   # -- Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi.
   maxEntrySize: 256Mi
   # @schema

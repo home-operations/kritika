@@ -67,7 +67,7 @@ func TestHelmConfiguration(t *testing.T) {
 	if runner, _ := containers[0].(map[string]any); runner["name"] != "runner" || runner["image"] == "" || runner["image"] == nil {
 		t.Fatalf("rendered runner container = %+v", containers[0])
 	}
-	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 || f.Run.GatewayCacheRefreshAfter != 24*time.Hour {
+	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 || f.Run.GatewayCacheRefreshAfter != 168*time.Hour {
 		t.Fatalf("rendered gateway cache = %q, %d, %s", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize, f.Run.GatewayCacheRefreshAfter)
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")

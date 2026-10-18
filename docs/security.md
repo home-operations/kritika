@@ -468,9 +468,16 @@ config:
   once more, asking the gateway, by the proxy URL's username `uncached`,
   not to answer from its cache; a locked install's retry also leaves
   its lock's hosts on HTTPS, as it would go without the cache. The
-  gateway fetches a kept download again after `gatewayCacheRefreshAfter`, 24h
-  unless set, so an asset replaced upstream costs retries for at most
-  that long. No run can write the cache, only have the gateway fetch a
+  gateway asks the origin about a kept download after
+  `gatewayCacheRefreshAfter`, a week unless set, with the ETag and
+  Last-Modified it kept: an unchanged download is kept for another
+  period at the cost of that one request, a changed one is fetched
+  again, and an asset replaced upstream costs retries for at most that
+  long, provided its origin's validators change with it; the validators
+  are offered only to the resource the body came from, a redirect's
+  signature parameters aside, not to wherever a changed redirect now
+  points. No run can write the cache, only have
+  the gateway fetch a
   URL a cached host serves or, by naming the proxy's user `locked`, a URL
   any other allowed host serves; what the gateway keeps from a host
   `egress.cache` does not name is served only to a request named
@@ -498,7 +505,7 @@ signing region:
 ```yaml
 gatewayCache:
   enabled: true
-  refreshAfter: 24h
+  refreshAfter: 168h
   maxEntrySize: 256Mi
   storage:
     type: s3
@@ -567,7 +574,10 @@ not contact S3 and never creates the bucket. Missing buckets, unavailable hosts
 and denied credentials recover through subsequent requests once the storage
 problem is corrected.
 
-`refreshAfter` is checked by kritika, independently of physical object deletion. It is
+`refreshAfter` is checked by kritika, independently of physical object deletion.
+An entry past it is revalidated with the origin: on 304 the replica copies the
+body it has, or the bucket's, under a new fetch time and uploads that, so the
+object is rewritten rather than downloaded from origin again. It is
 not a bucket size or retention limit. Provision retention outside the chart,
 using lifecycle expiration where supported or an external cleanup job. Include
 noncurrent versions if bucket versioning is enabled. Without cleanup, unused
