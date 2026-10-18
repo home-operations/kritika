@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -33,7 +34,7 @@ func loginChatGPT(ctx context.Context, cfg *config.Config, args []string, logger
 		return err
 	}
 	if !ready {
-		return fmt.Errorf("chatgpt: the schema is not ready; wait for kritika serve to apply migrations")
+		return errors.New("chatgpt: the schema is not ready; wait for kritika serve to apply migrations")
 	}
 	key := p.ChatGPTSessionKey()
 	session, err := st.PrepareChatGPTSession(ctx, key)

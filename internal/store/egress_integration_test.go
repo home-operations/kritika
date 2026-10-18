@@ -36,9 +36,9 @@ func TestEgressRefusals(t *testing.T) {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM egress_refusals WHERE runner_run_id IN ($1, $2)`, run, other)
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM runner_runs WHERE id IN ($1, $2)`, run, other)
 	})
-	limit := RefusalsPerRun
-	RefusalsPerRun = 3
-	t.Cleanup(func() { RefusalsPerRun = limit })
+	limit := refusalsPerRun
+	refusalsPerRun = 3
+	t.Cleanup(func() { refusalsPerRun = limit })
 
 	record := func(runID, repoID, kind, host, reason string) bool {
 		t.Helper()

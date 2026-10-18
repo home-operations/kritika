@@ -84,8 +84,8 @@ func Run(ctx context.Context, st *store.Store, spec Spec, secrets Secrets, logge
 // pack keeps: whole files in order, a file that would pass it left out. A
 // pull request that regenerates a large text file would otherwise put the
 // whole of it in the service's memory. The prompt's own budget is far
-// smaller, so the agent is sent no less for it. A variable for the tests.
-var maxPackDiffBytes = 4 << 20
+// smaller, so the agent is sent no less for it.
+const maxPackDiffBytes = 4 << 20
 
 // priorDelta is the prior head the fetch brought, nil when none was asked
 // for or it could not be had, which tells the worker the delta is unknown,

@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -219,10 +221,7 @@ type RepoActivity struct {
 func readRepoActivity(
 	ctx context.Context, tx pgx.Tx, from, to time.Time, limit int, findings map[string]RepoActivity,
 ) ([]RepoActivity, error) {
-	ids := make([]string, 0, len(findings))
-	for id := range findings {
-		ids = append(ids, id)
-	}
+	ids := slices.Collect(maps.Keys(findings))
 	rows, err := tx.Query(ctx, `WITH
 		rev AS (
 			SELECT p.repository_id AS id, count(*) AS n FROM reviews v JOIN pull_requests p ON p.id = v.pull_request_id

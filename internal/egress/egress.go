@@ -208,13 +208,10 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 // tunnel copies both ways until either side closes or the tunnel idles
 // out, then closes both.
 func tunnel(client net.Conn, buffered io.Reader, upstream net.Conn) {
-	var once sync.Once
-	stop := func() {
-		once.Do(func() {
-			_ = client.Close()
-			_ = upstream.Close()
-		})
-	}
+	stop := sync.OnceFunc(func() {
+		_ = client.Close()
+		_ = upstream.Close()
+	})
 	touch := func() {
 		deadline := time.Now().Add(tunnelIdle)
 		_ = client.SetDeadline(deadline)

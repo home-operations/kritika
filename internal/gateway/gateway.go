@@ -64,10 +64,6 @@ type Server struct {
 // tool output in it capped.
 const maxBody = 16 << 20
 
-// MaxStepOutput caps the answer to one step, whatever the runner asks: the
-// agent loop's own cap.
-var MaxStepOutput = agent.DefaultLimits.MaxOutputTokensPerStep
-
 // detachTimeout bounds the writes that settle a step once the provider has
 // answered, which must land even if the request's ctx ends.
 const detachTimeout = 2 * time.Minute
@@ -401,8 +397,10 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 			call.Fallback = &fallback
 		}
 	}
-	if req.MaxTokens <= 0 || req.MaxTokens > MaxStepOutput {
-		req.MaxTokens = MaxStepOutput
+	// The answer to one step is capped at the agent loop's own cap,
+	// whatever the runner asks.
+	if limit := agent.DefaultLimits.MaxOutputTokensPerStep; req.MaxTokens <= 0 || req.MaxTokens > limit {
+		req.MaxTokens = limit
 	}
 	// The step is reserved before it runs; its actual spend replaces the
 	// estimate once the provider answers.

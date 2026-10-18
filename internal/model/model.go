@@ -302,7 +302,11 @@ type Embedder interface {
 // request and never answers fails the step as a timeout, which is
 // Transient, so the gateway's retries and its fallback provider still get
 // their turn. A variable for the tests.
-var StepTimeout = 5 * time.Minute
+var StepTimeout = stepTimeout
+
+// stepTimeout is StepTimeout as it ships, which the gateway's budgets
+// below are derived from.
+const stepTimeout = 5 * time.Minute
 
 // GatewayStepBudget bounds what the gateway spends on one step, its
 // provider's attempts, their backoff and the fallback's together: two
@@ -313,10 +317,9 @@ var StepTimeout = 5 * time.Minute
 // step, each bounded at two minutes on a context of its own, before it
 // writes the answer. So a provider that stalls is the gateway's to give up
 // on, retry or replace, and never the runner's to cut off first, and an
-// answered step is never abandoned while the gateway settles it. Variables
-// for the tests.
-var (
-	GatewayStepBudget     = 2*StepTimeout + 2*time.Minute
+// answered step is never abandoned while the gateway settles it.
+const (
+	GatewayStepBudget     = 2*stepTimeout + 2*time.Minute
 	GatewayRequestTimeout = GatewayStepBudget + 5*time.Minute
 )
 
