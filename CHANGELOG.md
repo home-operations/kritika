@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.79](https://github.com/home-operations/kritika/compare/0.0.78...0.0.79) (2026-10-18)
+
+
+### Bug Fixes
+
+* **agent:** nudge an empty turn without spending the once-per-run nudge ([#1072](https://github.com/home-operations/kritika/issues/1072)) ([7c5f68a](https://github.com/home-operations/kritika/commit/7c5f68a2f10ea60b3abd1d65f36dddf3f9a1fb91))
+* **confidence:** cut a long reason between words and keep "I" out of it ([#1070](https://github.com/home-operations/kritika/issues/1070)) ([942fbb5](https://github.com/home-operations/kritika/commit/942fbb577780bb24dddcfdca8fdb6794f41d1571))
+
 ## [0.0.78](https://github.com/home-operations/kritika/compare/0.0.77...0.0.78) (2026-10-18)
 
 
