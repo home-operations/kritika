@@ -574,6 +574,33 @@ noncurrent versions if bucket versioning is enabled. Without cleanup, unused
 entries remain in the bucket. Use a dedicated prefix per instance, shared only
 by its replicas.
 
+The bucket may also live outside the cluster, at a provider such as Cloudflare
+R2, Backblaze B2 or Wasabi. Nothing in the gateway assumes it is nearby: the same
+bounded lookups, circuits and local fallback apply, and an unreachable bucket
+leaves each replica caching in its own directory. The deadlines are chosen for
+a bucket in the cluster, though, and an external one meets them with less
+margin. A metadata lookup has two seconds in total, including a TLS handshake
+on a cold connection; a link that regularly needs longer opens the read circuit
+and shows up on the `KritikaCacheStorageErrors` alert as `s3_lookup` errors
+while downloads keep working from local fills. A cold replica streams a hit
+over one connection, so a large entry may arrive more slowly than from its
+origin. Uploads are off the request path and their deadline grows with size.
+Run `mise run test-s3` against the provider before relying on it; the
+[compatibility suite](development.md#s3-cache-compatibility) was only run
+against the servers it names.
+
+Costs follow the request pattern: a HEAD per eligible request, a GET per cold
+replica hit, a PUT per fill, plus egress for the GETs. Providers with a minimum
+storage duration bill an object for that period however soon lifecycle
+expiration or a `refreshAfter` overwrite removes it, so set the lifecycle
+expiry at or above the minimum rather than close to `refreshAfter`. Give an
+`https://` endpoint, so credentials and bodies are encrypted in transit; scope
+the key to this bucket alone and keep the bucket private, since
+a key that works from anywhere widens what a leak exposes, and the gateway
+serves an unlocked instance tool from the bucket without a checksum. Use the
+provider's signing region, `auto` for R2; the chart's network policy already
+allows serve's egress on 443.
+
 For the filesystem backend, the Helm capacity setting is now
 `gatewayCache.storage.maxSize`; migrate the former `gatewayCache.maxSize` value.
 `storage.type` defaults to `filesystem`, retaining the per-replica emptyDir.
