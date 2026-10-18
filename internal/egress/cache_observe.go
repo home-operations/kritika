@@ -70,6 +70,7 @@ type cacheBody struct {
 	started time.Time
 	bytes   int64
 	err     error
+	finish  func(error)
 }
 
 func (b *cacheBody) Read(p []byte) (int, error) {
@@ -112,6 +113,9 @@ func (b *cacheBody) Close() error {
 	err := b.ReadSeekCloser.Close()
 	if b.err == nil {
 		b.err = err
+	}
+	if b.finish != nil {
+		b.finish(b.err)
 	}
 	if b.source == "s3" && (!b.started.IsZero() || b.err != nil) {
 		var took time.Duration
@@ -195,15 +199,22 @@ type cacheTransport struct {
 }
 
 func (t *cacheTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.Method != http.MethodPut || r.Body == nil {
-		return t.base.RoundTrip(r)
+	ctx, cancel := context.WithCancelCause(r.Context())
+	r = r.Clone(ctx)
+	if r.Method == http.MethodPut && r.Body != nil {
+		body := &uploadReader{Reader: r.Body, metrics: t.cache.metrics}
+		r.Body = struct {
+			io.Reader
+			io.Closer
+		}{body, r.Body}
 	}
-	body := &uploadReader{Reader: r.Body, metrics: t.cache.metrics}
-	r.Body = struct {
-		io.Reader
-		io.Closer
-	}{body, r.Body}
-	return t.base.RoundTrip(r)
+	resp, err := t.base.RoundTrip(r)
+	if err != nil {
+		cancel(context.Canceled)
+		return nil, err
+	}
+	resp.Body = &s3ResponseBody{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
 }
 
 type uploadReader struct {

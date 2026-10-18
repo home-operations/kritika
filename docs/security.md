@@ -524,8 +524,8 @@ are trusted: protect the bucket from runner pods and unrelated workloads,
 particularly because instance tools can install without a repository lock.
 
 Each replica first checks its bounded local cache, then the bucket. A cold fill
-is staged locally and uploaded with a single request; `maxEntrySize` cannot
-exceed 5Gi. No conditional writes, shared locks, bucket versioning, tagging or
+is staged locally and queued for a background single-request upload;
+`maxEntrySize` cannot exceed 5Gi. No conditional writes, shared locks, bucket versioning, tagging or
 multipart operations are required. Concurrent misses on different replicas can
 fetch and upload the same URL twice. Completed objects are reused thereafter;
 there is no promise of exactly one upstream download.
@@ -533,12 +533,32 @@ there is no promise of exactly one upstream download.
 The local emptyDir remains private to each pod. In S3 mode its retained-entry
 budget and, separately, its aggregate fill budget are each eight times
 `maxEntrySize`. With 256Mi entries, allow 4Gi plus evicted files still being
-served and the pod's other storage use. `storage.maxSize` applies only to the
-filesystem backend. Hits read from S3 are streamed, not added to local storage.
-A failed upload leaves the completed local download usable. Lookup failures
-bypass the cache; a failure reading an opened S3 object can cost the runner its
-existing uncached retry. Storage requests have deadlines, and
-startup does not contact S3.
+served or uploaded and the pod's other storage use. Two active uploads can hold
+up to another 512Mi of evicted files open; queued uploads retain only keys.
+`storage.maxSize` applies only to the filesystem backend. Hits read from S3 are
+streamed, not added to local storage.
+Uploads use two workers and a queue of at most 16 keys per replica. A full queue,
+failed upload or entry evicted before upload leaves the download usable locally
+when still present. The requesting install never waits for publication. Each
+upload has a 30-second deadline; shutdown cancels active uploads and drops queued
+keys. Failed or skipped uploads are not retried in the background.
+
+Metadata lookups have a two-second total deadline. Credential discovery has its
+own two-second budget, including SDK refreshes detached from the request.
+S3 connection, TLS handshake and response-header waits are also capped at two
+seconds; a body read with no
+progress for ten seconds fails. The existing overall download deadline remains.
+Read and write circuit breakers are separate: three consecutive failures pause
+that direction for 30 seconds, then one eligible request probes recovery while
+others bypass it. A successful read probe, including a normal missing object,
+or upload reopens access; a failed probe starts another cooldown. Client
+cancellation does not count as a storage failure. Local hits remain available
+through an S3 outage, and failed uploads do not suppress healthy S3 reads.
+
+Lookup failures bypass the cache; a failure reading an opened S3 object can cost
+the runner its existing uncached retry. Startup does not contact S3 and never
+creates the bucket. Missing buckets, unavailable hosts and denied credentials
+recover through subsequent requests once the storage problem is corrected.
 
 `maxAge` is checked by kritika, independently of physical object deletion. It is
 not a bucket size or retention limit. Provision retention outside the chart,

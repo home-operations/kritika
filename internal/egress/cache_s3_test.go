@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/minio/minio-go/v7"
 )
 
 type s3TestObject struct {
@@ -94,6 +96,33 @@ func useS3(t *testing.T, c *Cache, opts S3Options) {
 	if err := c.UseS3(opts); err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- c.RunUploads(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+}
+
+func waitS3Upload(t *testing.T, c *Cache, key string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if _, err := c.s3.client.StatObject(ctx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{}); err == nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("upload did not publish its object")
+		case <-tick.C:
+		}
+	}
 }
 
 // Each reader starts with an empty local directory, as a new replica does.
@@ -120,6 +149,7 @@ func testS3CacheSharesDownloads(t *testing.T, opts S3Options) {
 	if w := proxied(writer, http.MethodGet, target, nil); w.Body.String() != body {
 		t.Fatalf("fill: %d %q", w.Code, w.Body.String())
 	}
+	waitS3Upload(t, writer.Cache, cacheKey("https://example.com/tool.tar.gz"))
 	for _, tt := range []struct {
 		name, method string
 		headers      http.Header
@@ -238,6 +268,9 @@ func testS3CacheConcurrentFills(t *testing.T, opts S3Options) {
 	}
 	if calls.Load() != 2 {
 		t.Errorf("cold fetches = %d", calls.Load())
+	}
+	for _, p := range proxies {
+		waitS3Upload(t, p.Cache, cacheKey("https://example.com/tool"))
 	}
 	reader := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("concurrent fills did not publish a reusable object")

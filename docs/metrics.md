@@ -114,12 +114,13 @@ replica's configuration, without probing storage or claiming it is healthy.
 | `kritika_cache_operation_seconds` | operation, outcome | Duration histogram for `origin_fetch`, `s3_lookup`, `s3_read`, and `s3_upload` |
 | `kritika_cache_transfer_bytes_total` | operation | Actual body bytes consumed by cache fills, S3 reads/uploads, or accepted by response writers (`response_local`, `response_s3`) |
 | `kritika_cache_responses_total` | source, outcome | Responses after serving, by `local`/`s3` source and `ok`/`error`/`canceled` result |
-| `kritika_cache_active_fills` | | Current origin fills, including their S3 upload |
+| `kritika_cache_active_fills` | | Current origin fills, excluding background S3 uploads |
 | `kritika_cache_local_bytes` | | Retained files at the latest directory scan |
 | `kritika_cache_local_limit_bytes` | | Retained-entry budget, not a hard disk limit |
 | `kritika_cache_evictions_total` | | Local entries evicted to meet the budget |
+| `kritika_cache_upload_skips_total` | reason | Publications skipped for `queue_full`, `circuit_open`, or `entry_unavailable` |
 
-Bypass reasons are bounded: `ineligible`, `retry`, `lookup_error`, `fill_error`,
+Bypass reasons are bounded: `ineligible`, `retry`, `lookup_error`, `s3_circuit_open`, `fill_error`,
 `entry_unavailable`, `canceled`, `fill_busy`, `fill_capacity`, `too_large`,
 `private`, `encoded`, and `unknown_length`. URLs, object keys, run IDs and
 arbitrary errors are not metric labels. CONNECT tunnels are excluded.
@@ -129,7 +130,10 @@ one in-process fill. Failed fills instead report a bypass. The hit ratio is
 hits divided by hits plus misses; inspect bypasses alongside it. Operation
 outcomes are `ok`, `error`, and `canceled`, plus `miss` for an absent, expired or
 invalid S3 entry and `skipped` for an origin response that cannot be stored.
-Cache availability does not affect readiness.
+Cache availability does not affect readiness. Circuit-open bypasses and skipped
+uploads do not contribute to S3 operation counts, so they cannot dilute the
+storage-error rate. Read and upload circuits recover independently; uploads run
+in the background and their duration is separate from origin fill time.
 
 Transfer counters include partial operations. Origin bytes cover cache fill
 attempts, not all gateway forwarding or estimated bandwidth savings. Upload

@@ -216,6 +216,9 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	f, entry, err := p.Cache.load(ctx, key)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errExpired) && p.Cache.s3 != nil {
+			if errors.Is(err, errS3CircuitOpen) {
+				reason = "s3_circuit_open"
+			}
 			p.Logger.Debug("egress cache bypassed", "host", host, "error", err)
 			return false
 		}
@@ -342,9 +345,7 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	originResult = "ok"
 	finishOrigin()
 	if p.Cache.s3 != nil {
-		if err := p.Cache.upload(ctx, key); err != nil {
-			p.Logger.Debug("egress cache upload bypassed", "url", target, "error", err)
-		}
+		p.Cache.queueUpload(key)
 	}
 	p.Logger.Debug("egress cache fill", "url", target, "from", resp.Request.URL.Host, "bytes", entry.Size,
 		"elapsed", time.Since(started).Round(time.Millisecond))

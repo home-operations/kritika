@@ -27,9 +27,11 @@ type S3Options struct {
 }
 
 type s3Cache struct {
-	client *minio.Client
-	bucket string
-	prefix string
+	client        *minio.Client
+	bucket        string
+	prefix        string
+	uploads       chan string
+	reads, writes s3Circuit
 }
 
 // Validate checks configuration without contacting the object store.
@@ -63,13 +65,14 @@ func (c *Cache) UseS3(o S3Options) error {
 	}
 	c.MaxBytes = maxFills * c.MaxEntryBytes
 	u, _ := url.Parse(o.Endpoint)
-	creds := credentials.NewIAM("")
+	creds := credentials.New(&s3Credentials{Provider: &credentials.IAM{}})
 	if o.AccessKey != "" {
 		creds = credentials.NewStaticV4(o.AccessKey, o.SecretKey, "")
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext
-	transport.ResponseHeaderTimeout = 5 * time.Second
+	transport.DialContext = (&net.Dialer{Timeout: s3LookupTimeout, KeepAlive: 30 * time.Second}).DialContext
+	transport.ResponseHeaderTimeout = s3LookupTimeout
+	transport.TLSHandshakeTimeout = s3LookupTimeout
 	lookup := minio.BucketLookupAuto
 	if o.ForcePathStyle {
 		lookup = minio.BucketLookupPath
@@ -83,6 +86,7 @@ func (c *Cache) UseS3(o S3Options) error {
 	}
 	c.s3 = &s3Cache{client: client, bucket: o.Bucket, prefix: strings.TrimSuffix(o.Prefix, "/") + "/v1/"}
 	c.s3.prefix = strings.TrimPrefix(c.s3.prefix, "/")
+	c.s3.uploads = make(chan string, s3UploadQueue)
 	return nil
 }
 
@@ -102,25 +106,32 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 	if c.s3 == nil {
 		return nil, cacheEntry{}, err
 	}
+	attempt, allowed := c.s3.reads.allow(time.Now())
+	if !allowed {
+		return nil, cacheEntry{}, errS3CircuitOpen
+	}
 	started := time.Now()
+	complete := true
 	defer func() {
 		result := operationResult(loadErr)
+		circuitErr := loadErr
 		if errors.Is(loadErr, os.ErrNotExist) || errors.Is(loadErr, errExpired) {
-			result = "miss"
+			result, circuitErr = "miss", nil
 		} else if loadErr != nil {
 			c.warn("s3_lookup", key, loadErr)
 		}
+		if complete {
+			if ctx.Err() != nil {
+				circuitErr = context.Canceled
+			}
+			c.s3.reads.complete(attempt, circuitErr, time.Now())
+		}
 		c.metrics.CacheOperation("s3_lookup", result, time.Since(started), 0)
 	}()
-	obj, err := c.s3.client.GetObject(ctx, c.s3.bucket, c.s3.prefix+key, minio.GetObjectOptions{})
+	lookupCtx, cancel := context.WithTimeout(ctx, s3LookupTimeout)
+	info, err := c.s3.client.StatObject(lookupCtx, c.s3.bucket, c.s3.prefix+key, minio.StatObjectOptions{})
+	cancel()
 	if err != nil {
-		return nil, cacheEntry{}, err
-	}
-	// Stat forces the lazy request and pins subsequent reads and seeks to this
-	// ETag. A concurrent replacement must fail a read rather than mix bodies.
-	info, err := obj.Stat()
-	if err != nil {
-		_ = obj.Close()
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
 			err = os.ErrNotExist
 		}
@@ -132,26 +143,34 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 	}
 	if err != nil || entry.Size < 0 || entry.Size != info.Size || entry.Stored <= 0 || cacheKey(entry.URL) != key ||
 		info.ETag == "" || (c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes) {
-		_ = obj.Close()
 		return nil, cacheEntry{}, os.ErrNotExist
 	}
 	if c.MaxAge > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.MaxAge {
-		_ = obj.Close()
 		return nil, cacheEntry{}, errExpired
 	}
-	return &cacheBody{ReadSeekCloser: obj, cache: c, source: "s3", key: key}, entry, nil
+	// The bounded metadata request cannot own the streaming body's context.
+	// Explicit If-Match preserves the revision across the SDK's lazy reads/seeks.
+	opts := minio.GetObjectOptions{}
+	if err := opts.SetMatchETag(info.ETag); err != nil {
+		return nil, cacheEntry{}, err
+	}
+	obj, err := c.s3.client.GetObject(ctx, c.s3.bucket, c.s3.prefix+key, opts)
+	if err != nil {
+		return nil, cacheEntry{}, err
+	}
+	complete = false
+	return &cacheBody{ReadSeekCloser: obj, cache: c, source: "s3", key: key, finish: func(err error) {
+		if ctx.Err() != nil {
+			err = context.Canceled
+		}
+		c.s3.reads.complete(attempt, err, time.Now())
+	}}, entry, nil
 }
 
 func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
-	started := time.Now()
-	defer func() {
-		c.metrics.CacheOperation("s3_upload", operationResult(uploadErr), time.Since(started), 0)
-		if uploadErr != nil {
-			c.warn("s3_upload", key, uploadErr)
-		}
-	}()
 	f, entry, offset, err := c.open(key)
 	if err != nil {
+		c.metrics.CacheUploadSkipped("entry_unavailable")
 		return err
 	}
 	defer func() { _ = f.Close() }()
@@ -161,8 +180,29 @@ func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {
 	}
 	metadata := base64.StdEncoding.EncodeToString(raw)
 	if len(metadata)+len("kritika-entry") > 2048 {
+		c.metrics.CacheUploadSkipped("entry_unavailable")
 		return errors.New("egress: cache: entry metadata exceeds the S3 metadata limit")
 	}
+	attempt, allowed := c.s3.writes.allow(time.Now())
+	if !allowed {
+		c.metrics.CacheUploadSkipped("circuit_open")
+		return errS3CircuitOpen
+	}
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, s3UploadTimeout)
+	defer cancel()
+	started := time.Now()
+	defer func() {
+		circuitErr := uploadErr
+		if parent.Err() != nil {
+			circuitErr = context.Canceled
+		}
+		c.s3.writes.complete(attempt, circuitErr, time.Now())
+		c.metrics.CacheOperation("s3_upload", operationResult(uploadErr), time.Since(started), 0)
+		if uploadErr != nil {
+			c.warn("s3_upload", key, uploadErr)
+		}
+	}()
 	_, err = c.s3.client.PutObject(ctx, c.s3.bucket, c.s3.prefix+key, io.NewSectionReader(f, offset, entry.Size), entry.Size,
 		minio.PutObjectOptions{
 			UserMetadata: map[string]string{"kritika-entry": metadata},

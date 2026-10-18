@@ -67,6 +67,7 @@ func TestCacheObservations(t *testing.T) {
 	} {
 		proxied(p, tt.method, target, tt.headers)
 	}
+	waitS3Upload(t, p.Cache, cacheKey("https://example.com/tool"))
 	reader := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
 	useS3(t, reader.Cache, opts)
 	reader.Cache.Observe(m, reader.Logger)

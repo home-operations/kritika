@@ -3150,7 +3150,7 @@
           "refId": "A"
         }
       ],
-      "description": "Per-replica origin fills, including S3 publication. At most eight fills per replica."
+      "description": "Per-replica origin fills, excluding background S3 publication. At most eight fills per replica."
     },
     {
       "id": 53,

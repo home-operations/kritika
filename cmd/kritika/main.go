@@ -344,6 +344,9 @@ func startWorker(
 			}
 		}
 		cache.Observe(m, gatewayLogger)
+		if cfg.GatewayCacheStorage == "s3" {
+			g.Go(func() error { return cache.RunUploads(ctx) })
+		}
 	}
 	gw.Proxy = proxy
 	g.Go(func() error {

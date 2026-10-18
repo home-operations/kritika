@@ -13,6 +13,7 @@ const (
 
 type cacheMetrics struct {
 	requests, bypasses, transfers, responses *prometheus.CounterVec
+	uploadSkips                              *prometheus.CounterVec
 	operations                               *prometheus.HistogramVec
 	active, localBytes, localLimit           prometheus.Gauge
 	evictions                                prometheus.Counter
@@ -20,6 +21,9 @@ type cacheMetrics struct {
 
 func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 	c := cacheMetrics{
+		uploadSkips: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_cache_upload_skips_total", Help: "S3 publications skipped before an upload, by bounded reason.",
+		}, []string{"reason"}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_requests_total", Help: "Cache decisions for admitted HTTP requests, by outcome (local_hit, s3_hit, miss, bypass).",
 		}, []string{lblOutcome}),
@@ -37,7 +41,7 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 			Buckets: []float64{0.005, 0.025, 0.1, 0.5, 1, 5, 15, 30, 60, 120},
 		}, []string{"operation", lblOutcome}),
 		active: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "kritika_cache_active_fills", Help: "Origin fills currently in progress on this replica, including their S3 upload.",
+			Name: "kritika_cache_active_fills", Help: "Origin fills currently in progress on this replica, excluding background S3 uploads.",
 		}),
 		localBytes: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "kritika_cache_local_bytes",
@@ -51,7 +55,10 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		}),
 	}
 	reg.MustRegister(c.requests, c.bypasses, c.transfers, c.responses, c.operations,
-		c.active, c.localBytes, c.localLimit, c.evictions)
+		c.active, c.localBytes, c.localLimit, c.evictions, c.uploadSkips)
+	for _, reason := range []string{"queue_full", "circuit_open", "entry_unavailable"} {
+		c.uploadSkips.WithLabelValues(reason)
+	}
 	for _, outcome := range []string{"local_hit", "s3_hit", "miss", "bypass"} {
 		c.requests.WithLabelValues(outcome)
 	}
@@ -61,8 +68,8 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		}
 		c.transfers.WithLabelValues(op)
 	}
-	for _, reason := range []string{"ineligible", "retry", "lookup_error", "fill_error", "entry_unavailable", outcomeCanceled,
-		"fill_busy", "fill_capacity", "too_large", "private", "encoded", "unknown_length"} {
+	for _, reason := range []string{"ineligible", "retry", "lookup_error", "s3_circuit_open", "fill_error", "entry_unavailable",
+		outcomeCanceled, "fill_busy", "fill_capacity", "too_large", "private", "encoded", "unknown_length"} {
 		c.bypasses.WithLabelValues(reason)
 	}
 	for _, source := range []string{"local", "s3"} {
@@ -74,6 +81,13 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 	c.operations.WithLabelValues("s3_lookup", "miss")
 	c.operations.WithLabelValues("origin_fetch", "skipped")
 	return c
+}
+
+// CacheUploadSkipped counts dropped publications without diluting S3 operation error rates.
+func (m *Metrics) CacheUploadSkipped(reason string) {
+	if m != nil {
+		m.cache.uploadSkips.WithLabelValues(reason).Inc()
+	}
 }
 
 // CacheRequest records exactly one routing decision, with a reason only for bypasses.
