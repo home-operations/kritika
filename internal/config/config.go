@@ -166,7 +166,7 @@ func (c *Config) parseWebURL() error {
 func Load() (*Config, error) {
 	cfg, err := env.ParseAs[Config]()
 	if err != nil {
-		return nil, fmt.Errorf("config: %w", err)
+		return nil, envError[Config](err)
 	}
 	if cfg.ConfigFile != "" {
 		raw, err := os.ReadFile(cfg.ConfigFile)

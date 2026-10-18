@@ -224,3 +224,22 @@ func TestEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvironmentParseErrorNamesTheVariable(t *testing.T) {
+	for _, tt := range []struct{ key, value string }{
+		{"KRITIKA_GATEWAY_TOKEN_TTL", "abc"},
+		{"KRITIKA_RUNNER_POD_TEMPLATE", "gvisor"},
+	} {
+		t.Run(tt.key, func(t *testing.T) {
+			t.Setenv("KRITIKA_DATABASE_URL", "postgres://app@db/kritika")
+			t.Setenv(tt.key, tt.value)
+			want := "config: environment variable " + tt.key + ": "
+			if _, err := Load(); err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Fatalf("Load = %v, want an error starting %q", err, want)
+			}
+			if _, _, err := LoadSettings(nil); err == nil || !strings.HasPrefix(err.Error(), want) {
+				t.Fatalf("LoadSettings = %v, want an error starting %q", err, want)
+			}
+		})
+	}
+}
