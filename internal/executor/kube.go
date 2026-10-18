@@ -490,11 +490,11 @@ func jobFinished(j *batchv1.Job) bool {
 func (k *Kube) finish(ctx context.Context, res *Result, secrets runner.Secrets) {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
-	pods, err := k.Client.CoreV1().Pods(k.Namespace).List(fctx, metav1.ListOptions{LabelSelector: "job-name=" + res.JobName})
-	if err != nil || len(pods.Items) == 0 {
+	pods, err := k.listedPods(fctx, &batchv1.Job{Name: res.JobName, UID: types.UID(res.JobUID)})
+	if err != nil || len(pods) == 0 {
 		return
 	}
-	pod := pods.Items[len(pods.Items)-1]
+	pod := pods[len(pods)-1]
 	res.PodName, res.NodeName = pod.Name, pod.Spec.NodeName
 	for _, c := range pod.Status.Conditions {
 		switch {
