@@ -141,6 +141,10 @@ const MaxFileBytes = 1 << 20
 // ErrFileTooLarge is FileAt refusing a file over MaxFileBytes.
 var ErrFileTooLarge = errors.New("forge: file is over the size limit")
 
+// ErrNotFound is the forge having no issue, pull request or comment of
+// the number or id asked for, as when it was deleted.
+var ErrNotFound = errors.New("forge: not found")
+
 // Client is one connection's access to its forge.
 type Client interface {
 	// MergeBase asks the forge for the merge-base of base (a branch) and
@@ -168,7 +172,7 @@ type Client interface {
 	// file over MaxFileBytes one wrapping ErrFileTooLarge.
 	FileAt(ctx context.Context, owner, repo, ref, path string) ([]byte, error)
 	// Issue returns issue number of the repository. A number that names
-	// none is an error wrapping fs.ErrNotExist.
+	// none is an error wrapping ErrNotFound.
 	Issue(ctx context.Context, owner, repo string, number int) (Issue, error)
 
 	// BotLogin is the login comments posted through this client carry, so
@@ -181,7 +185,7 @@ type Client interface {
 	CreateComment(ctx context.Context, owner, repo string, number int, body string) (int64, error)
 	// UpdateComment replaces the body of conversation comment id. An id
 	// that names none, say one deleted since, is an error wrapping
-	// fs.ErrNotExist.
+	// ErrNotFound.
 	UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error
 	// CreateReview posts a non-blocking review with inline comments pinned
 	// to headSHA and returns each comment's id, in order, 0 where the forge
@@ -256,7 +260,7 @@ type Client interface {
 	// time, most recently updated first; the zero time lists them all.
 	ListOpenPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]OpenPullRequest, error)
 	// PullRequest returns one pull request as it stands, open or closed. A
-	// missing one is fs.ErrNotExist.
+	// missing one is an error wrapping ErrNotFound.
 	PullRequest(ctx context.Context, owner, repo string, number int) (OpenPullRequest, error)
 }
 

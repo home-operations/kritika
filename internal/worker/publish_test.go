@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"net/url"
@@ -248,7 +247,7 @@ func (f *stickyForge) UpdateComment(_ context.Context, _, _ string, id int64, bo
 		return f.updateErr
 	}
 	if _, ok := f.comments[id]; !ok {
-		return fmt.Errorf("fake: comment %d: %w", id, fs.ErrNotExist)
+		return fmt.Errorf("fake: comment %d: %w", id, forge.ErrNotFound)
 	}
 	f.comments[id] = body
 	return nil

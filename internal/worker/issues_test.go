@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"slices"
 	"testing"
@@ -29,7 +28,7 @@ func (f *issueForge) Issue(_ context.Context, _, _ string, number int) (forge.Is
 	}
 	is, ok := f.issues[number]
 	if !ok {
-		return forge.Issue{}, fmt.Errorf("github: issue %d: %w", number, fs.ErrNotExist)
+		return forge.Issue{}, fmt.Errorf("github: issue %d: %w", number, forge.ErrNotFound)
 	}
 	return is, nil
 }

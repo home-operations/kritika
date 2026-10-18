@@ -157,7 +157,7 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (forge.Issue, error) {
 	issue, resp, err := c.api.Issues.Get(ctx, owner, repo, number)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
-		return forge.Issue{}, fmt.Errorf("github: issue %d of %s/%s: %w", number, owner, repo, fs.ErrNotExist)
+		return forge.Issue{}, fmt.Errorf("github: issue %d of %s/%s: %w", number, owner, repo, forge.ErrNotFound)
 	}
 	if err != nil {
 		return forge.Issue{}, fmt.Errorf("github: issue %d of %s/%s: %w", number, owner, repo, err)
@@ -211,7 +211,7 @@ func (c *Client) CreateComment(ctx context.Context, owner, repo string, number i
 func (c *Client) UpdateComment(ctx context.Context, owner, repo string, id int64, body string) error {
 	_, resp, err := c.api.Issues.UpdateComment(ctx, owner, repo, id, gh.IssueCommentRequest{Body: body})
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("github: edit comment %d: %w", id, fs.ErrNotExist)
+		return fmt.Errorf("github: edit comment %d: %w", id, forge.ErrNotFound)
 	}
 	if err != nil {
 		return fmt.Errorf("github: edit comment %d: %w", id, err)
@@ -545,7 +545,7 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, s
 func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int) (forge.OpenPullRequest, error) {
 	pr, resp, err := c.api.PullRequests.Get(ctx, owner, repo, number)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
-		return forge.OpenPullRequest{}, fmt.Errorf("github: pull request %d of %s/%s: %w", number, owner, repo, fs.ErrNotExist)
+		return forge.OpenPullRequest{}, fmt.Errorf("github: pull request %d of %s/%s: %w", number, owner, repo, forge.ErrNotFound)
 	}
 	if err != nil {
 		return forge.OpenPullRequest{}, fmt.Errorf("github: pull request %d of %s/%s: %w", number, owner, repo, err)

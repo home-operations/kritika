@@ -227,8 +227,8 @@ func TestIssue(t *testing.T) {
 	if got, err := c.Issue(t.Context(), "o", "r", 13); err != nil || !got.PullRequest {
 		t.Fatalf("Issue of a pull request = %+v, %v; want PullRequest set", got, err)
 	}
-	if _, err := c.Issue(t.Context(), "o", "r", 14); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("Issue of an unknown number = %v, want fs.ErrNotExist", err)
+	if _, err := c.Issue(t.Context(), "o", "r", 14); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("Issue of an unknown number = %v, want forge.ErrNotFound", err)
 	}
 }
 
@@ -287,8 +287,8 @@ func TestWriteBackCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.reply("PATCH /api/v3/repos/o/r/issues/comments/101", 404, `{"message":"Not Found"}`)
-	if err := c.UpdateComment(t.Context(), "o", "r", 101, "edited"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("UpdateComment of a deleted comment = %v, want fs.ErrNotExist", err)
+	if err := c.UpdateComment(t.Context(), "o", "r", 101, "edited"); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("UpdateComment of a deleted comment = %v, want forge.ErrNotFound", err)
 	}
 	if ids, err := c.CreateReview(t.Context(), "o", "r", 7, "abc", nil); err != nil || ids == nil || f.saw("POST /api/v3/repos/o/r/pulls/7/reviews") {
 		t.Fatal("a review with no comments must not be posted")
@@ -477,7 +477,7 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 
 // TestPullRequestByNumber: the zero time lists every open pull request,
 // and one asked for by number comes back as it stands, closed included and
-// with its size, a missing one as fs.ErrNotExist.
+// with its size, a missing one as forge.ErrNotFound.
 func TestPullRequestByNumber(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/pulls", 200, openPullsJSON)
@@ -495,8 +495,8 @@ func TestPullRequestByNumber(t *testing.T) {
 		closed.Additions != 6824 || closed.Deletions != 291 || closed.ChangedFiles != 188 {
 		t.Fatalf("PullRequest(9) = %+v, %v; want it closed and merged at 08:59:24, with its size", closed, err)
 	}
-	if _, err := c.PullRequest(t.Context(), "o", "r", 10); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("PullRequest(10) = %v, want fs.ErrNotExist", err)
+	if _, err := c.PullRequest(t.Context(), "o", "r", 10); !errors.Is(err, forge.ErrNotFound) {
+		t.Fatalf("PullRequest(10) = %v, want forge.ErrNotFound", err)
 	}
 }
 
