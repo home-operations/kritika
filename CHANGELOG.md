@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.83](https://github.com/home-operations/kritika/compare/0.0.82...0.0.83) (2026-10-18)
+
+
+### Features
+
+* **cache:** revalidate expired downloads instead of refetching them ([#1090](https://github.com/home-operations/kritika/issues/1090)) ([da5e0b2](https://github.com/home-operations/kritika/commit/da5e0b2fbe42a744335597e223937a18b33eca31))
+
 ## [0.0.82](https://github.com/home-operations/kritika/compare/0.0.81...0.0.82) (2026-10-18)
 
 
