@@ -118,8 +118,12 @@ func (p Page) check() error {
 	if p.Limit <= 0 {
 		return ErrPageLimit
 	}
-	if !p.After.First() && uuid.Validate(p.After.ID) != nil {
-		return ErrCursor
+	// Postgres's own spelling, the one the API hands out: uuid.Validate
+	// allows spellings $1::uuid refuses.
+	if !p.After.First() {
+		if u, err := uuid.Parse(p.After.ID); err != nil || u.String() != p.After.ID {
+			return ErrCursor
+		}
 	}
 	return nil
 }

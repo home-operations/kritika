@@ -313,7 +313,7 @@ func ListPullReviews(ctx context.Context, tx pgx.Tx, pullRequestID string) ([]Re
 
 // FindReview returns one review, or ErrNotFound.
 func FindReview(ctx context.Context, tx pgx.Tx, id string) (ReviewRow, error) {
-	if uuid.Validate(id) != nil {
+	if u, err := uuid.Parse(id); err != nil || u.String() != id {
 		return ReviewRow{}, ErrNotFound
 	}
 	rows, err := tx.Query(ctx, `SELECT `+reviewColumns+` WHERE v.id = $1::uuid`, id)
