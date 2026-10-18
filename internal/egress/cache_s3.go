@@ -145,7 +145,7 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 		info.ETag == "" || (c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes) {
 		return nil, cacheEntry{}, os.ErrNotExist
 	}
-	if c.MaxAge > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.MaxAge {
+	if c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter {
 		return nil, cacheEntry{}, errExpired
 	}
 	// The bounded metadata request cannot own the streaming body's context.

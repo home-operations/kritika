@@ -48,7 +48,7 @@ strategy:
 #   gatewayTokenTtl: { type: string, minLength: 1 }
 #   gatewayCacheDir: { type: string }
 #   gatewayCacheMaxSize: { type: [string, integer] }
-#   gatewayCacheMaxAge: { type: string, minLength: 1 }
+#   gatewayCacheRefreshAfter: { type: string, minLength: 1 }
 #   gatewayCacheMaxEntrySize: { type: [string, integer] }
 #   gatewayCacheStorage: { type: string, enum: [filesystem, s3] }
 #   gatewayCacheS3Endpoint: { type: string }
@@ -328,8 +328,8 @@ runner:
 gatewayCache:
   # -- Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica; S3 shares completed objects across replicas and rollouts.
   enabled: false
-  # -- Maximum freshness of a cached download (KRITIKA_GATEWAY_CACHE_MAX_AGE). S3 retention is managed separately by the bucket operator.
-  maxAge: 24h
+  # -- How long a cached download is served before the gateway fetches its URL again (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention.
+  refreshAfter: 24h
   # -- Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi.
   maxEntrySize: 256Mi
   # @schema

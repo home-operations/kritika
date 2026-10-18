@@ -27,7 +27,7 @@ import (
 
 func faultS3Cache(t *testing.T, transport http.RoundTripper) *Cache {
 	t.Helper()
-	c := &Cache{Dir: t.TempDir(), MaxEntryBytes: 1 << 20, MaxAge: time.Hour}
+	c := &Cache{Dir: t.TempDir(), MaxEntryBytes: 1 << 20, RefreshAfter: time.Hour}
 	opts := S3Options{Endpoint: "https://s3.example", Region: "test", Bucket: "cache", AccessKey: "key", SecretKey: "secret"}
 	if err := c.UseS3(opts); err != nil {
 		t.Fatal(err)

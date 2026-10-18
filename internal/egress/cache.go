@@ -43,9 +43,9 @@ type Cache struct {
 	// going first, and apart from that what the fills under way may write,
 	// so Dir holds at most twice it. A body that would not fit is not kept.
 	MaxBytes int64
-	// MaxAge is how long an entry is served before it is fetched again,
-	// so an asset replaced upstream is not served stale for longer.
-	MaxAge time.Duration
+	// RefreshAfter is how long an entry is served before its URL is fetched
+	// again, so an asset replaced upstream is not served stale for longer.
+	RefreshAfter time.Duration
 	// MaxEntryBytes bounds one download, independently of the local budget.
 	MaxEntryBytes int64
 	s3            *s3Cache
@@ -105,7 +105,7 @@ func LockedInstall(ctx context.Context) bool {
 
 // OpenCache is a cache in dir, which it creates, checks it can write and
 // clears of the fills a previous process left unfinished.
-func OpenCache(dir string, maxBytes int64, maxAge time.Duration) (*Cache, error) {
+func OpenCache(dir string, maxBytes int64, refreshAfter time.Duration) (*Cache, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
@@ -125,7 +125,7 @@ func OpenCache(dir string, maxBytes int64, maxAge time.Duration) (*Cache, error)
 	if err := errors.Join(probe.Close(), os.Remove(probe.Name())); err != nil {
 		return nil, fmt.Errorf("egress: cache: %w", err)
 	}
-	return &Cache{Dir: dir, MaxBytes: maxBytes, MaxAge: maxAge}, nil
+	return &Cache{Dir: dir, MaxBytes: maxBytes, RefreshAfter: refreshAfter}, nil
 }
 
 // cacheEntry is the first line of an entry's file, before the body.
@@ -139,7 +139,7 @@ type cacheEntry struct {
 	LastModified string `json:"lastModified,omitempty"`
 }
 
-// errExpired is an entry older than the cache's MaxAge.
+// errExpired is an entry older than the cache's RefreshAfter.
 var (
 	errExpired      = errors.New("egress: cache entry: expired")
 	errFillBusy     = errors.New("egress: cache: all fill slots are occupied")
@@ -437,7 +437,7 @@ func (c *Cache) end(reserved int64) {
 // open opens the entry under key and marks it used, returning its file,
 // what its first line records and where its body starts. An entry whose
 // file does not hold what its first line says is removed, to be fetched
-// again; one past MaxAge is left for the fill that replaces it.
+// again; one past RefreshAfter is left for the fill that replaces it.
 func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 	path := filepath.Join(c.Dir, key)
 	f, err := os.Open(path)
@@ -454,7 +454,7 @@ func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 		}
 		return nil, cacheEntry{}, 0, err
 	}
-	if c.MaxAge > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.MaxAge {
+	if c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter {
 		_ = f.Close()
 		return nil, cacheEntry{}, 0, errExpired
 	}

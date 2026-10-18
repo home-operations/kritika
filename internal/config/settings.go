@@ -55,10 +55,11 @@ type Settings struct {
 	// under way may write, so the directory holds at most twice it. 2Gi
 	// holds a few dozen release archives.
 	GatewayCacheMaxSize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_SIZE" envDefault:"2Gi" yaml:"gatewayCacheMaxSize,omitempty"`
-	// GatewayCacheMaxAge is how long a kept download is served before it is
-	// fetched again, so an asset replaced upstream is served stale for at
-	// most this long; a day, since release assets rarely change.
-	GatewayCacheMaxAge time.Duration `env:"KRITIKA_GATEWAY_CACHE_MAX_AGE" envDefault:"24h" yaml:"gatewayCacheMaxAge,omitempty"`
+	// GatewayCacheRefreshAfter is how long a kept download is served before
+	// its URL is fetched again, so an asset replaced upstream is served
+	// stale for at most this long. It deletes nothing; a day, since release
+	// assets rarely change.
+	GatewayCacheRefreshAfter time.Duration `env:"KRITIKA_GATEWAY_CACHE_REFRESH_AFTER" envDefault:"24h" yaml:"gatewayCacheRefreshAfter,omitempty"` //nolint:lll // the setting's three names are user-facing
 	// GatewayCacheStorage selects filesystem or s3. Filesystem needs no
 	// external storage and remains the default.
 	GatewayCacheStorage string `env:"KRITIKA_GATEWAY_CACHE_STORAGE" envDefault:"filesystem" yaml:"gatewayCacheStorage,omitempty"`

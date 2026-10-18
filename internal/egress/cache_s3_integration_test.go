@@ -25,7 +25,7 @@ func TestS3Integration(t *testing.T) {
 		AccessKey: os.Getenv("KRITIKA_TEST_S3_ACCESS_KEY"), SecretKey: os.Getenv("KRITIKA_TEST_S3_SECRET_KEY"),
 		Prefix: fmt.Sprintf("kritika-test-%d/", time.Now().UnixNano()),
 	}
-	c := &Cache{Dir: t.TempDir(), MaxAge: time.Hour}
+	c := &Cache{Dir: t.TempDir(), RefreshAfter: time.Hour}
 	useS3(t, c, opts)
 	exists, err := c.s3.client.BucketExists(t.Context(), opts.Bucket)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestS3Integration(t *testing.T) {
 			}
 		}
 		put("old")
-		reader := &Cache{Dir: t.TempDir(), MaxAge: time.Hour}
+		reader := &Cache{Dir: t.TempDir(), RefreshAfter: time.Hour}
 		useS3(t, reader, opts)
 		f, _, err := reader.load(t.Context(), key)
 		if err != nil {

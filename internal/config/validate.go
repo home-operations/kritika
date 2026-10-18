@@ -29,7 +29,7 @@ func (s Settings) Validate() error {
 	v := validate.Struct(s)
 	v.StopOnError = false
 	v.SkipOnEmpty = false
-	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxEntrySize,GatewayCacheMaxAge,LeaderRetryInterval", "gt", 0)
+	v.AddRule("GatewayTokenTTL,GatewayCacheMaxSize,GatewayCacheMaxEntrySize,GatewayCacheRefreshAfter,LeaderRetryInterval", "gt", 0)
 	v.AddRule("ReviewWorkers,IndexWorkers,ThreadWorkers,OnboardWindow", "gt", 0)
 	v.AddRule("GatewayCacheStorage", "enum", []string{"filesystem", "s3"})
 	v.AddRule("PollInterval,PollLookback,IndexGrace", "gte", 0)

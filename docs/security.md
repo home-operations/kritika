@@ -468,7 +468,7 @@ config:
   once more, asking the gateway, by the proxy URL's username `uncached`,
   not to answer from its cache; a locked install's retry also leaves
   its lock's hosts on HTTPS, as it would go without the cache. The
-  gateway fetches a kept download again after `gatewayCacheMaxAge`, 24h
+  gateway fetches a kept download again after `gatewayCacheRefreshAfter`, 24h
   unless set, so an asset replaced upstream costs retries for at most
   that long. No run can write the cache, only have the gateway fetch a
   URL a cached host serves or, by naming the proxy's user `locked`, a URL
@@ -498,7 +498,7 @@ signing region:
 ```yaml
 gatewayCache:
   enabled: true
-  maxAge: 24h
+  refreshAfter: 24h
   maxEntrySize: 256Mi
   storage:
     type: s3
@@ -566,7 +566,7 @@ not contact S3 and never creates the bucket. Missing buckets, unavailable hosts
 and denied credentials recover through subsequent requests once the storage
 problem is corrected.
 
-`maxAge` is checked by kritika, independently of physical object deletion. It is
+`refreshAfter` is checked by kritika, independently of physical object deletion. It is
 not a bucket size or retention limit. Provision retention outside the chart,
 using lifecycle expiration where supported or an external cleanup job. Include
 noncurrent versions if bucket versioning is enabled. Without cleanup, unused

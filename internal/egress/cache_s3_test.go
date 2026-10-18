@@ -284,7 +284,7 @@ func testS3CacheConcurrentFills(t *testing.T, opts S3Options) {
 
 func TestS3CachePinsReadRevision(t *testing.T) {
 	store, opts := newS3TestStore(t)
-	c := &Cache{Dir: t.TempDir(), MaxAge: time.Hour}
+	c := &Cache{Dir: t.TempDir(), RefreshAfter: time.Hour}
 	useS3(t, c, opts)
 	key := cacheKey("https://example.com/tool")
 	entry := cacheEntry{URL: "https://example.com/tool", Stored: time.Now().UnixMilli(), Size: 3}

@@ -31,14 +31,14 @@
           <dt>Bucket</dt><dd class="mono break-all">{value('gatewayCacheS3Bucket', 'S3_BUCKET') ?? 'Unavailable'}</dd>
           <dt>Prefix</dt><dd class="mono break-all">{value('gatewayCacheS3Prefix', 'S3_PREFIX') || '(bucket root)'}</dd>
         {/if}
-        <dt>Maximum age</dt><dd>{value('gatewayCacheMaxAge', 'MAX_AGE') ?? 'Unavailable'}</dd>
+        <dt>Refresh after</dt><dd>{value('gatewayCacheRefreshAfter', 'REFRESH_AFTER') ?? 'Unavailable'}</dd>
         <dt>Maximum download size</dt><dd>{size(entrySize)}</dd>
         {#if backend === 'filesystem'}
           <dt>Local entry budget</dt><dd>{size(value('gatewayCacheMaxSize', 'MAX_SIZE'))}</dd>
         {/if}
       </dl>
       {#if backend === 's3'}
-        <p class="small muted text-ui-sm">Bucket retention is managed externally. Maximum age controls reuse, not object deletion.</p>
+        <p class="small muted text-ui-sm">Bucket retention is managed externally. Refresh after bounds how long a download is reused before it is fetched again; it deletes nothing.</p>
       {/if}
       <p class="small muted text-ui-sm">Configuration from the responding replica. Storage availability is not tested here; use the Grafana Download cache panels for traffic and errors.</p>
     {:else}

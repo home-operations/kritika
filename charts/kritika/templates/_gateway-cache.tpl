@@ -1,7 +1,7 @@
 {{- define "kritika.gatewayCacheSettings" -}}
 gatewayCacheDir: {{ include "kritika.gatewayCacheDir" . | quote }}
 gatewayCacheStorage: {{ .Values.gatewayCache.storage.type | quote }}
-gatewayCacheMaxAge: {{ .Values.gatewayCache.maxAge | quote }}
+gatewayCacheRefreshAfter: {{ .Values.gatewayCache.refreshAfter | quote }}
 gatewayCacheMaxEntrySize: {{ .Values.gatewayCache.maxEntrySize | quote }}
 {{- if eq .Values.gatewayCache.storage.type "s3" }}
 gatewayCacheS3Endpoint: {{ tpl .Values.gatewayCache.storage.endpoint . | quote }}
