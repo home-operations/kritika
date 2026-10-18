@@ -10,7 +10,7 @@
 # release archive and symlink_bins for an aqua recipe, so a tool offers one
 # command. curl has no registry short name, so it comes from its release
 # archive; the others resolve to aqua packages.
-"github:stunnel/static-curl" = { version = "8.22.0", matching = "glibc", filter_bins = "curl" }
+"github:stunnel/static-curl" = { version = "8.23.0", matching = "glibc", filter_bins = "curl" }
 fd = { version = "10.5.0", symlink_bins = true }
 gh = { version = "2.102.0", symlink_bins = true }
 jq = { version = "1.8.2", symlink_bins = true }
