@@ -45,10 +45,16 @@ func TestAgentRecordCommandErrors(t *testing.T) {
 	}
 	var rec agentRecord
 	rec.useTools(agentTools{run: run})
+	if rec.commandCounts == nil || len(rec.commandCounts) != 0 {
+		t.Fatalf("install failure counted as execution: %v", rec.commandCounts)
+	}
 	if !slices.Equal(rec.commandErrors, []string{"Command tool unavailable: install failed"}) {
 		t.Fatalf("command errors = %v", rec.commandErrors)
 	}
 	rec.useTools(agentTools{})
+	if rec.commandCounts == nil || len(rec.commandCounts) != 0 {
+		t.Fatalf("no run tool counts = %#v", rec.commandCounts)
+	}
 	if rec.commandErrors == nil || len(rec.commandErrors) != 0 {
 		t.Fatalf("empty command errors = %#v", rec.commandErrors)
 	}

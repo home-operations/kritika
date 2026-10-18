@@ -12,7 +12,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders the leader, config, queue and vector groups when enabled
+  - it: renders the leader, config, queue, vector and cache groups when enabled
     set:
       monitoring.prometheusRule.enabled: true
     asserts:
@@ -28,7 +28,7 @@ tests:
           value: kritika
       - lengthEqual:
           path: spec.groups
-          count: 4
+          count: 5
       - equal:
           path: spec.groups[0].name
           value: kritika.leader
@@ -150,3 +150,33 @@ tests:
       - equal:
           path: spec.groups[3].rules[0].annotations.runbook_url
           value: https://example.com/queues
+
+  - it: alerts on sustained S3 failures without treating cold misses as errors
+    set:
+      monitoring.prometheusRule.enabled: true
+      monitoring.prometheusRule.cacheStorageErrorsFor: 5m
+      monitoring.prometheusRule.additionalRuleLabels: { team: platform }
+      monitoring.prometheusRule.additionalRuleAnnotations:
+        { runbook_url: https://example.com/cache }
+    asserts:
+      - equal:
+          path: spec.groups[4].rules[0].alert
+          value: KritikaCacheStorageErrors
+      - equal:
+          path: spec.groups[4].rules[0].for
+          value: 5m
+      - equal:
+          path: spec.groups[4].rules[0].labels
+          value: { severity: warning, team: platform }
+      - equal:
+          path: spec.groups[4].rules[0].annotations.runbook_url
+          value: https://example.com/cache
+      - matchRegex:
+          path: spec.groups[4].rules[0].expr
+          pattern: 'outcome="error"'
+      - matchRegex:
+          path: spec.groups[4].rules[0].expr
+          pattern: 'outcome!="canceled"'
+      - matchRegex:
+          path: spec.groups[4].rules[0].expr
+          pattern: ">= 10"

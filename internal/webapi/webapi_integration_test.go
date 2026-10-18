@@ -294,6 +294,7 @@ func TestWebAPI(t *testing.T) {
 	t.Run("unknown repository searches are empty", func(t *testing.T) { testUnknownRepositorySearch(t, e) })
 	t.Run("diff preparation is explicit", func(t *testing.T) { testDiffPreparation(t, e) })
 	t.Run("global review usage is bounded", func(t *testing.T) { testInstanceReviewUsageLimit(t, e) })
+	t.Run("tool usage counts executions across accounts", func(t *testing.T) { testToolUsage(t, e) })
 }
 
 func testReadEndpointsScopeToAccount(t *testing.T, e *apiEnv) {

@@ -135,3 +135,32 @@ func TestRunnerDeadline(t *testing.T) {
 		t.Fatalf("from the environment: RunnerDeadline = %s, %v; want 10m", s.RunnerDeadline(), err)
 	}
 }
+
+func TestS3CacheSettings(t *testing.T) {
+	const base = "gatewayCacheStorage: s3\ngatewayCacheDir: /cache\ngatewayCacheS3Endpoint: https://s3.example.com\ngatewayCacheS3Region: garage\ngatewayCacheS3Bucket: kritika\n"
+	for _, tt := range []struct{ name, doc, want string }{
+		{"valid", base, ""},
+		{"unknown backend", "gatewayCacheStorage: other", "must be filesystem or s3"},
+		{"zero entry", "gatewayCacheMaxEntrySize: 0", "must be positive"},
+		{"oversize entry", base + "gatewayCacheMaxEntrySize: 6Gi\n", "must not exceed 5Gi"},
+		{"no staging", strings.ReplaceAll(base, "gatewayCacheDir: /cache\n", ""), "private local staging"},
+		{"no bucket", strings.ReplaceAll(base, "gatewayCacheS3Bucket: kritika\n", ""), "S3 bucket"},
+		{"no region", strings.ReplaceAll(base, "gatewayCacheS3Region: garage\n", ""), "S3 region"},
+		{"endpoint credential", strings.ReplaceAll(base, "https://s3.example.com", "https://user:password@s3.example.com"), "without credentials"},
+		{"endpoint path", strings.ReplaceAll(base, "https://s3.example.com", "https://s3.example.com/bucket"), "without credentials"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _, err := LoadSettings([]byte(tt.doc))
+			if tt.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !s.GatewayCacheS3ForcePathStyle || s.GatewayCacheMaxEntrySize != 256<<20 {
+					t.Fatalf("defaults = %+v", s)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("got %v, want %q", err, tt.want)
+			}
+		})
+	}
+}

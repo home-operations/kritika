@@ -101,6 +101,71 @@ pool and its least-privilege role; acquisition time counts against the two-secon
 budget. Pool saturation is a legitimate snapshot failure. Inspect the existing
 pool-wait metrics alongside queue health when diagnosing it.
 
+## Download cache
+
+The gateway exports cache telemetry per replica. Prometheus aggregates the
+replicas; the admin UI's Download cache card only reports the responding
+replica's configuration, without probing storage or claiming it is healthy.
+
+| Metric | Labels | Meaning |
+| --- | --- | --- |
+| `kritika_cache_requests_total` | outcome | One decision per admitted HTTP request while caching is enabled: `local_hit`, `s3_hit`, `miss`, or `bypass` |
+| `kritika_cache_bypasses_total` | reason | Why a request was forwarded without the cache |
+| `kritika_cache_operation_seconds` | operation, outcome | Duration histogram for `origin_fetch`, `s3_lookup`, `s3_read`, and `s3_upload` |
+| `kritika_cache_transfer_bytes_total` | operation | Actual body bytes consumed by cache fills, S3 reads/uploads, or accepted by response writers (`response_local`, `response_s3`) |
+| `kritika_cache_responses_total` | source, outcome | Responses after serving, by `local`/`s3` source and `ok`/`error`/`canceled` result |
+| `kritika_cache_active_fills` | | Current origin fills, including their S3 upload |
+| `kritika_cache_local_bytes` | | Retained files at the latest directory scan |
+| `kritika_cache_local_limit_bytes` | | Retained-entry budget, not a hard disk limit |
+| `kritika_cache_evictions_total` | | Local entries evicted to meet the budget |
+
+Bypass reasons are bounded: `ineligible`, `retry`, `lookup_error`, `fill_error`,
+`entry_unavailable`, `canceled`, `fill_busy`, `fill_capacity`, `too_large`,
+`private`, `encoded`, and `unknown_length`. URLs, object keys, run IDs and
+arbitrary errors are not metric labels. CONNECT tunnels are excluded.
+
+A miss is a request served after waiting for a fill, including requests sharing
+one in-process fill. Failed fills instead report a bypass. The hit ratio is
+hits divided by hits plus misses; inspect bypasses alongside it. Operation
+outcomes are `ok`, `error`, and `canceled`, plus `miss` for an absent, expired or
+invalid S3 entry and `skipped` for an origin response that cannot be stored.
+Cache availability does not affect readiness.
+
+Transfer counters include partial operations. Origin bytes cover cache fill
+attempts, not all gateway forwarding or estimated bandwidth savings. Upload
+bytes count the HTTP request body, excluding the SDK's checksum pass. Response
+bytes count writes accepted by the HTTP writer, including multipart framing;
+HEAD and 304 responses contribute zero. A hit does not prove delivery: check
+response results for stream failures and client cancellations. S3 read duration
+includes time waiting for the downstream reader.
+
+Local usage excludes fills in progress and evicted files still held open, and
+is updated at startup and eviction scans. Compare it with the entry budget to
+understand eviction pressure; use pod filesystem metrics for actual disk usage.
+Bucket usage and lifecycle retention belong in the storage provider's monitoring.
+
+At debug level, `egress cache download` records a completed serving attempt with
+`cache_key`, `source`, `result`, HTTP status, method, bytes and elapsed time.
+Storage failures produce `egress cache storage error` at warning level, limited
+to one warning per minute per replica. Every failed operation still appears in
+metrics. The runner's `gateway_cache` install field indicates the route used,
+not proof of a cache hit; an uncached retry has its own warning.
+
+## Most used tools
+
+The admin UI's **Most used tools** graph ranks the top ten command names over
+7, 30 or 90 days, across currently served accounts. Each started process counts,
+including nonzero exits, timeouts and retry runs. Rejected commands, failed
+installations and processes that fail to start do not count. Versions and
+providers share a command name; these are executions, not download counts.
+
+Counts are stored in `agent_runs.command_counts` alongside the saved result,
+so they survive restarts and aggregate across replicas without Prometheus labels
+for arbitrary command names. Split review parts share one counter. The period
+uses the result's save time; active runs and runs lost before saving their result
+are not included. Runs from older runners have no counts and are shown as
+excluded, rather than estimated from the distinct commands they used.
+
 ## Alerts
 
 The chart's `monitoring.prometheusRule.enabled` creates a Prometheus Operator
@@ -117,6 +182,7 @@ label to every rule, and `additionalRuleAnnotations` an annotation.
 | `KritikaConfigDrift`     | `kritika_config_drift == 1`: a replica's file differs from the applied one | warning | 15m |
 | `KritikaQueueDelayed` | Oldest runnable review/followup/thread job exceeds 600 seconds, using the last successful sample within 5m and max across replicas | warning | 15m |
 | `KritikaQueueStatsUnavailable` | Every replica succeeds on fewer than 75% of snapshot reads over 5m | warning | 5m |
+| `KritikaCacheStorageErrors` | More than 10% S3 operation errors, with at least 10 non-canceled operations in 15m; cold misses are not errors | warning | 10m |
 | `KritikaVectorSearchErrors` | More than 10% database search errors, with at least 10 non-canceled requests in 15m | warning | 10m |
 
 Without a leader nothing migrates, applies configuration, polls or rescues

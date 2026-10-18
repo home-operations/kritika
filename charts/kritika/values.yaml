@@ -49,6 +49,13 @@ strategy:
 #   gatewayCacheDir: { type: string }
 #   gatewayCacheMaxSize: { type: [string, integer] }
 #   gatewayCacheMaxAge: { type: string, minLength: 1 }
+#   gatewayCacheMaxEntrySize: { type: [string, integer] }
+#   gatewayCacheStorage: { type: string, enum: [filesystem, s3] }
+#   gatewayCacheS3Endpoint: { type: string }
+#   gatewayCacheS3Region: { type: string }
+#   gatewayCacheS3Bucket: { type: string }
+#   gatewayCacheS3Prefix: { type: string }
+#   gatewayCacheS3ForcePathStyle: { type: boolean }
 #   webUrl: { type: string }
 #   databaseAppRole: { type: string }
 #   databaseRunnerRole: { type: string }
@@ -315,19 +322,47 @@ runner:
     # -- Annotations for the runner ServiceAccount.
     annotations: {}
 
-# The gateway's download cache: each kritika serve replica keeps what a
-# repository's locked tools download, and what runner tools download from the
-# hosts `config.egress.cache` names, in an emptyDir, and serves it again to
-# the next run that asks for the same URL, so a tool is fetched once per
-# replica rather than once per run. mise still checks every download against
-# the repository's lock.
+# @schema
+# additionalProperties: false
+# @schema
 gatewayCache:
-  # -- Give each replica an emptyDir for the cache (KRITIKA_GATEWAY_CACHE_DIR), which keeps what a repository's `.kritika/mise.lock` pins; `config.egress.cache` names more hosts whose downloads it keeps.
+  # -- Cache eligible gateway downloads. Filesystem storage uses a private emptyDir per replica; S3 shares completed objects across replicas and rollouts.
   enabled: false
-  # -- The most the cache keeps (KRITIKA_GATEWAY_CACHE_MAX_SIZE), in bytes or with Ki, Mi, Gi or Ti, the least recently used downloads going first, and apart from that the most its fetches under way may write. Allow ephemeral storage for twice this size plus evicted files still being served and the pod's other storage use. Evicted files retain disk space until their readers finish, for up to two minutes; their total size is not bounded by this setting.
-  maxSize: 2Gi
-  # -- How long a kept download is served before it is fetched again (KRITIKA_GATEWAY_CACHE_MAX_AGE), a Go duration.
+  # -- Maximum freshness of a cached download (KRITIKA_GATEWAY_CACHE_MAX_AGE). S3 retention is managed separately by the bucket operator.
   maxAge: 24h
+  # -- Maximum size of one cached download (KRITIKA_GATEWAY_CACHE_MAX_ENTRY_SIZE). S3 uses single-request uploads, limited to 5Gi.
+  maxEntrySize: 256Mi
+  # @schema
+  # additionalProperties: false
+  # if:
+  #   properties:
+  #     type: { const: s3 }
+  # then:
+  #   properties:
+  #     bucket: { minLength: 1 }
+  #     endpoint: { minLength: 1 }
+  #     region: { minLength: 1 }
+  # @schema
+  storage:
+    # @schema
+    # enum: [filesystem, s3]
+    # @schema
+    # -- Cache storage backend.
+    type: filesystem
+    # -- Filesystem storage only: retained-entry budget, and separately the aggregate fill budget. Allow twice this plus evicted files still being served. S3's private local cache instead uses eight times maxEntrySize for each budget; this does not bound bucket usage.
+    maxSize: 2Gi
+    # -- Existing S3 bucket. Provision its credentials and retention outside this chart.
+    bucket: ""
+    # -- Object prefix dedicated to this instance. Kritika appends the storage format version.
+    prefix: gateway/
+    # -- S3 API origin, including http:// or https:// and an optional port; no bucket path.
+    endpoint: ""
+    # -- Signing region configured on the S3 server.
+    region: ""
+    # -- Address buckets in the URL path instead of requiring wildcard bucket DNS.
+    forcePathStyle: true
+    # -- Secret containing accessKeyId and secretAccessKey. Empty uses the SDK's IAM credentials. Only serve receives these credentials.
+    existingSecret: ""
 
 serviceAccount:
   # -- Create the ServiceAccount kritika serve runs as.
@@ -586,6 +621,8 @@ monitoring:
     queueStatsUnavailableFor: 5m
     # -- How long the vector-search error ratio must exceed 10% (at least 10 non-canceled requests in 15 minutes) before warning.
     vectorSearchErrorsFor: 10m
+    # -- How long sustained S3 cache errors must persist before alerting. Cold misses and client cancellations are excluded.
+    cacheStorageErrorsFor: 10m
   dashboards:
     # -- Render the Grafana dashboard ConfigMap (for the kube-prometheus-stack sidecar or grafana-operator): kritika's health, intake, reviews, model spend, runner Jobs, database pools, queue delays and vector searches, from the metrics the ServiceMonitor scrapes.
     enabled: false

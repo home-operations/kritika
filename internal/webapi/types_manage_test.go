@@ -9,6 +9,10 @@ var goldenUser = User{ID: "acct-1", DisplayName: "Ada", Email: "ada@example.com"
 
 func init() {
 	maps.Copy(goldens, map[string]any{
+		"tool_usage": ToolUsage{
+			From: t0, To: t1, RecordedRuns: 12, UncountedRuns: 2, TotalExecutions: 60,
+			Tools: []ToolExecution{{Name: "rg", Executions: 40}, {Name: "jq", Executions: 20}},
+		},
 		"meta":            Meta{Version: "v1.2.3", WebURL: "https://kritika.example"},
 		"turn_on_request": TurnOnRequest{On: true},
 		"accepted":        Accepted{JobID: 42},

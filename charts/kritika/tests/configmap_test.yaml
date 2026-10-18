@@ -143,7 +143,7 @@ tests:
 
   - it: renders the gateway cache's settings when it is enabled
     set:
-      gatewayCache: { enabled: true, maxSize: 512Mi, maxAge: 6h }
+      gatewayCache: { enabled: true, storage: { maxSize: 512Mi }, maxAge: 6h }
     asserts:
       - matchRegex:
           path: data["config.yaml"]
@@ -168,3 +168,29 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "config.gatewayCacheDir: the chart derives this setting from its deployment values"
+
+  - it: renders the shared S3 cache without a filesystem capacity setting
+    set:
+      gatewayCache:
+        enabled: true
+        storage:
+          type: s3
+          endpoint: https://s3.example.com
+          region: garage
+          bucket: kritika
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheStorage: s3"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheS3Endpoint: https://s3.example.com"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheS3Region: garage"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheMaxEntrySize: 256Mi"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "gatewayCacheMaxSize:"

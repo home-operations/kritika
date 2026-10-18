@@ -99,6 +99,10 @@ pkgs=$(grep -rl --include='*_test.go' '^//go:build integration' . | xargs -n1 di
 go test -race -tags integration -count=1 -p 1 $pkgs "$@"
 """
 
+[tasks.test-s3]
+description = "Run gateway cache compatibility tests against KRITIKA_TEST_S3_ENDPOINT (see docs/development.md)"
+run = "go test -race -tags integration -run '^TestS3Integration$' -count=1 -v ./internal/egress/"
+
 [tasks.smoke]
 description = "Boot kritika serve with two replicas in a throwaway kind cluster against a CloudNativePG Postgres with VectorChord, as the chart deploys it, and check readiness, helm test, one leader and the applied configuration (needs docker, kind, kubectl and helm)"
 run = "scripts/smoke.sh"

@@ -1012,3 +1012,12 @@ export interface AuditEvent {
   target: string;
   detail: Record<string, unknown>;
 }
+
+export interface ToolUsage {
+  from: string;
+  to: string;
+  recordedRuns: number;
+  uncountedRuns: number;
+  totalExecutions: number;
+  tools: { name: string; executions: number }[];
+}

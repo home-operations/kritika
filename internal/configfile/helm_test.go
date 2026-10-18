@@ -23,7 +23,7 @@ func TestHelmConfiguration(t *testing.T) {
 	cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
 		"--values", "../../charts/kritika/ci/lint-values.yaml", "--kube-version", "1.34.0",
 		"--set", "runner.podTemplate.spec.runtimeClassName=gvisor", "--set", "runner.jobTemplate.spec.activeDeadlineSeconds=1200",
-		"--set", "config.pollInterval=0s", "--set", "gatewayCache.enabled=true", "--set", "gatewayCache.maxSize=512Mi",
+		"--set", "config.pollInterval=0s", "--set", "gatewayCache.enabled=true", "--set", "gatewayCache.storage.maxSize=512Mi",
 		"--set-string", "config.webUrl=https://{{ .Release.Name }}.example.com")
 	rendered, err := cmd.CombinedOutput()
 	if err != nil {
@@ -99,6 +99,65 @@ func TestHelmRejectsEmptyDurations(t *testing.T) {
 			output, err := cmd.CombinedOutput()
 			if err == nil || !strings.Contains(string(output), "/config/"+key) || !strings.Contains(string(output), "minLength") {
 				t.Fatalf("helm template = %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func TestHelmS3Configuration(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is required to validate chart values")
+	}
+	cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
+		"--values", "../../charts/kritika/ci/lint-values.yaml",
+		"--set", "gatewayCache.enabled=true,gatewayCache.storage.type=s3,gatewayCache.storage.bucket=cache,gatewayCache.storage.region=garage",
+		"--set", "gatewayCache.storage.endpoint=https://s3.example.com,gatewayCache.storage.forcePathStyle=false")
+	rendered, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, rendered)
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(rendered))
+	for {
+		var doc struct {
+			Kind string            `yaml:"kind"`
+			Data map[string]string `yaml:"data"`
+		}
+		if err := dec.Decode(&doc); err != nil {
+			t.Fatalf("no valid ConfigMap found: %v", err)
+		}
+		if doc.Kind != "ConfigMap" || doc.Data["config.yaml"] == "" {
+			continue
+		}
+		t.Setenv("ADMIN_PASSWORD", "test-password")
+		t.Setenv("GITHUB_APP_PRIVATE_KEY", "test-key")
+		t.Setenv("GITHUB_APP_WEBHOOK_SECRET", "test-webhook")
+		f, err := Parse([]byte(doc.Data["config.yaml"]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := f.Run
+		if s.GatewayCacheStorage != "s3" || s.GatewayCacheS3Bucket != "cache" || s.GatewayCacheS3Region != "garage" ||
+			s.GatewayCacheS3Endpoint != "https://s3.example.com" || s.GatewayCacheS3ForcePathStyle || s.GatewayCacheMaxEntrySize != 256<<20 {
+			t.Fatalf("S3 configuration did not round trip: %+v", s)
+		}
+		break
+	}
+}
+
+func TestHelmRejectsInvalidCacheStorage(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is required to validate chart values")
+	}
+	for _, values := range []string{
+		"gatewayCache.maxSize=1Gi",
+		"gatewayCache.storage.type=unknown",
+		"gatewayCache.storage.type=s3",
+	} {
+		t.Run(values, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
+				"--values", "../../charts/kritika/ci/lint-values.yaml", "--set", values)
+			if output, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(output), "/gatewayCache") {
+				t.Fatalf("invalid cache values accepted: %v\n%s", err, output)
 			}
 		})
 	}

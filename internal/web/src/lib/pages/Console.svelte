@@ -10,6 +10,8 @@
   import AuditTable from '../components/AuditTable.svelte';
   import Checklist from './admin/Checklist.svelte';
   import ConnectionsSection from './admin/ConnectionsSection.svelte';
+  import DownloadCache from './admin/DownloadCache.svelte';
+  import ToolUsage from './admin/ToolUsage.svelte';
 
   const res = Resource.json<AdminAccount[]>(() => '/api/v1/admin/accounts');
   const instance = Resource.json<InstanceSetting[]>(() => '/api/v1/admin/instance');
@@ -80,6 +82,10 @@
     </section>
 
     <ConnectionsSection />
+
+    {#if instance.data}<DownloadCache settings={instance.data} />{/if}
+
+    <ToolUsage />
 
     <section class="panel" aria-labelledby="op-instance">
       <header class="panel-head"><h2 id="op-instance">Instance configuration</h2><HelpPopover label="About instance configuration"><p>Read-only values from this process's environment and configuration file. Source shows where each value is set.</p></HelpPopover></header>

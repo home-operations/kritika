@@ -31,6 +31,13 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	m.Poll("onedr0p-github", "ok", 1)
 	m.ForgeRateLimited("onedr0p-github", "waited")
 	m.Egress("http", "allowed")
+	m.CacheRequest("bypass", "retry")
+	m.CacheResponse("local", "ok", 3)
+	m.CacheOperation("origin_fetch", "ok", time.Second, 3)
+	m.CacheFill(1)
+	m.CacheFill(-1)
+	m.CacheLocal(3, 1024, 1)
+	m.CacheTransfer("s3_upload", 3)
 	m.FollowUp("onedr0p", "answered")
 	m.Thread("onedr0p", "addressed")
 	m.ContextChunks("onedr0p", "similar", 1)
@@ -96,8 +103,8 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 27 {
-		t.Fatalf("metric families = %d, want all 27", len(families))
+	if len(families) != 36 {
+		t.Fatalf("metric families = %d, want all 36", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)

@@ -149,4 +149,24 @@ spec:
             {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+    - name: kritika.cache
+      rules:
+        - alert: KritikaCacheStorageErrors
+          expr: >-
+            (sum by (namespace, job) (increase(kritika_cache_operation_seconds_count{operation=~"s3_.*",outcome="error"}[15m]))
+            / sum by (namespace, job) (increase(kritika_cache_operation_seconds_count{operation=~"s3_.*",outcome!="canceled"}[15m])) > 0.1)
+            and on (namespace, job)
+            (sum by (namespace, job) (increase(kritika_cache_operation_seconds_count{operation=~"s3_.*",outcome!="canceled"}[15m])) >= 10)
+          for: {{ .Values.monitoring.prometheusRule.cacheStorageErrorsFor }}
+          labels:
+            {{- include "kritika.alertRuleLabels" (dict "root" $ "severity" "warning") | nindent 12 }}
+          annotations:
+            summary: kritika download cache storage is failing
+            description: >-
+              More than 10% of S3 cache operations failed, with at least 10 operations in 15 minutes.
+              Cold misses and client cancellations are not errors. Downloads may fall back to origin or need an uncached retry.
+              Check S3 availability, credentials and the gateway logs for "egress cache storage error".
+            {{- with .Values.monitoring.prometheusRule.additionalRuleAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
 {{- end }}

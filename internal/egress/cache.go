@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,9 +17,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/singleflight"
+
+	"github.com/home-operations/kritika/internal/metrics"
 )
 
 // Cache keeps the bodies of upgraded downloads, so a tool every review
@@ -42,6 +46,12 @@ type Cache struct {
 	// MaxAge is how long an entry is served before it is fetched again,
 	// so an asset replaced upstream is not served stale for longer.
 	MaxAge time.Duration
+	// MaxEntryBytes bounds one download, independently of the local budget.
+	MaxEntryBytes int64
+	s3            *s3Cache
+	metrics       *metrics.Metrics
+	logger        *slog.Logger
+	lastWarning   atomic.Int64
 
 	fills    singleflight.Group
 	evicting sync.Mutex
@@ -130,7 +140,15 @@ type cacheEntry struct {
 }
 
 // errExpired is an entry older than the cache's MaxAge.
-var errExpired = errors.New("egress: cache entry: expired")
+var (
+	errExpired      = errors.New("egress: cache entry: expired")
+	errFillBusy     = errors.New("egress: cache: all fill slots are occupied")
+	errFillCapacity = errors.New("egress: cache: the fills under way hold the cache's bound")
+	errEntrySize    = errors.New("egress: cache: body exceeds the entry limit")
+	errPrivate      = errors.New("egress: cache: the response asks not to be shared")
+	errEncoded      = errors.New("egress: cache: response is encoded")
+	errLength       = errors.New("egress: cache: response has no length")
+)
 
 const (
 	// maxEntryHeader bounds an entry's first line.
@@ -189,33 +207,46 @@ func cacheKey(target string) string {
 // having written nothing, when the entry cannot be had, and r is then
 // forwarded as any other request is.
 func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool {
+	ctx, cancel := context.WithTimeout(r.Context(), upgradeTimeout)
+	defer cancel()
 	target := upstreamURL(r.URL, host)
 	key := cacheKey(target)
-	outcome := "hit"
-	f, entry, offset, err := p.Cache.open(key)
+	outcome, reason := "bypass", "lookup_error"
+	defer func() { p.Cache.metrics.CacheRequest(outcome, reason) }()
+	f, entry, err := p.Cache.load(ctx, key)
 	if err != nil {
-		outcome = "miss"
+		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errExpired) && p.Cache.s3 != nil {
+			p.Logger.Debug("egress cache bypassed", "host", host, "error", err)
+			return false
+		}
+		reason = "fill_error"
 		fill := p.Cache.fills.DoChan(key, func() (any, error) {
 			// A fill that finished between this request's miss and its
 			// joining is not repeated.
-			if f, _, _, err := p.Cache.open(key); err == nil {
+			if f, _, err := p.Cache.load(ctx, key); err == nil {
 				return nil, f.Close()
 			}
 			return nil, p.fill(r.Context(), key, target)
 		})
 		select {
 		case <-r.Context().Done():
+			reason = cacheCanceled
 			return true
 		case res := <-fill:
 			if res.Err != nil {
+				reason = fillBypassReason(res.Err)
 				p.Logger.Debug("egress cache bypassed", "host", host, "path", r.URL.Path, "error", res.Err)
 				return false
 			}
 		}
-		if f, entry, offset, err = p.Cache.open(key); err != nil {
+		reason = "entry_unavailable"
+		if f, entry, err = p.Cache.load(ctx, key); err != nil {
 			p.Logger.Debug("egress cache bypassed", "host", host, "path", r.URL.Path, "error", err)
 			return false
 		}
+		outcome = "miss"
+	} else {
+		outcome = f.source + "_hit"
 	}
 	defer func() { _ = f.Close() }()
 	h := w.Header()
@@ -237,7 +268,7 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(upgradeTimeout))
 	p.observe("http", OutcomeAllowed)
 	p.Logger.Debug("egress cache", "outcome", outcome, "host", host, "method", r.Method, "path", r.URL.Path, "bytes", entry.Size)
-	http.ServeContent(w, r, "", modified, io.NewSectionReader(f, offset, entry.Size))
+	p.serveCached(w, r, key, f, modified)
 	return true
 }
 
@@ -251,7 +282,7 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 // request that happened to start it.
 func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	if !p.Cache.begin() {
-		return fmt.Errorf("egress: cache: %d fills are under way", maxFills)
+		return errFillBusy
 	}
 	var reserved int64
 	defer func() { p.Cache.end(reserved) }()
@@ -269,28 +300,51 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	started := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
+		p.Cache.metrics.CacheOperation("origin_fetch", operationResult(err), time.Since(started), 0)
 		return fmt.Errorf("egress: cache: %w", err)
 	}
+	body := &countedReader{Reader: resp.Body}
+	originResult := "skipped"
+	originDone := false
+	finishOrigin := func() {
+		if !originDone {
+			p.Cache.metrics.CacheOperation("origin_fetch", originResult, time.Since(started), body.bytes)
+			originDone = true
+		}
+	}
+
+	defer finishOrigin()
 	defer func() { _ = resp.Body.Close() }()
 	switch {
 	case resp.StatusCode != http.StatusOK:
+		originResult = OutcomeError
 		return fmt.Errorf("egress: cache: %s", resp.Status)
 	case private(resp.Header):
-		return errors.New("egress: cache: the response asks not to be shared")
+		return errPrivate
 	case resp.Header.Get("Content-Encoding") != "":
-		return errors.New("egress: cache: response is encoded")
+		return errEncoded
 	case resp.ContentLength < 0:
-		return errors.New("egress: cache: response has no length")
+		return errLength
 	case resp.ContentLength > p.Cache.MaxBytes:
-		return fmt.Errorf("egress: cache: %d bytes is over the cache's bound", resp.ContentLength)
+		return errEntrySize
+	case p.Cache.MaxEntryBytes > 0 && resp.ContentLength > p.Cache.MaxEntryBytes:
+		return errEntrySize
 	case !p.Cache.reserve(resp.ContentLength):
-		return errors.New("egress: cache: the fills under way hold the cache's bound")
+		return errFillCapacity
 	}
 	reserved = resp.ContentLength
 	entry := cacheEntry{URL: target, Stored: time.Now().UnixMilli(), Size: resp.ContentLength, ContentType: resp.Header.Get("Content-Type"),
 		ETag: resp.Header.Get("Etag"), LastModified: resp.Header.Get("Last-Modified")}
-	if err := p.Cache.store(key, entry, resp.Body); err != nil {
+	if err := p.Cache.store(key, entry, body); err != nil {
+		originResult = operationResult(err)
 		return err
+	}
+	originResult = "ok"
+	finishOrigin()
+	if p.Cache.s3 != nil {
+		if err := p.Cache.upload(ctx, key); err != nil {
+			p.Logger.Debug("egress cache upload bypassed", "url", target, "error", err)
+		}
 	}
 	p.Logger.Debug("egress cache fill", "url", target, "from", resp.Request.URL.Host, "bytes", entry.Size,
 		"elapsed", time.Since(started).Round(time.Millisecond))
@@ -353,6 +407,7 @@ func (c *Cache) begin() bool {
 		return false
 	}
 	c.filling++
+	c.metrics.CacheFill(1)
 	return true
 }
 
@@ -373,6 +428,7 @@ func (c *Cache) end(reserved int64) {
 	c.underway.Lock()
 	defer c.underway.Unlock()
 	c.filling--
+	c.metrics.CacheFill(-1)
 	c.reserved -= reserved
 }
 
@@ -498,12 +554,15 @@ func (c *Cache) evict(keep string) {
 		}
 	}
 	slices.SortFunc(files, func(a, b file) int { return a.used.Compare(b.used) })
+	evictions := 0
 	for _, f := range files {
 		if total <= c.MaxBytes {
 			break
 		}
 		if os.Remove(filepath.Join(c.Dir, f.name)) == nil {
 			total -= f.size
+			evictions++
 		}
 	}
+	c.metrics.CacheLocal(total, c.MaxBytes, evictions)
 }
