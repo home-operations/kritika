@@ -122,7 +122,7 @@ test("findings open collapsed files, support keyboard navigation, and survive a 
   await expect(worker.locator("table.diff")).toBeVisible();
   await page.keyboard.press("j");
   await expect(page.locator("#diff-finding-logging")).toBeFocused();
-  await page.getByRole("button", { name: "Since last review", exact: true }).click();
+  await page.getByRole("radio", { name: "Since last review", exact: true }).click();
   await expect(page.getByRole("region", { name: "Findings outside this diff" })).toContainText(
     "Include the job ID",
   );
@@ -228,7 +228,7 @@ test("review tabs remember selection, scope, filters, expansion and scroll", asy
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff?finding=shutdown`);
   await expect(page.locator("#diff-finding-shutdown")).toBeFocused();
   await page.getByRole("button", { name: "Next finding" }).click();
-  await page.getByRole("button", { name: "Since last review", exact: true }).click();
+  await page.getByRole("radio", { name: "Since last review", exact: true }).click();
   await page.getByRole("checkbox", { name: "Files with findings" }).check();
   await page.getByRole("searchbox", { name: "Search files" }).fill("worker");
   const worker = page.locator(".diff-file").filter({ hasText: "internal/worker/worker.go" });
@@ -241,7 +241,7 @@ test("review tabs remember selection, scope, filters, expansion and scroll", asy
   await page.keyboard.press("j");
   await page.goBack();
   await expect(page.locator(".finding-jump.active")).toContainText("Include the job ID");
-  await expect(page.getByRole("button", { name: "Since last review", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("radio", { name: "Since last review", exact: true })).toBeChecked();
   await expect(page.getByRole("searchbox", { name: "Search files" })).toHaveValue("worker");
   await expect(page.getByRole("checkbox", { name: "Files with findings" })).toBeChecked();
   await expect(worker.locator("table.diff")).toHaveCount(0);
@@ -508,6 +508,6 @@ test("file-only navigation does not reopen stale targets after changing diff sco
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
   await page.getByRole("button", { name: "Open large.go", exact: true }).click();
   await expect(page.locator("table.diff")).toHaveCount(1);
-  await page.getByRole("button", { name: "Since last review", exact: true }).click();
+  await page.getByRole("radio", { name: "Since last review", exact: true }).click();
   await expect(page.locator("table.diff")).toHaveCount(0);
 });

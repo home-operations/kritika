@@ -17,6 +17,7 @@
   import ReviewStatusTile from './ReviewStatusTile.svelte';
   import SeverityCounts from './SeverityCounts.svelte';
   import RowToggle from './RowToggle.svelte';
+  import Checkbox from './Checkbox.svelte';
   import PullPreview from './PullPreview.svelte';
 
   let {
@@ -46,12 +47,12 @@
         {#if onpick}
           <th scope="col" class="pick relative">
             <label class="inline-flex items-center gap-2 font-normal">
-              <input
-                type="checkbox"
-                aria-label="Select every pull request shown"
+              <Checkbox
+                label="Select every pull request shown"
                 checked={open.length > 0 && open.every((p) => picked.includes(keyOf(p)))}
+                indeterminate={!open.every((p) => picked.includes(keyOf(p))) && open.some((p) => picked.includes(keyOf(p)))}
                 disabled={open.length === 0}
-                onchange={(e) => onpick(open.map(keyOf), e.currentTarget.checked)}
+                onchange={(on) => onpick(open.map(keyOf), on)}
               />
               <span class="pick-label sr-only">Select all</span>
             </label>

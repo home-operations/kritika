@@ -65,6 +65,7 @@ test.describe('actions', () => {
     await page.goto(`/#/a/${S}/pulls`);
     await expect(page.getByRole('group', { name: 'Selected pull requests' })).toHaveCount(0);
     await page.getByRole('checkbox', { name: `Select ${g.pull.repository}#7` }).check();
+    await expect(page.getByRole('checkbox', { name: 'Select every pull request shown' })).toBeChecked({ indeterminate: true });
     // Space picks the row the keyboard is on.
     await page.locator('main h1').click();
     await page.keyboard.press('j');
@@ -410,6 +411,7 @@ test.describe('repository switches', () => {
     await page.getByRole('switch', { name: 'Review and index alpha/two' }).check();
     await expect(page.getByRole('status')).toContainText('1 repository turned on');
     await expect(page.getByRole('checkbox', { name: 'Select alpha/one' })).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Select every repository shown' })).toBeChecked({ indeterminate: true });
     await expect(page.getByRole('group', { name: 'Selected repositories' })).toContainText('1 selected');
   });
 
