@@ -8,6 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
+
+	"github.com/home-operations/kritika/internal/jobtimeout"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -128,5 +130,37 @@ func TestInitVectorSearch(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDurationBucketsReachTheirLongest: the longest a review job, a runner
+// and an index job's wait for a model slot may take lands in a bucket, not
+// only in +Inf.
+func TestDurationBucketsReachTheirLongest(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := New(reg)
+	m.Review("acme", "completed", jobtimeout.MaxJobTimeout)
+	m.RunnerRun("acme", "review", "ok", jobtimeout.MaxJobTimeout)
+	m.LeaseWait("acme", "model", jobtimeout.IndexWriteHeadroom)
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, f := range families {
+		switch f.GetName() {
+		case "kritika_review_duration_seconds", "kritika_runner_duration_seconds", "kritika_lease_wait_seconds":
+		default:
+			continue
+		}
+		seen++
+		h := f.GetMetric()[0].GetHistogram()
+		buckets := h.GetBucket()
+		if last := buckets[len(buckets)-1]; last.GetCumulativeCount() != h.GetSampleCount() {
+			t.Errorf("%s: the longest observation is past its last bucket, %g", f.GetName(), last.GetUpperBound())
+		}
+	}
+	if seen != 3 {
+		t.Fatalf("found %d of the 3 histograms", seen)
 	}
 }
