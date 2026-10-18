@@ -1,13 +1,11 @@
 package configfile
 
 import (
-	"bytes"
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"math"
 	"os"
@@ -31,10 +29,9 @@ import (
 // path segment, a Kubernetes label value and a log line.
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// fileDoc is the configuration file's schema: sign-in and the whole
-// configuration.
+// fileDoc holds policy and sign-in configuration; config.Settings owns
+// operational settings.
 type fileDoc struct {
-	Settings  config.Settings       `yaml:",inline"`
 	Auth      Auth                  `yaml:"auth,omitempty"`
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
@@ -80,32 +77,23 @@ func configHash(raw []byte, secretEnv []string) string {
 
 // Parse is Load for bytes already in hand; nil or blank bytes are no file.
 func Parse(raw []byte) (*File, error) {
-	settings, err := config.LoadSettings(raw)
+	settings, doc, err := config.LoadSettings(raw)
 	if err != nil {
 		return nil, err
 	}
-	return parse(raw, settings)
+	return parse(doc, settings)
 }
 
 // FromConfig uses the file snapshot and runtime settings already read by config.Load.
 func FromConfig(cfg *config.Config) (*File, error) {
-	return parse(cfg.FileData(), cfg.Settings)
+	return parse(cfg.FileDocument(), cfg.Settings)
 }
 
-func parse(raw []byte, settings config.Settings) (*File, error) {
+func parse(input config.Document, settings config.Settings) (*File, error) {
 	var doc fileDoc
-	if len(bytes.TrimSpace(raw)) > 0 {
-		dec := yaml.NewDecoder(bytes.NewReader(raw))
-		dec.KnownFields(true)
-		if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("configfile: parse: %w", err)
-		}
-		var extra any
-		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-			return nil, errors.New("configfile: parse: the file must hold one document")
-		}
+	if err := input.Policy.Load(&doc, yaml.WithKnownFields()); err != nil {
+		return nil, fmt.Errorf("configfile: parse: %w", err)
 	}
-	doc.Settings = settings
 	if doc.Apps == nil {
 		doc.Apps = map[string]Connection{}
 	}
@@ -115,7 +103,7 @@ func parse(raw []byte, settings config.Settings) (*File, error) {
 	}
 	f := &File{
 		Auth: doc.Auth, Connections: connectionsOf(doc.Apps), Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
-		Embedding: doc.Embedding, Run: doc.Settings,
+		Embedding: doc.Embedding, Run: settings,
 	}
 	s := &secrets{}
 	if err := f.Auth.resolve(s); err != nil {
@@ -133,7 +121,7 @@ func parse(raw []byte, settings config.Settings) (*File, error) {
 		return nil, err
 	}
 	f.Accounts, f.unserved = servedAccounts(f.Connections, accounts)
-	f.hash = configHash(raw, s.env)
+	f.hash = configHash(input.Source, s.env)
 	return f, nil
 }
 

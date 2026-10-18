@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"go.yaml.in/yaml/v4"
-
 	"github.com/home-operations/kritika/internal/jobtimeout"
 )
 
@@ -206,9 +204,6 @@ type jsonObject map[string]any
 // UnmarshalText decodes the variable's JSON.
 func (o *jsonObject) UnmarshalText(b []byte) error { return json.Unmarshal(b, (*map[string]any)(o)) }
 
-// UnmarshalYAML accepts native resource maps alongside the environment's JSON.
-func (o *jsonObject) UnmarshalYAML(n *yaml.Node) error { return n.Decode((*map[string]any)(o)) }
-
 // ByteSize is a size in bytes, a whole number of them or one with a
 // binary suffix as Kubernetes writes a quantity: Ki, Mi, Gi or Ti.
 type ByteSize int64
@@ -229,13 +224,4 @@ func (b *ByteSize) UnmarshalText(text []byte) error {
 	}
 	*b = ByteSize(n * unit)
 	return nil
-}
-
-// UnmarshalYAML parses the file's value, a string or a number of bytes.
-func (b *ByteSize) UnmarshalYAML(n *yaml.Node) error {
-	var s string
-	if err := n.Decode(&s); err != nil {
-		return err
-	}
-	return b.UnmarshalText([]byte(s))
 }

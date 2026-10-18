@@ -42,7 +42,7 @@ func TestSettingsValidation(t *testing.T) {
 			"runner: {jobTemplate: {spec: {activeDeadlineSeconds: %d}}}", int64(jobtimeout.MaxRunnerDeadline/time.Second)), ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := LoadSettings([]byte(tt.doc))
+			_, _, err := LoadSettings([]byte(tt.doc))
 			if tt.want == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -55,7 +55,7 @@ func TestSettingsValidation(t *testing.T) {
 }
 
 func TestSettingsValidationCollectsErrors(t *testing.T) {
-	_, err := LoadSettings([]byte("reviewWorkers: 0\nindexWorkers: -1\nrunner: {jobTemplate: {spec: {activeDeadlineSeconds: 0}}}\nlogLevel: loud\nlogFormat: xml"))
+	_, _, err := LoadSettings([]byte("reviewWorkers: 0\nindexWorkers: -1\nrunner: {jobTemplate: {spec: {activeDeadlineSeconds: 0}}}\nlogLevel: loud\nlogFormat: xml"))
 	if err == nil {
 		t.Fatal("invalid settings accepted")
 	}
@@ -72,7 +72,7 @@ func TestValidationErrorsAreStable(t *testing.T) {
 		"runner.jobTemplate.spec.activeDeadlineSeconds: KRITIKA_RUNNER_JOB_TEMPLATE must be a whole number of seconds from 1 to 7200, " +
 		"or River's 3h0m0s job timeout cap would cut the runner off early"
 	for range 20 {
-		_, err := LoadSettings([]byte(doc))
+		_, _, err := LoadSettings([]byte(doc))
 		if err == nil || err.Error() != want {
 			t.Fatalf("LoadSettings = %v, want %s", err, want)
 		}
@@ -82,7 +82,7 @@ func TestValidationErrorsAreStable(t *testing.T) {
 func TestServeRequiresRunnerSecret(t *testing.T) {
 	for _, key := range []string{"databaseSecret", "databaseSecretKey"} {
 		t.Run(key, func(t *testing.T) {
-			s, err := LoadSettings([]byte("webUrl: https://example.com\ngatewayUrl: http://gateway:8082\nrunner: {" + key + ": ''}"))
+			s, _, err := LoadSettings([]byte("webUrl: https://example.com\ngatewayUrl: http://gateway:8082\nrunner: {" + key + ": ''}"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,14 +104,14 @@ func TestRunnerDeadline(t *testing.T) {
 		{"null", "runner: {jobTemplate: {spec: {activeDeadlineSeconds: null}}}", DefaultRunnerDeadline},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := LoadSettings([]byte(tt.doc))
+			s, _, err := LoadSettings([]byte(tt.doc))
 			if err != nil || s.RunnerDeadline() != tt.want {
 				t.Fatalf("RunnerDeadline = %s, %v; want %s", s.RunnerDeadline(), err, tt.want)
 			}
 		})
 	}
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":600}}`)
-	if s, err := LoadSettings(nil); err != nil || s.RunnerDeadline() != 10*time.Minute {
+	if s, _, err := LoadSettings(nil); err != nil || s.RunnerDeadline() != 10*time.Minute {
 		t.Fatalf("from the environment: RunnerDeadline = %s, %v; want 10m", s.RunnerDeadline(), err)
 	}
 }

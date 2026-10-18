@@ -109,12 +109,12 @@ type Config struct {
 	DatabaseToken string `env:"KRITIKA_DATABASE_TOKEN,unset"`
 	webURL        *url.URL
 	logLevel      slog.Level
-	// fileData is the startup snapshot shared with the policy loader.
-	fileData []byte
+	// document is the startup snapshot shared with the policy loader.
+	document Document
 }
 
-// FileData returns the configuration bytes read by Load. Treat the snapshot as read-only.
-func (c *Config) FileData() []byte { return c.fileData }
+// FileDocument returns the document read by Load. Treat the snapshot as read-only.
+func (c *Config) FileDocument() Document { return c.document }
 
 // ValidateRunner checks what a runner pod needs. The job document itself is
 // decoded and validated by the runner package.
@@ -169,11 +169,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	if cfg.ConfigFile != "" {
-		cfg.fileData, err = os.ReadFile(cfg.ConfigFile)
+		raw, err := os.ReadFile(cfg.ConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("config: %w", err)
 		}
-		if err := cfg.ReadFile(cfg.fileData); err != nil {
+		cfg.document, err = cfg.readFile(raw)
+		if err != nil {
 			return nil, err
 		}
 	}

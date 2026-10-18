@@ -60,7 +60,7 @@ func TestFileSettings(t *testing.T) {
 func TestRunnerTemplatesFromEnvironment(t *testing.T) {
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"ttlSecondsAfterFinished":60}}`)
 	t.Setenv("KRITIKA_RUNNER_POD_TEMPLATE", `{"spec":{"priorityClassName":"kritika-runner","hostUsers":false}}`)
-	s, err := LoadSettings(nil)
+	s, _, err := LoadSettings(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestRunnerTemplatesFromEnvironment(t *testing.T) {
 func TestSettingsSources(t *testing.T) {
 	t.Setenv("KRITIKA_REVIEW_WORKERS", "5")
 	t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":1200}}`)
-	s, err := LoadSettings([]byte(`pollInterval: 0s
+	s, _, err := LoadSettings([]byte(`pollInterval: 0s
 runner:
   serviceAccount: ""
   podTemplate:
@@ -112,13 +112,23 @@ func TestSettingsTypes(t *testing.T) {
 		{"duration requires units", "gatewayTokenTtl: 600", "gatewayTokenTtl"},
 		{"duration must be scalar", "pollInterval: [10m]", "pollInterval"},
 		{"workers must be numeric", "reviewWorkers: '4'", "reviewWorkers"},
+		{"workers must be whole", "reviewWorkers: 4.5", "reviewWorkers"},
+		{"workers must fit", "reviewWorkers: 18446744073709551616", "reviewWorkers"},
+		{"unsigned workers must fit", "reviewWorkers: 18446744073709551615", "reviewWorkers"},
+		{"workers cannot be NaN", "reviewWorkers: .nan", "reviewWorkers"},
 		{"no boolean coercion", "logLevel: true", "logLevel"},
+		{"duration zero requires units", "pollInterval: 0", "pollInterval"},
+		{"days are not duration units", "pollInterval: 1d", "pollInterval"},
+		{"nested keys are case sensitive", "runner: {ServiceAccount: named}", "ServiceAccount"},
+		{"omitted keys are case sensitive", "runner: {PodTemplate: {}}", "PodTemplate"},
+		{"unknown null is not omitted", "runner: {unknown: null}", "unknown"},
 		{"templates must be maps", "runner: {podTemplate: [1]}", "runner.podTemplate"},
 		{"cache size in decimal units", "gatewayCacheMaxSize: 2GB", "gatewayCacheMaxSize"},
 		{"cache size in a fraction", "gatewayCacheMaxSize: 1.5Gi", "gatewayCacheMaxSize"},
+		{"cache size must be whole bytes", "gatewayCacheMaxSize: 1.5", "gatewayCacheMaxSize"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := LoadSettings([]byte(tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, _, err := LoadSettings([]byte(tt.doc)); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("LoadSettings = %v, want %s", err, tt.want)
 			}
 		})
@@ -130,7 +140,7 @@ func TestNullSettingsAreOmitted(t *testing.T) {
 		t.Run(doc, func(t *testing.T) {
 			t.Setenv("KRITIKA_POLL_INTERVAL", "5m")
 			t.Setenv("KRITIKA_RUNNER_JOB_TEMPLATE", `{"spec":{"activeDeadlineSeconds":1200}}`)
-			s, err := LoadSettings([]byte(doc))
+			s, _, err := LoadSettings([]byte(doc))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,14 +149,14 @@ func TestNullSettingsAreOmitted(t *testing.T) {
 			}
 		})
 	}
-	s, err := LoadSettings([]byte("pollInterval: null\nrunner: {jobTemplate: null}"))
+	s, _, err := LoadSettings([]byte("pollInterval: null\nrunner: {jobTemplate: null}"))
 	if err != nil || s.PollInterval != 10*time.Minute || s.RunnerDeadline() != 15*time.Minute || len(s.fileEnv) != 0 {
 		t.Fatalf("null changed defaults: %+v, %v", s, err)
 	}
 }
 
 func TestEnvFormatsStructuredFileSettings(t *testing.T) {
-	s, err := LoadSettings([]byte(`runner:
+	s, _, err := LoadSettings([]byte(`runner:
   podTemplate: {spec: {resources: {requests: {cpu: 10m}}}}
 `))
 	if err != nil {
@@ -187,11 +197,11 @@ func TestByteSize(t *testing.T) {
 			t.Errorf("ByteSize(%q) = %d, %v; want %d, ok %v", tt.in, got, err, tt.want, tt.ok)
 		}
 	}
-	s, err := LoadSettings([]byte("gatewayCacheMaxSize: 1048576"))
+	s, _, err := LoadSettings([]byte("gatewayCacheMaxSize: 1048576"))
 	if err != nil || s.GatewayCacheMaxSize != 1<<20 {
 		t.Fatalf("a size in bytes from the file = %d, %v", s.GatewayCacheMaxSize, err)
 	}
-	if s, err = LoadSettings(nil); err != nil || s.GatewayCacheMaxSize != 2<<30 || s.GatewayCacheMaxAge != 24*time.Hour || s.GatewayCacheDir != "" {
+	if s, _, err = LoadSettings(nil); err != nil || s.GatewayCacheMaxSize != 2<<30 || s.GatewayCacheMaxAge != 24*time.Hour || s.GatewayCacheDir != "" {
 		t.Fatalf("defaults: size %d, age %s, dir %q, %v", s.GatewayCacheMaxSize, s.GatewayCacheMaxAge, s.GatewayCacheDir, err)
 	}
 }
