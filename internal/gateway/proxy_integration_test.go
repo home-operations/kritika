@@ -67,10 +67,10 @@ repositories:
 	}
 
 	reached := 0
-	var bypassed, locked []bool
+	var refill, locked []bool
 	proxy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached++
-		bypassed = append(bypassed, egress.CacheBypassed(r.Context()))
+		refill = append(refill, egress.Refill(r.Context()))
 		locked = append(locked, egress.LockedInstall(r.Context()))
 		if r.Header.Get("Proxy-Authorization") != "" {
 			t.Error("the run token reached the proxy")
@@ -122,8 +122,8 @@ repositories:
 	// install as egress.LockedProxyUser; the proxy gets each request
 	// marked so, and only that one.
 	for _, tt := range []struct {
-		name, user       string
-		bypassed, locked []bool
+		name, user     string
+		refill, locked []bool
 	}{
 		{"a retry around the gateway's cache", egress.UncachedProxyUser, []bool{false, true}, []bool{false, false}},
 		{"a locked install", egress.LockedProxyUser, []bool{false, true, false}, []bool{false, false, true}},
@@ -132,8 +132,8 @@ repositories:
 			if code, _, err := get(via(tt.user, token), "http://example.com/"); err != nil || code != http.StatusTeapot {
 				t.Fatalf("status = %d, %v; want %d", code, err, http.StatusTeapot)
 			}
-			if !slices.Equal(bypassed, tt.bypassed) || !slices.Equal(locked, tt.locked) {
-				t.Fatalf("bypassed = %v, locked = %v; want %v, %v", bypassed, locked, tt.bypassed, tt.locked)
+			if !slices.Equal(refill, tt.refill) || !slices.Equal(locked, tt.locked) {
+				t.Fatalf("refill = %v, locked = %v; want %v, %v", refill, locked, tt.refill, tt.locked)
 			}
 		})
 	}

@@ -94,10 +94,6 @@ type AgentLimits struct {
 	// as configfile.EgressHosts lists them, for the tools' descriptions;
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
-	// CachedHosts are the hosts whose downloads the gateway keeps, as
-	// configfile.EgressCached lists them, which mise reaches through the
-	// gateway's cache; none sends no download through it.
-	CachedHosts []string `json:"cachedHosts,omitempty"`
 	// CacheLocked says the gateway keeps downloads, as
 	// configfile.GatewayCaches reports, so a repository's locked install
 	// reaches the hosts its lock pins downloads on through the cache too.

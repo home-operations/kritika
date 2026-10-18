@@ -519,7 +519,6 @@ for (const backend of ['s3', 'filesystem', 'disabled']) {
     const settings: T.InstanceSetting[] = [
       { section: 'file', key: 'gatewayCacheDir', value: backend === 'disabled' ? '' : '/var/cache/kritika', source: 'file' },
       { section: 'environment', key: 'KRITIKA_GATEWAY_CACHE_STORAGE', value: backend, source: 'env' },
-      { section: 'file', key: 'gatewayCacheRefreshAfter', value: '24h0m0s', source: 'file' },
       { section: 'file', key: 'gatewayCacheMaxEntrySize', value: '268435456', source: 'file' },
       { section: 'file', key: 'gatewayCacheMaxSize', value: '2147483648', source: 'file' },
       { section: 'file', key: 'gatewayCacheS3Bucket', value: 'cache-bucket', source: 'file' },
@@ -539,7 +538,6 @@ for (const backend of ['s3', 'filesystem', 'disabled']) {
       await expect(panel).not.toContainText('cache-bucket');
     }
     if (backend !== 'disabled') {
-      await expect(panel).toContainText('24h0m0s');
       await expect(panel).toContainText('256');
       await expect(panel).toContainText('Storage availability is not tested');
     }

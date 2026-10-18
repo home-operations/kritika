@@ -327,7 +327,7 @@ func startWorker(
 	gw := &gateway.Server{Store: st, Current: current, Logger: gatewayLogger, Metrics: m, Steppers: steppers, Embedders: embedders}
 	proxy := &egress.Proxy{Rules: current.Get().EgressRules, Observe: m.Egress, Refused: gw.Refused, Logger: gatewayLogger}
 	if cfg.GatewayCacheDir != "" {
-		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize), cfg.GatewayCacheRefreshAfter)
+		cache, err := egress.OpenCache(cfg.GatewayCacheDir, int64(cfg.GatewayCacheMaxSize))
 		if err != nil {
 			return err
 		}

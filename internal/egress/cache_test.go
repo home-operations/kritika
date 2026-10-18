@@ -32,20 +32,18 @@ func cacheProxy(t *testing.T, rules Rules, maxBytes int64, upstream http.Handler
 		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	if rules.Cached == nil {
-		rules.Cached = []string{"example.com"}
-	}
 	return &Proxy{
 		Rules: func() Rules { return rules }, Logger: slog.New(slog.DiscardHandler), Transport: transport,
-		Cache: &Cache{Dir: t.TempDir(), MaxBytes: maxBytes, RefreshAfter: time.Hour},
+		Cache: &Cache{Dir: t.TempDir(), MaxBytes: maxBytes},
 	}
 }
 
+// proxied makes a locked install's request of p, the kind the cache keeps.
 func proxied(p *Proxy, method, target string, header http.Header) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, target, nil)
 	maps.Copy(r.Header, header)
 	w := httptest.NewRecorder()
-	p.ServeHTTP(w, r)
+	p.ServeHTTP(w, r.WithContext(ForLockedInstall(r.Context())))
 	return w
 }
 
@@ -151,16 +149,15 @@ func TestCacheBypass(t *testing.T) {
 		name, method, target string
 		header               http.Header
 		credentials          map[string]string
-		uncached             bool
+		unlocked             bool
 	}{
-		{"host not kept", http.MethodGet, "http://other.example.com/tool.tar.gz", nil, nil, false},
+		{"not a locked install", http.MethodGet, "http://example.com/tool.tar.gz", nil, nil, true},
 		{"credential added", http.MethodGet, "http://example.com/tool.tar.gz", nil, map[string]string{"example.com": "Bearer configured"}, false},
 		{"runner credential", http.MethodGet, "http://example.com/tool.tar.gz", http.Header{"Authorization": {"Bearer runner"}}, nil, false},
 		{"cookie", http.MethodGet, "http://example.com/tool.tar.gz", http.Header{"Cookie": {"session=1"}}, nil, false},
 		{"post", http.MethodPost, "http://example.com/tool.tar.gz", nil, nil, false},
 		{"query", http.MethodGet, "http://example.com/tool.tar.gz?X-Amz-Signature=abc", nil, nil, false},
 		{"empty query", http.MethodGet, "http://example.com/tool.tar.gz?", nil, nil, false},
-		{"asked to bypass", http.MethodGet, "http://example.com/tool.tar.gz", nil, nil, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -175,8 +172,8 @@ func TestCacheBypass(t *testing.T) {
 			for range 2 {
 				r := httptest.NewRequest(tt.method, tt.target, nil)
 				maps.Copy(r.Header, tt.header)
-				if tt.uncached {
-					r = r.WithContext(WithoutCache(r.Context()))
+				if !tt.unlocked {
+					r = r.WithContext(ForLockedInstall(r.Context()))
 				}
 				w := httptest.NewRecorder()
 				p.ServeHTTP(w, r)
@@ -194,10 +191,10 @@ func TestCacheBypass(t *testing.T) {
 	}
 }
 
-// TestCacheKeepsLockedInstalls: a locked install's download is kept from a
-// host the rules do not name as cached, and served again only to another
-// locked install, but never kept from a host they name as uncached or one
-// with a credential; a cached host's entry serves both.
+// TestCacheKeepsLockedInstalls: a locked install's download is kept from
+// any host and served again to another locked install, but never kept
+// from a host the rules name as uncached or one with a credential, and
+// never for a request that is not a locked install's.
 func TestCacheKeepsLockedInstalls(t *testing.T) {
 	for _, tt := range []struct {
 		name, host  string
@@ -215,13 +212,12 @@ func TestCacheKeepsLockedInstalls(t *testing.T) {
 		{"from a host with a credential", "other.example.com", map[string]string{"other.example.com": "Bearer configured"}, []bool{true, true}, 2, 0},
 		{"from a host with a credential and a trailing dot", "other.example.com.", map[string]string{"other.example.com": "Bearer configured"},
 			[]bool{true, true}, 2, 0},
-		{"from a cached host", "example.com", nil, []bool{false, true}, 1, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls atomic.Int32
 			rules := Rules{
 				Allow: hosts("example.com", "other.example.com", "api.example.com"), Credentials: tt.credentials,
-				Cached: []string{"example.com"}, Uncached: []string{"api.example.com"},
+				Uncached: []string{"api.example.com"},
 			}
 			p := cacheProxy(t, rules, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 				calls.Add(1)
@@ -482,22 +478,103 @@ func TestCacheRefetchesExpiredEntry(t *testing.T) {
 	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
 	})
-	p.Cache.RefreshAfter = 200 * time.Millisecond
 	const target = "http://example.com/tool.tar.gz"
 	for i, want := range []string{"archive 1", "archive 1"} {
 		if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != want {
 			t.Fatalf("request %d: body %q, want %q", i, w.Body.String(), want)
 		}
 	}
-	time.Sleep(300 * time.Millisecond)
+	// With no validators to offer, an expired entry is fetched again.
+	expireLocal(t, p.Cache, cacheKey("https://example.com/tool.tar.gz"))
 	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" {
-		t.Fatalf("after RefreshAfter: body %q, want a fresh fetch", w.Body.String())
+		t.Fatalf("after refreshAfter: body %q, want a fresh fetch", w.Body.String())
+	}
+}
+
+// TestCacheRefills: a locked install's retry, which the proxy's username
+// marks, is answered from the origin, and what it fetched takes the
+// entry's place for the locked installs that follow.
+func TestCacheRefills(t *testing.T) {
+	var calls atomic.Int32
+	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
+	})
+	const target = "http://example.com/tool.tar.gz"
+	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 1" {
+		t.Fatalf("fill: %q", w.Body.String())
+	}
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
+	if w.Code != http.StatusOK || w.Body.String() != "archive 2" {
+		t.Fatalf("refill: %d %q, want the origin's answer", w.Code, w.Body.String())
+	}
+	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" || calls.Load() != 2 {
+		t.Fatalf("after the refill: %q after %d fetches, want the refilled entry", w.Body.String(), calls.Load())
+	}
+	if n := entries(t, p.Cache); n != 1 {
+		t.Errorf("cache holds %d entries, want 1", n)
+	}
+	// A retry for an entry replaced a moment ago is served the entry; a HEAD
+	// is never a retry, and is forwarded without touching the entry.
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		r := httptest.NewRequest(method, target, nil)
+		w := httptest.NewRecorder()
+		p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s retry: %d", method, w.Code)
+		}
+	}
+	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 2" || calls.Load() != 3 {
+		t.Fatalf("after a second retry and a HEAD: %q after %d fetches, want one forwarded HEAD only", w.Body.String(), calls.Load())
+	}
+}
+
+// TestCacheRefillDoesNotJoinRevalidation: a retry arriving while another
+// request has the stale entry revalidated does not wait for, or get, that
+// request's answer, which would be the body the retry refused.
+func TestCacheRefillDoesNotJoinRevalidation(t *testing.T) {
+	conditional, release := make(chan struct{}, 1), make(chan struct{})
+	defer close(release)
+	var unconditional atomic.Int32
+	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"v1"` {
+			conditional <- struct{}{}
+			<-release
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Etag", fmt.Sprintf(`"v%d"`, unconditional.Add(1)))
+		_, _ = fmt.Fprintf(w, "archive %d", unconditional.Load())
+	})
+	const target = "http://example.com/tool.tar.gz"
+	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 1" {
+		t.Fatalf("fill: %q", w.Body.String())
+	}
+	expireLocal(t, p.Cache, cacheKey("https://example.com/tool.tar.gz"))
+	revalidated, refilled := make(chan *httptest.ResponseRecorder, 1), make(chan *httptest.ResponseRecorder, 1)
+	go func() { revalidated <- proxied(p, http.MethodGet, target, nil) }()
+	<-conditional
+	go func() {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		w := httptest.NewRecorder()
+		p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
+		refilled <- w
+	}()
+	// The retry waits its turn behind the revalidation rather than joining
+	// it, and then fetches without conditions.
+	release <- struct{}{}
+	if w := <-refilled; w.Code != http.StatusOK || w.Body.String() != "archive 2" || unconditional.Load() != 2 {
+		t.Fatalf("refill during a revalidation: %d %q after %d fetches, want the origin's new body", w.Code, w.Body.String(), unconditional.Load())
+	}
+	if w := <-revalidated; w.Code != http.StatusOK {
+		t.Fatalf("revalidating request: %d", w.Code)
 	}
 }
 
 func TestOpenCache(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "cache")
-	if _, err := OpenCache(dir, 1<<20, time.Hour); err != nil {
+	if _, err := OpenCache(dir, 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	leftover := filepath.Join(dir, ".fill-123")
@@ -507,11 +584,11 @@ func TestOpenCache(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	c, err := OpenCache(dir, 1<<20, time.Hour)
+	c, err := OpenCache(dir, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Dir != dir || c.MaxBytes != 1<<20 || c.RefreshAfter != time.Hour {
+	if c.Dir != dir || c.MaxBytes != 1<<20 {
 		t.Errorf("cache = %+v", c)
 	}
 	if _, err := os.Stat(leftover); !os.IsNotExist(err) {
@@ -526,7 +603,7 @@ func TestOpenCache(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(readOnly, 0o700) })
-		if _, err := OpenCache(readOnly, 1<<20, time.Hour); err == nil {
+		if _, err := OpenCache(readOnly, 1<<20); err == nil {
 			t.Error("a directory the cache cannot write was accepted")
 		}
 	}

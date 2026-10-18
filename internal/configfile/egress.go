@@ -1,7 +1,6 @@
 package configfile
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -50,36 +49,6 @@ func (f *File) validateEgress() error {
 		}
 		if f.Egress.credentials[host].Value() == "" {
 			return fmt.Errorf("configfile: egress.credentials.%s resolved to an empty value", host)
-		}
-	}
-	return f.validateEgressCache(rules)
-}
-
-// validateEgressCache checks that each cached host is one allowed host,
-// named once, that the gateway has somewhere to keep its downloads, and
-// that nothing fetched from it carries a credential: the gateway hands
-// what it keeps to every run, so it keeps only what any run could fetch.
-// The GitHub API is never cached, since mise sends it the run's token,
-// which the URL rewrite would carry over plain HTTP.
-func (f *File) validateEgressCache(rules egress.Rules) error {
-	if len(f.Egress.Cache) > 0 && f.Run.GatewayCacheDir == "" {
-		return errors.New("configfile: egress.cache needs gatewayCacheDir (KRITIKA_GATEWAY_CACHE_DIR), where the gateway keeps the downloads")
-	}
-	for i, host := range f.Egress.Cache {
-		if err := checkHost(host); err != nil {
-			return fmt.Errorf("configfile: egress.cache[%d]: %w", i, err)
-		}
-		switch {
-		case strings.HasPrefix(host, "*"):
-			return fmt.Errorf("configfile: egress.cache[%d]: a cached host is one host, not a pattern", i)
-		case slices.Contains(f.Egress.Cache[:i], host):
-			return fmt.Errorf("configfile: egress.cache[%d]: %s is listed twice", i, host)
-		case !rules.Allows(host):
-			return fmt.Errorf("configfile: egress.cache[%d]: %s is not allowed by egress.allow and egress.deny", i, host)
-		case rules.Credentials[host] != "":
-			return fmt.Errorf("configfile: egress.cache[%d]: %s has a credential, and what is fetched with one is not shared between runs", i, host)
-		case host == GitHubAPIHost:
-			return fmt.Errorf("configfile: egress.cache[%d]: %s is sent the run's token, and its answers are not shared between runs", i, host)
 		}
 	}
 	return nil
@@ -132,8 +101,8 @@ func checkHost(h string) error {
 // entries and, once any connection exists, GitHub and its API, since
 // runners fetch from the one and gh reads the other, the denied entries,
 // plus the credentials as Authorization header values, and what its cache
-// keeps: the cached hosts, and never the GitHub API, which mise sends the
-// run's token, not even for a locked install. Provider endpoints are not
+// never keeps: the GitHub API, which mise sends the run's token, not even
+// for a locked install. Provider endpoints are not
 // among them: a runner reaches its model through the gateway's model
 // endpoint, and the worker calls the provider.
 func (f *File) EgressRules() egress.Rules {
@@ -150,13 +119,9 @@ func (f *File) EgressRules() egress.Rules {
 		creds[host] = "Bearer " + secret.Value()
 	}
 	return egress.Rules{
-		Allow: allow, Deny: f.Egress.deny, Credentials: creds, Cached: slices.Clone(f.Egress.Cache), Uncached: []string{GitHubAPIHost},
+		Allow: allow, Deny: f.Egress.deny, Credentials: creds, Uncached: []string{GitHubAPIHost},
 	}
 }
-
-// EgressCached names the hosts whose downloads the gateway keeps, which a
-// runner's mise reaches over plain HTTP so the gateway can keep them.
-func (f *File) EgressCached() []string { return slices.Clone(f.Egress.Cache) }
 
 // GatewayCaches reports whether the gateway keeps downloads, which a
 // runner then sends what its repository's lock pins through, from

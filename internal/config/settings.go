@@ -45,8 +45,8 @@ type Settings struct {
 	// minted it dies before revoking it.
 	GatewayTokenTTL time.Duration `env:"KRITIKA_GATEWAY_TOKEN_TTL" envDefault:"1h" yaml:"gatewayTokenTtl,omitempty"`
 
-	// GatewayCacheDir is where the gateway keeps the downloads of the hosts
-	// egress.cache names, to serve each again to every runner that asks for
+	// GatewayCacheDir is where the gateway keeps what a repository's locked
+	// installs download, to serve each again to every runner that asks for
 	// the same URL; empty keeps none. The directory is the cache's alone,
 	// an emptyDir in the chart, so it lasts as long as the pod.
 	GatewayCacheDir string `env:"KRITIKA_GATEWAY_CACHE_DIR" yaml:"gatewayCacheDir,omitempty"`
@@ -55,12 +55,6 @@ type Settings struct {
 	// under way may write, so the directory holds at most twice it. 2Gi
 	// holds a few dozen release archives.
 	GatewayCacheMaxSize ByteSize `env:"KRITIKA_GATEWAY_CACHE_MAX_SIZE" envDefault:"2Gi" yaml:"gatewayCacheMaxSize,omitempty"`
-	// GatewayCacheRefreshAfter is how long a kept download is served before
-	// its origin is asked whether it changed, so an asset replaced upstream
-	// is served stale for at most this long. An unchanged one is kept for
-	// another period at the cost of one small request; it deletes nothing.
-	// A week, since release assets rarely change and most URLs never do.
-	GatewayCacheRefreshAfter time.Duration `env:"KRITIKA_GATEWAY_CACHE_REFRESH_AFTER" envDefault:"168h" yaml:"gatewayCacheRefreshAfter,omitempty"` //nolint:lll // the setting's three names are user-facing
 	// GatewayCacheStorage selects filesystem or s3. Filesystem needs no
 	// external storage and remains the default.
 	GatewayCacheStorage string `env:"KRITIKA_GATEWAY_CACHE_STORAGE" envDefault:"filesystem" yaml:"gatewayCacheStorage,omitempty"`

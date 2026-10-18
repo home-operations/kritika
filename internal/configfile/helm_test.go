@@ -67,8 +67,8 @@ func TestHelmConfiguration(t *testing.T) {
 	if runner, _ := containers[0].(map[string]any); runner["name"] != "runner" || runner["image"] == "" || runner["image"] == nil {
 		t.Fatalf("rendered runner container = %+v", containers[0])
 	}
-	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 || f.Run.GatewayCacheRefreshAfter != 168*time.Hour {
-		t.Fatalf("rendered gateway cache = %q, %d, %s", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize, f.Run.GatewayCacheRefreshAfter)
+	if f.Run.GatewayCacheDir != "/var/cache/kritika" || f.Run.GatewayCacheMaxSize != 512<<20 {
+		t.Fatalf("rendered gateway cache = %q, %d", f.Run.GatewayCacheDir, f.Run.GatewayCacheMaxSize)
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
@@ -92,7 +92,7 @@ func TestHelmRejectsEmptyDurations(t *testing.T) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skip("helm is required to validate chart values")
 	}
-	for _, key := range []string{"pollInterval", "pollLookback", "leaderRetryInterval", "gatewayTokenTtl", "gatewayCacheRefreshAfter", "indexGrace", "transcriptRetention", "diffRetention"} {
+	for _, key := range []string{"pollInterval", "pollLookback", "leaderRetryInterval", "gatewayTokenTtl", "indexGrace", "transcriptRetention", "diffRetention"} {
 		t.Run(key, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), "helm", "template", "kritika", "../../charts/kritika",
 				"--values", "../../charts/kritika/ci/lint-values.yaml", "--set-string", "config."+key+"=")

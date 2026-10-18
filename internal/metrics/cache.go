@@ -25,7 +25,8 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 			Name: "kritika_cache_upload_skips_total", Help: "S3 publications skipped before an upload, by bounded reason.",
 		}, []string{"reason"}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "kritika_cache_requests_total", Help: "Cache decisions for admitted HTTP requests, by outcome (local_hit, s3_hit, miss, bypass).",
+			Name: "kritika_cache_requests_total",
+			Help: "Cache decisions for admitted HTTP requests, by outcome (local_hit, s3_hit, miss, refill, bypass).",
 		}, []string{lblOutcome}),
 		bypasses: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_cache_bypasses_total", Help: "Requests forwarded without the cache, by bounded reason.",
@@ -56,10 +57,10 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 	}
 	reg.MustRegister(c.requests, c.bypasses, c.transfers, c.responses, c.operations,
 		c.active, c.localBytes, c.localLimit, c.evictions, c.uploadSkips)
-	for _, reason := range []string{"queue_full", "circuit_open", "entry_unavailable"} {
+	for _, reason := range []string{"queue_full", "circuit_open", "entry_unavailable", "superseded"} {
 		c.uploadSkips.WithLabelValues(reason)
 	}
-	for _, outcome := range []string{"local_hit", "s3_hit", "miss", "bypass"} {
+	for _, outcome := range []string{"local_hit", "s3_hit", "miss", "refill", "bypass"} {
 		c.requests.WithLabelValues(outcome)
 	}
 	for _, op := range []string{"origin_fetch", "s3_lookup", "s3_read", "s3_upload"} {
@@ -68,7 +69,7 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		}
 		c.transfers.WithLabelValues(op)
 	}
-	for _, reason := range []string{"ineligible", "retry", "fill_error", "entry_unavailable",
+	for _, reason := range []string{"ineligible", "fill_error", "entry_unavailable",
 		outcomeCanceled, "fill_busy", "fill_capacity", "too_large", "private", "encoded", "unknown_length"} {
 		c.bypasses.WithLabelValues(reason)
 	}

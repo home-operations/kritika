@@ -429,13 +429,15 @@ does not work there.
 ### The gateway's download cache
 
 A run installs the tools its repository declares, so each run downloads
-them again. The gateway can keep those downloads
-instead: with `gatewayCacheDir` set, a private emptyDir under Helm, each replica
-keeps what a repository's locked installs download from the hosts its
+them again. The gateway can keep those downloads instead: with
+`gatewayCacheDir` set, a private emptyDir under Helm, each replica keeps
+what a repository's locked installs download from the hosts its
 `.kritika/mise.lock` pins, and serves it to the next run that asks for
-the same URL. `egress.cache` names more hosts whose downloads it keeps
-for every install, such as those of the tools the admin's mise config
-declares, which no lock pins:
+the same URL. Only a request named as a locked install's is kept: what
+any other request fetches through the gateway is verified against
+nothing, so it is not shared between runs. A command can claim the name
+too; what it has the gateway keep is served only to requests that claim
+it as well, each of which a lock checks.
 
 ```yaml
 gatewayCache:
@@ -443,15 +445,12 @@ gatewayCache:
 config:
   egress:
     allow: [get.helm.sh, "*.githubusercontent.com"]
-    # Optional: what a repository's lock pins is kept without it.
-    cache: [get.helm.sh]
 ```
 
 - **What is kept.** A repository's locked install reaches each host its
   lock pins a download on over plain HTTP, `https://github.com/`
   rewritten to `http://github.com/`, with the proxy URL's username
-  `locked`; every install does the same for
-  a host `egress.cache` names. The gateway fetches such a request over
+  `locked`. The gateway fetches such a request over
   HTTPS, as it does any plain HTTP request, following redirects itself,
   each through the egress rules: a GitHub release download that
   redirects to `release-assets.githubusercontent.com` needs that host
@@ -463,32 +462,30 @@ config:
   A host with an `egress.credentials` entry is never cached, nor
   `api.github.com`, which mise sends the run's token; a lock's downloads
   from it, or from `raw.githubusercontent.com`, which mise sends the
-  token too, stay on HTTPS. A cached host's URLs must not carry a
-  credential in their path.
-  The fetch is the gateway's own, with its own User-Agent, and runs that
-  ask the same replica for the same URL at once share it. A command's plain HTTP request
-  to a cached host, such as `curl http://get.helm.sh/...`, is answered
-  and kept the same way.
+  token too, stay on HTTPS. A lock's URLs must not carry a credential in
+  their path. The fetch is the gateway's own, with its own User-Agent,
+  and runs that ask the same replica for the same URL at once share it.
 - **Integrity.** mise checks every download against the checksum the
   repository's lock pins, so a stale or damaged copy fails the install
   rather than changing a tool, and the runner then installs the tool
   once more, asking the gateway, by the proxy URL's username `uncached`,
-  not to answer from its cache; a locked install's retry also leaves
-  its lock's hosts on HTTPS, as it would go without the cache. The
-  gateway asks the origin about a kept download after
-  `gatewayCacheRefreshAfter`, a week unless set, with the ETag and
-  Last-Modified it kept: an unchanged download is kept for another
-  period at the cost of that one request, a changed one is fetched
-  again, and an asset replaced upstream costs retries for at most that
-  long, provided its origin's validators change with it; the validators
-  are offered only to the resource the body came from, a redirect's
-  signature parameters aside, not to wherever a changed redirect now
-  points. No run can write the cache, only have
-  the gateway fetch a
-  URL a cached host serves or, by naming the proxy's user `locked`, a URL
-  any other allowed host serves; what the gateway keeps from a host
-  `egress.cache` does not name is served only to a request named
-  `locked` too, which a locked install checks against its lock.
+  to fetch each download from its origin again and keep that in the
+  entry's place: a cached copy that stops matching the lock is replaced
+  the first time it fails, at the cost of that run's one extra download.
+  Should that install fail too, the runner makes it once more over
+  HTTPS, as it would without the cache. The username is a runner's word:
+  a retry is a GET, and an entry a retry replaced within the last minute
+  is served to the next retry as it is, so a run cannot have a URL
+  fetched and published again and again.
+  Once a week the gateway also asks the origin about a kept download,
+  with the ETag and Last-Modified it kept: an unchanged download is kept
+  for another week at the cost of that one small request, a changed one
+  is fetched again. The validators are offered only to the resource the
+  body came from, a redirect's signature parameters aside, not to
+  wherever a changed redirect now points. No run can write the cache,
+  only have the gateway fetch a URL by naming the proxy's user `locked`
+  or `uncached`; what it keeps is served only to a request named so too,
+  which a locked install checks against its lock.
 - **Filesystem size.** `gatewayCacheMaxSize`, 2Gi unless set, bounds what each
   replica keeps, the least recently used going first, and apart from
   that what the fetches under way, at most eight at once, may write: a
@@ -512,7 +509,6 @@ signing region:
 ```yaml
 gatewayCache:
   enabled: true
-  refreshAfter: 168h
   maxEntrySize: 256Mi
   storage:
     type: s3
@@ -553,7 +549,12 @@ served or uploaded and the pod's other storage use. Two active uploads can hold
 up to another 512Mi of evicted files open; queued uploads retain only keys.
 `storage.maxSize` applies only to the filesystem backend. Hits read from S3 are
 streamed, not added to local storage.
-Uploads use two workers and a queue of at most 16 keys per replica. A full queue,
+Uploads use two workers and a queue of at most 16 keys per replica, one entry's
+uploads one at a time, and an upload that finds a newer entry in the bucket,
+published by another replica, is skipped rather than made. Publication is best
+effort all the same: a replica that published between that check and the
+upload is overwritten by the older entry, which a locked install then refuses
+and has refilled once more. A full queue,
 failed upload or entry evicted before upload leaves the download usable locally
 when still present. The requesting install never waits for publication. Each
 upload has a deadline of 30 seconds plus one second per MiB of the entry, so a
@@ -581,11 +582,12 @@ not contact S3 and never creates the bucket. Missing buckets, unavailable hosts
 and denied credentials recover through subsequent requests once the storage
 problem is corrected.
 
-`refreshAfter` is checked by kritika, independently of physical object deletion.
-An entry past it is revalidated with the origin: on 304 the replica copies the
-body it has, or the bucket's, under a new fetch time and uploads that, so the
-object is rewritten rather than downloaded from origin again. It is
-not a bucket size or retention limit. Provision retention outside the chart,
+Freshness is checked by kritika, independently of physical object deletion.
+An entry a week old is revalidated with the origin: on 304 the replica copies
+the body it has, or the bucket's, under a new fetch time and uploads that, so
+the object is rewritten rather than downloaded from origin again, and a locked
+install's retry replaces an entry that stopped matching its lock the same way.
+Neither is a bucket size or retention limit. Provision retention outside the chart,
 using lifecycle expiration where supported or an external cleanup job. Include
 noncurrent versions if bucket versioning is enabled. Without cleanup, unused
 entries remain in the bucket. Use a dedicated prefix per instance, shared only
@@ -609,12 +611,13 @@ against the servers it names.
 Costs follow the request pattern: a HEAD per eligible request, a GET per cold
 replica hit, a PUT per fill, plus egress for the GETs. Providers with a minimum
 storage duration bill an object for that period however soon lifecycle
-expiration or a `refreshAfter` overwrite removes it, so set the lifecycle
-expiry at or above the minimum rather than close to `refreshAfter`. Give an
+expiration or a weekly revalidation's overwrite removes it, so set the
+lifecycle expiry at or above the minimum. Give an
 `https://` endpoint, so credentials and bodies are encrypted in transit; scope
 the key to this bucket alone and keep the bucket private, since
-a key that works from anywhere widens what a leak exposes, and the gateway
-serves an unlocked instance tool from the bucket without a checksum. Use the
+a key that works from anywhere widens what a leak exposes, and whoever can
+write to the bucket chooses what a locked install is offered, which its lock
+then has to refuse. Use the
 provider's signing region, `auto` for R2; the chart's network policy already
 allows serve's egress on 443.
 
@@ -622,6 +625,17 @@ For the filesystem backend, the Helm capacity setting is now
 `gatewayCache.storage.maxSize`; migrate the former `gatewayCache.maxSize` value.
 `storage.type` defaults to `filesystem`, retaining the per-replica emptyDir.
 `maxEntrySize` applies to either backend; larger downloads are forwarded.
+
+### Migrating from egress.cache and gatewayCacheRefreshAfter
+
+`egress.cache` is removed: with the instance mise config gone, every
+download the gateway keeps is a locked install's, which it keeps from any
+allowed host without being told, and an unlocked download is never kept.
+Delete the key from the application configuration. `gatewayCacheRefreshAfter`,
+`KRITIKA_GATEWAY_CACHE_REFRESH_AFTER` and the chart's `gatewayCache.refreshAfter`
+are removed too: a kept download is revalidated with its origin once a week,
+and replaced as soon as a locked install's retry says it stopped matching the
+lock, so there is nothing left to tune.
 
 ### Migrating from image-mounted tools
 

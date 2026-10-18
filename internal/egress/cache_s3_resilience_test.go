@@ -27,7 +27,7 @@ import (
 
 func faultS3Cache(t *testing.T, transport http.RoundTripper) *Cache {
 	t.Helper()
-	c := &Cache{Dir: t.TempDir(), MaxEntryBytes: 1 << 20, RefreshAfter: time.Hour}
+	c := &Cache{Dir: t.TempDir(), MaxEntryBytes: 1 << 20}
 	opts := S3Options{Endpoint: "https://s3.example", Region: "test", Bucket: "cache", AccessKey: "key", SecretKey: "secret"}
 	if err := c.UseS3(opts); err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestS3OutageRecovery(t *testing.T) {
 					t.Fatal("startup contacted S3")
 				}
 				p := &Proxy{Cache: c, Logger: slog.New(slog.DiscardHandler), Rules: func() Rules {
-					return Rules{Allow: hosts("example.com"), Cached: []string{"example.com"}}
+					return Rules{Allow: hosts("example.com")}
 				}, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 					resp := s3Reply(r, http.StatusOK, "")
 					resp.Body, resp.ContentLength = io.NopCloser(strings.NewReader("origin")), 6
@@ -247,16 +247,24 @@ func TestS3BackgroundUploads(t *testing.T) {
 		}))
 		reg := prometheus.NewPedanticRegistry()
 		c.Observe(metrics.New(reg), slog.New(slog.DiscardHandler))
+		// One entry per worker: one entry's uploads go one at a time, and
+		// synctest cannot wait out a mutex.
 		key := cacheKey("https://example.com/tool")
-		entry := cacheEntry{URL: "https://example.com/tool", Size: 3, Stored: time.Now().UnixMilli()}
-		if err := c.store(key, entry, strings.NewReader("abc")); err != nil {
-			t.Fatal(err)
+		keys := []string{key}
+		for i := 2; len(keys) < s3UploadWorkers; i++ {
+			keys = append(keys, cacheKey(fmt.Sprintf("https://example.com/tool%d", i)))
+		}
+		for i, k := range keys {
+			entry := cacheEntry{URL: fmt.Sprintf("https://example.com/tool%d", i), Size: 3, Stored: time.Now().UnixMilli()}
+			if err := c.store(k, entry, strings.NewReader("abc")); err != nil {
+				t.Fatal(err)
+			}
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
 		go func() { done <- c.RunUploads(ctx) }()
-		for range s3UploadWorkers {
-			c.queueUpload(key)
+		for _, k := range keys {
+			c.queueUpload(k)
 		}
 		synctest.Wait()
 		if puts.Load() != s3UploadWorkers {

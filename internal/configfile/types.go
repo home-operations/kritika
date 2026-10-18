@@ -698,11 +698,6 @@ type Egress struct {
 	Allow       []string             `yaml:"allow,omitempty"`
 	Deny        []string             `yaml:"deny,omitempty"`
 	Credentials map[string]SecretRef `yaml:"credentials,omitempty"`
-	// Cache names the hosts whose downloads the gateway keeps, in
-	// gatewayCacheDir, and serves again to every runner that asks for the
-	// same URL. A runner's mise reaches them over plain HTTP, which the
-	// gateway upgrades, so it can keep what it fetches.
-	Cache []string `yaml:"cache,omitempty"`
 
 	allow, deny egress.List
 	credentials map[string]Secret

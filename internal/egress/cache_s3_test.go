@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +20,9 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/home-operations/kritika/internal/metrics"
 )
 
 type s3TestObject struct {
@@ -202,7 +207,7 @@ func TestS3CacheFailures(t *testing.T) {
 				e := cacheEntry{URL: "https://example.com/tool.tar.gz", Size: 12, Stored: time.Now().UnixMilli()}
 				switch mode {
 				case "expired":
-					e.Stored = time.Now().Add(-2 * time.Hour).UnixMilli()
+					e.Stored = 1
 				case "wrong size":
 					e.Size++
 				case "wrong URL":
@@ -284,7 +289,7 @@ func testS3CacheConcurrentFills(t *testing.T, opts S3Options) {
 
 func TestS3CachePinsReadRevision(t *testing.T) {
 	store, opts := newS3TestStore(t)
-	c := &Cache{Dir: t.TempDir(), RefreshAfter: time.Hour}
+	c := &Cache{Dir: t.TempDir()}
 	useS3(t, c, opts)
 	key := cacheKey("https://example.com/tool")
 	entry := cacheEntry{URL: "https://example.com/tool", Stored: time.Now().UnixMilli(), Size: 3}
@@ -311,7 +316,9 @@ func TestS3CachePinsReadRevision(t *testing.T) {
 	}
 }
 
-func TestS3CacheBypass(t *testing.T) {
+// A retry's refill does not ask the bucket, whose entry it is replacing,
+// and publishes what it fetched like any fill.
+func TestS3CacheRefill(t *testing.T) {
 	store, opts := newS3TestStore(t)
 	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "direct")
@@ -319,12 +326,141 @@ func TestS3CacheBypass(t *testing.T) {
 	useS3(t, p.Cache, opts)
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/tool", nil)
 	w := httptest.NewRecorder()
-	p.ServeHTTP(w, r.WithContext(WithoutCache(r.Context())))
+	p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
 	if w.Code != 200 || w.Body.String() != "direct" {
 		t.Fatalf("got %d %q", w.Code, w.Body.String())
 	}
-	if len(store.requests) != 0 {
-		t.Fatalf("bypass contacted S3: %v", store.requests)
+	path := "/cache/instance/v1/" + cacheKey("https://example.com/tool")
+	store.waitObject(t, path)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	// The upload checks the bucket for a newer entry before it publishes; the
+	// retry's request itself never asks the bucket.
+	if want := []string{http.MethodHead + " " + path, http.MethodPut + " " + path}; !slices.Equal(store.requests, want) {
+		t.Fatalf("bucket requests = %v, want %v", store.requests, want)
+	}
+}
+
+// waitObject waits for the object at path without asking the store over HTTP.
+func (s *s3TestStore) waitObject(t *testing.T, path string) s3TestObject {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		s.mu.Lock()
+		o, ok := s.objects[path]
+		s.mu.Unlock()
+		if ok {
+			return o
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s was not published", path)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// An upload that read the entry before a retry replaced it finishes before
+// the replacement's upload starts, so the bucket ends with the replacement.
+func TestS3RefillOutlivesEarlierUpload(t *testing.T) {
+	var puts, stored atomic.Int32
+	release := make(chan struct{})
+	var store s3TestStore
+	store.objects = make(map[string]s3TestObject)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && puts.Add(1) == 1 {
+			// The first upload has read its entry and now waits with the body in flight.
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		store.serve(w, r)
+		if r.Method == http.MethodPut {
+			stored.Add(1)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	var calls atomic.Int32
+	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, "archive %d", calls.Add(1))
+	})
+	useS3(t, p.Cache, S3Options{Endpoint: srv.URL, Region: "test", Bucket: "cache", Prefix: "instance/", AccessKey: "key", SecretKey: "secret"})
+	const target = "http://example.com/tool"
+	if w := proxied(p, http.MethodGet, target, nil); w.Body.String() != "archive 1" {
+		t.Fatalf("fill: %q", w.Body.String())
+	}
+	for puts.Load() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
+	if w.Body.String() != "archive 2" {
+		t.Fatalf("refill: %q", w.Body.String())
+	}
+	close(release)
+	path := "/cache/instance/v1/" + cacheKey("https://example.com/tool")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		store.mu.Lock()
+		o, ok := store.objects[path]
+		done := stored.Load() == 2 && ok
+		store.mu.Unlock()
+		if done {
+			if string(o.body) != "archive 2" {
+				t.Fatalf("the bucket holds %q after both uploads, want the refill's body", o.body)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("uploads did not finish: %d", puts.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// An upload that finds a newer entry in the bucket, another replica's
+// refill, is skipped rather than made over it.
+func TestS3UploadSkipsSupersededEntry(t *testing.T) {
+	store, opts := newS3TestStore(t)
+	var calls atomic.Int32
+	upstream := func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprintf(w, "archive %d", calls.Add(1)) }
+	writer := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	useS3(t, writer.Cache, opts)
+	reg := prometheus.NewPedanticRegistry()
+	writer.Cache.Observe(metrics.New(reg), slog.New(slog.DiscardHandler))
+	const target = "http://example.com/tool"
+	key := cacheKey("https://example.com/tool")
+	path := "/cache/instance/v1/" + key
+	if w := proxied(writer, http.MethodGet, target, nil); w.Body.String() != "archive 1" {
+		t.Fatalf("fill: %q", w.Body.String())
+	}
+	store.waitObject(t, path)
+	time.Sleep(5 * time.Millisecond)
+	other := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, upstream)
+	useS3(t, other.Cache, opts)
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	w := httptest.NewRecorder()
+	other.ServeHTTP(w, r.WithContext(ForRefill(r.Context())))
+	if w.Body.String() != "archive 2" {
+		t.Fatalf("refill: %q", w.Body.String())
+	}
+	for string(store.waitObject(t, path).body) != "archive 2" {
+		time.Sleep(5 * time.Millisecond)
+	}
+	// The writer's older entry is queued again, as after an eviction scan or
+	// a restart it might be, and must not overwrite the refill.
+	writer.Cache.queueUpload(key)
+	deadline := time.Now().Add(10 * time.Second)
+	for cacheMetric(t, reg, "kritika_cache_upload_skips_total", map[string]string{"reason": "superseded"}) != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("the older upload was not skipped")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if body := store.waitObject(t, path).body; string(body) != "archive 2" {
+		t.Fatalf("the bucket holds %q, want the refill's body", body)
 	}
 }
 
