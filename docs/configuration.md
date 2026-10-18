@@ -72,6 +72,7 @@ These inputs have no configuration-file equivalent:
 | `KRITIKA_GATEWAY_TOKEN` | Per-run model gateway credential |
 | `KRITIKA_DATABASE_TOKEN` | Per-run database credential |
 | `KRITIKA_POD_NAME`, `KRITIKA_POD_UID` | The serve pod's name and UID, from the downward API, which its [Kubernetes Events](metrics.md#kubernetes-events) name; the chart sets both |
+| `GOMEMLIMIT`, `AUTOMEMLIMIT` | Go's soft memory limit. Unless `GOMEMLIMIT` is set or `AUTOMEMLIMIT` is `off`, kritika sets it to 90% of the container's memory limit, or to the share `AUTOMEMLIMIT` names, above 0 and at most 1, and on Linux follows a resized limit every minute. A container with no memory limit gets none. The chart sets neither |
 
 The service supplies per-run inputs to runner Jobs. Secret references such as
 `{ env: OPENROUTER_API_KEY }` can use any environment variable name; the file
