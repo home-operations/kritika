@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 )
 
 // RetryAfter reports how long to wait before trying again after err, when
