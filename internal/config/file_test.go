@@ -201,7 +201,7 @@ func TestByteSize(t *testing.T) {
 	if err != nil || s.GatewayCacheMaxSize != 1<<20 {
 		t.Fatalf("a size in bytes from the file = %d, %v", s.GatewayCacheMaxSize, err)
 	}
-	if s, _, err = LoadSettings(nil); err != nil || s.GatewayCacheMaxSize != 2<<30 || s.GatewayCacheRefreshAfter != 24*time.Hour || s.GatewayCacheDir != "" {
+	if s, _, err = LoadSettings(nil); err != nil || s.GatewayCacheMaxSize != 2<<30 || s.GatewayCacheRefreshAfter != 168*time.Hour || s.GatewayCacheDir != "" {
 		t.Fatalf("defaults: size %d, age %s, dir %q, %v", s.GatewayCacheMaxSize, s.GatewayCacheRefreshAfter, s.GatewayCacheDir, err)
 	}
 }

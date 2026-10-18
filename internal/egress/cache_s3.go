@@ -90,11 +90,25 @@ func (c *Cache) UseS3(o S3Options) error {
 	return nil
 }
 
-func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntry, loadErr error) {
+// load is the entry under key to serve, this replica's copy before the
+// bucket's. With errExpired the entry returned is the stale one, whose
+// validators a fill offers the origin.
+func (c *Cache) load(ctx context.Context, key string) (*cacheBody, cacheEntry, error) {
+	return c.lookup(ctx, key, false)
+}
+
+// lookup is load, and with stale set returns an entry past RefreshAfter as
+// any other: the copy a refresh keeps once the origin says it is unchanged.
+func (c *Cache) lookup(ctx context.Context, key string, stale bool) (_ *cacheBody, _ cacheEntry, loadErr error) {
 	f, entry, offset, err := c.open(key)
 	if err == nil && c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes {
 		_ = f.Close()
 		err = os.ErrNotExist
+	}
+	var expired cacheEntry
+	if err == nil && !stale && c.expired(entry) {
+		_ = f.Close()
+		err, expired = errExpired, entry
 	}
 	if err == nil {
 		reader := struct {
@@ -104,7 +118,14 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 		return &cacheBody{ReadSeekCloser: reader, source: "local"}, entry, nil
 	}
 	if c.s3 == nil {
-		return nil, cacheEntry{}, err
+		return nil, expired, err
+	}
+	// A bucket without the entry leaves the stale local copy to validate.
+	notFound := func() (*cacheBody, cacheEntry, error) {
+		if expired.Stored != 0 {
+			return nil, expired, errExpired
+		}
+		return nil, cacheEntry{}, os.ErrNotExist
 	}
 	attempt, allowed := c.s3.reads.allow(time.Now())
 	if !allowed {
@@ -116,7 +137,7 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 		result := operationResult(loadErr)
 		circuitErr := loadErr
 		if errors.Is(loadErr, os.ErrNotExist) || errors.Is(loadErr, errExpired) {
-			result, circuitErr = "miss", nil
+			result, circuitErr = cacheMiss, nil
 		} else if loadErr != nil {
 			c.warn("s3_lookup", key, loadErr)
 		}
@@ -133,20 +154,16 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 	cancel()
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
-			err = os.ErrNotExist
+			return notFound()
 		}
 		return nil, cacheEntry{}, err
 	}
-	raw, err := base64.StdEncoding.DecodeString(info.Metadata.Get("X-Amz-Meta-Kritika-Entry"))
-	if err == nil {
-		err = json.Unmarshal(raw, &entry)
+	entry, ok := c.s3Entry(info, key)
+	if !ok {
+		return notFound()
 	}
-	if err != nil || entry.Size < 0 || entry.Size != info.Size || entry.Stored <= 0 || cacheKey(entry.URL) != key ||
-		info.ETag == "" || (c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes) {
-		return nil, cacheEntry{}, os.ErrNotExist
-	}
-	if c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter {
-		return nil, cacheEntry{}, errExpired
+	if !stale && c.expired(entry) {
+		return nil, entry, errExpired
 	}
 	// The bounded metadata request cannot own the streaming body's context.
 	// Explicit If-Match preserves the revision across the SDK's lazy reads/seeks.
@@ -165,6 +182,28 @@ func (c *Cache) load(ctx context.Context, key string) (_ *cacheBody, _ cacheEntr
 		}
 		c.s3.reads.complete(attempt, err, time.Now())
 	}}, entry, nil
+}
+
+// s3Entry is what an object's metadata records of the entry under key,
+// and false for an object that does not hold a sound entry for it.
+func (c *Cache) s3Entry(info minio.ObjectInfo, key string) (cacheEntry, bool) {
+	var entry cacheEntry
+	raw, err := base64.StdEncoding.DecodeString(info.Metadata.Get("X-Amz-Meta-Kritika-Entry"))
+	if err == nil {
+		err = json.Unmarshal(raw, &entry)
+	}
+	if err != nil || entry.Size < 0 || entry.Size != info.Size || entry.Stored <= 0 || cacheKey(entry.URL) != key ||
+		info.ETag == "" || (c.MaxEntryBytes > 0 && entry.Size > c.MaxEntryBytes) {
+		return cacheEntry{}, false
+	}
+	return entry, true
+}
+
+// s3Gone reports whether reading an object failed because it went, or was
+// replaced, since it was looked up.
+func s3Gone(err error) bool {
+	var resp minio.ErrorResponse
+	return errors.As(err, &resp) && (resp.Code == "NoSuchKey" || resp.Code == "PreconditionFailed")
 }
 
 func (c *Cache) upload(ctx context.Context, key string) (uploadErr error) {

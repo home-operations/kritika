@@ -137,6 +137,55 @@ type cacheEntry struct {
 	ContentType  string `json:"contentType,omitempty"`
 	ETag         string `json:"etag,omitempty"`
 	LastModified string `json:"lastModified,omitempty"`
+	// Via is the resource the body came from, after redirects and without
+	// the query a signed redirect varies: validators belong to it alone.
+	Via string `json:"via,omitempty"`
+}
+
+// validators reports whether e can be offered to its origin as unchanged.
+func (e cacheEntry) validators() bool {
+	return e.Via != "" && (e.ETag != "" || e.LastModified != "")
+}
+
+// resource names what u's validators belong to: u without the query
+// parameters that sign a redirect, which change with every request and
+// would never let a redirected asset revalidate. Any other parameter may
+// select the resource and stays, so a redirect moved by query is a new
+// resource, fetched rather than asked about.
+func resource(u *url.URL) string {
+	r := *u
+	r.Fragment, r.RawFragment, r.ForceQuery = "", "", false
+	q := r.Query()
+	for name := range q {
+		if signing(r.Hostname(), name) {
+			q.Del(name)
+		}
+	}
+	r.RawQuery = q.Encode()
+	return r.String()
+}
+
+// signingParams are the query parameters that sign a redirect or name its
+// requester on the hosts release assets are served from, by host suffix.
+// SigV4's and GCS's prefixed parameters are unambiguous on any host.
+var signingParams = map[string][]string{
+	".githubusercontent.com": {"actor_id", "key_id"},
+	".cloudfront.net":        {"signature", "expires", "key-pair-id", "policy"},
+}
+
+// signing reports whether the query parameter name on host is a
+// signature or requester rather than part of the resource's name.
+func signing(host, name string) bool {
+	name = strings.ToLower(name)
+	if strings.HasPrefix(name, "x-amz-") || strings.HasPrefix(name, "x-goog-") {
+		return true
+	}
+	for suffix, names := range signingParams {
+		if strings.HasSuffix(host, suffix) && slices.Contains(names, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // errExpired is an entry older than the cache's RefreshAfter.
@@ -218,6 +267,10 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	// forwarding every download for as long as the bucket is unreachable.
 	f, entry, err := p.Cache.load(ctx, key)
 	if err != nil {
+		var stale cacheEntry
+		if errors.Is(err, errExpired) {
+			stale = entry
+		}
 		fill := p.Cache.fills.DoChan(key, func() (any, error) {
 			// A fill that finished between this request's miss and its
 			// joining is not repeated. Only this directory is checked: the
@@ -226,11 +279,11 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 			// not count: load refuses it, so a fill must replace it.
 			if f, entry, _, err := p.Cache.open(key); err == nil {
 				_ = f.Close()
-				if p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes {
+				if !p.Cache.expired(entry) && (p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes) {
 					return nil, nil
 				}
 			}
-			return nil, p.fill(r.Context(), key, target)
+			return nil, p.fill(r.Context(), key, target, stale)
 		})
 		select {
 		case <-r.Context().Done():
@@ -283,8 +336,10 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 // forwarded, while maxFills are under way or their bytes hold MaxBytes.
 // The fetch is the gateway's own, with a User-Agent and Accept of its
 // own, so which representation an entry holds does not depend on the
-// request that happened to start it.
-func (p *Proxy) fill(ctx context.Context, key, target string) error {
+// request that happened to start it. A stale entry's validators go with
+// the fetch: an origin that answers 304 keeps the entry's body under a new
+// fetch time, and only a changed body is downloaded again.
+func (p *Proxy) fill(ctx context.Context, key, target string, stale cacheEntry) error {
 	if !p.Cache.begin() {
 		return errFillBusy
 	}
@@ -292,20 +347,26 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	defer func() { p.Cache.end(reserved) }()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), upgradeTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return fmt.Errorf("egress: cache: %w", err)
-	}
-	req.Header.Set("User-Agent", "kritika")
-	req.Header.Set("Accept", "*/*")
-	// The body is kept as the server sends it, not as a transport decodes it.
-	req.Header.Set("Accept-Encoding", "identity")
-	client := &http.Client{Transport: p.httpTransport(), CheckRedirect: p.checkRedirect}
 	started := time.Now()
-	resp, err := client.Do(req)
+	resp, err := p.fetch(ctx, target, stale)
 	if err != nil {
-		p.Cache.metrics.CacheOperation("origin_fetch", operationResult(err), time.Since(started), 0)
-		return fmt.Errorf("egress: cache: %w", err)
+		return err
+	}
+	if resp.StatusCode == http.StatusNotModified && stale.validators() && resource(resp.Request.URL) == stale.Via {
+		_ = resp.Body.Close()
+		p.Cache.metrics.CacheOperation("origin_fetch", "not_modified", time.Since(started), 0)
+		if private(resp.Header) {
+			return errPrivate
+		}
+		reserved, err = p.refresh(ctx, key, stale, resp.Header)
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		// The stale copy went while the origin was asked: fetch the body.
+		started = time.Now()
+		if resp, err = p.fetch(ctx, target, cacheEntry{}); err != nil {
+			return err
+		}
 	}
 	body := &countedReader{Reader: resp.Body}
 	originResult := "skipped"
@@ -338,7 +399,7 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	}
 	reserved = resp.ContentLength
 	entry := cacheEntry{URL: target, Stored: time.Now().UnixMilli(), Size: resp.ContentLength, ContentType: resp.Header.Get("Content-Type"),
-		ETag: resp.Header.Get("Etag"), LastModified: resp.Header.Get("Last-Modified")}
+		ETag: resp.Header.Get("Etag"), LastModified: resp.Header.Get("Last-Modified"), Via: resource(resp.Request.URL)}
 	if err := p.Cache.store(key, entry, body); err != nil {
 		originResult = operationResult(err)
 		return err
@@ -351,6 +412,91 @@ func (p *Proxy) fill(ctx context.Context, key, target string) error {
 	p.Logger.Debug("egress cache fill", "url", target, "from", resp.Request.URL.Host, "bytes", entry.Size,
 		"elapsed", time.Since(started).Round(time.Millisecond))
 	return nil
+}
+
+// fetch asks the origin for target, conditionally on stale's validators
+// when it has any, and records a request that got no response.
+func (p *Proxy) fetch(ctx context.Context, target string, stale cacheEntry) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, fmt.Errorf("egress: cache: %w", err)
+	}
+	req.Header.Set("User-Agent", "kritika")
+	req.Header.Set("Accept", "*/*")
+	// The body is kept as the server sends it, not as a transport decodes it.
+	req.Header.Set("Accept-Encoding", "identity")
+	// Validators name one resource, so they go only to the one the stale
+	// body came from, not to wherever a changed redirect now points.
+	conditional := func(r *http.Request) {
+		r.Header.Del("If-None-Match")
+		r.Header.Del("If-Modified-Since")
+		if !stale.validators() || resource(r.URL) != stale.Via {
+			return
+		}
+		if stale.ETag != "" {
+			r.Header.Set("If-None-Match", stale.ETag)
+		}
+		if stale.LastModified != "" {
+			r.Header.Set("If-Modified-Since", stale.LastModified)
+		}
+	}
+	conditional(req)
+	client := &http.Client{Transport: p.httpTransport(), CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		if err := p.checkRedirect(r, via); err != nil {
+			return err
+		}
+		conditional(r)
+		return nil
+	}}
+	started := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		p.Cache.metrics.CacheOperation("origin_fetch", operationResult(err), time.Since(started), 0)
+		return nil, fmt.Errorf("egress: cache: %w", err)
+	}
+	return resp, nil
+}
+
+// refresh keeps stale's body, from this replica's copy or the bucket's,
+// under a new fetch time and the headers the origin's 304 renewed, once
+// the origin has said it is unchanged. It returns what it holds of the
+// fill budget, and os.ErrNotExist when the copy the origin was asked
+// about is gone.
+func (p *Proxy) refresh(ctx context.Context, key string, stale cacheEntry, renewed http.Header) (int64, error) {
+	kept, entry, err := p.Cache.lookup(ctx, key, true)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = kept.Close() }()
+	if entry.Size != stale.Size || entry.ETag != stale.ETag || entry.LastModified != stale.LastModified || entry.Via != stale.Via {
+		return 0, os.ErrNotExist
+	}
+	switch {
+	case entry.Size > p.Cache.MaxBytes:
+		return 0, errEntrySize
+	case !p.Cache.reserve(entry.Size):
+		return 0, errFillCapacity
+	}
+	entry.Stored = time.Now().UnixMilli()
+	fields := map[string]*string{"Etag": &entry.ETag, "Last-Modified": &entry.LastModified, "Content-Type": &entry.ContentType}
+	for name, field := range fields {
+		if v := renewed.Get(name); v != "" {
+			*field = v
+		}
+	}
+	if err := p.Cache.store(key, entry, kept); err != nil {
+		p.Cache.release(entry.Size)
+		if s3Gone(err) {
+			// The object went, or was replaced, between the lookup and the read.
+			return 0, os.ErrNotExist
+		}
+		return 0, err
+	}
+	if p.Cache.s3 != nil {
+		p.Cache.queueUpload(key)
+	}
+	p.Logger.Debug("egress cache refresh", "url", entry.URL, "from", kept.source, "bytes", entry.Size)
+	return entry.Size, nil
 }
 
 // checkRedirect lets a fill follow a redirect only where the runner's own
@@ -425,6 +571,13 @@ func (c *Cache) reserve(size int64) bool {
 	return true
 }
 
+// release gives back bytes a fill reserved for a body it did not keep.
+func (c *Cache) release(size int64) {
+	c.underway.Lock()
+	defer c.underway.Unlock()
+	c.reserved -= size
+}
+
 // end gives back a fill's place and the bytes it reserved.
 func (c *Cache) end(reserved int64) {
 	c.underway.Lock()
@@ -434,10 +587,16 @@ func (c *Cache) end(reserved int64) {
 	c.reserved -= reserved
 }
 
+// expired reports whether entry is past RefreshAfter, so its URL is asked
+// about before it is served again.
+func (c *Cache) expired(entry cacheEntry) bool {
+	return c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter
+}
+
 // open opens the entry under key and marks it used, returning its file,
-// what its first line records and where its body starts. An entry whose
-// file does not hold what its first line says is removed, to be fetched
-// again; one past RefreshAfter is left for the fill that replaces it.
+// what its first line records and where its body starts, however old it
+// is. An entry whose file does not hold what its first line says is
+// removed, to be fetched again.
 func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 	path := filepath.Join(c.Dir, key)
 	f, err := os.Open(path)
@@ -453,10 +612,6 @@ func (c *Cache) open(key string) (*os.File, cacheEntry, int64, error) {
 			_ = os.Remove(path)
 		}
 		return nil, cacheEntry{}, 0, err
-	}
-	if c.RefreshAfter > 0 && time.Since(time.UnixMilli(entry.Stored)) > c.RefreshAfter {
-		_ = f.Close()
-		return nil, cacheEntry{}, 0, errExpired
 	}
 	now := time.Now()
 	// Eviction ranks entries by this time; failing to set it only ages

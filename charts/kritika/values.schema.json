@@ -326,8 +326,8 @@
           "type": "string"
         },
         "refreshAfter": {
-          "default": "24h",
-          "description": "How long a cached download is served before the gateway fetches its URL again (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention.",
+          "default": "168h",
+          "description": "How long a cached download is served before the gateway asks its origin whether it changed (KRITIKA_GATEWAY_CACHE_REFRESH_AFTER), a Go duration. An unchanged download is kept for another period; a changed one is fetched again. A staleness bound for URLs whose contents change, not retention: nothing is deleted, and the bucket operator manages S3 retention.",
           "title": "refreshAfter",
           "type": "string"
         },

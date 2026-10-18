@@ -129,7 +129,10 @@ A miss is a request served after waiting for a fill, including requests sharing
 one in-process fill. Failed fills instead report a bypass. The hit ratio is
 hits divided by hits plus misses; inspect bypasses alongside it. Operation
 outcomes are `ok`, `error`, and `canceled`, plus `miss` for an absent, expired or
-invalid S3 entry and `skipped` for an origin response that cannot be stored.
+invalid S3 entry, or one replaced or removed while it was being read, `skipped`
+for an origin response that cannot be stored, and
+`not_modified` for an origin that confirmed an expired entry unchanged, which is
+then kept without a download.
 Cache availability does not affect readiness. A failed or circuit-open S3
 lookup is a miss that fills locally, not a bypass. Circuit-open lookups and
 skipped uploads do not contribute to S3 operation counts, so they cannot dilute

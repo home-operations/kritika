@@ -79,7 +79,9 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		c.transfers.WithLabelValues("response_" + source)
 	}
 	c.operations.WithLabelValues("s3_lookup", "miss")
+	c.operations.WithLabelValues("s3_read", "miss")
 	c.operations.WithLabelValues("origin_fetch", "skipped")
+	c.operations.WithLabelValues("origin_fetch", "not_modified")
 	return c
 }
 

@@ -15,7 +15,10 @@ import (
 	"github.com/home-operations/kritika/internal/metrics"
 )
 
-const cacheCanceled = "canceled"
+const (
+	cacheCanceled = "canceled"
+	cacheMiss     = "miss"
+)
 
 // Observe enables process-local cache telemetry. No bucket requests are made.
 func (c *Cache) Observe(m *metrics.Metrics, logger *slog.Logger) {
@@ -114,16 +117,27 @@ func (b *cacheBody) Close() error {
 	if b.err == nil {
 		b.err = err
 	}
+	// An object that went, or was replaced, while being read is a miss,
+	// not a storage failure: the bucket answered, with the revision gone.
+	gone := s3Gone(b.err)
 	if b.finish != nil {
-		b.finish(b.err)
+		if gone {
+			b.finish(nil)
+		} else {
+			b.finish(b.err)
+		}
 	}
 	if b.source == "s3" && (!b.started.IsZero() || b.err != nil) {
 		var took time.Duration
 		if !b.started.IsZero() {
 			took = time.Since(b.started)
 		}
-		b.cache.metrics.CacheOperation("s3_read", operationResult(b.err), took, b.bytes)
-		if b.err != nil {
+		result := operationResult(b.err)
+		if gone {
+			result = cacheMiss
+		}
+		b.cache.metrics.CacheOperation("s3_read", result, took, b.bytes)
+		if b.err != nil && !gone {
 			b.cache.warn("s3_read", b.key, b.err)
 		}
 	}
