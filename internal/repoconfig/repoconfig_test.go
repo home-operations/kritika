@@ -18,6 +18,7 @@ func TestParse_Invalid(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ name, yaml string }{
 		{"unknown key", "foo: bar\n"},
+		{"two documents", "ignore: [a]\n---\nignore: [b]\n"},
 		{"bad ignore glob", "ignore:\n  - \"[\"\n"},
 		{"skip is gone", "skip:\n  onlyPaths:\n    - \"**/*.md\"\n"},
 		{"bad include syntax", "trigger:\n  include: [{ expr: \"pr.draft &&\" }]\n"},
