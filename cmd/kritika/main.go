@@ -552,7 +552,7 @@ func newExecutor(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
 	if err != nil {
 		return nil, fmt.Errorf("runner.podTemplate: KRITIKA_RUNNER_POD_TEMPLATE: %w", err)
 	}
-	client, ns, err := executor.NewKubeInCluster()
+	client, ns, err := executor.NewKubeInCluster("kritika/" + version)
 	if err != nil {
 		return nil, err
 	}

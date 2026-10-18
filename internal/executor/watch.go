@@ -81,11 +81,9 @@ func (k *Kube) Start(ctx context.Context) error {
 			return fmt.Errorf("executor: watch runner jobs: %w", err)
 		}
 	}
-	factory.Start(wctx.Done())
-	for kind, synced := range factory.WaitForCacheSync(sctx.Done()) {
-		if !synced {
-			return fmt.Errorf("executor: watch runner jobs: %v not listed within %s", kind, watchSync)
-		}
+	factory.StartWithContext(wctx)
+	if err := factory.WaitForCacheSyncWithContext(sctx).AsError(); err != nil {
+		return fmt.Errorf("executor: watch runner jobs: not listed within %s: %w", watchSync, err)
 	}
 	k.watch, watching = w, true
 	return nil

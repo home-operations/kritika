@@ -82,12 +82,14 @@ func (k *Kube) RunEvent(ctx context.Context, res Result, warning bool, reason, n
 }
 
 // NewKubeInCluster returns a Kubernetes client from the pod's service
-// account, and the pod's namespace, for a Kube executor.
-func NewKubeInCluster() (kubernetes.Interface, string, error) {
+// account that names itself userAgent, and the pod's namespace, for a Kube
+// executor.
+func NewKubeInCluster(userAgent string) (kubernetes.Interface, string, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, "", fmt.Errorf("executor: in-cluster config: %w", err)
 	}
+	cfg.UserAgent = userAgent
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, "", fmt.Errorf("executor: kubernetes client: %w", err)

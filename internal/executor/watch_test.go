@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -62,6 +63,36 @@ func TestKubeStartBoundsAStalledWatch(t *testing.T) {
 type stalled struct{}
 
 func (stalled) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+
+// TestKubeStartBoundsTheFirstLists: lists the API never answers fail Start
+// once watchSync has passed, with the wait's cause and every kind not
+// listed.
+func TestKubeStartBoundsTheFirstLists(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client, err := kubernetes.NewForConfig(&rest.Config{Host: "https://kube.invalid", Transport: unlisted{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		k := &Kube{Client: client, Namespace: "kritika"}
+		t.Cleanup(k.Stop)
+		err = k.Start(t.Context())
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "*v1.Job, *v1.Pod") {
+			t.Fatalf("Start = %v, want both kinds not listed", err)
+		}
+	})
+}
+
+// unlisted is an API server that answers Start's trial watches and
+// nothing else.
+type unlisted struct{}
+
+func (unlisted) RoundTrip(r *http.Request) (*http.Response, error) {
+	if strings.Contains(r.URL.Query().Get("fieldSelector"), watchCheck) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: http.NoBody, Request: r}, nil
+	}
 	<-r.Context().Done()
 	return nil, r.Context().Err()
 }
