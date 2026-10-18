@@ -525,6 +525,70 @@ func setupCutOffAfterProse(t *testing.T) (model.Stepper, context.Context, *scrip
 	return st, nil, st
 }
 
+// setupEmptyTurnKeepsTheNudge ends a step with nothing, answers in prose,
+// then submits.
+func setupEmptyTurnKeepsTheNudge(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{},
+		{Text: "thinking..."},
+		{ToolCalls: []model.ToolCall{toolCall("1", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkEmptyTurnKeepsTheNudge(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+	nudge := (Run{Submit: testSubmitDef}).nudgeText()
+	want := []string{"", nudge, nudge}
+	for i, call := range scripted.calls {
+		if got := lastUserText(call); got != want[i] {
+			t.Fatalf("request %d ends with %q, want %q", i, got, want[i])
+		}
+	}
+	// The empty turn is carried as text, so no assistant message is bare.
+	if got := scripted.calls[1].Messages[1]; got.Role != model.RoleAssistant || got.Text != noResponseText {
+		t.Fatalf("the empty turn was carried as %+v", got)
+	}
+}
+
+// setupEmptyTurnsInARow ends every step with nothing.
+func setupEmptyTurnsInARow(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{{}, {}, {}, {}}}
+	return st, nil, st
+}
+
+func checkEmptyTurnsInARow(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+	nudge := (Run{Submit: testSubmitDef}).nudgeText()
+	want := []string{"", nudge, nudge, nudge}
+	for i, call := range scripted.calls {
+		if got := lastUserText(call); got != want[i] {
+			t.Fatalf("request %d ends with %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+// setupToolTurnEndsEmptyTurns ends the step with nothing emptyRetries
+// times, calls a tool, does so again, then submits.
+func setupToolTurnEndsEmptyTurns(t *testing.T) (model.Stepper, context.Context, *scriptedStepper) {
+	st := &scriptedStepper{steps: []model.StepResponse{
+		{}, {},
+		{ToolCalls: []model.ToolCall{toolCall("1", "noop", `{}`)}},
+		{}, {},
+		{ToolCalls: []model.ToolCall{toolCall("2", "submit_review", validSubmitInput)}},
+	}}
+	return st, nil, st
+}
+
+func checkToolTurnEndsEmptyTurns(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
+	nudge := (Run{Submit: testSubmitDef}).nudgeText()
+	// The opening message and the tool's results carry no text.
+	want := []string{"", nudge, nudge, "", nudge, nudge}
+	for i, call := range scripted.calls {
+		if got := lastUserText(call); got != want[i] {
+			t.Fatalf("request %d ends with %q, want %q", i, got, want[i])
+		}
+	}
+}
+
 func checkCutOffAfterProse(t *testing.T, _ Result, _ []StepEvent, scripted *scriptedStepper) {
 	run := Run{Submit: testSubmitDef}
 	goOn := run.cutOffText(DefaultLimits.MaxOutputTokensPerStep)
@@ -991,6 +1055,36 @@ func TestRun(t *testing.T) {
 			wantStop:  StopSubmitted,
 			wantSteps: 5,
 			check:     checkCutOffAfterProse,
+		},
+		{
+			// A turn with neither text nor a tool call is nudged without
+			// spending the once-per-Run nudge, which a turn in prose still
+			// gets.
+			name:      "empty_turn_keeps_the_nudge",
+			setup:     setupEmptyTurnKeepsTheNudge,
+			wantStop:  StopSubmitted,
+			wantSteps: 3,
+			check:     checkEmptyTurnKeepsTheNudge,
+		},
+		{
+			// Empty more than emptyRetries times in a row, the model
+			// spends the nudge, and the next empty turn ends the run as a
+			// turn with no tool call would.
+			name:      "empty_turns_in_a_row_fall_back_to_the_nudge",
+			setup:     setupEmptyTurnsInARow,
+			wantStop:  StopNoSubmit,
+			wantSteps: 2 + emptyRetries,
+			check:     checkEmptyTurnsInARow,
+		},
+		{
+			// A tool call ends a run of empty turns: the ones after it are
+			// nudged for free again.
+			name:      "tool_turn_ends_a_run_of_empty_turns",
+			tools:     []Tool{&fakeTool{name: "noop", output: "ok"}},
+			setup:     setupToolTurnEndsEmptyTurns,
+			wantStop:  StopSubmitted,
+			wantSteps: 4 + emptyRetries,
+			check:     checkToolTurnEndsEmptyTurns,
 		},
 		{
 			name:      "budget_exhausted_stops_immediately",

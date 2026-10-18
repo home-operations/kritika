@@ -297,8 +297,12 @@ func agentLoop(
 				Index: e.Index, Tools: tools, DurationMS: e.Duration.Milliseconds(), OutputBytes: outputBytes,
 				InputTokens: e.Usage.Prompt(), OutputTokens: e.Usage.Output,
 			})
-			logger.Info("agent step", "step", e.Index, "calls", e.Calls, "duration", e.Duration.Round(time.Millisecond),
-				"output_bytes", outputBytes, "input_tokens", e.Usage.Prompt(), "output_tokens", e.Usage.Output)
+			attrs := []any{"step", e.Index, "calls", e.Calls, "duration", e.Duration.Round(time.Millisecond),
+				"output_bytes", outputBytes, "input_tokens", e.Usage.Prompt(), "output_tokens", e.Usage.Output}
+			if e.Items != nil {
+				attrs = append(attrs, "items", e.Items)
+			}
+			logger.Info("agent step", attrs...)
 		},
 	}.Do(actx)
 	if res.Stop == agent.StopCanceled && ctx.Err() == nil && errors.Is(actx.Err(), context.DeadlineExceeded) {

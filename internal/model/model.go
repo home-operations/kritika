@@ -95,6 +95,24 @@ type ChatGPTOutput struct {
 	Items    []json.RawMessage `json:"items"`
 }
 
+// Kinds is the type of each item, in order, or nil for no output; an item
+// without one is "". It says what a turn with neither text nor a call held.
+func (o *ChatGPTOutput) Kinds() []string {
+	if o == nil || len(o.Items) == 0 {
+		return nil
+	}
+	kinds := make([]string, len(o.Items))
+	for i, raw := range o.Items {
+		var item struct {
+			Type string `json:"type"`
+		}
+		// A malformed item is reported as "": the kinds are diagnostic.
+		_ = json.Unmarshal(raw, &item)
+		kinds[i] = item.Type
+	}
+	return kinds
+}
+
 // ToolDef describes a tool the model may call. InputSchema is a JSON Schema
 // object.
 type ToolDef struct {

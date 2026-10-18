@@ -65,6 +65,9 @@ type StepEvent struct {
 	Calls    []StepCall
 	Duration time.Duration
 	Usage    model.Usage
+	// Items are the kinds of the step's Responses output items, on the
+	// ChatGPT route; nil elsewhere.
+	Items []string
 }
 
 // StepCall is one tool call of a step: the tool, and how many bytes its
@@ -190,11 +193,44 @@ func carriedTurn(c *Conversation, submit, text string) model.Message {
 	return turn
 }
 
-// nudgeText is appended once, as a user message, after the first turn with
-// no tool call, before a second such turn ends the Run. A turn the output
-// cap cut off before any tool call is answered with cutOffText instead,
-// while cutOffRetries allows.
+// nudgeText is appended, as a user message, after a turn with no tool
+// call: once after a turn with text, before a second such turn ends the
+// Run, and after each turn with no text either, while emptyRetries allows,
+// without spending that one nudge. A turn the output cap cut off before
+// any tool call is answered with cutOffText instead, while cutOffRetries
+// allows.
 func (r Run) nudgeText() string { return "call " + r.Submit.Name }
+
+// emptyRetries is how many steps in a row may end with neither text nor a
+// tool call and each be nudged without spending the once-per-Run nudge. A
+// reasoning model on the ChatGPT route sometimes ends the step before its
+// submission so, and the nudge has recovered every one; the once-per-Run
+// nudge is kept for a turn that answers in prose. One more is taken as a
+// turn with no tool call.
+const emptyRetries = 2
+
+// goOnText answers a step with no tool call that spends no nudge: a step
+// the output cap cut off, while cutOffRetries allows, or one that ended
+// with nothing, while emptyRetries allows. It is "" for a step that does.
+func (r Run) goOnText(limit int64, cutOffs, empties int) string {
+	if 0 < cutOffs && cutOffs <= cutOffRetries {
+		return r.cutOffText(limit)
+	}
+	if 0 < empties && empties <= emptyRetries {
+		return r.nudgeText()
+	}
+	return ""
+}
+
+// emptyStreak is how many steps in a row, resp's last, ended with neither
+// text nor a tool call, other than by the output cap, given n before
+// resp's.
+func emptyStreak(n int, resp model.StepResponse) int {
+	if resp.Text == "" && len(resp.ToolCalls) == 0 && resp.Stop != model.StopMaxTokens {
+		return n + 1
+	}
+	return 0
+}
 
 // cutOffText answers a step the output cap cut off before it called a tool,
 // whose reasoning was spent without an answer: the model goes on, where the
@@ -319,6 +355,9 @@ func (r Run) Do(ctx context.Context) (result Result) {
 	// cutOffs counts the steps in a row, up to the last, that the output
 	// cap cut off before any tool call.
 	cutOffs := 0
+	// empties counts the steps in a row, up to the last, that ended with
+	// neither text nor a tool call.
+	empties := 0
 	// forcedSteps counts the steps the model was told to submit on; the
 	// Run ends when the retries after the first are spent.
 	forcedSteps := 0
@@ -380,8 +419,9 @@ func (r Run) Do(ctx context.Context) (result Result) {
 		}
 		result.add(resp)
 
-		event := StepEvent{Index: step, Usage: resp.Usage}
+		event := StepEvent{Index: step, Usage: resp.Usage, Items: resp.ChatGPTOutput.Kinds()}
 		cutOffs = cutOffStreak(cutOffs, resp)
+		empties = emptyStreak(empties, resp)
 		assistant := model.Message{Role: model.RoleAssistant, Text: resp.Text, ToolCalls: resp.ToolCalls, ChatGPTOutput: resp.ChatGPTOutput}
 
 		if len(resp.ToolCalls) == 0 {
@@ -399,9 +439,9 @@ func (r Run) Do(ctx context.Context) (result Result) {
 				messages = append(messages, model.Message{Role: model.RoleUser})
 				continue
 			}
-			if 0 < cutOffs && cutOffs <= cutOffRetries {
+			if text := r.goOnText(limits.MaxOutputTokensPerStep, cutOffs, empties); text != "" {
 				messages = append(messages, assistant)
-				messages = append(messages, model.Message{Role: model.RoleUser, Text: r.cutOffText(limits.MaxOutputTokensPerStep)})
+				messages = append(messages, model.Message{Role: model.RoleUser, Text: text})
 				continue
 			}
 			if nudged {

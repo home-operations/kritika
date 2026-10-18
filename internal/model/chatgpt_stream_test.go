@@ -350,3 +350,23 @@ func TestChatGPTOnceKeepsNoOutput(t *testing.T) {
 		t.Fatalf("include = %v, output = %+v; want neither on a step no later one reads", got.body["include"], resp.ChatGPTOutput)
 	}
 }
+
+func TestChatGPTOutputKinds(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		out  *ChatGPTOutput
+		want []string
+	}{
+		{"no output", nil, nil},
+		{"no items", &ChatGPTOutput{Provider: testPlan}, nil},
+		{"a turn", planOutput(t, `[{"type":"reasoning","id":"rs_1"},{"type":"function_call","call_id":"call_1"},{"type":"message","role":"assistant"}]`),
+			[]string{"reasoning", "function_call", "message"}},
+		{"an item without a type", planOutput(t, `[{"id":"x"}, "not an object"]`), []string{"", ""}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.out.Kinds(); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("Kinds() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
