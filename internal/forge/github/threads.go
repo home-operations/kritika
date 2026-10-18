@@ -206,6 +206,9 @@ func (c *Client) graphql(ctx context.Context, query string, vars map[string]any,
 // GraphQL reports limits in HTTP 200 responses too. Use the REST client's
 // error types so worker retries and final-attempt handling share one policy.
 func graphqlError(resp *http.Response, message string, limited bool) error {
+	if resp.StatusCode == http.StatusOK && !limited {
+		return errors.New(message)
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
 		return errors.New(message)
 	}

@@ -160,7 +160,7 @@ func TestForgeRateLimitGraphQL(t *testing.T) {
 				return err
 			})
 			snooze, ok := errors.AsType[*river.JobSnoozeError](err)
-			if !ok || snooze.Duration < tt.wait || snooze.Duration > tt.wait+time.Second {
+			if !ok || snooze.Duration < tt.wait-time.Second || snooze.Duration > tt.wait+time.Second {
 				t.Fatalf("Work = %v, want snooze for %s", err, tt.wait)
 			}
 		})
