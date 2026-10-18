@@ -525,12 +525,18 @@ func backfill(ctx context.Context, repo *git.Repository, opts []client.Option, h
 }
 
 // write writes files to dest, a directory it creates, within the limits,
-// and records what it wrote in res. Every file is written 0644, whatever
-// mode git recorded: nothing in it is meant to run.
+// and records what it wrote in res. Every file is written through an
+// os.Root on dest, which refuses a path that leads out of it, and 0644,
+// whatever mode git recorded: nothing in it is meant to run.
 func (f *Fetcher) write(ctx context.Context, repo *git.Repository, files []file, dest string, res *Result) error {
 	if err := os.Mkdir(dest, 0o755); err != nil {
 		return fmt.Errorf("upstream: %w", err)
 	}
+	dst, err := os.OpenRoot(dest)
+	if err != nil {
+		return fmt.Errorf("upstream: %w", err)
+	}
+	defer func() { _ = dst.Close() }()
 	for _, fl := range files {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("upstream: write: %w", err)
@@ -547,12 +553,8 @@ func (f *Fetcher) write(ctx context.Context, repo *git.Repository, files []file,
 			res.Truncated = true
 			return nil
 		}
-		name, err := relPath(fl.name)
-		if err != nil {
-			return fmt.Errorf("upstream: %w", err)
-		}
-		if err := writeBlob(filepath.Join(dest, filepath.FromSlash(name)), blob); err != nil {
-			return fmt.Errorf("upstream: %s: %w", name, err)
+		if err := writeBlob(dst, filepath.FromSlash(fl.name), blob); err != nil {
+			return fmt.Errorf("upstream: %s: %w", fl.name, err)
 		}
 		res.Files++
 		res.Bytes += blob.Size
@@ -560,8 +562,8 @@ func (f *Fetcher) write(ctx context.Context, repo *git.Repository, files []file,
 	return nil
 }
 
-func writeBlob(name string, blob *object.Blob) error {
-	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+func writeBlob(dst *os.Root, name string, blob *object.Blob) error {
+	if err := dst.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
 	r, err := blob.Reader()
@@ -570,7 +572,7 @@ func writeBlob(name string, blob *object.Blob) error {
 	}
 	defer func() { _ = r.Close() }()
 	// O_EXCL: a path is written once, never through whatever is there.
-	out, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	out, err := dst.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
