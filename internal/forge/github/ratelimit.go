@@ -12,11 +12,11 @@ import (
 )
 
 // RetryAfter reports how long to wait before trying again after err, when
-// err is GitHub's rate limit as go-github reports it: until the primary
+// err is GitHub's rate limit from REST or GraphQL: until the primary
 // limit resets, with the second of grace rateLimitWait gives, or for the
 // secondary limit's Retry-After, rateLimitMaxWait when it names none.
-// go-github refuses every request until then without asking GitHub, so a
-// job retried sooner only spends an attempt.
+// A job retried sooner only spends an attempt; the REST client also refuses
+// requests locally until its limit resets.
 func RetryAfter(err error, now time.Time) (time.Duration, bool) {
 	if e, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return max(e.Rate.Reset.Sub(now)+time.Second, time.Second), true

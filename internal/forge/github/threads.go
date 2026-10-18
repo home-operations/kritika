@@ -9,7 +9,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
+
+	gh "github.com/google/go-github/v92/github"
 
 	"github.com/home-operations/kritika/internal/textcut"
 )
@@ -165,31 +169,62 @@ func (c *Client) graphql(ctx context.Context, query string, vars map[string]any,
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusOK {
-		// The body is kept for the message: a refusal's own words say why,
-		// a proxy's error page in full would be the job's last error.
-		return fmt.Errorf("graphql: %s: %s", resp.Status, textcut.Prefix(strings.TrimSpace(string(raw)), maxGraphQLErrorBytes))
-	}
 	var env struct {
-		Data   json.RawMessage `json:"data"`
-		Errors []struct {
+		DocumentationURL string          `json:"documentation_url"`
+		Data             json.RawMessage `json:"data"`
+		Errors           []struct {
+			Type    string `json:"type"`
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if err := json.Unmarshal(raw, &env); err != nil {
+	err = json.Unmarshal(raw, &env)
+	limited := strings.HasSuffix(env.DocumentationURL, "secondary-rate-limits") ||
+		strings.HasSuffix(env.DocumentationURL, "#abuse-rate-limits")
+	msgs := make([]string, len(env.Errors))
+	for i, e := range env.Errors {
+		msgs[i] = e.Message
+		limited = limited || e.Type == "RATE_LIMITED"
+	}
+	if resp.StatusCode != http.StatusOK {
+		// The body is kept for the message: a refusal's own words say why,
+		// a proxy's error page in full would be the job's last error.
+		message := fmt.Sprintf("graphql: %s: %s", resp.Status, textcut.Prefix(strings.TrimSpace(string(raw)), maxGraphQLErrorBytes))
+		return graphqlError(resp, message, limited)
+	}
+	if err != nil {
 		return fmt.Errorf("graphql: decode response: %w", err)
 	}
 	if len(env.Errors) > 0 {
-		msgs := make([]string, len(env.Errors))
-		for i, e := range env.Errors {
-			msgs[i] = e.Message
-		}
-		return errors.New("graphql: " + strings.Join(msgs, "; "))
+		return graphqlError(resp, "graphql: "+strings.Join(msgs, "; "), limited)
 	}
 	if len(env.Data) == 0 {
 		return errors.New("graphql: no data")
 	}
 	return json.Unmarshal(env.Data, out)
+}
+
+// GraphQL reports limits in HTTP 200 responses too. Use the REST client's
+// error types so worker retries and final-attempt handling share one policy.
+func graphqlError(resp *http.Response, message string, limited bool) error {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return errors.New(message)
+	}
+	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+		wait := max(time.Duration(secs)*time.Second, time.Second)
+		return &gh.AbuseRateLimitError{Response: resp, Message: message, RetryAfter: &wait}
+	}
+	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		if epoch, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			return &gh.RateLimitError{
+				Response: resp, Message: message, Rate: gh.Rate{Reset: gh.Timestamp{Time: time.Unix(epoch, 0)}},
+			}
+		}
+		limited = true
+	}
+	if limited || resp.StatusCode == http.StatusTooManyRequests {
+		return &gh.AbuseRateLimitError{Response: resp, Message: message}
+	}
+	return errors.New(message)
 }
 
 // graphqlURL is the GraphQL endpoint beside the REST base the client was
