@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -1062,6 +1063,26 @@ func TestFinishKeepsTheTailOfTheLog(t *testing.T) {
 			}
 			tt.check(t, res.LogTail)
 		})
+	}
+}
+
+// TestKubeFinishReportsItsOwnPod: a run reports its own pod, not the pod
+// of an earlier Job of the same name that the list returns after it.
+func TestKubeFinishReportsItsOwnPod(t *testing.T) {
+	job := jobName(spec().Job.RunID)
+	exited := func(name string, uid types.UID, code int32) *corev1.Pod {
+		p := runnerPod(job, corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: code}},
+		}}})
+		p.Name = name
+		p.OwnerReferences = []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "Job", Name: job, UID: uid, Controller: new(true)}}
+		return p
+	}
+	client := fake.NewSimpleClientset(exited(job+"-aaaaa", "this-run", 0), exited(job+"-zzzzz", "earlier", 1))
+	res := Result{JobName: job, JobUID: "this-run"}
+	newKube(t, client).finish(t.Context(), &res, runner.Secrets{})
+	if res.PodName != job+"-aaaaa" || res.ExitCode != 0 {
+		t.Fatalf("finish reported pod %s exiting %d, want %s exiting 0", res.PodName, res.ExitCode, job+"-aaaaa")
 	}
 }
 
