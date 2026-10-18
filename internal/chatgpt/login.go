@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -28,7 +27,7 @@ const (
 
 // scopes are the identity scopes and the plan usage scopes, which the
 // token response grants together or not at all.
-var scopes = []string{oidc.ScopeOpenID, "profile", "email", "offline_access", "resource.invoke", PlanScope}
+var scopes = []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail, oidc.ScopeOfflineAccess, "resource.invoke", PlanScope}
 
 // Login runs Sign in with ChatGPT on a loopback listener. An operator
 // forwards its port from the browser's machine when running it in a pod.
@@ -82,23 +81,29 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 	if err != nil {
 		return Credentials{}, fmt.Errorf("chatgpt: login: %w", err)
 	}
-	redirect := "http://" + listener.Addr().String() + callbackPath
-	params := url.Values{
-		"client_id": {cmp.Or(current.ClientID, registrationClient)}, "ext_agent_host_id": {hostID},
-		"response_type": {"code"}, "redirect_uri": {redirect}, "scope": {strings.Join(scopes, " ")}, "resource": {Resource},
-		"state": {state}, "nonce": {nonce}, "code_challenge_method": {"S256"}, "code_challenge": {oauth2.S256ChallengeFromVerifier(verifier)},
+	endpoint := discovered.Endpoint()
+	endpoint.AuthStyle = oauth2.AuthStyleInParams
+	conf := oauth2.Config{
+		ClientID:    cmp.Or(current.ClientID, registrationClient),
+		Endpoint:    endpoint,
+		RedirectURL: "http://" + listener.Addr().String() + callbackPath,
+		Scopes:      scopes,
+	}
+	opts := []oauth2.AuthCodeOption{
+		oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce),
+		oauth2.SetAuthURLParam("resource", Resource), oauth2.SetAuthURLParam("ext_agent_host_id", hostID),
 	}
 	if current.ClientID == "" {
-		params.Set("agent_name_hint", agentName)
+		opts = append(opts, oauth2.SetAuthURLParam("agent_name_hint", agentName))
 	} else {
 		if current.IDToken != "" {
-			params.Set("id_token_hint", current.IDToken)
+			opts = append(opts, oauth2.SetAuthURLParam("id_token_hint", current.IDToken))
 		}
 		if current.Email != "" {
-			params.Set("login_hint", current.Email)
+			opts = append(opts, oauth2.SetAuthURLParam("login_hint", current.Email))
 		}
 	}
-	authorize := discovered.Endpoint().AuthURL + "?" + params.Encode()
+	authorize := conf.AuthCodeURL(state, opts...)
 	l.say("Open this URL in your browser to sign in with ChatGPT and let kritika use your plan:\n\n  %s\n\n"+
 		"Waiting for the browser to come back...\n", authorize)
 
@@ -111,11 +116,7 @@ func (l Login) Run(ctx context.Context, current Credentials) (Credentials, error
 			return Credentials{}, fmt.Errorf("chatgpt: login: save the registration: %w", err)
 		}
 	}
-	conf := oauth2.Config{
-		ClientID:    cb.clientID,
-		Endpoint:    oauth2.Endpoint{TokenURL: discovered.Endpoint().TokenURL, AuthStyle: oauth2.AuthStyleInParams},
-		RedirectURL: redirect,
-	}
+	conf.ClientID = cb.clientID
 	tok, err := conf.Exchange(ctx, cb.code, oauth2.VerifierOption(verifier), oauth2.SetAuthURLParam("resource", Resource))
 	if err != nil {
 		if e, ok := errors.AsType[*oauth2.RetrieveError](err); ok {
