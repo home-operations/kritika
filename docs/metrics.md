@@ -120,7 +120,7 @@ replica's configuration, without probing storage or claiming it is healthy.
 | `kritika_cache_evictions_total` | | Local entries evicted to meet the budget |
 | `kritika_cache_upload_skips_total` | reason | Publications skipped for `queue_full`, `circuit_open`, or `entry_unavailable` |
 
-Bypass reasons are bounded: `ineligible`, `retry`, `lookup_error`, `s3_circuit_open`, `fill_error`,
+Bypass reasons are bounded: `ineligible`, `retry`, `fill_error`,
 `entry_unavailable`, `canceled`, `fill_busy`, `fill_capacity`, `too_large`,
 `private`, `encoded`, and `unknown_length`. URLs, object keys, run IDs and
 arbitrary errors are not metric labels. CONNECT tunnels are excluded.
@@ -130,9 +130,10 @@ one in-process fill. Failed fills instead report a bypass. The hit ratio is
 hits divided by hits plus misses; inspect bypasses alongside it. Operation
 outcomes are `ok`, `error`, and `canceled`, plus `miss` for an absent, expired or
 invalid S3 entry and `skipped` for an origin response that cannot be stored.
-Cache availability does not affect readiness. Circuit-open bypasses and skipped
-uploads do not contribute to S3 operation counts, so they cannot dilute the
-storage-error rate. Read and upload circuits recover independently; uploads run
+Cache availability does not affect readiness. A failed or circuit-open S3
+lookup is a miss that fills locally, not a bypass. Circuit-open lookups and
+skipped uploads do not contribute to S3 operation counts, so they cannot dilute
+the storage-error rate. Read and upload circuits recover independently; uploads run
 in the background and their duration is separate from origin fill time.
 
 Transfer counters include partial operations. Origin bytes cover cache fill

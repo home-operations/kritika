@@ -3,6 +3,7 @@ package egress
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -176,8 +177,8 @@ func TestCacheStorageWarningsAndFallback(t *testing.T) {
 	p := cacheProxy(t, Rules{Allow: hosts("example.com")}, 1<<20, func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "direct") })
 	useS3(t, p.Cache, opts)
 	p.Cache.Observe(metrics.New(reg), logger)
-	for range 3 {
-		if w := proxied(p, http.MethodGet, "http://example.com/tool", nil); w.Body.String() != "direct" {
+	for i := range 3 {
+		if w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), nil); w.Body.String() != "direct" {
 			t.Fatal(w.Body.String())
 		}
 	}
@@ -187,7 +188,18 @@ func TestCacheStorageWarningsAndFallback(t *testing.T) {
 	if got := cacheMetric(t, reg, "kritika_cache_operation_seconds", map[string]string{"operation": "s3_lookup", "outcome": "error"}); got != 3 {
 		t.Fatalf("failed lookups = %v", got)
 	}
-	if got := cacheMetric(t, reg, "kritika_cache_bypasses_total", map[string]string{"reason": "lookup_error"}); got != 3 {
+	// Each failed lookup fills the replica's own directory, which serves
+	// the next request for the same URL without asking the bucket again.
+	if got := cacheMetric(t, reg, "kritika_cache_requests_total", map[string]string{"outcome": "miss"}); got != 3 {
+		t.Fatalf("misses = %v", got)
+	}
+	if w := proxied(p, http.MethodGet, "http://example.com/tool0", nil); w.Body.String() != "direct" {
+		t.Fatal(w.Body.String())
+	}
+	if got := cacheMetric(t, reg, "kritika_cache_requests_total", map[string]string{"outcome": "local_hit"}); got != 1 {
+		t.Fatalf("local hits = %v", got)
+	}
+	if got := cacheMetric(t, reg, "kritika_cache_bypasses_total", map[string]string{"reason": "fill_error"}); got != 0 {
 		t.Fatalf("bypasses = %v", got)
 	}
 }

@@ -31,7 +31,12 @@ type s3Credentials struct {
 
 func (p *s3Credentials) RetrieveWithCredContext(cc *credentials.CredContext) (credentials.Value, error) {
 	bounded := *cc
-	ctx, cancel := context.WithTimeout(cc.Context, s3LookupTimeout)
+	// The SDK's default credential context carries no Context at all.
+	parent := cc.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, s3LookupTimeout)
 	defer cancel()
 	bounded.Context = ctx
 	return p.Provider.RetrieveWithCredContext(&bounded)

@@ -211,23 +211,24 @@ func (p *Proxy) cached(w http.ResponseWriter, r *http.Request, host string) bool
 	defer cancel()
 	target := upstreamURL(r.URL, host)
 	key := cacheKey(target)
-	outcome, reason := "bypass", "lookup_error"
+	outcome, reason := "bypass", "fill_error"
 	defer func() { p.Cache.metrics.CacheRequest(outcome, reason) }()
+	// A failed or circuit-open S3 lookup is a miss too: the replica then
+	// fills its own directory, as the filesystem backend does, rather than
+	// forwarding every download for as long as the bucket is unreachable.
 	f, entry, err := p.Cache.load(ctx, key)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errExpired) && p.Cache.s3 != nil {
-			if errors.Is(err, errS3CircuitOpen) {
-				reason = "s3_circuit_open"
-			}
-			p.Logger.Debug("egress cache bypassed", "host", host, "error", err)
-			return false
-		}
-		reason = "fill_error"
 		fill := p.Cache.fills.DoChan(key, func() (any, error) {
 			// A fill that finished between this request's miss and its
-			// joining is not repeated.
-			if f, _, err := p.Cache.load(ctx, key); err == nil {
-				return nil, f.Close()
+			// joining is not repeated. Only this directory is checked: the
+			// bucket was asked a moment ago, and may be unreachable. An
+			// entry over the limit, kept from before it was lowered, does
+			// not count: load refuses it, so a fill must replace it.
+			if f, entry, _, err := p.Cache.open(key); err == nil {
+				_ = f.Close()
+				if p.Cache.MaxEntryBytes <= 0 || entry.Size <= p.Cache.MaxEntryBytes {
+					return nil, nil
+				}
 			}
 			return nil, p.fill(r.Context(), key, target)
 		})

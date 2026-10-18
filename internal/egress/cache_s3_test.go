@@ -223,10 +223,10 @@ func TestS3CacheFailures(t *testing.T) {
 			if calls.Load() != 1 {
 				t.Fatalf("upstream fetched %d times", calls.Load())
 			}
-			if mode == "write denied" {
+			if mode == "write denied" || mode == "read denied" {
 				w = proxied(p, http.MethodGet, target, nil)
 				if w.Body.String() != "tool archive" || calls.Load() != 1 {
-					t.Fatalf("failed upload lost local fill: %d calls, %q", calls.Load(), w.Body.String())
+					t.Fatalf("storage failure lost local fill: %d calls, %q", calls.Load(), w.Body.String())
 				}
 			}
 		})

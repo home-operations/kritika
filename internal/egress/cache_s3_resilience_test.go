@@ -76,6 +76,12 @@ func TestS3CredentialDeadline(t *testing.T) {
 		if err == nil || time.Since(started) > s3LookupTimeout {
 			t.Errorf("credential discovery: elapsed=%s error=%v", time.Since(started), err)
 		}
+		// The SDK's own default credential context carries no Context.
+		bounded := &s3Credentials{Provider: &stalledS3Credentials{}}
+		started = time.Now()
+		if _, err := bounded.RetrieveWithCredContext(&credentials.CredContext{}); err == nil || time.Since(started) != s3LookupTimeout {
+			t.Errorf("without a context: elapsed=%s error=%v", time.Since(started), err)
+		}
 	})
 }
 
@@ -114,9 +120,11 @@ func TestS3OutageRecovery(t *testing.T) {
 					resp.Body, resp.ContentLength = io.NopCloser(strings.NewReader("origin")), 6
 					return resp, nil
 				})}
+				// Distinct URLs: a failed lookup fills the local directory,
+				// so a repeated URL would be a local hit and not ask S3.
 				for i := range s3Failures + 2 {
 					started := time.Now()
-					w := proxied(p, http.MethodGet, "http://example.com/tool", nil)
+					w := proxied(p, http.MethodGet, fmt.Sprintf("http://example.com/tool%d", i), nil)
 					if w.Code != http.StatusOK || w.Body.String() != "origin" {
 						t.Fatalf("fallback: %d %q", w.Code, w.Body.String())
 					}
@@ -126,6 +134,10 @@ func TestS3OutageRecovery(t *testing.T) {
 				}
 				if requests.Load() != s3Failures {
 					t.Fatalf("outage requests = %d, want %d", requests.Load(), s3Failures)
+				}
+				w := proxied(p, http.MethodGet, "http://example.com/tool0", nil)
+				if w.Code != http.StatusOK || w.Body.String() != "origin" || requests.Load() != s3Failures {
+					t.Fatalf("local fill during outage: %d %q after %d requests", w.Code, w.Body.String(), requests.Load())
 				}
 				healthy.Store(true)
 				time.Sleep(s3Cooldown)

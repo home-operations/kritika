@@ -68,7 +68,7 @@ func newCacheMetrics(reg prometheus.Registerer) cacheMetrics {
 		}
 		c.transfers.WithLabelValues(op)
 	}
-	for _, reason := range []string{"ineligible", "retry", "lookup_error", "s3_circuit_open", "fill_error", "entry_unavailable",
+	for _, reason := range []string{"ineligible", "retry", "fill_error", "entry_unavailable",
 		outcomeCanceled, "fill_busy", "fill_capacity", "too_large", "private", "encoded", "unknown_length"} {
 		c.bypasses.WithLabelValues(reason)
 	}

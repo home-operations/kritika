@@ -550,15 +550,19 @@ seconds; a body read with no
 progress for ten seconds fails. The existing overall download deadline remains.
 Read and write circuit breakers are separate: three consecutive failures pause
 that direction for 30 seconds, then one eligible request probes recovery while
-others bypass it. A successful read probe, including a normal missing object,
-or upload reopens access; a failed probe starts another cooldown. Client
+others skip the bucket. A successful read probe, including a normal missing
+object, or upload reopens access; a failed probe starts another cooldown. Client
 cancellation does not count as a storage failure. Local hits remain available
 through an S3 outage, and failed uploads do not suppress healthy S3 reads.
 
-Lookup failures bypass the cache; a failure reading an opened S3 object can cost
-the runner its existing uncached retry. Startup does not contact S3 and never
-creates the bucket. Missing buckets, unavailable hosts and denied credentials
-recover through subsequent requests once the storage problem is corrected.
+A failed or circuit-open lookup is a miss: the replica fills its own directory
+and serves that copy to later requests, as the filesystem backend does, so an
+outage costs each replica one origin fetch per URL rather than one per run. The
+fill's upload is skipped while the write circuit is open. A failure reading an
+opened S3 object can cost the runner its existing uncached retry. Startup does
+not contact S3 and never creates the bucket. Missing buckets, unavailable hosts
+and denied credentials recover through subsequent requests once the storage
+problem is corrected.
 
 `maxAge` is checked by kritika, independently of physical object deletion. It is
 not a bucket size or retention limit. Provision retention outside the chart,
