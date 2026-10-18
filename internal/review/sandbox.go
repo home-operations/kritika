@@ -64,6 +64,8 @@ const (
 // in a comment (checksum, crypto), and less those that change a dict in
 // place (set, unset and the merges), which could make it contain itself:
 // printing such a dict overflows the stack, which no recover survives.
+// The time registry stays, for formatting dates, though its now and
+// dateAgo read the clock.
 // printf, print and println are redefined so the guard sees them like any
 // other function.
 var baseFuncs = func() template.FuncMap {
