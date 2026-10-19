@@ -271,6 +271,11 @@ func totals(results []caseResult, mode string) modeTotals {
 			continue
 		}
 		tot.Cases++
+		// A failed case spent its tokens all the same: a budget that cuts
+		// off a submission must not look cheaper for it.
+		tot.CostUSD += r.CostUSD
+		tot.InputTokens += r.Input
+		tot.OutputTokens += r.Output
 		if r.Error != "" {
 			tot.Errors++
 			continue
@@ -281,9 +286,6 @@ func totals(results []caseResult, mode string) modeTotals {
 		niceHit += r.NiceHit
 		tot.Findings += len(r.Findings)
 		tot.Matched += r.Matched
-		tot.CostUSD += r.CostUSD
-		tot.InputTokens += r.Input
-		tot.OutputTokens += r.Output
 		latency += r.Latency
 	}
 	if must > 0 {

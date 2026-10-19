@@ -92,7 +92,7 @@ per-case step/tool counts and input/output tokens, alongside quality and latency
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `KRITIKA_BENCH_EFFORT` | Provider default | Reasoning effort supported by the chosen model |
-| `KRITIKA_BENCH_STEPS` | `1` | Maximum agent steps; use multiple steps to evaluate tool use |
+| `KRITIKA_BENCH_STEPS` | `1` | Step the agent is told to submit on, with up to two more steps for a missing submission; use multiple steps to evaluate tool use |
 | `KRITIKA_BENCH_OUTPUT_TOKENS` | Agent default | Output limit per step, including reasoning where the provider counts it |
 | `KRITIKA_BENCH_TOOL_BYTES` | Agent default | Maximum bytes returned by each tool |
 
