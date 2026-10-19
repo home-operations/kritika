@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -25,14 +27,20 @@ type partCheckpoint struct {
 }
 
 // partInputHash includes every part's prompt so a changed partition or retrieved
-// context invalidates the whole plan. Run identity and scheduling do not change
-// the input a part reviews.
+// context invalidates the whole plan. Run identity, scheduling and the token
+// budget the month left this attempt do not change the input a part reviews,
+// nor does the last review's conversation, which no part carries on.
 func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error) {
 	p.RunID = ""
 	if p.Agent != nil {
 		limits := *p.Agent
-		limits.Parallel = 0
+		limits.Parallel, limits.MaxTokens = 0, 0
 		p.Agent = &limits
+	}
+	if p.Prompt != nil {
+		prompt := *p.Prompt
+		prompt.Continue = nil
+		p.Prompt = &prompt
 	}
 	type prompt struct {
 		Paths        []string
@@ -58,7 +66,12 @@ func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error)
 	return hex.EncodeToString(hash[:]), nil
 }
 
-func loadParts(ctx context.Context, st *store.Store, p Spec, hash string, parts []reviewPart) ([]partCheckpoint, error) {
+// loadParts reads the parts the run may reuse. A checkpoint that cannot be
+// reused is left out, so its part runs again rather than failing every
+// retry that copies it.
+func loadParts(
+	ctx context.Context, st *store.Store, p Spec, hash string, parts []reviewPart, logger *slog.Logger,
+) ([]partCheckpoint, error) {
 	var rows []store.PartCheckpoint
 	err := st.WithRunnerJob(ctx, p.RunID, func(tx pgx.Tx) error {
 		var err error
@@ -70,22 +83,36 @@ func loadParts(ctx context.Context, st *store.Store, p Spec, hash string, parts 
 	}
 	saved := make([]partCheckpoint, len(parts))
 	for _, row := range rows {
-		if row.Part < 1 || row.Part > len(parts) {
-			return nil, fmt.Errorf("runner: checkpoint part %d is outside the plan", row.Part)
+		part, err := restorePart(row, parts)
+		if err != nil {
+			logger.Warn("agent part checkpoint not reused", "part", row.Part, "error", err)
+			continue
 		}
-		part := &saved[row.Part-1]
-		if err := json.Unmarshal(row.Payload, part); err != nil {
-			return nil, fmt.Errorf("runner: decode part checkpoint: %w", err)
-		}
-		if part.Result.Stop != agent.StopSubmitted {
-			return nil, fmt.Errorf("runner: checkpoint part %d is unfinished", row.Part)
-		}
-		if err := parts[row.Part-1].prompt.validate(part.Result.Submitted); err != nil {
-			return nil, fmt.Errorf("runner: validate part checkpoint: %w", err)
-		}
-		part.SourceRun = row.SourceRun
+		saved[row.Part-1] = part
 	}
 	return saved, nil
+}
+
+// restorePart decodes a checkpoint as the answer of its part: one its
+// submission check refuses is reused only if the answer was taken on the
+// check's fallback, as the agent took it.
+func restorePart(row store.PartCheckpoint, parts []reviewPart) (partCheckpoint, error) {
+	var part partCheckpoint
+	if row.Part < 1 || row.Part > len(parts) {
+		return part, errors.New("runner: checkpoint part is outside the plan")
+	}
+	if err := json.Unmarshal(row.Payload, &part); err != nil {
+		return part, fmt.Errorf("runner: decode part checkpoint: %w", err)
+	}
+	if part.Result.Stop != agent.StopSubmitted {
+		return part, errors.New("runner: checkpoint part is unfinished")
+	}
+	prompt := parts[row.Part-1].prompt
+	if err := prompt.validate(part.Result.Submitted); err != nil && (prompt.fallback == nil || !prompt.fallback(part.Result.Submitted)) {
+		return part, fmt.Errorf("runner: validate part checkpoint: %w", err)
+	}
+	part.SourceRun = row.SourceRun
+	return part, nil
 }
 
 // savePart stores only a submitted answer and provenance. Usage stays on the

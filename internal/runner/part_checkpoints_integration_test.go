@@ -60,7 +60,7 @@ func TestPartCheckpointPersistence(t *testing.T) {
 	if err := savePart(ctx, runner, s, Secrets{GitToken: "repository-secret"}, hash, 1, result, agentTools{}); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := loadParts(ctx, runner, s, hash, parts)
+	saved, err := loadParts(ctx, runner, s, hash, parts, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
