@@ -182,7 +182,7 @@ func TestPartPromptsContext(t *testing.T) {
 	}))
 	t.Cleanup(gw.Close)
 	s := reviewSpec()
-	s.Model.GatewayURL = gw.URL
+	s.Model.GatewayURL, s.Agent.Parallel = gw.URL, 2
 	head := tree(t, map[string]string{"a/x.go": "package a\n", "b/y.go": "package b\n", "lib/z.go": "package lib\n"})
 	res := &gitfetch.Result{Diff: sizedDiff("a/x.go", 50<<10, "b/y.go", 50<<10), Changed: []string{"a/x.go", "b/y.go"}}
 	var tools agentTools

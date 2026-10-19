@@ -282,6 +282,9 @@ The gateway separates `similar embedding slot` wait time from
 the worker's estimated part count, granted slots and concurrency limit; compare
 it with `agent started in parts` for the actual part count and parallelism.
 Elapsed fields are Go durations, encoded as nanoseconds by the JSON logger.
+Split parts retrieve similar code concurrently, bounded by their granted
+parallelism; these request durations can overlap and should not be summed
+to estimate preparation wall time.
 
 Run on a machine with Docker through the integration task, which creates and
 removes a disposable database. No provider credentials or model calls are needed:
