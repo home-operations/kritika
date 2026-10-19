@@ -119,6 +119,28 @@ Use this with a narrow `path_glob` when a small excerpt answers the question;
 `read_file` can retrieve larger ranges when needed. Compare tool calls, tokens,
 and finding quality with multi-step evaluations before claiming a saving.
 
+### Split-summary comparisons
+
+`TestMergeBench` exercises the production merge prompt, schema and parser on
+synthetic split-review fixtures. Each report retains the complete request and
+answer, token usage, latency, transport errors and evidence-check failures.
+Compare the same cases at different `KRITIKA_BENCH_EFFORT` and
+`KRITIKA_BENCH_OUTPUT_TOKENS` values; the output default is 16384, as in the worker.
+
+```sh
+env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestMergeBench$' -v -timeout 30m
+```
+
+Set `KRITIKA_BENCH_DRY=1` to construct prompts without a model call, or
+`KRITIKA_BENCH_MERGE_CASES` to a JSON array shaped like `bench/cases/merge.json`
+for additional, sanitized cases. Reports go to `KRITIKA_BENCH_OUT` or
+`bench/results`. The fixtures cover migration conditions and a cross-part
+flow; add representative production cases before choosing defaults. Evidence
+markers are lexical regression checks: a paraphrase can fail and an incorrect
+claim can pass. Review each answer for missing conditions, invented claims,
+summary usefulness and diagram accuracy. A completed harness run does not mean
+all model responses passed; inspect `error` and `check_error` in the report.
+
 ## Cluster development loop
 
 Everything that touches a private cluster lives in the gitignored
