@@ -320,7 +320,10 @@ func similarCodeFor(
 	if len(queries) == 0 {
 		return contextpack.SimilarResponse{}, false
 	}
+	started := time.Now()
 	out, err := similarCode(ctx, p.Model.GatewayURL, secrets.GatewayToken, contextpack.SimilarRequest{Queries: queries, Exclude: changed})
+	logger.Info("similar-code request ended", "queries", len(queries), "indexed", out.Indexed, "ok", err == nil,
+		"elapsed", time.Since(started))
 	if err != nil {
 		logger.Warn("similar-code retrieval skipped", "error", err)
 		return contextpack.SimilarResponse{}, false

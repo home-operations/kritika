@@ -179,6 +179,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
 	extra, releaseExtra := w.freeSlots(ctx, logger, account, settings, parts-1, job.ID)
 	defer releaseExtra()
+	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", settings.Limits.Concurrency)
 	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, granted, prior, cont, admitted,
 		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger)
 	if err != nil {
