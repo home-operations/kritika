@@ -101,10 +101,10 @@ func TestMergeEvaluation(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := stageCase{id: tt.name, request: cases[0].request, check: func(raw string) error { return checkMerge(f, raw) }}
-			call := &model.Structured{Stepper: model.StepperFunc(func(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
+			stepper := model.StepperFunc(func(_ context.Context, req model.StepRequest) (model.StepResponse, error) {
 				return model.StepResponse{ToolCalls: []model.ToolCall{{Name: req.Tools[0].Name, Input: json.RawMessage(tt.raw)}}}, nil
-			})}
-			r := evaluateStage(t.Context(), c, call)
+			})
+			r := evaluateStage(t.Context(), c, stepper)
 			if r.Error != "" || (r.CheckError != "") != tt.bad || r.Response.Raw != tt.raw {
 				t.Fatalf("result = %+v", r)
 			}

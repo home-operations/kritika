@@ -128,10 +128,11 @@ Compare the same cases at different `KRITIKA_BENCH_EFFORT` and
 `KRITIKA_BENCH_OUTPUT_TOKENS` values; the output default is 16384, as in the worker.
 
 ```sh
-env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestMergeBench$' -v -timeout 30m
+env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestMergeBench$' -v -count=1 -timeout 30m
 ```
 
-Set `KRITIKA_BENCH_DRY=1` to construct prompts without a model call, or
+`-count=1` keeps Go from replaying a cached run instead of calling the model
+again. Set `KRITIKA_BENCH_DRY=1` to construct prompts without a model call, or
 `KRITIKA_BENCH_MERGE_CASES` to a JSON array shaped like `bench/cases/merge.json`
 for additional, sanitized cases. Reports go to `KRITIKA_BENCH_OUT` or
 `bench/results`. The fixtures cover migration conditions and a cross-part
