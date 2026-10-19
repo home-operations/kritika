@@ -93,13 +93,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # The runner's tests run the mise on PATH. It is the -tools image's,
-      # so a bump of that mise is tested on its pull request.
+      # The runner's tests run the mise on PATH: make it the -tools image's,
+      # the min_version in .mise/config.toml, so a bump of it is tested on
+      # its pull request. mise is not installed yet to read it.
       - name: Resolve the image's mise version
         id: mise
         run: |
-          version=$(sed -nE 's|^FROM [^ ]+/jdxcode/mise:([^@ ]+).*|\1|p' Dockerfile)
-          [ -n "$version" ] || { echo "::error::no jdxcode/mise tag in the Dockerfile"; exit 1; }
+          version=$(sed -nE 's/^min_version = "([^"]+)"$/\1/p' .mise/config.toml)
+          [ -n "$version" ] || { echo "::error::no min_version in .mise/config.toml"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Mise
@@ -143,8 +144,8 @@ jobs:
       - name: Resolve the image's mise version
         id: mise
         run: |
-          version=$(sed -nE 's|^FROM [^ ]+/jdxcode/mise:([^@ ]+).*|\1|p' Dockerfile)
-          [ -n "$version" ] || { echo "::error::no jdxcode/mise tag in the Dockerfile"; exit 1; }
+          version=$(sed -nE 's/^min_version = "([^"]+)"$/\1/p' .mise/config.toml)
+          [ -n "$version" ] || { echo "::error::no min_version in .mise/config.toml"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Mise

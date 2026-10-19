@@ -5,10 +5,13 @@
 # still resolves them on Docker Hub: the shared preset aliases the mirror.
 
 # ARGs used in a FROM must live in the global scope (before the first FROM).
-# GO_VERSION and NODE_VERSION are supplied by the release workflow from mise,
-# the single source of truth for the toolchain (see .mise/config.toml).
+# GO_VERSION, NODE_VERSION and MISE_VERSION are supplied by the release
+# workflow from mise, the single source of truth for the toolchain (see
+# .mise/config.toml). Every build needs all three: a FROM that resolves to
+# no image fails the build even in a stage its target skips.
 ARG GO_VERSION
 ARG NODE_VERSION
+ARG MISE_VERSION
 
 # ---- UI build ---------------------------------------------------------------
 # The built UI is the same bytes on every platform, so it is built once, on
@@ -48,7 +51,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # kritika with mise and the tools the agent's run tool offers: the chart's
 # runner image. Built with --target tools, published as the -tools tag.
 # Distroless with glibc for the tools' release builds, and no shell.
-FROM mirror.gcr.io/jdxcode/mise:2026.10.13 AS mise
+FROM mirror.gcr.io/jdxcode/mise:${MISE_VERSION} AS mise
 FROM gcr.io/distroless/cc:nonroot AS tools
 # mise lives outside PATH. The runner runs it by path; a command the agent
 # runs must not find it.
