@@ -62,13 +62,17 @@ func partPrompts(
 	chunks := make([][]contextpack.Chunk, len(split))
 	for i, paths := range split {
 		diffs[i] = review.PartDiff(res.Diff, paths)
+		var stats contextpack.Stats
 		var err error
-		chunks[i], _, err = contextpack.Build(ctx, contextpack.Input{Head: head, Base: base, Diff: diffs[i], Changed: paths, Ignore: p.Ignore},
-			contextpack.DefaultOptions)
+		in := contextpack.Input{Head: head, Base: base, Diff: diffs[i], Changed: paths, Ignore: p.Ignore}
+		chunks[i], stats, err = contextpack.Build(ctx, in, contextpack.DefaultOptions)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("runner: context stages of part %d: %w", i+1, err)
 		}
-		if out, ok := similarCodeFor(ctx, p, secrets, diffs[i], res.Changed, logger); ok {
+		plog := logger.With("part", i+1)
+		plog.Info("part context built", "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
+			"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
+		if out, ok := similarCodeFor(ctx, p, secrets, diffs[i], res.Changed, plog); ok {
 			chunks[i] = append(chunks[i], out.Chunks...)
 			tools.search = newSearchTool(p, secrets, res.Changed)
 		}
