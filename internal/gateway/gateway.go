@@ -357,7 +357,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ref := configfile.ModelRef(c.grant.Model)
-	route, err := g.Steppers.Route(c.file, c.account, ref, c.logger)
+	call, err := g.Steppers.Execution(c.file, c.account, ref, configfile.ModelRef(c.grant.Fallback), true, c.logger)
 	if err != nil {
 		c.logger.Error("gateway: no model adapter", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
@@ -375,28 +375,6 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// Each part of a split review is a conversation of its own.
 		req.Session += "/" + strconv.Itoa(part)
 	}
-	call := adapter.Call{Route: route, Halve: true, Failed: func(err error, on, next adapter.Route) {
-		if next.Ref != on.Ref {
-			c.logger.Warn("gateway: step failed on the review model; trying the fallback", "fallback", next.Ref,
-				"error", maskProvider(err.Error(), on.Provider))
-			return
-		}
-		c.logger.Warn("gateway: step failed; trying again", "error", maskProvider(err.Error(), on.Provider))
-	}}
-	switch fb := configfile.ModelRef(c.grant.Fallback); {
-	case fb == "":
-	case fb.Provider() == ref.Provider():
-		req.Fallbacks = []string{fb.Model()}
-	default:
-		// The review model's attempts spent, a fallback on another
-		// provider gets the same step, unless the configuration no longer
-		// has it, which the step then does without.
-		if fallback, err := g.Steppers.Route(c.file, c.account, fb, c.logger); err != nil {
-			c.logger.Error("gateway: no adapter for the fallback", "fallback", fb, "error", err)
-		} else {
-			call.Fallback = &fallback
-		}
-	}
 	// The answer to one step is capped at the agent loop's own cap,
 	// whatever the runner asks.
 	if limit := agent.DefaultLimits.MaxOutputTokensPerStep; req.MaxTokens <= 0 || req.MaxTokens > limit {
@@ -408,7 +386,14 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if !g.reserve(ctx, w, c, reserved) {
 		return
 	}
-	start := time.Now()
+	call.Recorder = adapter.Recorder{Store: g.Store, Metrics: g.Metrics}
+	call.Record = store.ModelCall{
+		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
+		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part,
+	}
+	call.Usage = store.Usage{AccountID: c.grant.AccountID, RepositoryID: c.grant.RepositoryID, ReviewID: c.usageReview(),
+		Role: c.role(), RunnerRunID: c.grant.RunID}
+	call.Reservation = &adapter.Reservation{Token: c.token, Tokens: reserved}
 	// The step, its retries and its fallback share one budget, inside
 	// which the runner waits for the answer. With a fallback on another
 	// provider, the review model's attempts get at most half of it, so a
@@ -416,24 +401,8 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// turn.
 	sctx, cancel := context.WithTimeout(ctx, model.GatewayStepBudget)
 	defer cancel()
-	resp, attempts, served, err := call.Do(sctx, req)
-	took := time.Since(start)
-	g.Metrics.ModelCall(c.account.Key(), adapter.ServedRef(served.Ref, resp.Model), c.role(), adapter.Outcome(err), resp.Usage.Prompt(),
-		resp.Usage.CacheRead, resp.Usage.Output, resp.CostUSD, resp.Unpriced)
-	if cerr := g.charge(ctx, c, reserved, resp, err == nil); cerr != nil {
-		// A step that was answered is paid for either way; the run still
-		// gets the answer.
-		c.logger.Error("gateway: step not charged", "error", cerr)
-	}
-	// Recorded before the runner gets its answer, so the next step's delta
-	// is taken against this one; the recorder bounds how long it waits. A
-	// failed step's response names no model: it is recorded under the one
-	// it last went to.
-	req.Model = served.Ref.Model()
-	adapter.Recorder{Store: g.Store, Metrics: g.Metrics}.Record(ctx, c.logger, store.ModelCall{
-		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
-		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part, Duration: took,
-	}, req, resp, err, adapter.Mask(c.file, served.Provider, c.token))
+	resp, err := call.Step(sctx, req)
+	served := call.Served
 	if err != nil {
 		// The provider's error goes to a pod that reads untrusted content;
 		// it must not carry the key, or credentials in the provider's URL,
@@ -444,7 +413,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		refuse(w, status, code, msg)
 		return
 	}
-	c.logger.Debug("gateway: step", "model", resp.Model, "attempts", attempts, "input_tokens", resp.Usage.Prompt(),
+	c.logger.Debug("gateway: step", "model", resp.Model, "attempts", call.Attempts, "input_tokens", resp.Usage.Prompt(),
 		"output_tokens", resp.Usage.Output, "cost_usd", resp.CostUSD)
 	out, err := model.EncodeChatResponse(c.grant.RunID, resp)
 	if err != nil {
@@ -508,30 +477,6 @@ func upstreamStatus(err error) (int, string) {
 		return http.StatusBadGateway, "upstream_error"
 	}
 	return http.StatusUnprocessableEntity, "upstream_refused"
-}
-
-// charge settles a step's reservation: an answered step's actual spend
-// replaces it and is recorded against the run's review, or as a
-// follow-up's, where the caps count it; a failed step is refunded. The two
-// writes are independent, so a failed usage row still leaves the run's
-// budget charged.
-func (g *Server) charge(ctx context.Context, c runCall, reserved int64, resp model.StepResponse, answered bool) error {
-	ctx, cancel := detach(ctx)
-	defer cancel()
-	if !answered {
-		return g.Store.ChargeGatewayToken(ctx, c.token, -reserved)
-	}
-	grant := c.grant
-	spent := resp.Usage.Prompt() + resp.Usage.Output
-	budgetErr := g.Store.ChargeGatewayToken(ctx, c.token, spent-reserved)
-	usageErr := g.Store.WithAccount(ctx, grant.AccountID, func(tx pgx.Tx) error {
-		return store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: grant.AccountID, RepositoryID: grant.RepositoryID, ReviewID: c.usageReview(), Role: c.role(), Model: resp.Model,
-			Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
-			ChatGPTPlan: resp.ChatGPTPlan, Unpriced: resp.Unpriced, RunnerRunID: grant.RunID,
-		})
-	})
-	return errors.Join(budgetErr, usageErr)
 }
 
 // maskProvider removes a provider's key, and any credentials in its base
