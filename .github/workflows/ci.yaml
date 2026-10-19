@@ -93,9 +93,19 @@ jobs:
         with:
           persist-credentials: false
 
+      # The runner's tests run the mise on PATH. It is the -tools image's,
+      # so a bump of that mise is tested on its pull request.
+      - name: Resolve the image's mise version
+        id: mise
+        run: |
+          version=$(sed -nE 's|^FROM [^ ]+/jdxcode/mise:([^@ ]+).*|\1|p' Dockerfile)
+          [ -n "$version" ] || { echo "::error::no jdxcode/mise tag in the Dockerfile"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Setup Mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
+          version: ${{ steps.mise.outputs.version }}
           experimental: true
           install_args: --locked
 
@@ -128,9 +138,19 @@ jobs:
         with:
           persist-credentials: false
 
+      # The runner's package is in the integration suite too, its unit
+      # tests included.
+      - name: Resolve the image's mise version
+        id: mise
+        run: |
+          version=$(sed -nE 's|^FROM [^ ]+/jdxcode/mise:([^@ ]+).*|\1|p' Dockerfile)
+          [ -n "$version" ] || { echo "::error::no jdxcode/mise tag in the Dockerfile"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Setup Mise
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
+          version: ${{ steps.mise.outputs.version }}
           experimental: true
           install_args: --locked
 
