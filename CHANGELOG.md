@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.0.86](https://github.com/home-operations/kritika/compare/0.0.85...0.0.86) (2026-10-19)
+
+
+### Features
+
+* **agent:** offer bounded context around grep matches ([#1115](https://github.com/home-operations/kritika/issues/1115)) ([6b61972](https://github.com/home-operations/kritika/commit/6b61972c149558fa4372b28c720390f2742eec84))
+* **metrics:** expose split review preparation timings ([#1104](https://github.com/home-operations/kritika/issues/1104)) ([0e0fe4a](https://github.com/home-operations/kritika/commit/0e0fe4a41983ee45e6e286c8b8d1dd1ef90475c7))
+* **metrics:** measure review completion stages and slot waits ([#1111](https://github.com/home-operations/kritika/issues/1111)) ([ede78c0](https://github.com/home-operations/kritika/commit/ede78c04eb3a0f150a73256c3c3fda6aee165036))
+
+
+### Bug Fixes
+
+* **container:** roll mise back to 2026.10.13 and pin it with min_version ([#1102](https://github.com/home-operations/kritika/issues/1102)) ([d5a3732](https://github.com/home-operations/kritika/commit/d5a3732370684ecc48af4c48d33cf1152b8ba376))
+* **transcript:** retain model calls containing NUL characters ([#1108](https://github.com/home-operations/kritika/issues/1108)) ([d6e7c6b](https://github.com/home-operations/kritika/commit/d6e7c6bbc5812186a73880ef7f64c04e013b04da))
+
+
+### Performance Improvements
+
+* **contextpack:** share repository scans across review parts ([#1105](https://github.com/home-operations/kritika/issues/1105)) ([be9d81c](https://github.com/home-operations/kritika/commit/be9d81c77e8b941af2f7c5ba1f86feb8285bc2ab))
+* **executor:** inspect cached jobs when registering a waiter ([#1114](https://github.com/home-operations/kritika/issues/1114)) ([b710170](https://github.com/home-operations/kritika/commit/b710170b61e83195c87cffe267c652e397989e3e))
+* **runner:** grow split review capacity as model slots free up ([#1109](https://github.com/home-operations/kritika/issues/1109)) ([b78d94a](https://github.com/home-operations/kritika/commit/b78d94ae862f2681afd51ee419656790397fc80d))
+* **runner:** overlap split similar-code requests ([#1106](https://github.com/home-operations/kritika/issues/1106)) ([a6cb4a1](https://github.com/home-operations/kritika/commit/a6cb4a1a6a5d208354c30c6f6c08fed97fa38954))
+* **worker:** overlap inline review and commit status delivery ([#1112](https://github.com/home-operations/kritika/issues/1112)) ([74c240d](https://github.com/home-operations/kritika/commit/74c240db89adc1560ca29a387952abdbdae07eb3))
+
+
+### Tests
+
+* **bench:** compare review effort and output budgets ([#1113](https://github.com/home-operations/kritika/issues/1113)) ([722b60c](https://github.com/home-operations/kritika/commit/722b60c75c1ca16a4d6d5bca992493a90e3288af))
+* **bench:** evaluate confidence effort against score and risk fixtures ([#1117](https://github.com/home-operations/kritika/issues/1117)) ([8c23e7f](https://github.com/home-operations/kritika/commit/8c23e7f3e39b187ef3933648d2deb75ddc3d3212))
+* **bench:** evaluate split-summary effort and evidence retention ([#1116](https://github.com/home-operations/kritika/issues/1116)) ([a4d0137](https://github.com/home-operations/kritika/commit/a4d0137bc55680e69aa46aee3b545d99356e154a))
+
 ## [0.0.85](https://github.com/home-operations/kritika/compare/0.0.84...0.0.85) (2026-10-19)
 
 
