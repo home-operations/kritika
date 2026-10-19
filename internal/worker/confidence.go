@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/home-operations/kritika/internal/adapter"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -85,7 +84,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	// the score's whole time; with a fallback on another provider its
 	// attempts get at most half of what is left. One the model answered
 	// without the score is billed all the same.
-	call, err := p.structured(ctx, ref, p.settings.Confidence.Fallback, store.ModelCallConfidence, store.RoleConfidence,
+	call, err := p.structured(ref, p.settings.Confidence.Fallback, store.ModelCallConfidence, store.RoleConfidence,
 		"confidence", true)
 	if err != nil {
 		return review.Confidence{}, err
@@ -106,15 +105,13 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
 			Body: body, Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
 		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, p.settings.Agent.MaxPromptTokens),
-		Model: ref.Model(), Fallbacks: call.fallbacks, Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
+		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}
 	var resp model.CompletionResponse
 	complete := func(ctx context.Context) error {
 		var err error
-		resp, err = call.completer.Complete(ctx, req)
-		p.w.Metrics.ModelCall(p.account.Key(), adapter.ServedRef(call.served.Ref, resp.Model), store.RoleConfidence, adapter.Outcome(err),
-			resp.InputTokens, resp.CachedTokens, resp.OutputTokens, resp.CostUSD, resp.Unpriced)
+		resp, err = call.Complete(ctx, req)
 		return err
 	}
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
@@ -140,25 +137,6 @@ func earlierRisk(prior priorReview, head, rubric, trigger string) *review.Earlie
 		return nil
 	}
 	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason}
-}
-
-// charge records what one call publishing makes spent, as role, against
-// the review, where the caps count it; a call the provider did not answer
-// spent nothing.
-func (p *publishPhase) charge(ctx context.Context, resp model.StepResponse, role string) {
-	if resp.Usage.Prompt() == 0 && resp.Usage.Output == 0 {
-		return
-	}
-	err := p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
-		return store.InsertUsage(ctx, tx, store.Usage{
-			AccountID: p.account.ID(), RepositoryID: p.pr.repositoryID, ReviewID: p.reviewID, Role: role,
-			Model: resp.Model, Upstream: resp.Upstream, Input: resp.Usage.Prompt(), Output: resp.Usage.Output, CostUSD: resp.CostUSD,
-			ChatGPTPlan: resp.ChatGPTPlan, Unpriced: resp.Unpriced, RunnerRunID: p.runID,
-		})
-	})
-	if err != nil {
-		p.logger.Error("usage not recorded", "role", role, "error", err)
-	}
 }
 
 // verdict is the commit status of a published review with that many

@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // fakeStepper answers every Step with resp and records the request.
@@ -100,28 +98,8 @@ func TestStructuredComplete(t *testing.T) {
 	}
 }
 
-func TestStructuredOnStep(t *testing.T) {
-	for _, stepErr := range []error{nil, errors.New("boom")} {
-		t.Run(fmt.Sprint(stepErr), func(t *testing.T) {
-			f := &fakeStepper{err: stepErr, resp: StepResponse{Model: "m", ToolCalls: []ToolCall{{Name: "findings", Input: json.RawMessage(`{}`)}}}}
-			calls := 0
-			var gotReq StepRequest
-			var gotResp StepResponse
-			var gotErr error
-			s := Structured{Stepper: f, OnStep: func(req StepRequest, resp StepResponse, err error, d time.Duration) {
-				calls++
-				gotReq, gotResp, gotErr = req, resp, err
-				if d < 0 {
-					t.Errorf("duration %s", d)
-				}
-			}}
-			_, _ = s.Complete(t.Context(), CompletionRequest{System: "sys", User: "u", Model: "m", SchemaName: "findings"})
-			if calls != 1 || gotReq.System != "sys" || !strings.HasPrefix(gotReq.Messages[0].Text, "u\n\n") || gotResp.Model != "m" || !errors.Is(gotErr, stepErr) {
-				t.Fatalf("OnStep called %d times with %+v, %+v, %v", calls, gotReq, gotResp, gotErr)
-			}
-		})
-	}
-	// Without OnStep, an answer with no tool call is still an error.
+// TestStructuredNoToolCall: an answer with no tool call is an error.
+func TestStructuredNoToolCall(t *testing.T) {
 	if _, err := (Structured{Stepper: &fakeStepper{}}).Complete(t.Context(), CompletionRequest{SchemaName: "x"}); err == nil {
 		t.Fatal("no tool call was not an error")
 	}
