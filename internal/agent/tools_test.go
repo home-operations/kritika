@@ -119,6 +119,8 @@ func TestGrepContext(t *testing.T) {
 			"widget.go:4: func findMe() {}\n[truncated 117 bytes]", 100},
 		{"a match among earlier context stays a match", `{"pattern":"^MANY$","path_glob":"many.txt","context_lines":2,"max_results":3}`,
 			"many.txt:1: MANY\nmany.txt:2: MANY\nmany.txt:3: MANY\n[truncated 34 bytes]", 75},
+		{"no cap keeps context", `{"pattern":"SORTME","path_glob":"alpha.go","context_lines":1}`,
+			"alpha.go:1: SORTME one\nalpha.go:2: \nalpha.go:3: SORTME three", 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := GrepTool(tree, tt.maxBytes).Run(t.Context(), json.RawMessage(tt.input))

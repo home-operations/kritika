@@ -265,7 +265,7 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 		return strings.Join(lines, "\n")
 	}
 	out := render(true)
-	if contextLines > 0 && len(out) > gt.maxBytes {
+	if contextLines > 0 && gt.maxBytes > 0 && len(out) > gt.maxBytes {
 		// Context is dropped before it costs a match its place under the
 		// cap; the note counts it as cut.
 		bare := render(false)
