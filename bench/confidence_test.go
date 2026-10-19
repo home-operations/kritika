@@ -64,7 +64,8 @@ func checkConfidence(f confidenceCase, raw string) error {
 		return err
 	}
 	var answer struct {
-		Risk review.Risk `json:"risk"`
+		Score int         `json:"score"`
+		Risk  review.Risk `json:"risk"`
 	}
 	if err := json.Unmarshal([]byte(raw), &answer); err != nil {
 		return err
@@ -72,8 +73,10 @@ func checkConfidence(f confidenceCase, raw string) error {
 	if !answer.Risk.Valid() || strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("bench: incomplete risk or reason")
 	}
-	if score < f.Score[0] || score > f.Score[1] || risk != f.Risk {
-		return fmt.Errorf("bench: score/risk %d/%s, want [%d,%d]/%s", score, risk, f.Score[0], f.Score[1], f.Risk)
+	// The findings' ceiling holds the parsed score within range whatever
+	// the model said, so the model's own score is checked as well.
+	if answer.Score < f.Score[0] || answer.Score > f.Score[1] || score < f.Score[0] || score > f.Score[1] || risk != f.Risk {
+		return fmt.Errorf("bench: score/risk %d (model %d)/%s, want [%d,%d]/%s", score, answer.Score, risk, f.Score[0], f.Score[1], f.Risk)
 	}
 	return nil
 }
@@ -102,7 +105,8 @@ func TestConfidenceEvaluation(t *testing.T) {
 		name, raw string
 		bad       bool
 	}{
-		{"score ceiling", `{"score":5,"risk":"critical","reason":"Drops production records."}`, false},
+		{"within range", `{"score":1,"risk":"critical","reason":"Drops production records."}`, false},
+		{"overstates score under the ceiling", `{"score":5,"risk":"critical","reason":"Drops production records."}`, true},
 		{"understates risk", `{"score":2,"risk":"low","reason":"Drops production records."}`, true},
 		{"missing risk", `{"score":2,"reason":"Drops production records."}`, true},
 		{"missing reason", `{"score":2,"risk":"critical"}`, true},

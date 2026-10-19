@@ -150,13 +150,15 @@ risk ratings for a documentation-only change, production data loss and an
 administrative grant. The output-token default is 4096, as in the worker.
 
 ```sh
-env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestConfidenceBench$' -v -timeout 30m
+env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestConfidenceBench$' -v -count=1 -timeout 30m
 ```
 
 Use `KRITIKA_BENCH_CONFIDENCE_CASES` to supply additional cases shaped like
 `bench/cases/confidence.json`; custom risk instructions and an earlier rating
 are supported. The same dry-run, output directory and effort controls apply.
-Inspect raw scores as well as the enforced ceilings, risk ratings and reasons.
+Score checks hold the model's own score to the expected range as well as the
+ceiling the findings enforce, so a scorer that overrates a change fails even
+where production would clamp it; inspect risk ratings and reasons too.
 These small synthetic cases detect regressions; they do not establish accuracy
 on production reviews. Model errors and failed checks stay in the report and
 must count against a candidate. Neither stage harness reproduces production
