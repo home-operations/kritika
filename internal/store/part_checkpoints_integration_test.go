@@ -3,6 +3,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"testing"
@@ -39,6 +40,14 @@ func TestPartCheckpointRetries(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() {
+			ctx := context.Background()
+			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				return FailRunnerRun(ctx, tx, started.RunID, "test finished")
+			}); err != nil {
+				t.Error(err)
+			}
+		})
 		return started
 	}
 	first := start(8877001)
