@@ -76,14 +76,23 @@ func (k *Kube) Start(ctx context.Context) error {
 	jobs, pods := factory.Batch().V1().Jobs(), factory.Core().V1().Pods()
 	w := &watches{jobs: jobs.Lister(), pods: pods.Lister(), stop: stop, woken: map[string]chan struct{}{}}
 	handler := cache.ResourceEventHandlerFuncs{AddFunc: w.changed, UpdateFunc: func(_, obj any) { w.changed(obj) }, DeleteFunc: w.changed}
+	var handled []cache.InformerSynced
 	for _, i := range []cache.SharedIndexInformer{jobs.Informer(), pods.Informer()} {
-		if _, err := i.AddEventHandler(handler); err != nil {
+		reg, err := i.AddEventHandler(handler)
+		if err != nil {
 			return fmt.Errorf("executor: watch runner jobs: %w", err)
 		}
+		handled = append(handled, reg.HasSynced)
 	}
 	factory.StartWithContext(wctx)
 	if err := factory.WaitForCacheSyncWithContext(sctx).AsError(); err != nil {
 		return fmt.Errorf("executor: watch runner jobs: not listed within %s: %w", watchSync, err)
+	}
+	// The lists are handed to the handler before any run registers, so an
+	// event of a listed Job never stands in for the cache read a
+	// registration asks for.
+	if !cache.WaitForCacheSync(sctx.Done(), handled...) {
+		return fmt.Errorf("executor: watch runner jobs: not handled within %s", watchSync)
 	}
 	k.watch, watching = w, true
 	return nil
@@ -120,10 +129,12 @@ func (w *watches) changed(obj any) {
 	}
 }
 
-// wait makes job's changes wake the channel it returns, until done, which
-// leaves alone a later wait on a Job of the same name.
+// wait requests an initial cache read and wakes again on job's changes until
+// done, which leaves alone a later wait on a Job of the same name.
 func (w *watches) wait(job string) (wake <-chan struct{}, done func()) {
 	ch := make(chan struct{}, 1)
+	// Creation and Secret delivery may outlast the Job's watch events.
+	ch <- struct{}{}
 	w.mu.Lock()
 	w.woken[job] = ch
 	w.mu.Unlock()
