@@ -217,7 +217,7 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 			return p.advance(ctx, tx, job, jobs.PublishArgs{ReviewArgs: job.Args, ReviewID: saved.ReviewID})
 		}
 	}
-	handled := false
+	handled, handedOff := false, false
 	defer func() {
 		if !handled && err != nil {
 			decision := decidePublication(context.Cause(ctx), "", err, true, job.Attempt >= job.MaxAttempts)
@@ -226,7 +226,8 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 				err = w.finishPublication(ctx, job.Args.AccountID, p, decision, started)
 			}
 		}
-		if p.client != nil && (!handled || err != nil || p.handoff == nil) {
+		// The pull request keeps its eyes while the next stage owns the review.
+		if p.client != nil && !handedOff {
 			w.settlePublication(ctx, job.Args.AccountID, p)
 		}
 	}()
@@ -265,6 +266,7 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	}
 	handled = true
 	if deliveryErr == nil && status == store.ReviewPrepared && p.handoff != nil {
+		handedOff = true
 		return true, nil
 	}
 	return true, w.publicationEnded(ctx, job, p, status, deliveryErr, started)

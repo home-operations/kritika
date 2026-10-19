@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertest"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/store"
 )
@@ -144,4 +146,23 @@ func TestReviewStageHandoff(t *testing.T) {
 	if _, status, why := h.waitReview(t, h.head); status != "completed" {
 		t.Fatalf("review = %s: %s", status, why)
 	}
+}
+
+// TestPreparationFailureSettlesMarks: a preparation stage that ends the
+// review itself, with no job error for River, still takes the eyes off the
+// pull request and marks it failed, as the runner job did before it handed
+// preparation off.
+func TestPreparationFailureSettlesMarks(t *testing.T) {
+	h := newAgenticHarness(t, 1101)
+	h.sm.reset(scriptProse)
+	h.dispatch(t, h.head)
+	if _, status, errText := h.waitReview(t, h.head); status != "failed" || errText != "agent stopped: no_submit" {
+		t.Fatalf("review = %s (%q), want failed without a submission", status, errText)
+	}
+	waitFor(t, 5*time.Second, "the pull request to be marked as failed", func() bool {
+		h.lf.mu.Lock()
+		defer h.lf.mu.Unlock()
+		on := h.lf.pullReactions[h.number]
+		return on != nil && !on[forge.ReactionEyes] && on[forge.ReactionFailed]
+	})
 }
