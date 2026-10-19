@@ -417,5 +417,7 @@ and model for aggregate observed waiting time, and group
 separate from `kritika_lease_wait_seconds`, which measures waits inside an active
 worker. It overlaps queue delay and must not be added to it. Old jobs without
 the timestamp and canceled jobs never picked up again have no sample. A process
-crash before River saves cleared metadata can cause a repeated observation;
-these are operational metrics, not an exactly-once accounting ledger.
+crash before River saves cleared metadata can cause a repeated observation, and
+a pickup that fails before the wait is recorded leaves it to the next attempt,
+retry backoff included; these are operational metrics, not an exactly-once
+accounting ledger.
