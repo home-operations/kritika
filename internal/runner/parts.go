@@ -59,20 +59,19 @@ func partPrompts(
 	found []repoconfig.Skill, split [][]string, scope review.Scope, tools *agentTools, logger *slog.Logger,
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
 	diffs := make([]string, len(split))
-	chunks := make([][]contextpack.Chunk, len(split))
+	inputs := make([]contextpack.Part, len(split))
 	for i, paths := range split {
 		diffs[i] = review.PartDiff(res.Diff, paths)
-		var stats contextpack.Stats
-		var err error
-		in := contextpack.Input{Head: head, Base: base, Diff: diffs[i], Changed: paths, Ignore: p.Ignore}
-		chunks[i], stats, err = contextpack.Build(ctx, in, contextpack.DefaultOptions)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("runner: context stages of part %d: %w", i+1, err)
-		}
-		plog := logger.With("part", i+1)
-		plog.Info("part context built", "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
-			"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
-		if out, ok := similarCodeFor(ctx, p, secrets, diffs[i], res.Changed, plog); ok {
+		inputs[i] = contextpack.Part{Diff: diffs[i], Changed: paths}
+	}
+	chunks, stats, err := contextpack.BuildParts(ctx, head, base, p.Ignore, inputs, contextpack.DefaultOptions)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("runner: context stages of parts: %w", err)
+	}
+	logger.Info("parts context built", "parts", len(split), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
+		"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
+	for i := range split {
+		if out, ok := similarCodeFor(ctx, p, secrets, diffs[i], res.Changed, logger.With("part", i+1)); ok {
 			chunks[i] = append(chunks[i], out.Chunks...)
 			tools.search = newSearchTool(p, secrets, res.Changed)
 		}
