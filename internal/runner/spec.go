@@ -24,7 +24,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 35
+const SpecVersion = 36
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -78,8 +78,8 @@ type AgentLimits struct {
 	MaxPromptTokens int `json:"maxPromptTokens,omitempty"`
 	// Parts is the most parts the runner may split a review into, which
 	// the run's grant and deadline cover; under two it never splits.
-	// Parallel is how many of them may run at once, the review model's
-	// slots the run holds; under two runs them one after another.
+	// Parallel is the initial capacity held by the worker. A split review
+	// observes later grants through runner_runs.part_slots.
 	// TimeoutSeconds bounds each part.
 	Parts          int `json:"parts,omitempty"`
 	Parallel       int `json:"parallel,omitempty"`

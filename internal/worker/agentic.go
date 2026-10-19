@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -389,33 +388,6 @@ type sizing struct {
 
 // rounds is how many parts run one after another at the most.
 func (s sizing) rounds() int { return (s.parts + s.slots - 1) / s.slots }
-
-// freeSlots takes, without waiting, up to n more of the review model's
-// slots for a split review's parts to run at once: only ones no other job
-// holds, so the account's concurrency still bounds the model calls running
-// at once, and the parts that find none run one after another. It returns
-// how many it took and what lets them go, which may be called again.
-func (w *Review) freeSlots(
-	ctx context.Context, logger *slog.Logger, account *configfile.Account, settings configfile.Settings, n int, jobID int64,
-) (int, func()) {
-	key := string(settings.Models.Review)
-	var taken []*store.Lease
-	for range n {
-		l, err := w.Store.TakeLease(ctx, account.ID(), key, settings.Limits.Concurrency, jobID)
-		if err != nil {
-			logger.Warn("free model slots not taken", "error", err)
-		}
-		if l == nil {
-			break
-		}
-		taken = append(taken, l)
-	}
-	return len(taken), sync.OnceFunc(func() {
-		for _, l := range taken {
-			w.releaseLease(ctx, logger, l, key)
-		}
-	})
-}
 
 // revokeGatewayTokens ends the run's token once its runner is done, on a
 // context of its own since the job's may have ended. A token not revoked

@@ -280,7 +280,12 @@ time; `similar-code request ended` records the runner's whole retrieval request.
 The gateway separates `similar embedding slot` wait time from
 `similar queries embedded` provider time. `review model slots granted` records
 the worker's estimated part count, granted slots and concurrency limit; compare
-it with `agent started in parts` for the actual part count and parallelism.
+it with `agent started in parts` for the actual part count and initial parallelism.
+During a split review, `review model slots adjusted` records changes to the
+worker's grant, with `slots`, `remaining_parts` and `limit`. Remaining parts
+include active work and exclude completed checkpoints. The worker and runner
+check capacity every two seconds, so a review can gain slots after it starts.
+Recorded reviews waiting for their first slot take priority over extra slots.
 Elapsed fields are Go durations, encoded as nanoseconds by the JSON logger.
 Split parts retrieve similar code concurrently, bounded by their granted
 parallelism; these request durations can overlap and should not be summed

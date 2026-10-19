@@ -223,8 +223,8 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 }
 
 // runnerRunColumns are the runner_runs columns a runner writes: its phase,
-// its error and its heartbeat.
-var runnerRunColumns = []string{"phase", "error", "heartbeat_at"}
+// its error, its heartbeat and its remaining review parts.
+var runnerRunColumns = []string{"phase", "error", "heartbeat_at", "parts_remaining"}
 
 // bindPolicies scopes policies to roles only when their bindings differ.
 // ALTER POLICY takes an exclusive table lock even for an unchanged binding.

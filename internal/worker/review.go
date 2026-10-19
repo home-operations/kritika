@@ -177,8 +177,13 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	spec.CheckpointScope = fmt.Sprintf("%s/%s/%s", file.Hash(), granted.Effort, granted.Fallback)
 	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, granted.Review, provider.Type)
 	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
-	extra, releaseExtra := w.freeSlots(ctx, logger, account, settings, parts-1, job.ID)
-	defer releaseExtra()
+	slots := &reviewSlots{worker: w, logger: logger, accountID: account.ID(), runID: runID,
+		model: string(settings.Models.Review), limit: settings.Limits.Concurrency, maxParts: parts, jobID: job.ID}
+	defer slots.close(ctx)
+	if err := slots.resize(ctx, parts); err != nil {
+		return w.agentSpecFailed(ctx, ended, runID, err)
+	}
+	extra := len(slots.leases)
 	logger.Info("review model slots granted", "estimated_parts", parts, "slots", 1+extra, "limit", settings.Limits.Concurrency)
 	deadline, promptNotes, err := w.agentSpec(ctx, args.AccountID, reviewID, runID, args.Trigger, pr, eff, granted, prior, cont, admitted,
 		sizing{parts: parts, slots: 1 + extra}, &spec, &secrets, deadline, client, logger)
@@ -189,6 +194,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	spec.Agent.CacheLocked = file.GatewayCaches()
 	b.notes = append(b.notes, promptNotes...)
 	sup := runSupervision(w.Store, args.AccountID, runID, pr.id, reviewID, args.HeadSHA, w.superviseEvery, logger)
+	stopSlots := slots.watch(ctx)
+	defer stopSlots()
 	out := w.runRunner(ctx, w.Executor, sup, executor.Spec{
 		Labels:      runnerLabels(account.Key(), pr.repository, jobs.QueueReview, args.Number),
 		Annotations: runnerAnnotations(job.ID, args.HeadSHA),
@@ -197,7 +204,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		Deadline:    deadline,
 	}, args.AccountID, runID, settings.Models.Review, w.rowWait, logger)
 	// The parts are done with the slots they ran in.
-	releaseExtra()
+	stopSlots()
+	slots.close(ctx)
 	res, cause, agentOutcome, agentErr := out.res, out.cause, out.agent, out.agentErr
 	cctx, cancel := detach(ctx)
 	defer cancel()
