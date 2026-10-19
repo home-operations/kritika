@@ -93,7 +93,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		reviewStage: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "kritika_review_stage_duration_seconds",
 			Help:    "Wall time of review preparation and publication operations, including failed attempts. Stages can overlap.",
-			Buckets: []float64{.01, .05, .1, .25, .5, 1, 2, 5, 10, 20, 30, 60, 120, 300},
+			Buckets: []float64{.01, .05, .1, .25, .5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1800},
 		}, []string{lblAccount, "stage"}),
 		reviewSlotWait: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "kritika_review_slot_wait_seconds",

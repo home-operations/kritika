@@ -13,8 +13,8 @@ import (
 
 const slotWaitSinceKey = "slot_wait_since"
 
-func (w *Review) recordSlotWait(logger *slog.Logger, job *river.Job[jobs.ReviewArgs], account string) {
-	model, elapsed, ok := slotWaitElapsed(job.Metadata, time.Now())
+func (w *Review) recordSlotWait(logger *slog.Logger, job *river.Job[jobs.ReviewArgs], account string, pickedUp time.Time) {
+	model, elapsed, ok := slotWaitElapsed(job.Metadata, pickedUp)
 	if !ok {
 		return
 	}

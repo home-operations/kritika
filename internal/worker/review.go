@@ -90,7 +90,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return err
 	}
 	logger = w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
-	w.recordSlotWait(logger, job, account.Key())
+	w.recordSlotWait(logger, job, account.Key(), started)
 	clearSlotWait(ctx, logger, job)
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)

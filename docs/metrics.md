@@ -403,10 +403,11 @@ Executor logs split completion handling into `runner pods read`,
 `runner log tail read` and the enclosing `runner result collected`, joined by
 `job_name`. `runner job completion observed` marks when the watch sees completion.
 `agent completion observed` links that job to the run and reports
-`agent_to_executor_return`, which includes log collection, and `elapsed`, which
-also includes token revocation and loading the agent row. Their individual
-durations appear in `runner completion handled` as `revoke_elapsed` and
-`row_read_elapsed`. These logs distinguish lifecycle delay from log-read latency.
+`agent_to_executor_return`, which ends when the supervised run returns to the
+worker and so includes log collection and any supervisor check still in
+progress, and `elapsed`, which also includes token revocation and loading the
+agent row. Their individual durations appear in `runner completion handled` as
+`revoke_elapsed` and `row_read_elapsed`. These logs distinguish lifecycle delay from log-read latency.
 
 `kritika_review_slot_wait_seconds` measures each recorded slot snooze from its
 start to the next review pickup. Early wakes shorten it; scheduling delays
