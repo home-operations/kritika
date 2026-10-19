@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.84](https://github.com/home-operations/kritika/compare/0.0.83...0.0.84) (2026-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cache:** drop egress.cache and refreshAfter, refill on a failed install ([#1095](https://github.com/home-operations/kritika/issues/1095))
+
+### Features
+
+* **cache:** drop egress.cache and refreshAfter, refill on a failed install ([#1095](https://github.com/home-operations/kritika/issues/1095)) ([7eb06d9](https://github.com/home-operations/kritika/commit/7eb06d94b6124b8b29b7d8c3a920d3f95f765f74))
+
+
+### Documentation
+
+* simplify setup and everyday usage guides ([#1092](https://github.com/home-operations/kritika/issues/1092)) ([b587208](https://github.com/home-operations/kritika/commit/b587208a2d77d408a69ebe7d1299325905a9e3f2))
+
 ## [0.0.83](https://github.com/home-operations/kritika/compare/0.0.82...0.0.83) (2026-10-18)
 
 
