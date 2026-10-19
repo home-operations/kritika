@@ -6,4 +6,16 @@
   // bundleDependencies (@tailwindcss/oxide-wasm32-wasi): npm/cli#9800.
   // npm 11 is also what the pinned Node bundles for CI and the image.
   constraints: { npm: "^11" },
+  packageRules: [
+    {
+      // The runner depends on how this mise behaves. CI runs the runner's
+      // tests on it, but pull requests do not build the -tools image, so a
+      // person merges each bump.
+      description: "Hold the -tools image's mise for 3 days, bump it weekly and merge it by hand",
+      matchDepNames: ["mirror.gcr.io/jdxcode/mise"],
+      minimumReleaseAge: "3 days",
+      schedule: ["* 0-3 * * 1"],
+      automerge: false,
+    },
+  ],
 }
