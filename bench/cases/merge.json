@@ -1,0 +1,61 @@
+[
+  {
+    "id": "migration-and-reader",
+    "title": "Migrate stored records and update readers",
+    "body": "Deploy only after taking a backup. The old binary cannot read the new records.",
+    "parts": [
+      {
+        "Paths": ["storage/migrate.go"],
+        "Summary": {
+          "headline": "Migrate record format",
+          "take": "Writes the v2 record format.",
+          "praise": [],
+          "impact": [
+            "storage/migrate.go requires a backup before migration; old binaries cannot read v2 records."
+          ]
+        }
+      },
+      {
+        "Paths": ["storage/read.go"],
+        "Summary": {
+          "headline": "Read the v2 format",
+          "take": "Reads v2 records.",
+          "praise": ["Rejects unknown versions."],
+          "impact": ["storage/read.go rejects v1 records after migration."]
+        }
+      }
+    ],
+    "findings": [],
+    "evidence": ["storage/migrate.go", "backup", "storage/read.go"]
+  },
+  {
+    "id": "queue-and-worker-flow",
+    "title": "Add a bounded task queue",
+    "body": "Queue capacity is 16. Submission returns an error when full.",
+    "diagram": true,
+    "parts": [
+      {
+        "Paths": ["queue.go"],
+        "Summary": {
+          "headline": "Bound queued tasks",
+          "take": "queue.go rejects tasks when its capacity of 16 is reached.",
+          "praise": [],
+          "impact": ["queue.go returns ErrFull to callers when 16 tasks are queued."],
+          "diagram": "flowchart LR\n  caller --> queue"
+        }
+      },
+      {
+        "Paths": ["worker.go"],
+        "Summary": {
+          "headline": "Drain queued tasks",
+          "take": "worker.go drains queued tasks before shutdown returns.",
+          "praise": [],
+          "impact": ["worker.go shutdown waits for queued tasks to finish."],
+          "diagram": "flowchart LR\n  queue --> worker"
+        }
+      }
+    ],
+    "findings": [],
+    "evidence": ["ErrFull", "16", "shutdown"]
+  }
+]
