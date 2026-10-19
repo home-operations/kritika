@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.85](https://github.com/home-operations/kritika/compare/0.0.84...0.0.85) (2026-10-19)
+
+
+### Features
+
+* **review:** reuse completed parts across retries ([#1099](https://github.com/home-operations/kritika/issues/1099)) ([9be202c](https://github.com/home-operations/kritika/commit/9be202cdee3eae1b44ed251cfce28ed6ac05d0f8))
+* **review:** separate durable preparation and publication jobs ([#1098](https://github.com/home-operations/kritika/issues/1098)) ([07510ec](https://github.com/home-operations/kritika/commit/07510ec4f05ba30cf811ccfbb6f1881bbb671ddd))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/jdxcode/mise (2026.10.13 → 2026.10.14) ([#1096](https://github.com/home-operations/kritika/issues/1096)) ([ca4c16b](https://github.com/home-operations/kritika/commit/ca4c16bcfc36c426b3d5db493bb673129ea64aff))
+
+
+### Code Refactoring
+
+* **model:** share execution accounting and telemetry ([#1100](https://github.com/home-operations/kritika/issues/1100)) ([1b84952](https://github.com/home-operations/kritika/commit/1b84952837be13184886ce38dbd394e5e5b49114))
+
 ## [0.0.84](https://github.com/home-operations/kritika/compare/0.0.83...0.0.84) (2026-10-18)
 
 
