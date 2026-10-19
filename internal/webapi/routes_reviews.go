@@ -161,7 +161,7 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 		}
 	}
 	for i, p := range a.Parts {
-		out.Parts[i] = AgentPart{Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps}
+		out.Parts[i] = AgentPart{Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom}
 	}
 	return out
 }

@@ -135,10 +135,11 @@ type AgentRun struct {
 // AgentPart is one part of a split review: its files, why its agent
 // stopped, with the error it ended on, and its steps.
 type AgentPart struct {
-	Paths []string `json:"paths"`
-	Stop  string   `json:"stop"`
-	Error string   `json:"error"`
-	Steps int      `json:"steps"`
+	ReusedFrom string   `json:"reusedFrom,omitzero"`
+	Paths      []string `json:"paths"`
+	Stop       string   `json:"stop"`
+	Error      string   `json:"error"`
+	Steps      int      `json:"steps"`
 }
 
 // UsageRow is one usage row charged to a review.

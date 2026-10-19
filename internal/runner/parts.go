@@ -211,7 +211,18 @@ func runParts(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
 	parts []reviewPart, logger *slog.Logger,
 ) error {
-	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, parts, logger)
+	hash, err := partInputHash(p, parts, tools)
+	if err != nil {
+		return err
+	}
+	saved, err := loadParts(ctx, st, p, hash, parts)
+	if err != nil {
+		return err
+	}
+	save := func(ctx context.Context, part int, result agent.Result) error {
+		return savePart(ctx, st, p, secrets, hash, part, result, tools)
+	}
+	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, parts, logger, saved, save)
 	if err != nil {
 		return err
 	}
@@ -219,11 +230,21 @@ func runParts(
 	if err != nil {
 		return err
 	}
-	rec, err := newAgentRecord(merged, timeline, toolSources(tools), secrets)
+	sources := toolSources(tools)
+	for i, part := range saved {
+		records[i].ReusedFrom = part.SourceRun
+		sources = checkpointNames(sources, part.Sources)
+	}
+	rec, err := newAgentRecord(merged, timeline, sources, secrets)
 	if err != nil {
 		return err
 	}
 	rec.useTools(tools)
+	for _, part := range saved {
+		rec.skillsOpened = checkpointNames(rec.skillsOpened, part.SkillsOpened)
+		rec.commandsRun = checkpointNames(rec.commandsRun, part.CommandsRun)
+		rec.commandErrors = checkpointNames(rec.commandErrors, part.CommandErrors)
+	}
 	if rec.parts, err = json.Marshal(records); err != nil {
 		return fmt.Errorf("runner: encode parts: %w", err)
 	}
@@ -248,6 +269,7 @@ func runParts(
 func runPartLoops(
 	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools, parts []reviewPart,
 	logger *slog.Logger,
+	saved []partCheckpoint, save func(context.Context, int, agent.Result) error,
 ) ([]agent.Result, []store.TimelineStep, error) {
 	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
 	parallel := max(p.Agent.Parallel, 1)
@@ -261,6 +283,11 @@ func runPartLoops(
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(parallel)
 	for i, part := range parts {
+		if len(saved) > i && saved[i].Result.Stop == agent.StopSubmitted {
+			results[i] = saved[i].Result
+			logger.Info("agent part reused", "part", i+1, "source_run", saved[i].SourceRun)
+			continue
+		}
 		g.Go(func() error {
 			left := time.Until(deadline)
 			switch {
@@ -279,6 +306,18 @@ func runPartLoops(
 			offered := lockTools(offeredTools(p, head, ignore, tools.extra()), toolLock)
 			res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
 			results[i], steps[i] = res, partSteps
+			if res.Stop == agent.StopSubmitted && save != nil {
+				select {
+				case <-gctx.Done():
+					return context.Cause(gctx)
+				case toolLock <- struct{}{}:
+				}
+				err := save(gctx, i+1, res)
+				<-toolLock
+				if err != nil {
+					return err
+				}
+			}
 			plog.Info("agent part stopped", "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,
 				"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD)
 			return nil
