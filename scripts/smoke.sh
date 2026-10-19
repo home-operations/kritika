@@ -69,6 +69,7 @@ if [ -z "${KRITIKA_SMOKE_IMAGE:-}" ]; then
   docker build \
     --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" \
     --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" \
+    --build-arg MISE_VERSION="$(mise config get -f .mise/config.toml min_version)" \
     --build-arg VERSION=smoke --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" \
     -t "$image" .
 fi
