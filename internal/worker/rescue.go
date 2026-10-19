@@ -112,7 +112,7 @@ func (r *Rescuer) Rescue(ctx context.Context) error {
 		state := string(job.RescueState())
 		r.Logger.Warn("job rescued from a dead worker", "job", job.ID, "kind", job.Kind, "attempt", job.Attempt, "state", state)
 		r.Metrics.JobRescued(job.Kind, state)
-		if job.Kind == (jobs.ReviewArgs{}).Kind() && job.RescueState() != rivertype.JobStateRetryable {
+		if jobs.ReviewKind(job.Kind) && job.RescueState() != rivertype.JobStateRetryable {
 			if err := r.reportEnded(ctx, job); err != nil {
 				r.Logger.Warn("commit status not set for a rescued review", "job", job.ID, "error", err)
 			}

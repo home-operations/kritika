@@ -25,7 +25,7 @@
   function actionFor(j: J): Action | undefined {
     if (j.cancelableReviewId) return { label: 'Cancel review', title: `Cancel review for job #${j.id}?`, body: 'The run stops at its next checkpoint and nothing more is posted to the pull request.', path: cancelPath(account(j), j.cancelableReviewId), danger: true, done: 'Cancel requested' };
     if (j.state !== 'discarded' && j.state !== 'cancelled') return;
-    if (j.kind === 'review' && j.args.repository && j.args.number) return { label: 'Re-run', title: `Re-run ${j.args.repository}#${j.args.number}?`, body: "Queue a fresh review of the pull request's current head. This may differ from the failed job's commit. Closed or merged pull requests will be skipped.", path: rerunPath(account(j), j.args), done: 'Re-run queued' };
+    if (['review', 'review_prepare', 'review_publish'].includes(j.kind) && j.args.repository && j.args.number) return { label: 'Re-run', title: `Re-run ${j.args.repository}#${j.args.number}?`, body: "Queue a fresh review of the pull request's current head. This may differ from the failed job's commit. Closed or merged pull requests will be skipped.", path: rerunPath(account(j), j.args), done: 'Re-run queued' };
     if (j.kind === 'index' && j.args.repository) return { label: 'Reindex', title: `Reindex ${j.args.repository}?`, body: "Queue a full index of the repository's current default branch.", path: reindexPath(account(j), j.args.repository), done: 'Reindex queued' };
   }
   const visible = $derived(jobs.filter((j) => {

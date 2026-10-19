@@ -888,7 +888,7 @@ export interface Job {
   cancelableReviewId?: string;
   heartbeatAt?: string;
   id: number;
-  kind: 'review' | 'followup' | 'thread' | 'index';
+  kind: 'review' | 'review_prepare' | 'review_publish' | 'followup' | 'thread' | 'index';
   state: JobState;
   attempt: number;
   maxAttempts: number;

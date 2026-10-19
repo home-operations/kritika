@@ -432,8 +432,10 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	h.gatewayURL = gw.URL
 	h.review.GatewayURL, h.review.GatewayTokenTTL = gw.URL, time.Hour
 	river.AddWorker(workers, h.review)
+	river.AddWorker(workers, &Prepare{Review: h.review})
+	river.AddWorker(workers, &Publish{Review: h.review})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
-		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}}, Workers: workers,
+		Queues: map[string]river.QueueConfig{jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
 		// Far shorter than any review: the worker's own Timeout must win.
 		JobTimeout: agentJobTimeout,

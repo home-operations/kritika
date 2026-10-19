@@ -235,7 +235,8 @@ var jobColumns = `j.id, j.kind, j.state::text, j.attempt, j.max_attempts, j.crea
 			AND newer.state IN (` + jobs.LiveStatesSQL() + `, 'completed')), false) AS recent_failure
 	FROM river_job j LEFT JOIN repositories r ON r.id::text = j.args->>'repository_id'
 	LEFT JOIN job_heartbeats h ON h.job_id = j.id
-	WHERE j.args->>'account_id' = current_setting('app.account_id', true) AND j.kind IN ('review', 'followup', 'thread', 'index')`
+	WHERE j.args->>'account_id' = current_setting('app.account_id', true)
+	AND j.kind IN ('review', 'review_prepare', 'review_publish', 'followup', 'thread', 'index')`
 
 func scanJob(row pgx.CollectableRow) (JobRow, error) {
 	var j JobRow
@@ -297,7 +298,8 @@ func ReadHeldSlots(ctx context.Context, tx pgx.Tx) (map[string]int, error) {
 // FindLiveReviewJob returns the review job of a pull request that has not
 // finished, the newest when there are several, or nil when there is none.
 func FindLiveReviewJob(ctx context.Context, tx pgx.Tx, repositoryID string, number int) (*JobRow, error) {
-	rows, err := tx.Query(ctx, `SELECT `+jobColumns+` AND j.kind = 'review' AND j.state IN (`+jobs.LiveStatesSQL()+`)
+	rows, err := tx.Query(ctx, `SELECT `+jobColumns+` AND j.kind IN ('review', 'review_prepare', 'review_publish')
+		AND j.state IN (`+jobs.LiveStatesSQL()+`)
 			AND j.args->>'repository_id' = $1 AND (j.args->>'number')::int = $2
 		ORDER BY j.id DESC LIMIT 1`, repositoryID, number)
 	if err != nil {

@@ -89,7 +89,7 @@ func enqueueFresh(
 				AND r.status IN ('running', 'prepared'))
 		OR EXISTS (
 			SELECT 1 FROM river_job
-			WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
+			WHERE kind IN ($5, 'review_prepare', 'review_publish') AND state IN (`+LiveStatesSQL()+`)
 				AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
 				AND args->>'head_sha' = $4)`,
 		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&busy)
@@ -115,7 +115,7 @@ func HeadQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, 
 	var queued bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM river_job
-		WHERE kind = $5 AND state IN (`+LiveStatesSQL()+`)
+		WHERE kind IN ($5, 'review_prepare', 'review_publish') AND state IN (`+LiveStatesSQL()+`)
 			AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3
 			AND args->>'head_sha' = $4)`,
 		accountID, repositoryID, number, headSHA, ReviewArgs{}.Kind()).Scan(&queued)
@@ -131,7 +131,7 @@ func PullQueued(ctx context.Context, tx pgx.Tx, accountID, repositoryID string, 
 	var queued bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM river_job
-		WHERE kind = $4 AND state IN (`+LiveStatesSQL()+`)
+		WHERE kind IN ($4, 'review_prepare', 'review_publish') AND state IN (`+LiveStatesSQL()+`)
 			AND args->>'account_id' = $1::text AND args->>'repository_id' = $2::text AND (args->>'number')::int = $3)`,
 		accountID, repositoryID, number, ReviewArgs{}.Kind()).Scan(&queued)
 	if err != nil {

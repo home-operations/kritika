@@ -58,6 +58,8 @@ func TestJobArgs(t *testing.T) {
 	}{
 		{name: "review", args: ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: "push"},
 			wantKind: "review", wantQueue: QueueReview},
+		{name: "prepare", args: PrepareArgs{ReviewID: "review"}, wantKind: QueuePrepare, wantQueue: QueuePrepare},
+		{name: "publish", args: PublishArgs{ReviewID: "review"}, wantKind: QueuePublish, wantQueue: QueuePublish},
 		{name: "manual review", args: ReviewArgs{AccountID: "t", RepositoryID: "r", Number: 1, HeadSHA: "abc", Trigger: TriggerManual,
 			Request: "11111111-1111-1111-1111-111111111111"}, wantKind: "review", wantQueue: QueueReview, wantRequest: true},
 		{name: "follow-up", args: FollowUpArgs{AccountID: "t", RepositoryID: "r", Number: 1, CommentID: 7},

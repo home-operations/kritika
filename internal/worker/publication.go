@@ -42,6 +42,8 @@ type publicationPreparation struct {
 // publicationSnapshot freezes the inputs to preparation and delivery.
 // Credentials and model clients are resolved separately.
 type publicationSnapshot struct {
+	Agent           *store.AgentRunRow      `json:",omitempty"`
+	RunID           string                  `json:",omitempty"`
 	Preparation     *publicationPreparation `json:",omitempty"`
 	PriorConfidence *review.Confidence
 	Version         int
@@ -58,6 +60,7 @@ type publicationSnapshot struct {
 	Sources         []string
 	PriorID         string
 	PriorHead       string
+	PriorDiagram    string
 	Prior           []publicationFinding
 	Dismissed       []store.Dismissal
 	Resolved        []publicationFinding
@@ -94,7 +97,8 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 		Version: 1, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
 		Effort: p.settings.Models.Effort, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
 		Scope: p.scope, Trigger: p.trigger, Closed: p.pr.closed, RepoNotes: p.repoNotes,
-		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, Prior: snapshotFindings(p.prior.findings),
+		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
+		Prior:     snapshotFindings(p.prior.findings),
 		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
 		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished,
 	}
@@ -111,16 +115,29 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 			Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef}
 	} else {
 		snapshot.Answer = *answer
+		snapshot.RunID = p.runID
+		if p.agent != nil {
+			snapshot.Agent = &store.AgentRunRow{
+				Sources: p.agent.Sources, SkillsOffered: p.agent.SkillsOffered, SkillsOpened: p.agent.SkillsOpened,
+				CommandsOffered: p.agent.CommandsOffered, CommandsRun: p.agent.CommandsRun,
+			}
+		}
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("worker: encode publication: %w", err)
 	}
 	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		var err error
 		if p.pending != nil {
-			return store.ReplacePublication(ctx, tx, p.reviewID, p.pending, payload)
+			err = store.ReplacePublication(ctx, tx, p.reviewID, p.pending, payload)
+		} else {
+			err = store.SavePublication(ctx, tx, p.reviewID, payload)
 		}
-		return store.SavePublication(ctx, tx, p.reviewID, payload)
+		if err == nil && p.handoff != nil {
+			err = p.handoff(ctx, tx)
+		}
+		return err
 	})
 	if err == nil {
 		p.pending = nil
@@ -147,15 +164,16 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	// interrupted it.
 	p.settings.Review.Dashboard = p.file.Settings(p.account, p.pr.repository).Review.Dashboard
 	p.templates, p.scope, p.trigger = s.Templates, s.Scope, s.Trigger
-	if p.pr.closed == "" {
-		p.pr.closed = s.Closed
-	}
+	p.pr.closed = s.Closed
 	p.repoNotes = s.RepoNotes
-	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead,
+	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,
 		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
 	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
 	p.confidence, p.unscored, p.unfinished = s.Confidence, s.Unscored, s.Unfinished
 	p.agent = &store.AgentRunRow{Sources: s.Sources}
+	if s.Agent != nil {
+		p.agent, p.runID = s.Agent, s.RunID
+	}
 	if s.Version == 2 {
 		if s.Preparation == nil {
 			return nil, errors.New("worker: publication preparation missing")
@@ -185,14 +203,19 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
 	}
-	if err != nil || saved.Status != store.ReviewPrepared {
+	if err != nil || saved.Status != store.ReviewPrepared || saved.JobID != job.ID {
 		return true, err
 	}
 	started := time.Now()
 	p := &publishPhase{w: w, file: file, reviewID: saved.ReviewID, jobID: job.ID, logger: logger,
 		pr: &pullRequest{id: saved.PullRequestID, repositoryID: saved.RepositoryID, repository: saved.Repository,
 			number: saved.Number, headSHA: saved.HeadSHA, authorIsBot: saved.AuthorIsBot, closed: saved.Closed}}
-	handled := false
+	if job.Kind == jobs.QueuePrepare {
+		p.handoff = func(ctx context.Context, tx pgx.Tx) error {
+			return p.advance(ctx, tx, job, jobs.PublishArgs{ReviewArgs: job.Args, ReviewID: saved.ReviewID})
+		}
+	}
+	handled, handedOff := false, false
 	defer func() {
 		if !handled && err != nil {
 			decision := decidePublication(context.Cause(ctx), "", err, true, job.Attempt >= job.MaxAttempts)
@@ -201,7 +224,8 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 				err = w.finishPublication(ctx, job.Args.AccountID, p, decision, started)
 			}
 		}
-		if p.client != nil {
+		// The pull request keeps its eyes while the next stage owns the review.
+		if p.client != nil && !handedOff {
 			w.settlePublication(ctx, job.Args.AccountID, p)
 		}
 	}()
@@ -209,12 +233,13 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if err != nil {
 		return true, err
 	}
-	p.client, err = w.client(ctx, file, p.account, p.pr.repository)
+	client, err := w.client(ctx, file, p.account, p.pr.repository)
 	if err != nil {
 		return true, err
 	}
+	p.client = client
 	if p.pr.closed != "" {
-		p.client = statusless{p.client}
+		p.client = statusless{client}
 	}
 	if saved.CancelRequested {
 		handled = true
@@ -224,18 +249,30 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if err != nil {
 		return true, river.JobCancel(err)
 	}
+	// The checkpoint knows whether the review began on an open pull
+	// request, which is what set its pending status; a close since, even
+	// one the row's timestamps put before the review, leaves the outcome
+	// to replace it.
+	p.client = client
 	if p.pr.closed != "" {
-		p.client = statusless{p.client}
+		p.client = statusless{client}
 	}
 	logger.Info("resuming review publication", "review", saved.ReviewID)
 	var status store.ReviewStatus
 	var deliveryErr error
 	if p.pending != nil {
+		if job.Kind == jobs.QueuePublish {
+			return true, river.JobCancel(errors.New("worker: publication answer is not finalized"))
+		}
 		status, deliveryErr = p.run(ctx)
 	} else {
 		status, deliveryErr = p.deliver(ctx, answer)
 	}
 	handled = true
+	if deliveryErr == nil && status == store.ReviewPrepared && p.handoff != nil {
+		handedOff = true
+		return true, nil
+	}
 	return true, w.publicationEnded(ctx, job, p, status, deliveryErr, started)
 }
 
