@@ -2,6 +2,7 @@ package transcript
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/home-operations/kritika/internal/textcut"
 )
@@ -73,7 +74,8 @@ func maskRaw(raw json.RawMessage, fn func(string) string) json.RawMessage {
 	return validJSON([]byte(fn(string(raw))))
 }
 
-// Encode applies the caps and encodes r.
+// Encode applies the caps and encodes r, replacing NUL with the Unicode
+// replacement character because PostgreSQL text and jsonb cannot store it.
 func (r Row) Encode() Encoded {
 	e := Encoded{MessagesFrom: r.MessagesFrom, System: r.System, State: r.next}
 	msgs := r.Messages
@@ -81,6 +83,10 @@ func (r Row) Encode() Encoded {
 		msgs, e.System, e.Truncated = nil, nil, true
 	} else if r.Tools != nil {
 		e.Tools, _ = json.Marshal(*r.Tools) // cannot fail: every RawMessage is valid JSON
+	}
+	if e.System != nil && strings.ContainsRune(*e.System, 0) {
+		system := strings.ReplaceAll(*e.System, "\x00", "\ufffd")
+		e.System = &system
 	}
 	if e.System != nil && len(*e.System) > SystemCap {
 		system := textcut.Prefix(*e.System, SystemCap) + SystemTruncated
@@ -93,6 +99,9 @@ func (r Row) Encode() Encoded {
 		e.Messages, e.Truncated = marshalMessages(placeholders(msgs)), true
 	}
 	e.Response, _ = json.Marshal(r.Response) // cannot fail: every RawMessage is valid JSON
+	replaceJSONNUL(e.Messages)
+	replaceJSONNUL(e.Response)
+	replaceJSONNUL(e.Tools)
 	size := len(e.Messages) + len(e.Response) + len(e.Tools)
 	if e.System != nil {
 		size += len(*e.System)
@@ -151,4 +160,18 @@ func placeholders(msgs []Message) []Message {
 		}
 	}
 	return out
+}
+
+// replaceJSONNUL changes only actual JSON NUL escapes. Skipping each escape
+// pair preserves literal backslashes, including text spelling \u0000.
+func replaceJSONNUL(raw []byte) {
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		if len(raw)-i >= 6 && string(raw[i:i+6]) == `\u0000` {
+			copy(raw[i:i+6], `\ufffd`)
+		}
+		i++
+	}
 }
