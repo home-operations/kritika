@@ -37,6 +37,7 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	if ref == "" {
 		return ""
 	}
+	defer p.timeStage("confidence")()
 	ctx, cancel := context.WithTimeout(job, confidenceTimeout)
 	defer cancel()
 	// The agent is done with its slot on the review model. Scoring takes a

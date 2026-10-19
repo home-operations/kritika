@@ -21,6 +21,8 @@ type Metrics struct {
 	polled         *prometheus.CounterVec
 	reviews        *prometheus.CounterVec
 	reviewDuration *prometheus.HistogramVec
+	reviewStage    *prometheus.HistogramVec
+	reviewSlotWait *prometheus.HistogramVec
 	followups      *prometheus.CounterVec
 	threads        *prometheus.CounterVec
 	findings       *prometheus.CounterVec
@@ -88,6 +90,16 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_transcript_writes_total",
 			Help: "Model calls recorded for the transcript view, by kind (agent_step, confidence, merge) and outcome (ok, error).",
 		}, []string{lblKind, lblOutcome}),
+		reviewStage: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "kritika_review_stage_duration_seconds",
+			Help:    "Wall time of review preparation and publication operations, including failed attempts. Stages can overlap.",
+			Buckets: []float64{.01, .05, .1, .25, .5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1800},
+		}, []string{lblAccount, "stage"}),
+		reviewSlotWait: f.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "kritika_review_slot_wait_seconds",
+			Help:    "Elapsed model-slot snooze intervals observed when a review is picked up again, including queue delay.",
+			Buckets: []float64{1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1800, 3600},
+		}, []string{lblAccount, lblModel}),
 		reviewDuration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "kritika_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
@@ -353,5 +365,19 @@ func (m *Metrics) InitVectorSearch(account string) {
 func (m *Metrics) VectorSearch(account, outcome string, took time.Duration) {
 	if m != nil {
 		m.vectorSearch.WithLabelValues(account, outcome).Observe(took.Seconds())
+	}
+}
+
+// ReviewStage observes one named preparation or publication operation.
+func (m *Metrics) ReviewStage(account, stage string, took time.Duration) {
+	if m != nil {
+		m.reviewStage.WithLabelValues(account, stage).Observe(max(0, took.Seconds()))
+	}
+}
+
+// ReviewSlotWait observes an actual snooze interval, including an early wake.
+func (m *Metrics) ReviewSlotWait(account, model string, took time.Duration) {
+	if m != nil {
+		m.reviewSlotWait.WithLabelValues(account, model).Observe(max(0, took.Seconds()))
 	}
 }

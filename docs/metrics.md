@@ -29,6 +29,8 @@ fails is logged at error level and counted in
 | `kritika_polled_pull_requests_total`    | connection                     | open pull requests the backstop polls handed to ingest                                                                                                                                                                |
 | `kritika_reviews_total`                 | account, status                | reviews by terminal status                                                                                                                                                                                            |
 | `kritika_review_duration_seconds`       | account                        | a review job's wall time, from pickup to terminal status                                                                                                                                                              |
+| `kritika_review_stage_duration_seconds` | account, stage | preparation and publication operation durations, including failed attempts; nested stages overlap |
+| `kritika_review_slot_wait_seconds` | account, model | actual elapsed slot-snooze intervals observed at the next pickup, including queue delay |
 | `kritika_findings_total`                | account, severity, category    | findings posted                                                                                                                                                                                                       |
 | `kritika_confidence_scores_total`       | account, score, risk           | reviews the confidence model scored, by score (0 to 5) and risk: low, medium, high, critical                                                                                                                          |
 | `kritika_followups_total`               | account, outcome               | mentions handled: answered, limited, ignored, failed                                                                                                                                                                  |
@@ -354,3 +356,68 @@ are not evidence of production recall or an SLO, and do not justify changing
 partitioning, search parameters, prewarming or worker concurrency. Use the
 runtime histograms and repeat with representative embeddings and traffic before
 tuning those settings. No production database was measured for this baseline.
+
+## Review completion timings
+
+`kritika_review_stage_duration_seconds` separates the work after the runner
+answers. Stage labels are fixed operation names:
+
+| Stage | Interval |
+| --- | --- |
+| `agent_to_prepare` | Agent row creation to the start of a preparation attempt |
+| `prepare` | Finding processing, summary merging and confidence scoring |
+| `merge`, `confidence` | Each operation, including its model-slot wait and retries |
+| `checkpoint` | Saving preparation or publication state and any queue handoff |
+| `deliver` | Publication lock acquisition, delivery and persistence |
+| `write_back` | Rendering and forge operations |
+| `forge_sticky` | Finding, creating or updating the sticky comment |
+| `forge_inline`, `forge_status` | Posting the inline review or setting commit status |
+| `forge_approval`, `forge_resolve_threads` | Approval processing or resolving the batch of old threads |
+| `forge_summary_update` | Rewriting the summary with thread links and approval |
+| `persist` | Committing the completed publication |
+| `agent_to_published` | Agent row creation to successfully committed publication, across queue handoffs and retries |
+
+These intervals overlap: do not sum stages or their percentiles. Forge stages
+are operations and may make multiple HTTP requests. `agent_to_*` uses the
+database's agent-record timestamp, which approximates agent completion and
+requires aligned database and worker clocks. Negative durations are clamped to
+zero; older checkpoints without an agent timestamp produce no such sample.
+Other stages include failed attempts. All `review stage ended` logs carry
+`review`, `run`, `job`, `stage` and `elapsed`; JSON duration fields are nanoseconds.
+
+For example, compare publication-tail p95 by account:
+
+```promql
+histogram_quantile(0.95, sum by (account, le) (
+  rate(kritika_review_stage_duration_seconds_bucket{stage="agent_to_published"}[1h])
+))
+```
+
+Queue delay already uses `kritika_queue_wait_seconds` with
+`queue="review_prepare"` or `queue="review_publish"`. The
+`resuming review publication` log adds review/run/job identity, attempt number,
+`queue_wait` (since scheduled eligibility) and `since_enqueued` (including
+retry backoff and earlier attempts). Both end at worker pickup.
+
+Executor logs split completion handling into `runner pods read`,
+`runner log tail read` and the enclosing `runner result collected`, joined by
+`job_name`. `runner job completion observed` marks when the watch sees completion.
+`agent completion observed` links that job to the run and reports
+`agent_to_executor_return`, which ends when the supervised run returns to the
+worker and so includes log collection and any supervisor check still in
+progress, and `elapsed`, which also includes token revocation and loading the
+agent row. Their individual durations appear in `runner completion handled` as
+`revoke_elapsed` and `row_read_elapsed`. These logs distinguish lifecycle delay from log-read latency.
+
+`kritika_review_slot_wait_seconds` measures each recorded slot snooze from its
+start to the next review pickup. Early wakes shorten it; scheduling delays
+lengthen it. Sum `increase(kritika_review_slot_wait_seconds_sum[1h])` by account
+and model for aggregate observed waiting time, and group
+`review model slot wait ended` logs by job to inspect repeated waits. This is
+separate from `kritika_lease_wait_seconds`, which measures waits inside an active
+worker. It overlaps queue delay and must not be added to it. Old jobs without
+the timestamp and canceled jobs never picked up again have no sample. A process
+crash before River saves cleared metadata can cause a repeated observation, and
+a pickup that fails before the wait is recorded leaves it to the next attempt,
+retry backoff included; these are operational metrics, not an exactly-once
+accounting ledger.

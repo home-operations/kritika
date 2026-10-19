@@ -17,6 +17,8 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	var none *Metrics
 	none.Webhook("a", "b")
 	none.Review("t", "completed", time.Second)
+	none.ReviewStage("t", "merge", time.Second)
+	none.ReviewSlotWait("t", "m", time.Second)
 	none.ModelCall("t", "m", "review", "ok", 1, 0, 1, 0.1, false)
 	none.TranscriptWrite("review", "ok")
 	none.ConfidenceScored("t", 5, "low")
@@ -29,6 +31,8 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	m := New(reg)
 	m.Webhook("onedr0p-github", "enqueued")
+	m.ReviewStage("onedr0p", "merge", time.Second)
+	m.ReviewSlotWait("onedr0p", "model", time.Second)
 	m.Poll("onedr0p-github", "ok", 1)
 	m.ForgeRateLimited("onedr0p-github", "waited")
 	m.Egress("http", "allowed")
@@ -108,8 +112,8 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 37 {
-		t.Fatalf("metric families = %d, want all 37", len(families))
+	if len(families) != 39 {
+		t.Fatalf("metric families = %d, want all 39", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)

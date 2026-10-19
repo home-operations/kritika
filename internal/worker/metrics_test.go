@@ -33,6 +33,8 @@ func TestJobMetrics(t *testing.T) {
 	}{
 		{"due", "review", -time.Minute, true},
 		{"retry", "index", -time.Second, true},
+		{"preparation", "review_prepare", -time.Second, true},
+		{"publication", "review_publish", -time.Second, true},
 		{"thread", "thread", -time.Second, true},
 		{"future or clock skew", "followup", time.Minute, true},
 		{"unknown queue is not a label", "unbounded", -time.Second, false},

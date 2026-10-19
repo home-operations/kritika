@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertest"
 	"github.com/riverqueue/river/rivertype"
 
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -76,6 +78,8 @@ func (h *agenticHarness) workStages(t *testing.T, ctx context.Context, w *Review
 
 func TestReviewStageHandoff(t *testing.T) {
 	h := newAgenticHarness(t, 1100)
+	reg := prometheus.NewRegistry()
+	h.review.Metrics = metrics.New(reg)
 	job := queuedOutcomeReview(t, h)
 	h.sm.reset(scriptSubmit)
 	ctx := rivertest.WorkContext(h.ctx, h.insertOnly)
@@ -147,6 +151,32 @@ func TestReviewStageHandoff(t *testing.T) {
 	if _, status, why := h.waitReview(t, h.head); status != "completed" {
 		t.Fatalf("review = %s: %s", status, why)
 	}
+	checkPublishedTiming(t, reg)
+}
+
+func checkPublishedTiming(t *testing.T, reg *prometheus.Registry) {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != "kritika_review_stage_duration_seconds" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			for _, label := range metric.Label {
+				if label.GetName() == "stage" && label.GetValue() == "agent_to_published" {
+					h := metric.GetHistogram()
+					if h.GetSampleCount() != 1 || h.GetSampleSum() <= 0 {
+						t.Fatalf("agent-to-publication timing = %v", h)
+					}
+					return
+				}
+			}
+		}
+	}
+	t.Fatal("agent timestamp did not survive preparation and publication handoffs")
 }
 
 // TestPreparationFailureSettlesMarks: a preparation stage that ends the

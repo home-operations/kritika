@@ -128,6 +128,8 @@ func (p *publishPhase) ended() endedReview {
 
 // prepare settles the findings, summary and confidence before delivery.
 func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) {
+	defer p.timeStage("prepare")()
+	p.agentElapsed("agent_to_prepare")
 	if err := p.preparationCurrent(ctx); err != nil {
 		return nil, err
 	}
@@ -366,6 +368,7 @@ func splitHeld(findings []review.Finding, held func(review.Finding) bool) (kept,
 func (p *publishPhase) writeBack(
 	ctx context.Context, res review.Result, unanchored []review.Finding, modelName string, notes []string,
 ) (int64, []store.InlinePosted, error) {
+	defer p.timeStage("write_back")()
 	owner, repo := p.pr.ownerRepo()
 	// A finding reported again outside the diff is reported again all the
 	// same: it is neither resolved nor listed so, and keeps its thread.
@@ -445,7 +448,9 @@ func (p *publishPhase) writeBack(
 		return 0, nil, err
 	}
 
+	inlineDone := p.timeStage("forge_inline")
 	ids, err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline)
+	inlineDone()
 	switch {
 	case ids == nil:
 		p.logger.Warn("inline review not posted", "error", err)
@@ -463,9 +468,11 @@ func (p *publishPhase) writeBack(
 		}
 	}
 	state, desc := p.verdict(counts.Total())
+	statusDone := p.timeStage("forge_status")
 	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, state, "kritika: "+desc); err != nil {
 		p.logger.Warn("commit status not set", "error", err)
 	}
+	statusDone()
 	// A merged or closed pull request's head merges no more, so it is
 	// neither approved nor its approval withdrawn.
 	if p.settings.Review.Approve && p.pr.closed == "" {
@@ -477,6 +484,7 @@ func (p *publishPhase) writeBack(
 		// them is not worth failing the review.
 		data.Result = res
 		body, _ = review.RenderSummary(ctx, p.templates, data)
+		defer p.timeStage("forge_summary_update")()
 		if err := p.client.UpdateComment(ctx, owner, repo, commentID, body); err != nil {
 			p.logger.Warn("summary not rewritten with its threads and approval", "error", err)
 		}
@@ -610,6 +618,10 @@ func reportedSet(findings []review.Finding) map[string]bool {
 // forge client leaves a thread someone else wrote in open. Best effort,
 // like the inline review: the summary is the record either way.
 func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
+	if len(ids) == 0 {
+		return
+	}
+	defer p.timeStage("forge_resolve_threads")()
 	owner, repo := p.pr.ownerRepo()
 	for _, id := range ids {
 		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, true)
@@ -642,6 +654,7 @@ func (p *publishPhase) upsertSticky(ctx context.Context, body string) (int64, er
 // created when there is none: a sticky comment someone deleted must not
 // fail every later review, and the id returned replaces the stored one.
 func (p *publishPhase) writeSticky(ctx context.Context, stored int64, body string) (int64, error) {
+	defer p.timeStage("forge_sticky")()
 	owner, repo := p.pr.ownerRepo()
 	if stored != 0 {
 		err := p.client.UpdateComment(ctx, owner, repo, stored, body)

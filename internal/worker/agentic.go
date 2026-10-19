@@ -247,8 +247,16 @@ func (b *Base) runRunner(
 	rowWait time.Duration, logger *slog.Logger,
 ) agentRun {
 	res, cause := supervise(ctx, sup, exec, spec)
+	returned := time.Now()
 	b.revokeGatewayTokens(ctx, logger, runID)
+	revoked := time.Now()
 	row, agentErr := b.readAgentRun(ctx, accountID, runID, ref, stopped(ctx, res, cause), rowWait)
+	logger.Info("runner completion handled", "run", runID, "job_name", res.JobName,
+		"revoke_elapsed", revoked.Sub(returned), "row_read_elapsed", time.Since(revoked))
+	if row != nil && !row.CreatedAt.IsZero() {
+		logger.Info("agent completion observed", "run", runID, "job_name", res.JobName,
+			"agent_to_executor_return", max(0, returned.Sub(row.CreatedAt)), "elapsed", max(0, time.Since(row.CreatedAt)))
+	}
 	return agentRun{res: res, cause: cause, agent: row, agentErr: agentErr}
 }
 
