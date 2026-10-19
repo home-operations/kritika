@@ -226,6 +226,26 @@ func TestKubeRunRejectsOversizedSpecBeforeCreatingAnything(t *testing.T) {
 	}
 }
 
+func TestKubeRunReadsCompletionBeforeWaitRegistration(t *testing.T) {
+	j := &batchv1.Job{
+		Name: jobName(spec().Job.RunID), Namespace: "kritika", UID: "this-run",
+		Labels: map[string]string{"kritika.home-operations.com/role": "runner"}, Status: batchv1.JobStatus{Succeeded: 1},
+	}
+	client := fake.NewSimpleClientset(j)
+	k := newKube(t, client)
+	k.Poll = time.Hour
+	// The informer already holds the result by the time creation returns.
+	client.PrependReactor("create", "jobs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, j.DeepCopy(), nil
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	res := k.Run(ctx, spec())
+	if res.Err != nil || res.JobUID != string(j.UID) {
+		t.Fatalf("Run = %+v; want cached completion without a poll or another event", res)
+	}
+}
+
 func TestKubeRunWaitsForCompletion(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	k := newKube(t, client)

@@ -162,6 +162,7 @@ func TestWaitLeavesALaterWaitAlone(t *testing.T) {
 	w := &watches{woken: map[string]chan struct{}{}}
 	_, done := w.wait("job")
 	wake, _ := w.wait("job")
+	<-wake
 	done()
 	w.changed(&batchv1.Job{Name: "job"})
 	select {

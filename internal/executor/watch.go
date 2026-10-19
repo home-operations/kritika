@@ -120,10 +120,12 @@ func (w *watches) changed(obj any) {
 	}
 }
 
-// wait makes job's changes wake the channel it returns, until done, which
-// leaves alone a later wait on a Job of the same name.
+// wait requests an initial cache read and wakes again on job's changes until
+// done, which leaves alone a later wait on a Job of the same name.
 func (w *watches) wait(job string) (wake <-chan struct{}, done func()) {
 	ch := make(chan struct{}, 1)
+	// Creation and Secret delivery may outlast the Job's watch events.
+	ch <- struct{}{}
 	w.mu.Lock()
 	w.woken[job] = ch
 	w.mu.Unlock()
