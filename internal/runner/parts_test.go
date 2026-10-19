@@ -275,7 +275,7 @@ func TestRunPartLoops(t *testing.T) {
 				parts[i] = reviewPart{paths: []string{fmt.Sprintf("p%d.go", i+1)}, prompt: loopPrompt(s, false)}
 			}
 			results, timeline, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, head, nil, agentTools{}, parts,
-				slog.New(slog.DiscardHandler), nil, nil)
+				slog.New(slog.DiscardHandler), nil, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

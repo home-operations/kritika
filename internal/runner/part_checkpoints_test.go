@@ -93,10 +93,18 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 		}
 		return nil
 	}
+	var remaining []int
+	report := func(_ context.Context, n int) int {
+		remaining = append(remaining, n)
+		return 2
+	}
 	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil, agentTools{}, parts,
-		slog.New(slog.DiscardHandler), saved, save)
+		slog.New(slog.DiscardHandler), saved, save, report)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(remaining) == 0 || remaining[0] != 2 || remaining[len(remaining)-1] != 0 {
+		t.Fatalf("reused part counted as unfinished work: %v", remaining)
 	}
 	if len(saves) != 2 || results[0].Model != "saved-model" || results[0].Steps != 0 || results[0].CostUSD != 0 {
 		t.Fatalf("saves=%d reused=%+v", len(saves), results[0])
@@ -133,7 +141,7 @@ func TestPartsCheckpointFailureKeepsAnswer(t *testing.T) {
 		return errors.New("checkpoint refused")
 	}
 	results, _, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
-		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save)
+		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save, nil)
 	if err != nil {
 		t.Fatalf("a failed checkpoint failed the run: %v", err)
 	}
@@ -238,7 +246,7 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 		close(release)
 	}()
 	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
-		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save)
+		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save, nil)
 	if err != nil {
 		t.Fatalf("cancellation lost the run: %v", err)
 	}

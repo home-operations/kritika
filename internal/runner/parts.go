@@ -252,7 +252,7 @@ func runParts(
 	save := func(ctx context.Context, part int, result agent.Result) error {
 		return savePart(ctx, st, p, secrets, hash, part, result, tools)
 	}
-	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, parts, logger, saved, save)
+	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, parts, logger, saved, save, runnerPartSlots(st, p, logger))
 	if err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func runParts(
 }
 
 // runPartLoops runs the agents of a split review's parts, as many at once
-// as p.Agent.Parallel allows and the rest as those end, and returns each
+// as the worker grants slots for, and returns each
 // part's result and the run's timeline, its steps numbered across the parts
 // in part order. The parts share the agent time the worker sized the Job
 // for, so a part late enough to pass it is left out, ending the run cleanly
@@ -299,7 +299,7 @@ func runParts(
 func runPartLoops(
 	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools, parts []reviewPart,
 	logger *slog.Logger,
-	saved []partCheckpoint, save func(context.Context, int, agent.Result) error,
+	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, int) int,
 ) ([]agent.Result, []store.TimelineStep, error) {
 	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
 	parallel := max(p.Agent.Parallel, 1)
@@ -310,51 +310,55 @@ func runPartLoops(
 	results := make([]agent.Result, len(parts))
 	steps := make([][]store.TimelineStep, len(parts))
 	toolLock := make(chan struct{}, 1)
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(parallel)
-	for i, part := range parts {
+	pending := make([]int, 0, len(parts))
+	for i := range parts {
 		if len(saved) > i && saved[i].Result.Stop == agent.StopSubmitted {
 			results[i] = saved[i].Result
 			logger.Info("agent part reused", "part", i+1, "source_run", saved[i].SourceRun)
 			continue
 		}
-		g.Go(func() error {
-			left := time.Until(deadline)
-			switch {
-			case gctx.Err() != nil:
-				results[i] = agent.Result{Stop: agent.StopCanceled, Err: context.Cause(gctx).Error()}
-				return nil
-			case left < min(minPartTime, timeout/2):
-				results[i] = agent.Result{Stop: agent.StopCanceled, Err: "no agent time left"}
-				return nil
-			}
-			stepper, err := gatewayStepper(p, secrets, i+1)
-			if err != nil {
-				return err
-			}
-			plog := logger.With("part", i+1)
-			offered := lockTools(offeredTools(p, head, ignore, tools.extra()), toolLock)
-			res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
-			results[i], steps[i] = res, partSteps
-			// The checkpoint is a retry's shortcut: an answer it fails to
-			// keep, or a cancellation finds it waiting to keep, is still
-			// this run's to merge.
-			if res.Stop == agent.StopSubmitted && save != nil {
-				select {
-				case <-gctx.Done():
-				case toolLock <- struct{}{}:
-					if err := save(gctx, i+1, res); err != nil {
-						plog.Warn("agent part not checkpointed", "error", err)
-					}
-					<-toolLock
-				}
-			}
-			plog.Info("agent part stopped", "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,
-				"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD)
-			return nil
-		})
+		results[i] = agent.Result{Stop: agent.StopCanceled, Err: "part not started"}
+		pending = append(pending, i)
 	}
-	if err := g.Wait(); err != nil {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	err := scheduleParts(ctx, pending, parallel, ticker.C, report, func(gctx context.Context, i int) error {
+		part := parts[i]
+		left := time.Until(deadline)
+		switch {
+		case gctx.Err() != nil:
+			results[i] = agent.Result{Stop: agent.StopCanceled, Err: context.Cause(gctx).Error()}
+			return nil
+		case left < min(minPartTime, timeout/2):
+			results[i] = agent.Result{Stop: agent.StopCanceled, Err: "no agent time left"}
+			return nil
+		}
+		stepper, err := gatewayStepper(p, secrets, i+1)
+		if err != nil {
+			return err
+		}
+		plog := logger.With("part", i+1)
+		offered := lockTools(offeredTools(p, head, ignore, tools.extra()), toolLock)
+		res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
+		results[i], steps[i] = res, partSteps
+		// The checkpoint is a retry's shortcut: an answer it fails to
+		// keep, or a cancellation finds it waiting to keep, is still
+		// this run's to merge.
+		if res.Stop == agent.StopSubmitted && save != nil {
+			select {
+			case <-gctx.Done():
+			case toolLock <- struct{}{}:
+				if err := save(gctx, i+1, res); err != nil {
+					plog.Warn("agent part not checkpointed", "error", err)
+				}
+				<-toolLock
+			}
+		}
+		plog.Info("agent part stopped", "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,
+			"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD)
+		return nil
+	})
+	if err != nil {
 		return nil, nil, err
 	}
 	var timeline []store.TimelineStep

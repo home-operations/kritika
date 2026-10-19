@@ -69,6 +69,17 @@ func (s *Store) AcquireLease(ctx context.Context, accountID, modelKey string, sl
 // TakeLease claims a free slot for (account, model) without waiting: nil
 // when every slot is held.
 func (s *Store) TakeLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
+	return s.takeLease(ctx, accountID, modelKey, slots, jobID, false)
+}
+
+// TakeExtraLease claims capacity for an already admitted review only when
+// no recorded slot waiter needs its first lease. An awakened waiter keeps
+// priority until it has acquired a lease or left the review queue.
+func (s *Store) TakeExtraLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64) (*Lease, error) {
+	return s.takeLease(ctx, accountID, modelKey, slots, jobID, true)
+}
+
+func (s *Store) takeLease(ctx context.Context, accountID, modelKey string, slots int, jobID int64, extra bool) (*Lease, error) {
 	slot := 0
 	err := s.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `INSERT INTO model_leases (account_id, model_key, slot)
@@ -79,8 +90,14 @@ func (s *Store) TakeLease(ctx context.Context, accountID, modelKey string, slots
 			WHERE (account_id, model_key, slot) = (
 				SELECT account_id, model_key, slot FROM model_leases
 				WHERE account_id = $1 AND model_key = $2 AND slot <= $5 AND (job_id IS NULL OR expires_at < now())
+				AND (NOT $6::boolean OR NOT EXISTS (
+					SELECT 1 FROM river_job j WHERE j.kind = 'review' AND j.id <> $3
+					AND j.state IN ('available', 'scheduled', 'running')
+					AND j.args->>'account_id' = $1::text AND j.metadata->>'slot_wait' = $2
+					AND NOT EXISTS (SELECT 1 FROM model_leases held
+						WHERE held.account_id = $1 AND held.model_key = $2 AND held.job_id = j.id AND held.expires_at >= now())))
 				ORDER BY slot LIMIT 1 FOR UPDATE SKIP LOCKED)
-			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots).Scan(&slot)
+			RETURNING slot`, accountID, modelKey, jobID, leaseExpiry, slots, extra).Scan(&slot)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

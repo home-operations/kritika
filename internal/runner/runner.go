@@ -156,6 +156,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	if skip == "" {
 		split = splitReview(p, res, scope)
 	}
+	reportPartCount(ctx, st, p, len(split), logger)
 	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, split, logger)
 	if err != nil {
 		return err
