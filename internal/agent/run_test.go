@@ -544,7 +544,7 @@ func TestRunToolDef(t *testing.T) {
 		!strings.Contains(d, "fd finds files and directories by name") || !strings.HasSuffix(d, " The checkout is partial.") {
 		t.Fatalf("description = %q", d)
 	}
-	if d := proxied.Def().Description; !strings.Contains(d, "rg searches file contents where the grep tool falls short") ||
+	if d := proxied.Def().Description; !strings.Contains(d, "rg searches file contents where the grep tool falls short") || strings.Contains(d, "rg -C") ||
 		strings.Contains(d, "fd finds") || strings.Contains(d, "jq reads") || strings.Contains(d, "yq does") {
 		t.Fatalf("description = %q", d)
 	}
