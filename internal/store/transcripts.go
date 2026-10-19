@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -59,6 +60,10 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 	if !c.Kind.Valid() {
 		return fmt.Errorf("store: model call kind %q", c.Kind)
 	}
+	c.Model = strings.ReplaceAll(c.Model, "\x00", "\ufffd")
+	c.Upstream = strings.ReplaceAll(c.Upstream, "\x00", "\ufffd")
+	c.Stop = model.StopReason(strings.ReplaceAll(string(c.Stop), "\x00", "\ufffd"))
+	c.Error = strings.ReplaceAll(c.Error, "\x00", "\ufffd")
 	var tools *string
 	if c.Row.Tools != nil {
 		s := string(c.Row.Tools)
