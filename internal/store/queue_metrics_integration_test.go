@@ -56,8 +56,8 @@ func TestQueueStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stats) != 4 {
-		t.Fatalf("queues = %d, want 4", len(stats))
+	if want := len(jobs.Queues()); len(stats) != want {
+		t.Fatalf("queues = %d, want %d", len(stats), want)
 	}
 	for _, q := range stats {
 		wantCount, wantAge := baseline[q.Queue].Runnable, baseline[q.Queue].OldestSeconds
