@@ -59,16 +59,23 @@ func partPrompts(
 	found []repoconfig.Skill, split [][]string, scope review.Scope, tools *agentTools, logger *slog.Logger,
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
 	diffs := make([]string, len(split))
-	chunks := make([][]contextpack.Chunk, len(split))
+	inputs := make([]contextpack.Part, len(split))
 	for i, paths := range split {
 		diffs[i] = review.PartDiff(res.Diff, paths)
-		var err error
-		chunks[i], _, err = contextpack.Build(ctx, contextpack.Input{Head: head, Base: base, Diff: diffs[i], Changed: paths, Ignore: p.Ignore},
-			contextpack.DefaultOptions)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("runner: context stages of part %d: %w", i+1, err)
-		}
-		if out, ok := similarCodeFor(ctx, p, secrets, diffs[i], res.Changed, logger); ok {
+		inputs[i] = contextpack.Part{Diff: diffs[i], Changed: paths}
+	}
+	chunks, stats, err := contextpack.BuildParts(ctx, head, base, p.Ignore, inputs, contextpack.DefaultOptions)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("runner: context stages of parts: %w", err)
+	}
+	logger.Info("parts context built", "parts", len(split), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
+		"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
+	similar, err := partSimilarCode(ctx, p, secrets, diffs, res.Changed, logger)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("runner: similar code of parts: %w", err)
+	}
+	for i, out := range similar {
+		if out.Indexed {
 			chunks[i] = append(chunks[i], out.Chunks...)
 			tools.search = newSearchTool(p, secrets, res.Changed)
 		}
@@ -117,6 +124,29 @@ func partPrompts(
 		all = append(all, prompt.context...)
 	}
 	return parts, all, rules, nil
+}
+
+// partSimilarCode overlaps remote retrieval within the review's granted
+// parallelism. It reads no git objects; those belong to the serial context pass.
+func partSimilarCode(
+	ctx context.Context, p Spec, secrets Secrets, diffs, changed []string, logger *slog.Logger,
+) ([]contextpack.SimilarResponse, error) {
+	out := make([]contextpack.SimilarResponse, len(diffs))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(max(1, p.Agent.Parallel))
+	for i, diff := range diffs {
+		g.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+			out[i], _ = similarCodeFor(gctx, p, secrets, diff, changed, logger.With("part", i+1))
+			return gctx.Err()
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // unsplitPaths are the files of the last review's and the dismissed

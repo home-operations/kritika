@@ -162,12 +162,17 @@ func (g *Server) similar(
 	if len(r.queries) == 0 {
 		return nil, 0, true, nil
 	}
+	waitStarted := time.Now()
 	lease, err := g.Store.AcquireLease(ctx, r.account.ID(), "embed:"+emb.Model, r.slots, r.jobID)
+	logger.Info("similar embedding slot", "elapsed", time.Since(waitStarted), "outcome", adapter.Outcome(err))
 	if err != nil {
 		return nil, 0, true, err
 	}
 	var vectors [][]float32
+	embedStarted := time.Now()
 	vectors, tokens, err = embedder.Embed(ctx, r.queries)
+	logger.Info("similar queries embedded", "queries", len(r.queries), "elapsed", time.Since(embedStarted),
+		"outcome", adapter.Outcome(err))
 	g.Metrics.ModelCall(r.account.Key(), emb.Model, store.RoleEmbedding, adapter.Outcome(err), tokens, 0, 0, 0, false)
 	rctx, cancel := detach(ctx)
 	if _, rerr := lease.Release(rctx); rerr != nil {

@@ -274,6 +274,18 @@ Queue panels span all accounts; vector panels follow the account filter.
 
 ## Reproducing the vector-search baseline
 
+Preparation also emits INFO logs for diagnosing time outside the vector-search
+histogram. `parts context built` records the split review's shared scan counts and elapsed
+time; `similar-code request ended` records the runner's whole retrieval request.
+The gateway separates `similar embedding slot` wait time from
+`similar queries embedded` provider time. `review model slots granted` records
+the worker's estimated part count, granted slots and concurrency limit; compare
+it with `agent started in parts` for the actual part count and parallelism.
+Elapsed fields are Go durations, encoded as nanoseconds by the JSON logger.
+Split parts retrieve similar code concurrently, bounded by their granted
+parallelism; these request durations can overlap and should not be summed
+to estimate preparation wall time.
+
 Run on a machine with Docker through the integration task, which creates and
 removes a disposable database. No provider credentials or model calls are needed:
 
