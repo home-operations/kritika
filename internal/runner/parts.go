@@ -306,17 +306,18 @@ func runPartLoops(
 			offered := lockTools(offeredTools(p, head, ignore, tools.extra()), toolLock)
 			res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
 			results[i], steps[i] = res, partSteps
+			// The checkpoint is a retry's shortcut: an answer it fails to
+			// keep is still this run's to merge.
 			if res.Stop == agent.StopSubmitted && save != nil {
 				select {
 				case <-gctx.Done():
 					return context.Cause(gctx)
 				case toolLock <- struct{}{}:
 				}
-				err := save(gctx, i+1, res)
-				<-toolLock
-				if err != nil {
-					return err
+				if err := save(gctx, i+1, res); err != nil {
+					plog.Warn("agent part not checkpointed", "error", err)
 				}
+				<-toolLock
 			}
 			plog.Info("agent part stopped", "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,
 				"input_tokens", res.Usage.Prompt(), "output_tokens", res.Usage.Output, "cost_usd", res.CostUSD)

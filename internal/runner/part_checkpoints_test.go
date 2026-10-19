@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -94,6 +95,45 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 	}
 	if len(saves) != 2 || results[0].Model != "saved-model" || results[0].Steps != 0 || results[0].CostUSD != 0 {
 		t.Fatalf("saves=%d reused=%+v", len(saves), results[0])
+	}
+	for i, res := range results {
+		if res.Stop != agent.StopSubmitted {
+			t.Fatalf("part %d: %+v", i+1, res)
+		}
+	}
+}
+
+// TestPartsCheckpointFailureKeepsAnswer: a part whose checkpoint cannot be
+// written still ends submitted, since the checkpoint only shortens a retry.
+func TestPartsCheckpointFailureKeepsAnswer(t *testing.T) {
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		out, err := model.EncodeChatResponse("step", model.StepResponse{Model: "test", Stop: model.StopToolUse,
+			ToolCalls: []model.ToolCall{{ID: "submit", Name: submitReview,
+				Input: json.RawMessage(`{"summary":{"take":"t","praise":[]},"findings":[]}`)}},
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_, _ = w.Write(out)
+	}))
+	defer gw.Close()
+	s := reviewSpec()
+	s.Model.GatewayURL, s.Agent.Parallel, s.Agent.TimeoutSeconds = gw.URL, 2, 5
+	parts := []reviewPart{{prompt: loopPrompt(s, false)}, {prompt: loopPrompt(s, false)}}
+	saves := 0
+	save := func(context.Context, int, agent.Result) error {
+		saves++
+		return errors.New("checkpoint refused")
+	}
+	results, _, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
+		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save)
+	if err != nil {
+		t.Fatalf("a failed checkpoint failed the run: %v", err)
+	}
+	if saves != len(parts) {
+		t.Fatalf("saves = %d, want %d", saves, len(parts))
 	}
 	for i, res := range results {
 		if res.Stop != agent.StopSubmitted {
