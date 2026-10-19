@@ -211,6 +211,7 @@ func checkInterruptedAnswer(t *testing.T, number int, want store.ReviewStatus) {
 	t.Helper()
 	h := newAgenticHarness(t, number)
 	job := queuedOutcomeReview(t, h)
+	runnerJobID := job.ID
 	h.sm.reset(scriptSubmit)
 	ctx, cancel := context.WithCancelCause(h.ctx)
 	defer cancel(nil)
@@ -256,8 +257,8 @@ func checkInterruptedAnswer(t *testing.T, number int, want store.ReviewStatus) {
 		var reviews, runs int
 		if err := tx.QueryRow(h.ctx, `SELECT status,
 			(SELECT count(*) FROM reviews WHERE river_job_id = $2),
-			(SELECT count(*) FROM runner_runs WHERE river_job_id = $2)
-			FROM reviews WHERE id = $1`, saved.ReviewID, job.ID).Scan(&status, &reviews, &runs); err != nil {
+			(SELECT count(*) FROM runner_runs WHERE river_job_id = $3)
+			FROM reviews WHERE id = $1`, saved.ReviewID, job.ID, runnerJobID).Scan(&status, &reviews, &runs); err != nil {
 			return err
 		}
 		if status != want || reviews != 1 || runs != 1 {

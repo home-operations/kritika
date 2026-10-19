@@ -60,6 +60,7 @@ type publicationSnapshot struct {
 	Sources         []string
 	PriorID         string
 	PriorHead       string
+	PriorDiagram    string
 	Prior           []publicationFinding
 	Dismissed       []store.Dismissal
 	Resolved        []publicationFinding
@@ -96,7 +97,8 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 		Version: 1, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
 		Effort: p.settings.Models.Effort, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
 		Scope: p.scope, Trigger: p.trigger, Closed: p.pr.closed, RepoNotes: p.repoNotes,
-		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, Prior: snapshotFindings(p.prior.findings),
+		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
+		Prior:     snapshotFindings(p.prior.findings),
 		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
 		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished,
 	}
@@ -166,7 +168,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 		p.pr.closed = s.Closed
 	}
 	p.repoNotes = s.RepoNotes
-	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead,
+	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,
 		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
 	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
 	p.confidence, p.unscored, p.unfinished = s.Confidence, s.Unscored, s.Unfinished
