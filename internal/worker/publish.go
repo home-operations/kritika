@@ -448,9 +448,7 @@ func (p *publishPhase) writeBack(
 		return 0, nil, err
 	}
 
-	inlineDone := p.timeStage("forge_inline")
-	ids, err := p.client.CreateReview(ctx, owner, repo, p.pr.number, p.pr.headSHA, inline)
-	inlineDone()
+	ids, err := p.postInlineAndStatus(ctx, inline, counts.Total())
 	switch {
 	case ids == nil:
 		p.logger.Warn("inline review not posted", "error", err)
@@ -467,12 +465,6 @@ func (p *publishPhase) writeBack(
 			linked = true
 		}
 	}
-	state, desc := p.verdict(counts.Total())
-	statusDone := p.timeStage("forge_status")
-	if err := p.client.SetStatus(ctx, owner, repo, p.pr.headSHA, state, "kritika: "+desc); err != nil {
-		p.logger.Warn("commit status not set", "error", err)
-	}
-	statusDone()
 	// A merged or closed pull request's head merges no more, so it is
 	// neither approved nor its approval withdrawn.
 	if p.settings.Review.Approve && p.pr.closed == "" {
