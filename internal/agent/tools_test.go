@@ -111,6 +111,22 @@ func TestGrepContext(t *testing.T) {
 	if err != nil || len(out) > 100 || !strings.Contains(out, "[truncated") {
 		t.Fatalf("bounded output = %q, %v", out, err)
 	}
+	for _, tt := range []struct {
+		name, input, want string
+		maxBytes          int
+	}{
+		{"context over the limit is dropped before a match", `{"pattern":"findMe","path_glob":"widget.go","context_lines":2}`,
+			"widget.go:4: func findMe() {}\n[truncated 117 bytes]", 100},
+		{"a match among earlier context stays a match", `{"pattern":"^MANY$","path_glob":"many.txt","context_lines":2,"max_results":3}`,
+			"many.txt:1: MANY\nmany.txt:2: MANY\nmany.txt:3: MANY\n[truncated 34 bytes]", 75},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GrepTool(tree, tt.maxBytes).Run(t.Context(), json.RawMessage(tt.input))
+			if err != nil || got != tt.want {
+				t.Fatalf("grep = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
 }
 
 func numberedMatches(n int) string {

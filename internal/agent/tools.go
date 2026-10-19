@@ -168,6 +168,8 @@ type grepMatch struct {
 	path string
 	line int
 	text string
+	// context marks a line returned for a match near it, not a match.
+	context bool
 }
 
 func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, error) {
@@ -230,13 +232,18 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 			if hits >= limit {
 				break
 			}
-			if re.MatchString(line) {
-				hits++
-				// Adjacent matches share context; each source line is returned once.
-				for j := max(last+1, i-contextLines); j <= min(len(lines)-1, i+contextLines); j++ {
-					matches = append(matches, grepMatch{path: f.Name, line: j + 1, text: strings.Clone(lines[j])})
-					last = j
-				}
+			if !re.MatchString(line) {
+				continue
+			}
+			hits++
+			// Adjacent matches share context; each source line is returned
+			// once, so a match among the last window's lines is already there.
+			if i <= last {
+				matches[len(matches)-1-(last-i)].context = false
+			}
+			for j := max(last+1, i-contextLines); j <= min(len(lines)-1, i+contextLines); j++ {
+				matches = append(matches, grepMatch{path: f.Name, line: j + 1, text: strings.Clone(lines[j]), context: j != i})
+				last = j
 			}
 		}
 		return nil
@@ -247,11 +254,24 @@ func (gt *grepTool) Run(ctx context.Context, input json.RawMessage) (string, err
 
 	slices.SortFunc(matches, func(a, b grepMatch) int { return cmp.Or(cmp.Compare(a.path, b.path), cmp.Compare(a.line, b.line)) })
 
-	lines := make([]string, len(matches))
-	for i, m := range matches {
-		lines[i] = fmt.Sprintf("%s:%d: %s", m.path, m.line, m.text)
+	render := func(withContext bool) string {
+		var lines []string
+		for _, m := range matches {
+			if m.context && !withContext {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("%s:%d: %s", m.path, m.line, m.text))
+		}
+		return strings.Join(lines, "\n")
 	}
-	return textcut.Truncate(strings.Join(lines, "\n"), gt.maxBytes), nil
+	out := render(true)
+	if contextLines > 0 && len(out) > gt.maxBytes {
+		// Context is dropped before it costs a match its place under the
+		// cap; the note counts it as cut.
+		bare := render(false)
+		return textcut.Cut(bare, gt.maxBytes, len(out)-len(bare)), nil
+	}
+	return textcut.Truncate(out, gt.maxBytes), nil
 }
 
 var listFilesSchema = json.RawMessage(`{
