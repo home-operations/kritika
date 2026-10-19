@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/go-git/go-git/v6/plumbing/storer"
 
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/textcut"
@@ -119,20 +118,50 @@ type Stats struct {
 
 // Build runs stages 1 to 3.
 func Build(ctx context.Context, in Input, opts Options) ([]Chunk, Stats, error) {
+	out, stats, err := BuildParts(ctx, in.Head, in.Base, in.Ignore, []Part{{Diff: in.Diff, Changed: in.Changed}}, opts)
+	if err != nil {
+		return nil, stats, err
+	}
+	return out[0], stats, nil
+}
+
+// Part selects one review part's diff and head-side paths.
+type Part struct {
+	Diff    string
+	Changed []string
+}
+
+// BuildParts builds independent packs with one shared repository scan.
+// Output budgets apply to each part; scan statistics count shared work once.
+func BuildParts(ctx context.Context, head, base *object.Tree, ignore []string, parts []Part, opts Options) ([][]Chunk, Stats, error) {
 	if opts.MaxDeclLines == 0 {
 		opts = DefaultOptions
 	}
 	start := time.Now()
-	b := &builder{in: in, opts: opts, parser: &chunk.Parser{Limits: chunk.Limits{MaxBytes: opts.MaxFileBytes}}}
-	if err := b.overlay(ctx); err != nil {
-		return nil, b.stats, err
+	var stats Stats
+	builders := make([]*builder, len(parts))
+	parser := &chunk.Parser{Limits: chunk.Limits{MaxBytes: opts.MaxFileBytes}}
+	for i, part := range parts {
+		b := &builder{in: Input{Head: head, Base: base, Ignore: ignore, Diff: part.Diff, Changed: part.Changed}, opts: opts, parser: parser}
+		builders[i] = b
+		if err := b.overlay(ctx); err != nil {
+			return nil, stats, err
+		}
+		stats.Overlay += b.stats.Overlay
+		stats.Identifiers += b.stats.Identifiers
+		stats.ChangedSymbols += b.stats.ChangedSymbols
 	}
-	if err := b.scan(ctx); err != nil {
-		return nil, b.stats, err
+	if err := scanParts(ctx, builders, &stats); err != nil {
+		return nil, stats, err
 	}
-	out := b.assemble()
-	b.stats.Elapsed = time.Since(start)
-	return out, b.stats, nil
+	out := make([][]Chunk, len(parts))
+	for i, b := range builders {
+		out[i] = b.assemble()
+		stats.Definitions += b.stats.Definitions
+		stats.Callers += b.stats.Callers
+	}
+	stats.Elapsed = time.Since(start)
+	return out, stats, nil
 }
 
 type builder struct {
@@ -283,96 +312,6 @@ func subset(start, end int, shown map[int]string) bool {
 
 // wordStart reports whether c can start an identifier: [A-Za-z_].
 func wordStart(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' }
-
-// scan is stages 2 and 3 in one walk of the head tree: every parseable
-// file is searched for the wanted words, and only files with a hit are
-// parsed to map hits to their enclosing declarations.
-func (b *builder) scan(ctx context.Context) error {
-	wanted := map[string]bool{}
-	for _, id := range b.identifiers {
-		wanted[id] = true
-	}
-	for _, s := range b.changedSymbols {
-		wanted[s] = true
-	}
-	b.definitions, b.callers = map[string]*candidates{}, map[string]*candidates{}
-	if len(wanted) == 0 || b.in.Head == nil {
-		return nil
-	}
-	changedSet := map[string]bool{}
-	for _, s := range b.changedSymbols {
-		changedSet[s] = true
-	}
-	iter := b.in.Head.Files()
-	defer iter.Close()
-	return iter.ForEach(func(f *object.File) error {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if b.stats.FilesScanned >= b.opts.MaxScanFiles || b.stats.BytesScanned >= b.opts.MaxScanBytes {
-			b.stats.ScanTruncated = true
-			return storer.ErrStop
-		}
-		if f.Size > int64(b.opts.MaxFileBytes) || b.ignored(f.Name) {
-			return nil
-		}
-		if _, decls := chunk.Language(f.Name); !decls {
-			return nil
-		}
-		src := b.readFile(f)
-		if src == nil {
-			return nil
-		}
-		b.stats.FilesScanned++
-		b.stats.BytesScanned += len(src)
-		type hit struct {
-			word string
-			line int
-		}
-		var hits []hit
-		line := 1
-		last := 0
-		for i := 0; i < len(src); {
-			if !wordStart(src[i]) {
-				i++
-				continue
-			}
-			j := i + 1
-			for j < len(src) && (wordStart(src[j]) || '0' <= src[j] && src[j] <= '9') {
-				j++
-			}
-			if wanted[string(src[i:j])] {
-				line += bytes.Count(src[last:i], []byte{'\n'})
-				last = i
-				hits = append(hits, hit{string(src[i:j]), line})
-			}
-			i = j
-		}
-		if len(hits) == 0 {
-			return nil
-		}
-		pf := b.parser.Parse(f.Name, src)
-		defer pf.Close()
-		b.stats.FilesParsed++
-		if len(pf.Decls) == 0 {
-			return nil
-		}
-		seenDecl := map[string]bool{}
-		for _, h := range hits {
-			decl := pf.Enclosing([]int{h.line}, b.opts.MaxDeclLines)
-			if decl == nil {
-				continue
-			}
-			key := h.word + "\x00" + f.Name + "\x00" + decl.Symbol
-			if seenDecl[key] || b.overlayDecls[f.Name+"\x00"+decl.Symbol] {
-				continue
-			}
-			seenDecl[key] = true
-			b.addCandidate(pf, decl, h.word, changedSet[h.word])
-		}
-		return nil
-	})
-}
 
 func (b *builder) addCandidate(f *chunk.File, decl *chunk.Decl, word string, changed bool) {
 	var stage string

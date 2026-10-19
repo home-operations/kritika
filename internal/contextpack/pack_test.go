@@ -91,7 +91,7 @@ func TestScanBoundsCandidatesAndText(t *testing.T) {
 	opts := DefaultOptions
 	opts.MaxChunkBytes = 80
 	b := &builder{in: Input{Head: head}, opts: opts, parser: &chunk.Parser{}, changedSymbols: []string{"Target"}}
-	if err := b.scan(t.Context()); err != nil {
+	if err := scanParts(t.Context(), []*builder{b}, &b.stats); err != nil {
 		t.Fatal(err)
 	}
 	retained := b.callers["Target"].chunks

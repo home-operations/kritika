@@ -275,7 +275,7 @@ Queue panels span all accounts; vector panels follow the account filter.
 ## Reproducing the vector-search baseline
 
 Preparation also emits INFO logs for diagnosing time outside the vector-search
-histogram. `part context built` records each split part's scan counts and elapsed
+histogram. `parts context built` records the split review's shared scan counts and elapsed
 time; `similar-code request ended` records the runner's whole retrieval request.
 The gateway separates `similar embedding slot` wait time from
 `similar queries embedded` provider time. `review model slots granted` records
