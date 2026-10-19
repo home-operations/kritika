@@ -110,6 +110,15 @@ recall proxy, not a complete quality judgment. Dry runs validate input
 construction but cannot establish quality or model latency. This harness uses
 repository read tools; it does not reproduce the production command environment.
 
+The repository `grep` tool accepts `context_lines` (default 0, capped at 10)
+to return nearby source lines with each match. Overlapping windows appear once,
+`max_results` still limits matching lines, and the tool byte limit still applies:
+context that would push the output over it is dropped, with a note, before any
+match is.
+Use this with a narrow `path_glob` when a small excerpt answers the question;
+`read_file` can retrieve larger ranges when needed. Compare tool calls, tokens,
+and finding quality with multi-step evaluations before claiming a saving.
+
 ## Cluster development loop
 
 Everything that touches a private cluster lives in the gitignored

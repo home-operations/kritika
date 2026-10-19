@@ -189,8 +189,8 @@ func (rt *RunTool) Def() model.ToolDef {
 		"without a shell: arguments are passed exactly as given, with no globbing, pipes or redirection. It is stopped "+
 		"after %s, and its exit code and combined output are returned.", strings.Join(rt.names, ", "), rt.cfg.Timeout)
 	if slices.Contains(rt.names, "rg") {
-		desc += " rg searches file contents where the grep tool falls short: with context lines (`rg -C 3 <pattern>`), " +
-			"by file type (`rg -t go <pattern>`) or across lines (`rg -U <pattern>`)."
+		desc += " rg searches file contents where the grep tool falls short: by file type (`rg -t go <pattern>`) " +
+			"or across lines (`rg -U <pattern>`); for a few lines around a match, grep's context_lines is enough."
 	}
 	if slices.Contains(rt.names, "fd") {
 		desc += " fd finds files and directories by name, extension or type (`fd -e yaml values`, `fd -t d charts`), " +
