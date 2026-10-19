@@ -90,6 +90,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return err
 	}
 	logger = w.Logger.With("account", account.Key(), "pr", args.Number, "head", review.ShortSHA(args.HeadSHA))
+	w.recordSlotWait(logger, job, account.Key())
 	clearSlotWait(ctx, logger, job)
 
 	b, done, err := w.begin(ctx, job, file, account, logger, started)
@@ -610,6 +611,9 @@ func (w *Review) snooze(ctx context.Context, e earlyEnd, job *river.Job[jobs.Rev
 	if err := river.MetadataSet(ctx, store.SlotWaitKey, modelKey); err != nil {
 		e.logger.Warn("job not marked as waiting for a slot; it wakes when its snooze ends", "error", err)
 	}
+	if err := river.MetadataSet(ctx, slotWaitSinceKey, time.Now().UTC()); err != nil {
+		e.logger.Warn("model slot wait start not recorded", "error", err)
+	}
 	d := store.Backoff(meta.Snoozes, snoozeMin, snoozeMax)
 	e.logger.Info("review snoozed: every model slot is held", "model", modelKey, "snoozes", meta.Snoozes+1, "for", d.Round(time.Second))
 	w.Metrics.ReviewSnoozed(e.accountKey, modelKey)
@@ -627,6 +631,9 @@ func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs
 	}
 	if err := river.MetadataSet(ctx, store.SlotWaitKey, nil); err != nil {
 		logger.Warn("job's slot wait mark not cleared; a release may wake it early", "error", err)
+	}
+	if err := river.MetadataSet(ctx, slotWaitSinceKey, nil); err != nil {
+		logger.Warn("model slot wait start not cleared", "error", err)
 	}
 }
 

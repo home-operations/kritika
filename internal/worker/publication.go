@@ -93,6 +93,7 @@ func restoreFindings(prior []publicationFinding) []priorFinding {
 }
 
 func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer) error {
+	defer p.timeStage("checkpoint")()
 	snapshot := publicationSnapshot{
 		Version: 1, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
 		Effort: p.settings.Models.Effort, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
@@ -118,7 +119,8 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 		snapshot.RunID = p.runID
 		if p.agent != nil {
 			snapshot.Agent = &store.AgentRunRow{
-				Sources: p.agent.Sources, SkillsOffered: p.agent.SkillsOffered, SkillsOpened: p.agent.SkillsOpened,
+				CreatedAt: p.agent.CreatedAt,
+				Sources:   p.agent.Sources, SkillsOffered: p.agent.SkillsOffered, SkillsOpened: p.agent.SkillsOpened,
 				CommandsOffered: p.agent.CommandsOffered, CommandsRun: p.agent.CommandsRun,
 			}
 		}
@@ -194,6 +196,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File,
 	logger *slog.Logger,
 ) (resumed bool, err error) {
+	pickedUp := time.Now()
 	var saved store.Publication
 	err = w.Store.WithAccount(ctx, job.Args.AccountID, func(tx pgx.Tx) error {
 		var err error
@@ -257,7 +260,9 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if p.pr.closed != "" {
 		p.client = statusless{client}
 	}
-	logger.Info("resuming review publication", "review", saved.ReviewID)
+	p.logger = logger.With("account", p.account.Key(), "attempt", job.Attempt)
+	p.logger.Info("resuming review publication", "review", saved.ReviewID, "run", p.runID, "job", job.ID, "stage", job.Kind,
+		"queue_wait", max(0, pickedUp.Sub(job.ScheduledAt)), "since_enqueued", max(0, pickedUp.Sub(job.CreatedAt)))
 	var status store.ReviewStatus
 	var deliveryErr error
 	if p.pending != nil {
@@ -385,6 +390,7 @@ func (p *publishPhase) preparationCurrent(ctx context.Context) error {
 }
 
 func (p *publishPhase) deliver(job context.Context, answer *publicationAnswer) (store.ReviewStatus, error) {
+	defer p.timeStage("deliver")()
 	if cause := context.Cause(job); errors.Is(cause, errJobFenced) {
 		return store.ReviewSuperseded, cause
 	}
@@ -446,6 +452,7 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 	fctx, finish := context.WithTimeout(lockCtx, detachTimeout)
 	defer finish()
 	completed := false
+	persistDone := p.timeStage("persist")
 	err = p.w.Store.WithAccount(fctx, p.account.ID(), func(tx pgx.Tx) error {
 		var err error
 		completed, err = store.CompletePublication(fctx, tx, store.ReviewResult{
@@ -455,9 +462,11 @@ func (p *publishPhase) deliverLocked(lockCtx context.Context, answer *publicatio
 		}, p.trigger != jobs.TriggerManual, pauseNote != "")
 		return err
 	})
+	persistDone()
 	if err != nil || !completed {
 		return "", err
 	}
+	p.agentElapsed("agent_to_published")
 	p.countFindings(answer.Result)
 	if c := p.confidence; c != nil {
 		p.w.Metrics.ConfidenceScored(p.account.Key(), c.Score, string(c.Risk))

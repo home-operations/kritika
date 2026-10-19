@@ -45,6 +45,7 @@ func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart
 	if len(merge) < 2 {
 		return answer, ""
 	}
+	defer p.timeStage("merge")()
 	ctx, cancel := context.WithTimeout(ctx, mergeTimeout)
 	defer cancel()
 	var raw string

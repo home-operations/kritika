@@ -1757,18 +1757,20 @@ func checkSnoozeWhileSlotsHeld(
 
 	var jobID int64
 	var waitsOn string
+	var timed bool
 	snoozes := func() int {
 		var n int
-		err := appStore.App().QueryRow(ctx, `SELECT id, coalesce((metadata->>'snoozes')::int, 0), coalesce(metadata->>'slot_wait', '')
-			FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&jobID, &n, &waitsOn)
+		err := appStore.App().QueryRow(ctx, `SELECT id, coalesce((metadata->>'snoozes')::int, 0), coalesce(metadata->>'slot_wait', ''),
+			metadata->>'slot_wait_since' IS NOT NULL
+			FROM river_job WHERE kind = 'review' AND args->>'head_sha' = $1`, head).Scan(&jobID, &n, &waitsOn, &timed)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatal(err)
 		}
 		return n
 	}
 	waitFor(t, 30*time.Second, "the review to snooze", func() bool { return snoozes() >= 1 })
-	if waitsOn != modelKey {
-		t.Fatalf("the snoozed review waits on %q, want %q", waitsOn, modelKey)
+	if waitsOn != modelKey || !timed {
+		t.Fatalf("the snoozed review waits on %q, timed=%v; want %q with a start timestamp", waitsOn, timed, modelKey)
 	}
 	var reviews, runs int
 	if err := appStore.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
@@ -1799,8 +1801,8 @@ func checkSnoozeWhileSlotsHeld(
 		return err == nil && state == "completed"
 	})
 	snoozes()
-	if waitsOn != "" {
-		t.Fatalf("the completed review still waits on %q", waitsOn)
+	if waitsOn != "" || timed {
+		t.Fatalf("the completed review still waits on %q, timed=%v", waitsOn, timed)
 	}
 }
 

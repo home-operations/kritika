@@ -19,6 +19,7 @@ import (
 // review to approve. All of it is best effort, logged when it fails, and
 // what became of it is returned for the summary to state.
 func (p *publishPhase) approve(ctx context.Context, counts review.Counts, current bool) *review.Approval {
+	defer p.timeStage("forge_approval")()
 	owner, repo := p.pr.ownerRepo()
 	ok, why := approvable(counts, p.settings.Confidence, p.confidence, p.unscored)
 	if ok && p.unfinished > 0 {

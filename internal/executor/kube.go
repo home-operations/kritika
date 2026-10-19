@@ -189,6 +189,7 @@ func (k *Kube) Run(ctx context.Context, spec Spec) Result {
 		}
 		missing = 0
 		if j.Status.Succeeded > 0 || j.Status.Failed > 0 || jobFinished(j) {
+			k.logger().Info("runner job completion observed", "run", spec.Job.RunID, "job_name", created.Name)
 			k.finish(ctx, &res, spec.Secrets)
 			k.ended(ctx, &res, j, started)
 			return res
@@ -490,9 +491,14 @@ func jobFinished(j *batchv1.Job) bool {
 // the run's secrets masked out of the log tail. Best effort: a missing pod
 // leaves the fields empty rather than failing the run.
 func (k *Kube) finish(ctx context.Context, res *Result, secrets runner.Secrets) {
+	started := time.Now()
+	defer func() {
+		k.logger().Info("runner result collected", "job_name", res.JobName, "elapsed", time.Since(started))
+	}()
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 	defer cancel()
 	pods, err := k.listedPods(fctx, &batchv1.Job{Name: res.JobName, UID: types.UID(res.JobUID)})
+	k.logger().Info("runner pods read", "job_name", res.JobName, "elapsed", time.Since(started), "error", err)
 	if err != nil || len(pods) == 0 {
 		return
 	}
@@ -520,13 +526,19 @@ func (k *Kube) finish(ctx context.Context, res *Result, secrets runner.Secrets) 
 	// asked for by lines, generously, with LimitBytes only as a ceiling;
 	// the kept tail is cut from the end of what came back.
 	lines, limit := int64(logTailLines), int64(logReadBytes)
-	stream, err := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name,
+	logStarted := time.Now()
+	var logErr error
+	defer func() {
+		k.logger().Info("runner log tail read", "job_name", res.JobName, "pod", pod.Name,
+			"elapsed", time.Since(logStarted), "error", logErr)
+	}()
+	stream, logErr := k.Client.CoreV1().Pods(k.Namespace).GetLogs(pod.Name,
 		&corev1.PodLogOptions{TailLines: &lines, LimitBytes: &limit}).Stream(fctx)
-	if err != nil {
+	if logErr != nil {
 		return
 	}
 	defer func() { _ = stream.Close() }()
-	b, _ := io.ReadAll(io.LimitReader(stream, limit))
+	b, logErr := io.ReadAll(io.LimitReader(stream, limit))
 	res.LogTail = logTail(string(b), int64(len(b)) >= limit, secrets)
 }
 
