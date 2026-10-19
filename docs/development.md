@@ -142,6 +142,29 @@ claim can pass. Review each answer for missing conditions, invented claims,
 summary usefulness and diagram accuracy. A completed harness run does not mean
 all model responses passed; inspect `error` and `check_error` in the report.
 
+### Confidence comparisons
+
+`TestConfidenceBench` uses the production confidence prompt, schema, parser and
+finding ceilings, with a separate fixture corpus. It checks score ranges and
+risk ratings for a documentation-only change, production data loss and an
+administrative grant. The output-token default is 4096, as in the worker.
+
+```sh
+env KRITIKA_BENCH_EFFORT=high mise run test -- -tags bench ./bench/ -run '^TestConfidenceBench$' -v -count=1 -timeout 30m
+```
+
+Use `KRITIKA_BENCH_CONFIDENCE_CASES` to supply additional cases shaped like
+`bench/cases/confidence.json`; custom risk instructions and an earlier rating
+are supported. The same dry-run, output directory and effort controls apply.
+Score checks hold the model's own score to the expected range as well as the
+ceiling the findings enforce, so a scorer that overrates a change fails even
+where production would clamp it; inspect risk ratings and reasons too.
+These small synthetic cases detect regressions; they do not establish accuracy
+on production reviews. Model errors and failed checks stay in the report and
+must count against a candidate. Neither stage harness reproduces production
+slot waits, gateway accounting or fallback routing, so its latency measures
+model calls rather than the entire publication stage.
+
 ## Cluster development loop
 
 Everything that touches a private cluster lives in the gitignored

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "documentation-only",
+    "repository": "example/app",
+    "title": "Clarify startup instructions",
+    "body": "Corrects the documentation command. No executable files change.",
+    "diff": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-Run service\n+Run `app serve`\n",
+    "result": {
+      "summary": {
+        "take": "Clarifies the documented startup command.",
+        "praise": [],
+        "checked": ["cmd/app/main.go: the serve command exists and starts the server."]
+      },
+      "findings": []
+    },
+    "score": [5, 5],
+    "risk": "low"
+  },
+  {
+    "id": "production-data-loss",
+    "repository": "example/app",
+    "title": "Drop the account records table",
+    "body": "This migration runs automatically on deployment against production. No backup or replacement table is created.",
+    "diff": "diff --git a/migrations/004.sql b/migrations/004.sql\n--- /dev/null\n+++ b/migrations/004.sql\n@@ -0,0 +1 @@\n+DROP TABLE accounts;\n",
+    "result": {
+      "summary": {
+        "take": "Removes the account records table.",
+        "praise": [],
+        "impact": [
+          "migrations/004.sql permanently deletes account records; reverting application code cannot restore them."
+        ]
+      },
+      "findings": [
+        {
+          "path": "migrations/004.sql",
+          "line": 1,
+          "severity": "p0",
+          "title": "Retain account records",
+          "explanation": "Dropping accounts destroys production data without a replacement or backup."
+        }
+      ]
+    },
+    "score": [0, 2],
+    "risk": "critical"
+  },
+  {
+    "id": "admin-grant",
+    "repository": "example/app",
+    "title": "Allow the service to manage users",
+    "body": "Grants the application login administrative privileges in production.",
+    "diff": "diff --git a/roles.sql b/roles.sql\n--- a/roles.sql\n+++ b/roles.sql\n@@ -1 +1 @@\n-ALTER ROLE app NOSUPERUSER;\n+ALTER ROLE app SUPERUSER;\n",
+    "result": {
+      "summary": {
+        "take": "Gives the application login superuser access.",
+        "praise": [],
+        "impact": [
+          "roles.sql grants administrative access to production data to app. A revert cannot undo actions taken while it held access."
+        ]
+      },
+      "findings": [
+        {
+          "path": "roles.sql",
+          "line": 1,
+          "severity": "p1",
+          "title": "Keep the application role unprivileged",
+          "explanation": "The app login can now read all production data and change every role."
+        }
+      ]
+    },
+    "score": [0, 3],
+    "risk": "critical"
+  }
+]
