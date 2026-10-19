@@ -352,10 +352,13 @@ func startWorker(
 	g.Go(func() error {
 		return server.Serve(server.Lingering(ctx, linger), cfg.GatewayAddr, gw, gateway.Drain, gatewayLogger)
 	})
-	river.AddWorker(workers, &worker.Review{
+	reviewer := &worker.Review{
 		Base: base, Executor: exec, Steppers: steppers,
 		GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL, WebURL: cfg.WebURLParsed(),
-	})
+	}
+	river.AddWorker(workers, reviewer)
+	river.AddWorker(workers, &worker.Prepare{Review: reviewer})
+	river.AddWorker(workers, &worker.Publish{Review: reviewer})
 	river.AddWorker(workers, &worker.FollowUp{
 		Base: base, Executor: exec, Steppers: steppers, GatewayURL: cfg.GatewayURL, GatewayTokenTTL: cfg.GatewayTokenTTL,
 	})
@@ -489,6 +492,8 @@ func riverConfig(cfg *config.Config, workers *river.Workers, middleware []rivert
 func workerQueues(cfg *config.Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
 		jobs.QueueReview:   {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueuePrepare:  {MaxWorkers: cfg.ReviewWorkers},
+		jobs.QueuePublish:  {MaxWorkers: cfg.ReviewWorkers},
 		jobs.QueueFollowUp: {MaxWorkers: cfg.ReviewWorkers},
 		jobs.QueueThread:   {MaxWorkers: cfg.ThreadWorkers},
 		jobs.QueueIndex:    {MaxWorkers: cfg.IndexWorkers},

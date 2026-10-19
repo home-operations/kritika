@@ -74,7 +74,7 @@ func TestEndedReviewRecordedOnce(t *testing.T) {
 	}
 	for attempt := 1; attempt <= 2; attempt++ {
 		job.Attempt = attempt
-		if err := h.review.Work(h.ctx, job); err != nil {
+		if err := h.workStages(t, h.ctx, h.review, job); err != nil {
 			t.Fatalf("attempt %d: %v", attempt, err)
 		}
 	}
@@ -160,7 +160,7 @@ func TestPublicationSetupInterruption(t *testing.T) {
 				cancel(tt.cause)
 				return nil, context.Canceled
 			})
-			if err := worker.Work(ctx, job); err != nil {
+			if err := h.workStages(t, ctx, worker, job); err != nil {
 				t.Fatalf("Work = %v, want no retry", err)
 			}
 			if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
@@ -186,7 +186,7 @@ func TestUnstartedReviewLogsRunnerFailure(t *testing.T) {
 	var logs bytes.Buffer
 	h.review.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	h.exec.unstarted = errors.New("image registry unavailable")
-	if err := h.review.Work(h.ctx, job); err == nil {
+	if err := h.workStages(t, h.ctx, h.review, job); err == nil {
 		t.Fatal("unstarted runner should retry")
 	}
 	if !strings.Contains(logs.String(), `"runner_error":"image registry unavailable"`) || !strings.Contains(logs.String(), `"attempt":1`) {
@@ -215,7 +215,7 @@ func checkInterruptedAnswer(t *testing.T, number int, want store.ReviewStatus) {
 	ctx, cancel := context.WithCancelCause(h.ctx)
 	defer cancel(nil)
 	h.exec.after = func() { cancel(errors.New("stop initiated")) }
-	err := h.review.Work(ctx, job)
+	err := h.workStages(t, ctx, h.review, job)
 	if !errors.Is(err, context.Cause(ctx)) {
 		t.Fatalf("Work = %v, want shutdown retry", err)
 	}
@@ -247,7 +247,7 @@ func checkInterruptedAnswer(t *testing.T, number int, want store.ReviewStatus) {
 	worker.Executor, worker.Steppers = nil, nil
 	worker.Forges = &forges{f: h.lf}
 	for range 2 {
-		if err := worker.Work(h.ctx, job); err != nil {
+		if err := h.workStages(t, h.ctx, &worker, job); err != nil {
 			t.Fatalf("replay = %v", err)
 		}
 	}
@@ -316,7 +316,7 @@ DROP FUNCTION IF EXISTS reject_record_test()`); err != nil {
 		}
 	})
 	done := make(chan error, 1)
-	go func() { done <- h.review.Work(ctx, job) }()
+	go func() { done <- h.workStages(t, ctx, h.review, job) }()
 	select {
 	case <-locked:
 	case err := <-done:
@@ -409,7 +409,7 @@ func TestSuccessfulRunnerPreparationTermination(t *testing.T) {
 				}
 				cancel(tt.cause)
 			}
-			err := h.review.Work(ctx, job)
+			err := h.workStages(t, ctx, h.review, job)
 			if (err != nil) != tt.retry || (tt.retry && !errors.Is(err, tt.cause)) {
 				t.Fatalf("Work = %v, retry = %v", err, tt.retry)
 			}

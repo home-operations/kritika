@@ -15,6 +15,8 @@ import (
 // Queue names, one per job kind so the worker can bound each separately.
 const (
 	QueueReview   = "review"
+	QueuePrepare  = "review_prepare"
+	QueuePublish  = "review_publish"
 	QueueFollowUp = "followup"
 	QueueThread   = "thread"
 	QueueIndex    = "index"
@@ -22,7 +24,12 @@ const (
 
 // Queues lists the queues whose backlog and pickup delay are monitored.
 func Queues() []string {
-	return []string{QueueReview, QueueFollowUp, QueueThread, QueueIndex}
+	return []string{QueueReview, QueuePrepare, QueuePublish, QueueFollowUp, QueueThread, QueueIndex}
+}
+
+// ReviewKind reports whether a job owns a stage of a review.
+func ReviewKind(kind string) bool {
+	return kind == QueueReview || kind == QueuePrepare || kind == QueuePublish
 }
 
 // TriggerManual is the Trigger a human-requested re-run carries. It is the
@@ -105,6 +112,27 @@ func (ReviewArgs) Kind() string { return "review" }
 // InsertOpts implements river.JobArgsWithInsertOpts.
 func (ReviewArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueueReview, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+}
+
+// PrepareArgs finalizes a saved runner answer, including merge and confidence calls.
+type PrepareArgs struct {
+	ReviewArgs
+	ReviewID string `json:"review_id" river:"unique"`
+}
+
+func (PrepareArgs) Kind() string { return QueuePrepare }
+
+func (PrepareArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: QueuePrepare, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
+}
+
+// PublishArgs delivers a finalized answer without calling a model.
+type PublishArgs PrepareArgs
+
+func (PublishArgs) Kind() string { return QueuePublish }
+
+func (PublishArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: QueuePublish, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
 // FollowUpArgs answers one comment that addressed the bot.

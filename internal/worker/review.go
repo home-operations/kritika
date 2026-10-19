@@ -1,7 +1,7 @@
 // Package worker consumes River jobs. The review worker owns a review from
-// the moment its job starts until write-back: it checks the head is still
-// current, asks the forge for the merge-base, spawns a runner for the
-// checkout work, and records everything about the run.
+// the moment its job starts until the runner answer is checkpointed: it
+// checks the head, spawns a runner, and hands preparation and delivery to
+// their own durable jobs.
 package worker
 
 import (
@@ -152,6 +152,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	// it counts as failed here as the commit status says.
 	end := pullMarks(client, owner, repo, args.Number, logger).start(ctx)
 	defer func() {
+		if publicationHandled {
+			return
+		}
 		mctx, cancel := detach(ctx)
 		defer cancel()
 		end(w.reviewOutcome(mctx, logger, args.AccountID, reviewID, err,
@@ -228,6 +231,9 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		repoNotes: prep.notes, prior: prior, scope: prep.scope, templates: prep.templates,
 		agent: agentOutcome,
 	}
+	phase.handoff = func(ctx context.Context, tx pgx.Tx) error {
+		return phase.advance(ctx, tx, job, jobs.PrepareArgs{ReviewArgs: job.Args, ReviewID: reviewID})
+	}
 	if err := phase.checkpoint(pctx, nil); err != nil {
 		stopPreparation()
 		if ctx.Err() != nil {
@@ -240,9 +246,8 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return w.failReview(fctx, ended, prep.patchID, err.Error())
 	}
 	stopPreparation()
-	status, perr := phase.run(ctx)
 	publicationHandled = true
-	return w.publicationEnded(ctx, job, phase, status, perr, started)
+	return nil
 }
 
 // loadPullRequest reads a job's pull request. One the store does not know

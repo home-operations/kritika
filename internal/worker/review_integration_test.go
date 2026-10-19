@@ -1462,11 +1462,14 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 		Embedders: embedders, Steppers: steppers,
 	})
 	t.Cleanup(gw.Close)
-	river.AddWorker(workers, &Review{
+	reviewer := &Review{
 		Base: wb, Executor: exec, Steppers: steppers, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour,
 		// A stopped run's runner never started here, so no agent row comes.
 		superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
-	})
+	}
+	river.AddWorker(workers, reviewer)
+	river.AddWorker(workers, &Prepare{Review: reviewer})
+	river.AddWorker(workers, &Publish{Review: reviewer})
 	river.AddWorker(workers, &FollowUp{
 		Base: wb, Executor: exec, Steppers: steppers, GatewayURL: gw.URL, GatewayTokenTTL: time.Hour, superviseEvery: 50 * time.Millisecond, rowWait: time.Second,
 		awaitEvery: 100 * time.Millisecond,
@@ -1478,7 +1481,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 	client, err := river.NewClient(riverpgxv5.New(appStore.App()), &river.Config{
 		Queues: map[string]river.QueueConfig{
-			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueFollowUp: {MaxWorkers: 1},
+			jobs.QueueReview: {MaxWorkers: 1}, jobs.QueuePrepare: {MaxWorkers: 1}, jobs.QueuePublish: {MaxWorkers: 1}, jobs.QueueIndex: {MaxWorkers: 1}, jobs.QueueFollowUp: {MaxWorkers: 1},
 		}, Workers: workers,
 		FetchCooldown: 50 * time.Millisecond, FetchPollInterval: 100 * time.Millisecond,
 		Middleware: []rivertype.Middleware{river.WorkerMiddlewareFunc(deadline.wrap)},

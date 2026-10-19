@@ -75,7 +75,7 @@ func TestPreparationScoringInterruption(t *testing.T) {
 					return model.StepResponse{}, scoreCtx.Err()
 				}), nil
 			}}
-			err := h.review.Work(ctx, job)
+			err := h.workStages(t, ctx, h.review, job)
 			if (err != nil) != (tt.want == store.ReviewPrepared) {
 				t.Fatalf("Work = %v, want %s", err, tt.want)
 			}
@@ -92,7 +92,7 @@ func TestPreparationScoringInterruption(t *testing.T) {
 			}
 			if tt.want == store.ReviewPrepared {
 				h.review.Executor = nil
-				if err := h.review.Work(h.ctx, job); err != nil {
+				if err := h.workStages(t, h.ctx, h.review, job); err != nil {
 					t.Fatal(err)
 				}
 				if calls != 2 {
@@ -130,7 +130,7 @@ func TestPreparationSnoozeDuringShutdown(t *testing.T) {
 		}
 		cancel(errors.New("shutdown"))
 	}
-	err := h.review.Work(ctx, job)
+	err := h.workStages(t, ctx, h.review, job)
 	if _, ok := errors.AsType[*river.JobSnoozeError](err); !ok {
 		t.Fatalf("Work = %v, want a labels-changed snooze", err)
 	}
@@ -223,7 +223,7 @@ func TestPreparationMergeRecovery(t *testing.T) {
 		}
 		cancel(errors.New("shutdown"))
 	}
-	if err := h.review.Work(ctx, job); !errors.Is(err, context.Cause(ctx)) {
+	if err := h.workStages(t, ctx, h.review, job); !errors.Is(err, context.Cause(ctx)) {
 		t.Fatalf("Work = %v, want shutdown retry", err)
 	}
 	h.review.Executor = nil
@@ -245,7 +245,7 @@ func TestPreparationMergeRecovery(t *testing.T) {
 			}}, nil
 		}), nil
 	}}
-	if err := h.review.Work(h.ctx, job); err != nil {
+	if err := h.workStages(t, h.ctx, h.review, job); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {

@@ -42,6 +42,8 @@ type publicationPreparation struct {
 // publicationSnapshot freezes the inputs to preparation and delivery.
 // Credentials and model clients are resolved separately.
 type publicationSnapshot struct {
+	Agent           *store.AgentRunRow      `json:",omitempty"`
+	RunID           string                  `json:",omitempty"`
 	Preparation     *publicationPreparation `json:",omitempty"`
 	PriorConfidence *review.Confidence
 	Version         int
@@ -111,16 +113,29 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 			Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef}
 	} else {
 		snapshot.Answer = *answer
+		snapshot.RunID = p.runID
+		if p.agent != nil {
+			snapshot.Agent = &store.AgentRunRow{
+				Sources: p.agent.Sources, SkillsOffered: p.agent.SkillsOffered, SkillsOpened: p.agent.SkillsOpened,
+				CommandsOffered: p.agent.CommandsOffered, CommandsRun: p.agent.CommandsRun,
+			}
+		}
 	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("worker: encode publication: %w", err)
 	}
 	err = p.w.Store.WithAccount(ctx, p.account.ID(), func(tx pgx.Tx) error {
+		var err error
 		if p.pending != nil {
-			return store.ReplacePublication(ctx, tx, p.reviewID, p.pending, payload)
+			err = store.ReplacePublication(ctx, tx, p.reviewID, p.pending, payload)
+		} else {
+			err = store.SavePublication(ctx, tx, p.reviewID, payload)
 		}
-		return store.SavePublication(ctx, tx, p.reviewID, payload)
+		if err == nil && p.handoff != nil {
+			err = p.handoff(ctx, tx)
+		}
+		return err
 	})
 	if err == nil {
 		p.pending = nil
@@ -156,6 +171,9 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	p.resolved, p.heldBack = restoreFindings(s.Resolved), s.HeldBack
 	p.confidence, p.unscored, p.unfinished = s.Confidence, s.Unscored, s.Unfinished
 	p.agent = &store.AgentRunRow{Sources: s.Sources}
+	if s.Agent != nil {
+		p.agent, p.runID = s.Agent, s.RunID
+	}
 	if s.Version == 2 {
 		if s.Preparation == nil {
 			return nil, errors.New("worker: publication preparation missing")
@@ -185,13 +203,18 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
 	}
-	if err != nil || saved.Status != store.ReviewPrepared {
+	if err != nil || saved.Status != store.ReviewPrepared || saved.JobID != job.ID {
 		return true, err
 	}
 	started := time.Now()
 	p := &publishPhase{w: w, file: file, reviewID: saved.ReviewID, jobID: job.ID, logger: logger,
 		pr: &pullRequest{id: saved.PullRequestID, repositoryID: saved.RepositoryID, repository: saved.Repository,
 			number: saved.Number, headSHA: saved.HeadSHA, authorIsBot: saved.AuthorIsBot, closed: saved.Closed}}
+	if job.Kind == jobs.QueuePrepare {
+		p.handoff = func(ctx context.Context, tx pgx.Tx) error {
+			return p.advance(ctx, tx, job, jobs.PublishArgs{ReviewArgs: job.Args, ReviewID: saved.ReviewID})
+		}
+	}
 	handled := false
 	defer func() {
 		if !handled && err != nil {
@@ -201,7 +224,7 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 				err = w.finishPublication(ctx, job.Args.AccountID, p, decision, started)
 			}
 		}
-		if p.client != nil {
+		if p.client != nil && (!handled || err != nil || p.handoff == nil) {
 			w.settlePublication(ctx, job.Args.AccountID, p)
 		}
 	}()
@@ -231,11 +254,17 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	var status store.ReviewStatus
 	var deliveryErr error
 	if p.pending != nil {
+		if job.Kind == jobs.QueuePublish {
+			return true, river.JobCancel(errors.New("worker: publication answer is not finalized"))
+		}
 		status, deliveryErr = p.run(ctx)
 	} else {
 		status, deliveryErr = p.deliver(ctx, answer)
 	}
 	handled = true
+	if deliveryErr == nil && status == store.ReviewPrepared && p.handoff != nil {
+		return true, nil
+	}
 	return true, w.publicationEnded(ctx, job, p, status, deliveryErr, started)
 }
 

@@ -13,6 +13,7 @@ import (
 // Publication is the checkpoint a review job resumes without another runner.
 // Terminal checkpoints keep an empty marker so a retry after completion is a no-op.
 type Publication struct {
+	JobID                            int64
 	CancelRequested                  bool
 	ReviewID, PullRequestID, HeadSHA string
 	RepositoryID, Repository, Closed string
@@ -53,13 +54,14 @@ func ReplacePublication(ctx context.Context, tx pgx.Tx, reviewID string, previou
 // or ErrNotFound before either is recorded.
 func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, error) {
 	var p Publication
-	err := tx.QueryRow(ctx, `SELECT r.id, r.pull_request_id, r.head_sha, r.publication, r.status,
+	err := tx.QueryRow(ctx, `SELECT r.river_job_id, r.id, r.pull_request_id, r.head_sha, r.publication, r.status,
 		r.cancel_requested_at IS NOT NULL, p.repository_id, repo.name, p.number, p.author_is_bot,
 		CASE WHEN p.merged THEN 'the pull request was merged' WHEN p.state <> 'open' THEN 'the pull request is closed' ELSE '' END
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
-		WHERE r.river_job_id = $1 AND (r.publication IS NOT NULL OR (r.status = 'prepared' AND r.cancel_requested_at IS NOT NULL))
+		WHERE (r.river_job_id = $1 OR EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = r.id AND rr.river_job_id = $1))
+		AND (r.publication IS NOT NULL OR (r.status = 'prepared' AND r.cancel_requested_at IS NOT NULL))
 		ORDER BY r.created_at DESC LIMIT 1`, jobID).
-		Scan(&p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status, &p.CancelRequested,
+		Scan(&p.JobID, &p.ReviewID, &p.PullRequestID, &p.HeadSHA, &p.Payload, &p.Status, &p.CancelRequested,
 			&p.RepositoryID, &p.Repository, &p.Number, &p.AuthorIsBot, &p.Closed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
@@ -68,6 +70,19 @@ func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, 
 		return p, fmt.Errorf("store: read publication: %w", err)
 	}
 	return p, nil
+}
+
+// AdvancePublication transfers a prepared review to the next durable stage.
+func AdvancePublication(ctx context.Context, tx pgx.Tx, reviewID string, previous, next int64) error {
+	tag, err := tx.Exec(ctx, `UPDATE reviews SET river_job_id = $3
+		WHERE id = $1 AND river_job_id = $2 AND status = 'prepared' AND publication IS NOT NULL`, reviewID, previous, next)
+	if err != nil {
+		return fmt.Errorf("store: advance publication: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return errors.New("store: publication ownership changed")
+	}
+	return nil
 }
 
 // ErrPublicationBusy means another publisher owns this pull request.

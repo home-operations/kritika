@@ -60,6 +60,7 @@ type publishPhase struct {
 	statusReported bool
 	invalidAnswer  bool
 	pending        json.RawMessage
+	handoff        func(context.Context, pgx.Tx) error
 	// confidence is the score judge got, nil when the repository asks for
 	// none or, with unscored set, when the scorer did not answer.
 	confidence *review.Confidence
@@ -109,6 +110,9 @@ func (p *publishPhase) run(job context.Context) (store.ReviewStatus, error) {
 	}
 	if err := p.checkpoint(job, answer); err != nil {
 		return store.ReviewFailed, err
+	}
+	if p.handoff != nil {
+		return store.ReviewPrepared, nil
 	}
 	return p.deliver(job, answer)
 }
