@@ -78,12 +78,37 @@ Review quality is measured offline: `mise run bench-mine` builds a corpus,
 from sibling checkouts of flate and konflate, of pull requests whose lines a
 later fix commit changed, and `mise run
 bench` (with `OPENROUTER_API_KEY`) runs them through the service's own
-fetch, context and prompt code as one-step agentic reviews, what
+fetch, context and prompt code. By default these are one-step agentic reviews, what
 `agent.steps: 1` sends: the agentic system prompt, the read-only tools
 over the head commit and a `submit_review` the one step is told to make. Stage 4, the
 similar-code index, needs a database and is left out. Each case runs with
 the diff alone and with the context stages, reporting recall on the
 expected findings, cost and latency per ablation.
+
+To compare model effort and output limits, repeat the same selected cases and
+modes with these environment variables. Every report records the settings,
+per-case step/tool counts and input/output tokens, alongside quality and latency.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `KRITIKA_BENCH_EFFORT` | Provider default | Reasoning effort supported by the chosen model |
+| `KRITIKA_BENCH_STEPS` | `1` | Step the agent is told to submit on, with up to two more steps for a missing submission; use multiple steps to evaluate tool use |
+| `KRITIKA_BENCH_OUTPUT_TOKENS` | Agent default | Output limit per step, including reasoning where the provider counts it |
+| `KRITIKA_BENCH_TOOL_BYTES` | Agent default | Maximum bytes returned by each tool |
+
+For example, run the same small corpus selection at two efforts:
+
+```sh
+env KRITIKA_BENCH_LIMIT=3 KRITIKA_BENCH_STEPS=10 KRITIKA_BENCH_EFFORT=high mise run bench
+env KRITIKA_BENCH_LIMIT=3 KRITIKA_BENCH_STEPS=10 KRITIKA_BENCH_EFFORT=medium mise run bench
+```
+
+Live runs spend model tokens. Repeat comparisons to distinguish variance from
+an improvement, inspect errors and unmatched findings, and review the actual
+findings before changing production defaults. Expected line matches are a
+recall proxy, not a complete quality judgment. Dry runs validate input
+construction but cannot establish quality or model latency. This harness uses
+repository read tools; it does not reproduce the production command environment.
 
 ## Cluster development loop
 

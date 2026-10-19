@@ -44,6 +44,8 @@ func keep(cs []contextpack.Chunk, stage string) []contextpack.Chunk {
 
 // caseResult is one case under one mode.
 type caseResult struct {
+	Steps       int              `json:"steps"`
+	ToolCalls   map[string]int   `json:"tool_calls,omitempty"`
 	ID          string           `json:"id"`
 	Mode        string           `json:"mode"`
 	Findings    []review.Finding `json:"findings"`
@@ -65,6 +67,7 @@ type caseResult struct {
 
 // report is what a run writes.
 type report struct {
+	Options benchOptions          `json:"options"`
 	Model   string                `json:"model"`
 	When    time.Time             `json:"when"`
 	Dry     bool                  `json:"dry"`
@@ -74,16 +77,17 @@ type report struct {
 }
 
 type modeTotals struct {
-	Cases       int     `json:"cases"`
-	Errors      int     `json:"errors"`
-	MustRecall  float64 `json:"must_recall"`
-	NiceRecall  float64 `json:"nice_recall"`
-	Findings    int     `json:"findings"`
-	Matched     int     `json:"matched_findings"`
-	MatchRate   float64 `json:"match_rate"`
-	CostUSD     float64 `json:"cost_usd"`
-	MeanLatency float64 `json:"mean_latency_s"`
-	InputTokens int64   `json:"input_tokens"`
+	Cases        int     `json:"cases"`
+	Errors       int     `json:"errors"`
+	MustRecall   float64 `json:"must_recall"`
+	NiceRecall   float64 `json:"nice_recall"`
+	Findings     int     `json:"findings"`
+	Matched      int     `json:"matched_findings"`
+	MatchRate    float64 `json:"match_rate"`
+	CostUSD      float64 `json:"cost_usd"`
+	MeanLatency  float64 `json:"mean_latency_s"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
 }
 
 func envOr(key, def string) string {
@@ -105,6 +109,10 @@ func envOr(key, def string) string {
 //	KRITIKA_BENCH_OUT       results directory (default bench/results)
 func TestBench(t *testing.T) {
 	ctx := t.Context()
+	opts, err := readOptions(os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dry := os.Getenv("KRITIKA_BENCH_DRY") == "1"
 	key := os.Getenv("OPENROUTER_API_KEY")
 	if key == "" && !dry {
@@ -142,9 +150,10 @@ func TestBench(t *testing.T) {
 		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil); err != nil {
 			t.Fatal(err)
 		}
+		stepper = effortStepper{Stepper: stepper, effort: opts.Effort}
 	}
 
-	rep := report{Model: modelID, When: time.Now().UTC(), Dry: dry, Cases: len(cases), Modes: map[string]modeTotals{}}
+	rep := report{Options: opts, Model: modelID, When: time.Now().UTC(), Dry: dry, Cases: len(cases), Modes: map[string]modeTotals{}}
 	for _, c := range cases {
 		t.Logf("%s: fetching %s..%s", c.ID, c.Base[:7], c.Head[:7])
 		res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: c.CloneURL, Token: os.Getenv("GITHUB_TOKEN"), Head: c.Head, Base: c.Base})
@@ -168,10 +177,7 @@ func TestBench(t *testing.T) {
 			for _, ch := range selected {
 				cr.Context[ch.Stage]++
 			}
-			// The prompt a review sends when agent.steps is 1: the agentic
-			// system prompt, the user message within its budget, the read-only
-			// tools over the head and the submit_review its one step is told to make. Stage 4 needs
-			// an index, which the bench has none of.
+			// Stage 4 needs an index, which the bench has none of.
 			system := review.SystemPrompt(nil, nil, nil, false, false, false)
 			msg, _, _, _ := review.Build(review.Input{
 				Repository: c.Repository, Number: c.PR, Title: c.Title, Author: "author", BaseRef: "main",
@@ -187,7 +193,7 @@ func TestBench(t *testing.T) {
 			}
 			if !dry {
 				tree := agent.NewTree(headTree, nil)
-				limits := agent.Limits{MaxSteps: 1}.WithDefaults()
+				limits := opts.limits()
 				started := time.Now()
 				out := agent.Run{
 					Stepper: stepper, Model: modelID, System: system, User: msg,
@@ -199,6 +205,7 @@ func TestBench(t *testing.T) {
 					Submit: runner.SubmitTool(false, false), Limits: limits,
 				}.Do(ctx)
 				cr.Latency = time.Since(started)
+				cr.Steps, cr.ToolCalls = out.Steps, out.ToolCalls
 				cr.Input, cr.Cached, cr.Output, cr.CostUSD = out.Usage.Prompt(), out.Usage.CacheRead, out.Usage.Output, out.CostUSD
 				switch {
 				case out.Stop == agent.StopError:
@@ -264,6 +271,11 @@ func totals(results []caseResult, mode string) modeTotals {
 			continue
 		}
 		tot.Cases++
+		// A failed case spent its tokens all the same: a budget that cuts
+		// off a submission must not look cheaper for it.
+		tot.CostUSD += r.CostUSD
+		tot.InputTokens += r.Input
+		tot.OutputTokens += r.Output
 		if r.Error != "" {
 			tot.Errors++
 			continue
@@ -274,8 +286,6 @@ func totals(results []caseResult, mode string) modeTotals {
 		niceHit += r.NiceHit
 		tot.Findings += len(r.Findings)
 		tot.Matched += r.Matched
-		tot.CostUSD += r.CostUSD
-		tot.InputTokens += r.Input
 		latency += r.Latency
 	}
 	if must > 0 {
@@ -314,7 +324,7 @@ func writeReport(t *testing.T, rep report) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	name := filepath.Join(dir, rep.When.Format("20060102-150405")+".json")
+	name := filepath.Join(dir, rep.When.Format("20060102-150405.000000000")+".json")
 	raw, _ := json.MarshalIndent(rep, "", "  ")
 	if err := os.WriteFile(name, raw, 0o644); err != nil {
 		t.Fatal(err)
