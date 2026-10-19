@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -84,6 +85,40 @@ func TestReadFileTool(t *testing.T) {
 			t.Fatal("expected error for a blob over the size limit")
 		}
 	})
+}
+
+func TestGrepContext(t *testing.T) {
+	tree := NewTree(testTree(t), []string{"generated/**"})
+	for _, tt := range []struct {
+		name, input, want string
+		bad               bool
+	}{
+		{name: "default", input: `{"pattern":"SORTME","path_glob":"alpha.go"}`, want: "alpha.go:1: SORTME one\nalpha.go:3: SORTME three"},
+		{name: "overlapping windows", input: `{"pattern":"SORTME","path_glob":"alpha.go","context_lines":1}`, want: "alpha.go:1: SORTME one\nalpha.go:2: \nalpha.go:3: SORTME three"},
+		{name: "match limit excludes later window", input: `{"pattern":"SORTME","path_glob":"alpha.go","context_lines":1,"max_results":1}`, want: "alpha.go:1: SORTME one\nalpha.go:2: "},
+		{name: "context cap", input: `{"pattern":"^MANY$","path_glob":"many.txt","context_lines":999,"max_results":1}`, want: numberedMatches(11)},
+		{name: "negative", input: `{"pattern":"SORTME","context_lines":-1}`, bad: true},
+		{name: "no match", input: `{"pattern":"absent","context_lines":2}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GrepTool(tree, 1<<20).Run(t.Context(), json.RawMessage(tt.input))
+			if (err != nil) != tt.bad || got != tt.want {
+				t.Fatalf("grep = %q, %v; want %q, error %v", got, err, tt.want, tt.bad)
+			}
+		})
+	}
+	out, err := GrepTool(tree, 100).Run(t.Context(), json.RawMessage(`{"pattern":"MANY","context_lines":10}`))
+	if err != nil || len(out) > 100 || !strings.Contains(out, "[truncated") {
+		t.Fatalf("bounded output = %q, %v", out, err)
+	}
+}
+
+func numberedMatches(n int) string {
+	var lines []string
+	for i := 1; i <= n; i++ {
+		lines = append(lines, fmt.Sprintf("many.txt:%d: MANY", i))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestGrepTool(t *testing.T) {
