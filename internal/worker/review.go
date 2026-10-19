@@ -174,6 +174,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}
 	provider, _ := file.Provider(account, settings.Models.Review.Provider())
 	granted := pinModels(ctx, logger, w.Steppers, file, account, settings.Models)
+	spec.CheckpointScope = fmt.Sprintf("%s/%s/%s", file.Hash(), granted.Effort, granted.Fallback)
 	cont := w.continuation(ctx, logger, args.AccountID, prior, args.HeadSHA, mergeBase, granted.Review, provider.Type)
 	parts := w.splitParts(ctx, client, pr, settings.Agent.MaxParts, logger)
 	extra, releaseExtra := w.freeSlots(ctx, logger, account, settings, parts-1, job.ID)

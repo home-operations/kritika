@@ -114,7 +114,7 @@
                 <td class="num">{i + 1}</td>
                 <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span></td>
                 <td class="num">{p.steps}</td>
-                <td>{p.stop}</td>
+                <td title={p.reusedFrom ? `Reused from run ${p.reusedFrom}` : undefined}>{p.reusedFrom ? 'Reused' : p.stop}</td>
                 <td class="error-cell text-danger text-ui-sm max-w-80 [word-break:break-word]">{p.error}</td>
               </tr>
             {/each}

@@ -24,7 +24,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 34
+const SpecVersion = 35
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -189,6 +189,8 @@ type Spec struct {
 	Version int    `json:"version"`
 	Kind    Kind   `json:"kind"`
 	RunID   string `json:"runId"`
+	// CheckpointScope binds part reuse to the configuration and granted model policy.
+	CheckpointScope string `json:"checkpointScope,omitempty"`
 	// CloneURL is fetched with Secrets.GitToken.
 	CloneURL string `json:"cloneUrl"`
 	// Head is the commit under review or to index. Base is the merge-base

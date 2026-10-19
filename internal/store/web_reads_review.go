@@ -162,11 +162,12 @@ type AgentRunRow struct {
 // files it reviewed, why it stopped and, once it submitted, the summary it
 // wrote.
 type AgentPart struct {
-	Paths   []string        `json:"paths"`
-	Stop    string          `json:"stop"`
-	Error   string          `json:"error,omitempty"`
-	Steps   int             `json:"steps"`
-	Summary json.RawMessage `json:"summary,omitempty"`
+	ReusedFrom string          `json:"reused_from,omitempty"`
+	Paths      []string        `json:"paths"`
+	Stop       string          `json:"stop"`
+	Error      string          `json:"error,omitempty"`
+	Steps      int             `json:"steps"`
+	Summary    json.RawMessage `json:"summary,omitempty"`
 }
 
 // FindAgentRun returns the agent run of a runner run, or ErrNotFound.

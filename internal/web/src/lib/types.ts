@@ -673,6 +673,7 @@ export interface AgentRun {
 
 // AgentPart is one part of a split review: its files, why its agent stopped, with the error it ended on, and its steps.
 export interface AgentPart {
+  reusedFrom?: string;
   paths: string[];
   stop: string;
   error: string;

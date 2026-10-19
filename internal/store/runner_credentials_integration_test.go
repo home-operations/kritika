@@ -34,6 +34,8 @@ func TestRunnerNotificationsConveyNoAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	inserts := map[string]string{
+		"review_part_checkpoints": `INSERT INTO review_part_checkpoints
+			(runner_run_id, account_id, input_hash, part, source_run_id, payload) VALUES ($1, $2, 'inputs', 1, $1, '{}')`,
 		"context_packs": `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff)
 			VALUES ($1, $2, 'head', 'base', 'patch', 'private diff')`,
 		"index_packs": `INSERT INTO index_packs (runner_run_id, account_id, mode) VALUES ($1, $2, 'full')`,

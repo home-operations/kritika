@@ -169,6 +169,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON reviews, runner_runs, context_packs, findings, sticky_comments, usage TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON index_runs, index_packs, index_staging, followups, dismissals, poll_state TO ` + app,
 		`GRANT SELECT ON index_schema, agent_runs, agent_conversations TO ` + app,
+		`GRANT SELECT, INSERT, DELETE ON review_part_checkpoints TO ` + app,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON gateway_tokens, job_heartbeats TO ` + app,
 		// The web dashboard's own tables: all instance-level (no RLS,
 		// access control lives in web code) except model_calls, which is
@@ -183,6 +184,7 @@ func (s *Store) grant(ctx context.Context, appRole, runnerRole string) error {
 		// account or review its run belongs to.
 		`GRANT SELECT, UPDATE (` + strings.Join(runnerRunColumns, ", ") + `) ON runner_runs TO ` + runner,
 		`GRANT SELECT, INSERT ON context_packs, index_packs, index_staging, agent_runs, agent_conversations TO ` + runner,
+		`GRANT SELECT, INSERT ON review_part_checkpoints TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + runner,
 		`GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO ` + app,
 	}

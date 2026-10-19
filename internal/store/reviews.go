@@ -92,6 +92,9 @@ func StartReview(ctx context.Context, tx pgx.Tx, r NewReview) (Started, error) {
 		return Started{}, fmt.Errorf("store: cancel the older reviews: %w", err)
 	}
 	s.RunID, err = InsertRunnerRun(ctx, tx, r.AccountID, RunnerKindReview, s.ReviewID, r.JobID)
+	if err == nil {
+		err = copyPartCheckpoints(ctx, tx, s.RunID, r.JobID)
+	}
 	return s, err
 }
 
