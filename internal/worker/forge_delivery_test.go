@@ -6,16 +6,18 @@ import (
 	"log/slog"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/home-operations/kritika/internal/forge"
 )
 
+// release, when set, holds SetStatus until it is closed, whatever its
+// context says.
 type deliveryForge struct {
 	forge.Client
-	inline, status       chan struct{}
-	inlineErr, statusErr error
-	blockStatus          bool
+	inline, status, release chan struct{}
+	inlineErr, statusErr    error
 }
 
 func (f *deliveryForge) CreateReview(ctx context.Context, _, _ string, _ int, _ string, _ []forge.InlineComment) ([]int64, error) {
@@ -30,9 +32,9 @@ func (f *deliveryForge) CreateReview(ctx context.Context, _, _ string, _ int, _ 
 
 func (f *deliveryForge) SetStatus(ctx context.Context, _, _, _ string, _ forge.StatusState, _ string) error {
 	close(f.status)
-	if f.blockStatus {
-		<-ctx.Done()
-		return ctx.Err()
+	if f.release != nil {
+		<-f.release
+		return f.statusErr
 	}
 	select {
 	case <-f.inline:
@@ -42,29 +44,30 @@ func (f *deliveryForge) SetStatus(ctx context.Context, _, _, _ string, _ forge.S
 	}
 }
 
-func TestInlineAndStatusDrainOnCancel(t *testing.T) {
-	f := &deliveryForge{inline: make(chan struct{}), status: make(chan struct{}), blockStatus: true}
-	p := &publishPhase{pr: &pullRequest{repository: "owner/repo"}, client: f, logger: slog.Default()}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		_, _ = p.postInlineAndStatus(ctx, nil, 0)
-		close(done)
-	}()
-	<-f.status
-	<-f.inline
-	select {
-	case <-done:
-		t.Fatal("returned before status delivery finished")
-	default:
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("delivery did not drain on cancellation")
-	}
+// The status request is joined before the publication lock is let go, even
+// once the inline review has returned and the job has been canceled.
+func TestInlineAndStatusWaitForStatus(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &deliveryForge{inline: make(chan struct{}), status: make(chan struct{}), release: make(chan struct{})}
+		p := &publishPhase{pr: &pullRequest{repository: "owner/repo"}, client: f, logger: slog.Default()}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() {
+			_, _ = p.postInlineAndStatus(ctx, nil, 0)
+			close(done)
+		}()
+		<-f.status
+		<-f.inline
+		cancel()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("returned while the status request was in flight")
+		default:
+		}
+		close(f.release)
+		<-done
+	})
 }
 
 func TestInlineAndStatusOverlap(t *testing.T) {
