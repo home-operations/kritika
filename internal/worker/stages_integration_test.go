@@ -5,6 +5,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -165,4 +166,55 @@ func TestPreparationFailureSettlesMarks(t *testing.T) {
 		on := h.lf.pullReactions[h.number]
 		return on != nil && !on[forge.ReactionEyes] && on[forge.ReactionFailed]
 	})
+}
+
+// TestStageAfterCloseReplacesStatus: a pull request closed once its runner
+// is done still gets the review's outcome in place of the pending status it
+// set, as it did when one job carried the review through; only a review
+// that began after the close sets none. The worker read the pull request
+// open just before the review row was made, so a close that lands in
+// between is one the review began under all the same.
+func TestStageAfterCloseReplacesStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		number   int
+		closedAt string
+	}{
+		{"closed after the review began", 1102, "now()"},
+		{"closed as the review began", 1103, "(SELECT min(created_at) FROM reviews WHERE pull_request_id = pull_requests.id) - interval '1 second'"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newAgenticHarness(t, tt.number)
+			job := queuedOutcomeReview(t, h)
+			h.sm.reset(scriptSubmit)
+			closed := false
+			h.exec.after = func() {
+				err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+					tag, err := tx.Exec(h.ctx, `UPDATE pull_requests SET state = 'closed', closed_at = `+tt.closedAt+`
+						WHERE repository_id = $1 AND number = $2`, job.Args.RepositoryID, h.number)
+					if err == nil && tag.RowsAffected() != 1 {
+						err = fmt.Errorf("%d pull requests closed", tag.RowsAffected())
+					}
+					return err
+				})
+				if err != nil {
+					t.Error(err)
+				}
+				closed = true
+			}
+			if err := h.workStages(t, h.ctx, h.review, job); err != nil {
+				t.Fatal(err)
+			}
+			if !closed {
+				t.Fatal("the runner did not run")
+			}
+			if job.Kind != jobs.QueuePublish {
+				t.Fatalf("last stage = %s", job.Kind)
+			}
+			if _, status, why := h.waitReview(t, h.head); status != "completed" {
+				t.Fatalf("review = %s: %s", status, why)
+			}
+			h.waitForgeStatus(t, "success: kritika: 1 finding(s)")
+		})
+	}
 }

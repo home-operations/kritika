@@ -51,12 +51,16 @@ func ReplacePublication(ctx context.Context, tx pgx.Tx, reviewID string, previou
 }
 
 // ReadPublication returns the checkpoint or prepared cancellation of jobID,
-// or ErrNotFound before either is recorded.
+// or ErrNotFound before either is recorded. Closed is set only for a review
+// that began after its pull request was merged or closed, a look back that
+// sets no commit status: one the pull request closed under keeps the
+// pending status it set, which its outcome has to replace.
 func ReadPublication(ctx context.Context, tx pgx.Tx, jobID int64) (Publication, error) {
 	var p Publication
 	err := tx.QueryRow(ctx, `SELECT r.river_job_id, r.id, r.pull_request_id, r.head_sha, r.publication, r.status,
 		r.cancel_requested_at IS NOT NULL, p.repository_id, repo.name, p.number, p.author_is_bot,
-		CASE WHEN p.merged THEN 'the pull request was merged' WHEN p.state <> 'open' THEN 'the pull request is closed' ELSE '' END
+		CASE WHEN p.state = 'open' OR r.created_at < p.closed_at THEN ''
+			WHEN p.merged THEN 'the pull request was merged' ELSE 'the pull request is closed' END
 		FROM reviews r JOIN pull_requests p ON p.id = r.pull_request_id JOIN repositories repo ON repo.id = p.repository_id
 		WHERE (r.river_job_id = $1 OR EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = r.id AND rr.river_job_id = $1))
 		AND (r.publication IS NOT NULL OR (r.status = 'prepared' AND r.cancel_requested_at IS NOT NULL))

@@ -164,9 +164,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	// interrupted it.
 	p.settings.Review.Dashboard = p.file.Settings(p.account, p.pr.repository).Review.Dashboard
 	p.templates, p.scope, p.trigger = s.Templates, s.Scope, s.Trigger
-	if p.pr.closed == "" {
-		p.pr.closed = s.Closed
-	}
+	p.pr.closed = s.Closed
 	p.repoNotes = s.RepoNotes
 	p.prior = priorReview{id: s.PriorID, confidence: s.PriorConfidence, headSHA: s.PriorHead, diagram: s.PriorDiagram,
 		findings: restoreFindings(s.Prior), dismissed: s.Dismissed}
@@ -235,12 +233,13 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if err != nil {
 		return true, err
 	}
-	p.client, err = w.client(ctx, file, p.account, p.pr.repository)
+	client, err := w.client(ctx, file, p.account, p.pr.repository)
 	if err != nil {
 		return true, err
 	}
+	p.client = client
 	if p.pr.closed != "" {
-		p.client = statusless{p.client}
+		p.client = statusless{client}
 	}
 	if saved.CancelRequested {
 		handled = true
@@ -250,8 +249,13 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if err != nil {
 		return true, river.JobCancel(err)
 	}
+	// The checkpoint knows whether the review began on an open pull
+	// request, which is what set its pending status; a close since, even
+	// one the row's timestamps put before the review, leaves the outcome
+	// to replace it.
+	p.client = client
 	if p.pr.closed != "" {
-		p.client = statusless{p.client}
+		p.client = statusless{client}
 	}
 	logger.Info("resuming review publication", "review", saved.ReviewID)
 	var status store.ReviewStatus
