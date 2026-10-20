@@ -28,7 +28,6 @@ env:
 
 jobs:
   docs:
-    if: ${{ github.event_name != 'push' }}
     name: Docs
     uses: $/.github/workflows/docs.yaml
     permissions:
@@ -62,8 +61,8 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-lint-
 
       # This cache holds analyzer facts, so a stale or partial entry turns
       # checks like SA5011 into false positives on untouched code. Hence the
@@ -141,8 +140,8 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-unit-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-unit-
 
       - name: Check go.mod tidiness
         run: mise run tidy-check
@@ -178,8 +177,8 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-integration-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-integration-
 
       # Runs the store suite against a throwaway VectorChord container with the
       # owner, application and runner roles, the same way it runs locally.
