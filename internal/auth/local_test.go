@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -13,19 +14,19 @@ func TestAttempts(t *testing.T) {
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
 	for range maxFailedSignIns {
-		if !a.allowed("1.2.3.4") {
+		if !a.begin("1.2.3.4") {
 			t.Fatal("refused before the limit")
 		}
-		a.fail("1.2.3.4")
+		a.finish("1.2.3.4", true)
 	}
-	if a.allowed("1.2.3.4") {
+	if a.begin("1.2.3.4") {
 		t.Fatal("allowed past the limit")
 	}
-	if !a.allowed("5.6.7.8") {
+	if !a.begin("5.6.7.8") {
 		t.Fatal("another client was held to the first's limit")
 	}
 	now = now.Add(failedSignInWindow)
-	if !a.allowed("1.2.3.4") {
+	if !a.begin("1.2.3.4") {
 		t.Fatal("still refused after the window")
 	}
 }
@@ -37,10 +38,13 @@ func TestAttempts(t *testing.T) {
 func TestAttemptsStayBounded(t *testing.T) {
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
-	a.fail("first")
+	a.begin("first")
+	a.finish("first", true)
 	for i := range maxTrackedClients + 100 {
 		now = now.Add(time.Millisecond)
-		a.fail(fmt.Sprintf("2001:db8::%x", i))
+		client := fmt.Sprintf("2001:db8::%x", i)
+		a.begin(client)
+		a.finish(client, true)
 	}
 	if len(a.failed) > maxTrackedClients {
 		t.Fatalf("%d clients tracked, cap is %d", len(a.failed), maxTrackedClients)
@@ -53,9 +57,69 @@ func TestAttemptsStayBounded(t *testing.T) {
 		t.Fatal("a window newer than the oldest was dropped")
 	}
 	last := fmt.Sprintf("2001:db8::%x", maxTrackedClients+99)
-	a.fail(last)
+	a.begin(last)
+	a.finish(last, true)
 	if got := a.failed[last].n; got != 2 || len(a.failed) > maxTrackedClients {
 		t.Fatalf("count = %d with %d tracked; a tracked client failing again keeps its count and evicts nothing", got, len(a.failed))
+	}
+}
+
+func TestAttemptsRelease(t *testing.T) {
+	a := newAttempts(time.Now)
+	for range maxFailedSignIns * 2 {
+		if !a.begin("client") {
+			t.Fatal("a successful or invalid request consumed the limit")
+		}
+		a.finish("client", false)
+	}
+	if len(a.failed) != 0 {
+		t.Fatal("released requests left empty client windows")
+	}
+}
+
+func TestAttemptsPendingAcrossWindows(t *testing.T) {
+	now := time.Now()
+	a := newAttempts(func() time.Time { return now })
+	for range maxFailedSignIns {
+		if !a.begin("client") {
+			t.Fatal("refused before the limit")
+		}
+	}
+	now = now.Add(failedSignInWindow)
+	if a.begin("client") {
+		t.Fatal("expiring the failed window discarded pending attempts")
+	}
+	a.finish("client", false)
+	if !a.begin("client") {
+		t.Fatal("releasing a pending attempt did not free its slot")
+	}
+	for range maxFailedSignIns {
+		a.finish("client", true)
+	}
+	if a.begin("client") {
+		t.Fatal("failures completing after rollover did not count")
+	}
+	now = now.Add(failedSignInWindow)
+	if !a.begin("client") {
+		t.Fatal("completed failures did not expire")
+	}
+}
+
+func TestAttemptsPendingStayBounded(t *testing.T) {
+	now := time.Now()
+	a := newAttempts(func() time.Time { return now })
+	for i := range maxTrackedClients {
+		if !a.begin(fmt.Sprintf("client-%d", i)) {
+			t.Fatal("refused before the client limit")
+		}
+	}
+	now = now.Add(failedSignInWindow)
+	if a.begin("new-client") || len(a.failed) != maxTrackedClients {
+		t.Fatal("pending clients were evicted or exceeded the memory bound")
+	}
+	a.finish("client-0", false)
+	if !a.begin("new-client") || len(a.failed) != maxTrackedClients {
+		t.Fatal("a released client did not free space")
 	}
 }
 
@@ -105,4 +169,48 @@ func TestLocalSignInRefuses(t *testing.T) {
 	if w := post(`{"user":"admin","password":"s3cret"}`, "10.0.0.2"); w.Code != http.StatusNotFound {
 		t.Fatalf("without a password: %d, want 404", w.Code)
 	}
+}
+
+type blockedPasswordBody struct {
+	release <-chan struct{}
+	body    *strings.Reader
+}
+
+func (b *blockedPasswordBody) Read(p []byte) (int, error) {
+	<-b.release
+	return b.body.Read(p)
+}
+
+func (*blockedPasswordBody) Close() error { return nil }
+
+func TestLocalSignInConcurrentAttempts(t *testing.T) {
+	h := testHandler(t, "https://kritika.example.com", testFile(t, "auth:\n"+adminPassword))
+	mux := http.NewServeMux()
+	h.Register(mux)
+	synctest.Test(t, func(t *testing.T) {
+		const requests = maxFailedSignIns * 10
+		release := make(chan struct{})
+		results := make(chan int, requests)
+		for range requests {
+			go func() {
+				r := httptest.NewRequest(http.MethodPost, "/auth/local", nil)
+				r.Body = &blockedPasswordBody{release: release, body: strings.NewReader(`{"user":"admin","password":"wrong"}`)}
+				r.RemoteAddr = "192.0.2.1:1234"
+				r.Header.Set("X-Kritika", "1")
+				r.Header.Set("Origin", "https://kritika.example.com")
+				w := httptest.NewRecorder()
+				mux.ServeHTTP(w, r)
+				results <- w.Code
+			}()
+		}
+		synctest.Wait()
+		close(release)
+		counts := map[int]int{}
+		for range requests {
+			counts[<-results]++
+		}
+		if counts[http.StatusUnauthorized] != maxFailedSignIns || counts[http.StatusTooManyRequests] != requests-maxFailedSignIns {
+			t.Fatalf("concurrent sign-in responses = %v, want %d checked and %d limited", counts, maxFailedSignIns, requests-maxFailedSignIns)
+		}
+	})
 }

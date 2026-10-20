@@ -23,11 +23,11 @@ const (
 	// maxTrackedClients bounds the limiter's memory: at it, expired windows
 	// are dropped, and failing that the oldest one, so a flood of addresses
 	// costs the client it displaces its count rather than the process its
-	// memory.
+	// memory. In-flight attempts cannot be displaced.
 	maxTrackedClients = 10_000
 )
 
-// attempts counts failed local sign-ins per client address.
+// attempts counts failed and in-flight local sign-ins per client address.
 type attempts struct {
 	now func() time.Time
 
@@ -36,49 +36,71 @@ type attempts struct {
 }
 
 type window struct {
-	start time.Time
-	n     int
+	start   time.Time
+	n       int
+	pending int
 }
 
 func newAttempts(now func() time.Time) *attempts {
 	return &attempts{now: now, failed: map[string]window{}}
 }
 
-// allowed reports whether client may try a password now.
-func (a *attempts) allowed(client string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	w, ok := a.failed[client]
-	return !ok || a.now().Sub(w.start) >= failedSignInWindow || w.n < maxFailedSignIns
-}
-
-// fail records a wrong password from client.
-func (a *attempts) fail(client string) {
+// begin reserves an attempt before reading its body, so concurrent requests
+// cannot all pass the limit while their passwords are still in flight.
+func (a *attempts) begin(client string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
 	if _, tracked := a.failed[client]; !tracked && len(a.failed) >= maxTrackedClients {
 		for k, w := range a.failed {
-			if now.Sub(w.start) >= failedSignInWindow {
+			if w.pending == 0 && now.Sub(w.start) >= failedSignInWindow {
 				delete(a.failed, k)
 			}
 		}
 		if len(a.failed) >= maxTrackedClients {
 			var oldest string
 			for k, w := range a.failed {
-				if oldest == "" || w.start.Before(a.failed[oldest].start) {
+				if w.pending == 0 && (oldest == "" || w.start.Before(a.failed[oldest].start)) {
 					oldest = k
 				}
+			}
+			if oldest == "" {
+				return false
 			}
 			delete(a.failed, oldest)
 		}
 	}
 	w := a.failed[client]
 	if now.Sub(w.start) >= failedSignInWindow {
-		w = window{start: now}
+		w.start, w.n = now, 0
 	}
-	w.n++
+	if w.n+w.pending >= maxFailedSignIns {
+		return false
+	}
+	w.pending++
 	a.failed[client] = w
+	return true
+}
+
+// finish releases an admitted attempt, retaining only wrong credentials
+// against the limit. Pending attempts survive a failed window expiring.
+func (a *attempts) finish(client string, failed bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	w := a.failed[client]
+	w.pending--
+	if failed {
+		now := a.now()
+		if w.n == 0 || now.Sub(w.start) >= failedSignInWindow {
+			w.start, w.n = now, 0
+		}
+		w.n++
+	}
+	if w.n == 0 && w.pending == 0 {
+		delete(a.failed, client)
+	} else {
+		a.failed[client] = w
+	}
 }
 
 // clientAddr is the address a request came from, without its port.
@@ -104,10 +126,12 @@ func (h *Handler) localSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := clientAddr(r)
-	if !h.attempts.allowed(client) {
+	if !h.attempts.begin(client) {
 		writeJSON(w, http.StatusTooManyRequests, errorBody{Code: codeTooManyAttempts})
 		return
 	}
+	failed := false
+	defer func() { h.attempts.finish(client, failed) }()
 	var body struct {
 		User     string `json:"user"`
 		Password string `json:"password"`
@@ -120,7 +144,7 @@ func (h *Handler) localSignIn(w http.ResponseWriter, r *http.Request) {
 	// about which was wrong.
 	userOK, passwordOK := equalSecret(body.User, user), equalSecret(body.Password, password.Value())
 	if !userOK || !passwordOK {
-		h.attempts.fail(client)
+		failed = true
 		h.logger.WarnContext(r.Context(), "auth: local sign-in refused", "client", client)
 		writeJSON(w, http.StatusUnauthorized, errorBody{Code: codeInvalidCredentials})
 		return

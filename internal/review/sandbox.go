@@ -365,7 +365,7 @@ var estimates = map[string]func(args []reflect.Value) int{
 		}
 		return 0
 	},
-	"printf": func(a []reflect.Value) int { return printfWidths(a[0].String()) },
+	"printf": printfAllocation,
 }
 
 // seqItemBytes is what one number of seq's output is counted as.
@@ -408,15 +408,22 @@ func length(v reflect.Value) int {
 	return 0
 }
 
-// printfVerb captures a verb's width and precision; * takes them from an
-// argument, which the estimate cannot see, so it is refused.
-var printfVerb = regexp.MustCompile(`%[-+# 0]*(\*|\d+)?(?:\.(\*|\d+)?)?`)
+// printfVerb consumes the whole directive so %% is not read as the start
+// of another verb. Argument indexes may precede a width, precision or
+// value; * widths and precisions are refused even when indexed.
+var printfVerb = regexp.MustCompile(`(?s)%[-+# 0]*(?:\[\d+\])?(\*|\d+)?(?:\.(?:\[\d+\])?(\*|\d+)?)?(?:\[\d+\])?(.)`)
 
-// printfWidths is the padding a format asks for, summed over its verbs.
-func printfWidths(format string) int {
-	total := 0
-	for _, m := range printfVerb.FindAllStringSubmatch(format, -1) {
-		for _, n := range m[1:] {
+// printfAllocation conservatively charges every verb for the largest
+// argument, since indexes can reuse it, and padding for every leaf of
+// the largest composite argument, since fmt pads each element.
+func printfAllocation(a []reflect.Value) int {
+	widths, verbs := 0, 0
+	for _, m := range printfVerb.FindAllStringSubmatch(a[0].String(), -1) {
+		if m[3] == "%" {
+			continue
+		}
+		verbs++
+		for _, n := range m[1:3] {
 			if n == "" {
 				continue
 			}
@@ -424,11 +431,40 @@ func printfWidths(format string) int {
 			if err != nil || n == "*" {
 				return maxCallBytes + 1
 			}
-			total += w
-			if total > maxCallBytes {
+			if w > maxCallBytes-widths {
 				return maxCallBytes + 1
 			}
+			widths += w
 		}
 	}
-	return total
+	size, elements := 0, 1
+	for i := range a[1].Len() {
+		v := a[1].Index(i)
+		size = max(size, measure(v, 0, maxCallBytes))
+		elements = max(elements, printfElements(v, 0))
+	}
+	return product(int64(verbs), int64(size)) + product(int64(widths), int64(elements))
+}
+
+func printfElements(v reflect.Value, depth int) int {
+	v = indirect(v)
+	if depth >= maxMeasureDepth {
+		return maxCallBytes + 1
+	}
+	n := 0
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len() && n <= maxCallBytes; i++ {
+			n += printfElements(v.Index(i), depth+1)
+		}
+	case reflect.Map:
+		for it := v.MapRange(); it.Next() && n <= maxCallBytes; {
+			n += printfElements(it.Key(), depth+1) + printfElements(it.Value(), depth+1)
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField() && n <= maxCallBytes; i++ {
+			n += printfElements(v.Field(i), depth+1)
+		}
+	}
+	return max(n, 1)
 }

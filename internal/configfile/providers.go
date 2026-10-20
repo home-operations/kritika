@@ -3,6 +3,7 @@ package configfile
 import (
 	"fmt"
 	"maps"
+	"math"
 	"net/url"
 	"slices"
 )
@@ -132,8 +133,11 @@ func (p Provider) validate(where string) error {
 		return fmt.Errorf("configfile: %s.retries must be between 0 and %d, got %d", where, MaxProviderRetries, p.Retries)
 	}
 	for _, id := range slices.Sorted(maps.Keys(p.Pricing)) {
-		if price := p.Pricing[id]; price.Input < 0 || price.Output < 0 || price.CacheRead < 0 || price.CacheWrite < 0 {
-			return fmt.Errorf("configfile: %s.pricing.%s: prices must not be negative", where, id)
+		price := p.Pricing[id]
+		for _, rate := range []float64{price.Input, price.Output, price.CacheRead, price.CacheWrite} {
+			if rate < 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+				return fmt.Errorf("configfile: %s.pricing.%s: prices must be finite and nonnegative", where, id)
+			}
 		}
 		if err := checkAlias(where+".pricing", p.Type, id); err != nil {
 			return err

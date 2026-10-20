@@ -202,7 +202,11 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	}
 	// A push while this ran was absorbed into this job: if the branch has
 	// moved, index again at once, as a snooze that is not an attempt.
-	if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
+	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
+	if err != nil {
+		return fmt.Errorf("worker: check index tip after publication: %w", err)
+	}
+	if tip != commit {
 		logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
 		return river.JobSnooze(0)
 	}

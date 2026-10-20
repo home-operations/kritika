@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -56,7 +57,18 @@ func (w *Thread) Work(ctx context.Context, job *river.Job[jobs.ThreadArgs]) erro
 	if err != nil {
 		return err
 	}
-	outcome, err := w.apply(ctx, client, pr, args, logger)
+	// The state read and its dismissal write share the publication lock:
+	// another replica restoring the thread must not overtake this change.
+	var outcome string
+	err = w.Store.WithPublicationLock(ctx, pr.id, func(ctx context.Context) error {
+		var err error
+		outcome, err = w.apply(ctx, client, pr, args, logger)
+		return err
+	})
+	if errors.Is(err, store.ErrPublicationBusy) {
+		logger.Info("thread change snoozed: the pull request is being updated", "for", publishWait)
+		return river.JobSnooze(publishWait)
+	}
 	if err != nil {
 		w.Metrics.Thread(account.Key(), threadFailed)
 		logger.Error("thread change failed", "error", err)

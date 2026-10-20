@@ -52,6 +52,68 @@ func (f *resumeForge) GitToken(context.Context, string) (string, error) {
 }
 func (*resumeForge) CloneURL(string, string) string { return "unused" }
 
+type tipRetryForge struct {
+	*resumeForge
+	calls        int
+	afterPublish func(context.Context) error
+}
+
+func (f *tipRetryForge) BranchTip(ctx context.Context, owner, name, branch string) (string, string, error) {
+	f.calls++
+	if f.calls == 2 {
+		return "", "", f.afterPublish(ctx)
+	}
+	return f.resumeForge.BranchTip(ctx, owner, name, branch)
+}
+
+func TestIndexRetriesFailedTipCheck(t *testing.T) {
+	env := setupIndexResume(t, "")
+	ctx := rivertest.WorkContext(t.Context(), env.queue)
+	job := env.claim(1)
+	wantErr := errors.New("tip lookup unavailable")
+	f := &tipRetryForge{resumeForge: &resumeForge{tip: "head-1"}}
+	f.afterPublish = func(ctx context.Context) error {
+		args := job.Args
+		args.CommitSHA = "head-2"
+		inserted, err := env.queue.Insert(ctx, args, nil)
+		if err != nil {
+			return err
+		}
+		if !inserted.UniqueSkippedAsDuplicate || inserted.Job.ID != job.ID {
+			return errors.New("push was not absorbed into the running job")
+		}
+		f.tip = args.CommitSHA
+		return wantErr
+	}
+	exec := &resumeExecutor{st: env.st, account: env.account.ID()}
+	w := &Index{
+		Store: env.st, Current: configfile.NewCurrent(env.file), Forges: &forges{f: f}, Logger: slog.New(slog.DiscardHandler),
+		Executor: exec, Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return &fakeEmbedder{} }},
+	}
+	if err := w.Work(ctx, job); !errors.Is(err, wantErr) {
+		t.Fatalf("Work error = %v, want %v", err, wantErr)
+	}
+	if err := w.Work(ctx, env.claim(2)); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if err := env.st.WithAccount(ctx, env.account.ID(), func(tx pgx.Tx) error {
+		repo, err := store.FindIndexRepo(ctx, tx, env.repo)
+		if err != nil {
+			return err
+		}
+		generation, err := store.FindGeneration(ctx, tx, repo.ActiveRun)
+		if err == nil && generation.Commit != "head-2" {
+			t.Errorf("indexed commit = %s, want head-2", generation.Commit)
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if exec.calls != 2 {
+		t.Fatalf("runner calls = %d, want 2", exec.calls)
+	}
+}
+
 type resumeExecutor struct {
 	st      *store.Store
 	account string
