@@ -58,9 +58,11 @@ jobs:
             charts:
               - *shared
               - charts/**
+              - scripts/generate-chart.sh
             ui:
               - *shared
               - internal/web/**
+              - internal/webapi/testdata/*.golden.json
 
   go-lint:
     if: >-
