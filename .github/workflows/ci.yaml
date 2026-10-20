@@ -29,44 +29,38 @@ jobs:
     with:
       deploy: false
 
-  # Both pull_request (the merge of the branch into its base) and merge_group
-  # (the squash commit the queue lands) check out a commit whose first parent
-  # is the base, so HEAD^ is the base either way. A dispatch has no base and
-  # runs everything.
+  # A dispatch has no base to diff against, so it runs everything.
   changes:
     name: Changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
-      charts: ${{ steps.diff.outputs.charts }}
-      ui: ${{ steps.diff.outputs.ui }}
+      charts: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.charts_any_modified == 'true' }}
+      ui: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.ui_any_modified == 'true' }}
     steps:
       - name: Checkout
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Diff against the base
-        id: diff
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            echo "charts=true" >> "$GITHUB_OUTPUT"
-            echo "ui=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files=$(git diff --name-only HEAD^ HEAD)
-          all='^(\.github/workflows/ci\.yaml|\.mise/)'
-          for pair in charts:'^charts/' ui:'^internal/web/'; do
-            name=${pair%%:*}
-            pattern=${pair#*:}
-            if printf '%s\n' "$files" | grep -Eq "$all|$pattern"; then
-              echo "$name=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "$name=false" >> "$GITHUB_OUTPUT"
-            fi
-          done
+      - name: Detect changes
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        id: changes
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        with:
+          files_yaml: |
+            shared: &shared
+              - .github/workflows/ci.yaml
+              - .mise/**
+            charts:
+              - *shared
+              - charts/**
+            ui:
+              - *shared
+              - internal/web/**
 
   go-lint:
     if: >-
