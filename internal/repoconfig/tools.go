@@ -89,6 +89,7 @@ var toolOptions = map[string]optionKind{
 // builds (cargo:, go:), runs a package manager (npm:, pipx:, gem:,
 // dotnet:, spm:, conda:) or a plugin's scripts (asdf:, vfox:) is not
 // offered, whether named outright or resolved from a registry short name.
+// http is offered only resolved from one: Tool.check refuses it by name.
 var DownloadBackends = []string{"aqua", "core", "github", "gitlab", "http", "ubi"}
 
 // DownloadBackend reports whether backend, as mise names a tool's, is one
@@ -116,17 +117,15 @@ func (t Tool) check(name string) error {
 	if !toolName.MatchString(name) {
 		return fmt.Errorf("tools: %q is not a tool name: a registry short name, or a backend and its package, without options", name)
 	}
-	if backend, _, ok := strings.Cut(name, ":"); ok {
-		switch {
-		// filter_bins is how a tool declared by its backend names its
-		// commands, and mise refuses it on the http backend. A short name
-		// mise resolves to http is offered: the registry names its commands.
-		case backend == "http":
-			return fmt.Errorf("tools: %s: the http backend is not offered by name: it cannot name the tool's commands; "+
-				"declare the tool by its registry short name or as github:owner/repo", name)
-		case !slices.Contains(DownloadBackends, backend):
-			return fmt.Errorf("tools: %s: the %s backend is not offered: an install may only download and unpack", name, backend)
-		}
+	switch backend, _, ok := strings.Cut(name, ":"); {
+	// filter_bins is how a tool declared by its backend names its
+	// commands, and mise refuses it on the http backend. A short name
+	// mise resolves to http is offered: the registry names its commands.
+	case ok && backend == "http":
+		return fmt.Errorf("tools: %s: the http backend is not offered by name: it cannot name the tool's commands; "+
+			"declare the tool by its registry short name or as github:owner/repo", name)
+	case ok && !DownloadBackend(backend):
+		return fmt.Errorf("tools: %s: the %s backend is not offered: an install may only download and unpack", name, backend)
 	}
 	switch v := t.Version; {
 	case templated(v):

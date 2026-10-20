@@ -39,16 +39,16 @@ func TestMiseRepositoryTools(t *testing.T) {
 		// none for a release that publishes none.
 		locked bool
 	}{
-		{"declared", "", "repo-tool", "", true, "", "", "", false},
-		{"digest verified", "", "repo-tool", "", true, fmt.Sprintf("sha256:%x", sha256.Sum256(payload)), "", "", true},
-		{"wrong digest", "", "repo-tool", "", true, "sha256:" + strings.Repeat("0", 64), "", "checksum", true},
-		{"unpinnable", "", "repo-tool", "", true, "", "https://tools.example.invalid/repo-tool", "could not be installed", false},
+		{name: "declared", command: "repo-tool", offer: true},
+		{name: "digest verified", command: "repo-tool", offer: true, digest: fmt.Sprintf("sha256:%x", sha256.Sum256(payload)), locked: true},
+		{name: "wrong digest", command: "repo-tool", offer: true, digest: "sha256:" + strings.Repeat("0", 64), installErr: "checksum", locked: true},
+		{name: "unpinnable", command: "repo-tool", offer: true, asset: "https://tools.example.invalid/repo-tool", installErr: "could not be installed"},
 		// A repository's binary is not run with the run's GitHub token.
-		{"gh refused", "", "gh", "does not offer gh: it carries one of the run's credentials", false, "", "", "", false},
+		{name: "gh refused", command: "gh", note: "does not offer gh: it carries one of the run's credentials"},
 		// A registry short name may resolve to a backend that runs a
 		// plugin's scripts, which .kritika.yaml cannot tell from the name.
-		{"plugin backend", "[tools]\nyarn = '1.22.22'\n", "yarn", "yarn not offered: its vfox:jdx/vfox-yarn backend builds or runs a plugin",
-			false, "", "", "", false},
+		{name: "plugin backend", doc: "[tools]\nyarn = '1.22.22'\n", command: "yarn",
+			note: "yarn not offered: its vfox:jdx/vfox-yarn backend builds or runs a plugin"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
