@@ -135,7 +135,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByRole('region', { name: 'Job #103 details' })).toContainText('Last output: waiting for a model slot.');
     await page.screenshot({ path: testInfo.outputPath(`queue-details-${theme}.png`) });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page.getByRole('button', { name: /^Navigation · / }).click();
     await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`navigation-mobile-${theme}.png`) });
     await page.getByRole('dialog', { name: 'Navigation' }).getByRole('link', { name: 'Usage & costs' }).click();

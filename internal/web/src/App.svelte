@@ -217,7 +217,7 @@
 
 {#snippet actions()}
   <div class="actions flex gap-2 items-center">
-    <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to">
+    <Tooltip text="Go to (Ctrl/⌘ K)" class="btn btn-icon" onclick={togglePalette} aria-label="Go to… ⌘ K">
       <Icon path={mdiMagnify} label="Go to" /><span class="search-label">Go to…</span><kbd class="search-label">⌘ K</kbd>
     </Tooltip>
     <Tooltip text="Keyboard shortcuts (?)" class="btn btn-icon keys-button" onclick={toggleHelp} aria-label="Keyboard shortcuts">
@@ -321,7 +321,7 @@
       {#if me}
         <div class="mobile-navigation hidden">
           <Dialog.Root bind:open={navOpen}>
-            <Dialog.Trigger class="btn mobile-nav-trigger" aria-label="Open navigation">
+            <Dialog.Trigger class="btn mobile-nav-trigger">
               <Icon path={mdiViewGridOutline} size={16} />
               Navigation <span class="muted">· {currentSection ? SECTIONS[currentSection].label : instanceTabs.find((t) => t.route.name === router.route.name)?.label ?? (router.route.name === 'preferences' ? 'Your settings' : 'All accounts')}</span>
               <Icon path={mdiChevronDown} size={14} />
