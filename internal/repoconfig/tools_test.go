@@ -22,8 +22,9 @@ func TestParseTools_Invalid(t *testing.T) {
 		{"a templated version", "tools:\n  helm: \"{{ get_env(name='V') }}\"\n", "template"},
 		{"a build backend", "tools:\n  \"go:golang.org/x/vuln/cmd/govulncheck\": \"v1.9.0\"\n", "go backend is not offered"},
 		{"a plugin backend", "tools:\n  \"asdf:mise-plugins/asdf-yarn\": \"1.0.0\"\n", "asdf backend is not offered"},
+		{"the http backend", "tools:\n  \"http:tool\": { version: \"1.0.0\", url: \"https://example.com/tool\" }\n", "http backend is not offered by name"},
 		{"an install hook", "tools:\n  helm: { version: \"4.3.1\", postinstall: \"helm --help\" }\n", "option postinstall is not one of a download's"},
-		{"a templated option", "tools:\n  \"http:tool\": { version: \"1.0.0\", url: \"https://x/{{ version }}\" }\n", "option url holds a template"},
+		{"a templated option", "tools:\n  nomad-pack: { version: \"0.4.2\", url: \"https://x/{{ version }}\" }\n", "option url holds a template"},
 		{"a table for an option", "tools:\n  helm: { version: \"4.3.1\", checksum: { a: b } }\n", "option checksum is not a string"},
 		{"a list of tables", "tools:\n  helm: { version: \"4.3.1\", filter_bins: [{ a: b }] }\n", "not a list of strings"},
 		{"a list for a string option", "tools:\n  helm: { version: \"4.3.1\", exe: [helm] }\n", "option exe is not a string"},
@@ -31,9 +32,9 @@ func TestParseTools_Invalid(t *testing.T) {
 		{"a string for a boolean", "tools:\n  helm: { version: \"4.3.1\", no_app: \"yes\" }\n", "option no_app is not a boolean"},
 		{"a string for an integer", "tools:\n  helm: { version: \"4.3.1\", strip_components: \"1\" }\n", "option strip_components is not a whole number"},
 		{"a negative integer", "tools:\n  helm: { version: \"4.3.1\", size: -1 }\n", "option size is not a whole number"},
-		{"a file URL", "tools:\n  \"http:tool\": { version: \"1.0.0\", url: \"file:///tmp/tool\" }\n", "option url is not an https:// URL"},
-		{"a plain HTTP URL", "tools:\n  \"http:tool\": { version: \"1.0.0\", url: \"http://example.com/tool\" }\n", "option url is not an https:// URL"},
-		{"a platform's file URL", "tools:\n  \"http:tool\": { version: \"1.0.0\", platforms: { linux-x64: { url: \"file:///tmp/tool\" } } }\n",
+		{"a file URL", "tools:\n  nomad-pack: { version: \"0.4.2\", url: \"file:///tmp/tool\" }\n", "option url is not an https:// URL"},
+		{"a plain HTTP URL", "tools:\n  nomad-pack: { version: \"0.4.2\", url: \"http://example.com/tool\" }\n", "option url is not an https:// URL"},
+		{"a platform's file URL", "tools:\n  \"github:owner/tool\": { version: \"1.0.0\", platforms: { linux-x64: { url: \"file:///tmp/tool\" } } }\n",
 			"platform linux-x64: option url is not an https:// URL"},
 		{"options in the name", "tools:\n  \"github:owner/repo[postinstall=id]\": \"1.0.0\"\n", "not a tool name"},
 		{"a request in the name", "tools:\n  \"helm@4\": \"4.3.1\"\n", "not a tool name"},
@@ -69,8 +70,8 @@ func TestParseTools_Valid(t *testing.T) {
   shellcheck: "0.11.0"
   cosign: 3.1.3
   "github:home-operations/flate": { version: "0.6.5", filter_bins: flate }
-  "http:tool":
-    version: "1.0.0"
+  nomad-pack:
+    version: "0.4.2"
     url: https://example.com/tool.tar.gz
     strip_components: 1
     extract_all: true
@@ -87,7 +88,7 @@ func TestParseTools_Valid(t *testing.T) {
 		"shellcheck":                   {Version: "0.11.0"},
 		"cosign":                       {Version: "3.1.3"},
 		"github:home-operations/flate": {Version: "0.6.5", Options: map[string]any{"filter_bins": "flate"}},
-		"http:tool": {Version: "1.0.0", Options: map[string]any{
+		"nomad-pack": {Version: "0.4.2", Options: map[string]any{
 			"url": "https://example.com/tool.tar.gz", "strip_components": 1, "extract_all": true, "bin": []any{"tool", "tool-helper"},
 			"platforms": map[string]any{
 				"linux-x64": map[string]any{"checksum": "sha256:ab", "size": 12}, "linux-arm64": map[string]any{"checksum": "sha256:cd"},
@@ -113,8 +114,8 @@ func TestParseTools_Valid(t *testing.T) {
 		"shellcheck":                   "0.11.0",
 		"cosign":                       "3.1.3",
 		"github:home-operations/flate": map[string]any{"version": "0.6.5", "filter_bins": "flate"},
-		"http:tool": map[string]any{
-			"version": "1.0.0", "url": "https://example.com/tool.tar.gz", "strip_components": int64(1), "extract_all": true,
+		"nomad-pack": map[string]any{
+			"version": "0.4.2", "url": "https://example.com/tool.tar.gz", "strip_components": int64(1), "extract_all": true,
 			"bin": []any{"tool", "tool-helper"},
 			"platforms": map[string]any{
 				"linux-x64": map[string]any{"checksum": "sha256:ab", "size": int64(12)}, "linux-arm64": map[string]any{"checksum": "sha256:cd"},
