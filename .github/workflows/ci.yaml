@@ -3,6 +3,12 @@
 name: CI
 
 on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - ".release-please-manifest.json"
   pull_request:
     branches:
       - main
@@ -29,55 +35,11 @@ jobs:
     with:
       deploy: false
 
-  # A dispatch has no base to diff against, so it runs everything.
-  changes:
-    name: Changes
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: read
-    outputs:
-      run_suite: ${{ steps.suite.outputs.run == 'true' }}
-      run_charts: ${{ steps.suite.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || steps.changes.outputs.charts_any_modified == 'true') }}
-      run_ui: ${{ steps.suite.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || steps.changes.outputs.ui_any_modified == 'true') }}
-    steps:
-      - name: Select suite
-        id: suite
-        env:
-          RUN_SUITE: >-
-            ${{ !(startsWith(github.head_ref, 'release-please--')
-            && github.event.pull_request.head.repo.full_name == github.repository)
-            && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
-        run: echo "run=$RUN_SUITE" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout
-        if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-          persist-credentials: false
-
-      - name: Detect changes
-        if: ${{ github.event_name != 'workflow_dispatch' }}
-        id: changes
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
-        with:
-          files_yaml: |
-            shared: &shared
-              - .github/workflows/ci.yaml
-              - .mise/**
-            charts:
-              - *shared
-              - charts/**
-              - scripts/generate-chart.sh
-            ui:
-              - *shared
-              - internal/web/**
-              - internal/webapi/testdata/*.golden.json
-
   go-lint:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Go Lint
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -93,11 +55,6 @@ jobs:
           experimental: true
           install_args: --locked
 
-      # Each Go job keys its own cache: on a miss only the first job to save a
-      # key wins and the rest are refused, so a shared key held the lint build
-      # alone and the race-enabled test builds started cold every run. The
-      # go-cache workflow fills these keys on main, which is where pull
-      # requests and the merge queue restore from.
       - name: Cache Go modules and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -125,9 +82,10 @@ jobs:
   # whose suite takes in the runner's package, install the -tools image's,
   # so a bump of it is tested on its pull request.
   mise-version:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Mise Version
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -155,9 +113,11 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   go-test:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Go Test
-    needs: [changes, mise-version]
+    needs: mise-version
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -190,9 +150,11 @@ jobs:
         run: mise run test
 
   go-integration:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Go Integration
-    needs: [changes, mise-version]
+    needs: mise-version
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -224,9 +186,10 @@ jobs:
         run: mise run test-integration
 
   smoke:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Serve Smoke
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -251,9 +214,10 @@ jobs:
         run: mise run smoke
 
   go-vulncheck:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Go Vulncheck
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -273,9 +237,10 @@ jobs:
         run: mise run vulncheck
 
   helm-lint:
-    if: ${{ needs.changes.outputs.run_charts == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Helm Lint
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -301,9 +266,10 @@ jobs:
         run: mise run generate-check
 
   helm-unittest:
-    if: ${{ needs.changes.outputs.run_charts == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Helm Unittest
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -325,9 +291,10 @@ jobs:
           mise run helm-unittest
 
   ui-test:
-    if: ${{ needs.changes.outputs.run_ui == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: UI Test
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -363,9 +330,10 @@ jobs:
         run: mise run ui-build
 
   ui-e2e:
-    if: ${{ needs.changes.outputs.run_ui == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: UI E2E
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -413,9 +381,10 @@ jobs:
           retention-days: 7
 
   workflow-lint:
-    if: ${{ needs.changes.outputs.run_suite == 'true' }}
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Workflow Lint
-    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -446,7 +415,6 @@ jobs:
     if: ${{ !cancelled() }}
     name: Build Success
     needs:
-      - changes
       - docs
       - go-lint
       - mise-version
