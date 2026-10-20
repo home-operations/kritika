@@ -1,0 +1,79 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Go Cache
+
+# Pull requests and the merge queue can only restore caches saved on main, and
+# CI no longer runs there (the queue already ran it on the same commit). This
+# compiles what each Go job in CI needs under that job's key, without running
+# a test, whenever an input to a key changes.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - go.sum
+      - .golangci.yml
+      - .mise/mise.lock
+      - .github/workflows/go-cache.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    name: Warm (${{ matrix.cache }})
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        cache:
+          - lint
+          - unit
+          - integration
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          experimental: true
+          install_args: --locked
+
+      # The keys match the Go jobs in ci.yaml.
+      - name: Cache Go modules and build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.cache }}-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-${{ matrix.cache }}-
+
+      - name: Cache golangci-lint
+        if: ${{ matrix.cache == 'lint' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ hashFiles('go.sum', '.golangci.yml', '.mise/mise.lock') }}
+
+      # -run '^$' compiles every test binary with the flags CI passes and runs
+      # none of them; the build cache does not hold the final links anyway.
+      - name: Compile
+        env:
+          CACHE: ${{ matrix.cache }}
+        run: |
+          case "$CACHE" in
+            lint) mise run lint ;;
+            unit) mise run test -- -run '^$' ;;
+            integration) scripts/go-packages.sh | xargs go test -race -tags integration -run '^$' ;;
+          esac

@@ -3,12 +3,6 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - "**.md"
-      - ".release-please-manifest.json"
   pull_request:
     branches:
       - main
@@ -28,7 +22,6 @@ env:
 
 jobs:
   docs:
-    if: ${{ github.event_name != 'push' }}
     name: Docs
     uses: $/.github/workflows/docs.yaml
     permissions:
@@ -36,10 +29,50 @@ jobs:
     with:
       deploy: false
 
+  # Both pull_request (the merge of the branch into its base) and merge_group
+  # (the squash commit the queue lands) check out a commit whose first parent
+  # is the base, so HEAD^ is the base either way. A dispatch has no base and
+  # runs everything.
+  changes:
+    name: Changes
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      charts: ${{ steps.diff.outputs.charts }}
+      ui: ${{ steps.diff.outputs.ui }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Diff against the base
+        id: diff
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "charts=true" >> "$GITHUB_OUTPUT"
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only HEAD^ HEAD)
+          all='^(\.github/workflows/ci\.yaml|\.mise/)'
+          for pair in charts:'^charts/' ui:'^internal/web/'; do
+            name=${pair%%:*}
+            pattern=${pair#*:}
+            if printf '%s\n' "$files" | grep -Eq "$all|$pattern"; then
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
   go-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Go Lint
     runs-on: ubuntu-26.04
     permissions:
@@ -56,14 +89,19 @@ jobs:
           experimental: true
           install_args: --locked
 
+      # Each Go job keys its own cache: on a miss only the first job to save a
+      # key wins and the rest are refused, so a shared key held the lint build
+      # alone and the race-enabled test builds started cold every run. The
+      # go-cache workflow fills these keys on main, which is where pull
+      # requests and the merge queue restore from.
       - name: Cache Go modules and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-lint-
 
       # This cache holds analyzer facts, so a stale or partial entry turns
       # checks like SA5011 into false positives on untouched code. Hence the
@@ -85,7 +123,8 @@ jobs:
   mise-version:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Mise Version
     runs-on: ubuntu-26.04
     permissions:
@@ -116,7 +155,8 @@ jobs:
   go-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Go Test
     needs: mise-version
     runs-on: ubuntu-26.04
@@ -141,8 +181,8 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-unit-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-unit-
 
       - name: Check go.mod tidiness
         run: mise run tidy-check
@@ -153,7 +193,8 @@ jobs:
   go-integration:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Go Integration
     needs: mise-version
     runs-on: ubuntu-26.04
@@ -178,8 +219,8 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          key: ${{ runner.os }}-go-integration-${{ hashFiles('go.sum', '.mise/mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-integration-
 
       # Runs the store suite against a throwaway VectorChord container with the
       # owner, application and runner roles, the same way it runs locally.
@@ -189,7 +230,8 @@ jobs:
   smoke:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Serve Smoke
     runs-on: ubuntu-26.04
     permissions:
@@ -217,7 +259,8 @@ jobs:
   go-vulncheck:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Go Vulncheck
     runs-on: ubuntu-26.04
     permissions:
@@ -240,8 +283,11 @@ jobs:
   helm-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
+      && needs.changes.outputs.charts == 'true' }}
     name: Helm Lint
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -269,8 +315,11 @@ jobs:
   helm-unittest:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
+      && needs.changes.outputs.charts == 'true' }}
     name: Helm Unittest
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -294,8 +343,11 @@ jobs:
   ui-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
+      && needs.changes.outputs.ui == 'true' }}
     name: UI Test
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -333,8 +385,11 @@ jobs:
   ui-e2e:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
+      && needs.changes.outputs.ui == 'true' }}
     name: UI E2E
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -384,7 +439,8 @@ jobs:
   workflow-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+      && github.event.pull_request.head.repo.full_name == github.repository)
+      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
     name: Workflow Lint
     runs-on: ubuntu-26.04
     permissions:
@@ -416,6 +472,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: Build Success
     needs:
+      - changes
       - docs
       - go-lint
       - mise-version

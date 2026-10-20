@@ -6,8 +6,12 @@ on:
   push:
     branches:
       - main
+    # A release-please merge changes only these and the changelog; the release
+    # event that follows builds the same tree with its semver tags.
     paths-ignore:
       - "**.md"
+      - ".release-please-manifest.json"
+      - "charts/kritika/Chart.yaml"
   release:
     types:
       - published
