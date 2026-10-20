@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"net/url"
 	"slices"
 	"strings"
@@ -93,4 +94,25 @@ func withProxyUser(env []string, user string) []string {
 		out[i] = name + "=" + u.String()
 	}
 	return out
+}
+
+// miseURLReplacements is MISE_URL_REPLACEMENTS for rules: the JSON object
+// mise reads them from, keyed by from in the rules' order, which mise
+// keeps, trying the rules in turn until one matches. A map would sort them.
+func miseURLReplacements(rules []urlReplacement) string {
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, r := range rules {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		// Marshaling a string cannot fail.
+		from, _ := json.Marshal(r.From)
+		to, _ := json.Marshal(r.To)
+		b.Write(from)
+		b.WriteByte(':')
+		b.Write(to)
+	}
+	b.WriteByte('}')
+	return b.String()
 }

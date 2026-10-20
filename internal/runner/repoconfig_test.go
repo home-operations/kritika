@@ -100,13 +100,6 @@ func TestRepoFiles(t *testing.T) {
 			name:  "an unrequested oversized agent file produces no note",
 			files: map[string]string{"AGENTS.md": big, "a/b.go": "package a\n"},
 		},
-		{
-			name:      "a missing mise config and lock produce no note",
-			files:     map[string]string{RepoMiseLock: "lock", "main.go": "package main\n"},
-			paths:     []string{RepoMiseConfig, RepoMiseLock, "gone.md"},
-			wantFiles: []string{RepoMiseLock},
-			wantNotes: 1,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

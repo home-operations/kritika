@@ -182,7 +182,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		}
 		var commandNotes []string
 		var cleanup func()
-		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), files, secrets,
+		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
 		notes = append(notes, commandNotes...)

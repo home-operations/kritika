@@ -148,8 +148,8 @@ chart confines them:
 - A runner holds no provider key or App key: only a GitHub token for its
   run, a gateway token and the runner role's database URI.
 - The review's run tool executes the six programs the runner image
-  declares and those a repository's `.kritika/mise.toml` adds, each
-  download checked against the repository's lock.
+  declares and those the `tools` of a repository's `.kritika.yaml` add,
+  each download verified as its backend verifies it.
 - `runner.podTemplate` puts runner pods under a sandboxed runtime such as
   gVisor with `runtimeClassName`, keeps a runaway run in its own cgroup
   with `resources`, and keeps runner pods on nodes of their own, and in a
@@ -166,9 +166,9 @@ gateway, runner tools and the sandbox in full.
 
 `runner.mise.config` and `KRITIKA_RUNNER_MISE_CONFIG` are removed, as
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` were before them. Declare each
-tool in the `.kritika/mise.toml` of the repositories whose reviews use
-it, pinned by `.kritika/mise.lock`. The runner image declares its six tools
-itself, so they stay available. See the
+tool under `tools` in the `.kritika.yaml` of the repositories whose
+reviews use it. The runner image declares its six tools itself, so they
+stay available. See the
 [migration guide](https://kritika.home-operations.com/security/#migrating-from-the-instance-mise-config).
 
 ### Migrating NetworkPolicies
@@ -334,7 +334,7 @@ Kubernetes: `>=1.34.0-0`
 | runner.podTemplate.metadata.annotations | object | `{}` | Annotations for runner pods, such as `karpenter.sh/do-not-disrupt: "true"`. kritika refuses AppArmor's, which would set the runner's profile. |
 | runner.podTemplate.metadata.labels | object | `{}` | Labels for runner pods. kritika refuses its own, the instance label and the Job controller's. |
 | runner.podTemplate.spec.affinity | object | `{}` | Affinity for runner pods. |
-| runner.podTemplate.spec.containers | list | `[{"env":[],"image":"","imagePullPolicy":"IfNotPresent","name":"runner"}]` | The runner container, the pod's one, named runner: its `image`, empty for this release's `-tools` image pinned by digest, which adds mise with curl, fd, gh, jq, rg and yq for a review's or follow-up's run tool; its `imagePullPolicy`; and its `env`, variables the run tool's commands get over a repository's `[env]`, each a `value` or a Secret's key (`valueFrom.secretKeyRef`), which is masked out of what the commands print. kritika sets them on the container as `KRITIKA_COMMAND_ENV_<name>`, so they configure the commands and never kritika itself, and refuses the names it keeps for the commands, such as `HOME`, `PATH`, the proxy variables and `GH_*`. The Secret must be in the release namespace. |
+| runner.podTemplate.spec.containers | list | `[{"env":[],"image":"","imagePullPolicy":"IfNotPresent","name":"runner"}]` | The runner container, the pod's one, named runner: its `image`, empty for this release's `-tools` image pinned by digest, which adds mise with curl, fd, gh, jq, rg and yq for a review's or follow-up's run tool; its `imagePullPolicy`; and its `env`, variables the run tool's commands get, each a `value` or a Secret's key (`valueFrom.secretKeyRef`), which is masked out of what the commands print. kritika sets them on the container as `KRITIKA_COMMAND_ENV_<name>`, so they configure the commands and never kritika itself, and refuses the names it keeps for the commands, such as `HOME`, `PATH`, the proxy variables and `GH_*`. The Secret must be in the release namespace. |
 | runner.podTemplate.spec.hostUsers | bool | `true` | Set false to run runner pods in a user namespace of their own, which the nodes' kernel and container runtime must support; true shares the node's, as Kubernetes does by default. |
 | runner.podTemplate.spec.nodeSelector | object | `{}` | Node labels runner pods are scheduled by. |
 | runner.podTemplate.spec.priorityClassName | string | `""` | PriorityClass for runner pods. Empty uses the cluster default. |

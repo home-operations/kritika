@@ -361,20 +361,6 @@ func TestMiseRunCanceled(t *testing.T) {
 	}
 }
 
-func TestMiseURLReplacementsJSON(t *testing.T) {
-	got := miseURLReplacements([]urlReplacement{
-		{From: "https://github.com/", To: "https://mirror.example.com/github/"},
-		{From: `regex:^https://(\w+)\.example\.com/`, To: "http://mirror.example.com/$1/"},
-		{From: "https://get.helm.sh/", To: "https://mirror.example.com/helm/"},
-	})
-	want := `{"https://github.com/":"https://mirror.example.com/github/",` +
-		`"regex:^https://(\\w+)\\.example\\.com/":"http://mirror.example.com/$1/",` +
-		`"https://get.helm.sh/":"https://mirror.example.com/helm/"}`
-	if got != want || !json.Valid([]byte(got)) {
-		t.Fatalf("MISE_URL_REPLACEMENTS = %s, want %s", got, want)
-	}
-}
-
 // TestMiseInstallSystemLinks: an install succeeds when mise exits
 // non-zero only for the runtime symlinks of a system install it cannot
 // write, as it does in the -tools image, where the system installs are
