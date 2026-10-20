@@ -390,4 +390,9 @@
   </div>
 {/if}
 </BitsTooltip.Provider>
+{#if import.meta.env.DEV}
+  {#await import('@tanstack/svelte-query-devtools') then { SvelteQueryDevtools }}
+    <SvelteQueryDevtools />
+  {/await}
+{/if}
 </QueryClientProvider>

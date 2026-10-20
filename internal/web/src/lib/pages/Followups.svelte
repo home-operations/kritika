@@ -1,6 +1,6 @@
 <script lang="ts">
   import { accountApi } from '../links';
-  import { Paged, live } from '../resource.svelte';
+  import { Paged } from '../resource.svelte';
   import type { Followup } from '../types';
   import StateView from '../components/StateView.svelte';
   import FollowupItem from '../components/FollowupItem.svelte';
@@ -18,7 +18,6 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'followup', () => void paged.refresh()));
 </script>
 
 <svelte:head><title>Follow-ups · {slug} · kritika</title></svelte:head>

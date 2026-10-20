@@ -5,7 +5,7 @@
   import { tick, untrack } from 'svelte';
   import { href, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
-  import { Paged, Resource, errorMessage, live } from '../resource.svelte';
+  import { Paged, Resource, errorMessage } from '../resource.svelte';
   import { accountApi, pullRoute, threadUrl } from '../links';
   import { CATEGORIES, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
@@ -55,7 +55,6 @@
   $effect(() => {
     void repos.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void paged.refresh()));
 
   const specs = $derived<TokenSpec[]>([
     { key: 'repo', hint: 'a repository', values: (repos.data?.items ?? []).map((r) => r.fullName), open: true },

@@ -879,3 +879,34 @@ test('an expanded pull preview follows live updates and a newer review without c
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(preview.getByRole('link', { name: 'Open full review' })).toHaveAttribute('href', `#/a/${g.SLUG}/pulls/alpha/one/7?run=rev-2`);
 });
+
+test('the account overview refreshes attention on a review and ignores model calls', async ({ page }) => {
+  let reads = 0;
+  await page.route('**/accounts/github/alpha/attention', (route) => { reads++; return route.fallback(); });
+  await page.goto(account);
+  await expect(page.getByRole('region', { name: 'Account activity' })).toBeVisible();
+  await expect(page.locator('[data-loading="true"]')).toHaveCount(0);
+  await emit(page, 'model_call');
+  await page.waitForTimeout(500); // Past the refresh debounce: a model call must not have refetched.
+  expect(reads).toBe(1);
+  await emit(page, 'review');
+  await expect.poll(() => reads).toBe(2);
+});
+
+test('the repository page refreshes on an index run and ignores model calls', async ({ page }) => {
+  let repoReads = 0;
+  let pullReads = 0;
+  await page.route('**/accounts/github/alpha/repos/alpha/one', (route) => { repoReads++; return route.fallback(); });
+  await page.route('**/accounts/github/alpha/pulls?*', (route) => { pullReads++; return route.fallback(); });
+  await page.goto(`${account}/repos/alpha/one`);
+  await expect(page.getByRole('region', { name: 'Pull requests', exact: true })).toBeVisible();
+  await expect.poll(() => repoReads).toBe(1);
+  await expect.poll(() => pullReads).toBe(1);
+  await emit(page, 'model_call');
+  await page.waitForTimeout(500); // Past the refresh debounce: a model call must not have refetched.
+  expect(repoReads).toBe(1);
+  expect(pullReads).toBe(1);
+  await emit(page, 'index_run');
+  await expect.poll(() => repoReads).toBe(2);
+  await expect.poll(() => pullReads).toBe(2);
+});

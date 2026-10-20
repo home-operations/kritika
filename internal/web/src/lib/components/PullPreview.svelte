@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Resource, live } from '../resource.svelte';
+  import { Resource } from '../resource.svelte';
   import { accountApi, pullRoute } from '../links';
   import { href } from '../router.svelte';
   import { isActive, skipText } from '../format';
@@ -9,9 +9,8 @@
   import Pill from './Pill.svelte';
 
   let { slug, pull }: { slug: string; pull: Pull } = $props();
-  const res = Resource.json<ReviewDetail>(() => `${accountApi(slug)}/reviews/${encodeURIComponent(pull.lastReview!.id)}`);
+  const res = Resource.live<ReviewDetail>(() => `${accountApi(slug)}/reviews/${encodeURIComponent(pull.lastReview!.id)}`);
   $effect(() => { void res.load(); });
-  $effect(() => live((e) => e.account === slug && e.kind === 'review' && e.id === pull.lastReview?.id, () => void res.load()));
 </script>
 
 <StateView {res} layout="inline" retry={() => res.load()}>
