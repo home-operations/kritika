@@ -3,9 +3,11 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
@@ -150,6 +152,68 @@ func TestThreadWorker(t *testing.T) {
 	if ds := dismissals(); len(ds) != 0 {
 		t.Fatalf("resolving an outdated thread dismissed %+v", ds)
 	}
+
+	t.Run("concurrent restore waits for resolution", func(t *testing.T) {
+		checkConcurrentThreadRestore(t, base, lf, jobs.ThreadArgs{
+			AccountID: account.ID(), RepositoryID: repoID, Number: number, CommentID: root, Resolved: true, Sender: "onedr0p",
+		}, dismissals)
+	})
+}
+
+func checkConcurrentThreadRestore(t *testing.T, base Base, client forge.Client, args jobs.ThreadArgs, dismissals func() []store.Dismissal) {
+	t.Helper()
+	read := make(chan struct{})
+	release := make(chan struct{})
+	firstCtx, cancelFirst := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancelFirst()
+	first := &threadStateForge{Client: client, state: func(ctx context.Context) (bool, bool, error) {
+		close(read)
+		select {
+		case <-release:
+			return true, true, nil
+		case <-ctx.Done():
+			return false, false, ctx.Err()
+		}
+	}}
+	second := &threadStateForge{Client: client, state: func(context.Context) (bool, bool, error) {
+		return false, true, nil
+	}}
+	firstBase, secondBase := base, base
+	firstBase.Forges = &forges{f: first}
+	secondBase.Store, secondBase.Forges = storetest.Open(t), &forges{f: second}
+	firstWorker, secondWorker := &Thread{Base: firstBase}, &Thread{Base: secondBase}
+	done := make(chan error, 1)
+	firstJob := &river.Job[jobs.ThreadArgs]{Args: args}
+	go func() { done <- firstWorker.Work(firstCtx, firstJob) }()
+	select {
+	case <-read:
+	case <-firstCtx.Done():
+		t.Fatal("resolve did not reach its state check")
+	}
+	args.Resolved = false
+	err := secondWorker.Work(firstCtx, &river.Job[jobs.ThreadArgs]{Args: args})
+	close(release)
+	if firstErr := <-done; firstErr != nil {
+		t.Fatalf("resolve: %v", firstErr)
+	}
+	if snooze, ok := errors.AsType[*river.JobSnoozeError](err); !ok || snooze.Duration != publishWait {
+		t.Fatalf("restore error = %v, want a %s snooze while resolution is in progress", err, publishWait)
+	}
+	if err := secondWorker.Work(t.Context(), &river.Job[jobs.ThreadArgs]{Args: args}); err != nil {
+		t.Fatalf("restore retry: %v", err)
+	}
+	if ds := dismissals(); len(ds) != 0 {
+		t.Fatalf("unresolved thread remains dismissed: %+v", ds)
+	}
+}
+
+type threadStateForge struct {
+	forge.Client
+	state func(context.Context) (bool, bool, error)
+}
+
+func (f *threadStateForge) ThreadResolved(ctx context.Context, _, _ string, _ int, _ int64) (bool, bool, error) {
+	return f.state(ctx)
 }
 
 func TestThreadIgnoresSupersededState(t *testing.T) {
@@ -174,7 +238,7 @@ func TestThreadIgnoresSupersededState(t *testing.T) {
 			}
 			w := &Thread{}
 			outcome, err := w.apply(t.Context(), lf, &pullRequest{repository: "owner/repo", number: 7},
-				jobs.ThreadArgs{CommentID: 1, Sender: "maintainer", Resolved: tc.resolved}, slog.New(slog.DiscardHandler))
+				jobs.ThreadArgs{CommentID: 1, Sender: "maintainer", Resolved: tc.resolved}, "fingerprint", slog.New(slog.DiscardHandler))
 			if !errors.Is(err, tc.err) {
 				t.Fatalf("apply error = %v, want %v", err, tc.err)
 			}

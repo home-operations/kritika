@@ -365,7 +365,7 @@ var estimates = map[string]func(args []reflect.Value) int{
 		}
 		return 0
 	},
-	"printf": func(a []reflect.Value) int { return printfWidths(a[0].String()) },
+	"printf": printfAllocation,
 }
 
 // seqItemBytes is what one number of seq's output is counted as.
@@ -408,27 +408,99 @@ func length(v reflect.Value) int {
 	return 0
 }
 
-// printfVerb captures a verb's width and precision; * takes them from an
-// argument, which the estimate cannot see, so it is refused.
-var printfVerb = regexp.MustCompile(`%[-+# 0]*(\*|\d+)?(?:\.(\*|\d+)?)?`)
+// printfVerb consumes the whole directive so %% is not read as the start
+// of another verb, capturing the argument index that may precede the
+// width (1), the precision (3) or the verb (5), the width (2) and the
+// precision (4) themselves, and the verb (6).
+var printfVerb = regexp.MustCompile(`(?s)%[-+# 0]*(?:\[(\d+)\])?(\*|\d+)?(?:\.(?:\[(\d+)\])?(\*|\d+)?)?(?:\[(\d+)\])?(.)`)
 
-// printfWidths is the padding a format asks for, summed over its verbs.
-func printfWidths(format string) int {
-	total := 0
-	for _, m := range printfVerb.FindAllStringSubmatch(format, -1) {
-		for _, n := range m[1:] {
+// printfAllocation is what printf writes beyond its arguments: for each
+// verb, its argument's bytes once more, since the output holds them, and
+// the verb's width and precision for every leaf of the argument, since
+// fmt pads each element of a composite. Verbs take the arguments in
+// turn, an index choosing one outright, so an argument used twice is
+// charged twice; a * width or precision takes its value from an argument
+// the estimate cannot see, so it is refused. Each argument is measured
+// once, and its leaves counted only under a width.
+func printfAllocation(a []reflect.Value) int {
+	args := a[1]
+	sizes := make([]int, args.Len())
+	for i := range sizes {
+		sizes[i] = -1
+	}
+	total, next := 0, 0
+	for _, m := range printfVerb.FindAllStringSubmatch(a[0].String(), -1) {
+		if m[6] == "%" {
+			continue
+		}
+		pad := 0
+		for _, n := range []string{m[2], m[4]} {
 			if n == "" {
 				continue
 			}
 			w, err := strconv.Atoi(n)
-			if err != nil || n == "*" {
+			if err != nil || n == "*" || w > maxCallBytes-pad {
 				return maxCallBytes + 1
 			}
-			total += w
-			if total > maxCallBytes {
-				return maxCallBytes + 1
+			pad += w
+		}
+		arg, indexed := next, false
+		for _, n := range []string{m[1], m[3], m[5]} {
+			if n == "" {
+				continue
 			}
+			// An index fmt cannot read is a bad one: the verb writes a
+			// few bytes and the count stands.
+			i, err := strconv.Atoi(n)
+			arg, indexed = i-1, true
+			if err != nil {
+				arg = -1
+			}
+		}
+		if arg < 0 || arg >= args.Len() {
+			if !indexed {
+				next++
+			}
+			continue
+		}
+		next = arg + 1
+		if sizes[arg] < 0 {
+			sizes[arg] = measure(args.Index(arg), 0, maxCallBytes)
+		}
+		total += sizes[arg]
+		if pad > 0 {
+			total += product(int64(pad), int64(printfElements(args.Index(arg), 0)))
+		}
+		if total > maxCallBytes {
+			return maxCallBytes + 1
 		}
 	}
 	return total
+}
+
+// printfElements is how many values fmt pads when it formats v: the
+// leaves of a slice, array, map or struct, one for anything else. A value
+// at maxMeasureDepth counts as one leaf, as measure counts it as one
+// node, and the count stops once past maxCallBytes.
+func printfElements(v reflect.Value, depth int) int {
+	v = indirect(v)
+	if depth >= maxMeasureDepth {
+		return 1
+	}
+	n := 0
+	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len() && n <= maxCallBytes; i++ {
+			n += printfElements(v.Index(i), depth+1)
+		}
+	case reflect.Map:
+		for it := v.MapRange(); it.Next() && n <= maxCallBytes; {
+			n += printfElements(it.Key(), depth+1) + printfElements(it.Value(), depth+1)
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField() && n <= maxCallBytes; i++ {
+			n += printfElements(v.Field(i), depth+1)
+		}
+	}
+	return max(n, 1)
 }

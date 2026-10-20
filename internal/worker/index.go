@@ -201,8 +201,16 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 		return nil
 	}
 	// A push while this ran was absorbed into this job: if the branch has
-	// moved, index again at once, as a snooze that is not an attempt.
-	if tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch); err == nil && tip != commit {
+	// moved, index again at once, as a snooze that is not an attempt. A
+	// tip the forge would not give is asked for again the same way: the
+	// index is published, so the job must not fail over it and lose the
+	// push, nor spend an attempt on it.
+	tip, _, err := client.BranchTip(ctx, owner, name, repo.DefaultBranch)
+	if err != nil {
+		logger.Warn("index tip not checked after publication, checking again", "error", err, "in", tipCheckWait)
+		return river.JobSnooze(tipCheckWait)
+	}
+	if tip != commit {
 		logger.Info("index again: the branch moved while it ran", "tip", review.ShortSHA(tip))
 		return river.JobSnooze(0)
 	}
@@ -210,8 +218,13 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 }
 
 // appliedEmbedderWait is how long an index job waits on a pod whose
-// embedder the leader has not applied before it is tried again.
-const appliedEmbedderWait = time.Minute
+// embedder the leader has not applied before it is tried again, and
+// tipCheckWait how long one waits to ask the forge for the branch tip
+// again after it would not give it.
+const (
+	appliedEmbedderWait = time.Minute
+	tipCheckWait        = time.Minute
+)
 
 // embedderApplied reports whether emb is the embedder the leader applied,
 // which index_schema records once it has applied one. A pod on another, as

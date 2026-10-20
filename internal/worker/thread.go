@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -56,7 +57,23 @@ func (w *Thread) Work(ctx context.Context, job *river.Job[jobs.ThreadArgs]) erro
 	if err != nil {
 		return err
 	}
-	outcome, err := w.apply(ctx, client, pr, args, logger)
+	// Who asked, and whether the thread is one of the bot's findings, are
+	// settled before the pull request's publication lock is taken, so the
+	// events that end ignored never hold it, and the rest hold it for the
+	// state read and its dismissal write alone, which share it so that
+	// another replica restoring the thread cannot overtake this change.
+	fingerprint, outcome, err := w.check(ctx, client, pr, args, logger)
+	if err == nil && outcome == "" {
+		err = w.Store.WithPublicationLock(ctx, pr.id, func(ctx context.Context) error {
+			var err error
+			outcome, err = w.apply(ctx, client, pr, args, fingerprint, logger)
+			return err
+		})
+	}
+	if errors.Is(err, store.ErrPublicationBusy) {
+		logger.Info("thread change snoozed: the pull request is being updated", "for", publishWait)
+		return river.JobSnooze(publishWait)
+	}
 	if err != nil {
 		w.Metrics.Thread(account.Key(), threadFailed)
 		logger.Error("thread change failed", "error", err)
@@ -66,29 +83,38 @@ func (w *Thread) Work(ctx context.Context, job *river.Job[jobs.ThreadArgs]) erro
 	return nil
 }
 
-// apply dismisses or restores the finding the thread holds, when the
-// sender may and the thread is one of the bot's finding threads, and says
-// what it did.
-func (w *Thread) apply(
+// check is the fingerprint of the finding the thread holds, when the
+// sender may change it and the thread is one of the bot's finding
+// threads; otherwise the outcome is threadIgnored.
+func (w *Thread) check(
 	ctx context.Context, client forge.Client, pr *pullRequest, args jobs.ThreadArgs, logger *slog.Logger,
-) (string, error) {
+) (fingerprint, outcome string, err error) {
 	owner, repo := pr.ownerRepo()
 	perm, err := client.Permission(ctx, owner, repo, args.Sender)
 	if err != nil {
-		return "", fmt.Errorf("worker: look up the permission of %s: %w", args.Sender, err)
+		return "", "", fmt.Errorf("worker: look up the permission of %s: %w", args.Sender, err)
 	}
 	if !forge.CanWrite(perm) {
 		logger.Info("thread change ignored", "reason", "sender has "+string(perm)+" access, write is required")
-		return threadIgnored, nil
+		return "", threadIgnored, nil
 	}
-	fingerprint, err := threadFinding(ctx, client, owner, repo, args.CommentID)
+	fingerprint, err = threadFinding(ctx, client, owner, repo, args.CommentID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if fingerprint == "" {
 		logger.Info("thread change ignored", "reason", "not a finding thread")
-		return threadIgnored, nil
+		return "", threadIgnored, nil
 	}
+	return fingerprint, "", nil
+}
+
+// apply dismisses or restores the finding fingerprint the thread holds,
+// when the thread still is as the event said, and says what it did.
+func (w *Thread) apply(
+	ctx context.Context, client forge.Client, pr *pullRequest, args jobs.ThreadArgs, fingerprint string, logger *slog.Logger,
+) (string, error) {
+	owner, repo := pr.ownerRepo()
 	logger = logger.With("fingerprint", fingerprint)
 	resolved, exists, err := client.ThreadResolved(ctx, owner, repo, pr.number, args.CommentID)
 	if err != nil {

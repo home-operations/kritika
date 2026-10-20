@@ -44,41 +44,57 @@ func newAttempts(now func() time.Time) *attempts {
 	return &attempts{now: now, failed: map[string]window{}}
 }
 
-// allowed reports whether client may try a password now.
-func (a *attempts) allowed(client string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	w, ok := a.failed[client]
-	return !ok || a.now().Sub(w.start) >= failedSignInWindow || w.n < maxFailedSignIns
-}
-
-// fail records a wrong password from client.
-func (a *attempts) fail(client string) {
+// try runs check, a password comparison, for client, unless its wrong
+// answers have exhausted its window, and records a wrong one. The check
+// runs under the lock, so concurrent attempts are judged one after
+// another, each seeing the failures recorded before it: none passes the
+// limit on the strength of a count that is still to grow, and a right
+// answer, or one still in flight, costs the client nothing.
+func (a *attempts) try(client string, check func() bool) (admitted, ok bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
-	if _, tracked := a.failed[client]; !tracked && len(a.failed) >= maxTrackedClients {
-		for k, w := range a.failed {
-			if now.Sub(w.start) >= failedSignInWindow {
-				delete(a.failed, k)
-			}
-		}
-		if len(a.failed) >= maxTrackedClients {
-			var oldest string
-			for k, w := range a.failed {
-				if oldest == "" || w.start.Before(a.failed[oldest].start) {
-					oldest = k
-				}
-			}
-			delete(a.failed, oldest)
-		}
+	w, tracked := a.failed[client]
+	if tracked && now.Sub(w.start) >= failedSignInWindow {
+		delete(a.failed, client)
+		w, tracked = window{}, false
 	}
-	w := a.failed[client]
-	if now.Sub(w.start) >= failedSignInWindow {
-		w = window{start: now}
+	if w.n >= maxFailedSignIns {
+		return false, false
+	}
+	if check() {
+		return true, true
+	}
+	if !tracked {
+		a.evict(now)
+		w.start = now
 	}
 	w.n++
 	a.failed[client] = w
+	return true, false
+}
+
+// evict makes room for one more client once maxTrackedClients are
+// tracked: the expired windows go, and failing that the oldest one.
+func (a *attempts) evict(now time.Time) {
+	if len(a.failed) < maxTrackedClients {
+		return
+	}
+	for k, w := range a.failed {
+		if now.Sub(w.start) >= failedSignInWindow {
+			delete(a.failed, k)
+		}
+	}
+	if len(a.failed) < maxTrackedClients {
+		return
+	}
+	var oldest string
+	for k, w := range a.failed {
+		if oldest == "" || w.start.Before(a.failed[oldest].start) {
+			oldest = k
+		}
+	}
+	delete(a.failed, oldest)
 }
 
 // clientAddr is the address a request came from, without its port.
@@ -103,11 +119,6 @@ func (h *Handler) localSignIn(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody{Code: codeUnknownSignIn})
 		return
 	}
-	client := clientAddr(r)
-	if !h.attempts.allowed(client) {
-		writeJSON(w, http.StatusTooManyRequests, errorBody{Code: codeTooManyAttempts})
-		return
-	}
 	var body struct {
 		User     string `json:"user"`
 		Password string `json:"password"`
@@ -116,11 +127,18 @@ func (h *Handler) localSignIn(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Code: codeInvalidRequest})
 		return
 	}
-	// Both compared whatever the first says, so the time taken tells nothing
-	// about which was wrong.
-	userOK, passwordOK := equalSecret(body.User, user), equalSecret(body.Password, password.Value())
-	if !userOK || !passwordOK {
-		h.attempts.fail(client)
+	client := clientAddr(r)
+	admitted, ok := h.attempts.try(client, func() bool {
+		// Both compared whatever the first says, so the time taken tells
+		// nothing about which was wrong.
+		userOK, passwordOK := equalSecret(body.User, user), equalSecret(body.Password, password.Value())
+		return userOK && passwordOK
+	})
+	switch {
+	case !admitted:
+		writeJSON(w, http.StatusTooManyRequests, errorBody{Code: codeTooManyAttempts})
+		return
+	case !ok:
 		h.logger.WarnContext(r.Context(), "auth: local sign-in refused", "client", client)
 		writeJSON(w, http.StatusUnauthorized, errorBody{Code: codeInvalidCredentials})
 		return
