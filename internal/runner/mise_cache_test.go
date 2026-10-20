@@ -162,10 +162,10 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			var seen []string
 			// The gateway answers a plain HTTP request for the tool, from
 			// upstream when the proxy's username asks it to fetch again,
-			// and one for its release from the API, which the tool's
-			// api_url names over plain HTTP, and refuses every CONNECT,
-			// which mise also makes for its versions host; it notes how
-			// each request for the tool's host came, and as which user.
+			// and refuses every CONNECT, which mise also makes for its
+			// versions host; it notes how each request for the tool's
+			// host came, and as which user. The tool's api_url is plain
+			// HTTP, so the gateway answers as the API too.
 			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				r.Header.Set("Authorization", r.Header.Get("Proxy-Authorization"))
 				user, _, _ := r.BasicAuth()
@@ -191,7 +191,9 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			defer gateway.Close()
 			home := t.TempDir()
 			proxy := strings.Replace(gateway.URL, "://", "://:krk_token@", 1)
-			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy}
+			// mise would back off for seconds retrying each CONNECT the
+			// gateway refuses.
+			base := []string{"HOME=" + home, "PATH=/usr/bin:/bin", "HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy, "MISE_HTTP_RETRIES=0"}
 			var logs strings.Builder
 			m, _, err := newMiseTools(t.Context(), bin, home, base, nil, tt.cacheLocked, repo, nil,
 				Secrets{Redacted: &Redactions{}}, slog.New(slog.NewTextHandler(&logs, nil)))
