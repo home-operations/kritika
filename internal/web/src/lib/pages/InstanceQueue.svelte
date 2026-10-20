@@ -6,7 +6,7 @@
   // The queue of every account the viewer can read, and the model slots
   // each account's running reviews hold, which is why a job of it waits.
   import { href } from '../router.svelte';
-  import { Resource, live, pollJobs } from '../resource.svelte';
+  import { Resource, pollJobs } from '../resource.svelte';
   import type { InstanceQueue } from '../types';
   import StateView from '../components/StateView.svelte';
   import JobTable from '../components/JobTable.svelte';
@@ -14,12 +14,11 @@
 
   let { filter }: { filter?: QueueFilter } = $props();
 
-  const res = Resource.json<InstanceQueue>(() => '/api/v1/queue');
+  const res = Resource.live<InstanceQueue>(() => '/api/v1/queue');
 
   $effect(() => {
     void res.load();
   });
-  $effect(() => live(() => true, () => void res.load()));
   $effect(() => pollJobs(() => void res.load()));
 </script>
 

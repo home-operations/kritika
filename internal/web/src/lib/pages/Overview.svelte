@@ -4,7 +4,7 @@
   // see, then one row per account with its numbers and its health, each
   // cell that names something wrong leading to where the account shows it.
   import { href } from '../router.svelte';
-  import { Resource, live, pollJobs } from '../resource.svelte';
+  import { Resource, pollJobs } from '../resource.svelte';
   import { tokens, costTotal, reviewsLeftOut, usd, wholeNumber } from '../format';
   import type { AccountSummary, InstanceQueue } from '../types';
   import { WANTS, nearCaps } from '../attention';
@@ -16,20 +16,18 @@
   import { attention as jobNeedsAttention, overdue, waiting } from '../queue';
   import WebhookState from '../components/WebhookState.svelte';
 
-  const res = Resource.json<AccountSummary[]>(() => '/api/v1/accounts');
+  const res = Resource.live<AccountSummary[]>(() => '/api/v1/accounts');
 
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.kind !== 'model_call', () => void res.load()));
 
   // The queue is its own fetch: the page stands without it, and only the
   // one tile waits on it.
-  const queue = Resource.json<InstanceQueue>(() => '/api/v1/queue');
+  const queue = Resource.live<InstanceQueue>(() => '/api/v1/queue');
   $effect(() => {
     void queue.load();
   });
-  $effect(() => live((e) => e.kind !== 'model_call', () => void queue.load()));
   $effect(() => pollJobs(() => void queue.load()));
 
   const operationalWants = WANTS.filter((w) => w.key !== 'p0');

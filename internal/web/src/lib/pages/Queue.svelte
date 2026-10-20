@@ -1,7 +1,7 @@
 <script lang="ts">
   import { queueFilter, type QueueFilter } from '../routes';
   import { replace } from '../router.svelte';
-  import { Resource, live, pollJobs } from '../resource.svelte';
+  import { Resource, pollJobs } from '../resource.svelte';
   import { accountApi } from '../links';
   import type { Job } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -10,12 +10,11 @@
   import QueueHelp from '../components/QueueHelp.svelte';
 
   let { slug, filter }: { slug: string; filter?: QueueFilter } = $props();
-  const res = Resource.json<Job[]>(() => `${accountApi(slug)}/queue`);
+  const res = Resource.live<Job[]>(() => `${accountApi(slug)}/queue`);
 
   $effect(() => {
     void res.load();
   });
-  $effect(() => live((e) => e.account === slug, () => void res.load()));
   $effect(() => pollJobs(() => void res.load()));
 </script>
 

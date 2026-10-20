@@ -1,6 +1,6 @@
 import { onDestroy, untrack } from 'svelte';
 import { QueryObserver, type QueryObserverResult } from '@tanstack/svelte-query';
-import { apiQuery, queryClient } from './query';
+import { apiQuery, queryClient, refreshes } from './query';
 import { session } from './session.svelte';
 import { router } from './router.svelte';
 import { ApiError, getJSON } from './api.svelte';
@@ -17,6 +17,7 @@ export class Resource<T> {
   #observer?: QueryObserver<T>;
   #disposed = false;
   #unsubscribe?: () => void;
+  #unsubscribeLive?: () => void;
   #loadedKey?: string;
   readonly #snapshot = ++nextSnapshot;
   readonly #fetcher?: (signal: AbortSignal) => Promise<T>;
@@ -28,11 +29,20 @@ export class Resource<T> {
     onDestroy(() => {
       this.#disposed = true;
       this.#unsubscribe?.();
+      this.#unsubscribeLive?.();
     });
   }
 
   static json<T>(path: () => string): Resource<T> {
     return new Resource<T>(undefined, path);
+  }
+
+  // live is a read that keeps itself current: once the page has loaded it,
+  // the events its path refreshes on (see refreshes) reload it.
+  static live<T>(path: () => string, delayMs?: number): Resource<T> {
+    const res = new Resource<T>(undefined, path);
+    res.#unsubscribeLive = live((e) => refreshes(path(), e), () => { if (res.#observer) void res.load(); }, delayMs);
+    return res;
   }
 
   get data(): T | undefined { return this.#data; }
@@ -162,6 +172,8 @@ export function live(
 
 // Live refreshes publish a coherent snapshot from fresh cursors. Initial
 // restoration reveals pages as they arrive so a deep list stays usable.
+// The events the list's path refreshes on (see refreshes) refresh it once
+// the page has loaded it.
 export class Paged<T> {
   readonly first: Resource<Page<T>>;
   loadingMore = $state(false);
@@ -182,9 +194,11 @@ export class Paged<T> {
   constructor(url: (cursor?: string) => string, key: (t: T) => string) {
     this.#url = url;
     this.#key = key;
+    const unsubscribe = live((e) => refreshes(this.#url(), e), () => { if (this.#base) void this.refresh(); });
     onDestroy(() => {
       this.#gen++;
       this.#moreController?.abort();
+      unsubscribe();
     });
     this.first = new Resource(async (signal) => {
       const gen = this.#gen;

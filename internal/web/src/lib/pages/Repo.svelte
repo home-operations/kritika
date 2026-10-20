@@ -2,7 +2,7 @@
   import Collapsible from '../components/Collapsible.svelte';
   import PageHeader from '../components/PageHeader.svelte';
   import { href } from '../router.svelte';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
   import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings, SkillScope } from '../types';
   import StateView from '../components/StateView.svelte';
@@ -18,8 +18,8 @@
   const fullName = $derived(`${owner}/${repo}`);
   const account = $derived(`${accountApi(slug)}`);
 
-  const res = Resource.json<RepoDetail>(() => `${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
-  const pulls = Resource.json<Page<Pull>>(() => `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`);
+  const res = Resource.live<RepoDetail>(() => `${account}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+  const pulls = Resource.live<Page<Pull>>(() => `${account}/pulls?state=all&limit=50&repo=${encodeURIComponent(fullName)}`);
 
   $effect(() => {
     void res.load();
@@ -27,15 +27,6 @@
   $effect(() => {
     void pulls.load();
   });
-  $effect(() =>
-    live(
-      (e) => e.account === slug && e.kind !== 'model_call',
-      () => {
-        void res.load();
-        void pulls.load();
-      },
-    ),
-  );
 
   const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
   const tests = (c: Condition) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
