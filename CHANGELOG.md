@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.0.87](https://github.com/home-operations/kritika/compare/0.0.86...0.0.87) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** declare repository tools in .kritika.yaml ([#1121](https://github.com/home-operations/kritika/issues/1121))
+
+### Features
+
+* **config:** declare repository tools in .kritika.yaml ([#1121](https://github.com/home-operations/kritika/issues/1121)) ([12dd67e](https://github.com/home-operations/kritika/commit/12dd67e043d0c6ec5db391d79ac2abc0041d58e1))
+
+
+### Bug Fixes
+
+* **worker:** review an unchanged bot patch in place of a replaced request ([#1119](https://github.com/home-operations/kritika/issues/1119)) ([981e425](https://github.com/home-operations/kritika/commit/981e425434b7d50fd9aa0ea6a19194f9362821d2))
+
 ## [0.0.86](https://github.com/home-operations/kritika/compare/0.0.85...0.0.86) (2026-10-19)
 
 
