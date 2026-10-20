@@ -5,7 +5,7 @@
   import { sendEach, toastTally } from '../manage';
   import { navigate, replace } from '../router.svelte';
   import { PULL_IS, PULL_OUTCOMES, pullFilter, type PullFilter } from '../routes';
-  import { Paged, Resource, live } from '../resource.svelte';
+  import { Paged, Resource } from '../resource.svelte';
   import { pullKey, pullRoute, accountApi, rerunPath } from '../links';
   import { listKeys } from '../listkeys';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
@@ -62,7 +62,6 @@
   $effect(() => {
     if (slug) void repos.load();
   });
-  $effect(() => live((e) => (!slug || e.account === slug) && (e.kind === 'review' || e.kind === 'followup'), () => void paged.refresh()));
 
   // The box's tokens: status: is the last review's outcome.
   const authors = $derived([...new Set(paged.items.map((p) => p.author))].sort());

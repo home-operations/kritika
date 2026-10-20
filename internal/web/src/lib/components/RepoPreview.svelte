@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Resource, live } from '../resource.svelte';
+  import { Resource } from '../resource.svelte';
   import { accountApi, repoRoute } from '../links';
   import { href } from '../router.svelte';
   import { shortSha, wholeNumber } from '../format';
@@ -8,9 +8,8 @@
   import Time from './Time.svelte';
 
   let { slug, repo }: { slug: string; repo: Repository } = $props();
-  const res = Resource.json<RepoDetail>(() => `${accountApi(slug)}/repos/${repo.fullName.split('/').map(encodeURIComponent).join('/')}`);
+  const res = Resource.live<RepoDetail>(() => `${accountApi(slug)}/repos/${repo.fullName.split('/').map(encodeURIComponent).join('/')}`);
   $effect(() => { void repo.enabled; void res.load(); });
-  $effect(() => live((e) => e.account === slug && (e.kind === 'index_run' || e.kind === 'review'), () => void res.load()));
 </script>
 
 <StateView {res} layout="inline" retry={() => res.load()}>

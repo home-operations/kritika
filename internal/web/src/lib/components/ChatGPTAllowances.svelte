@@ -1,6 +1,6 @@
 <script lang="ts">
   import { accountApi } from '../links';
-  import { Resource, live } from '../resource.svelte';
+  import { Resource } from '../resource.svelte';
   import { clock, ago } from '../time.svelte';
   import type { ChatGPTAllowanceWindow, ChatGPTProviderUsage } from '../types';
   import Meter from './Meter.svelte';
@@ -8,9 +8,8 @@
   import Time from './Time.svelte';
 
   let { slug }: { slug: string } = $props();
-  const res = Resource.json<ChatGPTProviderUsage[]>(() => `${accountApi(slug)}/chatgpt/allowances`);
+  const res = Resource.live<ChatGPTProviderUsage[]>(() => `${accountApi(slug)}/chatgpt/allowances`, 2000);
   $effect(() => { void res.load(); });
-  $effect(() => live((e) => e.account === slug && e.kind === 'model_call', () => void res.load(), 2000));
 
   function windowName(w: ChatGPTAllowanceWindow): string {
     const mins = w.windowDurationMins;

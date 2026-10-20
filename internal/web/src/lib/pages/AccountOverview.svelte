@@ -1,7 +1,7 @@
 <script lang="ts">
   import { href } from '../router.svelte';
   import { accountApi, repoRoute } from '../links';
-  import { Resource, errorMessage, live, pollJobs } from '../resource.svelte';
+  import { Resource, errorMessage, pollJobs } from '../resource.svelte';
   import { WANTS, nearCaps } from '../attention';
   import { hookURL } from '../session.svelte';
   import { unsignedWebhooks } from '../setup';
@@ -17,15 +17,11 @@
 
   let { slug }: { slug: string } = $props();
   const base = $derived(accountApi(slug));
-  const account = Resource.json<AccountDetail>(() => base);
-  const attention = Resource.json<Attention>(() => `${base}/attention`);
-  const queue = Resource.json<Job[]>(() => `${base}/queue`);
-  const repos = Resource.json<Page<Repository>>(() => `${base}/repos?limit=5`);
+  const account = Resource.live<AccountDetail>(() => base);
+  const attention = Resource.live<Attention>(() => `${base}/attention`);
+  const queue = Resource.live<Job[]>(() => `${base}/queue`);
+  const repos = Resource.live<Page<Repository>>(() => `${base}/repos?limit=5`);
   $effect(() => { void account.load(); void attention.load(); void queue.load(); void repos.load(); });
-  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'followup'), () => void account.load()));
-  $effect(() => live((e) => e.account === slug && e.kind === 'review', () => void attention.load()));
-  $effect(() => live((e) => e.account === slug && e.kind !== 'model_call', () => void queue.load()));
-  $effect(() => live((e) => e.account === slug && (e.kind === 'review' || e.kind === 'index_run'), () => void repos.load()));
   $effect(() => pollJobs(() => void queue.load()));
 
   const wants = $derived(attention.data ? WANTS.filter((w) => attention.data![w.key] > 0) : []);

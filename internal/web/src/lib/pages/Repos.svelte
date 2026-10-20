@@ -2,7 +2,7 @@
   import PageHeader from '../components/PageHeader.svelte';
   import { Switch } from 'bits-ui';
   import { href, replace } from '../router.svelte';
-  import { Paged, live } from '../resource.svelte';
+  import { Paged } from '../resource.svelte';
   import { indexTone } from '../format';
   import { repoRoute, accountApi, reindexPath, turnedOnPath } from '../links';
   import { getJSON, sendJSON } from '../api.svelte';
@@ -55,7 +55,6 @@
   $effect(() => {
     void paged.load();
   });
-  $effect(() => live((e) => e.account === slug && e.kind === 'index_run', () => void paged.refresh()));
 
   function visible(): Repository[] {
     const needle = search.trim().toLowerCase();
