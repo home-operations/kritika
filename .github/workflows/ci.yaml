@@ -28,6 +28,9 @@ env:
 
 jobs:
   docs:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Docs
     uses: $/.github/workflows/docs.yaml
     permissions:
