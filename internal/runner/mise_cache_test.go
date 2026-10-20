@@ -3,6 +3,7 @@ package runner
 import (
 	"cmp"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -81,17 +82,49 @@ func TestLockHosts(t *testing.T) {
 	}
 }
 
-// repoTool is a repository's config for http:repo-tool at url, with
-// payload's checksum pinned, so the run's lock step needs no download.
-func repoTool(t *testing.T, url string, payload []byte) *repoMiseConfig {
+// repoToolDoc is a repository's config for github:acme/repo-tool, the
+// release repoToolRelease serves from the GitHub API at api, offering
+// command.
+func repoToolDoc(api, command string) string {
+	return fmt.Sprintf("[tools.'github:acme/repo-tool']\nversion = '1.0.0'\napi_url = '%s'\nasset_pattern = 'repo-tool'\nfilter_bins = '%s'\n",
+		api, command)
+}
+
+// repoTool is the runner's read of repoToolDoc offering repo-tool.
+func repoTool(t *testing.T, api string) *repoMiseConfig {
 	t.Helper()
-	doc := fmt.Sprintf("[tools]\n\"http:repo-tool\" = { version = \"1.0.0\", url = %q, filter_bins = \"repo-tool\", checksum = \"sha256:%x\" }\n",
-		url, sha256.Sum256(payload))
-	repo, err := newRepoMiseConfig(doc)
+	repo, err := newRepoMiseConfig(repoToolDoc(api, "repo-tool"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return repo
+}
+
+// repoToolRelease is the GitHub API's answers for acme/repo-tool's v1.0.0
+// release, and the list of its releases, which an unlocked install reads,
+// as mise asks a tool's api_url for them: one asset, repo-tool, which
+// mise downloads from assetURL, the asset's API URL, as it does from any
+// API but GitHub's own, and locks on digest unless it is "".
+func repoToolRelease(assetURL, digest string) http.Handler {
+	asset := map[string]any{"name": "repo-tool", "url": assetURL, "browser_download_url": assetURL}
+	if digest != "" {
+		asset["digest"] = digest
+	}
+	release := map[string]any{"tag_name": "v1.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-01T00:00:00Z", "assets": []any{asset}}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body any
+		switch r.URL.Path {
+		case "/repos/acme/repo-tool/releases/tags/v1.0.0":
+			body = release
+		case "/repos/acme/repo-tool/releases":
+			body = []any{release}
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+	})
 }
 
 // TestMiseLockedInstallThroughCache: a repository's tool, once the run
@@ -106,7 +139,10 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, testMiseConfig)
 	payload := []byte("#!/bin/sh\necho upstream\n")
-	repo := repoTool(t, "https://tools.example.invalid/repo-tool", payload)
+	// The API's digest is the checksum the run locks the tool on, which
+	// needs no download.
+	release := repoToolRelease("https://tools.example.invalid/repo-tool", fmt.Sprintf("sha256:%x", sha256.Sum256(payload)))
+	repo := repoTool(t, "http://api.example.invalid")
 	const stale = "#!/bin/sh\necho stale\n"
 	for _, tt := range []struct {
 		name string
@@ -126,9 +162,10 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 			var seen []string
 			// The gateway answers a plain HTTP request for the tool, from
 			// upstream when the proxy's username asks it to fetch again,
-			// and refuses every CONNECT, which mise also makes for its
-			// versions host; it notes how each request for the tool's
-			// host came, and as which user.
+			// and one for its release from the API, which the tool's
+			// api_url names over plain HTTP, and refuses every CONNECT,
+			// which mise also makes for its versions host; it notes how
+			// each request for the tool's host came, and as which user.
 			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				r.Header.Set("Authorization", r.Header.Get("Proxy-Authorization"))
 				user, _, _ := r.BasicAuth()
@@ -136,6 +173,10 @@ func TestMiseLockedInstallThroughCache(t *testing.T) {
 					mu.Lock()
 					seen = append(seen, r.Method+" "+user)
 					mu.Unlock()
+				}
+				if r.URL.Host == "api.example.invalid" {
+					release.ServeHTTP(w, r)
+					return
 				}
 				if r.Method == http.MethodConnect || r.URL.Host != "tools.example.invalid" {
 					http.Error(w, "refused", http.StatusForbidden)

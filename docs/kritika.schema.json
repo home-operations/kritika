@@ -202,8 +202,8 @@
     },
     "tools": {
       "type": "object",
-      "description": "The tools the repository's reviews may run, over the image's, as mise's [tools] table: each key a registry short name (helm, crane) or a backend such as github:owner/repo, without a [options] or @version suffix, with its version or a table of the version and the download's options. A tool installs on the first use. Only the aqua, github, gitlab, http and ubi backends and the core tools are offered, a short name by the backend mise resolves it to: an install only downloads and unpacks.",
-      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(:[A-Za-z0-9][A-Za-z0-9._/+-]*)?$" },
+      "description": "The tools the repository's reviews may run, over the image's, as mise's [tools] table: each key a registry short name (helm, crane) or a backend such as github:owner/repo, without a [options] or @version suffix, with its version or a table of the version and the download's options. A tool installs on the first use. Only the aqua, github, gitlab, http and ubi backends and the core tools are offered, a short name by the backend mise resolves it to: an install only downloads and unpacks. The http backend is offered only by a short name, whose commands the registry names: mise refuses filter_bins on it.",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*(:[A-Za-z0-9][A-Za-z0-9._/+-]*)?$", "not": { "pattern": "^http:" } },
       "additionalProperties": {
         "anyOf": [
           { "$ref": "#/$defs/toolVersion" },

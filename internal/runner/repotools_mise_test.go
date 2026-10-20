@@ -1,10 +1,13 @@
 package runner
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,45 +20,47 @@ func TestMiseRepositoryTools(t *testing.T) {
 	bin, dataDir := hostMise(t)
 	t.Setenv("MISE_SYSTEM_DATA_DIR", dataDir)
 	systemMiseConfig(t, testMiseConfig)
-	artifact := filepath.Join(t.TempDir(), "repo-tool")
 	payload := []byte("#!/bin/sh\necho installed\n")
-	if err := os.WriteFile(artifact, payload, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	checksum := fmt.Sprintf("sha256:%x", sha256.Sum256(payload))
-	doc := func(command, checksum string) string {
-		d := fmt.Sprintf("[tools.'http:repo-tool']\nversion = '1.0.0'\nurl = 'file://%s'\nfilter_bins = '%s'\n", filepath.ToSlash(artifact), command)
-		if checksum != "" {
-			d += "checksum = '" + checksum + "'\n"
-		}
-		return d
-	}
 	for _, tt := range []struct {
+		// doc is the repository's config, when not github:acme/repo-tool's
+		// offering command.
 		name, doc string
 		// command is what the tool is offered as, and note what the notes
 		// say when it is not.
 		command, note string
 		offer         bool
+		// digest is what the release publishes as its asset's, and asset
+		// the URL mise downloads it from, "" for the API's server.
+		digest, asset string
 		// installErr is what the install's error says, "" when it succeeds.
 		installErr string
 		// locked is whether the run locks the tool before installing it:
-		// mise lock takes a checksum from the config, or hashes an asset it
-		// fetches, which a file:// URL or an unreachable host is not.
+		// mise lock takes the asset's checksum from its digest, and pins
+		// none for a release that publishes none.
 		locked bool
 	}{
-		{"declared", doc("repo-tool", ""), "repo-tool", "", true, "", false},
-		{"checksum verified", doc("repo-tool", checksum), "repo-tool", "", true, "", true},
-		{"wrong checksum", doc("repo-tool", "sha256:"+strings.Repeat("0", 64)), "repo-tool", "", true, "checksum", true},
-		{"unpinnable", strings.Replace(doc("repo-tool", ""), "file://"+filepath.ToSlash(artifact), "https://tools.example.invalid/repo-tool", 1),
-			"repo-tool", "", true, "could not be installed", false},
+		{"declared", "", "repo-tool", "", true, "", "", "", false},
+		{"digest verified", "", "repo-tool", "", true, fmt.Sprintf("sha256:%x", sha256.Sum256(payload)), "", "", true},
+		{"wrong digest", "", "repo-tool", "", true, "sha256:" + strings.Repeat("0", 64), "", "checksum", true},
+		{"unpinnable", "", "repo-tool", "", true, "", "https://tools.example.invalid/repo-tool", "could not be installed", false},
 		// A repository's binary is not run with the run's GitHub token.
-		{"gh refused", doc("gh", ""), "gh", "does not offer gh: it carries one of the run's credentials", false, "", false},
+		{"gh refused", "", "gh", "does not offer gh: it carries one of the run's credentials", false, "", "", "", false},
 		// A registry short name may resolve to a backend that runs a
 		// plugin's scripts, which .kritika.yaml cannot tell from the name.
-		{"plugin backend", "[tools]\nyarn = '1.22.22'\n", "yarn", "yarn not offered: its vfox:jdx/vfox-yarn backend builds or runs a plugin", false, "", false},
+		{"plugin backend", "[tools]\nyarn = '1.22.22'\n", "yarn", "yarn not offered: its vfox:jdx/vfox-yarn backend builds or runs a plugin",
+			false, "", "", "", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			repo, err := newRepoMiseConfig(tt.doc)
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/repo-tool" {
+					_, _ = w.Write(payload)
+					return
+				}
+				repoToolRelease(cmp.Or(tt.asset, "http://"+r.Host+"/repo-tool"), tt.digest).ServeHTTP(w, r)
+			}))
+			defer api.Close()
+			doc := cmp.Or(tt.doc, repoToolDoc(api.URL, tt.command))
+			repo, err := newRepoMiseConfig(doc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -68,7 +73,7 @@ func TestMiseRepositoryTools(t *testing.T) {
 				t.Fatal(err)
 			}
 			if m.byCommand["yq"] == nil || (m.byCommand[tt.command] != nil) != tt.offer {
-				t.Fatalf("offered = %v, tool = %+v, notes = %v", m.offered(), m.tools["http:repo-tool"], notes)
+				t.Fatalf("offered = %v, tool = %+v, notes = %v", m.offered(), m.tools["github:acme/repo-tool"], notes)
 			}
 			if !tt.offer {
 				if !strings.Contains(strings.Join(notes, "\n"), tt.note) {
@@ -116,7 +121,7 @@ func TestMiseRepositoryTools(t *testing.T) {
 			if !slices.Contains(m.env, "MISE_CACHE_DIR="+filepath.Join(home, ".cache", "mise")) {
 				t.Fatalf("mise env = %v, want its cache under HOME", m.env)
 			}
-			if got, err := os.ReadFile(filepath.Join(home, "mise.toml")); err != nil || string(got) != tt.doc {
+			if got, err := os.ReadFile(filepath.Join(home, "mise.toml")); err != nil || string(got) != doc {
 				t.Fatalf("config changed: %s, %v", got, err)
 			}
 		})

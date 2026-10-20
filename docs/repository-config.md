@@ -375,9 +375,13 @@ only the `aqua`, `github`, `gitlab`, `http` and `ubi` backends and the
 core tools are offered; a backend that builds or runs a package manager
 or plugin (`go:`, `cargo:`, `npm:`, `pipx:`, `gem:`, `dotnet:`, `spm:`,
 `asdf:`, `vfox:`) fails the file by name, and a registry short name mise
-resolves to one, `yarn` say, is not offered, with a summary note. A core
-tool that would build from source when no prebuilt release fits, `node`,
-`python`, `ruby` or `erlang`, fails to install instead. mise
+resolves to one, `yarn` say, is not offered, with a summary note. The
+`http` backend is offered only by a registry short name, `nomad-pack`
+say, whose commands the registry names: an `http:` name fails the file,
+since a tool declared by its backend names its commands with
+`filter_bins`, which mise refuses on `http`. A core tool that would
+build from source when no prebuilt release fits, `node`, `python`,
+`ruby` or `erlang`, fails to install instead. mise
 `[settings]`, `[env]`, tasks and hooks have no place in the file: the
 settings are the admin's, and the runner container's `env` in the
 chart's `runner.podTemplate` sets the commands' variables.
