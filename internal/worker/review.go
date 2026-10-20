@@ -122,7 +122,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 		return river.JobSnooze(publishWait)
 	case errors.Is(err, store.ErrHeadMoved):
 		logger.Info("review superseded at start: the head moved")
-		return w.end(ctx, b.early, store.ReviewSuperseded, "")
+		return w.endHeadMoved(ctx, b.early, job)
 	case errors.Is(err, store.ErrReviewReplaced):
 		return river.JobCancel(err)
 	case err != nil:
@@ -341,6 +341,8 @@ type earlyEnd struct {
 	gate    bool
 	started time.Time
 	jobID   int64
+	// created dates the review the end records, now when zero.
+	created time.Time
 	logger  *slog.Logger
 	// client reports the end on the head commit, under owner/repo; nil
 	// until begin has built it, when a superseded head is the only end.
@@ -360,6 +362,7 @@ func (w *Review) end(ctx context.Context, e earlyEnd, status store.ReviewStatus,
 		recorded, err = store.RecordEndedReview(ctx, tx, store.EndedReview{
 			AccountID: e.args.AccountID, PullRequestID: e.pr.id, HeadSHA: e.args.HeadSHA, MergeBaseSHA: e.mergeBase,
 			ForgePatchID: e.forgePatch, Status: status, SkipReason: e.skip, Trigger: e.args.Trigger, Error: reason, JobID: e.jobID,
+			CreatedAt: e.created,
 		})
 		return err
 	})
@@ -405,8 +408,11 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 // skipUnchangedBot ends a bot's review whose rebase changed nothing,
 // before a lease or a runner is spent on it; the runner's own patch check
 // stays the backstop for what the forge cannot tell. A manual re-run is
-// never skipped. It returns the forge patch id the review records, and
-// whether it ended the review, with the error of recording that.
+// never skipped, nor is a review the pull request owes someone (see
+// store.ReviewOwed): a push that replaced the run they asked for leaves
+// their request to this one. It returns the forge patch id the review
+// records, and whether it ended the review, with the error of recording
+// that.
 func (w *Review) skipUnchangedBot(
 	ctx context.Context, e earlyEnd, client forge.Client, owner, repo string, settings configfile.Settings,
 ) (string, bool, error) {
@@ -417,14 +423,21 @@ func (w *Review) skipUnchangedBot(
 	if !unchanged {
 		return patch, false, nil
 	}
-	var skippable bool
+	var owed, skippable bool
 	e.gate = settings.Confidence.Gate
 	if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
 		var err error
+		if owed, err = store.ReviewOwed(ctx, tx, e.pr.id); err != nil || owed {
+			return err
+		}
 		e.carried, skippable, err = carriedConfidence(ctx, tx, e.pr.id, "", settings.Confidence)
 		return err
 	}); err != nil {
 		return "", true, err
+	}
+	if owed {
+		e.logger.Info("bot patch unchanged, reviewed anyway: a review asked for since the last was not delivered")
+		return patch, false, nil
 	}
 	if !skippable {
 		return patch, false, nil
@@ -471,7 +484,7 @@ func (w *Review) begin(
 	e := earlyEnd{args: args, pr: pr, accountKey: account.Key(), started: started, jobID: job.ID, logger: logger}
 	if pr.headSHA != args.HeadSHA {
 		logger.Info("review superseded before start", "current_head", review.ShortSHA(pr.headSHA))
-		return begun{}, true, w.end(ctx, e, store.ReviewSuperseded, "")
+		return begun{}, true, w.endHeadMoved(ctx, e, job)
 	}
 	// A retry of a job whose review a newer review replaced starts none in
 	// its place; start would refuse it too, after the forge calls below.
@@ -537,6 +550,19 @@ func (w *Review) begin(
 	}
 	e.forgePatch = forgePatch
 	return begun{early: e, eff: eff, notes: append(notes, parseNotes...), client: client, owner: owner, repo: repo, token: token}, false, nil
+}
+
+// endHeadMoved ends a review whose head moved before it started as
+// superseded. One someone asked for is owed to them until a review
+// completes (see store.ReviewOwed), and is dated by its job, when it was
+// asked: a job that wakes to find the head moved records its review
+// late, after the review that answered it or a newer request may have
+// started, and the date keeps it from outranking them.
+func (w *Review) endHeadMoved(ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs]) error {
+	if e.args.Trigger == jobs.TriggerManual {
+		e.created = job.CreatedAt
+	}
+	return w.end(ctx, e, store.ReviewSuperseded, "")
 }
 
 // errNoSlot is a review's admission finding every model slot held after

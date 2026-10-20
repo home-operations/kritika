@@ -33,7 +33,9 @@ func ReviewKind(kind string) bool {
 }
 
 // TriggerManual is the Trigger a human-requested re-run carries. It is the
-// only trigger the worker lets bypass the bot-author patch-id skip.
+// only trigger the worker lets bypass the bot-author patch-id skip; a
+// review that replaces an undelivered manual one stands in for it (see
+// store.ReviewOwed).
 const TriggerManual = "manual"
 
 // LabelChange reports whether trigger is a label added to or removed from

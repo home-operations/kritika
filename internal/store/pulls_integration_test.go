@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/jobs"
 )
 
 // TestPausePullRequest checks that automatic reviews pause on request or
@@ -384,6 +385,117 @@ func TestLastReviewIsNotASkippedOne(t *testing.T) {
 	}
 	if attention.P0 != 1 {
 		t.Errorf("attention = %+v, want the blocking finding still counted", attention)
+	}
+}
+
+// TestReviewOwed: a pull request owes a review while one asked for since
+// its last completed review delivered none: its job yet to start, or its
+// latest review still running or prepared, canceled by a newer review's
+// start or superseded by a moved head. One that ended on its own answered
+// the request, as does any review that completed after it was asked, a
+// cancel asked for withdraws it, the latest request speaks for the pull
+// request, and a push's review is never owed.
+func TestReviewOwed(t *testing.T) {
+	s := openStore(t)
+	ctx := t.Context()
+	if err := s.ApplyConfig(ctx, parse(t, soloAccount("owed"))); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	account := accountID(t, s, "owed")
+	// A job is a review job of the pull request of trigger in state,
+	// created minute minutes from now; a rev is a review of trigger,
+	// status and error created then, of the job at index job in jobs, or
+	// of none for -1, whose cancel was asked for when canceled.
+	type job struct {
+		trigger, state string
+		minute         int
+	}
+	type rev struct {
+		trigger, status string
+		minute, job     int
+		error           string
+		canceled        bool
+	}
+	const manual = jobs.TriggerManual
+	completed := rev{"synchronize", "completed", 1, -1, "", false}
+	tests := []struct {
+		name    string
+		jobs    []job
+		reviews []rev
+		want    bool
+	}{
+		{"no reviews", nil, nil, false},
+		{"a request yet to start", []job{{manual, "scheduled", 1}}, nil, true},
+		{"a request yet to start, asked before the last completed review", []job{{manual, "scheduled", 0}}, []rev{completed}, false},
+		{"a request's job that ended without a review", []job{{manual, "completed", 1}}, nil, false},
+		{"a push's job yet to start", []job{{"synchronize", "scheduled", 1}}, nil, false},
+		{"a request still running", nil, []rev{{manual, "running", 1, -1, "", false}}, true},
+		{"a request prepared", nil, []rev{completed, {manual, "prepared", 2, -1, "", false}}, true},
+		{"a request canceled by a newer review", nil, []rev{completed, {manual, "canceled", 2, -1, ReplacedReviewError, false}}, true},
+		{"a request whose cancel was asked for", nil, []rev{completed, {manual, "canceled", 2, -1, ReplacedReviewError, true}}, false},
+		{"a request superseded before it started", nil, []rev{completed, {manual, "superseded", 2, -1, "", false}}, true},
+		{"a request superseded while the review standing in for it runs", nil,
+			[]rev{{manual, "superseded", 1, -1, "", false}, {"synchronize", "running", 2, -1, "", false}}, true},
+		{"a request superseded, dated by its job before the review that answered it", nil,
+			[]rev{{manual, "superseded", 0, -1, "", false}, completed}, false},
+		{"a stale request dated before the last completed review and a newer one running", nil,
+			[]rev{{manual, "superseded", 0, -1, "", false}, completed, {manual, "running", 2, -1, "", false}}, true},
+		{"a request cut by a restart whose retry runs", []job{{manual, "running", 1}},
+			[]rev{completed, {manual, "superseded", 2, 0, "cut by a restart and retried", false}, {manual, "running", 3, 0, "", false}}, true},
+		{"a request cut by a restart whose retry failed", []job{{manual, "completed", 1}},
+			[]rev{completed, {manual, "superseded", 2, 0, "cut by a restart and retried", false}, {manual, "failed", 3, 0, "", false}}, false},
+		{"a request a later review answered", nil, []rev{{manual, "canceled", 0, -1, ReplacedReviewError, false}, completed}, false},
+		{"a request that completed", nil, []rev{completed, {manual, "completed", 2, -1, "", false}}, false},
+		{"a request that was skipped", nil, []rev{completed, {manual, "skipped", 2, -1, "", false}}, false},
+		{"a request that failed", nil, []rev{completed, {manual, "failed", 2, -1, "", false}}, false},
+		{"a request that was capped", nil, []rev{completed, {manual, "capped", 2, -1, "", false}}, false},
+		{"a push's review canceled", nil, []rev{completed, {"synchronize", "canceled", 2, -1, ReplacedReviewError, false}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got bool
+			err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
+				var repoID, prID string
+				var number int
+				if err := tx.QueryRow(ctx, `SELECT id FROM repositories WHERE account_id = $1 LIMIT 1`, account).Scan(&repoID); err != nil {
+					return err
+				}
+				if err := tx.QueryRow(ctx, `INSERT INTO pull_requests (account_id, repository_id, number, head_sha)
+					VALUES ($1, $2, (random() * 1e6)::int, 'abc') RETURNING id, number`, account, repoID).Scan(&prID, &number); err != nil {
+					return err
+				}
+				jobIDs := make([]int64, len(tt.jobs))
+				for i, j := range tt.jobs {
+					if err := tx.QueryRow(ctx, `INSERT INTO river_job (kind, queue, args, max_attempts, state, created_at, finalized_at)
+						VALUES ('review', 'review', jsonb_build_object('account_id', $1::text, 'repository_id', $2::text, 'number', $3::int, 'trigger', $4::text),
+							3, $5::text::river_job_state, now() + $6 * interval '1 minute',
+							CASE WHEN $5::text IN ('completed', 'cancelled', 'discarded') THEN now() + $6 * interval '1 minute' END) RETURNING id`,
+						account, repoID, number, j.trigger, j.state, j.minute).Scan(&jobIDs[i]); err != nil {
+						return err
+					}
+				}
+				for _, r := range tt.reviews {
+					var jobID *int64
+					if r.job >= 0 {
+						jobID = &jobIDs[r.job]
+					}
+					if _, err := tx.Exec(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, trigger, error, created_at, river_job_id, cancel_requested_at)
+						VALUES ($1, $2, 'abc', $3, $4, $5, now() + $6 * interval '1 minute', $7, CASE WHEN $8 THEN now() END)`,
+						account, prID, r.status, r.trigger, r.error, r.minute, jobID, r.canceled); err != nil {
+						return err
+					}
+				}
+				var err error
+				got, err = ReviewOwed(ctx, tx, prID)
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("ReviewOwed = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
