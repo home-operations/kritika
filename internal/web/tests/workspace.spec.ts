@@ -253,7 +253,7 @@ test("mobile navigation traps focus, closes on selection and restores focus on E
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
   await page.getByRole("button", { name: "Next finding" }).click();
-  const trigger = page.getByRole("button", { name: "Open navigation" });
+  const trigger = page.getByRole("button", { name: /^Navigation · / });
   await trigger.click();
   const menu = page.getByRole("dialog", { name: "Navigation" });
   await expect(menu).toBeVisible();
@@ -330,7 +330,7 @@ test.describe("desktop 200% zoom equivalent reflow", () => {
   test("review controls and menu fit half the CSS viewport", async ({ page }, testInfo) => {
     await mockWorkspace(page);
     await page.goto(`/#/a/${g.SLUG}/reviews/rev-1/diff`);
-    await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Navigation · / })).toBeVisible();
     await page.getByRole("searchbox", { name: "Search files" }).fill("retry");
     await expect(page.locator(".file-jump")).toHaveCount(1);
     expect(await page.locator("main").evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
