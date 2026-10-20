@@ -5,7 +5,7 @@
   // npm 12's --package-lock-only refuses registry tarballs of packages with
   // bundleDependencies (@tailwindcss/oxide-wasm32-wasi): npm/cli#9800.
   // npm 11 is also what the pinned Node bundles for CI and the image.
-  constraints: { npm: "^11" },
+  constraints: { npm: "^12.0.0" },
   customManagers: [
     {
       // The Dockerfile takes the -tools image's mise from min_version.
