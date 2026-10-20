@@ -7,17 +7,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river/rivertest"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
+	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -25,8 +31,14 @@ import (
 // second worker's job jobID would, under the publication lock.
 func (h *agenticHarness) rival(t *testing.T, head string, jobID int64) (store.Started, error) {
 	t.Helper()
+	return h.rivalAs(t, head, jobID, "test")
+}
+
+// rivalAs is rival with the review's trigger.
+func (h *agenticHarness) rivalAs(t *testing.T, head string, jobID int64, trigger string) (store.Started, error) {
+	t.Helper()
 	args := jobs.ReviewArgs{AccountID: h.account.ID(), RepositoryID: configfile.RepositoryID(h.account.ID(), "acme/widgets"),
-		Number: h.number, HeadSHA: head, Trigger: "test"}
+		Number: h.number, HeadSHA: head, Trigger: trigger}
 	pr, err := loadPullRequest(h.ctx, h.st, args.AccountID, args.RepositoryID, h.number)
 	if err != nil {
 		t.Fatal(err)
@@ -381,4 +393,192 @@ func TestSkipStatusWaitsForStarts(t *testing.T) {
 	if !strings.HasPrefix(forgeStatus, "success: kritika: skipped") {
 		t.Fatalf("forge status = %q, want the skip the review reported under the lock", forgeStatus)
 	}
+}
+
+// rebase puts the head's change on a new merge base, as a merge of the
+// base branch into the pull request does, and tells the forge: a new
+// head, returned, whose patch is the one already reviewed.
+func (h *agenticHarness) rebase(t *testing.T, unrelated string) string {
+	t.Helper()
+	r, err := git.PlainOpen(h.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _ := r.Worktree()
+	if err := wt.Reset(&git.ResetOptions{Commit: plumbing.NewHash(h.base), Mode: git.HardReset}); err != nil {
+		t.Fatal(err)
+	}
+	commit := func(name, content string) string {
+		if err := os.WriteFile(filepath.Join(h.dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = wt.Add(name)
+		c, err := wt.Commit("change "+name, &git.CommitOptions{Author: &object.Signature{Name: "t", Email: "t@x", When: time.Now()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.String()
+	}
+	h.lf.setBase(commit("other.txt", unrelated))
+	h.lf.mu.Lock()
+	h.lf.status = ""
+	h.lf.mu.Unlock()
+	return commit("main.go", "package main\n\nfunc b() {}\n")
+}
+
+// TestReplacementOwesTheRequestedReview: a bot's pull request someone
+// asked a review of takes a push that leaves its patch as the last review
+// had it, a merge of the base branch, while the review they asked for
+// runs. The push's review replaces that one and stands in for it: the
+// unchanged patch is reviewed rather than deduped away, so the request
+// ends in a review. Once one completes nothing is owed, and the next such
+// push is skipped before its runner as before. A request whose job has
+// yet to start when the push's review runs is owed the same, and the
+// superseded review that job records once it wakes, after the review
+// that answered it, is dated by the job and owes nothing. A request
+// whose job runs first and finds the head moved records a superseded
+// review the push's review then stands in for.
+func TestReplacementOwesTheRequestedReview(t *testing.T) {
+	h := newAgenticHarness(t, 1118)
+	h.sm.reset(scriptSubmit)
+	h.dispatchAs(t, h.head, "Adds b.", true)
+	first, status, errText := h.waitReview(t, h.head)
+	if status != "completed" {
+		t.Fatalf("first review = %s: %s", status, errText)
+	}
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), first)
+	// The review asked for runs as a second worker's job would.
+	asked, err := h.rivalAs(t, h.head, 7_000_010, jobs.TriggerManual)
+	if err != nil || len(asked.Replaced) != 0 {
+		t.Fatalf("the requested review's start = %+v, %v; want it to replace nothing", asked, err)
+	}
+
+	next := h.rebase(t, "x\n")
+	h.dispatchAs(t, next, "Adds b.", true)
+	standIn, status, errText := h.waitReview(t, next)
+	if status != "completed" {
+		t.Fatalf("the push's review = %s (%q), want completed in place of the one asked for", status, errText)
+	}
+	if r := h.replacedRow(t, asked.ReviewID); r.status != "canceled" || r.replacedBy != standIn {
+		t.Fatalf("the requested review = %+v, want canceled, replaced by %s", r, standIn)
+	}
+	var firstPatch, patch string
+	var agents int
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(h.ctx, `SELECT forge_patch_id FROM reviews WHERE id = $1`, first).Scan(&firstPatch); err != nil {
+			return err
+		}
+		return tx.QueryRow(h.ctx, `SELECT r.forge_patch_id, (SELECT count(*) FROM agent_runs a JOIN runner_runs rr ON a.runner_run_id = rr.id
+			WHERE rr.review_id = r.id) FROM reviews r WHERE r.id = $1`, standIn).Scan(&patch, &agents)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if patch == "" || patch != firstPatch || agents != 1 {
+		t.Fatalf("the push's review has forge patch %q and %d agent run(s); want the first review's %q, seen unchanged, and one run",
+			patch, agents, firstPatch)
+	}
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), standIn)
+
+	again := h.rebase(t, "y\n")
+	h.dispatchAs(t, again, "Adds b.", true)
+	skipped, status, _ := h.waitReview(t, again)
+	if status != "skipped" {
+		t.Fatalf("the next push's review = %s, want skipped: nothing is owed once a review completed", status)
+	}
+	var runs int
+	var reason string
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(h.ctx, `SELECT skip_reason, (SELECT count(*) FROM runner_runs rr WHERE rr.review_id = r.id)
+			FROM reviews r WHERE r.id = $1`, skipped).Scan(&reason, &runs)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if reason != runner.SkipUnchangedPatch || runs != 0 {
+		t.Fatalf("the skipped review = %q with %d runner run(s), want %s before any runner", reason, runs, runner.SkipUnchangedPatch)
+	}
+	h.waitForgeStatus(t, "success: kritika: skipped (patch unchanged since the last review)")
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), skipped)
+
+	// The request's job is held back, as one snoozed for a model slot is,
+	// so the push's review runs first.
+	var queued int64
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		queued, err = jobs.EnqueueRerun(h.ctx, tx, h.insertOnly, h.account.ID(), configfile.RepositoryID(h.account.ID(), "acme/widgets"), h.number)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(h.ctx, `UPDATE river_job SET state = 'scheduled', scheduled_at = now() + interval '1 minute' WHERE id = $1`, queued)
+		return err
+	}); err != nil {
+		t.Fatalf("EnqueueRerun: %v", err)
+	}
+	third := h.rebase(t, "z\n")
+	h.dispatchAs(t, third, "Adds b.", true)
+	standInAgain, status, errText := h.waitReview(t, third)
+	if status != "completed" {
+		t.Fatalf("the push's review = %s (%q), want completed in place of the one queued", status, errText)
+	}
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), standInAgain)
+	if _, err := h.st.App().Exec(h.ctx, `UPDATE river_job SET state = 'available', scheduled_at = now() WHERE id = $1`, queued); err != nil {
+		t.Fatal(err)
+	}
+	if !h.waitSuperseded(t, queued, standInAgain) {
+		t.Fatal("the queued request's review is dated after the review that stood in for it")
+	}
+	fourth := h.rebase(t, "w\n")
+	h.dispatchAs(t, fourth, "Adds b.", true)
+	skipped, status, _ = h.waitReview(t, fourth)
+	if status != "skipped" {
+		t.Fatalf("the next push's review = %s, want skipped: the request was answered before its job woke", status)
+	}
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), skipped)
+
+	// The request's job runs first, as the older job, and finds the head
+	// moved by the push queued behind it.
+	if err := h.queue.QueuePause(h.ctx, jobs.QueueReview, nil); err != nil {
+		t.Fatal(err)
+	}
+	var first2 int64
+	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+		var err error
+		first2, err = jobs.EnqueueRerun(h.ctx, tx, h.insertOnly, h.account.ID(), configfile.RepositoryID(h.account.ID(), "acme/widgets"), h.number)
+		return err
+	}); err != nil {
+		t.Fatalf("EnqueueRerun: %v", err)
+	}
+	fifth := h.rebase(t, "v\n")
+	h.dispatchAs(t, fifth, "Adds b.", true)
+	if err := h.queue.QueueResume(h.ctx, jobs.QueueReview, nil); err != nil {
+		t.Fatal(err)
+	}
+	standInThird, status, errText := h.waitReview(t, fifth)
+	if status != "completed" {
+		t.Fatalf("the push's review = %s (%q), want completed in place of the superseded one", status, errText)
+	}
+	if !h.waitSuperseded(t, first2, standInThird) {
+		t.Fatal("the request's review is dated after the review that stood in for it")
+	}
+	waitRiverJobCompleted(h.ctx, t, h.st, h.account.ID(), standInThird)
+	sixth := h.rebase(t, "u\n")
+	h.dispatchAs(t, sixth, "Adds b.", true)
+	if _, status, _ := h.waitReview(t, sixth); status != "skipped" {
+		t.Fatalf("the next push's review = %s, want skipped: the superseded request was answered", status)
+	}
+}
+
+// waitSuperseded waits for the review job's review to end superseded and
+// reports whether it is dated before the review standIn.
+func (h *agenticHarness) waitSuperseded(t *testing.T, jobID int64, standIn string) bool {
+	t.Helper()
+	var before bool
+	waitFor(t, 20*time.Second, "the job's review to be superseded", func() bool {
+		err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
+			return tx.QueryRow(h.ctx, `SELECT r.created_at < s.created_at FROM reviews r, reviews s
+				WHERE r.river_job_id = $1 AND r.status = 'superseded' AND r.trigger = $2 AND s.id = $3`,
+				jobID, jobs.TriggerManual, standIn).Scan(&before)
+		})
+		return err == nil
+	})
+	return before
 }

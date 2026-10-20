@@ -192,6 +192,11 @@ func (w *Review) agentPrompt(
 		if !pr.dedupesBotPatch(trigger) {
 			return nil
 		}
+		// A review someone asked for that this one's start canceled is
+		// owed: this one stands in for it, so its patch is not deduped.
+		if owed, err := store.ReviewOwed(ctx, tx, pr.id); err != nil || owed {
+			return err
+		}
 		// A patch whose last review left no score to carry is reviewed
 		// again where a score is asked for.
 		baseline, err := store.LastReviewBaseline(ctx, tx, pr.id, reviewID)

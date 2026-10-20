@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -82,6 +83,39 @@ func LastForgePatchID(ctx context.Context, tx pgx.Tx, prID string) (string, erro
 		return "", fmt.Errorf("store: read last forge patch: %w", err)
 	}
 	return patch, nil
+}
+
+// ReviewOwed reports whether the pull request owes someone a review: one
+// asked for (jobs.TriggerManual) since its last completed review started
+// that delivered none. That is a job yet to start one, or, as the latest
+// review asked for since says, one still running or prepared, which a
+// newer review's start cancels, canceled by such a start, or superseded
+// by a head that moved, before it started or under it. A review that
+// replaces it stands in for it, so an unchanged bot patch is reviewed
+// rather than deduped away. A request that ended on its own, completed,
+// failed, skipped or capped, or whose cancel was asked for, is not owed.
+// A review a retry superseded is the request's word only until the retry
+// records its own, and one superseded before it started is dated by its
+// job (see EndedReview.CreatedAt), so a stale job that wakes late does
+// not outrank the review that answered it or a newer request.
+func ReviewOwed(ctx context.Context, tx pgx.Tx, prID string) (bool, error) {
+	var owed bool
+	err := tx.QueryRow(ctx, `WITH last AS (SELECT coalesce(max(created_at), '-infinity') AS at FROM reviews
+			WHERE pull_request_id = $1 AND status = 'completed')
+		SELECT coalesce((SELECT r.cancel_requested_at IS NULL
+					AND (r.status IN ('running', 'prepared', 'superseded') OR (r.status = 'canceled' AND r.error = $4))
+				FROM reviews r, last WHERE r.pull_request_id = $1 AND r.trigger = $2 AND r.created_at > last.at
+				ORDER BY r.created_at DESC, r.id DESC LIMIT 1), false)
+		OR EXISTS (SELECT 1 FROM river_job j JOIN pull_requests p ON p.id = $1, last
+			WHERE j.kind = $3 AND j.state IN (`+jobs.LiveStatesSQL()+`) AND j.args->>'trigger' = $2
+				AND j.args->>'account_id' = p.account_id::text AND j.args->>'repository_id' = p.repository_id::text
+				AND (j.args->>'number')::int = p.number AND j.created_at > last.at
+				AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.pull_request_id = $1 AND r.river_job_id = j.id))`,
+		prID, jobs.TriggerManual, jobs.ReviewArgs{}.Kind(), ReplacedReviewError).Scan(&owed)
+	if err != nil {
+		return false, fmt.Errorf("store: read whether a review is owed: %w", err)
+	}
+	return owed, nil
 }
 
 // LastReviewMergeBase can use a partial review: it needs only a base that

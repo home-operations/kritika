@@ -154,6 +154,11 @@ type EndedReview struct {
 	SkipReason string
 	// JobID is the River job that ended it.
 	JobID int64
+	// CreatedAt dates the review, now() when zero: a review asked for
+	// whose head moved before it started is dated by its job, when it was
+	// asked, so it orders among the pull request's reviews as the request
+	// does (see ReviewOwed).
+	CreatedAt time.Time
 }
 
 // RecordEndedReview records a review that never ran, as its terminal
@@ -167,12 +172,17 @@ func RecordEndedReview(ctx context.Context, tx pgx.Tx, r EndedReview) (bool, err
 		r.JobID); err != nil {
 		return false, fmt.Errorf("store: lock ended review: %w", err)
 	}
+	var createdAt *time.Time
+	if !r.CreatedAt.IsZero() {
+		createdAt = &r.CreatedAt
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO reviews
-		(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error, finished_at, river_job_id)
-		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10
+		(account_id, pull_request_id, head_sha, merge_base_sha, forge_patch_id, status, skip_reason, trigger, error,
+			finished_at, river_job_id, created_at)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, coalesce($11, now())
 		WHERE NOT EXISTS (SELECT 1 FROM reviews v WHERE v.pull_request_id = $2 AND v.river_job_id = $10 AND v.head_sha = $3
 			AND NOT EXISTS (SELECT 1 FROM runner_runs rr WHERE rr.review_id = v.id))`,
-		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Status, r.SkipReason, r.Trigger, r.Error, r.JobID)
+		r.AccountID, r.PullRequestID, r.HeadSHA, r.MergeBaseSHA, r.ForgePatchID, r.Status, r.SkipReason, r.Trigger, r.Error, r.JobID, createdAt)
 	if err != nil {
 		return false, fmt.Errorf("store: record ended review: %w", err)
 	}
