@@ -186,32 +186,41 @@ image, pinned by digest like the chart's image: a distroless image that
 carries [mise](https://mise.jdx.dev/) and those six tools as mise system
 installs, declared by its system config, `/etc/mise/config.toml`, at the
 versions `build/tools/mise.toml` pins. Every other tool is the
-repository's: its own
-[`.kritika/mise.toml`](repository-config.md#repository-tools) layers
-tools over the image's, as mise merges configs: per tool, the
-repository's entry replaces the image's, options included, and the
-image's other tools stay. So a repository adds a tool, `crane` for a
+repository's: the [`tools`](repository-config.md#repository-tools) of
+its `.kritika.yaml`, mise's `[tools]` table, which the runner writes as
+the run's mise config over the image's, as mise merges configs: per
+tool, the repository's entry replaces the image's, options included, and
+the image's other tools stay. So a repository adds a tool, `crane` for a
 container image's tags, digest, manifest and labels, say, or `flate` for
-a chart's rendered output, without an image build, and pins its download
-in `.kritika/mise.lock`:
+a chart's rendered output, without an image build:
 
-```toml
-[tools]
-crane = "0.22.1"
-"github:home-operations/flate" = "0.6.5"
+```yaml
+tools:
+  crane: "0.22.1"
+  "github:home-operations/flate": "0.6.5"
 ```
 
-Both files are read from the merge base, so a pull request cannot change
-the tools or download pins used to review itself. A tool at the image's
-version runs from its system install; any other downloads on the first
-run that uses it, into the run's own scratch space, at the URL and
-checksum the lock pins. The run tool offers every command the merged
-config's tools provide, `mise` itself excepted. An image set as the runner
-container's in `runner.podTemplate` without mise offers the six default
-commands its builder
-put on its `PATH`, and reads no repository config, which the review
-summary says. A follow-up posts no summary, so its reply carries such
-notes, and a command's setup failure, instead.
+The file is read from the merge base, so a pull request cannot change
+the tools used to review itself. A tool at the image's version runs from
+its system install; any other downloads on the first run that uses it,
+into the run's own scratch space, at the version declared. The run locks
+the tool first, with `mise lock` for its platform into a lock of its
+own beside the config: mise resolves the download through the tool's
+backend and takes its checksum from what the backend publishes, the
+GitHub API's asset digest or a checksum asset of the release, the
+`checksum` the entry pins, or else by fetching the asset and hashing it,
+and the install is then a locked one, `mise install --locked`, which
+mise checks against that lock. A tool the run cannot lock, say because
+no asset matched, installs unlocked with a warning in the log, verified
+as its backend verifies a download. No committed lock pins a download
+across runs: a release asset replaced upstream under the same tag
+installs, unless the entry pins its checksum. The run tool offers every
+command the merged config's tools provide, `mise` itself excepted. An
+image set as the runner container's in `runner.podTemplate` without mise
+offers the six default commands its builder put on its `PATH`, and no
+repository tool, which the review summary says. A follow-up posts no
+summary, so its reply carries such notes, and a command's setup failure,
+instead.
 
 A tool every repository should have belongs in the runner image: an
 image built on the `-tools` image, with the tool added to its
@@ -221,19 +230,21 @@ installed with `mise install --system --locked` as the release's
 Dockerfile installs the six, set as the runner container's image in
 `runner.podTemplate`.
 
-The runner keeps of a repository's `[tools]` entry its version and the
-options that select, verify and extract its download. The options that
-run a command or set its environment (`postinstall`, `install_env`,
+A `tools` entry takes its version and the options that select, verify
+and extract its download, and nothing else. The options that run a
+command or set its environment (`postinstall`, `install_env`,
 `depends`), that would send mise's token to another host (`api_url`,
-`headers`) and any option holding a template are dropped, since mise
+`headers`) and any value holding a template fail the file, since mise
 renders templates, `exec()` among them, when it reads the config and
-runs install hooks with the run's GitHub token in their environment.
-Repository `[env]` permits only literal strings under non-reserved names;
-templates and `_.` directives are dropped. `[tasks]`, `[settings]` and
-hooks are dropped too, with summary notes. Egress permissions remain
-the admin's, and so do the variables the runner container's `env` in
-`runner.podTemplate` sets, which the commands get over the repository's
-`[env]`, each from a literal value or a Secret's key:
+runs install hooks with the run's GitHub token in their environment. So
+does a backend whose install builds or runs a package manager or a
+plugin's scripts (`go:`, `cargo:`, `npm:`, `pipx:`, `gem:`, `dotnet:`,
+`spm:`, `asdf:`, `vfox:`): an install only downloads and unpacks. The
+file has no mise `[env]`, `[tasks]`, `[settings]` or hooks. Egress
+permissions remain the admin's, and so do the variables the runner
+container's `env` in `runner.podTemplate` sets, which the commands get
+over the image config's `[env]`, each from a literal value or a Secret's
+key:
 
 ```yaml
 runner:
@@ -256,17 +267,17 @@ the runner pod read it. kritika sets the variables on the runner
 container as `KRITIKA_COMMAND_ENV_<name>` and hands them to the commands
 under their own names, so they configure the commands and never the
 runner itself: a `GODEBUG` or `TMPDIR` meant for a tool does not change
-how the runner fetches, logs or connects. The filtered config and its lock live
+how the runner fetches, logs or connects. The rendered config lives
 outside the checkout in the run's read-only `HOME`, trusted only for the
-runner's own mise calls. A tool without a locked version, URL and
-checksum for the runner's platform is not offered, unless the image has
-that version installed already and nothing is downloaded. Downloads use
-`mise install --locked` and stay within the existing install timeout and
-gateway restrictions.
+runner's own mise calls. Installs stay within the existing install
+timeout and gateway restrictions; one that resolves a version or
+verifies a download reaches the GitHub API with the run's token, and an
+aqua package's verification reaches sigstore, so those hosts need
+`egress.allow` too.
 
-Enabling repository tools trusts the repository's merged tool definitions.
-kritika does not vet arbitrary binaries, install hooks or `install_env`.
-A tool with an interpreter, plugin loader or subprocess feature can run
+Enabling repository tools trusts the repository's tool definitions.
+kritika does not vet arbitrary binaries. A tool with an interpreter,
+plugin loader or subprocess feature can run
 code from the pull request despite the checkout's missing execute bits.
 Such a tool can also invoke mise by its absolute path; keeping mise out of
 the offered commands does not prevent subprocess execution.
@@ -416,24 +427,28 @@ repository and a ref, never git arguments.
 
 ### More tools
 
-Declare a tool in `.kritika/mise.toml` by its registry short name where
-it has one (`helm`, `crane`), which names its commands before it installs,
-else as `aqua:owner/repo`, whose recipe names the release asset and what
-mise verifies, and as `github:owner/repo` as a last resort, with
-`filter_bins` naming its commands unless the repository's name is the
-command. The binaries must be static or link only
-against glibc, libgcc and libstdc++, which is all the image carries, so a
-backend that builds or needs a runtime (`npm:`, `pipx:`, `cargo:`, `go:`)
-does not work there.
+Declare a tool under `tools` in `.kritika.yaml` by its registry short
+name where it has one (`helm`, `crane`), which names its commands before
+it installs, else as `aqua:owner/repo`, whose recipe names the release
+asset and what mise verifies, and as `github:owner/repo` as a last
+resort, with `filter_bins` naming its commands unless the repository's
+name is the command. The binaries must be static or link only against
+glibc, libgcc and libstdc++, which is all the image carries; a backend
+that builds or needs a runtime (`npm:`, `pipx:`, `cargo:`, `go:`) is
+refused, as is a short name the registry resolves to a plugin backend
+(`asdf:`, `vfox:`), which the runner checks with mise before offering
+the tool.
 
 ### The gateway's download cache
 
 A run installs the tools its repository declares, so each run downloads
 them again. The gateway can keep those downloads instead: with
 `gatewayCacheDir` set, a private emptyDir under Helm, each replica keeps
-what a repository's locked installs download from the hosts its
-`.kritika/mise.lock` pins, and serves it to the next run that asks for
-the same URL. Only a request named as a locked install's is kept: what
+what a repository's locked installs download from the hosts the run's
+lock pins, and serves it to the next run that asks for the same URL.
+The lock step itself, the API calls and any asset it hashes, goes
+around the cache, so the checksum an install is checked against is never
+one the cache chose. Only a request named as a locked install's is kept: what
 any other request fetches through the gateway is verified against
 nothing, so it is not shared between runs. A command can claim the name
 too; what it has the gateway keep is served only to requests that claim
@@ -641,12 +656,12 @@ lock, so there is nothing left to tune.
 
 `runner.tools` and `KRITIKA_RUNNER_TOOLS` are removed. Delete them from
 Helm values, the application configuration and the environment. Declare
-each tool in the `.kritika/mise.toml` of the repositories whose reviews
-use it instead, with its lock; for example, a flate image mount becomes:
+each tool under `tools` in the `.kritika.yaml` of the repositories whose
+reviews use it instead; for example, a flate image mount becomes:
 
-```toml
-[tools]
-"github:home-operations/flate" = "0.6.5"
+```yaml
+tools:
+  "github:home-operations/flate": "0.6.5"
 ```
 
 Tools no longer use Kubernetes image volumes, so adding one does not
@@ -656,20 +671,15 @@ commands on its own `PATH`.
 ### Migrating from the instance mise config
 
 `runner.mise.config`, `runner.miseConfig` and `KRITIKA_RUNNER_MISE_CONFIG`
-are removed. The instance's config had no lock, so its tools downloaded
-with only the verification their backend gives them. Delete it from Helm
-values, the application configuration and the environment, and move what
-it held:
+are removed. Delete it from Helm values, the application configuration
+and the environment, and move what it held:
 
-- **`[tools]`:** into the `.kritika/mise.toml` of each repository whose
-  reviews use the tool, locked with
-  `mise -C .kritika lock --platform linux-x64,linux-arm64`; a tool every
-  repository needs goes into a runner image built on the `-tools` image
-  (see [runner tools](#runner-tools)).
-- **`[env]`:** a plain value into each repository's `[env]`, as a
-  literal string, or into the runner container's `env` in
-  `runner.podTemplate` when the repository must not hold it (see
-  [runner tools](#runner-tools)). A value marked `redact = true` is a
+- **`[tools]`:** under `tools` in the `.kritika.yaml` of each repository
+  whose reviews use the tool; a tool every repository needs goes into a
+  runner image built on the `-tools` image (see
+  [runner tools](#runner-tools)).
+- **`[env]`:** into the runner container's `env` in
+  `runner.podTemplate` (see [runner tools](#runner-tools)). A value marked `redact = true` is a
   secret and does not belong in a repository: a token a tool sends to a
   host goes in [`egress.credentials`](#the-egress-gateway), which the
   gateway adds to the tool's plain `http://` requests, so the runner

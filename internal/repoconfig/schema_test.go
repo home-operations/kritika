@@ -43,6 +43,10 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"skill scope", []string{"properties", "skills", "properties", "scope", "additionalProperties"}, yamlKeys[configfile.SkillScope]()},
 		{"skill scope when", []string{"properties", "skills", "properties", "scope", "additionalProperties", "properties", "when", "items"},
 			yamlKeys[configfile.When]()},
+		{"tool", []string{"properties", "tools", "additionalProperties", "anyOf", "1"},
+			append(slices.Collect(maps.Keys(toolOptions)), versionOption, platformsOption)},
+		{"tool platform", []string{"properties", "tools", "additionalProperties", "anyOf", "1", "properties", "platforms", "additionalProperties"},
+			slices.Collect(maps.Keys(toolOptions))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,6 +84,10 @@ func TestFileKeysAreSettings(t *testing.T) {
 		keys = append(keys, p.Key)
 	}
 	for _, key := range leafKeys(reflect.TypeFor[File](), "", true) {
+		// tools has no admin counterpart: the image's tools are the admin's.
+		if key == "tools" {
+			continue
+		}
 		if !slices.ContainsFunc(keys, func(k string) bool { return key == k || strings.HasPrefix(key, k+".") }) {
 			t.Errorf("the file takes %s, which is no setting an admin writes", key)
 		}

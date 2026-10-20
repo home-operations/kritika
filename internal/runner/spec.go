@@ -24,7 +24,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 36
+const SpecVersion = 37
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -95,8 +95,8 @@ type AgentLimits struct {
 	// empty leaves them unnamed.
 	Hosts []string `json:"hosts,omitempty"`
 	// CacheLocked says the gateway keeps downloads, as
-	// configfile.GatewayCaches reports, so a repository's locked install
-	// reaches the hosts its lock pins downloads on through the cache too.
+	// configfile.GatewayCaches reports, so a repository's tool, once the
+	// run has locked it, is installed through the cache.
 	CacheLocked bool `json:"cacheLocked,omitempty"`
 	// Env names the variables of the runner's own environment that the
 	// run tool's commands get, the admin's, over a repository's [env].
@@ -211,10 +211,14 @@ type Spec struct {
 	Ignore []string `json:"ignore,omitempty"`
 	// RepoFiles are repository paths read from the merge base: the files
 	// the review settings name, and .kritika.yaml itself when there is one.
-	RepoFiles []string       `json:"repoFiles,omitempty"`
-	Agent     *AgentLimits   `json:"agent,omitempty"`
-	Model     *ModelEndpoint `json:"model,omitempty"`
-	Prompt    *Prompt        `json:"prompt,omitempty"`
+	RepoFiles []string `json:"repoFiles,omitempty"`
+	// Tools is the repository's tools as a mise config, the [tools] table
+	// the merge-base .kritika.yaml declares, which the run's mise reads
+	// over the image's; empty offers the image's tools alone.
+	Tools  string         `json:"tools,omitempty"`
+	Agent  *AgentLimits   `json:"agent,omitempty"`
+	Model  *ModelEndpoint `json:"model,omitempty"`
+	Prompt *Prompt        `json:"prompt,omitempty"`
 	// Thread is the comments a follow-up answers, oldest first, the last
 	// of them the one to answer.
 	Thread []review.Message `json:"thread,omitempty"`

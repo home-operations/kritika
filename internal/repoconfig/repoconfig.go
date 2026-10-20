@@ -118,6 +118,9 @@ type File struct {
 	// Skills replace the directories the admin has skills looked for in,
 	// and add to the admin's scopes.
 	Skills configfile.SkillsSpec `yaml:"skills,omitempty"`
+	// Tools are the tools the repository's reviews may run, over the
+	// image's.
+	Tools Tools `yaml:"tools,omitempty"`
 }
 
 // Parse decodes data as .kritika.yaml. A second document, unknown fields, invalid glob patterns
@@ -159,6 +162,9 @@ func Parse(data []byte) (File, error) {
 		skillPaths = *f.Skills.Paths
 	}
 	if err := configfile.CheckSkills(skillPaths, f.Skills.Scope); err != nil {
+		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
+	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {

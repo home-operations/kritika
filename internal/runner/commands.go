@@ -20,7 +20,6 @@ import (
 
 	"github.com/home-operations/kritika/internal/agent"
 	"github.com/home-operations/kritika/internal/configfile"
-	"github.com/home-operations/kritika/internal/repoconfig"
 )
 
 // defaultCommands are the commands of the tools the -tools image ships. A
@@ -32,28 +31,27 @@ var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
 // beside the checkout, when one of the commands already reaches the
 // network. On an image with mise the commands are those of the tools the
 // merged mise config declares: the image's system config, and the
-// repository's own mise config among files, read from the merge base,
-// over it, each of the repository's tools installed on first use at what
-// its lock pins. An image without mise offers the defaultCommands on its
-// PATH.
+// repository's own tools, p.Tools, over it, each installed on first use.
+// An image without mise offers the defaultCommands on its PATH.
 // Both tools are nil, with a no-op cleanup, when there is nothing to
 // offer or the commands cannot be kept from the runner's secrets; the
 // review then goes on with the read-only tools alone. notes say what was
 // not offered, for the review's summary, and the values a mise config
 // marks for redaction join secrets. cleanup removes the scratch space.
 func commandTool(
-	ctx context.Context, p Spec, tree *agent.Tree, files repoconfig.Files, secrets Secrets, maxOutput int, logger *slog.Logger,
+	ctx context.Context, p Spec, tree *agent.Tree, secrets Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
 	withMise := err == nil
 	var repo *repoMiseConfig
 	if withMise {
-		var repoNotes []string
-		repo, repoNotes = readRepoMise(files, logger)
-		notes = append(notes, repoNotes...)
-	} else if _, ok := files[RepoMiseConfig]; ok {
-		notes = append(notes, RepoMiseConfig+" not read: the runner image has no mise")
+		if repo, err = newRepoMiseConfig(p.Tools); err != nil {
+			logger.Warn("repository tools not offered", "error", err)
+			notes = append(notes, "tools not offered: "+err.Error())
+		}
+	} else if p.Tools != "" {
+		notes = append(notes, "tools not offered: the runner image has no mise")
 	}
 	if err := hideEnviron(); err != nil {
 		logger.Warn("commands not offered: the runner's environment cannot be hidden from them", "error", err)

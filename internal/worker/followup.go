@@ -393,7 +393,7 @@ func (f *followUp) runAgent(
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindFollowUp, RunID: runID, CloneURL: f.client.CloneURL(f.owner, f.repo),
 			Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
-			Prompt: prompt, Thread: thread,
+			Tools: f.eff.Tools, Prompt: prompt, Thread: thread,
 			Model: &runner.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
 			Agent: &runner.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,

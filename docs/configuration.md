@@ -299,9 +299,9 @@ describes, and these, which are the admin's alone:
 | `limits`                  | at the root alone: every account's limits ([`accounts`](#accounts))                                                                                                                                                                                                                 |
 | `enabled`                 | at the root and `owner/*` only: the default for existing or explicitly listed repositories without a dashboard choice ([which repositories run](#which-repositories-run)). New discoveries wait for UI enablement. A repository's `.kritika.yaml` can only set `enabled: false`, which turns its own repository off |
 
-A repository adds tools of its own through
-[`.kritika/mise.toml`](repository-config.md#repository-tools); it cannot
-supply mise `[settings]`, which stay the admin's.
+A repository adds tools of its own through the
+[`tools`](repository-config.md#repository-tools) of its `.kritika.yaml`;
+it cannot supply mise `[settings]`, which stay the admin's.
 
 `trigger.settle` is no longer a key, at the root or in an entry: a file
 that still sets it does not load, so remove it before upgrading. A new
@@ -518,15 +518,15 @@ a new title.
   the Job deadline are sized for the parts from the pull request's size as
   the forge reports it, the deadline for running them in the slots taken.
 - **Commands:** the runner's `-tools` image offers `curl`, `fd`, `gh`,
-  `jq`, `rg` and `yq`, and a repository's
-  [`.kritika/mise.toml`](repository-config.md#repository-tools) and lock,
-  read from the merge base, add any other tool mise installs, such as
-  `crane`, for that repository. Every command those tools provide is
-  offered; `mise` itself never is. On a
-  custom image without mise, the six default commands are offered when
-  found on `PATH`, and a repository's mise config is not read, which the
-  review summary says. Tool install and command resolution failures also
-  appear in the summary.
+  `jq`, `rg` and `yq`, and the
+  [`tools`](repository-config.md#repository-tools) of a repository's
+  `.kritika.yaml`, read from the merge base, add any other tool mise
+  installs, such as `crane`, for that repository. Every command those
+  tools provide is offered; `mise` itself never is. On a custom image
+  without mise, the six default commands are offered when found on
+  `PATH`, and a repository's tools are not, which the review summary
+  says. Tool install and command resolution failures also appear in the
+  summary.
   The agent is told to use `gh` for GitHub,
   which signs in with a token minted for the run that can only read the
   repository under review and public repositories. With `gh` or `curl`
@@ -662,7 +662,7 @@ chart's top-level `runner`. Operational environment variables remain supported.
 | `logLevel` | `KRITIKA_LOG_LEVEL`                | `debug`, `info`, `warn` or `error`; `info` unless set                                                                                                                                                                            |
 | `logFormat` | `KRITIKA_LOG_FORMAT`               | `json` or `text`; `json` unless set                                                                                                                                                                                              |
 | `runner.jobTemplate` | `KRITIKA_RUNNER_JOB_TEMPLATE` | what kritika sets on every runner Job, as a Job template spells it: `metadata.labels` and `metadata.annotations`, `spec.activeDeadlineSeconds`, a runner Job's deadline, at most 7200 and 900 unless set, which a review's or follow-up's agent `timeout` lengthens when it needs more, and `spec.ttlSecondsAfterFinished`, at least 1 and 600 unless set; kritika refuses any other field, and its own labels and annotations, at startup; as JSON in env or a YAML mapping in the file; the chart's `runner.jobTemplate` renders it |
-| `runner.podTemplate` | `KRITIKA_RUNNER_POD_TEMPLATE` | what kritika sets on every runner pod, as a pod template spells it: `metadata.labels` and `metadata.annotations`; `spec.resources` for the whole pod, `runtimeClassName`, `priorityClassName`, `hostUsers`, `nodeSelector`, `tolerations`, `affinity` and `topologySpreadConstraints`; and `spec.containers`, one container named `runner` with its `image`, required, `imagePullPolicy`, and `env`, the admin's variables for the run tool's commands, each a `value` or a Secret's key (`valueFrom.secretKeyRef`), over a repository's `[env]`. kritika refuses any other field, its own labels and AppArmor annotations at startup; as JSON in env or a YAML mapping in the file; the chart's `runner.podTemplate` renders it, with this release's `-tools` image unless it names one |
+| `runner.podTemplate` | `KRITIKA_RUNNER_POD_TEMPLATE` | what kritika sets on every runner pod, as a pod template spells it: `metadata.labels` and `metadata.annotations`; `spec.resources` for the whole pod, `runtimeClassName`, `priorityClassName`, `hostUsers`, `nodeSelector`, `tolerations`, `affinity` and `topologySpreadConstraints`; and `spec.containers`, one container named `runner` with its `image`, required, `imagePullPolicy`, and `env`, the admin's variables for the run tool's commands, each a `value` or a Secret's key (`valueFrom.secretKeyRef`), over the image config's `[env]`. kritika refuses any other field, its own labels and AppArmor annotations at startup; as JSON in env or a YAML mapping in the file; the chart's `runner.podTemplate` renders it, with this release's `-tools` image unless it names one |
 
 A transcript may contain repository content the agent read, and every
 member of its account can read it. A review past the diff retention keeps

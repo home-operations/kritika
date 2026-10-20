@@ -56,7 +56,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 	similar, search := similarContext(ctx, p, secrets, res, logger)
 	chunks, tools.search = append(chunks, similar...), search
 	var cleanup func()
-	tools.run, tools.fetch, tools.notes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), files, secrets,
+	tools.run, tools.fetch, tools.notes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), secrets,
 		p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
 

@@ -15,7 +15,6 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
 )
 
 func adminSettings(t *testing.T) configfile.Settings {
@@ -117,9 +116,8 @@ func TestEffective(t *testing.T) {
 			if !slices.Equal(e.Ignore, tt.ignore) {
 				t.Fatalf("ignore=%v", e.Ignore)
 			}
-			want := append(slices.Clone(tt.repoFiles), runner.RepoMiseConfig, runner.RepoMiseLock)
-			if got := e.repoFiles(); !slices.Equal(got, want) {
-				t.Fatalf("repoFiles = %v, want %v", got, want)
+			if got := e.repoFiles(); !slices.Equal(got, tt.repoFiles) {
+				t.Fatalf("repoFiles = %v, want %v", got, tt.repoFiles)
 			}
 			if got := e.templates(tt.files); got != tt.templates || e.Review.RequireSuggestedFix != tt.strict {
 				t.Fatalf("templates=%+v strict=%v", got, e.Review.RequireSuggestedFix)
@@ -273,9 +271,7 @@ func TestFollowUpRepoConfig(t *testing.T) {
 			}
 			read := f.eff.repoFiles()
 			slices.Sort(read)
-			want := append([]string{runner.RepoMiseConfig, runner.RepoMiseLock}, tt.read...)
-			slices.Sort(want)
-			if f.settings.Models.Review != tt.model || !slices.Equal(read, want) {
+			if f.settings.Models.Review != tt.model || !slices.Equal(read, tt.read) {
 				t.Fatalf("model = %s, files read = %q", f.settings.Models.Review, read)
 			}
 			if tt.reason == "" && f.mergeBase != "base" {

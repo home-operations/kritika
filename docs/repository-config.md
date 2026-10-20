@@ -44,6 +44,7 @@ admin's policy; detailed examples follow.
 | [`rules`](#rules)                                            | checks the review makes                                            | added after; one under an admin's id is dropped |
 | [`context`](#context)                                        | files that explain the code                                        | added after                                     |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
+| [`tools`](#repository-tools)                                 | the tools the reviews may run, over the image's                    | added; one under an image tool's name replaces it |
 
 A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
@@ -329,86 +330,127 @@ beside it:
 
 ## Repository tools
 
-A repository adds tools for its own reviews with a mise config of its
-own. kritika reads `.kritika/mise.toml` and `.kritika/mise.lock` from the
-merge base, for reviews and follow-ups, so a pull request changing either
-file uses the previously merged version for its own review. Reading them
-needs a runner image with mise; on one without, the review summary says
-the file was not read. The repository's tools layer over the image's: an
-entry replaces the same tool, including its options, while unmentioned
-tools remain available.
+A repository adds tools for its own reviews under `tools`, read from the
+merge base like the rest of the file, so a pull request changing it uses
+the previously merged version for its own review. The key is mise's
+`[tools]` table: each entry a tool, by its
+[registry](https://mise.jdx.dev/registry.html) short name or a backend
+such as `github:owner/repo`, with the version to run or a table of the
+version and the options that select, verify and extract its download.
+The repository's tools layer over the image's: an entry replaces the
+same tool, including its options, while unmentioned tools remain
+available. Reading them needs a runner image with mise; on one without,
+the review summary says they were not offered.
 
-For example, `.kritika/mise.toml` can contain:
-
-```toml
-[tools]
-helm = "4.3.0"
-"github:home-operations/flate" = { version = "0.6.5", filter_bins = "flate" }
-
-[env]
-NO_COLOR = "1"
+```yaml
+tools:
+  crane: "0.22.1"
+  "github:home-operations/flate":
+    version: "0.6.5"
+    filter_bins: flate
 ```
 
-kritika keeps each `[tools]` entry's version and the options that select,
-verify and extract its download: `os`, `filter_bins`, `asset_pattern`,
+A tool installs on the first call that needs it, which can take a moment,
+at the version given; a failed install fails that tool call without
+stopping the review. A tool at the image's version runs from the image's
+install, and nothing is downloaded. Release hosts need the admin's
+`egress.allow` permission, as do the hosts a backend verifies against
+([runner tools](security.md#runner-tools)). Once the admin gives the
+gateway a download cache, later runs reuse what a run locked
+([the gateway's cache](security.md#the-gateways-download-cache)).
+
+The options an entry may take are `os`, `filter_bins`, `asset_pattern`,
 `additional_asset_patterns`, `matching`, `matching_regex`, `no_app`,
 `version_prefix`, `url`, `format`, `strip_components`, `bin_path`, `bin`,
 `rename_exe`, `exe`, `extract_all`, `symlink_bins`, `checksum`, `size`
-and `platforms`, whose per-platform tables keep the same options. Every
-other option is dropped with a summary note, among them `postinstall`,
-`install_env`, `depends`, `api_url` and `headers`, as is any option whose
-value holds a template: an install only downloads and unpacks, and the
-lock pins the version, so a `url` must be literal. It keeps `[env]` values
-only when they are literal strings under non-reserved names that the
-admin's variables, set in the chart's `runner.podTemplate`, do not set.
-Templates, `_.` directives, non-string values, the reserved names listed
-under [runner tools](security.md#runner-tools) and the admin's names are
-dropped with summary notes.
-`[settings]`, `[tasks]` and hooks are also dropped with notes; other
-sections are ignored. Mise settings are not the repository's, and the
-repository cannot expand network access.
+and `platforms`, whose per-platform tables (`linux-x64`, `linux-arm64`)
+take the same options; each typed as mise reads it, a string, a list of
+strings, a boolean or a whole number, which the
+[schema](kritika.schema.json) spells out, and `url` an `https://` URL.
+Every other option, among them `postinstall`, `install_env`, `depends`,
+`api_url` and `headers`, fails the file, as does a value holding a
+template or a name carrying options or a version (`tool[exe=x]`,
+`tool@4`): an install only downloads and unpacks. For the same reason
+only the `aqua`, `github`, `gitlab`, `http` and `ubi` backends and the
+core tools are offered; a backend that builds or runs a package manager
+or plugin (`go:`, `cargo:`, `npm:`, `pipx:`, `gem:`, `dotnet:`, `spm:`,
+`asdf:`, `vfox:`) fails the file by name, and a registry short name mise
+resolves to one, `yarn` say, is not offered, with a summary note. A core
+tool that would build from source when no prebuilt release fits, `node`,
+`python`, `ruby` or `erlang`, fails to install instead. mise
+`[settings]`, `[env]`, tasks and hooks have no place in the file: the
+settings are the admin's, and the runner container's `env` in the
+chart's `runner.podTemplate` sets the commands' variables.
 
-Generate and commit the lock alongside the config:
+Give each tool the number of the version to run, after an optional `v`.
+Every other request, `latest`, `system`, `lts` and `lts/iron`, and the
+`prefix:`, `sub-`, `path:`, `ref:`, `tag:`, `branch:` and `rev:` forms,
+is refused, since mise would resolve it anew on each install and a
+review's tool would change without a commit. A version such as `"4"` is
+accepted but resolves to the newest match, so pin the full version. No
+lock is committed: each run
+locks the tool itself before installing it, taking the checksum from
+what the backend publishes, a GitHub release's API digest or checksum
+asset, an aqua recipe's checksum file, or by hashing the asset, and
+installs against that lock, which also lets the gateway's download cache
+serve the next run. Pin a download yourself with `checksum`, per
+platform where the asset differs, and mise refuses one that does not
+match:
 
-```sh
-mise -C .kritika lock
+```yaml
+tools:
+  "github:home-operations/flate":
+    version: "0.6.5"
+    filter_bins: flate
+    platforms:
+      linux-x64: { checksum: "sha256:…" }
+      linux-arm64: { checksum: "sha256:…" }
 ```
 
-Include the runner's platforms when generating the lock, for example:
-
-```sh
-mise -C .kritika lock --platform linux-x64,linux-arm64
-```
-
-A repository tool needs a lock entry for its selected version with a URL
-and checksum for the runner's platform, unless the runner image already
-has that version installed, in which case nothing is downloaded. Without
-one it is not offered, and the review summary says why. Tools that need
-downloading install on first use with `mise install --locked`; a failed
-install fails that tool call without stopping the review. Release hosts
-still need the admin's `egress.allow` permission. Once the admin gives
-the gateway a download cache, later runs reuse what the lock pins. Filesystem
-storage keeps downloads per replica; S3 storage shares completed downloads
-across replicas and rollouts
-([the gateway's cache](security.md#the-gateways-download-cache)).
+### Updating tools with Renovate
 
 Renovate's [mise manager](https://docs.renovatebot.com/modules/manager/mise/)
-recognizes this config and supports lock updates. A minimal Renovate
-configuration enabling periodic lock maintenance is:
+reads mise's own files, not `.kritika.yaml`, so a
+[custom regex manager](https://docs.renovatebot.com/modules/manager/regex/)
+offers the updates instead. Annotate each tool with the datasource and
+package Renovate should follow, on the line above it, for the plain and
+the table form alike:
+
+```yaml
+tools:
+  # renovate: datasource=github-releases depName=google/go-containerregistry
+  crane: "0.22.1"
+  # renovate: datasource=github-releases depName=home-operations/flate
+  "github:home-operations/flate":
+    version: "0.6.5"
+    filter_bins: flate
+```
+
+and give Renovate the manager, which takes the version from the plain
+form, a table's `version` line and an inline table alike, and compares it
+with the release tag less its `v`:
 
 ```json
 {
-  "extends": ["config:recommended"],
-  "lockFileMaintenance": { "enabled": true }
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.kritika\\.yaml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s*\"?[^\"\\n]+\"?:[ \\t]*(?:\\{[ \\t]*)?(?:\\n\\s+version:[ \\t]*)?\"?(?<currentValue>[^\"\\s,}]+)\"?"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+      "extractVersionTemplate": "^v?(?<version>.+)$"
+    }
+  ]
 }
 ```
 
-Keep `.kritika/mise.lock` in the same update as `.kritika/mise.toml`; the
-commands above also regenerate it manually. The runner writes the
-filtered merge-base config and its lock into its isolated `HOME`, outside
-the checkout. The checkout contains the head's `.kritika/mise.toml` unless
-ignored, but excludes lockfiles by default; that copy does not configure
-the runner's mise.
+A registry short name's package is the one the
+[registry](https://mise.jdx.dev/registry.html) lists for it; `mise
+registry <name>` prints it. A tool pinned with `checksum` needs the
+checksum updated with the version, which the manager does not do; keep
+such tools few, or update them by hand.
 
 ## Include and exclude recipes
 
