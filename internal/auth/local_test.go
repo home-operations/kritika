@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -13,20 +14,20 @@ import (
 func TestAttempts(t *testing.T) {
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
+	wrong := func() bool { return false }
 	for range maxFailedSignIns {
-		if !a.begin("1.2.3.4") {
+		if admitted, ok := a.try("1.2.3.4", wrong); !admitted || ok {
 			t.Fatal("refused before the limit")
 		}
-		a.finish("1.2.3.4", true)
 	}
-	if a.begin("1.2.3.4") {
+	if admitted, _ := a.try("1.2.3.4", wrong); admitted {
 		t.Fatal("allowed past the limit")
 	}
-	if !a.begin("5.6.7.8") {
+	if admitted, _ := a.try("5.6.7.8", wrong); !admitted {
 		t.Fatal("another client was held to the first's limit")
 	}
 	now = now.Add(failedSignInWindow)
-	if !a.begin("1.2.3.4") {
+	if admitted, _ := a.try("1.2.3.4", wrong); !admitted {
 		t.Fatal("still refused after the window")
 	}
 }
@@ -38,13 +39,11 @@ func TestAttempts(t *testing.T) {
 func TestAttemptsStayBounded(t *testing.T) {
 	now := time.Now()
 	a := newAttempts(func() time.Time { return now })
-	a.begin("first")
-	a.finish("first", true)
+	wrong := func() bool { return false }
+	a.try("first", wrong)
 	for i := range maxTrackedClients + 100 {
 		now = now.Add(time.Millisecond)
-		client := fmt.Sprintf("2001:db8::%x", i)
-		a.begin(client)
-		a.finish(client, true)
+		a.try(fmt.Sprintf("2001:db8::%x", i), wrong)
 	}
 	if len(a.failed) > maxTrackedClients {
 		t.Fatalf("%d clients tracked, cap is %d", len(a.failed), maxTrackedClients)
@@ -57,69 +56,56 @@ func TestAttemptsStayBounded(t *testing.T) {
 		t.Fatal("a window newer than the oldest was dropped")
 	}
 	last := fmt.Sprintf("2001:db8::%x", maxTrackedClients+99)
-	a.begin(last)
-	a.finish(last, true)
+	a.try(last, wrong)
 	if got := a.failed[last].n; got != 2 || len(a.failed) > maxTrackedClients {
 		t.Fatalf("count = %d with %d tracked; a tracked client failing again keeps its count and evicts nothing", got, len(a.failed))
 	}
 }
 
-func TestAttemptsRelease(t *testing.T) {
+// TestAttemptsRightAnswersAreFree: a right password never counts, however
+// many come at once, and a client whose answers were all right is not
+// tracked; wrong ones after it still fill the window.
+func TestAttemptsRightAnswersAreFree(t *testing.T) {
 	a := newAttempts(time.Now)
 	for range maxFailedSignIns * 2 {
-		if !a.begin("client") {
-			t.Fatal("a successful or invalid request consumed the limit")
+		if admitted, ok := a.try("client", func() bool { return true }); !admitted || !ok {
+			t.Fatal("a right answer consumed the limit")
 		}
-		a.finish("client", false)
 	}
 	if len(a.failed) != 0 {
-		t.Fatal("released requests left empty client windows")
+		t.Fatal("right answers left a client window")
+	}
+	for range maxFailedSignIns {
+		a.try("client", func() bool { return false })
+	}
+	if admitted, _ := a.try("client", func() bool { return true }); admitted {
+		t.Fatal("wrong answers after right ones did not fill the window")
 	}
 }
 
-func TestAttemptsPendingAcrossWindows(t *testing.T) {
-	now := time.Now()
-	a := newAttempts(func() time.Time { return now })
-	for range maxFailedSignIns {
-		if !a.begin("client") {
-			t.Fatal("refused before the limit")
+// TestAttemptsJudgeOneAtATime: attempts in flight together are judged
+// under the lock, so the limit holds however many arrive at once.
+func TestAttemptsJudgeOneAtATime(t *testing.T) {
+	a := newAttempts(time.Now)
+	const requests = maxFailedSignIns * 10
+	var wg sync.WaitGroup
+	results := make(chan bool, requests)
+	for range requests {
+		wg.Go(func() {
+			admitted, _ := a.try("client", func() bool { return false })
+			results <- admitted
+		})
+	}
+	wg.Wait()
+	close(results)
+	admitted := 0
+	for r := range results {
+		if r {
+			admitted++
 		}
 	}
-	now = now.Add(failedSignInWindow)
-	if a.begin("client") {
-		t.Fatal("expiring the failed window discarded pending attempts")
-	}
-	a.finish("client", false)
-	if !a.begin("client") {
-		t.Fatal("releasing a pending attempt did not free its slot")
-	}
-	for range maxFailedSignIns {
-		a.finish("client", true)
-	}
-	if a.begin("client") {
-		t.Fatal("failures completing after rollover did not count")
-	}
-	now = now.Add(failedSignInWindow)
-	if !a.begin("client") {
-		t.Fatal("completed failures did not expire")
-	}
-}
-
-func TestAttemptsPendingStayBounded(t *testing.T) {
-	now := time.Now()
-	a := newAttempts(func() time.Time { return now })
-	for i := range maxTrackedClients {
-		if !a.begin(fmt.Sprintf("client-%d", i)) {
-			t.Fatal("refused before the client limit")
-		}
-	}
-	now = now.Add(failedSignInWindow)
-	if a.begin("new-client") || len(a.failed) != maxTrackedClients {
-		t.Fatal("pending clients were evicted or exceeded the memory bound")
-	}
-	a.finish("client-0", false)
-	if !a.begin("new-client") || len(a.failed) != maxTrackedClients {
-		t.Fatal("a released client did not free space")
+	if admitted != maxFailedSignIns {
+		t.Fatalf("%d of %d concurrent wrong answers were checked, want %d", admitted, requests, maxFailedSignIns)
 	}
 }
 

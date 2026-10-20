@@ -90,10 +90,12 @@ func TestIndexRetriesFailedTipCheck(t *testing.T) {
 		Store: env.st, Current: configfile.NewCurrent(env.file), Forges: &forges{f: f}, Logger: slog.New(slog.DiscardHandler),
 		Executor: exec, Embedders: &adapter.Embedders{Build: func(configfile.Embedding) model.Embedder { return &fakeEmbedder{} }},
 	}
-	if err := w.Work(ctx, job); !errors.Is(err, wantErr) {
-		t.Fatalf("Work error = %v, want %v", err, wantErr)
+	// The index is published; the tip check is asked for again as a snooze,
+	// not a failed attempt.
+	if snooze, ok := errors.AsType[*river.JobSnoozeError](w.Work(ctx, job)); !ok || snooze.Duration != tipCheckWait {
+		t.Fatalf("Work error = %v, want a %s snooze", snooze, tipCheckWait)
 	}
-	if err := w.Work(ctx, env.claim(2)); err != nil {
+	if err := w.Work(ctx, env.claim(1)); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	if err := env.st.WithAccount(ctx, env.account.ID(), func(tx pgx.Tx) error {

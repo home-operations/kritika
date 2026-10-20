@@ -238,7 +238,7 @@ func TestThreadIgnoresSupersededState(t *testing.T) {
 			}
 			w := &Thread{}
 			outcome, err := w.apply(t.Context(), lf, &pullRequest{repository: "owner/repo", number: 7},
-				jobs.ThreadArgs{CommentID: 1, Sender: "maintainer", Resolved: tc.resolved}, slog.New(slog.DiscardHandler))
+				jobs.ThreadArgs{CommentID: 1, Sender: "maintainer", Resolved: tc.resolved}, "fingerprint", slog.New(slog.DiscardHandler))
 			if !errors.Is(err, tc.err) {
 				t.Fatalf("apply error = %v, want %v", err, tc.err)
 			}

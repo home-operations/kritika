@@ -2,6 +2,7 @@ package review
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -9,10 +10,28 @@ import (
 )
 
 func TestPrintfAllocation(t *testing.T) {
+	// items is a list whose bytes fit the call twice over but not three
+	// times, so a width charged against its leaves instead of the scalar
+	// it pads would refuse the call. deep is a small value nested past
+	// maxMeasureDepth.
+	items := make([]int, 12000)
+	for i := range items {
+		items[i] = i
+	}
+	var deep any = "leaf"
+	for range maxMeasureDepth + 8 {
+		deep = []any{deep}
+	}
 	for _, tt := range []struct {
 		name, src, want string
+		data            any
 		refused         bool
 	}{
+		{name: "width on a scalar beside a composite", src: `{{ printf "%5d items: %v" 3 .Items }}`,
+			data: map[string]any{"Items": items}, want: fmt.Sprintf("%5d items: %v", 3, items)},
+		{name: "width on a composite", src: `{{ printf "%25v" .Items }}`, data: map[string]any{"Items": items}, refused: true},
+		{name: "width on a deeply nested value", src: `{{ printf "%3v" . }}`, data: deep, want: fmt.Sprintf("%3v", deep)},
+		{name: "index out of range", src: `{{ printf "%[3]s|%s" "a" "b" }}`, want: "%!s(BADINDEX)|a"},
 		{name: "indexed width", src: `{{ printf "%[1]*[2]s" 10 "x" }}`, refused: true},
 		{name: "indexed precision", src: `{{ printf "%.[1]*[2]f" 2 1.25 }}`, refused: true},
 		{name: "reordered width", src: `{{ printf "%[2]*[1]s" "x" 10 }}`, refused: true},
@@ -30,7 +49,7 @@ func TestPrintfAllocation(t *testing.T) {
 		{name: "ordinary composite", src: `{{ printf "%3s" (list "a" "b") }}`, want: "[  a   b]"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := execute(t.Context(), tt.src, nil, MaxRenderBytes)
+			got, err := execute(t.Context(), tt.src, tt.data, MaxRenderBytes)
 			if tt.refused {
 				if !errors.Is(err, errSandbox) || !strings.Contains(err.Error(), "printf:") ||
 					!strings.Contains(err.Error(), "input and estimated allocation") {
