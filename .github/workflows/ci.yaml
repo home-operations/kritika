@@ -36,9 +36,19 @@ jobs:
     permissions:
       contents: read
     outputs:
-      charts: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.charts_any_modified == 'true' }}
-      ui: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.ui_any_modified == 'true' }}
+      run_suite: ${{ steps.suite.outputs.run == 'true' }}
+      run_charts: ${{ steps.suite.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || steps.changes.outputs.charts_any_modified == 'true') }}
+      run_ui: ${{ steps.suite.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || steps.changes.outputs.ui_any_modified == 'true') }}
     steps:
+      - name: Select suite
+        id: suite
+        env:
+          RUN_SUITE: >-
+            ${{ !(startsWith(github.head_ref, 'release-please--')
+            && github.event.pull_request.head.repo.full_name == github.repository)
+            && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+        run: echo "run=$RUN_SUITE" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,11 +75,9 @@ jobs:
               - internal/webapi/testdata/*.golden.json
 
   go-lint:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Go Lint
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -117,11 +125,9 @@ jobs:
   # whose suite takes in the runner's package, install the -tools image's,
   # so a bump of it is tested on its pull request.
   mise-version:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Mise Version
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -149,12 +155,9 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   go-test:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Go Test
-    needs: mise-version
+    needs: [changes, mise-version]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -187,12 +190,9 @@ jobs:
         run: mise run test
 
   go-integration:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Go Integration
-    needs: mise-version
+    needs: [changes, mise-version]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -224,11 +224,9 @@ jobs:
         run: mise run test-integration
 
   smoke:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Serve Smoke
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -253,11 +251,9 @@ jobs:
         run: mise run smoke
 
   go-vulncheck:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Go Vulncheck
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -277,11 +273,7 @@ jobs:
         run: mise run vulncheck
 
   helm-lint:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
-      && needs.changes.outputs.charts == 'true' }}
+    if: ${{ needs.changes.outputs.run_charts == 'true' }}
     name: Helm Lint
     needs: changes
     runs-on: ubuntu-26.04
@@ -309,11 +301,7 @@ jobs:
         run: mise run generate-check
 
   helm-unittest:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
-      && needs.changes.outputs.charts == 'true' }}
+    if: ${{ needs.changes.outputs.run_charts == 'true' }}
     name: Helm Unittest
     needs: changes
     runs-on: ubuntu-26.04
@@ -337,11 +325,7 @@ jobs:
           mise run helm-unittest
 
   ui-test:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
-      && needs.changes.outputs.ui == 'true' }}
+    if: ${{ needs.changes.outputs.run_ui == 'true' }}
     name: UI Test
     needs: changes
     runs-on: ubuntu-26.04
@@ -379,11 +363,7 @@ jobs:
         run: mise run ui-build
 
   ui-e2e:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):')
-      && needs.changes.outputs.ui == 'true' }}
+    if: ${{ needs.changes.outputs.run_ui == 'true' }}
     name: UI E2E
     needs: changes
     runs-on: ubuntu-26.04
@@ -433,11 +413,9 @@ jobs:
           retention-days: 7
 
   workflow-lint:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository)
-      && !startsWith(github.event.merge_group.head_commit.message, 'chore(release):') }}
+    if: ${{ needs.changes.outputs.run_suite == 'true' }}
     name: Workflow Lint
+    needs: changes
     runs-on: ubuntu-26.04
     permissions:
       contents: read
