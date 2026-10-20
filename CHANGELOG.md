@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.88](https://github.com/home-operations/kritika/compare/0.0.87...0.0.88) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** refuse http: tools in .kritika.yaml ([#1122](https://github.com/home-operations/kritika/issues/1122))
+
+### Features
+
+* **config:** refuse http: tools in .kritika.yaml ([#1122](https://github.com/home-operations/kritika/issues/1122)) ([fcc83b8](https://github.com/home-operations/kritika/commit/fcc83b8dc1b82aa73a807bda7c7cef85f9a41a07))
+
+
+### Bug Fixes
+
+* enforce safety limits and preserve worker updates ([#1125](https://github.com/home-operations/kritika/issues/1125)) ([4b35f7d](https://github.com/home-operations/kritika/commit/4b35f7d8bb83cb6bcc9b921bf8b3769bf3b2b8af))
+
+
+### Code Refactoring
+
+* **config:** simplify the http: refusal and its tests ([#1124](https://github.com/home-operations/kritika/issues/1124)) ([0606c40](https://github.com/home-operations/kritika/commit/0606c40505575828fc8daa01c902522a16db51cb))
+
 ## [0.0.87](https://github.com/home-operations/kritika/compare/0.0.86...0.0.87) (2026-10-20)
 
 
