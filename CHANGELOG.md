@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.0.89](https://github.com/home-operations/kritika/compare/0.0.88...0.0.89) (2026-10-20)
+
+
+### Features
+
+* **container:** update image mirror.gcr.io/curlimages/curl (8.22.0 → 8.23.0) ([#1133](https://github.com/home-operations/kritika/issues/1133)) ([01a7a21](https://github.com/home-operations/kritika/commit/01a7a2174fd106f7433692a85b47aa6332b7a89f))
+* **go:** update module github.com/anthropics/anthropic-sdk-go (v1.80.0 → v1.82.0) ([#1134](https://github.com/home-operations/kritika/issues/1134)) ([4e67958](https://github.com/home-operations/kritika/commit/4e679584d1e926b2635522a1315d804e3d4085da))
+* **go:** update module github.com/openai/openai-go/v3 (v3.78.0 → v3.80.0) ([#1135](https://github.com/home-operations/kritika/issues/1135)) ([e16083c](https://github.com/home-operations/kritika/commit/e16083cbdbebec2b9cd3b0e61011f1c813af5f09))
+* **go:** update module golang.org/x/net (v0.60.0 → v0.61.0) ([#1136](https://github.com/home-operations/kritika/issues/1136)) ([8abaf00](https://github.com/home-operations/kritika/commit/8abaf00e3e0104ff0816f7c8470b182b5b918918))
+* **npm:** update dependency @axe-core/playwright (4.13.0 → 4.14.0) ([#1137](https://github.com/home-operations/kritika/issues/1137)) ([861e5dd](https://github.com/home-operations/kritika/commit/861e5ddb7d6f3ef896440f3b983f4c7a4124a174))
+* **npm:** update dependency eslint (10.12.0 → 10.13.0) ([#1138](https://github.com/home-operations/kritika/issues/1138)) ([cbf7cd4](https://github.com/home-operations/kritika/commit/cbf7cd4a34ee7d834874e1313ca7b47a708283fa))
+
+
+### Bug Fixes
+
+* **container:** update image mirror.gcr.io/curlimages/curl (a134550 → 11e64e2) ([#1141](https://github.com/home-operations/kritika/issues/1141)) ([a116479](https://github.com/home-operations/kritika/commit/a1164795ecc8f46d4bd1cd344264f63ad944c3b6))
+* **npm:** update dependency @tanstack/svelte-query (6.3.2 → 6.3.4) ([#1126](https://github.com/home-operations/kritika/issues/1126)) ([71ba6de](https://github.com/home-operations/kritika/commit/71ba6de92859498c8038774d4227ccf13257e31b))
+* **npm:** update dependency layerchart (2.8.0 → 2.8.1) ([#1129](https://github.com/home-operations/kritika/issues/1129)) ([9105db9](https://github.com/home-operations/kritika/commit/9105db9e4eb3d27edca646db5b22505f5757dc9d))
+* **npm:** update dependency svelte-check (4.7.6 → 4.7.7) ([#1130](https://github.com/home-operations/kritika/issues/1130)) ([b5f508e](https://github.com/home-operations/kritika/commit/b5f508e639f174d3a31f5d2eb3b44b642ca1a232))
+
+
+### Code Refactoring
+
+* **web:** centralize live refresh rules and add query devtools ([#1128](https://github.com/home-operations/kritika/issues/1128)) ([88f60d5](https://github.com/home-operations/kritika/commit/88f60d52cf3f09fbc103d450e66282e92c458795))
+
+
+### Continuous Integration
+
+* isolate Go job caches and validate docs on push ([#1140](https://github.com/home-operations/kritika/issues/1140)) ([1a0b3e9](https://github.com/home-operations/kritika/commit/1a0b3e94fab3b188048594d17436862c0602e435))
+
+
+### Miscellaneous Chores
+
+* add conditional check for docs job in CI workflow ([c73363e](https://github.com/home-operations/kritika/commit/c73363e72ff1b664b779ce4696f697637a2cf33a))
+* **github-action:** update action jdx/mise-action (v5.1.2 → v5.2.0) ([#1131](https://github.com/home-operations/kritika/issues/1131)) ([bf8989e](https://github.com/home-operations/kritika/commit/bf8989e23ceeb6bcc1620d1a0867282d86263236))
+* **mise:** update mise tools ([#1132](https://github.com/home-operations/kritika/issues/1132)) ([5a448c9](https://github.com/home-operations/kritika/commit/5a448c97590e88a91f022d7a3b02682a79f2aa55))
+
 ## [0.0.88](https://github.com/home-operations/kritika/compare/0.0.87...0.0.88) (2026-10-20)
 
 
