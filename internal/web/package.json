@@ -18,7 +18,7 @@
     "@tanstack/svelte-query": "^6.3.4"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^10.0.1",
     "@mdi/js": "^7.4.47",
     "@playwright/test": "^1.64.1",
