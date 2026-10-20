@@ -23,7 +23,7 @@ require (
 	github.com/knadh/koanf/v2 v2.4.0
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/odvcencio/gotreesitter v0.56.0
-	github.com/openai/openai-go/v3 v3.78.0
+	github.com/openai/openai-go/v3 v3.80.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
