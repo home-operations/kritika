@@ -68,6 +68,7 @@ type publicationSnapshot struct {
 	Confidence      *review.Confidence
 	Unscored        bool
 	Unfinished      int
+	Started         time.Time
 }
 
 type publicationFinding struct {
@@ -101,7 +102,7 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
 		Prior:     snapshotFindings(p.prior.findings),
 		Dismissed: p.prior.dismissed, Resolved: snapshotFindings(p.resolved), HeldBack: p.heldBack,
-		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished,
+		Confidence: p.confidence, Unscored: p.unscored, Unfinished: p.unfinished, Started: p.started,
 	}
 	if p.agent != nil {
 		snapshot.Sources = p.agent.Sources
@@ -209,8 +210,10 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	if err != nil || saved.Status != store.ReviewPrepared || saved.JobID != job.ID {
 		return true, err
 	}
-	started := time.Now()
+	// Whatever ends the review here, a cancellation or a failure before the
+	// checkpoint is restored among them, times it from its first job's pickup.
 	p := &publishPhase{w: w, file: file, reviewID: saved.ReviewID, jobID: job.ID, logger: logger,
+		started: startedAt(saved.Payload, pickedUp),
 		pr: &pullRequest{id: saved.PullRequestID, repositoryID: saved.RepositoryID, repository: saved.Repository,
 			number: saved.Number, headSHA: saved.HeadSHA, authorIsBot: saved.AuthorIsBot, closed: saved.Closed}}
 	if job.Kind == jobs.QueuePrepare {
@@ -224,7 +227,7 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 			decision := decidePublication(context.Cause(ctx), "", err, true, job.Attempt >= job.MaxAttempts)
 			switch decision.disposition {
 			case reviewInterrupted, reviewPublicationFailed:
-				err = w.finishPublication(ctx, job.Args.AccountID, p, decision, started)
+				err = w.finishPublication(ctx, job.Args.AccountID, p, decision)
 			}
 		}
 		// The pull request keeps its eyes while the next stage owns the review.
@@ -246,7 +249,7 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 	}
 	if saved.CancelRequested {
 		handled = true
-		return true, w.cancelPublication(ctx, job, p, started)
+		return true, w.cancelPublication(ctx, job, p)
 	}
 	answer, err := p.restore(saved.Payload)
 	if err != nil {
@@ -278,7 +281,17 @@ func (w *Review) resumePublication(ctx context.Context, job *river.Job[jobs.Revi
 		handedOff = true
 		return true, nil
 	}
-	return true, w.publicationEnded(ctx, job, p, status, deliveryErr, started)
+	return true, w.publicationEnded(ctx, job, p, status, deliveryErr)
+}
+
+// startedAt is when the review a checkpoint belongs to was picked up,
+// fallback for a checkpoint from before the time was carried.
+func startedAt(payload json.RawMessage, fallback time.Time) time.Time {
+	var s struct{ Started time.Time }
+	if json.Unmarshal(payload, &s) != nil || s.Started.IsZero() {
+		return fallback
+	}
+	return s.Started
 }
 
 func (w *Review) settlePublication(ctx context.Context, accountID string, p *publishPhase) {
@@ -293,7 +306,7 @@ func (w *Review) settlePublication(ctx context.Context, accountID string, p *pub
 }
 
 func (w *Review) finishPublication(
-	ctx context.Context, accountID string, p *publishPhase, decision reviewDecision, started time.Time,
+	ctx context.Context, accountID string, p *publishPhase, decision reviewDecision,
 ) error {
 	fctx, cancel := detach(ctx)
 	defer cancel()
@@ -315,32 +328,32 @@ func (w *Review) finishPublication(
 		p.logger.Warn("publication status and reactions not set: forge client unavailable")
 	}
 	if p.account != nil {
-		w.Metrics.Review(p.account.Key(), string(decision.end.Status), time.Since(started))
+		w.Metrics.Review(p.account.Key(), string(decision.end.Status), time.Since(p.started))
 	}
 	return decision.jobError()
 }
 
-func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase, started time.Time) error {
+func (w *Review) cancelPublication(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase) error {
 	cctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	cancel(river.ErrJobCancelledRemotely)
-	return w.publicationEnded(cctx, job, p, store.ReviewCanceled, river.ErrJobCancelledRemotely, started)
+	return w.publicationEnded(cctx, job, p, store.ReviewCanceled, river.ErrJobCancelledRemotely)
 }
 
 // publicationEnded leaves retryable delivery failures prepared. The job's
 // final attempt and explicit cancellation still produce terminal reviews.
 func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.ReviewArgs], p *publishPhase,
-	status store.ReviewStatus, err error, started time.Time,
+	status store.ReviewStatus, err error,
 ) error {
 	decision := decidePublication(context.Cause(ctx), status, err, true, job.Attempt >= job.MaxAttempts)
 	if err == nil {
 		if status != "" {
-			w.Metrics.Review(p.account.Key(), string(status), time.Since(started))
+			w.Metrics.Review(p.account.Key(), string(status), time.Since(p.started))
 			p.logger.Info("review ended", "status", status)
 		}
 		return nil
 	}
 	if decision.disposition == reviewInterrupted {
-		return w.finishPublication(ctx, job.Args.AccountID, p, decision, started)
+		return w.finishPublication(ctx, job.Args.AccountID, p, decision)
 	}
 	// Cancellation is durable before its notification can arrive. Prepared jobs
 	// remain retryable so a request racing this read is handled on their retry.
@@ -353,10 +366,10 @@ func (w *Review) publicationEnded(ctx context.Context, job *river.Job[jobs.Revie
 		return err
 	})
 	if readErr == nil && saved.CancelRequested {
-		return w.cancelPublication(ctx, job, p, started)
+		return w.cancelPublication(ctx, job, p)
 	}
 	if decision.disposition == reviewPublicationFailed {
-		return w.finishPublication(ctx, p.account.ID(), p, decision, started)
+		return w.finishPublication(ctx, p.account.ID(), p, decision)
 	}
 	p.logger.Warn("publication will be retried", "review", p.reviewID, "error", err)
 	return errors.Join(decision.jobError(), readErr)
