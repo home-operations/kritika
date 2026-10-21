@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.92](https://github.com/home-operations/kritika/compare/0.0.91...0.0.92) (2026-10-21)
+
+
+### Features
+
+* **followup:** answer replies in a finding thread that do not mention kritika ([#1163](https://github.com/home-operations/kritika/issues/1163)) ([5365377](https://github.com/home-operations/kritika/commit/536537725e87b85aa2b3b3ad51a693aeb77eef5a))
+
+
+### Bug Fixes
+
+* **metrics:** time a review from its first job's pickup ([#1158](https://github.com/home-operations/kritika/issues/1158)) ([641f4c2](https://github.com/home-operations/kritika/commit/641f4c25ca98e099df06556796023dd1a893cb65))
+
+
+### Performance Improvements
+
+* **runner:** let a split review's parts share tools by what they touch ([#1161](https://github.com/home-operations/kritika/issues/1161)) ([c2acd5b](https://github.com/home-operations/kritika/commit/c2acd5bd3a161045a8bae002c78a1e5640054643))
+* **runner:** write the command checkout on the first command ([#1159](https://github.com/home-operations/kritika/issues/1159)) ([1bbc9b6](https://github.com/home-operations/kritika/commit/1bbc9b6352769d81904e670492425e96ce3d2de8))
+
 ## [0.0.91](https://github.com/home-operations/kritika/compare/0.0.90...0.0.91) (2026-10-21)
 
 
