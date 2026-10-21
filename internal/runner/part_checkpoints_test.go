@@ -98,7 +98,7 @@ func TestPartsResumeAndCheckpoint(t *testing.T) {
 		remaining = append(remaining, n)
 		return 2
 	}
-	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil, agentTools{}, parts,
+	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil, agentTools{}, newPartLocks(), parts,
 		slog.New(slog.DiscardHandler), saved, save, report)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +141,7 @@ func TestPartsCheckpointFailureKeepsAnswer(t *testing.T) {
 		return errors.New("checkpoint refused")
 	}
 	results, _, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
-		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save, nil)
+		agentTools{}, newPartLocks(), parts, slog.New(slog.DiscardHandler), nil, save, nil)
 	if err != nil {
 		t.Fatalf("a failed checkpoint failed the run: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestPartsCancellationWhileCheckpointing(t *testing.T) {
 		close(release)
 	}()
 	results, _, err := runPartLoops(ctx, s, Secrets{GatewayToken: "t"}, tree(t, map[string]string{"a.go": "package a\n"}), nil,
-		agentTools{}, parts, slog.New(slog.DiscardHandler), nil, save, nil)
+		agentTools{}, newPartLocks(), parts, slog.New(slog.DiscardHandler), nil, save, nil)
 	if err != nil {
 		t.Fatalf("cancellation lost the run: %v", err)
 	}

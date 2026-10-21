@@ -40,7 +40,7 @@ func TestCommandToolMise(t *testing.T) {
 			s := reviewSpec()
 			s.Agent.CommandTimeoutSeconds = 10
 			s.Tools = tt.tools
-			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096, logger)
+			run, fetch, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096, logger)
 			defer cleanup()
 			if fetch != nil {
 				t.Fatal("fetch_repo offered without a command that reaches the network")
@@ -105,7 +105,7 @@ func TestCommandToolMiseAdminEnv(t *testing.T) {
 	s := reviewSpec()
 	s.Agent.CommandTimeoutSeconds = 10
 	s.Agent.Env = []CommandEnvVar{{Name: "REPO_MARKER"}}
-	run, _, notes, cleanup := commandTool(t.Context(), s, head, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096,
+	run, _, notes, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "ghs_run", Redacted: &Redactions{}}, 4096,
 		slog.New(slog.DiscardHandler))
 	defer cleanup()
 	if run == nil {
