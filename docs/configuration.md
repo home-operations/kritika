@@ -469,7 +469,7 @@ a new title.
 | `parts`          | 8                    | the most parts a review over 64 KiB of diff is split into; 1 never splits                    |
 | `timeout`        | 20m, at most 2h35m   | the loop's wall time, each part's in a split review                                          |
 | `commandTimeout` | 30s, at least 1s     | one command's wall time                                                                      |
-| `fetches`        | 8                    | repositories `fetch_repo` may fetch for a review, a split one's parts between them           |
+| `fetches`        | 8                    | repositories `fetch_repo` may fetch, and images `fetch_oci` may inspect, for a review, a split one's parts between them |
 
 - **Submitting:** the last step is told to submit, as is any step once the
   review has spent nine tenths of its `tokens`. A step told to submit that
@@ -532,9 +532,10 @@ a new title.
   which signs in with a token minted for the run that can only read the
   repository under review and public repositories. With `gh` or `curl`
   the agent can also fetch another repository's files, or list its tags,
-  with `fetch_repo`, such as the upstream of a dependency on any host.
-  [Runner tools](security.md#runner-tools) says what bounds a command and
-  a fetch.
+  with `fetch_repo`, such as the upstream of a dependency on any host, and
+  inspect a container image or chart in a registry, or list its tags, with
+  `fetch_oci`. [Runner tools](security.md#runner-tools) says what bounds a
+  command, a fetch and an inspection.
 
 ### Configuration sources
 

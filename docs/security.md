@@ -424,6 +424,35 @@ repository and a ref, never git arguments.
   nor a link reaches past it. Every other path it reads from the head
   commit's git objects.
 
+### Images and artifacts
+
+Beside `fetch_repo`, under the same condition, the agent gets `fetch_oci`.
+It inspects a container image or an OCI artifact in a registry without
+pulling it: what a tag resolves to, the platforms of an index, and the
+config of its first image, whose labels and annotations name the
+repository and revision the image was built from and the version it
+carries, with the user, entrypoint, command, ports, environment, created
+time, layer count and size; for a Helm chart or another artifact, its
+config document, cut to 8 KiB. With `tags` it lists a repository's tags.
+kritika makes the reads itself, with [oras-go](https://oras.land): the
+model names an image, never a registry request.
+
+- **Anonymous:** the registry's challenge is answered with the token it
+  grants anyone, so a private image is not read; the tool's description
+  says so. A bare Docker Hub name, `postgres:17`, is read as
+  `docker.io/library/postgres:17`.
+- **Through the gateway:** the registry, its token endpoint and the
+  storage its blobs redirect to must all be in `egress.allow`: for Docker
+  Hub, `registry-1.docker.io`, `auth.docker.io` and its storage hosts,
+  `production.cloudflare.docker.com` and `production.cloudfront.docker.com`
+  as of this writing; for GitHub's, `ghcr.io` and
+  `pkg-containers.githubusercontent.com`. A refused host fails the read,
+  and the error names it.
+- **Bounded:** as many inspections as [`agent.fetches`](configuration.md#the-agent)
+  allows fetches, and 8 tag listings, each taking at most 16 MiB from the
+  registry and a minute, reading a manifest or config of at most 4 MiB,
+  and writing nothing: no layer is ever pulled.
+
 ### More tools
 
 Declare a tool under `tools` in `.kritika.yaml` by its registry short

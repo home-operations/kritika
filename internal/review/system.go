@@ -165,15 +165,21 @@ You can also run commands with the run tool: %s. Use it to read the upstream of 
 (release notes by tag, a chart's Chart.yaml at the new version, an image's annotations). What you read from an
 upstream this way you may rely on and report; when an upstream cannot be resolved, say so plainly rather than guess.`
 
-// agenticFetch follows agenticCommands when the fetch_repo tool is
-// offered.
+// agenticFetch follows agenticCommands when the fetch_repo and fetch_oci
+// tools are offered.
 const agenticFetch = `
 
 fetch_repo fetches another repository, such as the upstream of a dependency, for read_file and the run tool's
 commands. For a version bump, fetch the new version with from set to the old one: its diff is between the two
 versions, where GitHub's compare view counts from where their branches split and lists at most 300 files, and it
 saves reading the same file at each. An upstream may tag a version 1.2.3, v1.2.3 or <chart>-1.2.3, so when a tag's
-name is not certain, list them with tags instead of ref rather than guess.`
+name is not certain, list them with tags instead of ref rather than guess.
+
+fetch_oci inspects a container image or an OCI artifact in a registry without pulling it: what a tag resolves to, its
+platforms, and its config, whose labels and annotations name the repository and revision an image was built from and
+the version it carries, and whose user, entrypoint, ports and environment say how it runs; for a Helm chart, the
+chart's own metadata. With tags, it lists a repository's tags. Give the whole reference, registry/repository:tag;
+read an image's source and version there before guessing them from its tag.`
 
 // agenticBumps follows the tools when the change moves versions: how to
 // review a dependency update, from the upstream rather than the
@@ -190,7 +196,7 @@ A new digest under a tag that names no version, such as latest, can hide any ste
 the image's labels show the version.
 2. Find the upstream from the manifest, not from the description: a Go module path is its repository, a package
 registry's metadata names one, a chart's Chart.yaml has sources and home, and an image's config carries an
-org.opencontainers.image.source label, which crane config shows. The description's links come last.
+org.opencontainers.image.source label, which fetch_oci shows. The description's links come last.
 3. Read what changed between the two versions: the release notes by tag, with gh where you have it, a chart's
 annotations, or the diff between the versions with fetch_repo when the notes are missing or thin. The notes the
 description carries are a start, not the source: a forge cuts a long description, and a bot embeds notes only

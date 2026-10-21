@@ -317,12 +317,13 @@ func agentLoop(
 
 // agentTools is what the agent gets beside the read-only tools over head:
 // read_diff over the pull request's diff, the run tool, when commands are
-// offered, with fetch_repo when one of them reaches the network, and
-// search_code, when the repository has an index.
+// offered, with fetch_repo and fetch_oci when one of them reaches the
+// network, and search_code, when the repository has an index.
 type agentTools struct {
 	diff   *readDiffTool
 	run    *agent.RunTool
 	fetch  *fetchRepoTool
+	oci    *fetchOCITool
 	search *searchTool
 	skills *skillTool
 	// notes say what of the run tool was not offered and why; a run with
@@ -342,6 +343,9 @@ func (t agentTools) extra() []agent.Tool {
 	}
 	if t.fetch != nil {
 		out = append(out, t.fetch)
+	}
+	if t.oci != nil {
+		out = append(out, t.oci)
 	}
 	if t.search != nil {
 		out = append(out, t.search)
@@ -439,8 +443,8 @@ func gatewayStepper(p Spec, secrets Secrets, part int) (model.Stepper, error) {
 	return s, nil
 }
 
-// toolSources are what the run tool's commands and fetch_repo read from
-// outside the repository, never nil.
+// toolSources are what the run tool's commands, fetch_repo and fetch_oci
+// read from outside the repository, never nil.
 func toolSources(tools agentTools) []string {
 	sources := []string{}
 	if tools.run != nil {
@@ -448,6 +452,9 @@ func toolSources(tools agentTools) []string {
 	}
 	if tools.fetch != nil {
 		sources = append(sources, tools.fetch.Sources()...)
+	}
+	if tools.oci != nil {
+		sources = append(sources, tools.oci.Sources()...)
 	}
 	return sources
 }

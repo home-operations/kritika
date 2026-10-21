@@ -59,6 +59,9 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 	tools.run, tools.fetch, tools.notes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, p.Ignore), secrets,
 		p.Agent.limits().MaxToolOutputBytes, logger)
 	defer cleanup()
+	if tools.fetch != nil {
+		tools.oci = newFetchOCITool(p)
+	}
 
 	system := review.FollowUpSystemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil)
 	pr := p.Prompt.PullRequest

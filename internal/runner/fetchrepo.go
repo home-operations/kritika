@@ -270,25 +270,26 @@ func (t *fetchRepoTool) listTags(ctx context.Context, rawURL, match string) (str
 	if err != nil {
 		return "", fmt.Errorf("agent: fetch_repo: %w", err)
 	}
-	return tagList(rawURL, match, tags), nil
+	return tagList(rawURL, match, tags, "newest first"), nil
 }
 
-// tagList is the answer to a listing of tags, newest first: those whose
-// names contain match, at most tagsShown of them.
-func tagList(rawURL, match string, tags []string) string {
+// tagList is the answer to a listing of tags, in the order the listing
+// gives them, which order words: those whose names contain match, at most
+// tagsShown of them.
+func tagList(rawURL, match string, tags []string, order string) string {
 	if len(tags) == 0 {
 		return rawURL + " has no tags."
 	}
 	matched := withText(tags, match)
 	if len(matched) == 0 {
-		return fmt.Sprintf("None of the %d tags of %s contain %q. The newest: %s.", len(tags), rawURL, match,
+		return fmt.Sprintf("None of the %d tags of %s contain %q. The first, %s: %s.", len(tags), rawURL, match, order,
 			strings.Join(tags[:min(len(tags), closestMax)], ", "))
 	}
 	var b strings.Builder
 	if match == "" {
-		fmt.Fprintf(&b, "The %d tags of %s, newest first", len(tags), rawURL)
+		fmt.Fprintf(&b, "The %d tags of %s, %s", len(tags), rawURL, order)
 	} else {
-		fmt.Fprintf(&b, "%d of the %d tags of %s contain %q, newest first", len(matched), len(tags), rawURL, match)
+		fmt.Fprintf(&b, "%d of the %d tags of %s contain %q, %s", len(matched), len(tags), rawURL, match, order)
 	}
 	if len(matched) > tagsShown {
 		fmt.Fprintf(&b, "; the first %d, so narrow tags for the rest", tagsShown)
