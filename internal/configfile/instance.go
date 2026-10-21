@@ -74,6 +74,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},
 		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
 		{keyCost, strconv.FormatBool(deref(d.Review.Cost)), d.Review.Cost != nil},
+		{keyReplies, strconv.FormatBool(deref(d.Review.Replies)), d.Review.Replies != nil},
 		{keyScorer, string(deref(d.Confidence.Model)), d.Confidence.Model != nil},
 		{keyScorerFallback, string(deref(d.Confidence.Fallback)), d.Confidence.Fallback != nil},
 		{keyScorerEffort, string(deref(d.Confidence.Effort)), d.Confidence.Effort != nil},

@@ -27,16 +27,21 @@ import (
 )
 
 // Follow-up bounds: mentions answered per pull request per hour before a
-// single "limit reached" reply, and thread messages kept in the prompt.
+// single "limit reached" reply, thread messages kept in the prompt, and
+// replies the bot makes in one of its finding threads to replies that did
+// not address it, before it leaves the thread to a mention.
 const (
 	followUpsPerHour = 5
 	threadMessages   = 20
+	repliesPerThread = 3
 )
 
 // FollowUp works the followup queue: one job answers one comment that
-// @-mentioned the bot, scoped to its thread. A question is answered by an
-// agent in a runner, with a review's tools; the commands (review, dismiss,
-// pause, resume) are carried out here.
+// @-mentioned the bot, scoped to its thread, or, where the repository asks
+// for it, one that replied in a thread of one of the bot's findings
+// without mentioning it, when the reply needs an answer. A question is
+// answered by an agent in a runner, with a review's tools; the commands
+// (review, dismiss, pause, resume) are carried out here.
 type FollowUp struct {
 	river.WorkerDefaults[jobs.FollowUpArgs]
 	Base
@@ -80,7 +85,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	}
 	owner, repo := pr.ownerRepo()
 	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
-		comment: forge.Comment{ID: args.CommentID, Inline: args.Inline}, owner: owner, repo: repo, jobID: job.ID,
+		comment: forge.Comment{ID: args.CommentID, Inline: args.Inline}, asReply: args.Reply, owner: owner, repo: repo, jobID: job.ID,
 		attempt: job.Attempt, maxAttempts: job.MaxAttempts, requested: job.CreatedAt, logger: logger}
 	// The job of an answered review request wakes until the review ends,
 	// with nothing to read from the forge each time.
@@ -140,10 +145,16 @@ type followUp struct {
 	client    forge.Client
 	pr        *pullRequest
 	comment   forge.Comment
-	owner     string
-	repo      string
-	botLogin  string
-	jobID     int64
+	// asReply says the comment may be answered as a reply in one of the
+	// bot's finding threads when it does not mention the bot; once
+	// disqualified has qualified it as one, fingerprint is the finding the
+	// thread holds, and a mention it is not.
+	asReply     bool
+	fingerprint string
+	owner       string
+	repo        string
+	botLogin    string
+	jobID       int64
 	// attempt is the job's, 1 the first time, and maxAttempts its last.
 	attempt, maxAttempts int
 	// requested is when the job was queued: a review that ended since may
@@ -178,13 +189,27 @@ func (f *followUp) alreadyAnswered(ctx context.Context) (bool, error) {
 	if f.attempt <= 1 {
 		return false, nil
 	}
-	id, err := f.repliedOnForge(ctx)
-	if err != nil || id == 0 {
+	posted, err := f.repliedOnForge(ctx)
+	if err != nil || posted.ID == 0 {
 		return false, err
 	}
-	f.logger.Info("follow-up already answered on the forge", "reply", id)
+	f.logger.Info("follow-up already answered on the forge", "reply", posted.ID)
 	f.unmark(ctx)
-	return true, f.record(ctx, store.FollowupAnswered, "", id, "")
+	// A reply that conceded the finding says so to whoever reads it; the
+	// attempt that posted it may have ended before it dismissed the
+	// finding. The marker is kritika's own: the model's prose loses any it
+	// echoes, and only the thread's finding is conceded.
+	if fingerprint, ok := review.MarkedConcession(posted.Body); ok && f.asReply {
+		held, err := f.dismissedFinding(ctx)
+		if err != nil {
+			return true, err
+		}
+		if held == fingerprint {
+			return true, f.recordConcession(ctx, posted.ID, "", fingerprint, posted.Body)
+		}
+		f.logger.Warn("conceded finding is not the thread's; not dismissed", "conceded", fingerprint, "thread", held)
+	}
+	return true, f.record(ctx, store.FollowupAnswered, "", posted.ID, "")
 }
 
 // unmark ends the marks an earlier attempt left on the mention when it was
@@ -196,9 +221,9 @@ func (f *followUp) unmark(ctx context.Context) {
 	}
 }
 
-// repliedOnForge returns the id of the bot's reply to the comment, by its
-// FollowUpMarker, where the reply would be posted, or 0.
-func (f *followUp) repliedOnForge(ctx context.Context) (int64, error) {
+// repliedOnForge returns the bot's reply to the comment, by its
+// FollowUpMarker, where the reply would be posted, or the zero comment.
+func (f *followUp) repliedOnForge(ctx context.Context) (forge.Comment, error) {
 	var comments []forge.Comment
 	var err error
 	if f.comment.Inline {
@@ -207,33 +232,36 @@ func (f *followUp) repliedOnForge(ctx context.Context) (int64, error) {
 		comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.pr.number)
 	}
 	if err != nil {
-		return 0, err
+		return forge.Comment{}, err
 	}
 	return markedReply(comments, f.botLogin, f.comment.ID), nil
 }
 
-// markedReply is the id of the comment by login whose FollowUpMarker names
-// commentID, or 0.
-func markedReply(comments []forge.Comment, login string, commentID int64) int64 {
+// markedReply is the comment by login whose FollowUpMarker names commentID,
+// or the zero comment.
+func markedReply(comments []forge.Comment, login string, commentID int64) forge.Comment {
 	want := strconv.FormatInt(commentID, 10)
 	for _, c := range comments {
 		if !strings.EqualFold(c.Author, login) {
 			continue
 		}
 		if id, ok := review.MarkedFollowUp(c.Body); ok && id == want {
-			return c.ID
+			return c
 		}
 	}
-	return 0
+	return forge.Comment{}
 }
 
-// run qualifies the mention, gathers the thread and the last review's
-// findings, has an agent answer, and posts the reply. Nothing after the
-// reply is posted may fail the job: a retry would answer twice.
+// run qualifies the mention, or the reply, gathers the thread and the last
+// review's findings, has an agent answer, and posts the reply. Nothing
+// after the reply is posted may fail the job: a retry would answer twice.
 func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) {
 	if reason := f.disqualified(ctx); reason != "" {
 		f.logger.Info("follow-up ignored", "reason", reason)
 		return store.FollowupIgnored, f.record(ctx, store.FollowupIgnored, reason, 0, "")
+	}
+	if f.asReply {
+		return f.runReply(ctx)
 	}
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
 	if requestsReview(f.comment.Body, slug) {
@@ -260,7 +288,7 @@ func (f *followUp) run(ctx context.Context) (_ store.FollowupStatus, err error) 
 	if limited {
 		return store.FollowupLimited, nil
 	}
-	thread, err := f.thread(ctx)
+	thread, _, err := f.thread(ctx)
 	if err != nil {
 		return store.FollowupFailed, err
 	}
@@ -393,7 +421,7 @@ func (f *followUp) runAgent(
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindFollowUp, RunID: runID, CloneURL: f.client.CloneURL(f.owner, f.repo),
 			Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
-			Tools: f.eff.Tools, Prompt: prompt, Thread: thread,
+			Tools: f.eff.Tools, Prompt: prompt, Thread: thread, Reply: f.asReply,
 			Model: &runner.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
 			Agent: &runner.AgentLimits{
 				MaxSteps: limits.MaxSteps, MaxToolOutputBytes: limits.MaxToolOutputBytes, MaxTokens: limits.MaxTokens,
@@ -439,14 +467,22 @@ func (f *followUp) runAgent(
 	return agent, nil
 }
 
-// disqualified returns why the mention is not answered, or "".
+// disqualified returns why the mention, or the reply, is not answered, or
+// "". A comment that mentions the bot is a mention, whatever thread it is
+// in; one that does not is a reply when the job allows it and the thread
+// is one of the bot's findings', still unresolved.
 func (f *followUp) disqualified(ctx context.Context) string {
 	if f.comment.AuthorIsBot || strings.EqualFold(f.comment.Author, f.botLogin) {
 		return "author is a bot"
 	}
 	slug := strings.TrimSuffix(f.botLogin, "[bot]")
-	if !mentioned(f.comment.Body, slug) {
+	switch mentions := mentioned(f.comment.Body, slug); {
+	case mentions:
+		f.asReply = false
+	case !f.asReply:
 		return "does not mention @" + slug
+	case !f.settings.Review.Replies:
+		return "replies in finding threads are off for this repository"
 	}
 	perm, err := f.client.Permission(ctx, f.owner, f.repo, f.comment.Author)
 	if err != nil {
@@ -455,6 +491,11 @@ func (f *followUp) disqualified(ctx context.Context) string {
 	}
 	if !forge.CanWrite(perm) {
 		return "author has " + string(perm) + " access, write is required"
+	}
+	// The thread is read for the author's reply alone: anyone can reply on
+	// a public repository, and the lookups page the pull request's threads.
+	if f.asReply {
+		return f.replyDisqualified(ctx)
 	}
 	return ""
 }
@@ -494,15 +535,17 @@ func (f *followUp) rateLimited(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// thread returns the messages the model sees. The asking comment is always
-// last.
-func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
+// thread returns the messages the model sees, the asking comment always
+// last, and how many replies the bot has made in the thread: its comments
+// that carry a FollowUpMarker, which a finding's own comment does not,
+// counted over the whole thread, not the messages kept.
+func (f *followUp) thread(ctx context.Context) ([]review.Message, int, error) {
 	var comments []forge.Comment
 	var err error
 	switch {
 	case !f.comment.Inline:
 		if comments, err = f.client.ListConversation(ctx, f.owner, f.repo, f.pr.number); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	// Only a reply has a thread to gather: a comment that replies to none
 	// starts its thread.
@@ -510,12 +553,18 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
 		root := f.comment.InReplyTo
 		all, err := f.client.ListInline(ctx, f.owner, f.repo, f.pr.number)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		for _, c := range all {
 			if c.ID == root || c.InReplyTo == root {
 				comments = append(comments, c)
 			}
+		}
+	}
+	replied := 0
+	for _, c := range comments {
+		if _, ok := review.MarkedFollowUp(c.Body); ok && strings.EqualFold(c.Author, f.botLogin) {
+			replied++
 		}
 	}
 	// The asking comment closes the thread whatever the timestamps say.
@@ -533,7 +582,7 @@ func (f *followUp) thread(ctx context.Context) ([]review.Message, error) {
 	for _, c := range comments {
 		msgs = append(msgs, review.NewMessage(c.Author, c.Body, c.CreatedAt))
 	}
-	return msgs, nil
+	return msgs, replied, nil
 }
 
 type reviewRecord struct {

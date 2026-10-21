@@ -245,6 +245,7 @@ export interface ReviewBlock {
   approve: boolean;
   diagram: boolean;
   cost: boolean;
+  replies: boolean;
   context: ContextFile[];
 }
 

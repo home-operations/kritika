@@ -151,6 +151,9 @@ type Comment struct {
 	Body        string
 	// Inline is set for review comments on a diff line.
 	Inline bool
+	// InReplyTo is the root inline comment an inline comment replies to, 0
+	// for a root or a conversation comment.
+	InReplyTo int64
 }
 
 // Thread is an inline review thread someone resolved or unresolved.
@@ -382,9 +385,10 @@ func parseReviewComment(delivery string, body []byte) (Event, error) {
 			Number int `json:"number"`
 		} `json:"pull_request"`
 		Comment struct {
-			ID   int64  `json:"id"`
-			Body string `json:"body"`
-			User ghUser `json:"user"`
+			ID        int64  `json:"id"`
+			Body      string `json:"body"`
+			User      ghUser `json:"user"`
+			InReplyTo int64  `json:"in_reply_to_id"`
 		} `json:"comment"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -396,7 +400,7 @@ func parseReviewComment(delivery string, body []byte) (Event, error) {
 		Comment: &Comment{
 			ID: p.Comment.ID, Number: p.PullRequest.Number, Author: p.Comment.User.Login,
 			AuthorIsBot: p.Comment.User.isBot(), Body: p.Comment.Body,
-			Inline: true,
+			Inline: true, InReplyTo: p.Comment.InReplyTo,
 		},
 	}, nil
 }

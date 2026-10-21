@@ -85,6 +85,10 @@ func TestSystemPromptRules(t *testing.T) {
 }
 
 func TestFollowUpSystemPrompt(t *testing.T) {
+	if got := ReplySystemPrompt(nil, nil, false, false); got != FollowUpSystem+replySystem+agenticTools ||
+		!strings.Contains(got, "Post nothing, with silent set to why") {
+		t.Fatalf("ReplySystemPrompt = %q", got)
+	}
 	if got := FollowUpSystemPrompt(nil, nil, false, false); got != FollowUpSystem+agenticTools || strings.Contains(got, "anchor") {
 		t.Fatalf("without rules or extra tools the follow-up system prompt is the built-in one with the shared tools:\n%s", got)
 	}

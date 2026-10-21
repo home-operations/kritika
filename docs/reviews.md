@@ -58,6 +58,24 @@ as a fix; use the dismiss command if you want a lasting dismissal.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
 
+### Replies in finding threads
+
+With [`review.replies`](configuration.md#what-only-the-admin-sets) on,
+kritika also reads a reply made in one of its finding threads without
+mentioning it, by someone with write access, while the thread is
+unresolved. It answers when the reply needs the reviewer: a question about
+the finding, a disagreement with it, or a claim about the code worth
+checking against the head. It posts nothing for an acknowledgement, a
+message meant for someone else, or a point the thread already settled; the
+dashboard records why. When the thread convinces it the finding was wrong,
+its reply says so, the finding is dismissed as `@<bot> dismiss` would, and
+the thread is resolved.
+
+Such replies count against the five follow-ups per pull request per hour,
+whether or not one is posted, and once kritika has replied three times in
+a thread it leaves the thread to a mention. A reply that mentions the bot
+is a mention wherever it is made.
+
 ### Dependency bumps
 
 A change that moves a version, whoever wrote it, gets a procedure of its

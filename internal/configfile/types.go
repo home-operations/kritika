@@ -250,6 +250,7 @@ type ReviewSpec struct {
 	Incremental *int          `yaml:"incremental,omitempty"`
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
+	Replies     *bool         `yaml:"replies,omitempty"`
 }
 
 // ConfidenceSpec sets how a review is judged at one scope: the model that
@@ -639,7 +640,12 @@ type Review struct {
 	// Cost is true to have the summary's footer state what the pull
 	// request's reviews have cost together. Off unless set: the comment
 	// is public, and the figure is the instance's spend.
-	Cost    bool          `json:"cost"`
+	Cost bool `json:"cost"`
+	// Replies is true to have kritika answer a reply someone with write
+	// access makes in one of its own finding threads without mentioning
+	// it, when the reply needs an answer. Off unless set: each answer is a
+	// model call the repository's reviewers did not ask for.
+	Replies bool          `json:"replies"`
 	Context []ContextFile `json:"context"`
 	// Rules are the checks the configuration writes, the broadest scope's
 	// first. The API serves them from the rules routes, with what each

@@ -103,6 +103,9 @@ func TestParseGitHubComments(t *testing.T) {
 		{"review comment", "pull_request_review_comment", `{"action":"created","pull_request":{"number":8},
 		  "comment":{"id":100,"body":"@bot why","path":"main.go","line":12,"user":{"login":"devin"}},
 		  "repository":{"full_name":"a/b","owner":{"login":"a"}}}`, KindComment, true, 8},
+		{"review comment in reply", "pull_request_review_comment", `{"action":"created","pull_request":{"number":8},
+		  "comment":{"id":101,"body":"not really","in_reply_to_id":100,"path":"main.go","line":12,"user":{"login":"devin"}},
+		  "repository":{"full_name":"a/b","owner":{"login":"a"}}}`, KindComment, true, 8},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -115,6 +118,9 @@ func TestParseGitHubComments(t *testing.T) {
 			}
 			if tt.kind == KindComment && (ev.Comment.Inline != tt.inline || ev.Comment.Number != tt.number) {
 				t.Fatalf("comment = %+v", ev.Comment)
+			}
+			if tt.kind == KindComment && (ev.Comment.InReplyTo != 0) != (tt.name == "review comment in reply") {
+				t.Fatalf("comment = %+v, want in_reply_to_id carried as it was given", ev.Comment)
 			}
 		})
 	}

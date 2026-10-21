@@ -58,6 +58,7 @@
       "approve": false,
       "diagram": false,
       "cost": false,
+      "replies": false,
       "context": [
         {
           "path": "db/schema.sql",
@@ -153,6 +154,7 @@
         "approve": false,
         "diagram": false,
         "cost": false,
+        "replies": false,
         "context": [
           {
             "path": "db/schema.sql",

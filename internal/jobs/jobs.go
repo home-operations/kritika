@@ -137,13 +137,17 @@ func (PublishArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: QueuePublish, MaxAttempts: reviewAttempts, UniqueOpts: river.UniqueOpts{ByArgs: true}}
 }
 
-// FollowUpArgs answers one comment that addressed the bot.
+// FollowUpArgs answers one comment that addressed the bot, or, with Reply,
+// one that replied in a thread of its own without addressing it.
 type FollowUpArgs struct {
 	AccountID    string `json:"account_id"`
 	RepositoryID string `json:"repository_id"`
 	Number       int    `json:"number"`
 	CommentID    int64  `json:"comment_id" river:"unique"`
 	Inline       bool   `json:"inline"`
+	// Reply says the comment may be answered as a reply in one of the
+	// bot's finding threads when it does not mention the bot.
+	Reply bool `json:"reply,omitempty"`
 }
 
 // Kind implements river.JobArgs.

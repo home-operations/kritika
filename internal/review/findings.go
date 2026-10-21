@@ -722,7 +722,7 @@ func citedRules(cited, given []string) []string {
 // the replacement and the agent prompt, are not prose: they render in
 // code blocks, which the forge does not link.
 func prose(s, repository string) string {
-	return RedirectReferences(strings.TrimSpace(s), repository)
+	return RedirectReferences(strings.TrimSpace(stripMarkers(s)), repository)
 }
 
 // stripFences drops the fence lines a model wraps replacement code in and

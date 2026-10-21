@@ -222,6 +222,10 @@ type Spec struct {
 	// Thread is the comments a follow-up answers, oldest first, the last
 	// of them the one to answer.
 	Thread []review.Message `json:"thread,omitempty"`
+	// Reply says the last of them replied in the thread of one of
+	// kritika's findings without addressing it: the agent answers only if
+	// the reviewer is needed, and may concede the finding.
+	Reply bool `json:"reply,omitempty"`
 }
 
 // Validate checks a spec is one this runner can carry out.

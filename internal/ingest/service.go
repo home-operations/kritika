@@ -294,9 +294,13 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 		return Outcome{Status: Ignored, Reason: reasonAction}, nil
 	}
 	// The cheap gate: a bot never triggers a follow-up, and a comment with
-	// no mention at all is not one. The worker checks the mention against
-	// the connection's resolved bot identity and the author's access.
-	if c.AuthorIsBot || !strings.Contains(c.Body, "@") {
+	// no mention at all is not one, unless it replies in an inline thread
+	// of a repository whose finding threads kritika answers replies in.
+	// The worker checks the mention against the connection's resolved bot
+	// identity, the thread against the bot's findings, and the author's
+	// access.
+	reply := c.Inline && c.InReplyTo != 0 && req.File.Settings(req.Account, ev.Repository.FullName).Review.Replies
+	if c.AuthorIsBot || !strings.Contains(c.Body, "@") && !reply {
 		return Outcome{Status: Skipped, Reason: "no-mention"}, nil
 	}
 	if runs, err := s.registerAndCheckRepository(ctx, req); err != nil || !runs {
@@ -310,7 +314,7 @@ func (s *Service) comment(ctx context.Context, req Request) (Outcome, error) {
 		}
 		res, err := s.queue.InsertTx(ctx, tx, jobs.FollowUpArgs{
 			AccountID: req.Account.ID(), RepositoryID: rid, Number: c.Number, CommentID: c.ID,
-			Inline: c.Inline,
+			Inline: c.Inline, Reply: reply,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("ingest: enqueue follow-up: %w", err)
