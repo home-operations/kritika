@@ -8,8 +8,10 @@
 [tools]
 # Each entry exposes only the executable it is there for, filter_bins for a
 # release archive and symlink_bins for an aqua recipe, so a tool offers one
-# command. curl has no registry short name, so it comes from its release
-# archive; the others resolve to aqua packages.
+# command. curl has no registry short name, and crane's aqua recipe would
+# expose gcrane beside it, so both come from their release archives; the
+# others resolve to aqua packages.
+"github:google/go-containerregistry" = { version = "0.22.1", filter_bins = "crane" }
 "github:stunnel/static-curl" = { version = "8.23.0", matching = "glibc", filter_bins = "curl" }
 fd = { version = "10.5.0", symlink_bins = true }
 gh = { version = "2.102.0", symlink_bins = true }
