@@ -30,9 +30,13 @@ func queuedOutcomeReview(t *testing.T, h *agenticHarness) *river.Job[jobs.Review
 		t.Fatal(err)
 	}
 	h.dispatch(t, h.head)
+	// River's table is outside the account policies, so the job is the
+	// account's own by its arguments, and the newest where a test queued
+	// more than one.
 	var id int64
 	if err := h.st.WithAccount(h.ctx, h.account.ID(), func(tx pgx.Tx) error {
-		return tx.QueryRow(h.ctx, `SELECT id FROM river_job WHERE kind = 'review' AND (args->>'number')::int = $1`, h.number).Scan(&id)
+		return tx.QueryRow(h.ctx, `SELECT id FROM river_job WHERE kind = 'review' AND (args->>'number')::int = $1
+			AND args->>'account_id' = $2 ORDER BY id DESC LIMIT 1`, h.number, h.account.ID()).Scan(&id)
 	}); err != nil {
 		t.Fatal(err)
 	}
