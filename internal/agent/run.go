@@ -47,6 +47,14 @@ type RunConfig struct {
 	// command's tool first when it is not yet; Commands then only names
 	// what is offered. Its error is returned to the model.
 	Resolve func(ctx context.Context, command string) (bin string, env []string, err error)
+	// Prepare, when set, writes Dir before the first command runs, so a
+	// review that runs none never pays for it. It runs once: its note,
+	// when any, opens every command's result, since the tool's description
+	// went out before it was known, and its error is returned to the model
+	// for that command and every later one. One it returns because ctx
+	// ended is not kept: the next command, with a context of its own, runs
+	// it again, so Dir must be fit to write again after a failure.
+	Prepare func(ctx context.Context) (note string, err error)
 	// Timeout bounds one command.
 	Timeout time.Duration
 	// MaxOutputBytes caps the combined output kept of one command.
@@ -114,6 +122,11 @@ type RunTool struct {
 	failed, errors []string
 	// calls counts the commands run, which number the kept outputs.
 	calls int
+	// prepared is set once Prepare ran, prepareNote and prepareErr to what
+	// it returned; the loop calls tools one at a time, so none is locked.
+	prepared    bool
+	prepareNote string
+	prepareErr  error
 }
 
 // NewRunTool builds the run tool over c.Commands.
@@ -271,9 +284,15 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 		}
 		rt.cfg.Logger.Info("command started", "call", rt.calls, "command", req.Command, "args", args)
 	}
+	note, err := rt.prepare(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("agent: run: %w", ctx.Err())
+		}
+		return "", rt.setupError(req.Command, err)
+	}
 	env := rt.cfg.Env
 	if rt.cfg.Resolve != nil {
-		var err error
 		if bin, env, err = rt.cfg.Resolve(ctx, req.Command); err != nil {
 			if ctx.Err() != nil {
 				return "", fmt.Errorf("agent: run: %w", ctx.Err())
@@ -294,7 +313,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	// Once the command is killed, a child still holding its output open is
 	// not waited for.
 	cmd.WaitDelay = time.Second
-	err := cmd.Run()
+	err = cmd.Run()
 	if cmd.Process != nil {
 		rt.executions[req.Command]++
 	}
@@ -302,7 +321,7 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 	case ctx.Err() != nil:
 		return "", fmt.Errorf("agent: run: %w", ctx.Err())
 	case cctx.Err() != nil:
-		stopped := fmt.Sprintf("stopped after %s\n%s", rt.cfg.Timeout, rt.mask(out.String()))
+		stopped := fmt.Sprintf("%sstopped after %s\n%s", note, rt.cfg.Timeout, rt.mask(out.String()))
 		return rt.result(stopped, out, out.dropped(), rt.mask(errs.String())), nil
 	case err != nil:
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
@@ -319,7 +338,27 @@ func (rt *RunTool) Run(ctx context.Context, input json.RawMessage) (string, erro
 			text, dropped, stderr = hint, 0, ""
 		}
 	}
-	return rt.result(fmt.Sprintf("exit code %d\n%s", code, text), out, dropped, stderr), nil
+	return rt.result(fmt.Sprintf("%sexit code %d\n%s", note, code, text), out, dropped, stderr), nil
+}
+
+// prepare runs Prepare before the first command and returns its note, as
+// a line of its own, for every command; its failure stands for every
+// command after it, unless ctx ended it.
+func (rt *RunTool) prepare(ctx context.Context) (string, error) {
+	if rt.cfg.Prepare == nil {
+		return "", nil
+	}
+	if !rt.prepared {
+		note, err := rt.cfg.Prepare(ctx)
+		if err != nil && ctx.Err() != nil {
+			return "", err
+		}
+		if note != "" {
+			note += "\n"
+		}
+		rt.prepared, rt.prepareNote, rt.prepareErr = true, note, err
+	}
+	return rt.prepareNote, rt.prepareErr
 }
 
 // A cut output keeps at most MaxOutputBytes/stderrShare of the end of the

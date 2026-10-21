@@ -370,13 +370,15 @@ What bounds a command:
   refused in its `--expand-` form too. It masks the token in a command's
   output and in the submitted review.
 - **A plain checkout:** the files are written without execute bits,
-  preventing direct execution. An interpreter or plugin loader can still
-  read and run them. An empty `.git` whose
-  `origin` is the repository's clone URL, with no history, lets a tool
-  that locates a repository by its working tree, such as flate, find this
-  one. Ignored paths, lockfiles and vendored trees among them, are left
-  out of it; the agent is told `read_file` and `read_diff` still read
-  them, so it need not reach for the forge's API for a lockfile.
+  preventing direct execution, when the first command runs; a review
+  that reads the head through its own tools alone writes none. An
+  interpreter or plugin loader can still read and run them. An empty
+  `.git` whose `origin` is the repository's clone URL, with no history,
+  lets a tool that locates a repository by its working tree, such as
+  flate, find this one. Ignored paths, lockfiles and vendored trees
+  among them, are left out of it; the agent is told `read_file` and
+  `read_diff` still read them, so it need not reach for the forge's API
+  for a lockfile.
 - **Bounded output:** a command's output is cut to the agent's `output`
   (32 KiB by default), keeping the end of its stderr past the cut. A cut
   output is kept whole, with the token masked, in a file beside the
