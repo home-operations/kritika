@@ -119,7 +119,7 @@ func TestMergeImpact(t *testing.T) {
 
 func TestConfidenceImpact(t *testing.T) {
 	res := Result{Summary: Summary{Take: "Adds a migration.", Impact: []string{impactNote}}}
-	msg := BuildConfidence(Input{}, res, nil, nil, ConfidenceSystem, DefaultBudgetTokens)
+	msg := BuildConfidence(Input{}, res, Record{}, nil, ConfidenceSystem, DefaultBudgetTokens)
 	if !strings.Contains(msg, impactNote) || !strings.Contains(msg, "not findings or completed checks") ||
 		!strings.Contains(msg, "The review reported no findings.") {
 		t.Fatalf("confidence prompt: %s", msg)
@@ -165,7 +165,7 @@ func TestImpactPreservesEvidence(t *testing.T) {
 		t.Fatalf("parsed impact = %q, err=%v", res.Summary.Impact, err)
 	}
 	for name, prompt := range map[string]string{
-		"confidence": BuildConfidence(Input{}, res, nil, nil, ConfidenceSystem, DefaultBudgetTokens),
+		"confidence": BuildConfidence(Input{}, res, Record{}, nil, ConfidenceSystem, DefaultBudgetTokens),
 		"merge":      BuildMerge("Migration", "", []MergePart{{Summary: res.Summary}}, nil, DefaultBudgetTokens),
 		"re-review":  priorImpactSection("123456789", res.Summary.Impact, 2000),
 	} {
@@ -227,7 +227,7 @@ func TestImpactMarkdown(t *testing.T) {
 		t.Fatalf("Markdown or section order lost:\n%s", body)
 	}
 	for name, prompt := range map[string]string{
-		"confidence": BuildConfidence(Input{}, parsed, nil, nil, ConfidenceSystem, DefaultBudgetTokens),
+		"confidence": BuildConfidence(Input{}, parsed, Record{}, nil, ConfidenceSystem, DefaultBudgetTokens),
 		"merge":      BuildMerge("t", "", []MergePart{{Summary: parsed.Summary}}, nil, DefaultBudgetTokens),
 		"prior":      priorImpactSection("1234567", parsed.Summary.Impact, 2000),
 	} {

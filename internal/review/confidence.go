@@ -108,9 +108,9 @@ func (c Confidence) Explanation() string {
 // ConfidenceSystem is the scorer's standing instructions. The ceilings it
 // states are the ones ConfidenceCeiling enforces.
 const ConfidenceSystem = `You are kritika's second reviewer. Another model reviewed a pull request with tools that read the repository and
-upstream sources. You see the pull request's title, description and diff, the review's account of what it checked
-and read, and the findings it reported. Judge how ready the pull request is to merge, as a confidence score from 0
-to 5.
+upstream sources. You see the pull request's title, description and diff, the versions the change moves where it
+moves any, the review's account of what it checked and read, the record of what its tools did, and the findings it
+reported. Judge how ready the pull request is to merge, as a confidence score from 0 to 5.
 
 Read the description and the diff yourself before the review's account and findings, then score:
 
@@ -133,7 +133,11 @@ merging that is unmet or that nothing in the description or the account shows wa
 the description carries that no checked line covers, or changed lines that depend on something outside the repository,
 such as an upstream interface or a version step, that no checked line or source covers. Never guess at what the review
 did not read: the account lists the sources it read and a selection of what it checked beyond the diff, so a concern
-names what they leave out, and their silence about a changed line is no sign that the review skipped it. The account
+names what they leave out, and their silence about a changed line is no sign that the review skipped it, except where
+the record says a part of the review ended before it submitted: the files it names went unreviewed, and whatever
+they change rests on the diff alone. The record also says which commands the review ran and which failed to run,
+which is kritika's account, not the review's: a command run is no proof of what it showed, and one that failed to
+run is a source the review could not have read. The account
 is the review's claim, not proof that the change is right. Merge impact notes describe intended consequences and
 specific checks, not additional findings. Their evidence can inform the risk rating and answer a concern; their
 presence alone never lowers the score, and a suggested check is not proof that it passed. An empty impact list is not
@@ -158,7 +162,11 @@ is administrative, reaches secrets or production data, or cannot be quickly reve
 lowers nothing: the access was held until then. A rename, or a replacement that leaves what each principal may do
 unchanged, grants nothing. Narrowing or removing access rates by what it breaks.
 
-A dependency update rates by what the dependency does and how far its version moves, not as a class of its own.
+A dependency update rates by what the dependency does and how far its version moves, not as a class of its own. The
+versions the change moves are listed, old to new, where the diff moves any: classify each step from that list, and
+from the diff for a version the list leaves out, since it holds only lines rewritten with the version alone and not
+every one of them. A diff cut to the prompt names the files it leaves out: you cannot read them, so rate what their
+paths and the list of moved versions imply, and say in the reason which were not shown.
 Call a dependency standalone when nothing else depends on it, shared when other things do, and central when much
 else does:
 
@@ -242,14 +250,24 @@ const (
 	maxConfidenceReason  = 500
 )
 
+// Record is what kritika saw of a review's run, as the scorer is told it
+// beside the review's own account: the sources its tools read outside the
+// repository, the commands it ran and the ones that failed to run, and
+// the notes on the parts of a split review that ended before they
+// submitted, whose files went unreviewed.
+type Record struct {
+	Sources, CommandsRun, CommandErrors, Unfinished []string
+}
+
 // BuildConfidence renders the scorer's user message, sent with system
 // within a prompt budget of budget tokens (see UserBudget): the pull
-// request, its description and its diff as Build renders them, then the
-// review's account of itself, res's summary, impact and checked lines and the
-// sources it read, the findings it reported and, when earlier is not nil,
-// the risk the last review was rated, which the description and the diff
-// give way to.
-func BuildConfidence(in Input, res Result, sources []string, earlier *EarlierRisk, system string, budget int) string {
+// request, its description and its diff as Build renders them, with
+// Input.Toolless set since the scorer cannot read what the diff leaves out,
+// then the review's account of itself, res's summary, impact and checked
+// lines, the record of its run, the findings it reported and, when earlier
+// is not nil, the risk the last review was rated, which the description
+// and the diff give way to.
+func BuildConfidence(in Input, res Result, rec Record, earlier *EarlierRisk, system string, budget int) string {
 	var tail strings.Builder
 	tail.WriteString("\n\nThe review's account of itself:\n")
 	if take := strings.Join(strings.Fields(res.Summary.Take), " "); take != "" {
@@ -272,16 +290,30 @@ func BuildConfidence(in Input, res Result, sources []string, earlier *EarlierRis
 			fmt.Fprintf(&tail, "- %s\n", oneLine(c))
 		}
 	}
-	if len(sources) == 0 {
+	if len(rec.Sources) == 0 {
 		tail.WriteString("\nIt read no sources outside the repository.\n")
 	} else {
 		tail.WriteString("\nThe sources it read outside the repository:\n")
-		for _, s := range sources[:min(len(sources), maxConfidenceSources)] {
+		for _, s := range rec.Sources[:min(len(rec.Sources), maxConfidenceSources)] {
 			fmt.Fprintf(&tail, "- %s\n", oneLine(s))
 		}
-		if more := len(sources) - maxConfidenceSources; more > 0 {
+		if more := len(rec.Sources) - maxConfidenceSources; more > 0 {
 			fmt.Fprintf(&tail, "- and %d more\n", more)
 		}
+	}
+	if len(rec.CommandsRun) > 0 {
+		fmt.Fprintf(&tail, "\nThe commands it ran: %s.\n", strings.Join(rec.CommandsRun, ", "))
+	}
+	for _, e := range rec.CommandErrors {
+		fmt.Fprintf(&tail, "\nA command failed to run: %s\n", oneLine(e))
+	}
+	// A note names the files that went unreviewed, which the rubric rests
+	// on, so it is kept whole as a finding is, not cut as a line.
+	for _, n := range rec.Unfinished {
+		if n = strings.Join(strings.Fields(n), " "); len(n) > maxConfidenceFinding {
+			n = textcut.Prefix(n, maxConfidenceFinding) + " …"
+		}
+		fmt.Fprintf(&tail, "\nUnreviewed: %s\n", n)
 	}
 	findings := res.Findings
 	if len(findings) == 0 {
@@ -304,6 +336,7 @@ func BuildConfidence(in Input, res Result, sources []string, earlier *EarlierRis
 		tail.WriteString("\n")
 	}
 	in.BudgetTokens = max(UserBudget(system, budget)-tail.Len()/charsPerToken, minUserBudget)
+	in.Toolless = true
 	msg, _, _, _ := Build(in)
 	return msg + tail.String()
 }
