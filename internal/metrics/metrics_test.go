@@ -22,6 +22,7 @@ func TestMetricsRecordAndNilIsSafe(t *testing.T) {
 	none.ModelCall("t", "m", "review", "ok", 1, 0, 1, 0.1, false)
 	none.TranscriptWrite("review", "ok")
 	none.ConfidenceScored("t", 5, "low")
+	none.ConfidenceHeld("t", "score")
 	none.Leading(true)
 	none.QueueWait("review", time.Second)
 	none.InitVectorSearch("account")
@@ -97,6 +98,12 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if v := testutil.ToFloat64(m.confidence.WithLabelValues("onedr0p", "4", "high")); v != 2 {
 		t.Fatalf("confidence scores = %v", v)
 	}
+	m.ConfidenceHeld("onedr0p", "score")
+	m.ConfidenceHeld("onedr0p", "score")
+	m.ConfidenceHeld("onedr0p", "risk")
+	if s, r := testutil.ToFloat64(m.confidenceHeld.WithLabelValues("onedr0p", "score")), testutil.ToFloat64(m.confidenceHeld.WithLabelValues("onedr0p", "risk")); s != 2 || r != 1 {
+		t.Fatalf("confidence held = %v score, %v risk", s, r)
+	}
 	if v := testutil.ToFloat64(m.leader); v != 0 {
 		t.Fatalf("leader before leading = %v", v)
 	}
@@ -112,8 +119,8 @@ kritika_model_tokens_total{account="onedr0p",direction="output",model="openai/gp
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(families) != 39 {
-		t.Fatalf("metric families = %d, want all 39", len(families))
+	if len(families) != 40 {
+		t.Fatalf("metric families = %d, want all 40", len(families))
 	}
 	if problems, err := promlint.NewWithMetricFamilies(families).Lint(); err != nil || len(problems) != 0 {
 		t.Fatalf("metric lint = %v, %v", problems, err)

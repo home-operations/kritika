@@ -358,6 +358,25 @@ func ConfidenceCeiling(c Counts) int {
 	return MaxConfidence
 }
 
+// Parsed is the scorer's answer as ParseConfidence reads it: the score
+// held to the ceiling and the risk held to a level, beside what the
+// scorer gave, so a disagreement with the ceiling or an answer outside
+// the levels can be seen.
+type Parsed struct {
+	Score, Given int
+	Risk         Risk
+	// RiskGiven is the risk as the scorer wrote it, which may be no level.
+	RiskGiven string
+	Reason    string
+}
+
+// Clamped reports whether the score was held under what the scorer gave.
+func (p Parsed) Clamped() bool { return p.Score < p.Given }
+
+// Defaulted reports whether the risk was given as no level, and so taken
+// as the highest.
+func (p Parsed) Defaulted() bool { return string(p.Risk) != p.RiskGiven }
+
 // ParseConfidence decodes the scorer's answer and holds its score to the
 // ceiling counts set, so the gate never rests on the scorer agreeing that
 // a reported finding counts. The reason's GitHub references are redirected
@@ -367,26 +386,27 @@ func ConfidenceCeiling(c Counts) int {
 // inside neither a word nor a link the redirection made. A risk that is no
 // level is the highest: an answer that does not say how risky the change
 // is must not read as a safe one.
-func ParseConfidence(raw, repository string, counts Counts) (score int, risk Risk, reason string, err error) {
+func ParseConfidence(raw, repository string, counts Counts) (Parsed, error) {
 	var out struct {
 		Score  *int   `json:"score"`
-		Risk   Risk   `json:"risk"`
+		Risk   string `json:"risk"`
 		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(strings.NewReader(strings.TrimSpace(raw))).Decode(&out); err != nil {
-		return 0, "", "", fmt.Errorf("review: model output is not the expected JSON: %w", err)
+		return Parsed{}, fmt.Errorf("review: model output is not the expected JSON: %w", err)
 	}
 	if out.Score == nil || *out.Score < 0 || *out.Score > MaxConfidence {
-		return 0, "", "", fmt.Errorf("review: model returned no score from 0 to %d", MaxConfidence)
+		return Parsed{}, fmt.Errorf("review: model returned no score from 0 to %d", MaxConfidence)
 	}
-	if !out.Risk.Valid() {
-		out.Risk = RiskCritical
+	p := Parsed{Score: min(*out.Score, ConfidenceCeiling(counts)), Given: *out.Score, Risk: Risk(out.Risk), RiskGiven: out.Risk}
+	if !p.Risk.Valid() {
+		p.Risk = RiskCritical
 	}
-	reason = prose(strings.Join(strings.Fields(out.Reason), " "), repository)
-	if len(reason) > maxConfidenceReason {
-		reason = cutWords(reason, maxConfidenceReason) + " …"
+	p.Reason = prose(strings.Join(strings.Fields(out.Reason), " "), repository)
+	if len(p.Reason) > maxConfidenceReason {
+		p.Reason = cutWords(p.Reason, maxConfidenceReason) + " …"
 	}
-	return min(*out.Score, ConfidenceCeiling(counts)), out.Risk, reason, nil
+	return p, nil
 }
 
 // cutWords is the longest prefix of s at most n bytes long that ends on a

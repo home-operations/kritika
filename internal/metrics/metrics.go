@@ -27,6 +27,7 @@ type Metrics struct {
 	threads        *prometheus.CounterVec
 	findings       *prometheus.CounterVec
 	confidence     *prometheus.CounterVec
+	confidenceHeld *prometheus.CounterVec
 	indexRuns      *prometheus.CounterVec
 	indexChunks    *prometheus.CounterVec
 	contextChunks  *prometheus.CounterVec
@@ -118,6 +119,11 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "kritika_confidence_scores_total",
 			Help: "Reviews the confidence model scored, by score (0 to 5) and risk (low, medium, high, critical).",
 		}, []string{lblAccount, "score", "risk"}),
+		confidenceHeld: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "kritika_confidence_held_total",
+			Help: "Confidence answers kritika held to its own rule, by what: score (under the findings' ceiling), " +
+				"risk (given as no level, taken as critical), floor (raised to a path's floor).",
+		}, []string{lblAccount, "what"}),
 		indexRuns: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "kritika_index_runs_total", Help: "Index runs finished, by mode and status.",
 		}, []string{lblAccount, "mode", "status"}),
@@ -223,6 +229,14 @@ func (m *Metrics) Findings(account, severity, category string, n int) {
 func (m *Metrics) ConfidenceScored(account string, score int, risk string) {
 	if m != nil {
 		m.confidence.WithLabelValues(account, strconv.Itoa(score), risk).Inc()
+	}
+}
+
+// ConfidenceHeld counts a scorer's answer held to kritika's rule: what is
+// score, risk or floor.
+func (m *Metrics) ConfidenceHeld(account, what string) {
+	if m != nil {
+		m.confidenceHeld.WithLabelValues(account, what).Inc()
 	}
 }
 
