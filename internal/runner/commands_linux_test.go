@@ -103,25 +103,13 @@ func TestCommandTool(t *testing.T) {
 		if err != nil || len(scratch) != 1 {
 			t.Fatalf("scratch = %v, %v", scratch, err)
 		}
-		if _, err := os.Stat(filepath.Join(scratch[0], "checkout", "main.go")); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := os.Stat(filepath.Join(scratch[0], "checkout", "vendor")); !os.IsNotExist(err) {
-			t.Fatalf("ignored path checked out: %v", err)
-		}
+		checkFirstCommandCheckout(t, run, filepath.Join(scratch[0], "checkout"), s.CloneURL)
 		if _, err := os.Stat(filepath.Join(scratch[0], "home", ".curlrc")); !os.IsNotExist(err) {
 			t.Fatalf(".curlrc written for a curl that is not offered: %v", err)
 		}
 		k := run.Kept()
 		if k == nil || *k != (agent.Kept{Dir: filepath.Join(scratch[0], upstreamDir), Rel: upstreamRel, FileBytes: fetchDiffBytes, Budget: k.Budget}) {
 			t.Fatalf("a cut output is kept at %+v, want beside the checkout in %s", k, scratch[0])
-		}
-		repo, err := git.PlainOpen(filepath.Join(scratch[0], "checkout"))
-		if err != nil {
-			t.Fatalf("checkout is not a repository: %v", err)
-		}
-		if origin, err := repo.Remote("origin"); err != nil || !slices.Equal(origin.Config().URLs, []string{s.CloneURL}) {
-			t.Fatalf("origin = %v, %v; want %s", origin, err, s.CloneURL)
 		}
 		cleanup()
 		if _, err := os.Stat(scratch[0]); !os.IsNotExist(err) {
@@ -150,6 +138,33 @@ func TestCommandTool(t *testing.T) {
 		}
 	})
 
+}
+
+// checkFirstCommandCheckout: the checkout at dir waits for the first
+// command, which finds the head's files there, less the ignored paths,
+// marked as a repository whose origin is cloneURL.
+func checkFirstCommandCheckout(t *testing.T, run *agent.RunTool, dir, cloneURL string) {
+	t.Helper()
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("checkout written before a command ran: %v, %v", entries, err)
+	}
+	out, err := run.Run(t.Context(), fetchInput(t, map[string]any{"command": "rg", "args": []string{"-test.run=^$"}}))
+	if err != nil || !strings.HasPrefix(out, "exit code 0\n") {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "main.go")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "vendor")); !os.IsNotExist(err) {
+		t.Fatalf("ignored path checked out: %v", err)
+	}
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("checkout is not a repository: %v", err)
+	}
+	if origin, err := repo.Remote("origin"); err != nil || !slices.Equal(origin.Config().URLs, []string{cloneURL}) {
+		t.Fatalf("origin = %v, %v; want %s", origin, err, cloneURL)
+	}
 }
 
 // TestCommandToolAdminEnv: the admin's variables reach a command from the

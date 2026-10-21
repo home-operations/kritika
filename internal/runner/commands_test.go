@@ -2,6 +2,8 @@ package runner
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -94,6 +97,63 @@ func TestCurlrcSchemes(t *testing.T) {
 		if code != tt.code {
 			t.Errorf("curl %s: exit code %d, want %d\n%s", tt.url, code, tt.code, out)
 		}
+	}
+}
+
+// TestClearDir: a checkout directory is emptied in place, under a scratch
+// directory that no longer lets it be removed.
+func TestClearDir(t *testing.T) {
+	scratch := t.TempDir()
+	dir := filepath.Join(scratch, "checkout")
+	if err := os.MkdirAll(filepath.Join(dir, "pkg", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"main.go", filepath.Join("pkg", "sub", "x.go")} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("package x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(scratch, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(scratch, 0o755) })
+	if err := clearDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("checkout = %v, %v; want an empty directory", entries, err)
+	}
+}
+
+// TestCheckoutFailure: a failed checkout names itself to the model and the
+// summary, and a path error among its causes by its operation and cause
+// alone, never the path, which the run tool would otherwise do by dropping
+// the checkout from the message.
+func TestCheckoutFailure(t *testing.T) {
+	t.Parallel()
+	full := &fs.PathError{Op: "write", Path: "/tmp/kritika-run-1/checkout/main.go", Err: syscall.ENOSPC}
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "path error", err: fmt.Errorf("agent: checkout: main.go: %w", full), want: "the checkout could not be written: write: no space left on device"},
+		{name: "other", err: errors.New("agent: checkout: context canceled"), want: "the checkout could not be written: agent: checkout: context canceled"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkoutFailure(tt.err)
+			if err.Error() != tt.want {
+				t.Fatalf("checkoutFailure = %q, want %q", err, tt.want)
+			}
+			if _, ok := errors.AsType[*fs.PathError](err); ok {
+				t.Fatal("the path error is still in the chain, for the run tool to show instead")
+			}
+			if !errors.Is(err, syscall.ENOSPC) && tt.name == "path error" {
+				t.Fatal("the cause was lost")
+			}
+		})
 	}
 }
 

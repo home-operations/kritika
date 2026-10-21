@@ -137,25 +137,37 @@ func commandTool(
 	if mise != nil {
 		mise.locked = true
 	}
-	started := time.Now()
-	stats, err := tree.Checkout(ctx, dir, agent.MaxCheckoutBytes)
-	if err != nil {
-		logger.Warn("commands not offered: checkout failed", "error", err)
-		return nil, nil, notes, cleanup
-	}
-	logger.Info("checkout written", "files", stats.Files, "bytes", stats.Bytes, "skipped", stats.Skipped,
-		"truncated", stats.Truncated, "elapsed", time.Since(started).Round(time.Millisecond))
-	if err := markRepository(dir, p.CloneURL); err != nil {
-		logger.Warn("checkout not marked as a repository", "error", err)
+	// The checkout is written on the first command, so a review that reads
+	// the head through its tools alone never writes one. A checkout that
+	// stopped at its cap says so with each command's result, since the
+	// description was sent before it was written.
+	prepare := func(ctx context.Context) (string, error) {
+		started := time.Now()
+		stats, err := tree.Checkout(ctx, dir, agent.MaxCheckoutBytes)
+		if err != nil {
+			logger.Warn("checkout not written", "error", err)
+			// What a stopped checkout wrote would be in the way of the
+			// next command's, which writes every path anew.
+			if err := clearDir(dir); err != nil {
+				logger.Warn("checkout not cleared", "error", err)
+			}
+			return "", checkoutFailure(err)
+		}
+		logger.Info("checkout written", "files", stats.Files, "bytes", stats.Bytes, "skipped", stats.Skipped,
+			"truncated", stats.Truncated, "elapsed", time.Since(started).Round(time.Millisecond))
+		if err := markRepository(dir, p.CloneURL); err != nil {
+			logger.Warn("checkout not marked as a repository", "error", err)
+		}
+		if stats.Truncated {
+			return fmt.Sprintf("[the checkout stopped at %d MiB, so the paths that sort last are missing]", agent.MaxCheckoutBytes>>20), nil
+		}
+		return "", nil
 	}
 	// Ignored paths are left out for the commands' sake, not the agent's: a
 	// lockfile the change touches is still the head's and the diff's.
 	note := fmt.Sprintf("The checkout leaves out ignored paths, lockfiles and vendored or generated trees among them, symlinks and "+
 		"files over %d MiB; read_file still reads a left-out file at the head, and read_diff its part of the pull request's diff.",
 		agent.MaxBlobBytes>>20)
-	if stats.Truncated {
-		note += fmt.Sprintf(" It stopped at %d MiB, so the paths that sort last are missing.", agent.MaxCheckoutBytes>>20)
-	}
 	var resolve func(context.Context, string) (string, []string, error)
 	if mise != nil {
 		resolve = mise.resolve
@@ -168,7 +180,7 @@ func commandTool(
 	// read_file reads of a diff, in line ranges.
 	budget := agent.NewWriteBudget(fetchWriteBytes)
 	run = agent.NewRunTool(agent.RunConfig{
-		Dir: dir, Env: append(env, admin...), CommandEnv: commandEnvs, Commands: found, Resolve: resolve,
+		Dir: dir, Env: append(env, admin...), CommandEnv: commandEnvs, Commands: found, Resolve: resolve, Prepare: prepare,
 		Timeout:        cmp.Or(time.Duration(p.Agent.CommandTimeoutSeconds)*time.Second, configfile.DefaultCommandTimeout),
 		MaxOutputBytes: maxOutput, Proxied: proxied, Hosts: p.Agent.Hosts, Note: note, Logger: logger,
 		Mask: secrets.Mask,
@@ -196,6 +208,32 @@ func commandTool(
 // variables cover http and https alone, so a URL of any other scheme curl
 // speaks, given or redirected to, would connect around the gateway.
 const curlrc = "no-progress-meter\nlocation\nfail-with-body\nproto = \"=http,https\"\n"
+
+// clearDir empties dir, which itself stays: its parent, the scratch
+// directory, is read-only by then.
+func clearDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, e := range entries {
+		errs = append(errs, os.RemoveAll(filepath.Join(dir, e.Name())))
+	}
+	return errors.Join(errs...)
+}
+
+// checkoutFailure is a failed checkout as the model and the summary see
+// it: the run tool would show a path error by its operation and cause
+// alone, so that it never names a path under the scratch space, which
+// would lose the checkout from the message; here the path is dropped the
+// same way, but what could not be written stays named.
+func checkoutFailure(err error) error {
+	if pe, ok := errors.AsType[*fs.PathError](err); ok {
+		err = fmt.Errorf("%s: %w", pe.Op, pe.Err)
+	}
+	return fmt.Errorf("the checkout could not be written: %w", err)
+}
 
 // markRepository gives the checkout an empty .git whose origin is the
 // repository's clone URL: no history, but enough for a tool that locates a

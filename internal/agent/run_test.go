@@ -166,6 +166,74 @@ func TestRunToolSetupErrors(t *testing.T) {
 	}
 }
 
+// TestRunToolPrepare: Prepare runs once, before the first command and not
+// before the tool is used, and its note opens every command's result,
+// within the output's cut; a Prepare that failed fails every command, with
+// one note for each, and is not run again, unless the run's context ended
+// it, when the next command runs it again.
+func TestRunToolPrepare(t *testing.T) {
+	t.Run("once, before the first command", func(t *testing.T) {
+		rt, _ := newTestRunTool(t, false)
+		runs := 0
+		rt.cfg.Prepare = func(context.Context) (string, error) {
+			runs++
+			return "[the checkout stopped early]", nil
+		}
+		if _, err := rt.Run(t.Context(), json.RawMessage(`{"command":"nope"}`)); err == nil || runs != 0 {
+			t.Fatalf("a refused command prepared the tool: runs = %d, err = %v", runs, err)
+		}
+		out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
+		if err != nil || runs != 1 || !strings.HasPrefix(out, "[the checkout stopped early]\nexit code 0\nwd=") {
+			t.Fatalf("out = %q, err = %v, runs = %d", out, err, runs)
+		}
+		rt.cfg.MaxOutputBytes = 64
+		out, err = rt.Run(t.Context(), json.RawMessage(`{"command":"curl","args":["flood","1000"]}`))
+		if err != nil || runs != 1 || !strings.HasPrefix(out, "[the checkout stopped early]\nexit code 0\n") || len(out) > 64 {
+			t.Fatalf("out = %q, err = %v, runs = %d", out, err, runs)
+		}
+	})
+	t.Run("failed", func(t *testing.T) {
+		rt, _ := newTestRunTool(t, false)
+		runs := 0
+		failure := errors.New("the checkout could not be written: disk full")
+		rt.cfg.Prepare = func(context.Context) (string, error) {
+			runs++
+			return "", failure
+		}
+		for _, command := range []string{"rg", "rg", "curl"} {
+			_, err := rt.Run(t.Context(), json.RawMessage(`{"command":"`+command+`"}`))
+			if !errors.Is(err, failure) || err.Error() != "agent: run: Command "+command+" unavailable: "+failure.Error() {
+				t.Fatalf("%s: err = %v", command, err)
+			}
+		}
+		if runs != 1 || len(rt.Errors()) != 2 || len(rt.Executions()) != 0 {
+			t.Fatalf("runs = %d, errors = %v, executions = %v", runs, rt.Errors(), rt.Executions())
+		}
+	})
+	t.Run("canceled", func(t *testing.T) {
+		rt, _ := newTestRunTool(t, false)
+		ctx, cancel := context.WithCancel(t.Context())
+		runs := 0
+		rt.cfg.Prepare = func(ctx context.Context) (string, error) {
+			runs++
+			cancel()
+			return "", ctx.Err()
+		}
+		_, err := rt.Run(ctx, json.RawMessage(`{"command":"rg"}`))
+		if !errors.Is(err, context.Canceled) || len(rt.Errors()) != 0 {
+			t.Fatalf("err = %v, errors = %v", err, rt.Errors())
+		}
+		rt.cfg.Prepare = func(context.Context) (string, error) {
+			runs++
+			return "", nil
+		}
+		out, err := rt.Run(t.Context(), json.RawMessage(`{"command":"rg"}`))
+		if err != nil || runs != 2 || !strings.HasPrefix(out, "exit code 0\n") {
+			t.Fatalf("after a cancellation: out = %q, err = %v, runs = %d", out, err, runs)
+		}
+	})
+}
+
 // TestRunToolResolveCanceled: a resolver stopped by the run's cancellation
 // reports the cancellation, not the command.
 func TestRunToolResolveCanceled(t *testing.T) {
