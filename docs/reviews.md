@@ -58,6 +58,40 @@ as a fix; use the dismiss command if you want a lasting dismissal.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
 
+### Dependency bumps
+
+A change that moves a version, whoever wrote it, gets a procedure of its
+own. kritika lists each version the diff moves (a line rewritten with only
+a version, tag or digest changed, lockfiles left out) and tells the review
+to:
+
+- classify the step: major, minor, patch or a digest alone, a move under
+  1.0 counting as a minor step, and a new digest under a tag that names no
+  version as a minor step unless the image's labels show otherwise;
+- find the upstream from the manifest rather than the description, and
+  read what changed between the two versions there: release notes by tag
+  with `gh`, a chart's annotations, an image's source label with `crane`,
+  or the diff between the versions with `fetch_repo`. The description's
+  notes are a start, not the source: GitHub cuts long descriptions, and
+  Renovate and Dependabot embed notes only when they found them;
+- search this repository for every symbol, flag, configuration key or
+  default the notes say changed, and report what it does to each usage, on
+  the usage's line when the diff shows it and else on the line that moves
+  the version, naming the usage. A usage that no longer builds or no
+  longer does what the code intends is `p0`, even where a build would
+  catch it; one the new version serves only by a path it deprecates and
+  announces it will remove is `p1`; any other new deprecation on a used
+  symbol is `p2`. A change no usage meets is no finding, and goes under
+  what the review checked;
+- read major and minor steps first when a grouped update has many, and
+  put the notes it could not read, or left unread, under
+  [merge impact](#the-summary-comment) as a check to make, never as a
+  finding and never as safe;
+- never propose adopting what the new version adds.
+
+A version number alone never sets a severity. The
+[confidence scorer](confidence.md#risk) rates the step's risk separately.
+
 ### The summary comment
 
 Start with the findings and suggested fixes. The summary also includes:

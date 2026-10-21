@@ -149,7 +149,7 @@ func TestAgentPrompt(t *testing.T) {
 			}
 			prompt := newAgentPrompt(s, in, pack, nil, false, false)
 			system, user := prompt.system, prompt.user
-			if want := review.SystemPrompt(tt.active, nil, nil, false, false, tt.diagram); system != want {
+			if want := review.SystemPrompt(tt.active, nil, nil, false, false, tt.diagram, false); system != want {
 				t.Fatalf("system prompt:\n%s", system)
 			}
 			var inc *review.IncrementalInput

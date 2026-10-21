@@ -165,8 +165,9 @@ func (a agentPrompt) notes() []string {
 // the run tool offers, fetch says fetch_repo is offered, and search
 // search_code.
 func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, fetch, search bool) agentPrompt {
+	bumps := review.Bumps(pack.Diff)
 	system := review.SystemPrompt(
-		in.rules, repoconfig.PromptSkills(in.skills, in.loaded), commands, fetch, search, p.Prompt.Diagram,
+		in.rules, repoconfig.PromptSkills(in.skills, in.loaded), commands, fetch, search, p.Prompt.Diagram, len(bumps) > 0,
 	)
 	var incremental *review.IncrementalInput
 	var earlier *review.EarlierInput
@@ -183,7 +184,7 @@ func newAgentPrompt(p Spec, in promptInputs, pack packView, commands []string, f
 	pr := p.Prompt.PullRequest
 	user, omitted, contextOmitted, referencesOmitted := review.Build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body,
-		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Context: pack.Context,
+		Issues: p.Prompt.Issues, BaseRef: pr.BaseRef, Changed: pack.Changed, Diff: pack.Diff, Bumps: bumps, Context: pack.Context,
 		Incremental: incremental, Earlier: earlier, Dismissed: p.Prompt.Dismissed, References: in.references, Part: pack.Part,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
 	})

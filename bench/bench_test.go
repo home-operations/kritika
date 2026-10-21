@@ -178,7 +178,7 @@ func TestBench(t *testing.T) {
 				cr.Context[ch.Stage]++
 			}
 			// Stage 4 needs an index, which the bench has none of.
-			system := review.SystemPrompt(nil, nil, nil, false, false, false)
+			system := review.SystemPrompt(nil, nil, nil, false, false, false, false)
 			msg, _, _, _ := review.Build(review.Input{
 				Repository: c.Repository, Number: c.PR, Title: c.Title, Author: "author", BaseRef: "main",
 				Changed: res.Changed, Diff: res.Diff, Context: selected, BudgetTokens: review.UserBudget(system, 0),
