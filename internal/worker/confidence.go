@@ -140,15 +140,28 @@ func (p *publishPhase) score(
 	if err := p.w.withLease(ctx, p.account, string(ref), p.settings.Limits.Concurrency, p.jobID, complete); err != nil {
 		return review.Confidence{}, err
 	}
-	score, risk, reason, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
+	parsed, err := review.ParseConfidence(resp.Raw, p.pr.repository, res.Counts())
 	if err != nil {
 		return review.Confidence{}, err
 	}
+	// What the scorer gave against what stands is the calibration signal:
+	// a model that keeps scoring over the ceiling disagrees with the
+	// findings, one that keeps giving no level fails the schema.
+	if parsed.Clamped() {
+		p.logger.Info("confidence score held to the ceiling", "model", resp.Model, "given", parsed.Given, "score", parsed.Score)
+		p.w.Metrics.ConfidenceHeld(p.account.Key(), "score")
+	}
+	if parsed.Defaulted() {
+		p.logger.Info("confidence risk given as no level", "model", resp.Model, "given", parsed.RiskGiven, "risk", parsed.Risk)
+		p.w.Metrics.ConfidenceHeld(p.account.Key(), "risk")
+	}
 	c := review.Confidence{
-		Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Risk: risk, Model: resp.Model, Rubric: rubric,
+		Score: parsed.Score, Threshold: p.settings.Confidence.Threshold, Reason: parsed.Reason, Risk: parsed.Risk, Model: resp.Model,
+		Rubric: rubric,
 	}
 	if floor, at := p.settings.Confidence.Floors.Floor(changed); c.Hold(floor, at) {
-		p.logger.Info("risk held to the floor", "rated", risk, "floor", floor, "path", at)
+		p.logger.Info("risk held to the floor", "rated", parsed.Risk, "floor", floor, "path", at)
+		p.w.Metrics.ConfidenceHeld(p.account.Key(), "floor")
 	}
 	return c, nil
 }

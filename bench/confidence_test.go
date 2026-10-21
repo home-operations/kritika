@@ -60,24 +60,21 @@ func loadConfidenceCases(path string) ([]stageCase, error) {
 }
 
 func checkConfidence(f confidenceCase, raw string) error {
-	score, risk, reason, err := review.ParseConfidence(raw, f.Repository, f.Result.Counts())
+	// ParseConfidence reads the first JSON value; the answer must be one.
+	if !json.Valid([]byte(raw)) {
+		return fmt.Errorf("bench: answer is not one JSON value")
+	}
+	p, err := review.ParseConfidence(raw, f.Repository, f.Result.Counts())
 	if err != nil {
 		return err
 	}
-	var answer struct {
-		Score int         `json:"score"`
-		Risk  review.Risk `json:"risk"`
-	}
-	if err := json.Unmarshal([]byte(raw), &answer); err != nil {
-		return err
-	}
-	if !answer.Risk.Valid() || strings.TrimSpace(reason) == "" {
+	if p.Defaulted() || strings.TrimSpace(p.Reason) == "" {
 		return fmt.Errorf("bench: incomplete risk or reason")
 	}
 	// The findings' ceiling holds the parsed score within range whatever
 	// the model said, so the model's own score is checked as well.
-	if answer.Score < f.Score[0] || answer.Score > f.Score[1] || score < f.Score[0] || score > f.Score[1] || risk != f.Risk {
-		return fmt.Errorf("bench: score/risk %d (model %d)/%s, want [%d,%d]/%s", score, answer.Score, risk, f.Score[0], f.Score[1], f.Risk)
+	if p.Given < f.Score[0] || p.Given > f.Score[1] || p.Score < f.Score[0] || p.Score > f.Score[1] || p.Risk != f.Risk {
+		return fmt.Errorf("bench: score/risk %d (model %d)/%s, want [%d,%d]/%s", p.Score, p.Given, p.Risk, f.Score[0], f.Score[1], f.Risk)
 	}
 	return nil
 }

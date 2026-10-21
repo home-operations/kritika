@@ -2,6 +2,7 @@ package review
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -34,6 +35,8 @@ func TestParseConfidence(t *testing.T) {
 			wantReason: RedirectReferences("See up/stream#12.", "o/r")},
 		{name: "the risk it gives", raw: `{"score": 5, "risk": "medium", "reason": "ok"}`, wantScore: 5, wantRisk: RiskMedium, wantReason: "ok"},
 		{name: "a risk that is no level is the highest", raw: `{"score": 5, "risk": "none", "reason": "ok"}`, wantScore: 5, wantReason: "ok"},
+		{name: "a risk in another case is no level", raw: `{"score": 5, "risk": "Critical", "reason": "ok"}`, wantScore: 5, wantReason: "ok"},
+		{name: "a score at the ceiling is not held", raw: `{"score": 3, "reason": "ok"}`, counts: Counts{P1: 1}, wantScore: 3, wantReason: "ok"},
 		{name: "a score past the scale", raw: `{"score": 6, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
 		{name: "a negative score", raw: `{"score": -1, "reason": "ok"}`, wantErr: "no score from 0 to 5"},
 		{name: "no score", raw: `{"reason": "ok"}`, wantErr: "no score from 0 to 5"},
@@ -41,16 +44,30 @@ func TestParseConfidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score, risk, reason, err := ParseConfidence(tt.raw, "o/r", tt.counts)
+			p, err := ParseConfidence(tt.raw, "o/r", tt.counts)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to mention %q", err, tt.wantErr)
 				}
 				return
 			}
-			if err != nil || score != tt.wantScore || reason != tt.wantReason || risk != cmp.Or(tt.wantRisk, RiskCritical) {
-				t.Fatalf("ParseConfidence = %d, %s, %q, %v; want %d, %s, %q", score, risk, reason, err, tt.wantScore,
+			if err != nil || p.Score != tt.wantScore || p.Reason != tt.wantReason || p.Risk != cmp.Or(tt.wantRisk, RiskCritical) {
+				t.Fatalf("ParseConfidence = %d, %s, %q, %v; want %d, %s, %q", p.Score, p.Risk, p.Reason, err, tt.wantScore,
 					cmp.Or(tt.wantRisk, RiskCritical), tt.wantReason)
+			}
+			// What the scorer gave is read back from its answer, apart from
+			// what stands.
+			var given struct {
+				Score int    `json:"score"`
+				Risk  string `json:"risk"`
+			}
+			if err := json.Unmarshal([]byte(tt.raw), &given); err != nil {
+				t.Fatal(err)
+			}
+			if p.Given != given.Score || p.RiskGiven != given.Risk || p.Clamped() != (given.Score > tt.wantScore) ||
+				p.Defaulted() != (given.Risk != string(cmp.Or(tt.wantRisk, RiskCritical))) {
+				t.Fatalf("given %d (clamped %v), risk given %q (defaulted %v); the answer gave %d and %q", p.Given, p.Clamped(), p.RiskGiven,
+					p.Defaulted(), given.Score, given.Risk)
 			}
 		})
 	}
