@@ -70,8 +70,8 @@ to:
   version as a minor step unless the image's labels show otherwise;
 - find the upstream from the manifest rather than the description, and
   read what changed between the two versions there: release notes by tag
-  with `gh`, a chart's annotations, an image's source label with `crane`,
-  or the diff between the versions with `fetch_repo`. The description's
+  with `gh`, a chart's annotations, an image's source label with
+  `fetch_oci`, or the diff between the versions with `fetch_repo`. The description's
   notes are a start, not the source: GitHub cuts long descriptions, and
   Renovate and Dependabot embed notes only when they found them;
 - search this repository for every symbol, flag, configuration key or

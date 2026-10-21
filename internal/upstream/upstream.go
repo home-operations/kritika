@@ -233,13 +233,25 @@ func (f *Fetcher) fetch(ctx context.Context, repo *git.Repository, req Request, 
 // wire is the transport a fetch or a listing goes through, capped at
 // WireBytes, and what to call once it is done.
 func (f *Fetcher) wire() (*cappedTransport, func()) {
-	if f.Transport != nil {
-		return &cappedTransport{base: f.Transport, max: f.Limits.WireBytes}, func() {}
+	return capped(f.Transport, f.Limits.WireBytes)
+}
+
+// CappedTransport is base, through the pod's proxy as a clone of
+// http.DefaultTransport when nil, whose response bodies read at most max
+// bytes together before a read fails with ErrTooLarge; done releases what
+// a clone holds once the transport is no longer used.
+func CappedTransport(base http.RoundTripper, max int64) (rt http.RoundTripper, done func()) {
+	return capped(base, max)
+}
+
+func capped(base http.RoundTripper, max int64) (*cappedTransport, func()) {
+	if base != nil {
+		return &cappedTransport{base: base, max: max}, func() {}
 	}
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	// Nothing reuses t once the fetch is done, and it would keep its idle
 	// connections open until they time out.
-	return &cappedTransport{base: t, max: f.Limits.WireBytes}, t.CloseIdleConnections
+	return &cappedTransport{base: t, max: max}, t.CloseIdleConnections
 }
 
 // Refs is what a listing found: the repository's tags, in newerFirst

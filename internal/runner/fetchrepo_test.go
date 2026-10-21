@@ -277,7 +277,7 @@ func TestFetchRepoTags(t *testing.T) {
 	if out, err := run(map[string]any{"tags": "V2"}); err != nil || out != "1 of the 2 tags of "+url+` contain "V2", newest first:`+"\nv2" {
 		t.Fatalf("tags with V2 = %q, %v", out, err)
 	}
-	if out, err := run(map[string]any{"tags": "9.9"}); err != nil || !strings.HasPrefix(out, "None of the 2 tags of "+url+` contain "9.9". The newest: v2, v1.`) {
+	if out, err := run(map[string]any{"tags": "9.9"}); err != nil || !strings.HasPrefix(out, "None of the 2 tags of "+url+` contain "9.9". The first, newest first: v2, v1.`) {
 		t.Fatalf("no tag with 9.9 = %q, %v", out, err)
 	}
 	if _, err := run(map[string]any{"tags": "v", "ref": "v2"}); err == nil || !strings.Contains(err.Error(), "not both") {
@@ -396,12 +396,12 @@ func TestTagList(t *testing.T) {
 	for i := range tags {
 		tags[i] = fmt.Sprintf("v1.%d.0", 299-i)
 	}
-	out := tagList("https://x/r", "", tags)
+	out := tagList("https://x/r", "", tags, "newest first")
 	if !strings.HasPrefix(out, "The 300 tags of https://x/r, newest first; the first 200, so narrow tags for the rest:\nv1.299.0\n") ||
 		strings.Count(out, "\n") != 200 || !strings.HasSuffix(out, "\nv1.100.0") {
 		t.Fatalf("300 tags = %.120q…", out)
 	}
-	if got := tagList("https://x/r", "", nil); got != "https://x/r has no tags." {
+	if got := tagList("https://x/r", "", nil, "newest first"); got != "https://x/r has no tags." {
 		t.Fatalf("no tags = %q", got)
 	}
 }

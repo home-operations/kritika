@@ -185,6 +185,9 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
+		if tools.fetch != nil {
+			tools.oci = newFetchOCITool(p)
+		}
 		notes = append(notes, commandNotes...)
 		if split == nil {
 			prompt, chunks = wholePrompt(ctx, p, secrets, headTree, ignore, res, in, scope, chunks, &tools, logger)
