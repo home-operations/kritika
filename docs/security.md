@@ -180,12 +180,13 @@ it, so it has no switch:
 
 The model runs allowlisted programs over a checkout of the head commit:
 to read a dependency bump's release notes and upstream pull requests with
-`gh`, a container image's tags, digest, manifest and labels with `crane`,
-fetch anything else with `curl`, search with `rg` and `fd`, or read JSON
-and YAML with `jq` and `yq`. Runner Jobs run on the release's `-tools`
-image, pinned by digest like the chart's image: a distroless image that
-carries [mise](https://mise.jdx.dev/) and those seven tools as mise system
-installs, declared by its system config, `/etc/mise/config.toml`, at the
+`gh`, fetch anything else with `curl`, search with `rg` and `fd`, or read
+JSON and YAML with `jq` and `yq`; a container image it reads with
+[`fetch_oci`](#images-and-artifacts), which needs no tool. Runner Jobs run
+on the release's `-tools` image, pinned by digest like the chart's image:
+a distroless image that carries [mise](https://mise.jdx.dev/) and those
+six tools as mise system installs, declared by its system config,
+`/etc/mise/config.toml`, at the
 versions `build/tools/mise.toml` pins. Every other tool is the
 repository's: the [`tools`](repository-config.md#repository-tools) of
 its `.kritika.yaml`, mise's `[tools]` table, which the runner writes as
@@ -216,7 +217,7 @@ across runs: a release asset replaced upstream under the same tag
 installs, unless the entry pins its checksum. The run tool offers every
 command the merged config's tools provide, `mise` itself excepted. An
 image set as the runner container's in `runner.podTemplate` without mise
-offers the seven default commands its builder put on its `PATH`, and no
+offers the six default commands its builder put on its `PATH`, and no
 repository tool, which the review summary says. A follow-up posts no
 summary, so its reply carries such notes, and a command's setup failure,
 instead.
@@ -226,7 +227,7 @@ image built on the `-tools` image, with the tool added to its
 `/etc/mise/config.toml` and to `/etc/mise/mise.lock`, which the runner's
 user must be able to read (`mise lock` writes it mode 0600), and
 installed with `mise install --system --locked` as the release's
-Dockerfile installs the seven, set as the runner container's image in
+Dockerfile installs the six, set as the runner container's image in
 `runner.podTemplate`.
 
 A `tools` entry takes its version and the options that select, verify
@@ -714,10 +715,11 @@ and the environment, and move what it held:
   never holds it, or else in a Secret the runner container's `env` names.
 - **`[settings]`:** no longer apply.
 
-The image's `/etc/mise/config.toml` declares `crane`, `curl`, `fd`, `gh`,
-`jq`, `rg` and `yq`, and every review offers those and the repository's
-tools. If building on top of the `-tools` image, its preinstalled tools
-live in mise's system install directory, not `/usr/local/bin`.
+The image's `/etc/mise/config.toml` declares `curl`, `fd`, `gh`, `jq`,
+`rg` and `yq`, and every review offers those and the repository's tools.
+A container image needs no tool: `fetch_oci` reads its registry. If
+building on top of the `-tools` image, its preinstalled tools live in
+mise's system install directory, not `/usr/local/bin`.
 
 ## Runner sandbox
 

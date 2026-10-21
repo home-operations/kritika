@@ -24,7 +24,7 @@ import (
 
 // defaultCommands are the commands of the tools the -tools image ships. A
 // runner image without mise offers those of them on its PATH.
-var defaultCommands = []string{"crane", "curl", "fd", "gh", "jq", "rg", "yq"}
+var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
 
 // commandTool is the run tool for the commands a run offers over a
 // checkout of tree written to scratch space, and fetch_repo, which writes
