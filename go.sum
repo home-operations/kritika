@@ -243,8 +243,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/odvcencio/gotreesitter v0.56.0 h1:2cyxAbG9yAMs1d8xTAxq3HWrKh8m7mi7pAjRBZd1Pp8=
 github.com/odvcencio/gotreesitter v0.56.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
-github.com/openai/openai-go/v3 v3.80.0 h1:oSyiYRtv8Te5a012toe1tY+EQPfxz1btv5MvpoF7dtQ=
-github.com/openai/openai-go/v3 v3.80.0/go.mod h1:i+lM+NFmWP+Yd+fYKEaPxUINBx+vZtRmY5gaszSfsiQ=
+github.com/openai/openai-go/v3 v3.81.0 h1:qWXDSLy7LWXGUvWMhKKs1ydrbImMDkgA7XSJv69tXYk=
+github.com/openai/openai-go/v3 v3.81.0/go.mod h1:i+lM+NFmWP+Yd+fYKEaPxUINBx+vZtRmY5gaszSfsiQ=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=
 github.com/pb33f/ordered-map/v2 v2.3.1/go.mod h1:qxFQgd0PkVUtOMCkTapqotNgzRhMPL7VvaHKbd1HnmQ=
 github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 h1:onHthvaw9LFnH4t2DcNVpwGmV9E1BkGknEliJkfwQj0=
