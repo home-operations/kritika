@@ -482,6 +482,9 @@ type fetchedReadFile struct {
 	agent.Tool
 	dir      string
 	maxBytes int
+	// head and writes, when set, are the locks of a split review's parts
+	// (partLocks): reading the head takes head, a fetched file writes.
+	head, writes chan struct{}
 }
 
 func (r fetchedReadFile) Def() model.ToolDef {
@@ -502,6 +505,15 @@ func (r fetchedReadFile) Run(ctx context.Context, input json.RawMessage) (string
 		}
 	}
 	rel, ok := strings.CutPrefix(path.Clean(req.Path), upstreamRel+"/")
+	lock := r.writes
+	if !ok {
+		lock = r.head
+	}
+	release, err := acquire(ctx, lock)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	if !ok {
 		return r.Tool.Run(ctx, input)
 	}

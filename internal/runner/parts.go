@@ -202,32 +202,100 @@ func splitNotes(parts []reviewPart) []string {
 // took to reach it.
 const minPartTime = 2 * time.Minute
 
-// lockedTool runs its tool holding lock, a channel of one the parts of a
-// split review running at once share: their tools read the head through one
-// go-git repository, which is not safe for concurrent use, and keep the
-// counts the run records. A part that ends while it waits runs nothing.
+// partLocks are what the parts of a split review running at once share,
+// each a channel of one, so that a part's slow command, fetch or search
+// holds up another part's read of a file no more than it must. head
+// serializes what reads the head or the base through the run's one go-git
+// repository, which is not safe for concurrent use: read_file, grep,
+// list_files, load_skill and the checkout the run tool writes on its first
+// command. writes serializes the run tool and fetch_repo, which share the
+// directory beside the checkout and its budget, and read_file when it reads
+// there. search and oci keep the counts those tools record. A holder of
+// more than one takes them in the order writes, head, oci: the run tool
+// holds writes while its checkout takes head, and a part's checkpoint
+// reads the run tool, fetch_repo and fetch_oci.
+type partLocks struct {
+	head, writes, search, oci chan struct{}
+}
+
+func newPartLocks() *partLocks {
+	return &partLocks{
+		head: make(chan struct{}, 1), writes: make(chan struct{}, 1), search: make(chan struct{}, 1), oci: make(chan struct{}, 1),
+	}
+}
+
+// acquire takes lock, a channel of one, and returns what releases it; a
+// nil lock is nothing to take. A part that ends while it waits takes
+// nothing.
+func acquire(ctx context.Context, lock chan struct{}) (func(), error) {
+	if lock == nil {
+		return func() {}, nil
+	}
+	select {
+	case lock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	}
+	if ctx.Err() != nil {
+		<-lock
+		return nil, context.Cause(ctx)
+	}
+	return func() { <-lock }, nil
+}
+
+// checkpoint runs f holding writes and oci, unless ctx ends first.
+func (l *partLocks) checkpoint(ctx context.Context, f func() error) error {
+	for _, lock := range []chan struct{}{l.writes, l.oci} {
+		release, err := acquire(ctx, lock)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
+	return f()
+}
+
+// lockedTool runs its tool holding lock.
 type lockedTool struct {
 	agent.Tool
 	lock chan struct{}
 }
 
 func (t lockedTool) Run(ctx context.Context, input json.RawMessage) (string, error) {
-	select {
-	case t.lock <- struct{}{}:
-	case <-ctx.Done():
-		return "", context.Cause(ctx)
+	release, err := acquire(ctx, t.lock)
+	if err != nil {
+		return "", err
 	}
-	defer func() { <-t.lock }()
-	if ctx.Err() != nil {
-		return "", context.Cause(ctx)
-	}
+	defer release()
 	return t.Tool.Run(ctx, input)
 }
 
-// lockTools wraps each of tools to run holding lock.
-func lockTools(tools []agent.Tool, lock chan struct{}) []agent.Tool {
+// lockTools wraps each of tools to run holding the lock of locks for what
+// it touches; read_file over fetched files takes head or writes itself, by
+// the path, and read_diff reads what it was built with and takes none. A
+// tool of any other type takes head: one that writes beside the checkout
+// must be listed with the run tool.
+func lockTools(tools []agent.Tool, locks *partLocks) []agent.Tool {
 	out := make([]agent.Tool, len(tools))
 	for i, t := range tools {
+		var lock chan struct{}
+		switch t := t.(type) {
+		case fetchedReadFile:
+			t.head, t.writes = locks.head, locks.writes
+			out[i] = t
+			continue
+		case *readDiffTool:
+			out[i] = t
+			continue
+		case *agent.RunTool, *fetchRepoTool:
+			lock = locks.writes
+		case *fetchOCITool:
+			lock = locks.oci
+		case *searchTool:
+			lock = locks.search
+		default:
+			lock = locks.head
+		}
 		out[i] = lockedTool{Tool: t, lock: lock}
 	}
 	return out
@@ -239,7 +307,7 @@ func lockTools(tools []agent.Tool, lock chan struct{}) []agent.Tool {
 // ended.
 func runParts(
 	ctx context.Context, st *store.Store, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools,
-	parts []reviewPart, logger *slog.Logger,
+	locks *partLocks, parts []reviewPart, logger *slog.Logger,
 ) error {
 	hash, err := partInputHash(p, parts, tools)
 	if err != nil {
@@ -252,7 +320,8 @@ func runParts(
 	save := func(ctx context.Context, part int, result agent.Result) error {
 		return savePart(ctx, st, p, secrets, hash, part, result, tools)
 	}
-	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, parts, logger, saved, save, runnerPartSlots(st, p, logger))
+	results, timeline, err := runPartLoops(ctx, p, secrets, head, ignore, tools, locks, parts, logger, saved, save,
+		runnerPartSlots(st, p, logger))
 	if err != nil {
 		return err
 	}
@@ -297,8 +366,8 @@ func runParts(
 // for, so a part late enough to pass it is left out, ending the run cleanly
 // rather than at the Job's deadline.
 func runPartLoops(
-	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools, parts []reviewPart,
-	logger *slog.Logger,
+	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, tools agentTools, locks *partLocks,
+	parts []reviewPart, logger *slog.Logger,
 	saved []partCheckpoint, save func(context.Context, int, agent.Result) error, report func(context.Context, int) int,
 ) ([]agent.Result, []store.TimelineStep, error) {
 	timeout := time.Duration(p.Agent.TimeoutSeconds) * time.Second
@@ -309,7 +378,6 @@ func runPartLoops(
 		"search", tools.search != nil)
 	results := make([]agent.Result, len(parts))
 	steps := make([][]store.TimelineStep, len(parts))
-	toolLock := make(chan struct{}, 1)
 	pending := make([]int, 0, len(parts))
 	for i := range parts {
 		if len(saved) > i && saved[i].Result.Stop == agent.StopSubmitted {
@@ -338,20 +406,16 @@ func runPartLoops(
 			return err
 		}
 		plog := logger.With("part", i+1)
-		offered := lockTools(offeredTools(p, head, ignore, tools.extra()), toolLock)
+		offered := lockTools(offeredTools(p, head, ignore, tools.extra()), locks)
 		res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
 		results[i], steps[i] = res, partSteps
 		// The checkpoint is a retry's shortcut: an answer it fails to
 		// keep, or a cancellation finds it waiting to keep, is still
-		// this run's to merge.
+		// this run's to merge. It reads what the run tool, fetch_repo and
+		// fetch_oci recorded.
 		if res.Stop == agent.StopSubmitted && save != nil {
-			select {
-			case <-gctx.Done():
-			case toolLock <- struct{}{}:
-				if err := save(gctx, i+1, res); err != nil {
-					plog.Warn("agent part not checkpointed", "error", err)
-				}
-				<-toolLock
+			if err := locks.checkpoint(gctx, func() error { return save(gctx, i+1, res) }); err != nil {
+				plog.Warn("agent part not checkpointed", "error", err)
 			}
 		}
 		plog.Info("agent part stopped", "of", len(parts), "files", len(part.paths), "stop", res.Stop, "steps", res.Steps,

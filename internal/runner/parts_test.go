@@ -9,6 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -274,7 +277,7 @@ func TestRunPartLoops(t *testing.T) {
 			for i := range parts {
 				parts[i] = reviewPart{paths: []string{fmt.Sprintf("p%d.go", i+1)}, prompt: loopPrompt(s, false)}
 			}
-			results, timeline, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, head, nil, agentTools{}, parts,
+			results, timeline, err := runPartLoops(t.Context(), s, Secrets{GatewayToken: "t"}, head, nil, agentTools{}, newPartLocks(), parts,
 				slog.New(slog.DiscardHandler), nil, nil, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -301,10 +304,13 @@ func TestRunPartLoops(t *testing.T) {
 	}
 }
 
-// countedTool counts its runs.
-type countedTool struct{ runs *int }
+// countedTool counts its runs, under name.
+type countedTool struct {
+	name string
+	runs *int
+}
 
-func (countedTool) Def() model.ToolDef { return model.ToolDef{Name: "counted"} }
+func (t countedTool) Def() model.ToolDef { return model.ToolDef{Name: t.name} }
 
 func (t countedTool) Run(context.Context, json.RawMessage) (string, error) {
 	*t.runs++
@@ -315,19 +321,172 @@ func (t countedTool) Run(context.Context, json.RawMessage) (string, error) {
 // its part ends first, and runs nothing once it has.
 func TestLockedTool(t *testing.T) {
 	var runs int
-	lock := make(chan struct{}, 1)
-	tool := lockTools([]agent.Tool{countedTool{runs: &runs}}, lock)[0]
+	locks := newPartLocks()
+	tool := lockTools([]agent.Tool{countedTool{name: "counted", runs: &runs}}, locks)[0]
 	if tool.Def().Name != "counted" {
 		t.Fatalf("Def = %+v, want the tool's own", tool.Def())
 	}
-	lock <- struct{}{}
+	locks.head <- struct{}{}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	if _, err := tool.Run(ctx, nil); !errors.Is(err, context.DeadlineExceeded) || runs != 0 {
 		t.Fatalf("waiting past its part's end: err = %v, %d runs", err, runs)
 	}
-	<-lock
-	if out, err := tool.Run(t.Context(), nil); err != nil || out != "ok" || runs != 1 || len(lock) != 0 {
-		t.Fatalf("Run = %q, %v, %d runs, lock held %d", out, err, runs, len(lock))
+	<-locks.head
+	if out, err := tool.Run(t.Context(), nil); err != nil || out != "ok" || runs != 1 || len(locks.head) != 0 {
+		t.Fatalf("Run = %q, %v, %d runs, lock held %d", out, err, runs, len(locks.head))
+	}
+}
+
+// TestLockToolsByResource: each tool waits for the lock of what it touches
+// and no other, so a part's command holds up another part's read of the
+// head no more; read_file over fetched files takes head or writes by the
+// path, and read_diff waits for nothing.
+func TestLockToolsByResource(t *testing.T) {
+	locks := newPartLocks()
+	held := map[string]chan struct{}{"head": locks.head, "writes": locks.writes, "search": locks.search, "oci": locks.oci}
+	trueBin, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip(err)
+	}
+	fetched := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(fetched, "1-x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fetched, "1-x", "README.md"), []byte("# x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	headTree := agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil)
+	run := agent.NewRunTool(agent.RunConfig{Dir: t.TempDir(), Commands: map[string]string{"rg": trueBin}, Timeout: 5 * time.Second,
+		MaxOutputBytes: 4096})
+	tests := []struct {
+		name  string
+		tool  agent.Tool
+		input string
+		waits string
+	}{
+		{name: "read_file", tool: agent.ReadFileTool(headTree, 1024), input: `{"path":"main.go"}`, waits: "head"},
+		{name: "grep", tool: agent.GrepTool(headTree, 1024), input: `{"pattern":"main"}`, waits: "head"},
+		{name: "list_files", tool: agent.ListFilesTool(headTree, 1024), waits: "head"},
+		{name: "load_skill", tool: &skillTool{maxBytes: 1024}, input: `{"name":"x"}`, waits: "head"},
+		{name: "run", tool: run, input: `{"command":"rg"}`, waits: "writes"},
+		{name: "fetch_repo", tool: &fetchRepoTool{dir: fetched}, input: `{}`, waits: "writes"},
+		{name: "fetch_oci", tool: &fetchOCITool{}, input: `{}`, waits: "oci"},
+		{name: "search_code", tool: &searchTool{}, input: `{}`, waits: "search"},
+		{name: "read_diff", tool: newReadDiffTool("", 1024), input: `{"path":"main.go"}`},
+		{name: "fetched read_file at the head", tool: fetchedReadFile{Tool: agent.ReadFileTool(headTree, 1024), dir: fetched, maxBytes: 1024},
+			input: `{"path":"main.go"}`, waits: "head"},
+		{name: "fetched read_file of a fetched file", tool: fetchedReadFile{Tool: agent.ReadFileTool(headTree, 1024), dir: fetched, maxBytes: 1024},
+			input: `{"path":"../upstream/1-x/README.md"}`, waits: "writes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := lockTools([]agent.Tool{tt.tool}, locks)[0]
+			// Whatever the tool makes of its input, it runs while any other
+			// lock is held; the deadline fails a tool that waits for one
+			// instead of stalling the test.
+			for name, lock := range held {
+				if name == tt.waits {
+					continue
+				}
+				lock <- struct{}{}
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				_, err := tool.Run(ctx, json.RawMessage(tt.input))
+				cancel()
+				<-lock
+				if errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("holding %s: %v", name, err)
+				}
+			}
+			if tt.waits == "" {
+				return
+			}
+			held[tt.waits] <- struct{}{}
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+			defer cancel()
+			if _, err := tool.Run(ctx, json.RawMessage(tt.input)); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("holding %s: err = %v", tt.waits, err)
+			}
+			<-held[tt.waits]
+		})
+	}
+}
+
+// heldTool is a tool that runs until released, under head, as a slow read
+// of the head would.
+type heldTool struct{ entered, release chan struct{} }
+
+func (heldTool) Def() model.ToolDef { return model.ToolDef{Name: "held"} }
+
+func (t heldTool) Run(ctx context.Context, _ json.RawMessage) (string, error) {
+	close(t.entered)
+	select {
+	case <-t.release:
+		return "ok", nil
+	case <-ctx.Done():
+		return "", context.Cause(ctx)
+	}
+}
+
+// TestPartLocksExclusion: a tool holds its lock for as long as it runs,
+// so another part's tool of the same lock waits for it to end, while one
+// of another lock runs meanwhile.
+func TestPartLocksExclusion(t *testing.T) {
+	trueBin, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip(err)
+	}
+	locks := newPartLocks()
+	slow := heldTool{entered: make(chan struct{}), release: make(chan struct{})}
+	tools := lockTools([]agent.Tool{
+		slow, agent.ListFilesTool(agent.NewTree(tree(t, map[string]string{"main.go": "package main\n"}), nil), 1024),
+		agent.NewRunTool(agent.RunConfig{Dir: t.TempDir(), Commands: map[string]string{"rg": trueBin}, Timeout: 5 * time.Second, MaxOutputBytes: 4096}),
+	}, locks)
+	held, list, run := tools[0], tools[1], tools[2]
+	done := make(chan error, 1)
+	go func() {
+		_, err := held.Run(t.Context(), nil)
+		done <- err
+	}()
+	<-slow.entered
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := list.Run(ctx, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a read of the head ran beside another part's: %v", err)
+	}
+	rctx, rcancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer rcancel()
+	if out, err := run.Run(rctx, json.RawMessage(`{"command":"rg"}`)); err != nil || !strings.HasPrefix(out, "exit code 0\n") {
+		t.Fatalf("a command waited for another part's read of the head: %q, %v", out, err)
+	}
+	close(slow.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if out, err := list.Run(t.Context(), nil); err != nil || !strings.Contains(out, "main.go") {
+		t.Fatalf("after the read ended: %q, %v", out, err)
+	}
+}
+
+// TestPartLocksCheckpoint: a checkpoint holds writes and oci, released
+// however it ends, and is not written once its part ended.
+func TestPartLocksCheckpoint(t *testing.T) {
+	locks := newPartLocks()
+	failure := errors.New("not kept")
+	err := locks.checkpoint(t.Context(), func() error {
+		if len(locks.writes) != 1 || len(locks.oci) != 1 || len(locks.head) != 0 || len(locks.search) != 0 {
+			t.Fatal("checkpoint runs without writes and oci, or with more")
+		}
+		return failure
+	})
+	if !errors.Is(err, failure) || len(locks.writes) != 0 || len(locks.oci) != 0 {
+		t.Fatalf("err = %v, writes held %d, oci held %d", err, len(locks.writes), len(locks.oci))
+	}
+	locks.oci <- struct{}{}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	err = locks.checkpoint(ctx, func() error { t.Fatal("written past its part's end"); return nil })
+	if !errors.Is(err, context.DeadlineExceeded) || len(locks.writes) != 0 {
+		t.Fatalf("err = %v, writes held %d", err, len(locks.writes))
 	}
 }

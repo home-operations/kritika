@@ -33,13 +33,15 @@ var defaultCommands = []string{"curl", "fd", "gh", "jq", "rg", "yq"}
 // merged mise config declares: the image's system config, and the
 // repository's own tools, p.Tools, over it, each installed on first use.
 // An image without mise offers the defaultCommands on its PATH.
-// Both tools are nil, with a no-op cleanup, when there is nothing to
+// head, when not nil, is the lock the parts of a split review share for
+// reading the head (partLocks), which the checkout holds while it is
+// written. Both tools are nil, with a no-op cleanup, when there is nothing to
 // offer or the commands cannot be kept from the runner's secrets; the
 // review then goes on with the read-only tools alone. notes say what was
 // not offered, for the review's summary, and the values a mise config
 // marks for redaction join secrets. cleanup removes the scratch space.
 func commandTool(
-	ctx context.Context, p Spec, tree *agent.Tree, secrets Secrets, maxOutput int, logger *slog.Logger,
+	ctx context.Context, p Spec, tree *agent.Tree, head chan struct{}, secrets Secrets, maxOutput int, logger *slog.Logger,
 ) (run *agent.RunTool, fetch *fetchRepoTool, notes []string, cleanup func()) {
 	cleanup = func() {}
 	_, err := os.Stat(miseBin)
@@ -138,10 +140,17 @@ func commandTool(
 		mise.locked = true
 	}
 	// The checkout is written on the first command, so a review that reads
-	// the head through its tools alone never writes one. A checkout that
-	// stopped at its cap says so with each command's result, since the
-	// description was sent before it was written.
+	// the head through its tools alone never writes one; it reads the head
+	// holding head, the lock a split review's parts share for that, when
+	// given one. A checkout that stopped at its cap says so with each
+	// command's result, since the description was sent before it was
+	// written.
 	prepare := func(ctx context.Context) (string, error) {
+		release, err := acquire(ctx, head)
+		if err != nil {
+			return "", err
+		}
+		defer release()
 		started := time.Now()
 		stats, err := tree.Checkout(ctx, dir, agent.MaxCheckoutBytes)
 		if err != nil {

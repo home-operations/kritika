@@ -174,6 +174,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	var tools agentTools
 	var prompt agentPrompt
 	var parts []reviewPart
+	locks := newPartLocks()
 	ruleIDs := in.ruleIDs()
 	if skip == "" {
 		tools.diff = newReadDiffTool(res.Diff, p.Agent.limits().MaxToolOutputBytes)
@@ -182,7 +183,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		}
 		var commandNotes []string
 		var cleanup func()
-		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), secrets,
+		tools.run, tools.fetch, commandNotes, cleanup = commandTool(ctx, p, agent.NewTree(headTree, ignore), locks.head, secrets,
 			p.Agent.limits().MaxToolOutputBytes, logger)
 		defer cleanup()
 		if tools.fetch != nil {
@@ -254,7 +255,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 		return nil
 	}
 	if parts != nil {
-		return runParts(ctx, st, p, secrets, headTree, ignore, tools, parts, logger)
+		return runParts(ctx, st, p, secrets, headTree, ignore, tools, locks, parts, logger)
 	}
 	return runAgentic(ctx, st, p, secrets, headTree, ignore, tools, prompt, scope, logger)
 }
