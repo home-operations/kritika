@@ -279,7 +279,7 @@ func TestCommandToolNothingToOffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(bin, "crane")); err != nil {
+	if err := os.Symlink(self, filepath.Join(bin, "helm")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)

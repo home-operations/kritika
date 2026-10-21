@@ -344,7 +344,7 @@ the review summary says they were not offered.
 
 ```yaml
 tools:
-  crane: "0.22.1"
+  helm: "4.3.1"
   "github:home-operations/flate":
     version: "0.6.5"
     filter_bins: flate
@@ -422,8 +422,8 @@ the table form alike:
 
 ```yaml
 tools:
-  # renovate: datasource=github-releases depName=google/go-containerregistry
-  crane: "0.22.1"
+  # renovate: datasource=github-releases depName=helm/helm
+  helm: "4.3.1"
   # renovate: datasource=github-releases depName=home-operations/flate
   "github:home-operations/flate":
     version: "0.6.5"
