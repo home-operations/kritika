@@ -443,6 +443,13 @@ func newAgenticHarness(t *testing.T, number int) *agenticHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The database outlives each test, so a job an earlier test left queued
+	// is this queue's to run otherwise. Only this test's number keeps its
+	// jobs.
+	if _, err := appStore.App().Exec(ctx, `UPDATE river_job SET state = 'cancelled', finalized_at = now()
+		WHERE state IN ('available', 'scheduled', 'retryable') AND coalesce((args->>'number')::int, 0) <> $1`, number); err != nil {
+		t.Fatal(err)
+	}
 	if err := client.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
