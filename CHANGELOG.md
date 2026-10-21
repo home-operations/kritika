@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.0.90](https://github.com/home-operations/kritika/compare/0.0.89...0.0.90) (2026-10-21)
+
+
+### Features
+
+* **go:** update module github.com/openai/openai-go/v3 (v3.80.0 → v3.81.0) ([#1142](https://github.com/home-operations/kritika/issues/1142)) ([926fa96](https://github.com/home-operations/kritika/commit/926fa969480556d5ecdfa6f1ae102244994e0235))
+
+
+### Bug Fixes
+
+* **go:** update module github.com/knadh/koanf/v2 (v2.4.0 → v2.4.1) ([#1143](https://github.com/home-operations/kritika/issues/1143)) ([add2a49](https://github.com/home-operations/kritika/commit/add2a490c95797ff8522c729aad3a5e52cb495a0))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool go (1.27.2 → 1.27.3) ([#1144](https://github.com/home-operations/kritika/issues/1144)) ([5387778](https://github.com/home-operations/kritika/commit/5387778a52720867bc104efcedaa9201cfa32cfb))
+
 ## [0.0.89](https://github.com/home-operations/kritika/compare/0.0.88...0.0.89) (2026-10-20)
 
 
