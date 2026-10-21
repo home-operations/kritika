@@ -95,12 +95,12 @@ func TestFileDefaultModelNeedsAProvider(t *testing.T) {
 func TestFileReviewDefaults(t *testing.T) {
 	setInstanceEnv(t)
 	doc := strings.Replace(fileWithDefaults, "review: { model: openrouter/big, fallback: openrouter/small }",
-		"review: {model: openrouter/big, fallback: openrouter/small, effort: low, approve: true, fixes: true, cost: true, incremental: 7, diagram: true}", 1)
+		"review: {model: openrouter/big, fallback: openrouter/small, effort: low, approve: true, fixes: true, cost: true, incremental: 7, diagram: true, replies: true}", 1)
 	f := mustLoad(t, doc+"trigger: {limit: 3}\n")
 	a := &f.Accounts[0]
 	s := f.Settings(a, "acme/x")
 	if s.MaxAutoReviews != 3 || !s.Review.Approve || s.Models.Effort != model.EffortLow ||
-		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost {
+		!s.Review.RequireSuggestedFix || s.Incremental.MaxDeltaFiles != 7 || !s.Review.Diagram || !s.Review.Cost || !s.Review.Replies {
 		t.Fatalf("settings = %+v", s)
 	}
 	for _, d := range f.FileLayer().Defaults {

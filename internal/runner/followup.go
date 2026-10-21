@@ -15,6 +15,11 @@ import (
 const submitReplyDescription = "Submit the reply and end the run. The input is the whole reply, as it is posted in the thread. " +
 	"Call it exactly once, when you are done."
 
+// submitIfNeededDescription is submitReplyDescription for a reply in a
+// finding thread, which may post nothing.
+const submitIfNeededDescription = "Submit the reply, or none and why, and end the run. The reply is posted whole in the " +
+	"thread. Call it exactly once, when you are done."
+
 // runFollowUp answers the last comment of the spec's thread: it fetches the
 // head and merge-base as a review does, shows the agent the diff, the
 // findings kritika posted and the thread, and runs it with a review's
@@ -63,9 +68,15 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		tools.oci = newFetchOCITool(p)
 	}
 
-	system := review.FollowUpSystemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil)
+	systemPrompt, build, validate, schema, description := review.FollowUpSystemPrompt, review.BuildFollowUp, review.CheckFollowUp,
+		review.FollowUpSchema, submitReplyDescription
+	if p.Reply {
+		systemPrompt, build, validate, schema, description = review.ReplySystemPrompt, review.BuildReply, review.CheckReply,
+			review.ReplySchema, submitIfNeededDescription
+	}
+	system := systemPrompt(in.rules, tools.commands(), tools.fetch != nil, tools.search != nil)
 	pr := p.Prompt.PullRequest
-	user := review.BuildFollowUp(review.Input{
+	user := build(review.Input{
 		Repository: p.Prompt.Repository, Number: pr.Number, Title: pr.Title, Author: pr.Author, Body: pr.Body, BaseRef: pr.BaseRef,
 		Changed: res.Changed, Diff: res.Diff, Context: chunks, References: in.references,
 		BudgetTokens: review.UserBudget(system, p.Agent.MaxPromptTokens),
@@ -74,7 +85,7 @@ func runFollowUp(ctx context.Context, st *store.Store, p Spec, secrets Secrets, 
 		return err
 	}
 	return runAgentic(ctx, st, p, secrets, headTree, p.Ignore, tools, agentPrompt{
-		system: system, user: user, validate: review.CheckFollowUp,
-		submit: model.ToolDef{Name: review.SubmitReply, Description: submitReplyDescription, InputSchema: review.FollowUpSchema()},
+		system: system, user: user, validate: validate,
+		submit: model.ToolDef{Name: review.SubmitReply, Description: description, InputSchema: schema()},
 	}, review.ScopeFull, logger)
 }

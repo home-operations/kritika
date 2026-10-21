@@ -3,6 +3,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -314,8 +315,12 @@ func (l *localForge) ListConversation(context.Context, string, string, int) ([]f
 	return out, nil
 }
 
+// ListInline lists the inline comments GetComment serves, by id.
 func (l *localForge) ListInline(context.Context, string, string, int) ([]forge.Comment, error) {
-	return nil, nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := slices.SortedFunc(maps.Values(l.threads), func(a, b forge.Comment) int { return cmp.Compare(a.ID, b.ID) })
+	return out, nil
 }
 
 func (l *localForge) Permission(_ context.Context, _, _, login string) (forge.Permission, error) {
@@ -348,11 +353,18 @@ func (l *localForge) ListOpenPullRequests(context.Context, string, string, time.
 	return nil, nil
 }
 
-func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, _ forge.Comment, body string) (int64, error) {
+// ReplyInline keeps the reply, and, where threads are served, lists it in
+// its thread as the bot's.
+func (l *localForge) ReplyInline(_ context.Context, _, _ string, _ int, to forge.Comment, body string) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.replies = append(l.replies, body)
-	return int64(len(l.replies)), nil
+	id := int64(len(l.replies))
+	if l.threads != nil {
+		id = 9500 + id
+		l.threads[id] = forge.Comment{ID: id, Author: "kritika[bot]", Body: body, Inline: true, InReplyTo: cmp.Or(to.InReplyTo, to.ID)}
+	}
+	return id, nil
 }
 
 func (l *localForge) React(_ context.Context, _, _ string, to forge.Comment, content string) (int64, error) {
@@ -434,6 +446,9 @@ func (l *localForge) ResolveThread(_ context.Context, _, _ string, _ int, id int
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.resolved = append(l.resolved, id)
+	if l.threadStates != nil {
+		l.threadStates[id] = true
+	}
 	return true, nil
 }
 
@@ -536,6 +551,9 @@ type fakeCompleter struct {
 	// scoreFails is how many confidence calls still fail with a 503 before
 	// one is answered; a failed call is not recorded as made.
 	scoreFails int
+	// reply, when set, is the JSON a follow-up's agent submits in place of
+	// its reply.
+	reply string
 }
 
 // failScore has the next n confidence calls fail in a way a retry gets
@@ -627,7 +645,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 		}
 	}
 	if tool == review.SubmitReply {
-		return answer(`{"reply":"Because b is new."}`, model.Usage{Input: 20, Output: 5}, "", 0), nil
+		return answer(cmp.Or(f.reply, `{"reply":"Because b is new."}`), model.Usage{Input: 20, Output: 5}, "", 0), nil
 	}
 	if tool == "confidence" {
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
@@ -1174,6 +1192,216 @@ func followUpHelpers(
 	return mention, waitFollowUp, lastComment
 }
 
+// replyThreads are two inline threads on the finding the review posted,
+// which checkReplies replies in, none of the replies mentioning the bot,
+// as the forge would deliver them; the second is the one conceded in.
+type replyThreads struct {
+	t            *testing.T
+	st           *store.Store
+	svc          *ingest.Service
+	lf           *localForge
+	req          ingest.Request
+	accountID    string
+	fingerprint  string
+	root, second int64
+	next         int64
+	waitFollowUp func(id int64) (string, string)
+}
+
+// reply posts body by author in the thread in opened, as the forge would
+// deliver it, and returns the comment's id.
+func (r *replyThreads) reply(in int64, author, body string) int64 {
+	r.t.Helper()
+	r.lf.mu.Lock()
+	r.next++
+	id := r.next
+	r.lf.threads[id] = forge.Comment{ID: id, Author: author, Body: body, Inline: true, InReplyTo: in}
+	r.lf.mu.Unlock()
+	r.req.Event = webhook.Event{
+		Kind: webhook.KindComment, Action: "created", Account: "onedr0p",
+		Repository: &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main"},
+		Comment:    &webhook.Comment{ID: id, Number: 1, Author: author, Body: body, Inline: true, InReplyTo: in},
+	}
+	out, err := r.svc.Dispatch(r.t.Context(), r.req)
+	if err != nil || out.Status != ingest.Enqueued {
+		r.t.Fatalf("dispatch = %+v, %v", out, err)
+	}
+	return id
+}
+
+// lastReply is the bot's last inline reply, "" for none.
+func (r *replyThreads) lastReply() string {
+	r.lf.mu.Lock()
+	defer r.lf.mu.Unlock()
+	if len(r.lf.replies) == 0 {
+		return ""
+	}
+	return r.lf.replies[len(r.lf.replies)-1]
+}
+
+// dismissals counts the finding's dismissals.
+func (r *replyThreads) dismissals() int {
+	r.t.Helper()
+	var n int
+	if err := r.st.WithAccount(r.t.Context(), r.accountID, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.t.Context(), `SELECT count(*) FROM dismissals WHERE fingerprint = $1`, r.fingerprint).Scan(&n)
+	}); err != nil {
+		r.t.Fatal(err)
+	}
+	return n
+}
+
+// checkReplies posts replies in threads of a finding the review posted,
+// none of them mentioning the bot, as the forge would deliver them, and
+// checks each is answered as the agent saw fit: a reply, nothing and why,
+// which counts as an answer all the same, or a concession that dismisses
+// the finding and resolves the thread; and that one from someone without
+// write access, one past the bot's replies in its thread, or one in a
+// resolved thread, is ignored.
+func checkReplies(
+	ctx context.Context, t *testing.T, st *store.Store, svc *ingest.Service, lf *localForge, fc *fakeCompleter, req ingest.Request, accountID string,
+) {
+	t.Helper()
+	_, waitFollowUp, _ := followUpHelpers(ctx, t, st, svc, lf, req, accountID)
+	// The mentions answered before this spent the pull request's hour.
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE followups SET created_at = now() - interval '2 hours'
+			WHERE pull_request_id IN (SELECT id FROM pull_requests WHERE account_id = $1 AND number = 1)`, accountID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lf.mu.Lock()
+	if len(lf.inline) == 0 {
+		lf.mu.Unlock()
+		t.Fatal("no finding was posted inline for a thread to form on")
+	}
+	fingerprint, ok := review.MarkedFinding(lf.inline[0].Body)
+	if !ok {
+		lf.mu.Unlock()
+		t.Fatalf("the inline finding carries no marker: %q", lf.inline[0].Body)
+	}
+	r := &replyThreads{t: t, st: st, svc: svc, lf: lf, req: req, accountID: accountID, fingerprint: fingerprint,
+		root: 9001, second: 9002, next: 9002, waitFollowUp: waitFollowUp}
+	wasResolved, wasReplies := len(lf.resolved), len(lf.replies)
+	lf.threads = map[int64]forge.Comment{
+		r.root:   {ID: r.root, Author: "kritika[bot]", Body: lf.inline[0].Body, Inline: true},
+		r.second: {ID: r.second, Author: "kritika[bot]", Body: lf.inline[0].Body, Inline: true},
+	}
+	lf.threadStates = map[int64]bool{r.root: false, r.second: false}
+	lf.permissions["outsider"] = forge.PermissionRead
+	lf.mu.Unlock()
+
+	checkReplyAnswers(t, r, fc)
+	checkReplyBounds(t, r, fc)
+
+	// The checks that follow review the pull request again, and would find
+	// the conceded finding dismissed.
+	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM dismissals WHERE fingerprint = $1`, fingerprint)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lf.mu.Lock()
+	lf.threads, lf.threadStates = nil, nil
+	lf.resolved, lf.replies = lf.resolved[:wasResolved], lf.replies[:wasReplies]
+	lf.mu.Unlock()
+}
+
+// checkReplyAnswers: a reply that needs the reviewer is answered in its
+// thread from a reply-mode prompt, one that does not is answered with
+// nothing and why, which the model was paid for, and an outsider's is
+// ignored.
+func checkReplyAnswers(t *testing.T, r *replyThreads, fc *fakeCompleter) {
+	t.Helper()
+	id := r.reply(r.root, "onedr0p", "The caller holds the lock, so this cannot happen.")
+	if status, reason := r.waitFollowUp(id); status != "answered" {
+		t.Fatalf("reply: status = %s (%s), want answered", status, reason)
+	}
+	if body := r.lastReply(); !strings.Contains(body, review.FollowUpMarker(id)) || !strings.Contains(body, "Because b is new.") ||
+		strings.Contains(body, "kritika:conceded") {
+		t.Fatalf("the reply was not answered in its thread: %q", body)
+	}
+	fc.mu.Lock()
+	prompt, system := fc.users[len(fc.users)-1], fc.systems[len(fc.systems)-1]
+	fc.mu.Unlock()
+	if !strings.Contains(prompt, "[reply if needed]") || !strings.Contains(prompt, "replied in this finding's thread without addressing you") ||
+		!strings.Contains(prompt, "--- kritika[bot]") || !strings.Contains(prompt, "The caller holds the lock") {
+		t.Fatalf("the reply's prompt lacks the thread or its instruction:\n%s", prompt)
+	}
+	if !strings.Contains(system, "Post nothing, with silent set to why") || strings.Contains(prompt, "[answer this]") {
+		t.Fatalf("the reply was answered as a mention:\n%s", system)
+	}
+	if n := r.dismissals(); n != 0 {
+		t.Fatalf("a reply that stands by the finding dismissed it: %d dismissals", n)
+	}
+
+	fc.mu.Lock()
+	fc.reply = `{"reply":"","silent":"an acknowledgement"}`
+	fc.mu.Unlock()
+	before := r.lastReply()
+	id = r.reply(r.root, "onedr0p", "Thanks, fixing.")
+	if status, reason := r.waitFollowUp(id); status != "answered" || reason != "nothing to add: an acknowledgement" {
+		t.Fatalf("acknowledgement: status = %s (%s), want answered with why", status, reason)
+	}
+	if r.lastReply() != before {
+		t.Fatalf("an acknowledgement was answered: %q", r.lastReply())
+	}
+	fc.mu.Lock()
+	fc.reply = ""
+	fc.mu.Unlock()
+
+	id = r.reply(r.root, "outsider", "I disagree.")
+	if status, reason := r.waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "write is required") {
+		t.Fatalf("outsider: status = %s (%s)", status, reason)
+	}
+}
+
+// checkReplyBounds: past repliesPerThread of the bot's replies a thread is
+// left to a mention; a concession in the other thread dismisses the
+// finding and resolves the thread, which then takes no more replies.
+func checkReplyBounds(t *testing.T, r *replyThreads, fc *fakeCompleter) {
+	t.Helper()
+	for i := 2; i <= repliesPerThread; i++ {
+		id := r.reply(r.root, "onedr0p", fmt.Sprintf("Still not convinced, take %d.", i))
+		if status, reason := r.waitFollowUp(id); status != "answered" {
+			t.Fatalf("reply %d: status = %s (%s), want answered", i, status, reason)
+		}
+	}
+	id := r.reply(r.root, "onedr0p", "And again.")
+	if status, reason := r.waitFollowUp(id); status != "ignored" || !strings.Contains(reason, "replied 3 times in this thread") {
+		t.Fatalf("past the thread's replies: status = %s (%s)", status, reason)
+	}
+
+	fc.mu.Lock()
+	fc.reply = `{"reply":"You are right: the caller holds it.","dismiss":true}`
+	fc.mu.Unlock()
+	id = r.reply(r.second, "onedr0p", "See main.go:4, the caller holds it.")
+	if status, reason := r.waitFollowUp(id); status != "answered" {
+		t.Fatalf("concession: status = %s (%s), want answered", status, reason)
+	}
+	if body := r.lastReply(); !strings.Contains(body, "You are right") || !strings.Contains(body, review.ConcessionMarker(r.fingerprint)) {
+		t.Fatalf("the concession was not posted with its marker: %q", body)
+	}
+	if n := r.dismissals(); n != 1 {
+		t.Fatalf("the conceded finding has %d dismissals, want 1", n)
+	}
+	r.lf.mu.Lock()
+	resolved := slices.Contains(r.lf.resolved, r.second) && r.lf.threadStates[r.second]
+	r.lf.mu.Unlock()
+	if !resolved {
+		t.Fatal("the conceded finding's thread was not resolved")
+	}
+	fc.mu.Lock()
+	fc.reply = ""
+	fc.mu.Unlock()
+	id = r.reply(r.second, "onedr0p", "Thanks.")
+	if status, reason := r.waitFollowUp(id); status != "ignored" || reason != "thread is resolved" {
+		t.Fatalf("resolved thread: status = %s (%s)", status, reason)
+	}
+}
+
 // checkFollowUps posts mentions as the forge would deliver them and checks
 // qualification, the reply, the thread in the prompt, and the rate limit.
 func checkFollowUps(
@@ -1598,6 +1826,23 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 			}
 		})
 		checkFollowUps(ctx, t, appStore, svc, lf, fc, ingest.Request{File: file, Account: account}, account.ID())
+	})
+
+	t.Run("a reply in a finding thread is answered when it needs the reviewer", func(t *testing.T) {
+		replyConfig := configfiletest.Load(t, strings.Replace(configYAML, "onedr0p/home-ops: {}", "onedr0p/home-ops: { review: { replies: true } }", 1))
+		if err := appStore.ApplyConfig(ctx, replyConfig); err != nil {
+			t.Fatal(err)
+		}
+		current.Set(replyConfig)
+		t.Cleanup(func() {
+			current.Set(file)
+			if err := appStore.ApplyConfig(ctx, file); err != nil {
+				t.Fatal(err)
+			}
+		})
+		// The repository's settings are read through its account's entry.
+		replyAccount, _ := replyConfig.Account(configfile.ForgeGitHub, "onedr0p")
+		checkReplies(ctx, t, appStore, svc, lf, fc, ingest.Request{File: replyConfig, Account: replyAccount}, account.ID())
 	})
 
 	t.Run("bot PR with the same patch id is skipped", func(t *testing.T) {

@@ -49,6 +49,7 @@ const (
 	keyIncremental    = "review.incremental"
 	keyDiagram        = "review.diagram"
 	keyCost           = "review.cost"
+	keyReplies        = "review.replies"
 	keyScorer         = "confidence.model"
 	keyScorerFallback = "confidence.fallback"
 	keyScorerEffort   = "confidence.effort"
@@ -70,6 +71,7 @@ var Policies = []Policy{
 	{Key: keyIncremental, Scopes: everyScope},
 	{Key: keyDiagram, Scopes: everyScope},
 	{Key: keyCost, Scopes: everyScope},
+	{Key: keyReplies, Scopes: everyScope},
 	{Key: keyScorer, Scopes: everyScope},
 	{Key: keyScorerFallback, Scopes: everyScope},
 	{Key: keyScorerEffort, Scopes: everyScope},

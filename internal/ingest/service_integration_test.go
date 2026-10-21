@@ -33,6 +33,7 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	f := configfiletest.Load(t, configYAML+`repositories:
   onedr0p/*: { trigger: { exclude: [{ name: drafts, expr: pr.draft }] } }
   onedr0p/home-ops: {}
+  onedr0p/replies: { review: { replies: true } }
   onedr0p/polled: {}
   onedr0p/at-once: {}
   onedr0p/opened-only: { trigger: { include: [{ expr: 'pr.event == "opened"' }] } }
@@ -661,6 +662,38 @@ func TestDispatchCommentPush(t *testing.T) {
 			t.Fatalf("index jobs = %d", count("index"))
 		}
 	})
+}
+
+// TestDispatchReply: a reply in an inline thread that mentions no one is a
+// follow-up where the repository answers replies in finding threads, and
+// its job says so; a root inline comment, or a reply where they are off,
+// is not.
+func TestDispatchReply(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := t.Context()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	reply := &webhook.Comment{ID: 511, Number: 7, Author: "devin", Body: "the caller holds the lock", Inline: true, InReplyTo: 500}
+	event := func(repo *webhook.Repository, c *webhook.Comment) Request {
+		return request(f, webhook.Event{Kind: webhook.KindComment, Action: "created", Repository: repo, Comment: c})
+	}
+	if out, _ := svc.Dispatch(ctx, event(repo("onedr0p/home-ops"), reply)); out.Reason != "no-mention" {
+		t.Fatalf("reply where replies are off = %+v", out)
+	}
+	root := *reply
+	root.ID, root.InReplyTo = 512, 0
+	if out, _ := svc.Dispatch(ctx, event(repo("onedr0p/replies"), &root)); out.Reason != "no-mention" {
+		t.Fatalf("root inline comment = %+v", out)
+	}
+	if out, err := svc.Dispatch(ctx, event(repo("onedr0p/replies"), reply)); err != nil || out.Status != Enqueued || out.Job != "followup" {
+		t.Fatalf("reply = %+v, %v", out, err)
+	}
+	var asReply bool
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT coalesce((args->>'reply')::bool, false) FROM river_job WHERE kind = 'followup'
+			AND (args->>'comment_id')::bigint = 511`).Scan(&asReply)
+	}); err != nil || !asReply {
+		t.Fatalf("the job allows a reply: %v, %v", asReply, err)
+	}
 }
 
 func TestDispatchInstallation(t *testing.T) {

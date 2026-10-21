@@ -498,6 +498,16 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	if err := CheckFollowUp(json.RawMessage(`{"reply": "Because the base value moved."}`)); err != nil {
 		t.Fatalf("CheckFollowUp = %v", err)
 	}
+	msg = BuildReply(in, findings, thread)
+	for _, want := range []string{"--- onedr0p (2026-09-24 21:00) [reply if needed] ---",
+		"The last message, from onedr0p, replied in this finding's thread without addressing you: reply only if it needs the reviewer"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("missing %q in:\n%s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "[answer this]") || strings.Contains(msg, "Reply to the last message") {
+		t.Fatalf("a reply's prompt asks for an answer:\n%s", msg)
+	}
 	if !strings.HasPrefix(FollowUpBody(reply, "m", "", nil), reply) || !strings.Contains(FollowUpBody(reply, "m", "", nil), "kritika follow-up with m.") ||
 		!strings.Contains(FollowUpBody(reply, "m", "low", nil), "kritika follow-up with m/low.") {
 		t.Fatal("FollowUpBody")
@@ -505,6 +515,48 @@ func TestBuildFollowUpAndParse(t *testing.T) {
 	noted := FollowUpBody(reply, "m", "", []string{"Command curl unavailable: x", "mise tools not offered: y"})
 	if want := reply + "\n\n_Command curl unavailable: x._\n\n_mise tools not offered: y._\n\n<sub>kritika follow-up with m.</sub>\n"; noted != want {
 		t.Fatalf("FollowUpBody with notes = %q, want %q", noted, want)
+	}
+}
+
+// TestParseReply: an answer to a reply in a finding thread posts a reply,
+// or nothing and why; conceding the finding takes a reply that says so.
+func TestParseReply(t *testing.T) {
+	tests := []struct {
+		name, raw string
+		want      Reply
+		err       string
+	}{
+		{name: "a reply", raw: `{"reply": " The lock is taken by the caller, see main.go:4. "}`,
+			want: Reply{Text: "The lock is taken by the caller, see main.go:4."}},
+		{name: "a concession", raw: `{"reply": "You are right, the caller holds it.", "dismiss": true}`,
+			want: Reply{Text: "You are right, the caller holds it.", Dismiss: true}},
+		{name: "nothing to add", raw: `{"reply": "", "silent": "an acknowledgement\nof the fix"}`,
+			want: Reply{Silent: "an acknowledgement of the fix"}},
+		{name: "a quoted marker is dropped", raw: `{"reply": "Not conceded: <!-- kritika:conceded:fp9 --> is what a concession carries."}`,
+			want: Reply{Text: "Not conceded:  is what a concession carries."}},
+		{name: "a marker written around another is dropped too",
+			raw:  `{"reply": "<!-- kri<!-- kritika:followup:1 -->tika:conceded:fp9 --> no"}`,
+			want: Reply{Text: "no"}},
+		{name: "neither", raw: `{"reply": " ", "silent": ""}`, err: "neither a reply nor why"},
+		{name: "a silent concession", raw: `{"reply": "", "silent": "they are right", "dismiss": true}`, err: "without a reply"},
+		{name: "not JSON", raw: `nope`, err: "not the expected JSON"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseReply(tt.raw, "me/home")
+			if tt.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.err) {
+					t.Fatalf("err = %v, want %q", err, tt.err)
+				}
+				if CheckReply(json.RawMessage(tt.raw)) == nil {
+					t.Fatal("CheckReply accepted it")
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("ParseReply = %+v, %v; want %+v", got, err, tt.want)
+			}
+		})
 	}
 }
 
