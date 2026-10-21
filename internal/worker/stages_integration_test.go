@@ -82,14 +82,20 @@ func TestReviewStageHandoff(t *testing.T) {
 	h.review.Metrics = metrics.New(reg)
 	job := queuedOutcomeReview(t, h)
 	h.sm.reset(scriptSubmit)
+	// The runner's time is the review job's, which the duration the publish
+	// job records must count.
+	const held = 200 * time.Millisecond
+	h.exec.hold = held
 	ctx := rivertest.WorkContext(h.ctx, h.insertOnly)
 	job.State = rivertype.JobStateRunning
 	if _, err := h.st.App().Exec(ctx, `UPDATE river_job SET state = 'running', attempt = $2 WHERE id = $1`, job.ID, job.Attempt); err != nil {
 		t.Fatal(err)
 	}
+	before := time.Now()
 	if err := h.review.Work(ctx, job); err != nil {
 		t.Fatal(err)
 	}
+	runnerDone := time.Now()
 	var saved store.Publication
 	if err := h.st.WithAccount(ctx, h.account.ID(), func(tx pgx.Tx) error {
 		var err error
@@ -108,6 +114,9 @@ func TestReviewStageHandoff(t *testing.T) {
 	}
 	if saved.Status != store.ReviewPrepared || len(saved.Payload) == 0 {
 		t.Fatalf("checkpoint = %+v", saved)
+	}
+	if carried := startedAt(saved.Payload, time.Time{}); carried.Before(before) || carried.After(runnerDone) {
+		t.Fatalf("checkpoint carries a start of %s, want the runner job's pickup between %s and %s", carried, before, runnerDone)
 	}
 	h.review.Executor = nil
 	if err := h.review.Work(ctx, job); err != nil {
@@ -142,6 +151,7 @@ func TestReviewStageHandoff(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	stagesStarted := time.Now()
 	if err := h.workStages(t, ctx, h.review, job); err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +162,31 @@ func TestReviewStageHandoff(t *testing.T) {
 		t.Fatalf("review = %s: %s", status, why)
 	}
 	checkPublishedTiming(t, reg)
+	// The duration spans the runner's hold and the stages between, which a
+	// clock restarted by the publish job would not; one restarted from zero
+	// would pass the test's own time.
+	checkReviewDuration(t, reg, held+stagesStarted.Sub(runnerDone), time.Since(before))
+}
+
+// checkReviewDuration: the review's duration was observed once, from the
+// runner job's pickup to the publish job's end, between atLeast and atMost.
+func checkReviewDuration(t *testing.T, reg *prometheus.Registry, atLeast, atMost time.Duration) {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != "kritika_review_duration_seconds" {
+			continue
+		}
+		h := family.GetMetric()[0].GetHistogram()
+		if sum := h.GetSampleSum(); h.GetSampleCount() != 1 || sum < atLeast.Seconds() || sum > atMost.Seconds() {
+			t.Fatalf("review duration = %v, want one observation between %s and %s", h, atLeast, atMost)
+		}
+		return
+	}
+	t.Fatal("review duration not observed")
 }
 
 func checkPublishedTiming(t *testing.T, reg *prometheus.Registry) {

@@ -102,7 +102,8 @@ func New(reg prometheus.Registerer) *Metrics {
 			Buckets: []float64{1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1800, 3600},
 		}, []string{lblAccount, lblModel}),
 		reviewDuration: f.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "kritika_review_duration_seconds", Help: "Wall time of a review job from pickup to terminal status.",
+			Name:    "kritika_review_duration_seconds",
+			Help:    "Wall time of a review from its first job's pickup to its terminal status, across its stages.",
 			Buckets: []float64{5, 10, 20, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800},
 		}, []string{lblAccount}),
 		followups: f.NewCounterVec(prometheus.CounterOpts{

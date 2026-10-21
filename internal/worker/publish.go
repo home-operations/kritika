@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -40,6 +41,10 @@ type publishPhase struct {
 	// trigger is why the review ran; one a human asked for does not
 	// count towards the pull request's automatic reviews.
 	trigger string
+	// started is when the review's first job was picked up, which the
+	// duration the metric observes counts from; a checkpoint carries it
+	// to the stage that ends the review.
+	started time.Time
 	logger  *slog.Logger
 	// parse and templates are the repository's contract settings; the zero
 	// values are kritika's defaults.
