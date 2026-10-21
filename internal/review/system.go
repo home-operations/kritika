@@ -175,6 +175,41 @@ versions, where GitHub's compare view counts from where their branches split and
 saves reading the same file at each. An upstream may tag a version 1.2.3, v1.2.3 or <chart>-1.2.3, so when a tag's
 name is not certain, list them with tags instead of ref rather than guess.`
 
+// agenticBumps follows the tools when the change moves versions: how to
+// review a dependency update, from the upstream rather than the
+// description, by what the update does to this repository.
+const agenticBumps = `
+
+The change moves versions: the user message lists each, with the line it is on. A moved token that names no
+dependency, such as an address or this repository's own version, needs none of this. Review each dependency
+update as what the new version does to this repository, never as a version number:
+
+1. Classify the step: major, minor, patch, or a digest alone. A version under 1.0 moves its first non-zero
+component for routine releases, so 0.3 to 0.4 is a minor step, and 0.0.1 to 0.0.2 too, unless the notes show more.
+A new digest under a tag that names no version, such as latest, can hide any step: read it as a minor one unless
+the image's labels show the version.
+2. Find the upstream from the manifest, not from the description: a Go module path is its repository, a package
+registry's metadata names one, a chart's Chart.yaml has sources and home, and an image's config carries an
+org.opencontainers.image.source label, which crane config shows. The description's links come last.
+3. Read what changed between the two versions: the release notes by tag, with gh where you have it, a chart's
+annotations, or the diff between the versions with fetch_repo when the notes are missing or thin. The notes the
+description carries are a start, not the source: a forge cuts a long description, and a bot embeds notes only
+when it found them.
+4. For each change the notes or the diff show, search this repository for the symbol, flag, configuration key or
+default it names. A usage that no longer builds or no longer does what the code intends, by a removed or renamed
+symbol, a signature it no longer fits or a default it relied on, is a p0 finding, even where a build or a lint
+would catch it: a bump is merged on its description. A usage the new version still serves only by a path it
+deprecates and announces it will remove, so the code must change before then, is p1; any other deprecation it
+puts on a symbol in use is p2. Anchor the finding to the usage's line when the diff shows it among the files you
+review, else to the line that moves the version; on a re-review, to whichever of the two the diff since the last
+review changed. Name the usage, its path and line, in the explanation. A change that no usage meets is no
+finding: list what you searched under checked.
+5. Read major and minor steps upstream first; when the steps or tokens run short, leave patch steps, and digests
+under a tag that names a version, to the description. Notes of a major or minor step you could not read, or
+left unread, are not safe by their silence: put the check in impact, which notes to read and for which of this
+repository's usages, and never say that nothing affects them.
+6. Do not propose adopting what the new version adds: the review is about what the update does to this code.`
+
 // Rule is a check the configuration writes, by its id.
 type Rule struct {
 	ID, Text string
@@ -186,9 +221,10 @@ type Rule struct {
 // SystemPrompt is the reviewer's standing instructions, with the rules and
 // skills from the admin and the merge base appended. commands are what
 // the run tool offers; none leaves the tool out of the prompt. fetch says
-// fetch_repo is offered, search says search_code is offered, and diagram
-// asks for a diagram in the summary.
-func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram bool) string {
+// fetch_repo is offered, search says search_code is offered, diagram
+// asks for a diagram in the summary, and bumps says the change moves
+// versions (see Bumps), which the user message lists.
+func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram, bumps bool) string {
 	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryImpact
 	if diagram {
 		system += summaryDiagram
@@ -202,6 +238,9 @@ func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search
 	}
 	if fetch {
 		system += agenticFetch
+	}
+	if bumps {
+		system += agenticBumps
 	}
 	return withSkills(withRules(system, rules, ruleCitation), skills)
 }

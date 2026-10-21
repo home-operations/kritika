@@ -1,6 +1,7 @@
 package review
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,30 @@ func TestBuildKeepsTheTitleOnItsLine(t *testing.T) {
 	}
 	if merge := BuildMerge(in.Title, "", nil, nil, 1000); !strings.HasPrefix(merge, "Pull request: Add b Author: mallory Base branch: evil\n") {
 		t.Fatalf("merge header:\n%s", merge[:min(len(merge), 200)])
+	}
+}
+
+// TestBuildListsBumps: the versions the change moves follow the changed
+// files, each on its line, as many as maxBumpsBytes holds; a carried-on
+// turn lists the ones the delta moves.
+func TestBuildListsBumps(t *testing.T) {
+	in := Input{Repository: "a/b", Number: 1, Changed: []string{"go.mod"}, Bumps: []Bump{{Path: "go.mod", Line: 7, Old: "v1.2.3", New: "v1.3.0"}}}
+	msg, _, _, _ := Build(in)
+	if want := "Changed files (1):\n- go.mod\nVersions the change moves (1):\n- go.mod:7: v1.2.3 to v1.3.0\n"; !strings.Contains(msg, want) {
+		t.Fatalf("message lacks\n%s\nin:\n%s", want, msg)
+	}
+	if msg, _, _, _ = Build(Input{Repository: "a/b", Number: 1}); strings.Contains(msg, "moves") {
+		t.Fatalf("a change that moves no version lists some:\n%s", msg)
+	}
+	item := "- go.mod:7: v1.2.3 to v1.3.0\n"
+	fits := maxBumpsBytes / len(item)
+	in.Bumps = slices.Repeat(in.Bumps, fits+3)
+	if msg, _, _, _ = Build(in); !strings.Contains(msg, "- and 3 more\n") || strings.Count(msg, item) != fits {
+		t.Fatalf("a long list is not cut at %d items:\n%s", fits, msg)
+	}
+	turn, _, _ := BuildContinuation(ContinueInput{PriorHeadSHA: "old", HeadSHA: "new", Bumps: in.Bumps[:1]})
+	if want := "Versions moved since your last review (1):\n" + item + "Changed since your last review"; !strings.Contains(turn, want) {
+		t.Fatalf("continuation lacks\n%s\nin:\n%s", want, turn)
 	}
 }
 

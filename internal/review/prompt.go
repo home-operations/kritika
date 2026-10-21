@@ -26,6 +26,10 @@ type Input struct {
 	Issues  []Issue
 	Changed []string
 	Diff    string
+	// Bumps are the versions the change moves, listed after the changed
+	// files for the dependency-update instructions the system prompt then
+	// carries.
+	Bumps []Bump
 	// Context is the runner's context pack, in stage order. It is spent
 	// after the diff, so a huge diff crowds it out rather than the reverse.
 	Context []contextpack.Chunk
@@ -89,6 +93,29 @@ type Reference struct {
 	Path, Description string
 }
 
+// maxBumpsBytes bounds the list of the versions a change moves, which is
+// written before the budgeted sections: a digest pinned beside a tag
+// takes a line of its own, and the diff shows the rest.
+const maxBumpsBytes = 2_000
+
+// writeBumps lists the versions a change moves under lead, each on the
+// line that moves it, as many as maxBumpsBytes holds, and counts the rest.
+func writeBumps(b *strings.Builder, lead string, bumps []Bump) {
+	if len(bumps) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "%s (%d):\n", lead, len(bumps))
+	room := maxBumpsBytes
+	for i, bump := range bumps {
+		item := fmt.Sprintf("- %s:%d: %s to %s\n", bump.Path, bump.Line, bump.Old, bump.New)
+		if room -= len(item); room < 0 {
+			fmt.Fprintf(b, "- and %d more\n", len(bumps)-i)
+			return
+		}
+		b.WriteString(item)
+	}
+}
+
 // DefaultBudgetTokens bounds the user message when Input sets no budget.
 const DefaultBudgetTokens = 24_000
 
@@ -141,6 +168,7 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 	if in.Part != nil {
 		fmt.Fprintf(&b, partLead, in.Part.Count, in.Part.Index)
 	}
+	writeBumps(&b, "Versions the change moves", in.Bumps)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	writeDescription(&b, in.Body, budget/bodyShare)
 	writeIssues(&b, in.Issues, budget/bodyShare)
@@ -337,8 +365,10 @@ type ContinueInput struct {
 	// PriorHeadSHA is the head the last review saw, HeadSHA this review's;
 	// the two share their merge base.
 	PriorHeadSHA, HeadSHA string
-	// DeltaDiff is the unified diff from PriorHeadSHA to HeadSHA.
+	// DeltaDiff is the unified diff from PriorHeadSHA to HeadSHA, and
+	// Bumps the versions it moves.
 	DeltaDiff string
+	Bumps     []Bump
 	// Prior are the last review's findings, those it carried on unchecked
 	// included, which its submission may not hold: the turn lists them with
 	// their ids.
@@ -385,6 +415,7 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 		b.WriteString(" The repositories fetch_repo fetched then are no longer on disk: fetch again any you need to read.")
 	}
 	b.WriteString(reReviewLead)
+	writeBumps(&b, "Versions moved since your last review", in.Bumps)
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	references, referencesOmitted := referenceSection(in.References, min(budget/bodyShare, budget-b.Len()-len(closing)))

@@ -240,7 +240,7 @@ func TestImpactMarkdown(t *testing.T) {
 }
 
 func TestImpactPromptContract(t *testing.T) {
-	if !strings.Contains(SystemPrompt(nil, nil, nil, false, false, false), "An intended or documented change is not automatically safe") ||
+	if !strings.Contains(SystemPrompt(nil, nil, nil, false, false, false, false), "An intended or documented change is not automatically safe") ||
 		!strings.Contains(ConfidenceSystem, "cannot be completed before deployment is not, by itself, an unanswered concern") ||
 		strings.Contains(MergeSystemPrompt(false), "Skills can identify relevant domain evidence") {
 		t.Fatal("reviewer, scorer and merger need distinct impact instructions")
