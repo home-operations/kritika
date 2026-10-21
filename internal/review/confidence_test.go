@@ -131,6 +131,60 @@ func TestBuildConfidence(t *testing.T) {
 	}
 }
 
+func TestConfidenceHold(t *testing.T) {
+	const at = "db/migrations/1.sql"
+	for _, tt := range []struct {
+		name  string
+		c     Confidence
+		floor Risk
+		at    string
+		want  Confidence
+		held  bool
+	}{
+		{name: "a rating under the floor rises to it", c: Confidence{Risk: RiskLow, Reason: "Docs only."}, floor: RiskCritical, at: at,
+			want: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: at, Reason: "Docs only."}, held: true},
+		{name: "a rating at the floor stands", c: Confidence{Risk: RiskHigh, Reason: "r"}, floor: RiskHigh, at: at, want: Confidence{Risk: RiskHigh, Reason: "r"}},
+		{name: "a rating over the floor stands", c: Confidence{Risk: RiskCritical, Reason: "r"}, floor: RiskMedium, at: at, want: Confidence{Risk: RiskCritical, Reason: "r"}},
+		{name: "no floor holds nothing", c: Confidence{Risk: RiskLow, Reason: "r"}, floor: RiskLow, want: Confidence{Risk: RiskLow, Reason: "r"}},
+		{name: "a floor raised since holds the rating higher", c: Confidence{Risk: RiskHigh, Rated: RiskLow, Held: "charts/x.yaml", Reason: "r"},
+			floor: RiskCritical, at: at, want: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: at, Reason: "r"}, held: true},
+		{name: "a floor lowered since lets the rating go", c: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: at, Reason: "r"},
+			floor: RiskLow, want: Confidence{Risk: RiskLow, Reason: "r"}},
+		{name: "the same floor again changes nothing", c: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: at, Reason: "r"},
+			floor: RiskCritical, at: at, want: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: at, Reason: "r"}, held: true},
+		{name: "a risk that is no level is left as it is", c: Confidence{Reason: "r"}, floor: RiskLow, want: Confidence{Reason: "r"}},
+		{name: "a risk that is no level is not held either", c: Confidence{Risk: "none", Reason: "r"}, floor: RiskCritical, at: at,
+			want: Confidence{Risk: "none", Reason: "r"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := tt.c
+			if held := c.Hold(tt.floor, tt.at); held != tt.held || c != tt.want {
+				t.Fatalf("Hold = %v, %+v; want %v, %+v", held, c, tt.held, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfidenceExplanation(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		c    Confidence
+		want string
+	}{
+		{name: "the reason alone", c: Confidence{Risk: RiskLow, Reason: "Docs only."}, want: "Docs only."},
+		{name: "how a floor held the risk", c: Confidence{Risk: RiskCritical, Rated: RiskLow, Held: "db/migrations/1.sql", Reason: "Docs only."},
+			want: "Docs only. Held to critical risk by the instance's floor for db/migrations/1.sql."},
+		{name: "no reason to follow", c: Confidence{Risk: RiskHigh, Rated: RiskLow, Held: "charts/x.yaml"},
+			want: "Held to high risk by the instance's floor for charts/x.yaml."},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.c.Explanation(); got != tt.want {
+				t.Fatalf("Explanation = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfidencePassed(t *testing.T) {
 	if (Confidence{Score: 4, Threshold: 5}).Passed() || !(Confidence{Score: 5, Threshold: 5}).Passed() || !(Confidence{Score: 3, Threshold: 0}).Passed() {
 		t.Fatal("Passed must be true exactly when the score reaches the threshold")

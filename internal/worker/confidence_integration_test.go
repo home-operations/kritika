@@ -19,9 +19,9 @@ import (
 )
 
 // TestCarriedConfidence: an unchanged patch keeps the score its last
-// completed review got, judged by the threshold asked for now,
-// and may be skipped only where there is a score to keep or none is asked
-// for.
+// completed review got, judged by the threshold and held to the risk floors
+// asked for now, and may be skipped only where there is a score to keep or
+// none is asked for.
 func TestCarriedConfidence(t *testing.T) {
 	ctx := t.Context()
 	st := storetest.Open(t)
@@ -49,16 +49,21 @@ func TestCarriedConfidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	scored := configfile.Confidence{Model: "test/judge", Threshold: 3}
+	floored := configfile.Confidence{Model: "test/judge", Threshold: 3, Floors: configfile.RiskFloors{review.RiskCritical: {"db/migrations/**"}}}
 	errRollback := errors.New("roll back")
 	type row struct{ status, confidence string }
 	tests := []struct {
 		name string
 		// rows are the pull request's reviews, oldest first; the last one's
-		// id is excluded when exclude is set.
+		// id is excluded when exclude is set, and changed the paths its
+		// context pack records.
 		rows          []row
+		changed       []string
 		exclude       bool
 		want          configfile.Confidence
 		wantScore     int
+		wantRisk      review.Risk
+		wantHeld      string
 		wantSkippable bool
 	}{
 		{name: "no score asked for", rows: []row{{"completed", ""}}, wantScore: -1, wantSkippable: true},
@@ -75,6 +80,16 @@ func TestCarriedConfidence(t *testing.T) {
 			rows: []row{{"completed", `{"score":4,"threshold":5}`}, {"failed", ""}}},
 		{name: "the review asking is left out", want: scored, wantScore: 4, wantSkippable: true, exclude: true,
 			rows: []row{{"completed", `{"score":4,"threshold":5}`}, {"prepared", ""}}},
+		{name: "a floor set since holds the risk", want: floored, wantScore: 4, wantRisk: review.RiskCritical, wantHeld: "db/migrations/1.sql", wantSkippable: true,
+			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"low","reason":"Docs only."}`}}, changed: []string{"db/migrations/1.sql", "README.md"}},
+		{name: "a floor the change is not under", want: floored, wantScore: 4, wantRisk: review.RiskLow, wantSkippable: true,
+			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"low"}`}}, changed: []string{"README.md"}},
+		{name: "a floor with no paths recorded", want: floored, wantScore: 4, wantRisk: review.RiskLow, wantSkippable: true,
+			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"low"}`}}},
+		{name: "a floor cleared since lets the rating go", want: scored, wantScore: 4, wantRisk: review.RiskLow, wantSkippable: true,
+			rows: []row{{"completed", `{"score":4,"threshold":3,"risk":"critical","rated":"low","held":"db/migrations/1.sql"}`}}, changed: []string{"db/migrations/1.sql"}},
+		{name: "a risk never rated stays none under a floor", want: floored, wantScore: 4, wantSkippable: true,
+			rows: []row{{"completed", `{"score":4,"threshold":3}`}}, changed: []string{"db/migrations/1.sql"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,6 +101,17 @@ func TestCarriedConfidence(t *testing.T) {
 					if err := tx.QueryRow(ctx, `INSERT INTO reviews (account_id, pull_request_id, head_sha, status, confidence, created_at)
 						VALUES ($1, $2, 'abc4243', $3, nullif($4, '')::jsonb, now() + make_interval(secs => $5)) RETURNING id::text`,
 						account.ID(), pr.id, r.status, r.confidence, i).Scan(&last); err != nil {
+						return err
+					}
+				}
+				if tt.changed != nil {
+					var runID string
+					if err := tx.QueryRow(ctx, `INSERT INTO runner_runs (account_id, kind, review_id) VALUES ($1, 'review', $2) RETURNING id`,
+						account.ID(), last).Scan(&runID); err != nil {
+						return err
+					}
+					if _, err := tx.Exec(ctx, `INSERT INTO context_packs (runner_run_id, account_id, head_sha, base_sha, patch_id, diff, changed_paths, stages, repo_files)
+						VALUES ($1, $2, 'abc4243', 'base', 'p', '', $3, '[]', '{}')`, runID, account.ID(), tt.changed); err != nil {
 						return err
 					}
 				}
@@ -106,6 +132,9 @@ func TestCarriedConfidence(t *testing.T) {
 				score = got.Score
 				if got.Threshold != tt.want.Threshold {
 					t.Errorf("threshold = %d, want the one asked for now, %d", got.Threshold, tt.want.Threshold)
+				}
+				if got.Risk != tt.wantRisk || got.Held != tt.wantHeld {
+					t.Errorf("risk = %q held by %q, want %q and %q under the floors asked for now", got.Risk, got.Held, tt.wantRisk, tt.wantHeld)
 				}
 			}
 			if score != tt.wantScore || skippable != tt.wantSkippable {

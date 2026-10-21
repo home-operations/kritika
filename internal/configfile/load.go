@@ -417,6 +417,16 @@ func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
 	if risk := r.Confidence.Risk; risk != nil && !risk.Valid() {
 		return fmt.Errorf("configfile: %s%s must be %s, got %q", where, keyRisk, review.RiskLevels, *risk)
 	}
+	for _, level := range slices.Sorted(maps.Keys(r.Confidence.Floors)) {
+		if !level.Valid() {
+			return fmt.Errorf("configfile: %s%s keys must be %s, got %q", where, keyFloors, review.RiskLevels, level)
+		}
+		for gi, g := range r.Confidence.Floors[level] {
+			if !ValidGlob(g) {
+				return fmt.Errorf("configfile: %s%s.%s[%d] %q is not a valid glob", where, keyFloors, level, gi, g)
+			}
+		}
+	}
 	if r.Trigger.Limit != nil && *r.Trigger.Limit < 0 {
 		return fmt.Errorf("configfile: %strigger.limit must not be negative", where)
 	}

@@ -55,6 +55,7 @@ const (
 	keyThreshold      = "confidence.threshold"
 	keyGate           = "confidence.gate"
 	keyRisk           = "confidence.risk"
+	keyFloors         = "confidence.floors"
 	keyLimit          = "trigger.limit"
 )
 
@@ -76,6 +77,7 @@ var Policies = []Policy{
 	{Key: keyGate, Scopes: everyScope},
 	{Key: keyRisk, Scopes: everyScope},
 	{Key: "confidence.instructions", Scopes: everyScope},
+	{Key: keyFloors, Scopes: everyScope},
 	{Key: "trigger.include", Scopes: everyScope},
 	{Key: "trigger.exclude", Scopes: everyScope},
 	{Key: keyLimit, Scopes: everyScope},

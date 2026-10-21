@@ -17,6 +17,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/home-operations/kritika/internal/agent"
+	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
@@ -257,7 +258,8 @@ type ReviewSpec struct {
 // how hard they reason, the score the pull request must reach, whether
 // the commit status fails under it, the highest risk a change may carry
 // and still be approved, and the admin's guidance to the scorer on rating
-// risk.
+// risk and the least risk a change to some paths is rated, which a scope
+// that writes it, even empty, replaces the broader scope's.
 type ConfidenceSpec struct {
 	Model        *ModelRef     `yaml:"model,omitempty"`
 	Fallback     *ModelRef     `yaml:"fallback,omitempty"`
@@ -266,6 +268,28 @@ type ConfidenceSpec struct {
 	Gate         *bool         `yaml:"gate,omitempty"`
 	Risk         *review.Risk  `yaml:"risk,omitempty"`
 	Instructions *string       `yaml:"instructions,omitempty"`
+	Floors       RiskFloors    `yaml:"floors,omitempty"`
+}
+
+// RiskFloors is the least risk a change is rated when it touches a path
+// matching one of the level's globs, whatever the scorer says.
+type RiskFloors map[review.Risk][]string
+
+// Floor is the highest level in f a path of changed matches, review.RiskLow
+// when none does, and the first such path in order, so the path named is
+// the same for the same change however changed is listed.
+func (f RiskFloors) Floor(changed []string) (review.Risk, string) {
+	floor, at := review.RiskLow, ""
+	changed = slices.Sorted(slices.Values(changed))
+	for level, globs := range f {
+		if level.Within(floor) {
+			continue
+		}
+		if i := slices.IndexFunc(changed, func(p string) bool { return chunk.Matches(globs, p) }); i >= 0 {
+			floor, at = level, changed[i]
+		}
+	}
+	return floor, at
 }
 
 // Confidence is how a repository's reviews are judged, as resolved. With no
@@ -291,6 +315,10 @@ type Confidence struct {
 	// A repository's own file cannot set them: a pull request must not be
 	// able to talk its risk down.
 	Instructions string `json:"instructions"`
+	// Floors is the least risk a change to a path is rated, by level,
+	// held in code whatever the scorer says; the admin's alone, as
+	// Instructions are.
+	Floors RiskFloors `json:"floors,omitempty"`
 }
 
 // MaxConfidence is the highest score, and DefaultConfidenceThreshold the

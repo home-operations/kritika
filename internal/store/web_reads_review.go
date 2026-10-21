@@ -297,17 +297,20 @@ func FindContextPackMeta(ctx context.Context, tx pgx.Tx, runnerRunID string) (Co
 
 type ContextPackChanges struct {
 	Diff, Delta string
-	DeltaPaths  []string
-	Swept       bool
+	// Changed is every path the change touches, deleted and binary ones
+	// the diff shows no line of included; DeltaPaths the ones the delta
+	// does.
+	Changed, DeltaPaths []string
+	Swept               bool
 }
 
-// ContextPackDiffs returns the diffs and delta paths of the context pack a
+// ContextPackDiffs returns the diffs and paths of the context pack a
 // runner run wrote, and whether the retention sweep has emptied the diffs,
 // or ErrNotFound.
 func ContextPackDiffs(ctx context.Context, tx pgx.Tx, runnerRunID string) (ContextPackChanges, error) {
 	var changes ContextPackChanges
-	err := tx.QueryRow(ctx, `SELECT diff, delta_diff, delta_paths, swept_at IS NOT NULL FROM context_packs WHERE runner_run_id = $1`,
-		runnerRunID).Scan(&changes.Diff, &changes.Delta, &changes.DeltaPaths, &changes.Swept)
+	err := tx.QueryRow(ctx, `SELECT diff, delta_diff, changed_paths, delta_paths, swept_at IS NOT NULL FROM context_packs
+		WHERE runner_run_id = $1`, runnerRunID).Scan(&changes.Diff, &changes.Delta, &changes.Changed, &changes.DeltaPaths, &changes.Swept)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ContextPackChanges{}, ErrNotFound
 	}

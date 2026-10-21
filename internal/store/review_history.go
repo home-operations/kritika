@@ -133,16 +133,20 @@ func LastReviewMergeBase(ctx context.Context, tx pgx.Tx, prID, head string) (str
 type ReviewBaseline struct {
 	PatchID    string
 	Confidence *review.Confidence
+	// Changed is every path the baseline's change touched, as its context
+	// pack records; nil when none was written.
+	Changed []string
 }
 
-// LastReviewBaseline returns the latest reusable review's patch and score,
-// excluding reviewID when nonempty. No baseline yields a zero value, and
-// SQL NULL or JSON null confidence yields a nil score. The caller chooses
-// the threshold to apply to the score.
+// LastReviewBaseline returns the latest reusable review's patch, score and
+// changed paths, excluding reviewID when nonempty. No baseline yields a
+// zero value, and SQL NULL or JSON null confidence yields a nil score. The
+// caller chooses the threshold and the risk floors to apply to the score.
 func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (ReviewBaseline, error) {
 	var baseline ReviewBaseline
+	var id string
 	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT patch_id, confidence`+reusableBaselineSQL, prID, reviewID).Scan(&baseline.PatchID, &raw)
+	err := tx.QueryRow(ctx, `SELECT id, patch_id, confidence`+reusableBaselineSQL, prID, reviewID).Scan(&id, &baseline.PatchID, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ReviewBaseline{}, nil
 	}
@@ -153,6 +157,11 @@ func LastReviewBaseline(ctx context.Context, tx pgx.Tx, prID, reviewID string) (
 		if err := json.Unmarshal(raw, &baseline.Confidence); err != nil {
 			return ReviewBaseline{}, fmt.Errorf("store: decode last review confidence: %w", err)
 		}
+	}
+	err = tx.QueryRow(ctx, `SELECT c.changed_paths FROM context_packs c JOIN runner_runs rr ON rr.id = c.runner_run_id
+		WHERE rr.review_id = $1 ORDER BY c.created_at DESC LIMIT 1`, id).Scan(&baseline.Changed)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return ReviewBaseline{}, fmt.Errorf("store: read last review baseline's paths: %w", err)
 	}
 	return baseline, nil
 }

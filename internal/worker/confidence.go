@@ -30,9 +30,10 @@ const (
 // confidence score and the scorer gave none.
 const unscoredNote = "The confidence model did not answer, so this review has no confidence score"
 
-// judge scores the review within the finalization context. It returns the
-// note the summary states when the scorer gave no answer.
-func (p *publishPhase) judge(job context.Context, res review.Result, diff string) string {
+// judge scores the review within the finalization context; changed is
+// every path the change touches, which the diff may show no line of. It
+// returns the note the summary states when the scorer gave no answer.
+func (p *publishPhase) judge(job context.Context, res review.Result, diff string, changed []string) string {
 	ref := p.settings.Confidence.Model
 	if ref == "" {
 		return ""
@@ -46,7 +47,7 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	if p.lease != nil {
 		p.w.releaseLease(ctx, p.logger, p.lease, string(p.settings.Models.Review))
 	}
-	c, err := p.score(ctx, ref, res, diff)
+	c, err := p.score(ctx, ref, res, diff, changed)
 	if err != nil {
 		p.logger.Warn("confidence not scored", "model", ref, "error", err)
 		p.unscored = true
@@ -77,7 +78,9 @@ func (p *publishPhase) checkMonthCap(ctx context.Context) error {
 
 // score asks ref for the score, recording the call against the review and
 // charging it to the account.
-func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res review.Result, diff string) (review.Confidence, error) {
+func (p *publishPhase) score(
+	ctx context.Context, ref configfile.ModelRef, res review.Result, diff string, changed []string,
+) (review.Confidence, error) {
 	if err := p.checkMonthCap(ctx); err != nil {
 		return review.Confidence{}, err
 	}
@@ -104,7 +107,7 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
-			Body: body, Changed: review.ChangedPaths(diff), Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
+			Body: body, Changed: changed, Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
 		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, p.settings.Agent.MaxPromptTokens),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
@@ -122,19 +125,25 @@ func (p *publishPhase) score(ctx context.Context, ref configfile.ModelRef, res r
 	if err != nil {
 		return review.Confidence{}, err
 	}
-	return review.Confidence{
+	c := review.Confidence{
 		Score: score, Threshold: p.settings.Confidence.Threshold, Reason: reason, Risk: risk, Model: resp.Model, Rubric: rubric,
-	}, nil
+	}
+	if floor, at := p.settings.Confidence.Floors.Floor(changed); c.Hold(floor, at) {
+		p.logger.Info("risk held to the floor", "rated", risk, "floor", floor, "path", at)
+	}
+	return c, nil
 }
 
 // earlierRisk is the risk prior was rated, which a review of head is asked
 // to keep unless the change now does something that rating does not
 // account for. It is nil when prior was not scored, saw head itself or
-// the review was asked for by hand, so that a re-run rates afresh, or was
-// rated under instructions other than rubric's.
+// the review was asked for by hand, so that a re-run rates afresh, was
+// rated under instructions other than rubric's, or was held to a floor:
+// the floor applies again, and one since lowered must not live on in the
+// rating.
 func earlierRisk(prior priorReview, head, rubric, trigger string) *review.EarlierRisk {
 	c := prior.confidence
-	if c == nil || prior.headSHA == head || trigger == jobs.TriggerManual || c.Rubric != rubric {
+	if c == nil || prior.headSHA == head || trigger == jobs.TriggerManual || c.Rubric != rubric || c.Rated != "" {
 		return nil
 	}
 	return &review.EarlierRisk{HeadSHA: prior.headSHA, Risk: c.Risk, Reason: c.Reason}
@@ -168,11 +177,11 @@ func (p *publishPhase) verdict(findings int) (forge.StatusState, string) {
 
 // carriedConfidence is the confidence a patch unchanged since its last
 // review keeps: the one the pull request's newest completed
-// review other than reviewID got, held to the threshold want sets now.
-// skippable says the patch may be skipped as unchanged: always for a
-// repository that asks for no score, and otherwise only when that review
-// left one to carry, so a rebase neither passes a patch that failed nor
-// leaves an unscored one unscored.
+// review other than reviewID got, held to the threshold and the risk
+// floors want sets now. skippable says the patch may be skipped as
+// unchanged: always for a repository that asks for no score, and otherwise
+// only when that review left one to carry, so a rebase neither passes a
+// patch that failed nor leaves an unscored one unscored.
 func carriedConfidence(
 	ctx context.Context, tx pgx.Tx, prID, reviewID string, want configfile.Confidence,
 ) (c *review.Confidence, skippable bool, err error) {
@@ -185,6 +194,7 @@ func carriedConfidence(
 		return nil, false, err
 	}
 	c.Threshold = want.Threshold
+	c.Hold(want.Floors.Floor(baseline.Changed))
 	return c, true, nil
 }
 

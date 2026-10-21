@@ -1,6 +1,7 @@
 package review
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -30,6 +31,10 @@ type Confidence struct {
 	// Rubric identifies the standing instructions the scorer was given (see
 	// ConfidenceRubric), "" for a score from before it was recorded.
 	Rubric string `json:"rubric,omitempty"`
+	// Rated is the risk the scorer gave when a floor held Risk above it,
+	// and Held the path that set the floor; both "" when none did.
+	Rated Risk   `json:"rated,omitempty"`
+	Held  string `json:"held,omitempty"`
 }
 
 // EarlierRisk is the risk the last review of a pull request was rated, at
@@ -71,6 +76,34 @@ const RiskLevels = string(RiskLow) + ", " + string(RiskMedium) + ", " + string(R
 
 // Passed reports whether the score reaches the threshold.
 func (c Confidence) Passed() bool { return c.Score >= c.Threshold }
+
+// Hold holds the risk to floor, the one at sets: the rating the scorer
+// gave, Rated when an earlier floor held it, is raised to floor when it is
+// below it and stands otherwise, so a floor since lowered lets the rating
+// go. A risk that is no level is left as it is, since it must not read as
+// a safe one. It reports whether the floor holds the risk above the
+// rating.
+func (c *Confidence) Hold(floor Risk, at string) bool {
+	rated := cmp.Or(c.Rated, c.Risk)
+	if !rated.Valid() {
+		return false
+	}
+	c.Risk, c.Rated, c.Held = rated, "", ""
+	if floor.Within(rated) {
+		return false
+	}
+	c.Risk, c.Rated, c.Held = floor, rated, at
+	return true
+}
+
+// Explanation is the reason, and after it how a floor held the risk when
+// one did.
+func (c Confidence) Explanation() string {
+	if c.Held == "" {
+		return c.Reason
+	}
+	return strings.TrimSpace(fmt.Sprintf("%s Held to %s risk by the instance's floor for %s.", c.Reason, c.Risk, c.Held))
+}
 
 // ConfidenceSystem is the scorer's standing instructions. The ceilings it
 // states are the ones ConfidenceCeiling enforces.

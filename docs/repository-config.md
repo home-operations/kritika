@@ -51,7 +51,7 @@ is dropped: the admin's value applies for that field, a note in the
 review's summary says which field was dropped and what it may be, and the
 rest of the file still applies. `agent`,
 `trigger.limit`, `review.incremental`, `review.cost`, `comments.dashboard`,
-`confidence.instructions` and `limits` are the admin's alone; a file
+`confidence.instructions`, `confidence.floors` and `limits` are the admin's alone; a file
 naming one of them, or any other unknown key, does not parse.
 
 ### Models
@@ -101,7 +101,7 @@ threshold and the gate in either direction; the models are held to the
 providers `review.model` is ([models](#models)), and the fallback takes
 the scorer's call when the confidence model fails;
 `confidence.risk` may only lower the admin's, and a higher one is dropped.
-`confidence.instructions` is the admin's alone
+`confidence.instructions` and `confidence.floors` are the admin's alone
 ([confidence and approvals](confidence.md)).
 
 ### Trigger conditions
@@ -307,7 +307,7 @@ The summary template's dot is the review:
 | `.Sources`                                                                   | links to what the review's commands fetched                                                                              |
 | `.Skills`, `.Commands`                                                       | the repository's skills and the run tool's commands the review was offered, each with `.Names`, every one offered, and `.Used`, the ones it read or ran; `.Named` is `.Used` sorted and cut to the first 10, `.More` how many that leaves out |
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
-| `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` and `.Model`                     |
+| `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` (the scorer's own), `.Explanation` (the reason, then how a floor held the risk when one did), `.Rated` and `.Held` (the scorer's rating and the path that held it, "" when none did) and `.Model` |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                     |
 | `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its re-run badge points; both "" when the admin's `comments.dashboard` is off |
 
