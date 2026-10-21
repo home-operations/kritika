@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.0.91](https://github.com/home-operations/kritika/compare/0.0.90...0.0.91) (2026-10-21)
+
+
+### Features
+
+* **confidence:** count the answers held to kritika's rule ([#1155](https://github.com/home-operations/kritika/issues/1155)) ([880534f](https://github.com/home-operations/kritika/commit/880534f1918eee342504a0570b2bc71a97b94c6f))
+* **confidence:** hold a change's risk to the floors its paths set ([#1146](https://github.com/home-operations/kritika/issues/1146)) ([d1ecb94](https://github.com/home-operations/kritika/commit/d1ecb94f8b261f5ff403b3813827edb7403f1ce8))
+* **confidence:** tell the scorer what the review's run showed ([#1154](https://github.com/home-operations/kritika/issues/1154)) ([f6c317b](https://github.com/home-operations/kritika/commit/f6c317be191531a86b956f76418af65be12b2201))
+* **review:** review a dependency bump by what it does to the code ([#1149](https://github.com/home-operations/kritika/issues/1149)) ([79f017b](https://github.com/home-operations/kritika/commit/79f017b50ff52ca977bce4a4a48d30d114498369))
+* **runner:** inspect an image in its registry with fetch_oci ([#1151](https://github.com/home-operations/kritika/issues/1151)) ([981d283](https://github.com/home-operations/kritika/commit/981d2838779c50cd1c94f65851d82361056f0c13))
+
+
+### Tests
+
+* **worker:** keep a finished test's queued jobs from the next harness ([#1157](https://github.com/home-operations/kritika/issues/1157)) ([fa1be75](https://github.com/home-operations/kritika/commit/fa1be759f4a112769e7d144bfea4c1150369713b))
+
+
+### Build System
+
+* **tools:** add crane back to the runner tools image ([#1148](https://github.com/home-operations/kritika/issues/1148)) ([79e9ad7](https://github.com/home-operations/kritika/commit/79e9ad7520c40bc1331b4043206e77fc6b06bb85))
+* **tools:** drop crane from the runner tools image ([#1152](https://github.com/home-operations/kritika/issues/1152)) ([6db0713](https://github.com/home-operations/kritika/commit/6db0713f8c00b31164f8e5c81ebf728c3787a677))
+
 ## [0.0.90](https://github.com/home-operations/kritika/compare/0.0.89...0.0.90) (2026-10-21)
 
 
