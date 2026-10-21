@@ -20,7 +20,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/knadh/koanf/providers/confmap v1.0.1
 	github.com/knadh/koanf/providers/structs v1.0.1
-	github.com/knadh/koanf/v2 v2.4.0
+	github.com/knadh/koanf/v2 v2.4.1
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/odvcencio/gotreesitter v0.56.0
 	github.com/openai/openai-go/v3 v3.80.0
