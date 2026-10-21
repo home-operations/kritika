@@ -95,9 +95,27 @@ confidence:
 ```
 
 Repository settings cannot change these instructions or raise the allowed risk.
+
+The instructions guide the scorer; `confidence.floors` binds it. Each risk
+level lists globs, and a change that touches a matching path is rated at least
+that level whatever the scorer says, the summary saying after the reason which
+path held it there:
+
+```yaml
+confidence:
+  floors:
+    critical: ["db/migrations/**"]
+    high: ["charts/**", ".github/workflows/**"]
+```
+
+A floor never lowers a rating, and a change rated higher than its floor keeps
+that rating. Floors apply to every path the change touches, deleted files
+included, and again to the score an unchanged patch carries, so a floor set
+after a review holds the next rebase. Floors are the admin's alone, as the
+instructions are.
 A later push normally keeps the earlier risk rating unless the change's impact
-changes. Manual re-runs, re-runs of the same commit, and changes to scoring
-instructions trigger a fresh rating.
+changes. Manual re-runs, re-runs of the same commit, changes to scoring
+instructions, and a rating a floor held trigger a fresh rating.
 
 ## Settings reference
 
@@ -110,3 +128,4 @@ instructions trigger a fresh rating.
 | `confidence.gate`         | off                     | `true` fails the commit status under the threshold, so it can be a required check          | replaces, either way                       |
 | `confidence.risk`         | `low`                   | the highest [risk](#risk) a change may be rated and still be approved                      | may only lower it; a higher one is dropped |
 | `confidence.instructions` |                         | the admin's guidance to the scorer on [rating risk](#risk) in your code                    | the admin's alone                          |
+| `confidence.floors`       | none                    | globs by risk level: a change touching a matching path is rated at least that level, whatever the scorer says ([risk](#risk)) | the admin's alone                          |

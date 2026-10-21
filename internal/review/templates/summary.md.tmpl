@@ -13,7 +13,7 @@
 **No findings**
 {{ end }}
 {{ if .Confidence -}}
-**Confidence {{ .Confidence.Score }}/5**{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ if .Confidence.Reason }}: {{ .Confidence.Reason }}{{ end }}
+**Confidence {{ .Confidence.Score }}/5**{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ with .Confidence.Explanation }}: {{ . }}{{ end }}
 
 {{ end -}}
 {{ if .Approval -}}

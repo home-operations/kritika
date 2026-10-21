@@ -159,6 +159,11 @@ func TestRenderSummaryConfidence(t *testing.T) {
 			want: "1 P2\n\n**Confidence 5/5** · low risk: Nothing stands against it.\n\n## Findings\n",
 		},
 		{
+			name:       "a risk a floor held",
+			confidence: &Confidence{Score: 5, Threshold: 5, Risk: RiskCritical, Rated: RiskLow, Held: "db/migrations/1.sql", Reason: "Docs only."},
+			want:       "1 P2\n\n**Confidence 5/5** · critical risk: Docs only. Held to critical risk by the instance's floor for db/migrations/1.sql.\n\n## Findings\n",
+		},
+		{
 			name: "a score under the threshold", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
 			want: "1 P2\n\n**Confidence 2/5**: The nil map write stands.\n\n## Findings\n",
 		},

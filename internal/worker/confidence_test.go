@@ -118,7 +118,8 @@ func TestCarryApproval(t *testing.T) {
 
 // TestEarlierRisk: a review of a new head is given the risk the last
 // review was rated under the same instructions; a re-run of the same head,
-// a re-run asked for and a rating under other instructions start afresh.
+// a re-run asked for, a rating under other instructions and one a floor
+// held start afresh.
 func TestEarlierRisk(t *testing.T) {
 	rated := func(rubric string) *review.Confidence {
 		return &review.Confidence{Score: 4, Risk: review.RiskHigh, Reason: "A major bump.", Rubric: rubric}
@@ -135,6 +136,8 @@ func TestEarlierRisk(t *testing.T) {
 		{name: "a rating under other instructions", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("other")}},
 		{name: "a rating from before rubrics", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("")}},
 		{name: "a re-run asked for at a new head", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("rubric")}, trigger: jobs.TriggerManual},
+		{name: "a rating a floor held", prior: priorReview{id: "r1", headSHA: "old",
+			confidence: &review.Confidence{Score: 4, Risk: review.RiskHigh, Rated: review.RiskLow, Held: "charts/x.yaml", Reason: "Docs only.", Rubric: "rubric"}}},
 		{name: "a new head under the same instructions", prior: priorReview{id: "r1", headSHA: "old", confidence: rated("rubric")},
 			want: &review.EarlierRisk{HeadSHA: "old", Risk: review.RiskHigh, Reason: "A major bump."}},
 	}

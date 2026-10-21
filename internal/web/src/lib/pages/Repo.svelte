@@ -4,7 +4,7 @@
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
-  import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings, SkillScope } from '../types';
+  import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings, Risk, SkillScope } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -37,6 +37,10 @@
     Object.entries(scope)
       .map(([name, sc]) => `${name}${sc.load ? ' (loaded)' : ''}: ${narrows(sc)}`)
       .join('; ') || '—';
+  const floors = (f: Partial<Record<Risk, string[]>> | undefined) =>
+    Object.entries(f ?? {})
+      .map(([level, globs]) => `${level}: ${(globs ?? []).join(', ')}`)
+      .join('; ') || '—';
   const yes = (b: boolean) => (b ? 'yes' : 'no');
   const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 
@@ -67,6 +71,7 @@
       value: (s) => (!s.review.approve ? '—' : s.confidence.model ? s.confidence.risk : 'any: no scorer, so on the findings alone'),
     },
     { label: 'Risk instructions', key: 'confidence.instructions', value: (s) => s.confidence.instructions || '—' },
+    { label: 'Risk floors', key: 'confidence.floors', value: (s) => floors(s.confidence.floors), mono: true },
     { label: 'Include', key: 'trigger.include', value: (s) => conditions(s.filters.include), mono: true },
     { label: 'Exclude', key: 'trigger.exclude', value: (s) => conditions(s.filters.exclude), mono: true },
     { label: 'Ignore', key: 'ignore', value: (s) => list(s.ignore), mono: true },

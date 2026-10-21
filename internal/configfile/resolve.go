@@ -194,6 +194,9 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Confidence.Instructions != nil {
 		s.Confidence.Instructions = *o.Confidence.Instructions
 	}
+	if o.Confidence.Floors != nil {
+		s.Confidence.Floors = o.Confidence.Floors
+	}
 	s.Ignore = append(s.Ignore, o.Ignore...)
 	s.Skills = s.Skills.overlay(o.Skills)
 	s.trigger(o)
