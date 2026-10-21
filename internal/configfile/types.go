@@ -521,9 +521,10 @@ type Agent struct {
 	// Tokens bounds the prompt plus output tokens one review, or each part
 	// of a split one, may spend across all its steps.
 	Tokens *int64 `yaml:"tokens,omitempty"`
-	// Prompt bounds, in tokens, the opening prompt of a review, its
-	// confidence score and a follow-up: how much of the diff and context
-	// they start from before tools read the rest.
+	// Prompt bounds, in tokens, the opening prompt of a review and a
+	// follow-up: how much of the diff and context they start from before
+	// tools read the rest. The confidence score, with no tools, gets up to
+	// twice it.
 	Prompt *int `yaml:"prompt,omitempty"`
 	// Parts is the most parts a review whose diff is over review.PartBytes
 	// is split into, each read by an agent with these bounds of its own; 1

@@ -26,14 +26,32 @@ const (
 	confidenceMaxOutputTokens = 4096
 )
 
+// confidenceBudgetShare is how many times the agent's prompt budget the
+// scorer's prompt may take, up to confidenceBudgetCap tokens and never
+// less than the agent's: the scorer makes one call with no tool outputs
+// to leave room for, and the diff is what its risk rating rests on, but
+// an agent budget set for a large context must not double past what the
+// scorer's model holds.
+const (
+	confidenceBudgetShare = 2
+	confidenceBudgetCap   = 4 * review.DefaultBudgetTokens
+)
+
+// confidenceBudget is the scorer's prompt budget for an agent budget of
+// prompt tokens.
+func confidenceBudget(prompt int) int {
+	return max(prompt, min(confidenceBudgetShare*prompt, confidenceBudgetCap))
+}
+
 // unscoredNote is what the summary states when the repository asks for a
 // confidence score and the scorer gave none.
 const unscoredNote = "The confidence model did not answer, so this review has no confidence score"
 
 // judge scores the review within the finalization context; changed is
-// every path the change touches, which the diff may show no line of. It
+// every path the change touches, which the diff may show no line of, and
+// unfinished the summary's notes on the parts that went unreviewed. It
 // returns the note the summary states when the scorer gave no answer.
-func (p *publishPhase) judge(job context.Context, res review.Result, diff string, changed []string) string {
+func (p *publishPhase) judge(job context.Context, res review.Result, diff string, changed, unfinished []string) string {
 	ref := p.settings.Confidence.Model
 	if ref == "" {
 		return ""
@@ -47,7 +65,7 @@ func (p *publishPhase) judge(job context.Context, res review.Result, diff string
 	if p.lease != nil {
 		p.w.releaseLease(ctx, p.logger, p.lease, string(p.settings.Models.Review))
 	}
-	c, err := p.score(ctx, ref, res, diff, changed)
+	c, err := p.score(ctx, ref, res, diff, changed, unfinished)
 	if err != nil {
 		p.logger.Warn("confidence not scored", "model", ref, "error", err)
 		p.unscored = true
@@ -79,7 +97,7 @@ func (p *publishPhase) checkMonthCap(ctx context.Context) error {
 // score asks ref for the score, recording the call against the review and
 // charging it to the account.
 func (p *publishPhase) score(
-	ctx context.Context, ref configfile.ModelRef, res review.Result, diff string, changed []string,
+	ctx context.Context, ref configfile.ModelRef, res review.Result, diff string, changed, unfinished []string,
 ) (review.Confidence, error) {
 	if err := p.checkMonthCap(ctx); err != nil {
 		return review.Confidence{}, err
@@ -97,18 +115,19 @@ func (p *publishPhase) score(
 	if err != nil {
 		return review.Confidence{}, err
 	}
-	var sources []string
+	var rec review.Record
 	if p.agent != nil {
-		sources = p.agent.Sources
+		rec = review.Record{Sources: p.agent.Sources, CommandsRun: p.agent.CommandsRun, CommandErrors: p.agent.CommandErrors}
 	}
+	rec.Unfinished = unfinished
 	system := review.ConfidenceSystemPrompt(p.settings.Confidence.Instructions)
 	rubric := review.ConfidenceRubric(system)
 	req := model.CompletionRequest{
 		System: system,
 		User: review.BuildConfidence(review.Input{
 			Repository: p.pr.repository, Number: p.pr.number, Title: p.pr.title, Author: p.pr.author, BaseRef: p.pr.baseRef,
-			Body: body, Changed: changed, Diff: diff, Dismissed: dismissedFindings(p.prior.dismissed),
-		}, res, sources, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, p.settings.Agent.MaxPromptTokens),
+			Body: body, Changed: changed, Diff: diff, Bumps: review.Bumps(diff), Dismissed: dismissedFindings(p.prior.dismissed),
+		}, res, rec, earlierRisk(p.prior, p.pr.headSHA, rubric, p.trigger), system, confidenceBudget(p.settings.Agent.MaxPromptTokens)),
 		Model: ref.Model(), Session: "confidence-" + p.reviewID, Effort: p.settings.Confidence.Effort,
 		Schema: review.ConfidenceSchema(), SchemaName: "confidence", MaxTokens: confidenceMaxOutputTokens,
 	}

@@ -63,11 +63,16 @@ func TestBuildConfidence(t *testing.T) {
 	for i := range many {
 		many[i] = fmt.Sprintf("https://example.com/%d", i)
 	}
+	// Five ordinary paths run past the line a source is cut to.
+	longPaths := strings.Repeat("kubernetes/apps/default/some-application/app/helmrelease.yaml, ", 4) + "kubernetes/apps/default/other/app/kustomization.yaml"
+	if len(longPaths) <= 200 {
+		t.Fatal("the unreviewed note must outrun a line")
+	}
 	tests := []struct {
 		name    string
 		body    string
 		res     Result
-		sources []string
+		rec     Record
 		earlier *EarlierRisk
 		want    []string
 	}{
@@ -99,7 +104,7 @@ func TestBuildConfidence(t *testing.T) {
 				Take:    "Adds f.\nIt is unused.",
 				Checked: []string{"main.go: no caller of f yet", strings.Repeat("y", 400)},
 			}},
-			sources: []string{"https://github.com/up/stream/releases/tag/v2"},
+			rec: Record{Sources: []string{"https://github.com/up/stream/releases/tag/v2"}},
 			want: []string{
 				"<description>\nRelease notes: f is new.\n</description>", "\nIts summary: Adds f. It is unused.\n",
 				"\nWhat it checked beyond the diff and found sound:\n- main.go: no caller of f yet\n- " + strings.Repeat("y", 200) + " …\n",
@@ -107,15 +112,24 @@ func TestBuildConfidence(t *testing.T) {
 			},
 		},
 		{
-			name: "past 20 sources, a count", sources: many,
+			name: "past 20 sources, a count", rec: Record{Sources: many},
 			want: []string{"- https://example.com/19\n- and 5 more\n"},
+		},
+		{
+			name: "the record of the run follows the sources",
+			rec: Record{Sources: []string{"oci://ghcr.io/x/y:1"}, CommandsRun: []string{"gh", "rg"}, CommandErrors: []string{"helm: not found\nat all"},
+				Unfinished: []string{"Part 2 of 2 ended before it submitted, so its files went unreviewed: " + longPaths}},
+			want: []string{
+				"- oci://ghcr.io/x/y:1\n\nThe commands it ran: gh, rg.\n\nA command failed to run: helm: not found at all\n" +
+					"\nUnreviewed: Part 2 of 2 ended before it submitted, so its files went unreviewed: " + longPaths + "\n\n\nThe review reported no findings.",
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := in
 			in.Body = tt.body
-			msg := BuildConfidence(in, tt.res, tt.sources, tt.earlier, ConfidenceSystem, 0)
+			msg := BuildConfidence(in, tt.res, tt.rec, tt.earlier, ConfidenceSystem, 0)
 			for _, want := range tt.want {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message lacks %q:\n%s", want, msg)
@@ -123,6 +137,9 @@ func TestBuildConfidence(t *testing.T) {
 			}
 			if tt.earlier == nil && strings.Contains(msg, "The last review of this pull request") {
 				t.Errorf("a rating is given with none earlier:\n%s", msg)
+			}
+			if len(tt.rec.CommandsRun) == 0 && strings.Contains(msg, "commands it ran") {
+				t.Errorf("commands are named with none run:\n%s", msg)
 			}
 			if strings.Contains(msg, "https://example.com/20") {
 				t.Errorf("the 21st source is listed:\n%s", msg)
@@ -264,9 +281,14 @@ func TestBuildConfidenceBudget(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := BuildConfidence(in, Result{}, nil, nil, ConfidenceSystem, tt.budget)
+			msg := BuildConfidence(in, Result{}, Record{}, nil, ConfidenceSystem, tt.budget)
 			if kept := strings.Contains(msg, "+// a line of the large file under review"); kept != tt.kept {
 				t.Fatalf("diff in the message = %v, want %v", kept, tt.kept)
+			}
+			// The scorer has no tool to read a file left out, and is told so.
+			if note := strings.Contains(msg, "[1 file(s) not shown, past the prompt budget: big.go; you cannot read them]"); note == tt.kept ||
+				strings.Contains(msg, "read_diff") {
+				t.Fatalf("omission note in the message = %v, want %v, never naming read_diff:\n%s", note, !tt.kept, msg[len(msg)-300:])
 			}
 		})
 	}

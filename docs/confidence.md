@@ -25,9 +25,11 @@ Use a model from a provider you configured. These settings belong under Helm's
 
 ## The score
 
-The scorer reads the pull request description, diff, findings and review summary.
-It returns a score from **0 to 5** and a reason. A model from a different vendor
-can provide a second opinion.
+The scorer reads the pull request description, diff, the versions the change
+moves, findings and review summary, and kritika's record of the review's run:
+the sources it read, the commands it ran or could not run, and the parts of a
+split review that went unreviewed. It returns a score from **0 to 5** and a
+reason. A model from a different vendor can provide a second opinion.
 
 - A **P0** finding caps the score at **2**.
 - A **P1** finding caps it at **3**.
@@ -38,8 +40,12 @@ The scorer can raise its own evidence-backed concerns. Merge impact notes and
 post-deployment checks do not lower the score by themselves.
 
 Scoring uses tokens and adds cost. It has no tools and sees only the supplied
-prompt. If retries and `confidence.fallback` fail, the review remains unscored.
-The scorer gets two minutes, including time waiting for a model slot.
+prompt, which may take twice the agent's `agent.prompt` budget, up to 96,000
+tokens and never less than that budget, since there are no tool outputs to
+leave room for; a diff cut to it names the files not shown,
+and the scorer is told to rate those by their paths and say so. If retries and
+`confidence.fallback` fail, the review remains unscored. The scorer gets two
+minutes, including time waiting for a model slot.
 
 ## The commit status
 

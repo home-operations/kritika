@@ -51,7 +51,8 @@ func loadConfidenceCases(path string) ([]stageCase, error) {
 		cases = append(cases, stageCase{id: f.ID, request: model.CompletionRequest{
 			System: system,
 			User: review.BuildConfidence(review.Input{Repository: f.Repository, Title: f.Title, Body: f.Body,
-				Diff: f.Diff, Changed: review.ChangedPaths(f.Diff)}, f.Result, f.Sources, f.Earlier, system, review.DefaultBudgetTokens),
+				Diff: f.Diff, Changed: review.ChangedPaths(f.Diff), Bumps: review.Bumps(f.Diff)}, f.Result, review.Record{Sources: f.Sources}, f.Earlier, system,
+				review.DefaultBudgetTokens),
 			Schema: review.ConfidenceSchema(), SchemaName: "confidence",
 		}, check: func(raw string) error { return checkConfidence(f, raw) }})
 	}

@@ -10,6 +10,16 @@ import (
 	"github.com/home-operations/kritika/internal/review"
 )
 
+// TestConfidenceBudget: the scorer gets twice the agent's prompt budget,
+// up to the cap, and never less than the agent's.
+func TestConfidenceBudget(t *testing.T) {
+	for prompt, want := range map[int]int{1_000: 2_000, review.DefaultBudgetTokens: 2 * review.DefaultBudgetTokens, 60_000: 96_000, 120_000: 120_000} {
+		if got := confidenceBudget(prompt); got != want {
+			t.Errorf("confidenceBudget(%d) = %d, want %d", prompt, got, want)
+		}
+	}
+}
+
 func TestVerdict(t *testing.T) {
 	tests := []struct {
 		name       string

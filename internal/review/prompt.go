@@ -50,6 +50,10 @@ type Input struct {
 	// Part, when set, is the part of a split review the prompt is for:
 	// Diff holds its files' sections alone, and Changed every file.
 	Part *PartInput
+	// Toolless says the reader has no tool to read what the diff leaves
+	// out, as the confidence scorer has none: the note on the files left
+	// out says so instead of naming read_diff.
+	Toolless bool
 	// BudgetTokens bounds the whole user message. Tokens are approximated
 	// at four characters each, rounded conservatively; the budget is a
 	// ceiling, not a target.
@@ -188,14 +192,18 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 		// learns the delta existed.
 		room -= len(deltaOmitted)
 	}
+	note := diffOmitted
+	if in.Toolless {
+		note = diffNotShown
+	}
 	diff, omitted := FitDiff(in.Diff, room-omissionRoom)
-	earlier := earlierSections(in, room-len(diff)-len(omissionNote(diffOmitted, omitted)))
+	earlier := earlierSections(in, room-len(diff)-len(omissionNote(note, omitted)))
 	if kept := earlierSections(in, min(budget/bodyShare, room-omissionRoom)); len(kept) > len(earlier) {
 		earlier = kept
 		diff, omitted = FitDiff(in.Diff, room-omissionRoom-len(earlier))
 	}
 	b.WriteString(diff)
-	b.WriteString(omissionNote(diffOmitted, omitted))
+	b.WriteString(omissionNote(note, omitted))
 	if in.Incremental != nil {
 		b.WriteString(incrementalSections(in.Incremental, earlier, budget-b.Len()))
 	} else {
@@ -249,8 +257,12 @@ func SameBrief(opening string, in Input) bool {
 const deltaOmitted = "\n\n[The diff since the last review was omitted to fit the prompt budget.]\n"
 
 // diffOmitted is omissionNote's format for the note on the files the
-// diff left out.
-const diffOmitted = "\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n"
+// diff left out, and diffNotShown the same for a reader with no tool to
+// read them.
+const (
+	diffOmitted  = "\n\n[%d file(s) omitted to fit the prompt budget: %s; read them with read_diff]\n"
+	diffNotShown = "\n\n[%d file(s) not shown, past the prompt budget: %s; you cannot read them]\n"
+)
 
 // reReviewLead raises the bar for a re-review's new findings: the first
 // review set it, and this one is for defects the new commits introduced or
