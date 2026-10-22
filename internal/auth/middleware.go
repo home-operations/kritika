@@ -89,7 +89,7 @@ func (h *Handler) session(r *http.Request, file *configfile.File) (store.Session
 	if err != nil {
 		return store.Session{}, false, err
 	}
-	return sess, honoured(file.Auth, sess), nil
+	return sess, honoured(file, sess), nil
 }
 
 // Stands reports whether the session r was authenticated with still
@@ -105,9 +105,10 @@ func (h *Handler) Stands(r *http.Request) bool {
 	return ok
 }
 
-// honoured reports whether a session still stands under auth: its sign-in
+// honoured reports whether a session still stands under file: its sign-in
 // is configured, points where it did, and would decide grants as it did.
-func honoured(auth configfile.Auth, sess store.Session) bool {
+func honoured(file *configfile.File, sess store.Session) bool {
+	auth := file.Auth
 	provider := sess.Identity.Provider
 	origin := localOrigin
 	if provider != string(configfile.SignInLocal) {
@@ -117,7 +118,7 @@ func honoured(auth configfile.Auth, sess store.Session) bool {
 		}
 		origin = signInOrigin(s)
 	}
-	key, ok := GrantKey(auth, provider)
+	key, ok := GrantKey(file, provider)
 	return ok && origin == sess.Identity.Origin && key == sess.Grant.Key
 }
 

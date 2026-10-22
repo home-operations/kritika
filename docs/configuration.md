@@ -97,6 +97,10 @@ existing Kubernetes Secrets.
 | `github.clientId` | Client ID, inline or an environment reference. |
 | `github.clientSecret` | Environment reference for the client secret. |
 | `github.roleMappingExpr` | Expression mapping GitHub identity to a dashboard role. |
+| `forgejo.host` | The Forgejo instance's hostname, reached over HTTPS. |
+| `forgejo.clientId` | Client ID, inline or an environment reference. |
+| `forgejo.clientSecret` | Environment reference for the client secret. |
+| `forgejo.roleMappingExpr` | Expression mapping Forgejo identity to a dashboard role. |
 
 ```yaml
 auth:
@@ -114,6 +118,10 @@ auth:
     clientId: Iv1.abc123
     clientSecret: { env: GITHUB_CLIENT_SECRET }
     roleMappingExpr: 'login == "user-1" ? "admin" : ""'
+  forgejo:
+    host: codeberg.org
+    clientId: 0a1b2c3d-…
+    clientSecret: { env: FORGEJO_CLIENT_SECRET }
 ```
 
 - `admin` is the local admin. It signs in on the sign-in page with a
@@ -127,11 +135,13 @@ auth:
 - `github` signs in on github.com with an OAuth App's client, or a GitHub
   App's own: the App kritika reviews through can serve both, with a client
   secret generated on its settings page (see [setup](setup.md)).
+- `forgejo` signs in through an OAuth2 application of the Forgejo instance
+  at `host`, as [Git forges](forges.md#sign-in-with-forgejo) describes.
 - `sessionTTL` is how long a dashboard session lasts, between 5 minutes and
   30 days. It defaults to 12 hours.
 
-A provider must allow the callback URL `<KRITIKA_WEB_URL>/auth/callback/oidc`
-or `<KRITIKA_WEB_URL>/auth/callback/github`. The dashboard refuses to start
+A provider must allow the callback URL `<KRITIKA_WEB_URL>/auth/callback/<type>`:
+`oidc`, `github` or `forgejo`. The dashboard refuses to start
 with no way to sign in. The configuration is refused when nothing could
 make an admin: set an admin password, or a `roleMappingExpr` on a
 provider.
@@ -151,7 +161,9 @@ makes.
 
 A session holds the role its sign-in gave it. Editing a provider's role
 mapping, or rotating the admin password, ends the sessions it granted, so
-the next request signs in again under the new rules.
+the next request signs in again under the new rules. A Forgejo sign-in's
+sessions also end when the accounts its instance's connections serve
+change, such as an account moving to another instance.
 
 #### Role mappings
 
@@ -170,15 +182,19 @@ yields a role on one branch and a map on the other wraps one in `dyn()`.
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OIDC     | `claims`, the ID token's claims merged with the UserInfo response; `roles`, the values of the claim `rolesClaim` names, read from a list, a map's keys, or a single string |
 | GitHub   | `login`; `email`; `orgs`, the organizations the user is an active member of; `teams`, each as `"<org>/<team>"`                                                             |
+| Forgejo  | as GitHub's, a team named by its name; `email` is empty unless the instance verified the address                                                                         |
 
 When the mapping places nobody:
 
 - An OIDC sign-in is refused, unless `defaultRole: member` lets it read
   every account. `defaultRole` defaults to `none`, so a wrong mapping fails
   closed.
-- A GitHub sign-in reads the accounts serving the user's own account, or an
-  organization they are an active member of, and is refused when there are
-  none. Accounts a mapping names are added to those.
+- A GitHub or Forgejo sign-in reads the accounts serving the user's own
+  account, or an organization they are an active member of, and is refused
+  when there are none. Accounts a mapping names are added to those. A
+  Forgejo sign-in reads only the accounts a connection serves on its own
+  instance: an account of the same name on another instance is not the
+  user's.
 
 A mapping that fails to evaluate refuses the sign-in.
 

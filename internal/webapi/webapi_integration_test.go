@@ -237,7 +237,7 @@ func (e *apiEnv) signIn(name, subject string, g store.SessionGrant) {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	g.Key, _ = auth.GrantKey(e.file.Auth, "oidc")
+	g.Key, _ = auth.GrantKey(e.file, "oidc")
 	token, err := e.st.CreateSession(ctx, user.ID, "oidc", origin, g, now, now.Add(time.Hour))
 	if err != nil {
 		e.t.Fatal(err)

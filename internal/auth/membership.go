@@ -64,7 +64,7 @@ func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id 
 			accounts[a] = true
 		}
 		if facts.Membership != nil {
-			forge, err := forgeAccounts(ctx, file, configfile.Forge(s.Type()), id.Login, facts.Membership)
+			forge, err := forgeAccounts(ctx, file, configfile.Forge(s.Type()), s.Host, id.Login, facts.Membership)
 			if err != nil {
 				return store.SessionGrant{}, err
 			}
@@ -81,19 +81,43 @@ func grant(ctx context.Context, file *configfile.File, s *configfile.SignIn, id 
 			return store.SessionGrant{}, ErrNoGrant
 		}
 	}
-	g.Key, _ = GrantKey(file.Auth, string(s.Type()))
+	g.Key, _ = GrantKey(file, string(s.Type()))
 	return g, nil
+}
+
+// instanceAccounts lists the keys of the accounts on forge a connection
+// serves on the instance at host, sorted.
+func instanceAccounts(file *configfile.File, forge configfile.Forge, host string) []string {
+	var out []string
+	for i := range file.Accounts {
+		a := &file.Accounts[i]
+		if in := file.ConnectionFor(a); a.Forge == forge && in != nil && slices.Contains(in.ForgeHosts(), host) {
+			out = append(out, a.Key())
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // forgeAccounts lists the accounts the running connections on forge serve
 // that the person with login belongs to: their own login, and each
-// organization m reports them an active member of, as account keys.
-func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.Forge, login string, m Membership) ([]string, error) {
+// organization m reports them an active member of, as account keys. A
+// sign-in on a forge instance at host reads only the accounts a connection
+// serves on that instance: an account of the same name on another instance
+// is not the person's.
+func forgeAccounts(
+	ctx context.Context, file *configfile.File, forge configfile.Forge, host, login string, m Membership,
+) ([]string, error) {
 	var out []string
 	for i := range file.Accounts {
 		a := &file.Accounts[i]
 		if a.Forge != forge {
 			continue
+		}
+		if host != "" {
+			if in := file.ConnectionFor(a); in == nil || !slices.Contains(in.ForgeHosts(), host) {
+				continue
+			}
 		}
 		ok := strings.EqualFold(login, a.Name)
 		if !ok {
@@ -110,12 +134,16 @@ func forgeAccounts(ctx context.Context, file *configfile.File, forge configfile.
 }
 
 // GrantKey fingerprints what decides a sign-in's grants, the key a session
-// through provider must carry to be honoured under a: for the local
+// through provider must carry to be honoured under file: for the local
 // admin its name and password, and for a provider its role mapping and
-// what the mapping reads. A session whose sign-in's key has changed since
-// is not honoured, so editing a mapping, or rotating the password, ends
-// the sessions it granted. ok is false when the sign-in is not configured.
-func GrantKey(a configfile.Auth, provider string) (key string, ok bool) {
+// what the mapping reads, and for a sign-in on a forge instance the
+// accounts that instance's connections serve, since an account's grant
+// rests on the instance serving it. A session whose sign-in's key has
+// changed since is not honoured, so editing a mapping, rotating the
+// password, or moving an account to another instance ends the sessions it
+// granted. ok is false when the sign-in is not configured.
+func GrantKey(file *configfile.File, provider string) (key string, ok bool) {
+	a := file.Auth
 	var parts []string
 	if configfile.SignInType(provider) == configfile.SignInLocal {
 		user, password, ok := a.AdminUser()
@@ -130,6 +158,9 @@ func GrantKey(a configfile.Auth, provider string) (key string, ok bool) {
 			return "", false
 		}
 		parts = []string{s.RoleMappingExpr, s.RolesClaim, s.DefaultRole}
+		if s.Host != "" {
+			parts = append(parts, instanceAccounts(file, configfile.Forge(provider), s.Host)...)
+		}
 	}
 	h := sha256.New()
 	h.Write([]byte(provider))

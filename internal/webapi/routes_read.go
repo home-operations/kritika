@@ -489,6 +489,9 @@ func instanceSettings(f *configfile.File, env []config.EnvVar) []InstanceSetting
 		if s.Issuer != "" {
 			value += " at " + s.Issuer
 		}
+		if s.Host != "" {
+			value += " at " + s.Host
+		}
 		if s.RoleMappingExpr == "" {
 			value += ", no role mapping"
 		}

@@ -1,5 +1,5 @@
 // Package auth signs humans in to the dashboard, as the local admin or
-// through the file's OIDC and GitHub sign-ins, decides what each may do
+// through the file's OIDC, GitHub and Forgejo sign-ins, decides what each may do
 // from the sign-in's role mapping and the forge, keeps their sessions, and
 // guards the dashboard's routes.
 package auth
@@ -140,7 +140,7 @@ func requestEnded(ctx context.Context) bool {
 func signInsKey(signIns []*configfile.SignIn) [sha256.Size]byte {
 	h := sha256.New()
 	for _, s := range signIns {
-		fields := []string{string(s.Type()), s.Issuer, s.ClientIDValue(), s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
+		fields := []string{string(s.Type()), s.Issuer, s.Host, s.ClientIDValue(), s.ClientSecretValue().Value(), strings.Join(s.Scopes, " ")}
 		for _, f := range fields {
 			h.Write([]byte(f))
 			h.Write([]byte{0})
@@ -160,17 +160,23 @@ func buildProvider(
 		return newOIDCProvider(ctx, s, redirect, client, now)
 	case configfile.SignInGitHub:
 		return newGitHubProvider(s, redirect, client), nil
+	case configfile.SignInForgejo:
+		return newForgejoProvider(s, redirect, client), nil
 	default:
 		return nil, fmt.Errorf("auth: unsupported sign-in type %q", s.Type())
 	}
 }
 
-// signInOrigin is where a sign-in points: its type and base URL, or for OIDC
-// its issuer exactly as configured, since the issuer is compared exactly
-// against the ID token's. Identities and sessions are bound to it.
+// signInOrigin is where a sign-in points: its type and base URL, github.com
+// or a forge instance's, or for OIDC its issuer exactly as configured, since
+// the issuer is compared exactly against the ID token's. Identities and
+// sessions are bound to it.
 func signInOrigin(s *configfile.SignIn) string {
-	if s.Type() == configfile.SignInOIDC {
+	switch {
+	case s.Type() == configfile.SignInOIDC:
 		return string(s.Type()) + ":" + s.Issuer
+	case s.Host != "":
+		return string(s.Type()) + ":https://" + s.Host
 	}
 	return string(s.Type()) + ":https://" + configfile.GitHubHost
 }

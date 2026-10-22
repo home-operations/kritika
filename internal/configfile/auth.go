@@ -13,8 +13,8 @@ import (
 )
 
 // Auth configures how people sign in to the dashboard and what each may do:
-// a local admin, an OIDC issuer and GitHub, each optional, and each
-// provider's role mapping. Secret values use explicit environment
+// a local admin, an OIDC issuer, GitHub and a Forgejo instance, each
+// optional, and each provider's role mapping. Secret values use explicit environment
 // references.
 type Auth struct {
 	// SessionTTL is how long a dashboard session lasts; zero means
@@ -28,6 +28,9 @@ type Auth struct {
 	// GitHub signs in through a GitHub OAuth App, or a GitHub App's own
 	// client, on github.com.
 	GitHub *SignIn `yaml:"github,omitempty"`
+	// Forgejo signs in through an OAuth2 application of the Forgejo
+	// instance at its Host.
+	Forgejo *SignIn `yaml:"forgejo,omitempty"`
 }
 
 // LocalAdmin is the username and password that sign in as an admin, for a
@@ -50,9 +53,10 @@ type SignInType string
 
 // Sign-in types. SignInLocal is the local admin's password form.
 const (
-	SignInLocal  SignInType = "local"
-	SignInOIDC   SignInType = "oidc"
-	SignInGitHub SignInType = "github"
+	SignInLocal   SignInType = "local"
+	SignInOIDC    SignInType = "oidc"
+	SignInGitHub  SignInType = "github"
+	SignInForgejo SignInType = "forgejo"
 )
 
 // SignIn is one identity provider people sign in through.
@@ -61,7 +65,10 @@ type SignIn struct {
 	// unset. A GitHub sign-in is labelled GitHub.
 	Name string `yaml:"name,omitempty"`
 	// Issuer is an OIDC sign-in's discovery issuer URL, https only.
-	Issuer       string     `yaml:"issuer,omitempty"`
+	Issuer string `yaml:"issuer,omitempty"`
+	// Host is a forge instance sign-in's hostname, reached over HTTPS: the
+	// instance whose accounts the sign-in places people on.
+	Host         string     `yaml:"host,omitempty"`
 	ClientID     ValueOrRef `yaml:"clientId"`
 	ClientSecret SecretRef  `yaml:"clientSecret"`
 	Scopes       []string   `yaml:"scopes,omitempty"`
@@ -95,8 +102,11 @@ func (s *SignIn) Type() SignInType { return s.typ }
 
 // Label is how the sign-in page labels the sign-in.
 func (s *SignIn) Label() string {
-	if s.typ == SignInGitHub {
+	switch s.typ {
+	case SignInGitHub:
 		return "GitHub"
+	case SignInForgejo:
+		return "Forgejo"
 	}
 	return cmp.Or(s.Name, DefaultOIDCName)
 }
@@ -131,7 +141,7 @@ func (a *Auth) SessionTTLOrDefault() time.Duration {
 // SignIns lists the configured providers, OIDC first.
 func (a *Auth) SignIns() []*SignIn {
 	var out []*SignIn
-	for _, s := range []*SignIn{a.OIDC, a.GitHub} {
+	for _, s := range []*SignIn{a.OIDC, a.GitHub, a.Forgejo} {
 		if s != nil {
 			out = append(out, s)
 		}
@@ -180,7 +190,7 @@ func (a *Auth) resolve(sec *secrets) error {
 		signIn *SignIn
 		typ    SignInType
 		kind   rolemap.Kind
-	}{{a.OIDC, SignInOIDC, rolemap.OIDC}, {a.GitHub, SignInGitHub, rolemap.GitHub}} {
+	}{{a.OIDC, SignInOIDC, rolemap.OIDC}, {a.GitHub, SignInGitHub, rolemap.GitHub}, {a.Forgejo, SignInForgejo, rolemap.GitHub}} {
 		if s.signIn == nil {
 			continue
 		}
@@ -231,6 +241,9 @@ func (a *Auth) validate() error {
 }
 
 func (s *SignIn) validate(where string) error {
+	if s.Host != "" && s.typ != SignInForgejo {
+		return fmt.Errorf("configfile: %s.host is for forge instance sign-ins", where)
+	}
 	switch s.typ {
 	case SignInOIDC:
 		if u, err := url.Parse(s.Issuer); err != nil || u.Scheme != "https" || u.Host == "" {
@@ -241,6 +254,14 @@ func (s *SignIn) validate(where string) error {
 		default:
 			return fmt.Errorf("configfile: %s.defaultRole must be %s or %s, got %q", where, DefaultRoleNone, DefaultRoleMember, s.DefaultRole)
 		}
+	case SignInForgejo:
+		if s.Host == "" {
+			return fmt.Errorf("configfile: %s.host is required", where)
+		}
+		if err := checkHost(s.Host); err != nil || strings.HasPrefix(s.Host, "*") {
+			return fmt.Errorf("configfile: %s.host: %q must be a lowercase hostname, without a scheme, port or path", where, s.Host)
+		}
+		fallthrough
 	case SignInGitHub:
 		for _, f := range []struct {
 			key string

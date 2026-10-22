@@ -104,7 +104,7 @@ func TestRegisterReachedJudgesByTheDatabaseClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	grant := store.SessionGrant{Role: store.RoleAdmin}
-	grant.Key, _ = auth.GrantKey(file.Auth, "oidc")
+	grant.Key, _ = auth.GrantKey(file, "oidc")
 	token, err := st.CreateSession(ctx, user.ID, "oidc", origin, grant, now, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)

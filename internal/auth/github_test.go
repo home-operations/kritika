@@ -44,7 +44,7 @@ func TestGitHubMember(t *testing.T) {
 				_, _ = w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			got, err := githubAPI{}.member(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "acme")
+			got, err := githubAPI{}.member(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{}, "acme")
 			if tt.wantErr != (err != nil) || (err != nil && !errors.Is(err, ErrForgeAPI)) || got != tt.want {
 				t.Fatalf("member = %v, %v; want %v, error %v", got, err, tt.want, tt.wantErr)
 			}
@@ -96,7 +96,7 @@ func TestGitHubMemberRefusalCutShort(t *testing.T) {
 		_, _ = w.Write([]byte(`{"documentation_url":"https://docs.github.com/rest#secondary-rate`))
 	}))
 	defer srv.Close()
-	got, err := githubAPI{}.member(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, "acme")
+	got, err := githubAPI{}.member(t.Context(), apiClient{base: srv.URL, token: "tok", client: srv.Client()}, Identity{}, "acme")
 	if got || !errors.Is(err, ErrForgeAPI) {
 		t.Fatalf("member = %v, %v; want a forge error", got, err)
 	}

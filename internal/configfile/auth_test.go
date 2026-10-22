@@ -119,7 +119,8 @@ func TestAuthRejects(t *testing.T) {
 		{"oidc without issuer", rep("    issuer: https://sso.example.com\n", ""), "auth.oidc.issuer"},
 		{"issuer on github", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    issuer: https://x.example.com\n"), "auth.github.issuer is for oidc"},
 		{"scopes on github", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    scopes: [read:user]\n"), "auth.github.scopes is for oidc"},
-		{"github enterprise host", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    host: github.example.com\n"), "field host not found"},
+		{"github enterprise host", rep("    clientId: Iv1.x\n", "    clientId: Iv1.x\n    host: github.example.com\n"), "auth.github.host is for forge instance sign-ins"},
+		{"host on oidc", rep("    clientId: kritika\n", "    clientId: kritika\n    host: sso.example.com\n"), "auth.oidc.host is for forge instance sign-ins"},
 		{"no client id", rep("clientId: kritika", "clientId: \"\""), "auth.oidc.clientId is required"},
 		{"unset secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_NOPE }"), "auth.oidc.clientSecret"},
 		{"empty secret", rep("{ env: TEST_WEBHOOK_SECRET }", "{ env: TEST_EMPTY }"), "auth.oidc.clientSecret resolved to an empty value"},
@@ -135,6 +136,53 @@ func TestAuthRejects(t *testing.T) {
     clientId: Iv1.x
     clientSecret: { env: TEST_WEBHOOK_SECRET }
 ` + minimal, "no way to sign in as an admin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := loadBytes(t, []byte(tt.yaml))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error %v does not mention %q", err, tt.want)
+			}
+		})
+	}
+}
+
+const forgejoSignIn = `  forgejo:
+    host: forge.example.com
+    clientId: forgejo-client
+    clientSecret: { env: TEST_WEBHOOK_SECRET }
+    roleMappingExpr: '"admins" in orgs ? "admin" : ""'
+`
+
+func TestAuthForgejo(t *testing.T) {
+	authEnv(t)
+	f, err := loadBytes(t, []byte(authMinimal+forgejoSignIn+minimal))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	fj, ok := f.Auth.SignInByType(SignInForgejo)
+	if !ok || fj.Label() != "Forgejo" || fj.Host != "forge.example.com" || fj.ClientIDValue() != "forgejo-client" || fj.Mapping() == nil {
+		t.Fatalf("forgejo = %+v, %v", fj, ok)
+	}
+	if got := f.Auth.SignIns(); len(got) != 3 || got[2] != fj {
+		t.Fatalf("SignIns = %v", got)
+	}
+}
+
+func TestAuthForgejoRejects(t *testing.T) {
+	authEnv(t)
+	rep := func(o, n string) string { return authMinimal + strings.Replace(forgejoSignIn, o, n, 1) + minimal }
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{"no host", rep("    host: forge.example.com\n", ""), "auth.forgejo.host is required"},
+		{"a host with a scheme", rep("host: forge.example.com", "host: https://forge.example.com"), "auth.forgejo.host"},
+		{"a host with a path", rep("host: forge.example.com", "host: forge.example.com/git"), "auth.forgejo.host"},
+		{"an issuer", rep("    host: forge.example.com\n", "    host: forge.example.com\n    issuer: https://forge.example.com\n"), "auth.forgejo.issuer is for oidc"},
+		{"scopes", rep("    host: forge.example.com\n", "    host: forge.example.com\n    scopes: [read:user]\n"), "auth.forgejo.scopes is for oidc"},
+		{"an oidc variable", rep(`'"admins" in orgs ? "admin" : ""'`, `'"admins" in roles ? "admin" : ""'`), "auth.forgejo.roleMappingExpr"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

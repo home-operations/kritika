@@ -24,8 +24,8 @@ var ErrForgeAPI = errors.New("auth: forge API")
 // the OAuth dance is done.
 type forgeAPI interface {
 	identity(ctx context.Context, c apiClient) (Identity, error)
-	// member reports whether the user is an active member of org.
-	member(ctx context.Context, c apiClient, org string) (bool, error)
+	// member reports whether the user id is an active member of org.
+	member(ctx context.Context, c apiClient, id Identity, org string) (bool, error)
 	// mappingVars fills the role mapping's variables for the user.
 	mappingVars(ctx context.Context, c apiClient, id Identity) (map[string]any, error)
 }
@@ -86,7 +86,7 @@ func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ stri
 			return vars, nil
 		},
 		Membership: func(ctx context.Context, org string) (bool, error) {
-			ok, err := p.api.member(ctx, c, org)
+			ok, err := p.api.member(ctx, c, id, org)
 			if err != nil {
 				return false, fmt.Errorf("auth: %s: organization %s: %w", name, org, err)
 			}
@@ -138,6 +138,28 @@ func (c apiClient) get(ctx context.Context, path string, v any) (int, http.Heade
 		return resp.StatusCode, resp.Header, nil, fmt.Errorf("%w: GET %s: decode: %w", ErrForgeAPI, path, err)
 	}
 	return resp.StatusCode, resp.Header, nil, nil
+}
+
+// getOK fetches path into v as get does, for a call that must succeed.
+func (c apiClient) getOK(ctx context.Context, path string, v any) error {
+	status, _, _, err := c.get(ctx, path, v)
+	switch {
+	case err != nil:
+		return err
+	case status/100 != 2:
+		return fmt.Errorf("%w: GET %s: status %d", ErrForgeAPI, path, status)
+	}
+	return nil
+}
+
+// verifiedOnly is id's email when the forge verified it, else empty: what a
+// sign-in on a forge instance lets a role mapping see, so a mapping never
+// grants on an address someone merely typed.
+func verifiedOnly(id Identity) string {
+	if id.EmailVerified {
+		return id.Email
+	}
+	return ""
 }
 
 // forgeEmail is one address from a forge's /user/emails.
