@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The running connections, and the accounts one's GitHub App is installed
-  // on: kritika serves only the accounts a connection lists, and an
-  // installation on any other can be removed.
+  // The running connections, GitHub Apps and Forgejo bots, and the accounts
+  // an App is installed on: kritika serves only the accounts a connection
+  // lists, and an installation on any other can be removed.
   import { sendJSON } from '../../api.svelte';
   import { Resource } from '../../resource.svelte';
   import { describe } from '../../manage';
@@ -54,14 +54,14 @@
 </script>
 
 <section class="panel" aria-labelledby="op-connections">
-  <header class="panel-head"><h2 id="op-connections">GitHub Apps</h2></header>
-  <StateView res={conns} retry={() => conns.load()} isEmpty={(d) => d.length === 0} empty="No GitHub Apps yet.">
+  <header class="panel-head"><h2 id="op-connections">Connections</h2></header>
+  <StateView res={conns} retry={() => conns.load()} isEmpty={(d) => d.length === 0} empty="No connections yet.">
     {#snippet children(list)}
       <div class="table-wrap overflow-x-auto max-w-full">
         <table class="data">
           <thead>
             <tr>
-              <th scope="col">App</th>
+              <th scope="col">Connection</th>
               <th scope="col">Accounts</th>
               <th scope="col">Webhooks</th>
               <th scope="col"><span class="sr-only">Actions</span></th>
@@ -70,13 +70,18 @@
           <tbody>
             {#each list as c (c.name)}
               <tr>
-                <td class="mono">{c.name}</td>
+                <td>
+                  <span class="mono">{c.name}</span>
+                  <span class="small muted text-ui-sm block">{c.forge === 'github' ? 'GitHub App' : `Forgejo on ${c.host}`}</span>
+                </td>
                 <td class="mono small text-ui-sm">{c.accounts.join(', ')}</td>
                 <td>
                   <WebhookState of={c} />
                 </td>
                 <td>
-                  <button class="btn btn-small" aria-pressed={selected === c.name} onclick={() => show(c.name)}>Installations</button>
+                  {#if c.forge === 'github'}
+                    <button class="btn btn-small" aria-pressed={selected === c.name} onclick={() => show(c.name)}>Installations</button>
+                  {/if}
                 </td>
               </tr>
             {/each}

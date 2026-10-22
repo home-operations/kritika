@@ -151,14 +151,14 @@ func (l *localForge) setTip(tip string) {
 	l.tip = tip
 }
 
-func (l *localForge) MergeBase(context.Context, string, string, string, string) (string, error) {
+func (l *localForge) MergeBase(context.Context, string, string, int, string, string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.base, nil
 }
 
 // PullRequestDiff is the diff the runner would make of the same commits.
-func (l *localForge) PullRequestDiff(ctx context.Context, _, _, base, head string) (string, error) {
+func (l *localForge) PullRequestDiff(ctx context.Context, _, _ string, _ int, base, head string) (string, error) {
 	res, err := gitfetch.Run(ctx, gitfetch.Fetch{CloneURL: l.dir, Head: head, Base: base})
 	if err != nil {
 		return "", err

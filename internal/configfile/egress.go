@@ -10,12 +10,26 @@ import (
 	"github.com/home-operations/kritika/internal/egress"
 )
 
-// GitHubHost is the forge every connection and GitHub sign-in talks to, and
+// GitHubHost is the forge a GitHub App and GitHub sign-in talk to, and
 // GitHubAPIHost its API, which a runner's gh calls.
 const (
 	GitHubHost    = "github.com"
 	GitHubAPIHost = "api.github.com"
 )
+
+// forgeHosts are the hosts the connections' forges are reached at, each
+// once, in the connections' order.
+func (f *File) forgeHosts() []string {
+	var hosts []string
+	for i := range f.Connections {
+		for _, h := range f.Connections[i].ForgeHosts() {
+			if !slices.Contains(hosts, h) {
+				hosts = append(hosts, h)
+			}
+		}
+	}
+	return hosts
+}
 
 // validateEgress parses the allow and deny entries, checks that no deny
 // entry cuts off the forge a connection needs, and that each credential
@@ -30,11 +44,9 @@ func (f *File) validateEgress() error {
 		return fmt.Errorf("configfile: egress.deny%w", err)
 	}
 	rules := f.EgressRules()
-	if len(f.Connections) > 0 {
-		for _, host := range []string{GitHubHost, GitHubAPIHost} {
-			if !rules.Allows(host) {
-				return fmt.Errorf("configfile: egress.deny: %s is denied, which every app needs", host)
-			}
+	for _, host := range f.forgeHosts() {
+		if !rules.Allows(host) {
+			return fmt.Errorf("configfile: egress.deny: %s is denied, which a connection needs", host)
 		}
 	}
 	for _, host := range slices.Sorted(maps.Keys(f.Egress.credentials)) {
@@ -98,20 +110,18 @@ func checkHost(h string) error {
 }
 
 // EgressRules is what the gateway allows for this file: the configured
-// entries and, once any connection exists, GitHub and its API, since
-// runners fetch from the one and gh reads the other, the denied entries,
-// plus the credentials as Authorization header values, and what its cache
-// never keeps: the GitHub API, which mise sends the run's token, not even
-// for a locked install. Provider endpoints are not
-// among them: a runner reaches its model through the gateway's model
-// endpoint, and the worker calls the provider.
+// entries and the connections' forges, GitHub and its API for an App,
+// since runners fetch from the one and gh reads the other, and a Forgejo
+// instance's host for a bot, the denied entries, plus the credentials as
+// Authorization header values, and what its cache never keeps: the GitHub
+// API, which mise sends the run's token, not even for a locked install.
+// Provider endpoints are not among them: a runner reaches its model
+// through the gateway's model endpoint, and the worker calls the provider.
 func (f *File) EgressRules() egress.Rules {
 	allow := egress.List{Hosts: slices.Clone(f.Egress.allow.Hosts), Prefixes: f.Egress.allow.Prefixes}
-	if len(f.Connections) > 0 {
-		for _, h := range []string{GitHubHost, GitHubAPIHost} {
-			if !slices.Contains(allow.Hosts, h) {
-				allow.Hosts = append(allow.Hosts, h)
-			}
+	for _, h := range f.forgeHosts() {
+		if !slices.Contains(allow.Hosts, h) {
+			allow.Hosts = append(allow.Hosts, h)
 		}
 	}
 	creds := make(map[string]string, len(f.Egress.credentials))
@@ -129,7 +139,7 @@ func (f *File) EgressRules() egress.Rules {
 func (f *File) GatewayCaches() bool { return f.Run.GatewayCacheDir != "" }
 
 // EgressHosts names the hosts the gateway lets a runner reach, for the
-// agent's tool descriptions: the allowed hosts, GitHub's among them, less
+// agent's tool descriptions: the allowed hosts, the forges' among them, less
 // an exact host a deny entry refuses. A pattern stays as written, and
 // "*" says every host, since the agent is told what it may try, not
 // what the rules refuse.

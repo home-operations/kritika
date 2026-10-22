@@ -34,6 +34,7 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 type fileDoc struct {
 	Auth      Auth                  `yaml:"auth,omitempty"`
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
+	Forgejo   map[string]forgejoDoc `yaml:"forgejo,omitempty"`
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
 	Embedding *Embedding            `yaml:"embedding,omitempty"`
 	Egress    Egress                `yaml:"egress,omitempty"`
@@ -94,15 +95,16 @@ func parse(input config.Document, settings config.Settings) (*File, error) {
 	if err := input.Policy.Load(&doc, yaml.WithKnownFields()); err != nil {
 		return nil, fmt.Errorf("configfile: parse: %w", err)
 	}
-	if doc.Apps == nil {
-		doc.Apps = map[string]Connection{}
+	conns, err := connectionsOf(doc.Apps, doc.Forgejo)
+	if err != nil {
+		return nil, err
 	}
-	accounts, err := accountsOf(doc.Accounts, doc.Repositories)
+	accounts, err := accountsOf(doc.Accounts, doc.Repositories, forgesServing(conns))
 	if err != nil {
 		return nil, err
 	}
 	f := &File{
-		Auth: doc.Auth, Connections: connectionsOf(doc.Apps), Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
+		Auth: doc.Auth, Connections: conns, Providers: doc.Providers, Defaults: doc.Defaults, Egress: doc.Egress,
 		Embedding: doc.Embedding, Run: settings,
 	}
 	s := &secrets{}
@@ -150,7 +152,7 @@ func (f *File) resolve(accounts []Account, s *secrets) error {
 		return fmt.Errorf("configfile: trigger.%w", err)
 	}
 	for i := range f.Connections {
-		if err := f.Connections[i].resolve("apps."+f.Connections[i].Name, s); err != nil {
+		if err := f.Connections[i].resolve(f.Connections[i].where(), s); err != nil {
 			return err
 		}
 	}
@@ -196,24 +198,38 @@ func (f *File) resolveEmbedding() error {
 
 // accountsOf gathers each account's entries, in the order of their
 // names: its accounts entry, and its owner/* and owner/name entries under
-// repositories.
-func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Account, error) {
+// repositories. An entry is keyed by the account's name alone, so it is
+// the account's on the forge serving that name, forges; one no connection
+// serves is GitHub's, and one served on two forges names neither.
+func accountsOf(entries map[string]accountDoc, repos map[string]Overrides, forges map[string][]Forge) ([]Account, error) {
 	byKey := map[string]*Account{}
-	get := func(name string) *Account {
-		key := AccountKey(ForgeGitHub, name)
-		if a, ok := byKey[key]; ok {
-			return a
+	get := func(where, name string) (*Account, error) {
+		forge := ForgeGitHub
+		switch served := forges[strings.ToLower(name)]; len(served) {
+		case 0:
+		case 1:
+			forge = served[0]
+		default:
+			return nil, fmt.Errorf("configfile: %s: %s is served on %s and %s; an entry names an account on one forge",
+				where, name, served[0], served[1])
 		}
-		a := &Account{Forge: ForgeGitHub, Name: name}
+		key := AccountKey(forge, name)
+		if a, ok := byKey[key]; ok {
+			return a, nil
+		}
+		a := &Account{Forge: forge, Name: name}
 		byKey[key] = a
-		return a
+		return a, nil
 	}
 	for _, name := range slices.Sorted(maps.Keys(entries)) {
 		where := "accounts." + name
 		if err := checkAccountName(where, name); err != nil {
 			return nil, err
 		}
-		a := get(name)
+		a, err := get(where, name)
+		if err != nil {
+			return nil, err
+		}
 		if a.entry != "" {
 			return nil, fmt.Errorf("configfile: %s duplicates %s", where, a.entry)
 		}
@@ -230,7 +246,10 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides) ([]Ac
 			return nil, fmt.Errorf("configfile: %s duplicates %s", where, prev)
 		}
 		seen[strings.ToLower(key)] = where
-		a := get(owner)
+		a, err := get(where, owner)
+		if err != nil {
+			return nil, err
+		}
 		if name == "*" {
 			a.Overrides, a.pattern = repos[key], where
 		} else {
@@ -266,6 +285,21 @@ func (a *Account) resolve(s *secrets) error {
 
 func (i *Connection) resolve(where string, s *secrets) error {
 	var err error
+	if i.Forge == ForgeForgejo {
+		b := &i.Forgejo
+		if b.token, err = s.read(b.Token); err != nil {
+			return fmt.Errorf("configfile: %s.token: %w", where, err)
+		}
+		if !b.GitToken.empty() {
+			if b.gitToken, err = s.read(b.GitToken); err != nil {
+				return fmt.Errorf("configfile: %s.gitToken: %w", where, err)
+			}
+		}
+		if b.webhookSecret, err = s.read(b.WebhookSecret); err != nil {
+			return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
+		}
+		return nil
+	}
 	if i.App.clientID, err = i.App.ClientID.resolve(s); err != nil {
 		return fmt.Errorf("configfile: %s.clientId: %w", where, err)
 	}
@@ -284,13 +318,14 @@ func (f *File) validate(accounts []Account) error {
 	if err := f.validateProviders(); err != nil {
 		return err
 	}
+	// Connections first: egress checks their hosts.
+	if err := validateConnections(f.Connections); err != nil {
+		return err
+	}
 	if err := f.validateEgress(); err != nil {
 		return err
 	}
 	if err := f.validateEmbedding(); err != nil {
-		return err
-	}
-	if err := validateConnections(f.Connections); err != nil {
 		return err
 	}
 	return f.validateAccounts(accounts)
@@ -557,8 +592,27 @@ func (i *Connection) validate(where string) error {
 		if i.App.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
 		}
+	case ForgeForgejo:
+		b := &i.Forgejo
+		if b.Host == "" {
+			return fmt.Errorf("configfile: %s.host is required", where)
+		}
+		// The host is matched by the egress gateway and joined into URLs,
+		// so it is a bare lowercase hostname, as an egress entry is.
+		if err := checkHost(b.Host); err != nil || strings.HasPrefix(b.Host, "*") {
+			return fmt.Errorf("configfile: %s.host: %q must be a lowercase hostname, without a scheme, port or path", where, b.Host)
+		}
+		if b.token.Value() == "" {
+			return fmt.Errorf("configfile: %s.token is required", where)
+		}
+		if !b.GitToken.empty() && b.gitToken.Value() == "" {
+			return fmt.Errorf("configfile: %s.gitToken resolved to an empty value", where)
+		}
+		if b.webhookSecret.Value() == "" {
+			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
+		}
 	default:
-		return fmt.Errorf("configfile: %s.forge must be %s, got %q", where, ForgeGitHub, i.Forge)
+		return fmt.Errorf("configfile: %s: forge must be %s or %s, got %q", where, ForgeGitHub, ForgeForgejo, i.Forge)
 	}
 	return nil
 }

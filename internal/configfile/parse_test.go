@@ -87,7 +87,7 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"a repository entry that turns it on or off", "repositories: { acme/x: { enabled: false } }\n",
 			"repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
 		{"a duplicate app", apps(fileApp("a", "x"), fileApp("a", "y")), "already defined"},
-		{"an account two apps serve", apps(fileApp("a", "x"), fileApp("b", "X")), "an account is served by one app"},
+		{"an account two apps serve", apps(fileApp("a", "x"), fileApp("b", "X")), "an account is served by one connection"},
 		{"two documents", "egress: {}\n---\negress: {}\n", "one document"},
 		{"an embedder without a provider", embeddingDoc("model: voyage-code-3"), `embedding.model must be "<provider>/<model>"`},
 		{"an embedder of an undeclared provider", embeddingDoc("model: other/voyage-code-3"), `references provider "other"`},

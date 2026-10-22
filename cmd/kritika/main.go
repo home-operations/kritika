@@ -241,10 +241,10 @@ func serve(
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
 	}
-	// One App per connection and one forge client per App and account,
-	// shared by the workers and the leader's poll, so an installation's
-	// token is minted once.
-	apps := &worker.Apps{Metrics: m}
+	// One App or bot per connection and one forge client per connection
+	// and account, shared by the workers and the leader's poll, so an
+	// installation's token is minted once.
+	apps := &worker.Forges{Metrics: m}
 	forges := &worker.ForgeCache{Build: apps.Build}
 	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
@@ -626,7 +626,7 @@ func openStore(ctx context.Context, opts store.Options, logger *slog.Logger) (*s
 // the configuration.
 func lead(
 	ctx context.Context, st *store.Store, cfg *config.Config, current *configfile.Current, queue *river.Client[pgx.Tx],
-	svc *ingest.Service, apps *worker.Apps, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
+	svc *ingest.Service, apps *worker.Forges, forges *worker.ForgeCache, kube *executor.Kube, events *executor.Events,
 	m *metrics.Metrics, configErrors *server.ConfigErrorGauge, logger *slog.Logger,
 ) error {
 	if err := st.Migrate(ctx, cfg.DatabaseAppRole, cfg.DatabaseRunnerRole); err != nil {

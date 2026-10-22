@@ -223,13 +223,18 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 }
 
 func connection(in *configfile.Connection) Connection {
-	return Connection{
+	c := Connection{
 		Name: in.Name, Forge: in.Forge, Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
-		Credentials: CredentialsSet{
-			ClientID: in.App.ClientIDValue() != "", PrivateKey: in.App.PrivateKeyValue().Value() != "",
-			WebhookSecret: in.WebhookSecretValue().Value() != "",
-		},
+		Credentials: CredentialsSet{WebhookSecret: in.WebhookSecretValue().Value() != ""},
 	}
+	if in.Forge == configfile.ForgeForgejo {
+		c.Host = in.Forgejo.Host
+		c.Credentials.Token = in.Forgejo.TokenValue().Value() != ""
+		c.Credentials.GitToken = in.Forgejo.GitToken.Env != ""
+		return c
+	}
+	c.Credentials.ClientID, c.Credentials.PrivateKey = in.App.ClientIDValue() != "", in.App.PrivateKeyValue().Value() != ""
+	return c
 }
 
 func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountScope) error {

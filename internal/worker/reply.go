@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
 	"github.com/home-operations/kritika/internal/textcut"
@@ -141,7 +142,8 @@ func (f *followUp) runReply(ctx context.Context) (_ store.FollowupStatus, err er
 func (f *followUp) recordConcession(ctx context.Context, replyID int64, modelName, fingerprint, reply string) error {
 	// Best effort, like the review's own thread resolution: the record
 	// and the reply stand either way.
-	if _, err := f.client.ResolveThread(ctx, f.owner, f.repo, f.pr.number, f.comment.InReplyTo, false); err != nil {
+	_, err := f.client.ResolveThread(ctx, f.owner, f.repo, f.pr.number, f.comment.InReplyTo, false)
+	if err != nil && !errors.Is(err, forge.ErrUnsupported) {
 		f.logger.Warn("conceded finding's thread not resolved", "comment", f.comment.InReplyTo, "error", err)
 	}
 	return f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {

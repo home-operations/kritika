@@ -742,16 +742,26 @@ type installAttempt struct {
 	output       string
 }
 
+// withGitHubToken is env plus the run's GitHub token for mise's own
+// process, when the run has one, so its GitHub API calls count against the
+// App installation's limit rather than the gateway's one address.
+func (m *miseTools) withGitHubToken(env []string) []string {
+	env = slices.Clone(env)
+	if m.secrets.GitToken != "" {
+		env = append(env, "MISE_GITHUB_TOKEN="+m.secrets.GitToken)
+	}
+	return env
+}
+
 // installWith runs mise with args, an install, with env as mise's
-// environment, plus the run's GitHub token for mise's own process, so its
-// GitHub API calls count against the App installation's limit rather
-// than the gateway's one address, then reads the tools and environment
-// again, all within installTimeout and with home unlocked once.
+// environment, plus the run's GitHub token, then reads the tools and
+// environment again, all within installTimeout and with home unlocked
+// once.
 func (m *miseTools) installWith(ctx context.Context, env, args []string) installAttempt {
 	ictx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
 	saved := m.env
-	m.env = append(slices.Clone(env), "MISE_GITHUB_TOKEN="+m.secrets.GitToken)
+	m.env = m.withGitHubToken(env)
 	defer func() { m.env = saved }()
 	out := &cappedWriter{max: installOutputBytes}
 	var a installAttempt

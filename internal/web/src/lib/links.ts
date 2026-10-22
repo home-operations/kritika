@@ -29,10 +29,24 @@ export function rerunPath(slug: string, p: { repository: string; number: number 
   return `${accountApi(slug)}/pulls/${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}/${p.number}/rerun`;
 }
 
-// threadUrl links the thread of an inline comment on a pull request; none
-// for a finding kritika did not post inline, or whose comment id it lacks.
-export function threadUrl(pullUrl: string, commentId: number | null): string | undefined {
-  return commentId ? safeHref(`${pullUrl}#discussion_r${commentId}`) : undefined;
+// forgeOf is the forge of an account slug, "<forge>/<name>".
+export function forgeOf(slug: string): string {
+  const i = slug.indexOf('/');
+  return i < 0 ? slug : slug.slice(0, i);
+}
+
+// forgeName is how the forge of an account slug is named in a label.
+export function forgeName(slug: string): string {
+  return forgeOf(slug) === 'forgejo' ? 'Forgejo' : 'GitHub';
+}
+
+// threadUrl links the thread of an inline comment on a pull request of an
+// account of slug; none for a finding kritika did not post inline, or
+// whose comment id it lacks. GitHub anchors a review comment's thread by
+// its discussion id; Forgejo anchors a code comment as any comment.
+export function threadUrl(slug: string, pullUrl: string, commentId: number | null): string | undefined {
+  if (!commentId) return undefined;
+  return safeHref(forgeOf(slug) === 'github' ? `${pullUrl}#discussion_r${commentId}` : `${pullUrl}#issuecomment-${commentId}`);
 }
 
 // commentUrl links a comment on a pull request's conversation.

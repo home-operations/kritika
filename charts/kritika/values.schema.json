@@ -65,6 +65,10 @@
         "executor": {
           "type": "string"
         },
+        "forgejo": {
+          "required": [],
+          "type": "object"
+        },
         "gatewayAddr": {
           "type": "string"
         },

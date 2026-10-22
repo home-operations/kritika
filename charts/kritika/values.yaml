@@ -73,6 +73,7 @@ strategy:
 #   diffRetention: { type: string, minLength: 1 }
 #   auth: { type: object }
 #   apps: { type: object }
+#   forgejo: { type: object }
 #   providers: { type: object }
 #   embedding: { type: object }
 #   egress: { type: object }
@@ -103,6 +104,12 @@ config: {}
 #     clientId: Iv1.example
 #     privateKey: { env: GITHUB_APP_PRIVATE_KEY }
 #     webhookSecret: { env: GITHUB_APP_WEBHOOK_SECRET }
+# forgejo:
+#   codeberg:
+#     host: codeberg.org
+#     accounts: [org-1]
+#     token: { env: FORGEJO_TOKEN }
+#     webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
 # providers:
 #   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
 # review:

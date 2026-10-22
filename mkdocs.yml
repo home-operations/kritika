@@ -130,6 +130,7 @@ nav:
       - Monitoring: metrics.md
   - Reference:
       - Configuration: configuration.md
+      - Git forges: forges.md
       - Models and providers: models.md
       - Helm values: chart-values.md
   - Development: development.md

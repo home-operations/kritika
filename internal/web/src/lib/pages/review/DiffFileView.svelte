@@ -11,10 +11,11 @@
   let {
     file,
     findings,
+    slug,
     pullUrl,
     open = $bindable(false),
     id,
-  }: { file: DiffFile; findings: Finding[]; pullUrl: string; open?: boolean; id: string } = $props();
+  }: { file: DiffFile; findings: Finding[]; slug: string; pullUrl: string; open?: boolean; id: string } = $props();
   const contentId = $props.id();
 
   // Findings keyed by the new-side line they point at; anything that points
@@ -49,7 +50,7 @@
   </h3>
   {#if open}
     <div id={contentId}>
-      {#each orphans as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} id={`diff-finding-${f.id}`} /></div>{/each}
+      {#each orphans as f (f.id)}<div class="diff-finding"><FindingCard {f} {slug} {pullUrl} id={`diff-finding-${f.id}`} /></div>{/each}
       {#if file.lines.length === 0}
         <p class="small muted diff-empty text-ui-sm m-0 py-2 px-3">{file.header.slice(1).join(' · ') || 'No textual changes.'}</p>
       {:else}
@@ -66,7 +67,7 @@
                 {#if anchored}
                   <tr class="dl-finding">
                     <td colspan="3">
-                      {#each anchored as f (f.id)}<div class="diff-finding"><FindingCard {f} {pullUrl} compact id={`diff-finding-${f.id}`} /></div>{/each}
+                      {#each anchored as f (f.id)}<div class="diff-finding"><FindingCard {f} {slug} {pullUrl} compact id={`diff-finding-${f.id}`} /></div>{/each}
                     </td>
                   </tr>
                 {/if}

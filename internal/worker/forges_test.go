@@ -35,8 +35,50 @@ apps:
 	return in
 }
 
+// forgejoConnection is a Forgejo connection of name, its tokens read from
+// TEST_FORGEJO_TOKEN and TEST_WEBHOOK_SECRET.
+func forgejoConnection(t *testing.T, name string) *configfile.Connection {
+	t.Helper()
+	file, err := configfile.Parse([]byte(`
+forgejo:
+  ` + name + `:
+    host: forge.example.com
+    accounts: [acme]
+    token: { env: TEST_FORGEJO_TOKEN }
+    webhookSecret: { env: TEST_WEBHOOK_SECRET }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection(name)
+	return in
+}
+
+// TestForgesBuildForgejoOnce: a Forgejo connection's clients share one
+// bot client, whichever owner they are built for.
+func TestForgesBuildForgejoOnce(t *testing.T) {
+	t.Setenv("TEST_FORGEJO_TOKEN", "fj")
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	in := forgejoConnection(t, "acme-forge")
+	forges := &Forges{}
+	first, err := forges.Build(t.Context(), in, "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := forges.Build(t.Context(), in, "acme/gadgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again || first.CloneURL("acme", "widgets") != "https://forge.example.com/acme/widgets.git" {
+		t.Fatalf("clients = %p %p, clone URL %s", first, again, first.CloneURL("acme", "widgets"))
+	}
+	if tok, _ := first.GitToken(t.Context(), "widgets"); tok != "fj" {
+		t.Fatalf("GitToken = %q, want the bot's token when no read-only one is set", tok)
+	}
+}
+
 func TestAppsRefuseAnotherForge(t *testing.T) {
-	apps := &Apps{}
+	apps := &Forges{}
 	other := &configfile.Connection{Name: "x", Forge: "gitlab"}
 	if _, err := apps.Build(t.Context(), other, "acme/widgets"); err == nil {
 		t.Fatal("Build built a client for a forge kritika does not support")
@@ -58,7 +100,7 @@ func TestAppsBuildOnePerConnection(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")
 	acme, globex := appConnection(t, "Iv1.acme"), appConnection(t, "Iv1.globex")
 	globex.Name = "globex-bot"
-	apps := &Apps{}
+	apps := &Forges{}
 	first, err := apps.app(acme)
 	if err != nil {
 		t.Fatal(err)

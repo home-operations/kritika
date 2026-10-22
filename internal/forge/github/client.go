@@ -42,8 +42,9 @@ func NewClient(app *App, installationID int64) (*Client, error) {
 }
 
 // MergeBase implements forge.Client through the compare API, whose
-// merge_base_commit is exactly what GitHub diffs a PR against.
-func (c *Client) MergeBase(ctx context.Context, owner, repo, base, head string) (string, error) {
+// merge_base_commit is exactly what GitHub diffs a PR against; the pull
+// request's number goes unused.
+func (c *Client) MergeBase(ctx context.Context, owner, repo string, _ int, base, head string) (string, error) {
 	cmp, _, err := c.api.Repositories.CompareCommits(ctx, owner, repo, base, head, &gh.ListOptions{PerPage: 1})
 	if err != nil {
 		return "", fmt.Errorf("github: compare %s...%s: %w", base, head, err)
@@ -57,7 +58,7 @@ func (c *Client) MergeBase(ctx context.Context, owner, repo, base, head string) 
 
 // PullRequestDiff implements forge.Client from the compare of base and
 // head, both commits, so the diff is of exactly those two.
-func (c *Client) PullRequestDiff(ctx context.Context, owner, repo, base, head string) (string, error) {
+func (c *Client) PullRequestDiff(ctx context.Context, owner, repo string, _ int, base, head string) (string, error) {
 	diff, _, err := c.api.Repositories.CompareCommitsRaw(ctx, owner, repo, base, head, gh.RawOptions{Type: gh.Diff})
 	if err != nil {
 		return "", fmt.Errorf("github: diff %s...%s: %w", base, head, err)
