@@ -19,7 +19,7 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Forges holds one GitHub App, Forgejo or GitLab client per connection, built on
+// Forges holds one GitHub App, Forgejo, Gitea or GitLab client per connection, built on
 // first use and kept for the life of the process, as the configuration
 // is, so the clients and the listings of a connection share its
 // credentials: an App's installation tokens are minted once an hour each,
@@ -34,6 +34,7 @@ type Forges struct {
 
 	mu   sync.Mutex
 	apps map[string]*github.App
+	// bots are the Forgejo and Gitea clients, which share a package.
 	bots map[string]*forgejo.Client
 	labs map[string]*gitlab.Client
 }
@@ -65,19 +66,15 @@ func (a *Forges) app(in *configfile.Connection) (*github.App, error) {
 	return app, nil
 }
 
-// bot is connection in's Forgejo client. The integration is the
-// connection's, so one client serves every account it lists.
+// bot is connection in's Forgejo or Gitea client. The integration, or bot
+// user, is the connection's, so one client serves every account it lists.
 func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if c, ok := a.bots[in.Name]; ok {
 		return c, nil
 	}
-	issuer, err := forgejo.NewIssuer(a.Issuer, in.Forgejo.PrivateKeyValue().Value())
-	if err != nil {
-		return nil, err
-	}
-	c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), in.Forgejo.RunnerAudienceValue(), nil)
+	c, err := a.newBot(in)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +83,17 @@ func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
 	}
 	a.bots[in.Name] = c
 	return c, nil
+}
+
+func (a *Forges) newBot(in *configfile.Connection) (*forgejo.Client, error) {
+	if in.Forge == configfile.ForgeGitea {
+		return forgejo.NewGiteaClient(in.Gitea.Host, in.Gitea.TokenValue().Value(), in.Gitea.RunnerTokenValue().Value(), nil)
+	}
+	issuer, err := forgejo.NewIssuer(a.Issuer, in.Forgejo.PrivateKeyValue().Value())
+	if err != nil {
+		return nil, err
+	}
+	return forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), in.Forgejo.RunnerAudienceValue(), nil)
 }
 
 // lab is connection in's GitLab client. The service account is the
@@ -124,7 +132,7 @@ func (a *Forges) Build(ctx context.Context, in *configfile.Connection, repo stri
 			return nil, err
 		}
 		return github.NewClient(app, id)
-	case configfile.ForgeForgejo:
+	case configfile.ForgeForgejo, configfile.ForgeGitea:
 		return a.bot(in)
 	case configfile.ForgeGitLab:
 		return a.lab(in)
@@ -155,7 +163,7 @@ func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[stri
 			}
 			out[strings.ToLower(r.Account)] = repos
 		}
-	case configfile.ForgeForgejo:
+	case configfile.ForgeForgejo, configfile.ForgeGitea:
 		c, err := a.bot(in)
 		if err != nil {
 			return nil, err

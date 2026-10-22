@@ -191,7 +191,7 @@ type Spec struct {
 	CheckpointScope string `json:"checkpointScope,omitempty"`
 	// CloneURL is fetched with Secrets.GitToken.
 	CloneURL string `json:"cloneUrl"`
-	// Forge is the repository's forge, github, forgejo or gitlab; empty is github.
+	// Forge is the repository's forge, github, forgejo, gitlab or gitea; empty is github.
 	// Secrets.GitToken is a GitHub token only on GitHub, where gh and mise
 	// are given it.
 	Forge string `json:"forge,omitempty"`

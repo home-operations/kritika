@@ -106,7 +106,7 @@ type CredentialsSet struct {
 	// ClientID is a GitHub App's; Audience and RunnerAudience a Forgejo
 	// integration's, the second the read-only one runners fetch as; both
 	// have a PrivateKey. Token and RunnerToken are a GitLab service
-	// account's, the second read-only.
+	// account's or a Gitea bot user's, the second read-only.
 	ClientID       bool `json:"clientId,omitzero"`
 	PrivateKey     bool `json:"privateKey,omitzero"`
 	Audience       bool `json:"audience,omitzero"`
@@ -116,10 +116,10 @@ type CredentialsSet struct {
 	WebhookSecret  bool `json:"webhookSecret"`
 }
 
-// Connection is one GitHub App, Forgejo integration or GitLab service
-// account and the accounts it serves. HookPath is where its webhook
-// arrives, under the dashboard's URL; Host is the Forgejo or GitLab
-// instance it talks to, empty for GitHub.
+// Connection is one GitHub App, Forgejo integration, GitLab service
+// account or Gitea bot user and the accounts it serves. HookPath is where
+// its webhook arrives, under the dashboard's URL; Host is the Forgejo,
+// GitLab or Gitea instance it talks to, empty for GitHub.
 type Connection struct {
 	Name        string           `json:"name"`
 	Forge       configfile.Forge `json:"forge"`

@@ -125,12 +125,8 @@ func (s *Server) reach(r *http.Request) (*configfile.Connection, []reachedAccoun
 			}
 			out = append(out, ra)
 		}
-	case configfile.ForgeForgejo:
-		issuer, err := forgejo.NewIssuer(forgejo.IssuerURL(s.webURL), in.Forgejo.PrivateKeyValue().Value())
-		if err != nil {
-			return nil, nil, errForge(err)
-		}
-		c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), "", nil)
+	case configfile.ForgeForgejo, configfile.ForgeGitea:
+		c, err := s.forgejoClient(in)
 		if err != nil {
 			return nil, nil, errForge(err)
 		}
@@ -163,6 +159,19 @@ func (s *Server) reach(r *http.Request) (*configfile.Connection, []reachedAccoun
 		}
 	}
 	return in, out, nil
+}
+
+// forgejoClient is connection in's Forgejo or Gitea client, for listing
+// alone: no runner fetches with it.
+func (s *Server) forgejoClient(in *configfile.Connection) (*forgejo.Client, error) {
+	if in.Forge == configfile.ForgeGitea {
+		return forgejo.NewGiteaClient(in.Gitea.Host, in.Gitea.TokenValue().Value(), "", nil)
+	}
+	issuer, err := forgejo.NewIssuer(forgejo.IssuerURL(s.webURL), in.Forgejo.PrivateKeyValue().Value())
+	if err != nil {
+		return nil, err
+	}
+	return forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), "", nil)
 }
 
 // reachedAccount is one account a connection serves and what it reaches

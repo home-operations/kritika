@@ -233,6 +233,12 @@ func connection(in *configfile.Connection) Connection {
 		c.Credentials.RunnerToken = in.GitLab.RunnerTokenValue().Value() != ""
 		return c
 	}
+	if in.Forge == configfile.ForgeGitea {
+		c.Host = in.Gitea.Host
+		c.Credentials.Token = in.Gitea.TokenValue().Value() != ""
+		c.Credentials.RunnerToken = in.Gitea.RunnerTokenValue().Value() != ""
+		return c
+	}
 	if in.Forge == configfile.ForgeForgejo {
 		c.Host = in.Forgejo.Host
 		c.Credentials.PrivateKey = in.Forgejo.PrivateKeyValue().Value() != ""

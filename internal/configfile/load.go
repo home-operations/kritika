@@ -37,6 +37,7 @@ type fileDoc struct {
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
 	Forgejo   map[string]forgejoDoc `yaml:"forgejo,omitempty"`
 	GitLab    map[string]gitlabDoc  `yaml:"gitlab,omitempty"`
+	Gitea     map[string]giteaDoc   `yaml:"gitea,omitempty"`
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
 	Embedding *Embedding            `yaml:"embedding,omitempty"`
 	Egress    Egress                `yaml:"egress,omitempty"`
@@ -97,7 +98,7 @@ func parse(input config.Document, settings config.Settings) (*File, error) {
 	if err := input.Policy.Load(&doc, yaml.WithKnownFields()); err != nil {
 		return nil, fmt.Errorf("configfile: parse: %w", err)
 	}
-	conns, err := connectionsOf(doc.Apps, doc.Forgejo, doc.GitLab)
+	conns, err := connectionsOf(doc.Apps, doc.Forgejo, doc.GitLab, doc.Gitea)
 	if err != nil {
 		return nil, err
 	}
@@ -311,18 +312,13 @@ func (i *Connection) resolve(where string, s *secrets) error {
 	var err error
 	if i.Forge == ForgeGitLab {
 		b := &i.GitLab
-		if b.token, err = s.read(b.Token); err != nil {
-			return fmt.Errorf("configfile: %s.token: %w", where, err)
-		}
-		if !b.RunnerToken.empty() {
-			if b.runnerToken, err = s.read(b.RunnerToken); err != nil {
-				return fmt.Errorf("configfile: %s.runnerToken: %w", where, err)
-			}
-		}
-		if b.webhookSecret, err = s.read(b.WebhookSecret); err != nil {
-			return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
-		}
-		return nil
+		b.token, b.runnerToken, b.webhookSecret, err = readTokens(where, s, b.Token, b.RunnerToken, b.WebhookSecret)
+		return err
+	}
+	if i.Forge == ForgeGitea {
+		b := &i.Gitea
+		b.token, b.runnerToken, b.webhookSecret, err = readTokens(where, s, b.Token, b.RunnerToken, b.WebhookSecret)
+		return err
 	}
 	if i.Forge == ForgeForgejo {
 		b := &i.Forgejo
@@ -677,8 +673,11 @@ func (i *Connection) validate(where string) error {
 		if key, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(key) == 0 {
 			return fmt.Errorf("configfile: %s.webhookSecret must be the webhook's signing token, \"whsec_\" followed by base64", where)
 		}
+	case ForgeGitea:
+		return i.Gitea.validate(where)
 	default:
-		return fmt.Errorf("configfile: %s: forge must be %s, %s or %s, got %q", where, ForgeGitHub, ForgeForgejo, ForgeGitLab, i.Forge)
+		return fmt.Errorf("configfile: %s: forge must be %s, %s, %s or %s, got %q",
+			where, ForgeGitHub, ForgeForgejo, ForgeGitLab, ForgeGitea, i.Forge)
 	}
 	return nil
 }

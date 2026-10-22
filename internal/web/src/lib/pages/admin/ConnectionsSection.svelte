@@ -7,6 +7,7 @@
   import { describe } from '../../manage';
   import { toast } from '../../toast.svelte';
   import type { AppInstallation, Connection } from '../../types';
+  import { forgeName } from '../../links';
   import StateView from '../../components/StateView.svelte';
   import Pill from '../../components/Pill.svelte';
   import WebhookState from '../../components/WebhookState.svelte';
@@ -72,7 +73,7 @@
               <tr>
                 <td>
                   <span class="mono">{c.name}</span>
-                  <span class="small muted text-ui-sm block">{c.forge === 'github' ? 'GitHub App' : `${c.forge === 'gitlab' ? 'GitLab' : 'Forgejo'} on ${c.host}`}</span>
+                  <span class="small muted text-ui-sm block">{c.forge === 'github' ? 'GitHub App' : `${forgeName(c.forge)} on ${c.host}`}</span>
                 </td>
                 <td class="mono small text-ui-sm">{c.accounts.join(', ')}</td>
                 <td>

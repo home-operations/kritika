@@ -224,7 +224,7 @@ forgejo:
 
 | Key              | What                                                                                                                                                              |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo` or `gitlab`                               |
+| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo`, `gitlab` or `gitea`                     |
 | `host`           | the instance's hostname, reached over HTTPS                                                                                                                       |
 | `accounts`       | the users and organizations it serves; an account is served by one connection on its forge                                                                       |
 | `audience`       | the audience Forgejo shows for the integration, inline or as a reference; until it is set the connection only serves its key, for the integration to be created |
@@ -252,12 +252,37 @@ gitlab:
 
 | Key             | What                                                                                                                          |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo` or `gitlab` |
+| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo`, `gitlab` or `gitea` |
 | `host`          | the instance's hostname, reached over HTTPS                                                                                   |
 | `accounts`      | the top-level groups and users it serves; an account is served by one connection on its forge                                |
 | `token`         | a personal access token of the service account with the `api` scope                                                         |
 | `runnerToken`   | optional: a token of the account with the `read_repository` scope alone, which runner pods fetch with                       |
 | `webhookSecret` | the signing token of the webhooks, `whsec_` followed by base64                                                               |
+
+## `gitea`
+
+`gitea` declares the Gitea bot users kritika serves accounts through, one
+per instance and set of accounts; Gitea 28 or later is needed. [Git forges](forges.md#gitea)
+covers the user, its tokens and the webhooks.
+
+```yaml
+gitea:
+  home:
+    host: gitea.example.com
+    accounts: [org-1]
+    token: { env: GITEA_TOKEN }
+    runnerToken: { env: GITEA_RUNNER_TOKEN }
+    webhookSecret: { env: GITEA_WEBHOOK_SECRET }
+```
+
+| Key             | What                                                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo`, `gitlab` or `gitea` |
+| `host`          | the instance's hostname, reached over HTTPS                                                                                                  |
+| `accounts`      | the users and organizations it serves; an account is served by one connection on its forge                                                  |
+| `token`         | an access token of the bot user with the `read:user`, `write:repository` and `write:issue` scopes                                           |
+| `runnerToken`   | optional: a token of the user with the `read:repository` scope alone, which runner pods fetch with                                         |
+| `webhookSecret` | the secret of the webhooks added on each account                                                                                             |
 
 An entry under `accounts` or `repositories` names an account by its name
 alone, so it is the account's on the forge serving that name; a name
@@ -640,7 +665,7 @@ then keeps its index.
 ## `accounts`
 
 An account is a user or organization a connection serves,
-`github/<name>` or `forgejo/<name>`. Its entry under `accounts`, keyed by
+`github/<name>`, `forgejo/<name>`, `gitlab/<name>` or `gitea/<name>`. Its entry under `accounts`, keyed by
 its name, holds what is the account's alone:
 
 ```yaml
@@ -671,7 +696,7 @@ it as not served.
 
 `egress` is what runner pods may reach through kritika's gateway beyond
 the connections' forges, `github.com` and `api.github.com` for an app and
-the instance's host for a Forgejo bot: `allow` and `deny`
+the instance's host for a Forgejo, GitLab or Gitea connection: `allow` and `deny`
 list hosts, IP addresses and CIDRs, `credentials` names hosts the
 gateway adds a token to, and `cache` names hosts whose downloads the
 gateway keeps for every install, in `gatewayCacheDir`, beyond what a
