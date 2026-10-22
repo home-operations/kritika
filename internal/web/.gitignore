@@ -3,4 +3,5 @@ test-results
 playwright-report
 dist/*
 dist-mock/
+.svelte-check/
 !dist/favicon.svg
