@@ -191,3 +191,29 @@ func TestGrantForgejoInstance(t *testing.T) {
 		t.Fatalf("asked about another instance's account: %v", o.calls)
 	}
 }
+
+// TestGiteaSignIn: a Gitea sign-in is Forgejo's at its own instance, and
+// places people on the accounts Gitea connections serve there.
+func TestGiteaSignIn(t *testing.T) {
+	t.Setenv("TEST_AUTH_SECRET", "s3cret")
+	file := configfiletest.Load(t, "auth:\n"+adminPassword+
+		"  gitea:\n    host: gitea.example.com\n    clientId: gt\n    clientSecret: { env: TEST_AUTH_SECRET }\n"+
+		"gitea:\n  tea: { host: gitea.example.com, accounts: [acme], token: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }\n"+
+		forgejoInstances)
+	s, _ := file.Auth.SignInByType(configfile.SignInGitea)
+	p, err := buildProvider(t.Context(), s, "https://kritika.example.com/auth/callback/gitea", http.DefaultClient, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fp := p.(*forgeProvider); fp.conf.Endpoint.AuthURL != "https://gitea.example.com/login/oauth/authorize" || fp.apiBase != "https://gitea.example.com/api/v1" {
+		t.Fatalf("auth URL %q, API %q", fp.conf.Endpoint.AuthURL, fp.apiBase)
+	}
+	if got := signInOrigin(s); got != "gitea:https://gitea.example.com" {
+		t.Fatalf("origin = %q", got)
+	}
+	o := &orgs{member: map[string]bool{"acme": true}}
+	g, err := grant(t.Context(), file, s, Identity{Login: "alice"}, Facts{Membership: o.membership()})
+	if err != nil || !slices.Equal(g.Accounts, []string{"gitea/acme"}) {
+		t.Fatalf("grant = %+v, %v; want the Gitea account alone", g, err)
+	}
+}

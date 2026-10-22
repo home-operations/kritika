@@ -43,8 +43,8 @@ const (
 	// merged over them, and roles, the roles claim as a list of strings.
 	OIDC Kind = iota
 	// GitHub sees login, email, orgs (the logins of the organisations the
-	// person is an active member of) and teams ("org/slug"). A Forgejo
-	// sign-in sees the same, a team named by its name.
+	// person is an active member of) and teams ("org/slug"). A Forgejo or
+	// Gitea sign-in sees the same, a team named by its name.
 	GitHub
 )
 

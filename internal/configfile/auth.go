@@ -13,8 +13,8 @@ import (
 )
 
 // Auth configures how people sign in to the dashboard and what each may do:
-// a local admin, an OIDC issuer, GitHub and a Forgejo instance, each
-// optional, and each provider's role mapping. Secret values use explicit environment
+// a local admin, an OIDC issuer, GitHub, and a Forgejo and a Gitea
+// instance, each optional, and each provider's role mapping. Secret values use explicit environment
 // references.
 type Auth struct {
 	// SessionTTL is how long a dashboard session lasts; zero means
@@ -31,6 +31,9 @@ type Auth struct {
 	// Forgejo signs in through an OAuth2 application of the Forgejo
 	// instance at its Host.
 	Forgejo *SignIn `yaml:"forgejo,omitempty"`
+	// Gitea signs in through an OAuth2 application of the Gitea instance
+	// at its Host.
+	Gitea *SignIn `yaml:"gitea,omitempty"`
 }
 
 // LocalAdmin is the username and password that sign in as an admin, for a
@@ -57,6 +60,7 @@ const (
 	SignInOIDC    SignInType = "oidc"
 	SignInGitHub  SignInType = "github"
 	SignInForgejo SignInType = "forgejo"
+	SignInGitea   SignInType = "gitea"
 )
 
 // SignIn is one identity provider people sign in through.
@@ -107,8 +111,16 @@ func (s *SignIn) Label() string {
 		return "GitHub"
 	case SignInForgejo:
 		return "Forgejo"
+	case SignInGitea:
+		return "Gitea"
 	}
 	return cmp.Or(s.Name, DefaultOIDCName)
+}
+
+// onInstance reports whether the sign-in is on a forge instance at its
+// Host.
+func (s *SignIn) onInstance() bool {
+	return s.typ == SignInForgejo || s.typ == SignInGitea
 }
 
 // ClientIDValue returns the client id, inline or resolved.
@@ -141,7 +153,7 @@ func (a *Auth) SessionTTLOrDefault() time.Duration {
 // SignIns lists the configured providers, OIDC first.
 func (a *Auth) SignIns() []*SignIn {
 	var out []*SignIn
-	for _, s := range []*SignIn{a.OIDC, a.GitHub, a.Forgejo} {
+	for _, s := range []*SignIn{a.OIDC, a.GitHub, a.Forgejo, a.Gitea} {
 		if s != nil {
 			out = append(out, s)
 		}
@@ -190,7 +202,10 @@ func (a *Auth) resolve(sec *secrets) error {
 		signIn *SignIn
 		typ    SignInType
 		kind   rolemap.Kind
-	}{{a.OIDC, SignInOIDC, rolemap.OIDC}, {a.GitHub, SignInGitHub, rolemap.GitHub}, {a.Forgejo, SignInForgejo, rolemap.GitHub}} {
+	}{
+		{a.OIDC, SignInOIDC, rolemap.OIDC}, {a.GitHub, SignInGitHub, rolemap.GitHub},
+		{a.Forgejo, SignInForgejo, rolemap.GitHub}, {a.Gitea, SignInGitea, rolemap.GitHub},
+	} {
 		if s.signIn == nil {
 			continue
 		}
@@ -241,7 +256,7 @@ func (a *Auth) validate() error {
 }
 
 func (s *SignIn) validate(where string) error {
-	if s.Host != "" && s.typ != SignInForgejo {
+	if s.Host != "" && !s.onInstance() {
 		return fmt.Errorf("configfile: %s.host is for forge instance sign-ins", where)
 	}
 	switch s.typ {
@@ -254,7 +269,7 @@ func (s *SignIn) validate(where string) error {
 		default:
 			return fmt.Errorf("configfile: %s.defaultRole must be %s or %s, got %q", where, DefaultRoleNone, DefaultRoleMember, s.DefaultRole)
 		}
-	case SignInForgejo:
+	case SignInForgejo, SignInGitea:
 		if s.Host == "" {
 			return fmt.Errorf("configfile: %s.host is required", where)
 		}

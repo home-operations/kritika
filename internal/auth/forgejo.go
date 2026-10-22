@@ -12,12 +12,13 @@ import (
 )
 
 // forgejoScopes read the profile, its emails and organization memberships.
-// Forgejo limits an OAuth2 token to the API scopes it was granted, and
-// grants every scope to one that asks for none.
+// Forgejo and Gitea limit an OAuth2 token to the API scopes it was granted,
+// and grant every scope to one that asks for none.
 var forgejoScopes = []string{"read:user", "read:organization"}
 
 // newForgejoProvider signs in through an OAuth2 application of the Forgejo
-// instance at the sign-in's host.
+// or Gitea instance at the sign-in's host: Gitea's OAuth2 provider and the
+// API calls a sign-in makes are Forgejo's.
 func newForgejoProvider(s *configfile.SignIn, redirect string, client *http.Client) *forgeProvider {
 	web := "https://" + s.Host
 	return newForgeProvider(s, web, web+"/api/v1", redirect, forgejoScopes, client, forgejoAPI{})
