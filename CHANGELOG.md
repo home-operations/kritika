@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.0.95](https://github.com/home-operations/kritika/compare/0.0.94...0.0.95) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** lead the summary with the confidence score and drop merge impact ([#1177](https://github.com/home-operations/kritika/issues/1177))
+
+### Features
+
+* **review:** lead the summary with the confidence score and drop merge impact ([#1177](https://github.com/home-operations/kritika/issues/1177)) ([2312aae](https://github.com/home-operations/kritika/commit/2312aae86418cad577f67fc740646f3d4057b07f))
+
+
+### Continuous Integration
+
+* **pages:** move deploys to a fresh concurrency group ([#1176](https://github.com/home-operations/kritika/issues/1176)) ([c16f823](https://github.com/home-operations/kritika/commit/c16f8238b4cb04225f4a666899ecc1dbad8b24cc))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action docker/github-builder (v1.17.0 → v1.18.0) ([#1174](https://github.com/home-operations/kritika/issues/1174)) ([767c3dd](https://github.com/home-operations/kritika/commit/767c3dde486c31c15144c39634e4133349f9e513))
+
 ## [0.0.94](https://github.com/home-operations/kritika/compare/0.0.93...0.0.94) (2026-10-22)
 
 
