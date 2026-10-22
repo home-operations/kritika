@@ -25,10 +25,11 @@ import (
 // step, waiting on it.
 const recordTimeout = 2 * time.Second
 
-// ProviderSecrets are a provider's key and the credentials in its base
-// URL, whole and the password alone; some may be empty.
+// ProviderSecrets are a provider's key, the headers it is given by
+// reference, and the credentials in its base URL, whole and the password
+// alone; some may be empty.
 func ProviderSecrets(p configfile.Provider) []string {
-	secrets := []string{p.APIKeyValue().Value()}
+	secrets := append([]string{p.APIKeyValue().Value()}, p.HeaderSecrets()...)
 	if u, err := url.Parse(p.BaseURL); err == nil && u.User != nil {
 		secrets = append(secrets, u.User.String())
 		if pw, ok := u.User.Password(); ok {

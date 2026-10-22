@@ -407,7 +407,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		// The provider's error goes to a pod that reads untrusted content;
 		// it must not carry the key, or credentials in the provider's URL,
 		// if the provider or the SDK echoed them.
-		msg := maskProvider(err.Error(), served.Provider)
+		msg := adapter.Mask(c.file, served.Provider)(err.Error())
 		c.logger.Warn("gateway: step failed", "error", msg)
 		status, code := upstreamStatus(err)
 		refuse(w, status, code, msg)
@@ -477,15 +477,4 @@ func upstreamStatus(err error) (int, string) {
 		return http.StatusBadGateway, "upstream_error"
 	}
 	return http.StatusUnprocessableEntity, "upstream_refused"
-}
-
-// maskProvider removes a provider's key, and any credentials in its base
-// URL, from text bound for a runner.
-func maskProvider(text string, p configfile.Provider) string {
-	for _, s := range adapter.ProviderSecrets(p) {
-		if s != "" {
-			text = strings.ReplaceAll(text, s, "***")
-		}
-	}
-	return text
 }

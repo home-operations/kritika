@@ -29,7 +29,7 @@ func TestUnpricedModels(t *testing.T) {
 						body = anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", `{"input_tokens":1000000,"output_tokens":10}`)
 					}
 					srv, _ := fakeProvider(t, http.StatusOK, body)
-					s, err := NewStepper(provider, srv.URL, "test-key", tt.pricing, nil)
+					s, err := NewStepper(provider, srv.URL, "test-key", nil, tt.pricing, nil)
 					if err != nil {
 						t.Fatal(err)
 					}

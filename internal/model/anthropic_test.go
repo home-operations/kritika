@@ -273,7 +273,7 @@ func TestNewStepper(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := NewStepper(tt.typ, tt.baseURL, "k", nil, nil)
+			s, err := NewStepper(tt.typ, tt.baseURL, "k", nil, nil, nil)
 			if (err != nil) != tt.wantErr || (err == nil && s == nil) {
 				t.Fatalf("NewStepper = %v, %v", s, err)
 			}
@@ -286,7 +286,7 @@ func TestNewStepper(t *testing.T) {
 			host = r.URL.Host
 			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
 		})}
-		s, err := NewStepper(ProviderOpenAI, "", "k", nil, client)
+		s, err := NewStepper(ProviderOpenAI, "", "k", nil, nil, client)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -294,6 +294,30 @@ func TestNewStepper(t *testing.T) {
 			t.Fatalf("reached %q (%v), want api.openai.com", host, err)
 		}
 	})
+}
+
+// TestAnthropicConfiguredHeaders: as TestOpenAIConfiguredHeaders.
+func TestAnthropicConfiguredHeaders(t *testing.T) {
+	srv, got := fakeProvider(t, http.StatusOK, anthropicMessage(`[{"type":"text","text":"ok"}]`, "end_turn", anthropicUsage))
+	c, err := NewAnthropic(AnthropicConfig{BaseURL: srv.URL, APIKey: "k", Headers: map[string]string{
+		"x-tag": "kritika", "User-Agent": "mine", "x-session": "{session}",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ name, session, want string }{
+		{"a step names its session", "run-1", "run-1"},
+		{"a step without a session sends none", "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := c.Step(t.Context(), StepRequest{Model: "m", Session: tt.session}); err != nil {
+				t.Fatal(err)
+			}
+			if h := got.header; h.Get("x-tag") != "kritika" || h.Get("User-Agent") != "mine" || h.Get("x-session") != tt.want {
+				t.Fatalf("headers = %v, want x-tag, User-Agent and a session header of %q", h, tt.want)
+			}
+		})
+	}
 }
 
 type roundTripper func(*http.Request) (*http.Response, error)

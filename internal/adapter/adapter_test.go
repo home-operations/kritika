@@ -126,11 +126,13 @@ const minimalFile = `apps:
 func TestMask(t *testing.T) {
 	t.Setenv("TEST_PROVIDER_KEY", "sk-provider")
 	t.Setenv("TEST_EGRESS_TOKEN", "ghp-egress")
+	t.Setenv("TEST_HEADER_KEY", "gw-secret")
 	f, err := configfiletest.Parse(t, `providers:
   p:
     type: openai
     baseUrl: https://kritika:url-secret@llm.example/v1
     apiKey: { env: TEST_PROVIDER_KEY }
+    headers: { x-gw-key: { env: TEST_HEADER_KEY }, x-team: platform }
 egress:
   allow: [api.example.com]
   credentials:
@@ -145,6 +147,7 @@ egress:
 		"https://kritika:url-secret@llm/":           "https://***@llm/",
 		"auth Bearer ghp-egress or bare ghp-egress": "auth *** or bare ***",
 		"token krk_run":                             "token ***",
+		"header gw-secret of platform":              "header *** of platform",
 		`plain se"cr\et<x`:                          "plain ***",
 		`{"k":"se\"cr\\et\u003cx"}`:                 `{"k":"***"}`,
 		`{"k":"se\"cr\\et<x"}`:                      `{"k":"***"}`,

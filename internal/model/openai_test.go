@@ -428,7 +428,7 @@ func TestStalledProviderTimesOut(t *testing.T) {
 	t.Cleanup(func() { close(release) })
 	for _, pt := range []ProviderType{ProviderOpenAI, ProviderOpenRouter, ProviderOpenCode, ProviderAnthropic} {
 		t.Run(string(pt), func(t *testing.T) {
-			s, err := NewStepper(pt, srv.URL, "k", Pricing{}, nil)
+			s, err := NewStepper(pt, srv.URL, "k", nil, Pricing{}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -581,11 +581,50 @@ func TestOpenAISessionHeader(t *testing.T) {
 			if _, err := c.Step(t.Context(), StepRequest{Model: "m", Session: tt.session}); err != nil {
 				t.Fatal(err)
 			}
-			if h := got.header.Get(sessionHeader); h != tt.want {
-				t.Fatalf("%s = %q, want %q", sessionHeader, h, tt.want)
+			if h := got.header.Get(OpenCodeSessionHeader); h != tt.want {
+				t.Fatalf("%s = %q, want %q", OpenCodeSessionHeader, h, tt.want)
 			}
 		})
 	}
+}
+
+// TestOpenAIConfiguredHeaders: a provider's headers reach every request,
+// the catalog's too, and replace kritika's own; one naming the session
+// carries the step's, and a request without one leaves it off, or sends
+// kritika's own header of that name.
+func TestOpenAIConfiguredHeaders(t *testing.T) {
+	srv, got := fakeProvider(t, http.StatusOK, chatCompletion(`{"role":"assistant","content":"ok"}`, "stop", plainUsage, ""))
+	c, err := NewOpenAI(OpenAIConfig{BaseURL: srv.URL + "/v1", APIKey: "k", Headers: map[string]string{
+		"x-tag": "kritika", "User-Agent": "mine", "x-session": "{session}", "X-Title": "kritika-{session}",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(t *testing.T, session, title string) {
+		t.Helper()
+		if h := got.header; h.Get("x-tag") != "kritika" || h.Get("User-Agent") != "mine" || h.Get("x-session") != session || h.Get("X-Title") != title {
+			t.Fatalf("headers = %v, want x-tag, User-Agent, x-session %q and X-Title %q", h, session, title)
+		}
+	}
+	for _, tt := range []struct{ name, session, title string }{
+		{"a step names its session", "run-1/2", "kritika-run-1/2"},
+		{"a step without a session", "", "kritika"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := c.Step(t.Context(), StepRequest{Model: "m", Session: tt.session}); err != nil {
+				t.Fatal(err)
+			}
+			check(t, tt.session, tt.title)
+		})
+	}
+	t.Run("the catalog", func(t *testing.T) {
+		// The fake answers every path with a completion, which is no catalog.
+		_, _ = c.client.Models.List(t.Context())
+		if got.path != "/v1/models" {
+			t.Fatalf("path = %s", got.path)
+		}
+		check(t, "", "kritika")
+	})
 }
 
 // TestRequestTimeoutOverrides: a client built with its own request timeout

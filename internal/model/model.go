@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -342,28 +343,47 @@ const (
 )
 
 // NewStepper builds the adapter for a provider. An empty baseURL means the
-// provider's default endpoint; client may be nil. The adapter sends each
-// request once: the gateway and the workers retry a step with the
-// provider's retries (adapter.Step).
-func NewStepper(t ProviderType, baseURL, apiKey string, pricing Pricing, client *http.Client) (Stepper, error) {
+// provider's default endpoint; headers and client may be nil. The adapter
+// sends each request once: the gateway and the workers retry a step with
+// the provider's retries (adapter.Step).
+func NewStepper(t ProviderType, baseURL, apiKey string, headers map[string]string, pricing Pricing, client *http.Client) (Stepper, error) {
 	switch t {
 	case ProviderOpenRouter:
 		baseURL = cmp.Or(baseURL, OpenRouterBaseURL)
-		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenRouter: true, Pricing: pricing})
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, OpenRouter: true, Pricing: pricing})
 	case ProviderOpenAI:
 		// Set, so the client never falls back to OPENAI_BASE_URL.
 		baseURL = cmp.Or(baseURL, OpenAIBaseURL)
-		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, Pricing: pricing})
 	case ProviderAnthropic:
-		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, Pricing: pricing})
+		return NewAnthropic(AnthropicConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, Pricing: pricing})
 	case ProviderOpenCode:
 		baseURL = cmp.Or(baseURL, OpenCodeBaseURL)
-		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, HTTPClient: client, OpenCode: true, Pricing: pricing})
+		return NewOpenAI(OpenAIConfig{BaseURL: baseURL, APIKey: apiKey, Headers: headers, HTTPClient: client, OpenCode: true, Pricing: pricing})
 	case ProviderChatGPT:
 		return nil, errors.New("model: a chatgpt provider takes a token source, not a key")
 	default:
 		return nil, fmt.Errorf("model: provider type %q has no adapter", t)
 	}
+}
+
+// SessionPlaceholder, in the value of a header a provider is configured
+// with, stands for the step's Session. Such a header is sent with each step
+// that names a session, and with no other request.
+const SessionPlaceholder = "{session}"
+
+// splitHeaders parts configured headers into those every request carries
+// and those that carry a step's session.
+func splitHeaders(h map[string]string) (static, session map[string]string) {
+	static, session = map[string]string{}, map[string]string{}
+	for k, v := range h {
+		if strings.Contains(v, SessionPlaceholder) {
+			session[k] = v
+		} else {
+			static[k] = v
+		}
+	}
+	return static, session
 }
 
 // Where an openrouter, openai or opencode provider without a baseUrl goes.

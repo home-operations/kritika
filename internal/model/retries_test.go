@@ -34,7 +34,7 @@ func TestAdaptersSendOnce(t *testing.T) {
 	req := StepRequest{Model: "m", Messages: []Message{{Role: RoleUser, Text: "hi"}}}
 	t.Run("openai", func(t *testing.T) {
 		srv, n := failing(t, http.StatusServiceUnavailable)
-		s, err := NewStepper(ProviderOpenAI, srv.URL+"/v1", "k", nil, nil)
+		s, err := NewStepper(ProviderOpenAI, srv.URL+"/v1", "k", nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +56,7 @@ func TestAdaptersSendOnce(t *testing.T) {
 	})
 	t.Run("anthropic", func(t *testing.T) {
 		srv, n := failing(t, http.StatusServiceUnavailable)
-		s, err := NewStepper(ProviderAnthropic, srv.URL, "k", nil, nil)
+		s, err := NewStepper(ProviderAnthropic, srv.URL, "k", nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

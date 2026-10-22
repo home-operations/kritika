@@ -36,6 +36,7 @@ Everything else is optional:
 | `baseUrl` | its API's URL, the type's default unless set                                                                                             |
 | `pricing` | per model id or [floating alias](#floating-model-aliases), the prices of a provider that reports no cost ([local models](#local-models)) |
 | `retries` | how many more times a failed model step is tried, from 0 to 5; 0 unless set ([retries](#retries))                                        |
+| `headers` | headers sent with every request, by name, each inline or by reference like `apiKey` ([headers](#headers))                                |
 
 Provider credentials never enter a runner pod: the agent reaches its model
 through kritika's gateway ([the model endpoint](security.md#the-model-endpoint)).
@@ -78,6 +79,40 @@ A model named `<key name>/<model>` in the account's `owner/*` or
 `owner/name` entries, or in one of its repositories' `.kritika.yaml`, runs
 on that key and the account pays for it. A key's name may not be one the
 instance's providers use.
+
+### Headers
+
+A provider's `headers` are sent with every request to it, and replace
+kritika's own of the same name. A value is inline, or a reference like
+`apiKey`'s for one that is secret, which kritika masks as it does the
+key. `{session}` in a value stands for the conversation a step belongs
+to, the one a provider of type `opencode` sends
+([OpenCode Go and Zen](#opencode-go-and-zen)); a header with it is sent
+with a conversation's steps alone, and any other request carries
+kritika's own header of that name, if it has one. A gateway that keys a
+cache or a route on its own header gets the conversation that way;
+Bifrost, for one, forwards a header only under the `x-bf-eh-` prefix,
+which it strips:
+
+```yaml
+providers:
+  bifrost:
+    type: openai
+    baseUrl: http://bifrost.ai.svc.cluster.local:8080/v1
+    apiKey: { env: BIFROST_API_KEY }
+    headers:
+      x-bf-eh-x-opencode-session: "{session}"
+      x-team: platform
+```
+
+- `{session}` is the only placeholder, and goes in an inline value.
+- `apiKey`, the SDKs or Go's HTTP client set `Authorization`,
+  `X-Api-Key`, `Host`, `Accept`, `Accept-Encoding`, `Content-Type`,
+  `Content-Length`, `Content-Encoding`, `Transfer-Encoding` and
+  `Connection`, which are refused, as is `x-opencode-session` on a
+  provider of type `opencode`, which sends its own.
+- A `chatgpt` provider takes none, and the [embedder](#the-embedder)
+  sends none.
 
 ### Floating model aliases
 

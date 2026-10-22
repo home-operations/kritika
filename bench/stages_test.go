@@ -121,7 +121,7 @@ func runStageBench(t *testing.T, stage string, cases []stageCase, outputTokens i
 	modelID := envOr("KRITIKA_BENCH_MODEL", "openai/gpt-6-sol")
 	var stepper model.Stepper
 	if !dry {
-		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil); err != nil {
+		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
