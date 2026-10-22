@@ -37,7 +37,9 @@ published less than a day ago (pnpm's default `minimumReleaseAge`) that its
 file does not exist. In `internal/web`, `pnpm approve-builds` records a
 build decision there, and pnpm adds an exclusion there itself when an
 install has to take a version that new; commit the file with the lockfile.
-Renovate holds npm updates for three days, so its own updates pass.
+Renovate holds npm updates for three days, so its version bumps pass; its
+security fixes skip that hold, so one published under a day ago fails
+until it is a day old or an exclusion for it is committed.
 
 ## S3 cache compatibility
 
