@@ -75,7 +75,12 @@
     {
       label: 'Confidence gate',
       key: 'confidence.gate',
-      value: (s) => (!s.confidence.model ? '—' : s.confidence.gate ? 'yes: the check fails under the threshold' : 'no: the check reports the score'),
+      value: (s) =>
+        !s.confidence.model
+          ? '—'
+          : s.confidence.gate
+            ? `yes${s.confidence.gateWhen?.length ? ` ${bounded(s.confidence.gateWhen)}` : ''}: the check fails under the threshold`
+            : 'no: the check reports the score',
     },
     {
       label: 'Approve up to risk',

@@ -79,7 +79,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyScorerFallback, string(deref(d.Confidence.Fallback)), d.Confidence.Fallback != nil},
 		{keyScorerEffort, string(deref(d.Confidence.Effort)), d.Confidence.Effort != nil},
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
-		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},
+		{keyGate, deref(d.Confidence.Gate).String(), d.Confidence.Gate != nil},
 		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
 		{keyConfidenceWhen, whenLabel(d.Confidence.When), d.Confidence.When != nil},
 		{keyLimit, strconv.Itoa(deref(d.Trigger.Limit)), d.Trigger.Limit != nil},

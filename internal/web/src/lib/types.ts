@@ -290,6 +290,8 @@ export interface RepoSettings {
     effort: string;
     threshold: number;
     gate: boolean;
+    // gateWhen is absent when the gate holds every scored pull request.
+    gateWhen?: Condition[];
     risk: Risk;
     instructions: string;
     // floors is absent when the admin set none.

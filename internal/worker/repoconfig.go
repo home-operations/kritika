@@ -56,12 +56,17 @@ func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
 	return Effective{Merged: m, Found: doc != nil}, notes
 }
 
-// scoreFor turns confidence scoring off for a pull request, with the filter
-// variables vars, that confidence.when's conditions do not hold for. One the
-// admin's leave out is reviewed as a repository with no confidence model
-// is; one only the repository file's leave out is not approved either.
-func (e *Effective) scoreFor(vars map[string]any) {
+// narrowTo turns confidence scoring and its gate off for a pull request,
+// with the filter variables vars, that their conditions do not hold for.
+// One confidence.when's admin conditions leave out is reviewed as a
+// repository with no confidence model is; one only the repository file's
+// leave out is not approved either. One confidence.gate's leave out shows
+// its score and passes.
+func (e *Effective) narrowTo(vars map[string]any) {
 	c := &e.Confidence
+	if !configfile.AnyHolds(c.GateWhen, vars) {
+		c.Gate = false
+	}
 	switch {
 	case c.Model == "":
 	case !configfile.AnyHolds(c.When, vars):
@@ -120,7 +125,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 			e.logger.Warn("repository filter failed to evaluate", "filter", by.Label(), "error", err)
 		}
 		if reason == "" {
-			eff.scoreFor(vars)
+			eff.narrowTo(vars)
 			return false, nil
 		}
 		e.filter = ""

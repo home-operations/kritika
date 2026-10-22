@@ -58,7 +58,9 @@ minutes, including time waiting for a model slot.
 
 A pull request [`confidence.when`](#only-some-pull-requests) leaves out is
 reviewed as if no confidence model were set: it is not scored, and the
-gate does not hold it.
+gate does not hold it. A `when` block in place of `gate: true` gates only
+the pull requests one of its conditions holds for; another shows its score
+and passes.
 
 To block merging, also make **Kritika / Review** a required check in GitHub.
 Risk does not affect this check. A high-risk change can pass its score gate
@@ -83,20 +85,21 @@ The summary says **Approved** or **Not approved**, with a reason. A repository's
 
 ### Only some pull requests
 
-`confidence.when` and a `when` block in place of `review.approve: true`
-narrow scoring and approval to the pull requests one of their conditions
-holds for. Each is a list of conditions as a [rule's](repository-config.md#rules),
-an `expr` over [`pr`](repository-config.md#include-and-exclude-recipes) with
-an optional `name`. To score Renovate's pull requests alone, and approve
+`confidence.when`, and a `when` block in place of `confidence.gate: true`
+or `review.approve: true`, narrow scoring, the gate and approval to the
+pull requests one of their conditions holds for. Each is a list of
+conditions as a [rule's](repository-config.md#rules), an `expr` over
+[`pr`](repository-config.md#include-and-exclude-recipes) with an optional
+`name`. To score every pull request, gate only Renovate's, and approve
 only its small bumps:
 
 ```yaml
 confidence:
   threshold: 4
-  gate: true
-  when:
-    - name: renovate
-      expr: pr.headRef.startsWith("renovate/")
+  gate:
+    when:
+      - name: renovate
+        expr: pr.headRef.startsWith("renovate/")
 review:
   approve:
     when:
@@ -104,11 +107,18 @@ review:
         expr: pr.bot && pr.labels.exists(l, l.name in ["type/patch", "type/minor", "type/digest"])
 ```
 
+To score Renovate's pull requests alone instead, saving the scorer's
+calls on the rest, move the condition to `confidence.when` and write
+`gate: true`.
+
 - A condition is compiled and smoke-tested when the configuration loads,
   and one that fails to evaluate does not hold. `pr.lines` is a trigger
   condition's alone.
-- An approval block must list at least one condition: `true` approves
-  every pull request the review allows, and `false` none.
+- A `gate` or `approve` block must list at least one condition: `true`
+  gates or approves every pull request the review allows, and `false`
+  none.
+- The gate's conditions, like `confidence.when`, are judged as the review
+  starts.
 - Approval's conditions are judged as the review is posted, so a label
   added while it ran counts. A pull request they do not hold for is never
   approved, whatever its review found: an approval kritika gave it is
@@ -116,10 +126,12 @@ review:
 - `pr.bot` is who opened the pull request, not who pushed to it: a commit
   someone else pushes onto a bot's branch is approved as the bot's would
   be, when the review allows it.
-- A scope that writes `review.approve` replaces the broader one's,
-  conditions and all, and one that writes `confidence.when`, even empty,
-  replaces the broader one's; an empty `confidence.when` scores every pull
-  request.
+- A scope that writes `review.approve` or `confidence.gate` replaces the
+  broader one's, conditions and all, and one that writes
+  `confidence.when`, even empty, replaces the broader one's; an empty
+  `confidence.when` scores every pull request.
+- A repository's `confidence.gate` replaces the admin's, conditions and
+  all, as it may already turn the gate off.
 - A repository's `.kritika.yaml` adds conditions that must hold beside the
   admin's, and its `approve: true` keeps the admin's conditions. A pull
   request only the file's `confidence.when` leaves unscored is not approved

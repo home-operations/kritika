@@ -50,8 +50,8 @@ func defaultValue(defaults []FileDefault, key string) string {
 func TestApproveRejects(t *testing.T) {
 	authEnv(t)
 	for name, tt := range map[string]struct{ approve, want string }{
-		"an empty block":       {"{}", "an approve block must list when conditions"},
-		"an empty list":        {"{ when: [] }", "an approve block must list when conditions"},
+		"an empty block":       {"{}", "a block must list when conditions"},
+		"an empty list":        {"{ when: [] }", "a block must list when conditions"},
 		"an unknown key":       {"{ if: [] }", "field if not found"},
 		"a number":             {"3", "cannot"},
 		"no expression":        {"{ when: [{ name: a }] }", "review.approve.when[0]: expr is required"},
@@ -111,5 +111,31 @@ func TestRepositoryConditions(t *testing.T) {
 	}
 	if AnyHolds([]When{{Expr: "pr.nope == 1"}}, SamplePR()) {
 		t.Fatal("a condition that fails to evaluate must not hold")
+	}
+}
+
+// TestGateForms: confidence.gate takes the forms review.approve does, and a
+// narrower scope replaces it whole.
+func TestGateForms(t *testing.T) {
+	authEnv(t)
+	f := mustLoad(t, "confidence:\n  gate:\n    when:\n      - { name: renovate, expr: 'pr.headRef.startsWith(\"renovate/\")' }\n"+
+		acme("  acme/x: { confidence: { gate: true } }\n"))
+	a := &f.Accounts[0]
+	if c := f.Settings(a, "acme/y").Confidence; !c.Gate || whenLabel(c.GateWhen) != "renovate" {
+		t.Fatalf("gate %v when %q", c.Gate, whenLabel(c.GateWhen))
+	}
+	if c := f.Settings(a, "acme/x").Confidence; !c.Gate || len(c.GateWhen) != 0 {
+		t.Fatalf("gate: true must replace the root's conditions: %v %q", c.Gate, whenLabel(c.GateWhen))
+	}
+	if got := defaultValue(f.FileLayer().Defaults, keyGate); got != "when renovate" {
+		t.Fatalf("the Configuration page states %q", got)
+	}
+	for name, tt := range map[string]struct{ gate, want string }{
+		"an empty block":   {"{}", "a block must list when conditions"},
+		"a diff condition": {"{ when: [{ expr: 'pr.lines > 1' }] }", "confidence.gate.when[0]: pr.lines"},
+	} {
+		if _, err := load(t, "confidence:\n  gate: "+tt.gate+"\n"+minimal); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("%s: err = %v, want %q", name, err, tt.want)
+		}
 	}
 }

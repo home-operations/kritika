@@ -281,9 +281,9 @@ func TestFollowUpRepoConfig(t *testing.T) {
 	}
 }
 
-// TestScoreFor: a pull request confidence.when does not hold for is
+// TestNarrowTo: a pull request confidence.when does not hold for is
 // reviewed as if no confidence model were set.
-func TestScoreFor(t *testing.T) {
+func TestNarrowTo(t *testing.T) {
 	t.Parallel()
 	scoped := func() Effective {
 		var e Effective
@@ -291,14 +291,14 @@ func TestScoreFor(t *testing.T) {
 		return e
 	}
 	e := scoped()
-	e.scoreFor(configfile.SamplePR())
+	e.narrowTo(configfile.SamplePR())
 	if e.Confidence.Model != "" || e.Confidence.Fallback != "" {
 		t.Fatalf("confidence = %+v, want no model for a person's pull request", e.Confidence)
 	}
 	e = scoped()
 	bot := configfile.SamplePR()
 	bot["bot"] = true
-	e.scoreFor(bot)
+	e.narrowTo(bot)
 	if e.Confidence.Model != "p/judge" || e.Confidence.RepoUnscored {
 		t.Fatalf("confidence = %+v, want the model kept for a bot's", e.Confidence)
 	}
@@ -309,8 +309,31 @@ func TestScoreFor(t *testing.T) {
 	// unscored and unapproved, never approved on its findings alone.
 	e = scoped()
 	e.Confidence.WhenInRepo = []configfile.When{{Expr: "pr.draft"}}
-	e.scoreFor(bot)
+	e.narrowTo(bot)
 	if e.Confidence.Model != "" || !e.Confidence.RepoUnscored {
 		t.Fatalf("confidence = %+v, want it unscored by the repository", e.Confidence)
+	}
+}
+
+// TestNarrowToGate: a pull request confidence.gate's conditions do not hold
+// for is scored but not gated.
+func TestNarrowToGate(t *testing.T) {
+	t.Parallel()
+	gated := func() Effective {
+		var e Effective
+		e.Confidence = configfile.Confidence{Model: "p/judge", Gate: true, GateWhen: []configfile.When{{Expr: "pr.bot"}}}
+		return e
+	}
+	e := gated()
+	e.narrowTo(configfile.SamplePR())
+	if e.Confidence.Gate || e.Confidence.Model != "p/judge" {
+		t.Fatalf("confidence = %+v, want a person's pull request scored and not gated", e.Confidence)
+	}
+	e = gated()
+	bot := configfile.SamplePR()
+	bot["bot"] = true
+	e.narrowTo(bot)
+	if !e.Confidence.Gate {
+		t.Fatalf("confidence = %+v, want a bot's pull request gated", e.Confidence)
 	}
 }

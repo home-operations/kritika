@@ -213,7 +213,7 @@ type ReviewSpec struct {
 	// to the provider.
 	Effort      *model.Effort `yaml:"effort,omitempty"`
 	Fixes       *bool         `yaml:"fixes,omitempty"`
-	Approve     *Approve      `yaml:"approve,omitempty"`
+	Approve     *Switch       `yaml:"approve,omitempty"`
 	Incremental *int          `yaml:"incremental,omitempty"`
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
@@ -233,7 +233,7 @@ type ConfidenceSpec struct {
 	Fallback     *ModelRef     `yaml:"fallback,omitempty"`
 	Effort       *model.Effort `yaml:"effort,omitempty"`
 	Threshold    *int          `yaml:"threshold,omitempty"`
-	Gate         *bool         `yaml:"gate,omitempty"`
+	Gate         *Switch       `yaml:"gate,omitempty"`
 	Risk         *review.Risk  `yaml:"risk,omitempty"`
 	Instructions *string       `yaml:"instructions,omitempty"`
 	Floors       RiskFloors    `yaml:"floors,omitempty"`
@@ -279,8 +279,12 @@ type Confidence struct {
 	Threshold int `json:"threshold"`
 	// Gate is true to fail the commit status under Threshold, so it can be
 	// a required check. Off unless set: a score never blocks a merge
-	// nobody asked it to, and the status only reports it.
-	Gate bool `json:"gate"`
+	// nobody asked it to, and the status only reports it. GateWhen are
+	// confidence.gate's conditions, one of which a pull request must hold
+	// for to be gated, none for every one; one they do not hold for shows
+	// its score and passes.
+	Gate     bool   `json:"gate"`
+	GateWhen []When `json:"gateWhen,omitempty"`
 	// Risk is the highest risk a change may be rated and still be approved.
 	Risk review.Risk `json:"risk"`
 	// Instructions are the admin's guidance to the scorer on rating risk.

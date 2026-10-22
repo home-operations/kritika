@@ -12,17 +12,18 @@ import (
 	"github.com/home-operations/kritika/internal/prfilter"
 )
 
-// Approve is review.approve as a file writes it: true or false, or a
-// block whose when lists the conditions, one of which a pull request must
-// hold for to be approved, as a rule's do. The block turns approval on and
-// lists at least one condition; true is how every pull request is.
-type Approve struct {
+// Switch is a setting a file writes as true or false, or as a block whose
+// when lists the conditions, one of which a pull request must hold for the
+// setting to be on for it, as a rule's do: review.approve and
+// confidence.gate. The block turns the setting on and lists at least one
+// condition; true is how it is on for every pull request.
+type Switch struct {
 	On   bool
 	When []When
 }
 
 // UnmarshalYAML takes a boolean, or a mapping with when.
-func (a *Approve) UnmarshalYAML(n *yaml.Node) error {
+func (a *Switch) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
 		return n.Decode(&a.On)
 	}
@@ -34,14 +35,14 @@ func (a *Approve) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 	if len(block.When) == 0 {
-		return errors.New("an approve block must list when conditions; true approves every pull request")
+		return errors.New("a block must list when conditions; true is on for every pull request")
 	}
 	a.On, a.When = true, block.When
 	return nil
 }
 
 // String is the value as the Configuration page states it.
-func (a Approve) String() string {
+func (a Switch) String() string {
 	if len(a.When) == 0 {
 		return strconv.FormatBool(a.On)
 	}
@@ -86,12 +87,15 @@ func (r Review) ApprovesFor(vars map[string]any) bool {
 	return AnyHolds(r.ApproveWhen, vars) && AnyHolds(r.ApproveWhenInRepo, vars)
 }
 
-// checkConditions checks the approval and confidence conditions one scope
-// writes, as a rule's are checked.
+// checkConditions checks the approval, gate and confidence conditions one
+// scope writes, as a rule's are checked.
 func checkConditions(where string, r *Overrides) error {
-	if a := r.Review.Approve; a != nil {
-		if err := CheckWhen(a.When); err != nil {
-			return fmt.Errorf("configfile: %s%s.%w", where, keyApprove, err)
+	for key, s := range map[string]*Switch{keyApprove: r.Review.Approve, keyGate: r.Confidence.Gate} {
+		if s == nil {
+			continue
+		}
+		if err := CheckWhen(s.When); err != nil {
+			return fmt.Errorf("configfile: %s%s.%w", where, key, err)
 		}
 	}
 	if err := CheckWhen(r.Confidence.When); err != nil {

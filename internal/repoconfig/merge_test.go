@@ -111,7 +111,7 @@ func TestMerge(t *testing.T) {
 				s.Review.Approve, s.Review.ApproveWhenInRepo = true, []configfile.When{{Name: "bumps", Expr: "pr.bot"}}
 			},
 		},
-		{name: "an approval block with no conditions", doc: "review: { approve: {} }\n", wantErr: "an approve block must list when conditions"},
+		{name: "an approval block with no conditions", doc: "review: { approve: {} }\n", wantErr: "a block must list when conditions"},
 		{name: "an approval condition on the diff", doc: "review: { approve: { when: [{ expr: 'pr.lines > 1' }] } }\n",
 			wantErr: "review.approve.when[0]: pr.lines"},
 		{
@@ -119,6 +119,13 @@ func TestMerge(t *testing.T) {
 			want: func(s *configfile.Settings) { s.Confidence.WhenInRepo = []configfile.When{{Expr: "pr.draft"}} },
 		},
 		{name: "a confidence condition that does not compile", doc: "confidence: { when: [{ expr: 'pr.(' }] }\n", wantErr: "confidence.when[0]"},
+		{
+			name: "a gate's conditions replace the admin's", doc: "confidence: { gate: { when: [{ expr: pr.bot }] } }\n",
+			want: func(s *configfile.Settings) {
+				s.Confidence.Gate, s.Confidence.GateWhen = true, []configfile.When{{Expr: "pr.bot"}}
+			},
+		},
+		{name: "a gate condition on the diff", doc: "confidence: { gate: { when: [{ expr: 'pr.lines > 1' }] } }\n", wantErr: "confidence.gate.when[0]: pr.lines"},
 		{
 			name: "diagram replaces the admin's", doc: "review: { diagram: true }\n",
 			want: func(s *configfile.Settings) { s.Review.Diagram = true },
@@ -426,5 +433,19 @@ func TestMergeKeepsAdminApprovalConditions(t *testing.T) {
 	m, err := Merge([]byte("review: { approve: true }\n"), op)
 	if err != nil || !m.Review.Approve || len(m.Review.ApproveWhen) != 1 || len(m.Review.ApproveWhenInRepo) != 0 {
 		t.Fatalf("merged review = %+v, %v", m.Review, err)
+	}
+}
+
+// TestMergeReplacesAdminGate: a file's gate replaces the admin's,
+// conditions and all, where its approval conditions hold beside them.
+func TestMergeReplacesAdminGate(t *testing.T) {
+	t.Parallel()
+	op := configfile.Settings{Confidence: configfile.Confidence{Gate: true, GateWhen: []configfile.When{{Expr: "pr.draft"}}}}
+	m, err := Merge([]byte("confidence: { gate: { when: [{ expr: pr.bot }] } }\n"), op)
+	if err != nil || !m.Confidence.Gate || len(m.Confidence.GateWhen) != 1 || m.Confidence.GateWhen[0].Expr != "pr.bot" {
+		t.Fatalf("merged confidence = %+v, %v; want the file's conditions alone", m.Confidence, err)
+	}
+	if m, err = Merge([]byte("confidence: { gate: true }\n"), op); err != nil || !m.Confidence.Gate || len(m.Confidence.GateWhen) != 0 {
+		t.Fatalf("merged confidence = %+v, %v; want gate: true to gate every pull request", m.Confidence, err)
 	}
 }

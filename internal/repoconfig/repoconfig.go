@@ -72,7 +72,7 @@ type Review struct {
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
 	Effort   *model.Effort       `yaml:"effort,omitempty"`
 	Fixes    *bool               `yaml:"fixes,omitempty"`
-	Approve  *configfile.Approve `yaml:"approve,omitempty"`
+	Approve  *configfile.Switch  `yaml:"approve,omitempty"`
 	Diagram  *bool               `yaml:"diagram,omitempty"`
 }
 
@@ -88,7 +88,7 @@ type Confidence struct {
 	Fallback  configfile.ModelRef `yaml:"fallback,omitempty"`
 	Effort    *model.Effort       `yaml:"effort,omitempty"`
 	Threshold *int                `yaml:"threshold,omitempty"`
-	Gate      *bool               `yaml:"gate,omitempty"`
+	Gate      *configfile.Switch  `yaml:"gate,omitempty"`
 	Risk      review.Risk         `yaml:"risk,omitempty"`
 	When      []configfile.When   `yaml:"when,omitempty"`
 }
@@ -157,9 +157,12 @@ func Parse(data []byte) (File, error) {
 	if err := configfile.CheckRules(f.Rules); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
-	if a := f.Review.Approve; a != nil {
-		if err := configfile.CheckWhen(a.When); err != nil {
-			return File{}, fmt.Errorf("repoconfig: review.approve.%w", err)
+	for key, s := range map[string]*configfile.Switch{"review.approve": f.Review.Approve, "confidence.gate": f.Confidence.Gate} {
+		if s == nil {
+			continue
+		}
+		if err := configfile.CheckWhen(s.When); err != nil {
+			return File{}, fmt.Errorf("repoconfig: %s.%w", key, err)
 		}
 	}
 	if err := configfile.CheckWhen(f.Confidence.When); err != nil {

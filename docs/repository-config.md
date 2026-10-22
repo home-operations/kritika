@@ -116,6 +116,9 @@ threshold and the gate in either direction; the models are held to the
 providers `review.model` is ([models](#models)), and the fallback takes
 the scorer's call when the confidence model fails;
 `confidence.risk` may only lower the admin's, and a higher one is dropped.
+`confidence.gate` may be a block of `when` conditions, as `review.approve`
+may, gating only a pull request one of them holds for; it replaces the
+admin's, conditions and all.
 `confidence.when` lists conditions, as a rule's `when`, one of which a pull
 request must hold for to be scored, beside the admin's. One the file's
 conditions leave unscored is reviewed without a score and, where the
