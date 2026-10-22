@@ -160,8 +160,7 @@ var goldens = map[string]any{
 			Review: goldenReview, Pull: goldenPullRef, PullState: "open", ScopeReason: "delta",
 			MergeBaseSHA: "base1", PatchID: "patch1", PriorReviewID: new("rev-0"), CancelRequestedAt: nil,
 		},
-		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}, Diagram: "flowchart TD\n  A --> B",
-			Impact: []string{"`migrations/002.sql` drops the legacy column on startup; reverting the binary does not restore its data."}},
+		Summary: &Summary{Take: "Looks fine.", Praise: []string{"tests"}, Diagram: "flowchart TD\n  A --> B"},
 		Findings: []Finding{{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityP0, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",

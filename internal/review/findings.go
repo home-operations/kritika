@@ -267,7 +267,6 @@ const (
 	keyHeadline     = "headline"
 	keyTake         = "take"
 	keyPraise       = "praise"
-	keyImpact       = "impact"
 	keyDiagram      = "diagram"
 	keyChecked      = "checked"
 	keyFindings     = "findings"
@@ -409,20 +408,18 @@ func contractSchema(requireFix, diagram bool) jsonSchema {
 	}
 }
 
-// summaryProperties are a summary's headline, take, praise and impact, and its
+// summaryProperties are a summary's headline, take and praise, and its
 // diagram when diagram is set, as a schema states them.
 func summaryProperties(diagram bool) map[string]*jsonSchema {
 	summary := map[string]*jsonSchema{
 		keyHeadline: {
 			Type:        schemaString,
-			Description: "One sentence, under twelve words, on what the change does; it opens the comment. No markdown.",
+			Description: "One sentence, under twelve words, on what the change does; it opens the summary. No markdown.",
 		},
 		keyTake: {
-			Type:        schemaString,
-			Description: "Two to four sentences: what the change does and the overall assessment. No markdown headings.",
-		},
-		keyImpact: {
-			Type: schemaArray, Description: describeImpact, Items: &jsonSchema{Type: schemaString}, MaxItems: maxImpact,
+			Type: schemaString,
+			Description: "Two to four sentences on how the change does it and what merging sets off, as the instructions say; " +
+				"not the findings or a verdict. No markdown headings.",
 		},
 		keyPraise: {
 			Type:        schemaArray,
@@ -488,14 +485,6 @@ func Check(raw json.RawMessage) error {
 	if d := strings.TrimSpace(res.Summary.Diagram); d != "" && diagram(d) == "" {
 		return fmt.Errorf("review: summary.diagram must be Mermaid source under %d bytes opening with %s, or be left out",
 			maxDiagramBytes, strings.Join(diagramKinds, ", "))
-	}
-	if len(res.Summary.Impact) > maxImpact {
-		return fmt.Errorf("review: summary.impact takes at most %d notes", maxImpact)
-	}
-	for _, note := range res.Summary.Impact {
-		if len(strings.TrimSpace(note)) > maxImpactItemBytes {
-			return fmt.Errorf("review: each summary.impact note must be at most %d bytes", maxImpactItemBytes)
-		}
 	}
 	return nil
 }
@@ -682,7 +671,6 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 func normalizeSummary(s Summary, opts ParseOptions) Summary {
 	s.Headline = oneLine(prose(s.Headline, opts.Repository))
 	s.Take = prose(s.Take, opts.Repository)
-	s.Impact = normalizeImpact(s.Impact, opts.Repository)
 	praise := make([]string, 0, maxPraise)
 	for _, p := range s.Praise {
 		if p = prose(p, opts.Repository); p != "" && len(praise) < maxPraise {

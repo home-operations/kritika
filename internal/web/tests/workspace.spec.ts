@@ -15,7 +15,6 @@ const review: ReviewDetail = {
     ...g.reviewDetail.summary!,
     headline: "Drain pending jobs before the worker exits",
     take: "Cancellation can leave accepted work unfinished. The shutdown path should account for jobs still in the queue.",
-    impact: ["Queued jobs may be lost if the worker exits before draining them."],
   },
   findings: [
     {
@@ -489,16 +488,6 @@ test("sidebar tab order and current-page markers match visible navigation", asyn
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   await expect(nav.locator('[aria-current="page"]')).toHaveText("Findings");
   await expect(nav).toContainText("Configuration");
-});
-
-test("summary and code use the same list formatting for multiline merge impact", async ({ page }) => {
-  await mockWorkspace(page);
-  await page.route("**/reviews/rev-1", (route) => route.fulfill({ json: { ...review, summary: { ...review.summary, impact: ["First concern\ncontinued here", "Second concern"] } } }));
-  await page.goto(`/#/a/${g.SLUG}/reviews/rev-1`);
-  const summary = await page.locator('[aria-labelledby="sum-impact"] .md').innerHTML();
-  await page.getByRole("link", { name: "Findings & code", exact: true }).click();
-  await page.getByRole("region", { name: "Review summary" }).getByRole("button").click();
-  await expect(page.locator(".merge-impact .md")).toHaveJSProperty("innerHTML", summary);
 });
 
 test("file-only navigation does not reopen stale targets after changing diff scope", async ({ page }) => {

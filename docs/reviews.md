@@ -106,9 +106,9 @@ to:
   symbol is `p2`. A change no usage meets is no finding, and goes under
   what the review checked;
 - read major and minor steps first when a grouped update has many, and
-  put the notes it could not read, or left unread, under
-  [merge impact](#the-summary-comment) as a check to make, never as a
-  finding and never as safe;
+  name in the [summary](#the-summary-comment) the notes it could not read,
+  or left unread, as a check to make, never as a finding and never as
+  safe;
 - never propose adopting what the new version adds.
 
 A version number alone never sets a severity. The
@@ -116,15 +116,20 @@ A version number alone never sets a severity. The
 
 ### The summary comment
 
-Start with the findings and suggested fixes. The summary also includes:
+With [confidence scoring](confidence.md) on, the comment's heading is the
+score, and the change's [risk](confidence.md#risk) leads the scorer's reason
+below it. The approval decision, when enabled, comes next, then the findings
+and suggested fixes, then the summary of the change. The comment also
+includes:
 
-- a confidence score and approval decision, when enabled;
 - earlier findings that were fixed, dismissed or not rechecked;
-- merge impact, when the review identifies a concrete operational concern;
 - expandable review context, including sources, skills and commands used.
 
-Merge impact notes explain consequences or checks to make. A suggested check
-is not evidence that it passed. Optional [flow diagrams](repository-config.md#flow-diagrams)
+The summary says what the change does and how, and, where the evidence the
+review read shows it, what merging sets off: what takes effect and when,
+what restarts, what a revert cannot undo, or a check to make afterwards. It
+does not repeat the findings. A suggested check is not evidence that it
+passed. Optional [flow diagrams](repository-config.md#flow-diagrams)
 and [comment templates](repository-config.md#comment-templates) change presentation.
 
 ### The commit status

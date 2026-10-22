@@ -84,7 +84,7 @@ func TestCheck(t *testing.T) {
 		{name: "a misspelled fix key and checked key", raw: `{"summary":{"headline":"h","take":"t","praise":[],"checked>":["x"]},
 			"findings":[{"path":"a.yaml","line":1,"severity":"p1","category":"correctness","title":"t","explanation":"e","suggested_fix.":"the fix"}]}`,
 			wantErr: `unknown keys summary."checked>", findings[0]."suggested_fix."; the input takes findings, resolved, summary, ` +
-				`the summary takes checked, diagram, headline, impact, praise, take and a finding takes agent_prompt, category, ` +
+				`the summary takes checked, diagram, headline, praise, take and a finding takes agent_prompt, category, ` +
 				`end_line, explanation, insert_after, line, path, prior, replacement, rules, severity, suggested_fix, title`},
 		{name: "broken keys across findings, each named", raw: `{"summary":{"take":"t","praise":[]},
 			"findings":[{"path":"a","line":1,"severity":"p0","severity_":"p1","title":"t","explanation":"e","suggested_fix` + "`" + `: ":"f"},
@@ -717,7 +717,7 @@ func TestSchemas(t *testing.T) {
 // schemas declare, at the summary and the finding level.
 func TestSchemaMatchesJSONTags(t *testing.T) {
 	raw, err := json.Marshal(Result{
-		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d", Impact: []string{"i"}, Checked: []string{"c"}},
+		Summary: Summary{Headline: "h", Take: "t", Praise: []string{"p"}, Diagram: "d", Checked: []string{"c"}},
 		Findings: []Finding{{Path: "a", Line: 1, Severity: SeverityP2, Title: "t", Explanation: "e", SuggestedFix: "f",
 			EndLine: 2, Replacement: "r", InsertAfter: "i", AgentPrompt: "p", Rules: []string{"r"}, Prior: "p", URL: "ignored"}},
 		Resolved: []string{"0a1b2c3d"},

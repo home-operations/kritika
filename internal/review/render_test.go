@@ -52,7 +52,10 @@ func TestRenderSummaryRerunBadge(t *testing.T) {
 	body, _ = RenderSummary(t.Context(), Templates{}, d)
 	want := "\n## <a href=\"https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42\"><picture>" +
 		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://kritika.example/k/badges/rerun-dark.svg\">" +
-		"<img alt=\"Re-run\" src=\"https://kritika.example/k/badges/rerun.svg\" align=\"right\"></picture></a>Kritika Review\n"
+		"<img alt=\"Re-run\" src=\"https://kritika.example/k/badges/rerun.svg\" align=\"right\"></picture></a>" +
+		"<a href=\"https://kritika.example/k/#/a/github/acme/pulls/acme/widgets/42\"><picture>" +
+		"<source media=\"(prefers-color-scheme: dark)\" srcset=\"https://kritika.example/k/badges/view-dark.svg\">" +
+		"<img alt=\"View\" src=\"https://kritika.example/k/badges/view.svg\" align=\"right\"></picture></a>Kritika Review\n"
 	if !strings.Contains(body, want) {
 		t.Fatalf("missing %q in:\n%s", want, body)
 	}
@@ -94,10 +97,9 @@ func TestRenderSummaryDefault(t *testing.T) {
 		t.Fatalf("first line = %q", first)
 	}
 	for _, want := range []string{
-		"## Kritika Review\n\nAdds the widget cache.\n\n**2 findings** · 1 P0 · 1 P2\n\n## Findings\n",
-		"**2 findings** · 1 P0 · 1 P2\n",
+		"## Kritika Review\n\n## Findings\n",
 		"## Findings\n\n- **[P0]**",
-		"### Summary\n\nSolid change with one real bug.\n\n**What's good**\n\n- Clear tests\n",
+		"### Summary\n\nAdds the widget cache.\n\nSolid change with one real bug.\n\n**What's good**\n\n- Clear tests\n",
 		"- **[P0]** [`main.go:11`](https://forge.example/o/r/blob/0123456789abcdef/main.go#L11) nil map write · correctness",
 		"- **[P2]** `README.md:2` typo",
 		"_1 file(s) were omitted from the diff to fit the context budget._",
@@ -111,7 +113,7 @@ func TestRenderSummaryDefault(t *testing.T) {
 	if strings.Contains(body, "\n\n\n") {
 		t.Fatalf("blank lines doubled:\n%s", body)
 	}
-	if strings.Index(body, "2 findings") > strings.Index(body, "`main.go:11`") || strings.Index(body, "`main.go:11`") > strings.Index(body, "### Summary") {
+	if strings.Index(body, "`main.go:11`") > strings.Index(body, "### Summary") {
 		t.Fatalf("the findings come before the summary:\n%s", body)
 	}
 
@@ -122,9 +124,9 @@ func TestRenderSummaryDefault(t *testing.T) {
 	body, _ = RenderSummary(t.Context(), Templates{}, empty)
 	// An incremental review says so in the footer alone, with the subject
 	// cut to fit.
-	if !strings.Contains(body, "**No findings**\n\n### Summary\n\nSolid change") || strings.Contains(body, "Incremental review") ||
+	if !strings.Contains(body, "## Kritika Review\n\n### Summary\n\nAdds the widget cache.\n\nSolid change") || strings.Contains(body, "Incremental review") ||
 		!strings.Contains(body, "<sub>Reviews (2) · Last reviewed commit: \"fix(cache): evict the widget cache when...\" · vendor/model-x</sub>") ||
-		strings.Contains(body, "_1 file") || strings.Contains(body, "0 findings") || strings.Contains(body, "Findings\n") ||
+		strings.Contains(body, "_1 file") || strings.Contains(body, "No findings") || strings.Contains(body, "Findings\n") ||
 		strings.Contains(body, "\n\n\n") {
 		t.Fatalf("empty body:\n%s", body)
 	}
@@ -145,9 +147,9 @@ func TestRenderSummaryDiagram(t *testing.T) {
 	}
 }
 
-// TestRenderSummaryConfidence: a scored review states its score under the
-// findings count, with the threshold it missed, and an unscored one says
-// nothing of it.
+// TestRenderSummaryConfidence: a scored review heads the comment with its
+// score and leads the scorer's reason with its risk, and an unscored one
+// says nothing of either.
 func TestRenderSummaryConfidence(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -156,18 +158,27 @@ func TestRenderSummaryConfidence(t *testing.T) {
 	}{
 		{
 			name: "a score that passes", confidence: &Confidence{Score: 5, Threshold: 5, Risk: RiskLow, Reason: "Nothing stands against it."},
-			want: "1 P2\n\n**Confidence 5/5** · low risk: Nothing stands against it.\n\n## Findings\n",
+			want: "## Confidence Score: 5/5\n\n**[Low risk]** Nothing stands against it.\n\n## Findings\n",
 		},
 		{
 			name:       "a risk a floor held",
 			confidence: &Confidence{Score: 5, Threshold: 5, Risk: RiskCritical, Rated: RiskLow, Held: "db/migrations/1.sql", Reason: "Docs only."},
-			want:       "1 P2\n\n**Confidence 5/5** · critical risk: Docs only. Held to critical risk by the instance's floor for db/migrations/1.sql.\n\n## Findings\n",
+			want: "## Confidence Score: 5/5\n\n**[Critical risk]** Docs only. Held to critical risk by the instance's floor for " +
+				"db/migrations/1.sql.\n\n## Findings\n",
 		},
 		{
 			name: "a score under the threshold", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
-			want: "1 P2\n\n**Confidence 2/5**: The nil map write stands.\n\n## Findings\n",
+			want: "## Confidence Score: 2/5\n\nThe nil map write stands.\n\n## Findings\n",
 		},
-		{name: "no score", want: "1 P2\n\n## Findings\n"},
+		{
+			name: "a risk without a reason", confidence: &Confidence{Score: 4, Threshold: 4, Risk: RiskHigh},
+			want: "## Confidence Score: 4/5\n\n**[High risk]**\n\n## Findings\n",
+		},
+		{
+			name: "neither a risk nor a reason", confidence: &Confidence{Score: 3, Threshold: 4},
+			want: "## Confidence Score: 3/5\n\n## Findings\n",
+		},
+		{name: "no score", want: "## Kritika Review\n\n## Findings\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -238,13 +249,13 @@ func TestRenderSummaryApproval(t *testing.T) {
 		want       string
 	}{
 		{name: "approved on its findings", approval: &Approval{Approved: true, Reason: "nothing at P0 or P1 found"},
-			want: "1 P2\n\n**Approved**: nothing at P0 or P1 found\n\n## Findings\n"},
+			want: "## Kritika Review\n\n**Approved**: nothing at P0 or P1 found\n\n## Findings\n"},
 		{name: "approved on its score", confidence: &Confidence{Score: 5, Threshold: 4, Risk: RiskLow, Reason: "Clean."}, approval: &Approval{Approved: true},
-			want: "**Confidence 5/5** · low risk: Clean.\n\n**Approved**\n\n## Findings\n"},
+			want: "**[Low risk]** Clean.\n\n**Approved**\n\n## Findings\n"},
 		{name: "withheld", confidence: &Confidence{Score: 2, Threshold: 4, Reason: "The nil map write stands."},
 			approval: &Approval{Reason: "confidence 2/5 is below the threshold of 4"},
-			want:     "**Confidence 2/5**: The nil map write stands.\n\n**Not approved**: confidence 2/5 is below the threshold of 4\n\n## Findings\n"},
-		{name: "not asked to approve", want: "1 P2\n\n## Findings\n"},
+			want:     "The nil map write stands.\n\n**Not approved**: confidence 2/5 is below the threshold of 4\n\n## Findings\n"},
+		{name: "not asked to approve", want: "## Kritika Review\n\n## Findings\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -309,9 +320,9 @@ func TestRenderSummaryLinks(t *testing.T) {
 	}
 }
 
-// TestRenderSummaryOutsideDiffOnly: findings the diff does not show count
-// in the summary's line like any other, so a review with only those does
-// not read as finding nothing.
+// TestRenderSummaryOutsideDiffOnly: findings the diff does not show are
+// listed under the findings like any other, so a review with only those
+// does not read as finding nothing.
 func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	d := sampleData()
 	d.Result.Findings = nil
@@ -322,8 +333,7 @@ func TestRenderSummaryOutsideDiffOnly(t *testing.T) {
 	}
 	d.Counts = Result{Findings: d.Unanchored}.Counts()
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
-	if !strings.Contains(body, "**2 findings** · 1 P1 · 1 P2\n") || strings.Contains(body, "No findings") ||
-		!strings.Contains(body, "**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n") ||
+	if !strings.Contains(body, "## Findings\n\n**Outside the diff**\n\n- **[P1]** `other.go:7` stale cache\n") ||
 		!strings.Contains(body, "- **[P2]** `other.go:9` [terse name](https://forge.example/o/r/pull/42#r3)\n") {
 		t.Fatalf("body:\n%s", body)
 	}
@@ -353,7 +363,7 @@ func TestRenderSummaryHeldBack(t *testing.T) {
 	d.HeldBack = []Finding{{Path: "old.go", Line: 3, Severity: SeverityP1, Category: CategoryReliability, Title: "unbounded retry",
 		URL: "https://forge.example/o/r/blob/0123456789abcdef/old.go#L3"}}
 	body, _ := RenderSummary(t.Context(), Templates{}, d)
-	want := "**No findings**\n\n## Findings\n\n<details>\n<summary>Held back (1): not on lines changed since the last review</summary>\n\n" +
+	want := "## Kritika Review\n\n## Findings\n\n<details>\n<summary>Held back (1): not on lines changed since the last review</summary>\n\n" +
 		"- **[P1]** [`old.go:3`](https://forge.example/o/r/blob/0123456789abcdef/old.go#L3) unbounded retry · reliability\n\n" +
 		"</details>\n\n### Summary\n"
 	if !strings.Contains(body, want) || strings.Contains(body, "\n\n\n") {

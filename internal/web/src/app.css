@@ -1129,9 +1129,6 @@
   .review-conclusion .collapsible-body > .md {
     @apply text-[length:15px] leading-[1.65];
   }
-  .merge-impact > strong {
-    @apply block mb-1.5;
-  }
   .finding-nav h2 {
     @apply text-[length:16px] py-3 px-4 m-0 border-b border-solid border-b-line;
   }

@@ -539,7 +539,6 @@ type fakeCompleter struct {
 	efforts  []model.Effort
 	// diagram, when set, is the summary diagram a review submits.
 	diagram string
-	impact  string
 	// extra, when set, is one more finding a review submits, as JSON.
 	extra string
 	// again, when set, replaces the first finding's line and title: the
@@ -615,12 +614,9 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	f.systems = append(f.systems, req.System)
 	f.sessions = append(f.sessions, req.Session)
 	f.efforts = append(f.efforts, req.Effort)
-	var diagram, impact, extra string
+	var diagram, extra string
 	if f.diagram != "" {
 		diagram = `,"diagram":` + strconv.Quote(f.diagram)
-	}
-	if f.impact != "" {
-		impact = `,"impact":[` + strconv.Quote(f.impact) + `]`
 	}
 	if f.extra != "" {
 		extra = "," + f.extra
@@ -650,7 +646,7 @@ func (f *fakeCompleter) Step(_ context.Context, req model.StepRequest) (model.St
 	if tool == "confidence" {
 		return answer(`{"score":5,"risk":"medium","reason":"Nothing else stands out."}`, model.Usage{Input: 30, Output: 6}, "test", 0.002), nil
 	}
-	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+impact+`},"findings":[
+	return answer(`{"summary":{"take":"Changes main.go.","praise":["Small and focused"],"checked":["main.go: package clause read"]`+diagram+`},"findings":[
 		  {"path":"main.go",`+first+`,"severity":"p1","category":"correctness","explanation":"look here","suggested_fix":"do this",
 		   "rules":["no-panics","sql-placeholders"]},
 		  {"path":"main.go","line":500,"severity":"p0","category":"correctness","title":"off the diff","explanation":"dropped"}`+extra+`]`+
@@ -711,7 +707,7 @@ func checkWriteBack(t *testing.T, lf *localForge, fc *fakeCompleter) {
 	if len(comments) != 1 || !strings.HasPrefix(sticky, "<!-- kritika:pr-1 -->\n") ||
 		!strings.Contains(sticky, "- **[P1]** [`main.go:1`](local://onedr0p/home-ops/") ||
 		!strings.Contains(sticky, "/main.go#L1) [first line](local://onedr0p/home-ops/pull/1#r1001) · correctness\n") ||
-		!strings.Contains(sticky, "**2 findings** · 1 P0 · 1 P1\n") || strings.Contains(sticky, "What's good") ||
+		!strings.Contains(sticky, "## Kritika Review\n\n## Findings\n") || strings.Contains(sticky, "What's good") ||
 		!strings.Contains(sticky, "**Outside the diff**\n\n- **[P0]** `main.go:500` off the diff · correctness\n\n  dropped\n") ||
 		strings.Contains(sticky, "were dropped") {
 		t.Fatalf("comments = %v", comments)
@@ -2505,20 +2501,6 @@ func checkWithdrawn(t *testing.T, lf *localForge) {
 	}
 }
 
-func checkSummaryImpact(ctx context.Context, t *testing.T, st *store.Store, accountID, reviewID, want string) {
-	t.Helper()
-	var impact []string
-	if err := st.WithAccount(ctx, accountID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT ARRAY(SELECT jsonb_array_elements_text(summary->'impact'))
-			FROM reviews WHERE id = $1`, reviewID).Scan(&impact)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(impact, "") != want {
-		t.Fatalf("stored impact = %q, want %q", impact, want)
-	}
-}
-
 // checkIncremental reviews a pull request, pushes a commit on top, and then
 // force-pushes it away: the second review is incremental, does not post
 // the repeated finding inline again and holds back a new one far from the
@@ -2583,18 +2565,10 @@ func checkIncremental(
 	base = commitDiagramConfig(t, dir, wt)
 	lf.setBase(base)
 	fc.draw(diagram)
-	const impact = "main.go changes startup; restart to apply the new behavior."
-	fc.mu.Lock()
-	fc.impact = impact
-	fc.mu.Unlock()
 	const firstMain = "package main\n\nfunc f1() {}\n\nfunc g() {}\n\nfunc h() {}\n"
 	first := commit(firstMain)
 	firstRow, prompt, inline := reviewHead(first)
 	fc.draw("")
-	fc.mu.Lock()
-	fc.impact = ""
-	fc.mu.Unlock()
-	checkSummaryImpact(ctx, t, appStore, accountID, firstRow.id, impact)
 	if firstRow.scope != "full" || firstRow.reason != "no completed review to build on" || firstRow.prior != "" || inline != 1 {
 		t.Fatalf("first review = %+v, %d inline comment(s)", firstRow, inline)
 	}
@@ -2625,7 +2599,6 @@ func checkIncremental(
 		"Findings from the last review (verify each; report again every one still present, whatever its severity and wherever it is, " +
 			"and list in resolved the id of each that no longer holds)",
 		"main.go:1 [p1] first line: look here",
-		"Merge impact reported at " + first[:7], impact, "Reassess the earlier merge impact against the current head",
 		"What the last review checked at " + first[:7] + " and found sound", "\n- main.go: package clause read\n",
 		"The last review's summary diagram, of the change at " + first[:7], "<diagram>\n" + diagram + "\n</diagram>\n",
 	} {
@@ -2635,7 +2608,6 @@ func checkIncremental(
 	}
 	// The second review answered with no diagram at all.
 	wantDiagram(secondRow.id, diagram)
-	checkSummaryImpact(ctx, t, appStore, accountID, secondRow.id, "")
 	if p := postedInline(ctx, t, appStore, accountID, secondRow.id); len(p) != 1 || !p[0].Posted || p[0].ID != thread {
 		t.Fatalf("a finding carried from the last review keeps posted_inline and its thread %d, got %+v", thread, p)
 	}
@@ -2755,7 +2727,6 @@ func checkSettled(
 	}
 	body, resolved := sticky()
 	for _, want := range []string{
-		"**3 findings** · 1 P0 · 1 P1 · 1 P2\n",
 		"- **[P2]** " + leftLink + " · maintainability · not rechecked since `" + fifth[:7] + "`\n",
 		"<summary>Earlier findings (1 resolved)</summary>\n\n- **[P1]** " + fixedLink + " · correctness · resolved\n\n</details>",
 	} {
@@ -2796,7 +2767,7 @@ func checkSettled(
 	}
 	body, resolved = sticky()
 	if want := "<summary>Earlier findings (1 resolved)</summary>\n\n- **[P2]** " + leftLink + " · maintainability · resolved\n"; !strings.Contains(body, want) ||
-		strings.Contains(body, "not rechecked") || !strings.Contains(body, "**2 findings** · 1 P0 · 1 P1\n") {
+		strings.Contains(body, "not rechecked") {
 		t.Fatalf("the seventh review's summary lacks %q, or still carries a finding:\n%s", want, body)
 	}
 	if got := resolved[len(before):]; !slices.Equal(got, []int64{threads[left.Title]}) {
@@ -2967,10 +2938,8 @@ func checkIncrementalRecord(ctx context.Context, t *testing.T, appStore *store.S
 		strings.Contains(sticky, "Earlier findings") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}
-	// The new finding far from the pushed lines is listed apart and
-	// counted nowhere.
-	if !strings.Contains(sticky, "**2 findings** · 1 P0 · 1 P1\n") ||
-		!strings.Contains(sticky, "<summary>Held back (1): not on lines changed since the last review</summary>\n\n- **[P1]** [`main.go:3`](") ||
+	// The new finding far from the pushed lines is listed apart.
+	if !strings.Contains(sticky, "<summary>Held back (1): not on lines changed since the last review</summary>\n\n- **[P1]** [`main.go:3`](") ||
 		!strings.Contains(sticky, ") far from the push · correctness\n") {
 		t.Fatalf("sticky comment = %q", sticky)
 	}

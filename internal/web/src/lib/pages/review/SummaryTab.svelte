@@ -2,7 +2,6 @@
   import type { ReviewDetail, Severity } from '../../types';
   import { SEVERITIES, isActive } from '../../format';
   import Markdown from '../../components/Markdown.svelte';
-  import ReviewImpact from './ReviewImpact.svelte';
   import Confidence from '../../components/Confidence.svelte';
   import FindingCard from './FindingCard.svelte';
   import Collapsible from '../../components/Collapsible.svelte';
@@ -43,12 +42,6 @@
       {#if d.summary.headline}<p class="headline mt-0 mx-0 mb-1.5 font-semibold leading-[1.5]">{d.summary.headline}</p>{/if}
       <Markdown text={d.summary.take} />
     </div>
-    {#if d.summary.impact?.length}
-      <section class="border-t border-line py-3 px-4" aria-labelledby="sum-impact">
-        <h3 id="sum-impact" class="m-0 mb-2 text-ui-sm font-semibold">Merge impact</h3>
-        <ReviewImpact notes={d.summary.impact} />
-      </section>
-    {/if}
   </section>
 {:else}
   <p class="state-msg flex items-center gap-2 m-0 py-3 px-4 text-muted">No summary{isActive(d.review.status) ? ' yet' : ''}.</p>

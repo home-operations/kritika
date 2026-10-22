@@ -192,7 +192,7 @@ func TestReviewHistorySelection(t *testing.T) {
 	})
 	must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE reviews SET status = 'completed', patch_id = 'baseline', forge_patch_id = 'forge-baseline', merge_base_sha = 'base',
-			created_at = '2000-01-01', finished_at = now() - interval '1 minute', summary = '{"diagram":"graph TD","checked":["checks"],"impact":["impact"]}', confidence = '{"score":4,"threshold":3,"risk":"low"}' WHERE id = $1`, id)
+			created_at = '2000-01-01', finished_at = now() - interval '1 minute', summary = '{"diagram":"graph TD","checked":["checks"]}', confidence = '{"score":4,"threshold":3,"risk":"low"}' WHERE id = $1`, id)
 		must(t, err)
 		_, err = tx.Exec(ctx, `INSERT INTO findings (account_id, review_id, path, line, severity, title, explanation, posted_inline, forge_comment_id, fingerprint, carried_from)
 			VALUES ($1, $2, 'a.go', 3, 'p1', 'finding', 'why', true, 42, 'fp', 'older')`, account, id)
@@ -210,7 +210,7 @@ func TestReviewHistorySelection(t *testing.T) {
 		must(t, s.WithAccount(ctx, account, func(tx pgx.Tx) error {
 			p, err := LastCompletedReview(ctx, tx, prID)
 			must(t, err)
-			if p.ID != id || p.Diagram != "graph TD" || !slices.Equal(p.Checked, []string{"checks"}) || !slices.Equal(p.Impact, []string{"impact"}) || p.Confidence == nil || p.Confidence.Score != 4 {
+			if p.ID != id || p.Diagram != "graph TD" || !slices.Equal(p.Checked, []string{"checks"}) || p.Confidence == nil || p.Confidence.Score != 4 {
 				t.Fatalf("baseline = %+v", p)
 			}
 			if p.Changed != nil || len(p.Findings) != 1 || p.Findings[0].CommentID != 42 || !p.Findings[0].PostedInline || p.Findings[0].CarriedFrom != "older" {

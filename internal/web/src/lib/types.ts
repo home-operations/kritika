@@ -494,7 +494,6 @@ export interface Summary {
   headline?: string;
   take: string;
   praise: string[];
-  impact?: string[];
   diagram?: string;
 }
 

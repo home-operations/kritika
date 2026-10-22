@@ -23,7 +23,6 @@ import (
 func TestCarryOn(t *testing.T) {
 	s := agentPromptSpec()
 	s.Prompt.Continue = &Continuation{RunID: "run-0", Session: "run-0"}
-	s.Prompt.PriorImpact = []string{"main.go changes startup."}
 	s.Prompt.Dismissed = []review.DismissedFinding{{Path: "main.go", Line: 1, Severity: review.SeverityP2, Title: "dismissed one"}}
 	head := tree(t, map[string]string{"main.go": "package main\n"})
 	tools := offeredTools(s, head, nil, nil)
@@ -98,7 +97,7 @@ func TestCarryOn(t *testing.T) {
 				len(got.context) != 0 || strings.Contains(got.user, "### definition: util.go") {
 				t.Fatalf("prompt = %+v", got)
 			}
-			for _, want := range []string{"main.go changes startup.", "### web/AGENTS.md: frontend conventions", "moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
+			for _, want := range []string{"### web/AGENTS.md: frontend conventions", "moved from " + shaB[:7] + " to " + shaA[:7], "+func b() {}", "- main.go:1 [p2] dismissed one"} {
 				if !strings.Contains(got.user, want) {
 					t.Fatalf("missing %q in the next turn:\n%s", want, got.user)
 				}

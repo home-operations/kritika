@@ -75,8 +75,6 @@ type IncrementalInput struct {
 	// Checked are the last review's notes on what it checked and found
 	// sound.
 	Checked []string
-	// Impact is the last review's merge impact, to reassess at the current head.
-	Impact []string
 }
 
 // EarlierInput is what a full re-review is told of the last review.
@@ -87,8 +85,6 @@ type EarlierInput struct {
 	Findings []Finding
 	// Checked are its notes on what it checked and found sound.
 	Checked []string
-	// Impact is the last review's merge impact, to reassess at the current head.
-	Impact []string
 }
 
 // Reference is a repository file named as explaining the code, with what
@@ -179,13 +175,6 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 	b.WriteString(diffLead)
 	references, referencesOmitted := referenceSection(in.References, min(budget/bodyShare, budget-b.Len()))
 	budget -= len(references)
-
-	impactHead, impact := priorImpact(in)
-	impactRoom := 0
-	if len(impact) > 0 {
-		impactRoom = len(impactOmitted)
-	}
-	budget -= impactRoom
 	room := budget - b.Len()
 	if in.Incremental != nil {
 		// The delta's omission note keeps its room, so the model always
@@ -210,8 +199,6 @@ func Build(in Input) (msg string, omitted []string, contextOmitted, referencesOm
 		b.WriteString(earlier)
 	}
 	writeDismissed(&b, in.Dismissed, budget)
-	budget += impactRoom
-	b.WriteString(priorImpactSection(impactHead, impact, budget-b.Len()))
 	b.WriteString(references)
 	budget += len(references)
 	contextOmitted = writeContext(&b, in.Context, budget)
@@ -389,8 +376,6 @@ type ContinueInput struct {
 	Dismissed []DismissedFinding
 	// References are the applicable reference files at the current head.
 	References []Reference
-	// Impact is the latest review's merge impact, excluding older submissions.
-	Impact []string
 	// Diagram says the summary carries a diagram.
 	Diagram bool
 	// Fetched says the last review called fetch_repo, whose files this
@@ -431,11 +416,7 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 	fmt.Fprintf(&b, "Changed since your last review (%s to %s, unified; "+anchorsAbove+"):\n\n", prior, head)
 	budget := cmp.Or(in.BudgetTokens, DefaultBudgetTokens) * charsPerToken
 	references, referencesOmitted := referenceSection(in.References, min(budget/bodyShare, budget-b.Len()-len(closing)))
-	impactRoom := len(noPriorImpact)
-	if len(in.Impact) > 0 {
-		impactRoom = len(impactOmitted)
-	}
-	budget -= len(references) + impactRoom
+	budget -= len(references)
 	earlier := priorSection(in.PriorHeadSHA, in.Prior, budget-b.Len()-len(closing)-omissionRoom)
 	delta, omitted := FitDiff(in.DeltaDiff, budget-b.Len()-len(earlier)-len(closing)-omissionRoom)
 	b.WriteString(delta)
@@ -443,12 +424,6 @@ func BuildContinuation(in ContinueInput) (msg string, omitted []string, referenc
 		"read them with your tools]\n", omitted))
 	b.WriteString(earlier)
 	writeDismissed(&b, in.Dismissed, budget-len(closing))
-	budget += impactRoom
-	if len(in.Impact) == 0 {
-		b.WriteString(noPriorImpact)
-	} else {
-		b.WriteString(priorImpactSection(in.PriorHeadSHA, in.Impact, budget-b.Len()-len(closing)))
-	}
 	b.WriteString(references)
 	b.WriteString(closing)
 	return b.String(), omitted, referencesOmitted

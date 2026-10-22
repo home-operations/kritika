@@ -12,7 +12,6 @@
   import RawTab from './RawTab.svelte';
   import UsageTab from './UsageTab.svelte';
   import Markdown from '../../components/Markdown.svelte';
-  import ReviewImpact from './ReviewImpact.svelte';
   import ReviewMeta from '../../components/ReviewMeta.svelte';
   import ReviewStatusTile from '../../components/ReviewStatusTile.svelte';
   import FollowupItem from '../../components/FollowupItem.svelte';
@@ -78,7 +77,6 @@
   <section class="review-conclusion" aria-label="Review summary">
     <Collapsible title={d.summary.headline || 'Review summary'}>
       <Markdown text={d.summary.take} />
-      {#if d.summary.impact?.length}<div class="merge-impact mt-4 py-3 px-3.5 bg-highlight rounded-sm"><strong>Merge impact</strong><ReviewImpact notes={d.summary.impact} /></div>{/if}
     </Collapsible>
   </section>
 {/if}

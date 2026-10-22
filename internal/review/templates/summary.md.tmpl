@@ -1,20 +1,13 @@
-## {{ if .PullURL }}<a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ .WebURL }}/badges/rerun-dark.svg"><img alt="Re-run" src="{{ .WebURL }}/badges/rerun.svg" align="right"></picture></a>{{ end }}Kritika Review
+## {{ if .PullURL }}<a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ .WebURL }}/badges/rerun-dark.svg"><img alt="Re-run" src="{{ .WebURL }}/badges/rerun.svg" align="right"></picture></a><a href="{{ .PullURL }}"><picture><source media="(prefers-color-scheme: dark)" srcset="{{ .WebURL }}/badges/view-dark.svg"><img alt="View" src="{{ .WebURL }}/badges/view.svg" align="right"></picture></a>{{ end }}{{ if .Confidence }}Confidence Score: {{ .Confidence.Score }}/5{{ else }}Kritika Review{{ end }}
 
 {{ if .Incomplete -}}
 **Review incomplete for {{ if .HeadURL }}[`{{ trunc 7 .HeadSHA }}`]({{ .HeadURL }}){{ else }}`{{ trunc 7 .HeadSHA }}`{{ end }}:** {{ .Incomplete }}. Findings posted for earlier heads may no longer apply.
 {{ else -}}
-{{ if .Result.Summary.Headline -}}
-{{ .Result.Summary.Headline }}
+{{ with .Confidence -}}
+{{ if or .Risk .Explanation -}}
+{{ if .Risk }}**[{{ .Risk | toString | capitalize }} risk]**{{ if .Explanation }} {{ end }}{{ end }}{{ .Explanation }}
 
 {{ end -}}
-{{ if .Counts.Total -}}
-**{{ .Counts.Total }} {{ plural "finding" "findings" .Counts.Total }}**{{ if .Counts.P0 }} · {{ .Counts.P0 }} P0{{ end }}{{ if .Counts.P1 }} · {{ .Counts.P1 }} P1{{ end }}{{ if .Counts.P2 }} · {{ .Counts.P2 }} P2{{ end }}
-{{ else -}}
-**No findings**
-{{ end }}
-{{ if .Confidence -}}
-**Confidence {{ .Confidence.Score }}/5**{{ if .Confidence.Risk }} · {{ .Confidence.Risk }} risk{{ end }}{{ with .Confidence.Explanation }}: {{ . }}{{ end }}
-
 {{ end -}}
 {{ if .Approval -}}
 **{{ if .Approval.Approved }}Approved{{ else }}Not approved{{ end }}**{{ if .Approval.Reason }}: {{ .Approval.Reason }}{{ end }}
@@ -62,6 +55,10 @@
 {{ end -}}
 ### Summary
 
+{{ with .Result.Summary.Headline -}}
+{{ . }}
+
+{{ end -}}
 {{ .Result.Summary.Take }}
 {{ if .Result.Summary.Diagram }}
 <details open>
@@ -79,13 +76,6 @@
 
 {{ range .Result.Summary.Praise -}}
 - {{ . }}
-{{ end -}}
-{{ end -}}
-{{ if .Result.Summary.Impact }}
-### Merge impact
-
-{{ range .Result.Summary.Impact -}}
-- {{ . | indent 2 | trim }}
 {{ end -}}
 {{ end -}}
 {{ end -}}

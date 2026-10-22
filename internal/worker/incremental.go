@@ -29,8 +29,6 @@ type priorReview struct {
 	diagram string
 	// checked are its notes on what it checked and found sound.
 	checked []string
-	// impact is its evidence-backed account of merge consequences.
-	impact []string
 	// confidence is its confidence score and risk, nil when it was not
 	// scored.
 	confidence *review.Confidence
@@ -51,7 +49,7 @@ func lastCompleted(ctx context.Context, tx pgx.Tx, prID string) (priorReview, er
 		return priorReview{}, err
 	}
 	p := priorReview{id: row.ID, headSHA: row.HeadSHA, trigger: row.Trigger, mergeBase: row.MergeBase,
-		changed: row.Changed, diagram: row.Diagram, checked: row.Checked, impact: row.Impact, confidence: row.Confidence}
+		changed: row.Changed, diagram: row.Diagram, checked: row.Checked, confidence: row.Confidence}
 	p.findings = slices.Grow(p.findings, len(row.Findings))
 	for _, f := range row.Findings {
 		p.findings = append(p.findings, priorFinding{Finding: f.Finding, postedInline: f.PostedInline, commentID: f.CommentID})
