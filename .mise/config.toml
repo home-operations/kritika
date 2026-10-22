@@ -226,7 +226,7 @@ dir = "internal/web"
 run = "npm ci"
 
 [tasks.ui-lint]
-description = "Lint the dashboard UI (ESLint)"
+description = "Lint the dashboard UI (oxlint)"
 dir = "internal/web"
 run = "npm run lint"
 
