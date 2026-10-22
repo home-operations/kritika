@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -35,8 +36,59 @@ apps:
 	return in
 }
 
+// forgejoConnection is a Forgejo connection of name with fields, its key
+// and webhook secret read from TEST_PRIVATE_KEY and TEST_WEBHOOK_SECRET.
+func forgejoConnection(t *testing.T, name, fields string) *configfile.Connection {
+	t.Helper()
+	file, err := configfile.Parse([]byte(`
+forgejo:
+  ` + name + `:
+    host: forge.example.com
+    accounts: [acme]
+    ` + fields + `
+    privateKey: { env: TEST_PRIVATE_KEY }
+    webhookSecret: { env: TEST_WEBHOOK_SECRET }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection(name)
+	return in
+}
+
+// TestForgesBuildForgejoOnce: a Forgejo connection's clients share one
+// integration client, whichever owner they are built for, and none is
+// built before the integration's audience is known.
+func TestForgesBuildForgejoOnce(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_PRIVATE_KEY", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})))
+	t.Setenv("TEST_WEBHOOK_SECRET", "s")
+	forges := &Forges{Issuer: "https://kritika.example.com/forgejo"}
+	if _, err := forges.Build(t.Context(), forgejoConnection(t, "acme-forge", ""), "acme/widgets"); err == nil || !strings.Contains(err.Error(), "audience") {
+		t.Fatalf("Build without an audience = %v; want it refused until the integration exists", err)
+	}
+	in := forgejoConnection(t, "acme-forge", "audience: aud-1")
+	first, err := forges.Build(t.Context(), in, "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := forges.Build(t.Context(), in, "acme/gadgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again || first.CloneURL("acme", "widgets") != "https://forge.example.com/acme/widgets.git" {
+		t.Fatalf("clients = %p %p, clone URL %s", first, again, first.CloneURL("acme", "widgets"))
+	}
+	if tok, err := first.GitToken(t.Context(), "widgets"); err != nil || strings.Count(tok, ".") != 2 {
+		t.Fatalf("GitToken = %q, %v; want a signed token", tok, err)
+	}
+}
+
 func TestAppsRefuseAnotherForge(t *testing.T) {
-	apps := &Apps{}
+	apps := &Forges{}
 	other := &configfile.Connection{Name: "x", Forge: "gitlab"}
 	if _, err := apps.Build(t.Context(), other, "acme/widgets"); err == nil {
 		t.Fatal("Build built a client for a forge kritika does not support")
@@ -58,7 +110,7 @@ func TestAppsBuildOnePerConnection(t *testing.T) {
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")
 	acme, globex := appConnection(t, "Iv1.acme"), appConnection(t, "Iv1.globex")
 	globex.Name = "globex-bot"
-	apps := &Apps{}
+	apps := &Forges{}
 	first, err := apps.app(acme)
 	if err != nil {
 		t.Fatal(err)

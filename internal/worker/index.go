@@ -165,7 +165,7 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if !resumed {
 		err := w.stage(ctx, job, account, repo.Name, client, runID, runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindIndex, RunID: runnerRunID, CloneURL: client.CloneURL(owner, name),
-			Head: commit, Base: base, Ignore: eff.Ignore,
+			Forge: string(account.Forge), Head: commit, Base: base, Ignore: eff.Ignore,
 		}, logger)
 		if err != nil {
 			w.Metrics.IndexRun(account.Key(), mode, string(store.IndexFailed), 0)

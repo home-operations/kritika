@@ -34,6 +34,15 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 	case configfile.ForgeGitHub:
 		// X-Hub-Signature-256: "sha256=" + hex(HMAC-SHA256(body, secret)).
 		return verifyHMAC(header.Get("X-Hub-Signature-256"), secret, body)
+	case configfile.ForgeForgejo:
+		// X-Forgejo-Signature: hex(HMAC-SHA256(body, secret)), no prefix.
+		// Forgejo sends X-Hub-Signature-256 too, but its own header is
+		// the one that says a Forgejo sent the delivery.
+		sig := header.Get("X-Forgejo-Signature")
+		if sig != "" {
+			sig = "sha256=" + sig
+		}
+		return verifyHMAC(sig, secret, body)
 	default:
 		return fmt.Errorf("webhook: unsupported forge %q", forge)
 	}
@@ -46,6 +55,8 @@ func Delivered(forge configfile.Forge, header http.Header) bool {
 	switch forge {
 	case configfile.ForgeGitHub:
 		return header.Get("X-GitHub-Delivery") != "" && header.Get("X-GitHub-Event") != ""
+	case configfile.ForgeForgejo:
+		return header.Get("X-Forgejo-Delivery") != "" && header.Get("X-Forgejo-Event") != ""
 	default:
 		return false
 	}

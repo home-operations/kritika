@@ -164,7 +164,7 @@ func (w *Review) Work(ctx context.Context, job *river.Job[jobs.ReviewArgs]) (err
 	}()
 	deadline := file.RunnerDeadline()
 	spec := runner.Spec{
-		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo),
+		Version: runner.SpecVersion, Kind: runner.KindReview, RunID: runID, CloneURL: client.CloneURL(owner, repo), Forge: string(account.Forge),
 		Head: args.HeadSHA, Base: mergeBase, PriorHead: prior.headSHA, PriorChanged: prior.changed, PriorBase: prior.mergeBase,
 		Ignore: settings.Ignore, RepoFiles: eff.repoFiles(),
 	}
@@ -296,7 +296,7 @@ func loadPullRequest(ctx context.Context, st *store.Store, accountID, repository
 // still does, and is "" when there is none.
 func reviewBase(ctx context.Context, st *store.Store, client forge.Client, accountID string, pr *pullRequest) (string, error) {
 	owner, repo := pr.ownerRepo()
-	base, err := client.MergeBase(ctx, owner, repo, pr.baseRef, pr.headSHA)
+	base, err := client.MergeBase(ctx, owner, repo, pr.number, pr.baseRef, pr.headSHA)
 	if err != nil || base != pr.headSHA {
 		return base, err
 	}
@@ -672,7 +672,7 @@ func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs
 func (w *Review) botPatch(
 	ctx context.Context, logger *slog.Logger, client forge.Client, owner, repo, accountID string, pr *pullRequest, mergeBase string,
 ) (patch string, unchanged bool) {
-	diff, err := client.PullRequestDiff(ctx, owner, repo, mergeBase, pr.headSHA)
+	diff, err := client.PullRequestDiff(ctx, owner, repo, pr.number, mergeBase, pr.headSHA)
 	if err != nil {
 		logger.Warn("forge diff not read; the runner checks the patch", "error", err)
 		return "", false

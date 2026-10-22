@@ -193,6 +193,10 @@ type Spec struct {
 	CheckpointScope string `json:"checkpointScope,omitempty"`
 	// CloneURL is fetched with Secrets.GitToken.
 	CloneURL string `json:"cloneUrl"`
+	// Forge is the repository's forge, github or forgejo; empty is github.
+	// Secrets.GitToken is a GitHub token only on GitHub, where gh and mise
+	// are given it.
+	Forge string `json:"forge,omitempty"`
 	// Head is the commit under review or to index. Base is the merge-base
 	// for a review and the previously indexed commit for an incremental
 	// index. PriorHead is the head of the last completed review,
@@ -423,3 +427,7 @@ func (s Secrets) Mask(text string) string {
 	}
 	return text
 }
+
+// onGitHub reports whether the run's repository is on GitHub, where
+// Secrets.GitToken is a GitHub token.
+func (p Spec) onGitHub() bool { return p.Forge == "" || p.Forge == string(configfile.ForgeGitHub) }

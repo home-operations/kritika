@@ -2,7 +2,7 @@
   import type { Followup } from '../types';
   import { followupTone } from '../format';
   import { href } from '../router.svelte';
-  import { pullRoute, commentUrl, threadUrl } from '../links';
+  import { pullRoute, commentUrl, threadUrl, forgeName } from '../links';
   import Icon from '../Icon.svelte';
   import { mdiOpenInNew } from '../icons';
   import Pill from './Pill.svelte';
@@ -17,8 +17,8 @@
   // The question is where it was asked, in a thread or on the conversation,
   // and so is its answer; the notice that a limit was reached always goes on
   // the conversation.
-  const asked = $derived((f.inline ? threadUrl : commentUrl)(f.pullUrl, f.commentId));
-  const answered = $derived((f.inline && f.status !== 'limited' ? threadUrl : commentUrl)(f.pullUrl, f.replyCommentId));
+  const asked = $derived(f.inline ? threadUrl(slug, f.pullUrl, f.commentId) : commentUrl(f.pullUrl, f.commentId));
+  const answered = $derived(f.inline && f.status !== 'limited' ? threadUrl(slug, f.pullUrl, f.replyCommentId) : commentUrl(f.pullUrl, f.replyCommentId));
 </script>
 
 <!-- The chevron is the keyboard's toggle; the card's whitespace is the pointer's, as in the tables. -->
@@ -40,7 +40,7 @@
   {#if f.reason}<p class="small muted followup-reason text-ui-sm">{f.reason}</p>{/if}
   <p class="small followup-links text-ui-sm flex flex-wrap gap-y-1 gap-x-3.5 m-0">
     {#if asked}
-      <a class="external" href={asked} target="_blank" rel="noopener noreferrer">The question on GitHub <Icon path={mdiOpenInNew} size={11} /></a>
+      <a class="external" href={asked} target="_blank" rel="noopener noreferrer">The question on {forgeName(slug)} <Icon path={mdiOpenInNew} size={11} /></a>
     {/if}
     {#if answered}
       <a class="external" href={answered} target="_blank" rel="noopener noreferrer">kritika's reply <Icon path={mdiOpenInNew} size={11} /></a>

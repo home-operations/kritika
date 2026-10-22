@@ -624,6 +624,8 @@ func (p *publishPhase) resolveThreads(ctx context.Context, ids []int64) {
 	for _, id := range ids {
 		resolved, err := p.client.ResolveThread(ctx, owner, repo, p.pr.number, id, true)
 		switch {
+		case errors.Is(err, forge.ErrUnsupported):
+			return
 		case err != nil:
 			p.logger.Warn("finding's thread not resolved", "comment", id, "error", err)
 		case resolved:

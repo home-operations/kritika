@@ -120,6 +120,22 @@ func TestCommandTool(t *testing.T) {
 		}
 	})
 
+	t.Run("gh is not offered on another forge", func(t *testing.T) {
+		if err := os.Symlink(self, filepath.Join(bin, "gh")); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Remove(filepath.Join(bin, "gh")) }()
+		s := reviewSpec()
+		s.Forge = "forgejo"
+		run, fetch, _, cleanup := commandTool(t.Context(), s, head, nil, Secrets{GitToken: "fj_run", Redacted: &Redactions{}}, 1024, logger)
+		defer cleanup()
+		// The run's token is the Forgejo bot's: gh, signed in nowhere,
+		// is left out, and fetch_repo with it.
+		if run == nil || fetch != nil || !slices.Equal(run.Names(), []string{"rg"}) {
+			t.Fatalf("run tool %v, fetch_repo %v", run, fetch != nil)
+		}
+	})
+
 	t.Run("fetch_repo beside a command that reaches the network", func(t *testing.T) {
 		if err := os.Symlink(self, filepath.Join(bin, "gh")); err != nil {
 			t.Fatal(err)

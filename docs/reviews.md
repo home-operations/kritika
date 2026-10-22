@@ -57,6 +57,8 @@ thread outdated because its lines changed. In that case, resolution counts
 as a fix; use the dismiss command if you want a lasting dismissal.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
+On Forgejo, threads are neither read nor resolved: the dismiss command is
+the way, as [Git forges](forges.md#what-works-where) lists.
 
 ### Replies in finding threads
 

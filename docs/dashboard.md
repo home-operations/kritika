@@ -11,7 +11,7 @@ the service. Application settings live in the [configuration file](configuration
 Sign in as an admin and open **All accounts → Settings**. The setup checklist
 shows what is missing:
 
-1. A GitHub App declared under `apps`.
+1. A GitHub App declared under `apps`, or a Forgejo bot under `forgejo`.
 2. An installed App and at least one enabled repository.
 3. A default model in `review.model`.
 4. An optional embedder in `embedding` for finding similar code.
@@ -105,7 +105,7 @@ for how dashboard choices and configured defaults interact.
 
 ## Configuration page
 
-Admins can inspect the setup checklist, GitHub Apps, served accounts, effective
+Admins can inspect the setup checklist, connections, served accounts, effective
 settings and audit log. Search or filter settings to find their source.
 
 This page does not edit the configuration file. Change the file and roll out

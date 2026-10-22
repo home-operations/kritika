@@ -18,9 +18,9 @@
 
   // An empty response during preparation is not the final, immutable diff.
   let {
-    base, d, version, finding, active = true, selected = $bindable(''), inspection,
+    base, slug, d, version, finding, active = true, selected = $bindable(''), inspection,
   }: {
-    base: string; d: ReviewDetail; version: number; finding?: string;
+    base: string; slug: string; d: ReviewDetail; version: number; finding?: string;
     active?: boolean; selected?: string; inspection: number;
   } = $props();
   const res = Resource.json<ReviewDiff>(() => `${base}/diff`);
@@ -179,7 +179,7 @@
         {#if outside.length}
           <section class="panel" aria-label="Findings outside this diff">
             <header class="panel-head"><h2>Outside this diff</h2></header>
-            {#each outside as f (f.id)}<FindingCard {f} pullUrl={d.review.pull.url} id={`diff-finding-${f.id}`} />{/each}
+            {#each outside as f (f.id)}<FindingCard {f} {slug} pullUrl={d.review.pull.url} id={`diff-finding-${f.id}`} />{/each}
           </section>
         {/if}
         {#each files as file, i (`${delta}:${i}`)}
@@ -189,6 +189,7 @@
               id={fileId(i)}
               bind:open={() => open[i] ?? (total <= TOTAL_LINES && file.lines.length <= FILE_LINES), (value) => { open[i] = value; }}
               findings={findingsByFile.get(i) ?? []}
+              {slug}
               pullUrl={d.review.pull.url}
             />
           </div>

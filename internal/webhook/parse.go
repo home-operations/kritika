@@ -17,7 +17,8 @@ import (
 // closed, merged or not.
 const stateOpen = "open"
 
-// Event names as GitHub puts them in the X-GitHub-Event header.
+// Event names as GitHub puts them in the X-GitHub-Event header, and
+// Forgejo the ones it shares in X-Forgejo-Event.
 const (
 	evPullRequest   = "pull_request"
 	evIssueComment  = "issue_comment"
@@ -200,6 +201,8 @@ func Parse(forge configfile.Forge, header http.Header, body []byte) (Event, erro
 	switch forge {
 	case configfile.ForgeGitHub:
 		return parseGitHub(header.Get("X-GitHub-Event"), header.Get("X-GitHub-Delivery"), body)
+	case configfile.ForgeForgejo:
+		return parseForgejo(header.Get("X-Forgejo-Event"), header.Get("X-Forgejo-Delivery"), body)
 	}
 	return Event{}, fmt.Errorf("webhook: unsupported forge %q", forge)
 }
@@ -241,7 +244,7 @@ func IsBot(userType, login string) bool {
 	return strings.EqualFold(userType, "Bot") || strings.HasSuffix(login, "[bot]")
 }
 
-// ghRepo is a repository as GitHub payloads carry one.
+// ghRepo is a repository as GitHub and Forgejo payloads carry one.
 type ghRepo struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
@@ -307,6 +310,56 @@ func (p ghPR) event() *PullRequest {
 	return pr
 }
 
+// forgejoActions are the pull request actions Forgejo names differently
+// from GitHub, by GitHub's name, which the rest of kritika acts on.
+var forgejoActions = map[string]string{"synchronized": "synchronize", "label_updated": "labeled", "label_cleared": "unlabeled"}
+
+// parseForgejo takes the events Forgejo shares with GitHub's shapes. A
+// review event, pull_request_comment, approved or rejected, carries the
+// review's body alone and nothing of its code comments, so it is ignored:
+// a reply in a code conversation arrives as an issue_comment. Forgejo
+// sends no event for a review thread being resolved.
+func parseForgejo(event, delivery string, body []byte) (Event, error) {
+	var ev Event
+	var err error
+	switch event {
+	case evPullRequest:
+		ev, err = parsePullRequestEvent(delivery, body)
+		if action, ok := forgejoActions[ev.Action]; ok {
+			ev.Action = action
+		}
+	case evIssueComment:
+		ev, err = parseIssueComment(delivery, body)
+	case evPush:
+		ev, err = parsePush(delivery, body)
+	case evRepository:
+		ev, err = parseRepository(delivery, body)
+	default:
+		return Event{Kind: KindIgnored, Delivery: delivery, Action: event}, nil
+	}
+	if err != nil || ev.Repository == nil {
+		return ev, err
+	}
+	// Forgejo names no visibility: it says private and internal.
+	var p struct {
+		Repository struct {
+			Private, Internal bool
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return Event{}, fmt.Errorf("webhook: %s payload: %w", event, err)
+	}
+	switch {
+	case p.Repository.Internal:
+		ev.Repository.Visibility = "internal"
+	case p.Repository.Private:
+		ev.Repository.Visibility = "private"
+	default:
+		ev.Repository.Visibility = "public"
+	}
+	return ev, nil
+}
+
 func parseGitHub(event, delivery string, body []byte) (Event, error) {
 	switch event {
 	case "ping":
@@ -359,12 +412,14 @@ func parseIssueComment(delivery string, body []byte) (Event, error) {
 			Body string `json:"body"`
 			User ghUser `json:"user"`
 		} `json:"comment"`
+		// IsPull is how Forgejo says the issue is a pull request.
+		IsPull bool `json:"is_pull"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Event{}, fmt.Errorf("webhook: issue_comment payload: %w", err)
 	}
 	// Comments on plain issues are not review follow-ups.
-	if len(p.Issue.PullRequest) == 0 {
+	if len(p.Issue.PullRequest) == 0 && !p.IsPull {
 		return Event{Kind: KindIgnored, Action: evIssueComment, Delivery: delivery}, nil
 	}
 	return Event{

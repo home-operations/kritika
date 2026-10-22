@@ -145,16 +145,23 @@ var ErrFileTooLarge = errors.New("forge: file is over the size limit")
 // the number or id asked for, as when it was deleted.
 var ErrNotFound = errors.New("forge: not found")
 
+// ErrUnsupported is a call the forge has no API for, such as resolving a
+// review thread on Forgejo. A caller whose work is best effort there
+// treats it as a no-op rather than a failure.
+var ErrUnsupported = errors.New("forge: not supported by this forge")
+
 // Client is one connection's access to its forge.
 type Client interface {
-	// MergeBase asks the forge for the merge-base of base (a branch) and
-	// head (a commit), the same way the forge computes a pull request's
-	// diff.
-	MergeBase(ctx context.Context, owner, repo, base, head string) (string, error)
-	// PullRequestDiff is a pull request's unified diff, from base, its
-	// merge-base, to head. A diff too large to read whole is an error,
-	// never a truncated diff.
-	PullRequestDiff(ctx context.Context, owner, repo, base, head string) (string, error)
+	// MergeBase asks the forge for the merge-base of pull request number,
+	// of base (its base branch) and head (its head commit), the same way
+	// the forge computes the pull request's diff: GitHub compares the two,
+	// Forgejo reports the pull request's own.
+	MergeBase(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
+	// PullRequestDiff is pull request number's unified diff, from base,
+	// its merge-base, to head. Forgejo diffs the pull request as it stands,
+	// which is from its current merge base to its current head. A diff too
+	// large to read whole is an error, never a truncated diff.
+	PullRequestDiff(ctx context.Context, owner, repo string, number int, base, head string) (string, error)
 	// CloneURL is the HTTPS clone URL of a repository on this forge.
 	CloneURL(owner, repo string) string
 	// GitToken is the credential a runner fetches repo, a name under the

@@ -89,7 +89,7 @@
       {#if view === 'summary'}
         <SummaryTab {slug} {d} {to} oninspect={() => inspection++} finding={tab === view ? finding : undefined} />
       {:else if view === 'diff'}
-        <DiffTab {base} {d} {version} {finding} {inspection} bind:selected={selectedFinding} active={tab === view} />
+        <DiffTab {base} {slug} {d} {version} {finding} {inspection} bind:selected={selectedFinding} active={tab === view} />
       {:else if view === 'activity'}
         {#if pull}
           <section class="panel" aria-labelledby="pull-reviews">

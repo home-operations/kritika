@@ -1891,7 +1891,7 @@ func checkRunnerNeverStarted(t *testing.T, h *agenticHarness) {
 func checkRunnerOnlySkip(t *testing.T, h *agenticHarness) {
 	h.sm.reset(scriptSubmit)
 	next := h.commit(t, "main.go", "package main\n\nfunc b() {}\n\nfunc k() {}\n")
-	base, _ := h.lf.MergeBase(h.ctx, "", "", "", "")
+	base, _ := h.lf.MergeBase(h.ctx, "", "", 0, "", "")
 	fetched, err := gitfetch.Run(h.ctx, gitfetch.Fetch{CloneURL: h.dir, Head: next, Base: base})
 	if err != nil {
 		t.Fatal(err)
