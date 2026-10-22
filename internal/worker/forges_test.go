@@ -7,6 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/gitlab"
 )
 
 // appConnection is a connection of an App with clientID, its private
@@ -89,7 +93,7 @@ func TestForgesBuildForgejoOnce(t *testing.T) {
 
 func TestAppsRefuseAnotherForge(t *testing.T) {
 	apps := &Forges{}
-	other := &configfile.Connection{Name: "x", Forge: "gitlab"}
+	other := &configfile.Connection{Name: "x", Forge: "bitbucket"}
 	if _, err := apps.Build(t.Context(), other, "acme/widgets"); err == nil {
 		t.Fatal("Build built a client for a forge kritika does not support")
 	}
@@ -261,5 +265,76 @@ func TestForgeCacheBuildOutlivesItsFirstCaller(t *testing.T) {
 	close(release)
 	if err := <-second; err != nil {
 		t.Fatalf("a caller sharing the build got %v", err)
+	}
+}
+
+// gitlabConnection is a GitLab connection serving acme, with fields.
+func gitlabConnection(t *testing.T, fields string) *configfile.Connection {
+	t.Helper()
+	t.Setenv("TEST_GL_TOKEN", "glpat-api")
+	t.Setenv("TEST_GL_READ", "glpat-read")
+	t.Setenv("TEST_GL_HOOK", "whsec_c2lnbmluZy1rZXk=")
+	file, err := configfile.Parse([]byte(`
+gitlab:
+  acme-lab:
+    host: gitlab.example.com
+    accounts: [acme]
+    ` + fields + `
+    token: { env: TEST_GL_TOKEN }
+    webhookSecret: { env: TEST_GL_HOOK }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection("acme-lab")
+	return in
+}
+
+// TestForgesBuildGitLabOnce: a GitLab connection's clients share one
+// client, whichever owner they are built for, and runners fetch with the
+// read-only token.
+func TestForgesBuildGitLabOnce(t *testing.T) {
+	in := gitlabConnection(t, "runnerToken: { env: TEST_GL_READ }")
+	forges := &Forges{}
+	first, err := forges.Build(t.Context(), in, "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := forges.Build(t.Context(), in, "other/sub/gadgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again || first.CloneURL("acme", "sub/widgets") != "https://gitlab.example.com/acme/sub/widgets.git" {
+		t.Fatalf("clients = %p %p, clone URL %s", first, again, first.CloneURL("acme", "sub/widgets"))
+	}
+	if tok, err := first.GitToken(t.Context(), "widgets"); err != nil || tok != "glpat-read" {
+		t.Fatalf("GitToken = %q, %v; want the read-only token", tok, err)
+	}
+}
+
+// TestForgeCachePullRequestAuthor: the author a GitLab webhook leaves out
+// is read from the merge request.
+func TestForgeCachePullRequestAuthor(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v4/projects/{project}", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"default_branch": "main"}`)
+	})
+	mux.HandleFunc("GET /api/v4/projects/{project}/merge_requests/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("project") != "acme/sub/widgets" {
+			t.Errorf("project = %q", r.PathValue("project"))
+		}
+		_, _ = io.WriteString(w, `{"iid": 7, "state": "opened", "author": {"id": 3, "username": "renovate"}}`)
+	})
+	mux.HandleFunc("GET /api/v4/users/3", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id": 3, "username": "renovate", "bot": true}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	cache := &ForgeCache{Build: func(context.Context, *configfile.Connection, string) (forge.Client, error) {
+		return gitlab.NewClient(srv.URL, "glpat-api", "", nil)
+	}}
+	login, bot, err := cache.PullRequestAuthor(t.Context(), gitlabConnection(t, ""), "acme/sub/widgets", 7)
+	if err != nil || login != "renovate" || !bot {
+		t.Fatalf("PullRequestAuthor = %q, %v, %v", login, bot, err)
 	}
 }

@@ -70,7 +70,7 @@ export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths' | '
 export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
-export type Forge = 'github' | 'forgejo';
+export type Forge = 'github' | 'forgejo' | 'gitlab';
 // account groups the instance's usage by account; an account's own has no such group.
 export type UsageGroup = 'hour' | 'day' | 'week' | 'model' | 'repo' | 'role' | 'review' | 'account';
 export type JobState =
@@ -130,19 +130,22 @@ export interface AdminAccount extends AccountSummary {
 
 // CredentialsSet says which of a connection's credentials are set: a
 // GitHub App's client id, a Forgejo integration's audience and the
-// read-only one runners fetch as, and the private key both sign with.
+// read-only one runners fetch as, and the private key both sign with; a
+// GitLab service account's token and the read-only one runners fetch with.
 export interface CredentialsSet {
   clientId?: boolean;
   privateKey?: boolean;
   audience?: boolean;
   runnerAudience?: boolean;
+  token?: boolean;
+  runnerToken?: boolean;
   webhookSecret: boolean;
 }
 
 export interface Connection {
   name: string;
   forge: Forge;
-  // host is the Forgejo instance a bot talks to; absent for GitHub.
+  // host is the Forgejo or GitLab instance a bot talks to; absent for GitHub.
   host?: string;
   accounts: string[];
   credentials: CredentialsSet;

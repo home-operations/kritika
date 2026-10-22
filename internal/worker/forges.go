@@ -14,11 +14,12 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
+	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Forges holds one GitHub App or Forgejo client per connection, built on
+// Forges holds one GitHub App, Forgejo or GitLab client per connection, built on
 // first use and kept for the life of the process, as the configuration
 // is, so the clients and the listings of a connection share its
 // credentials: an App's installation tokens are minted once an hour each,
@@ -34,6 +35,7 @@ type Forges struct {
 	mu   sync.Mutex
 	apps map[string]*github.App
 	bots map[string]*forgejo.Client
+	labs map[string]*gitlab.Client
 }
 
 // app is connection in's App.
@@ -86,6 +88,25 @@ func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
 	return c, nil
 }
 
+// lab is connection in's GitLab client. The service account is the
+// connection's, so one client serves every account it lists.
+func (a *Forges) lab(in *configfile.Connection) (*gitlab.Client, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if c, ok := a.labs[in.Name]; ok {
+		return c, nil
+	}
+	c, err := gitlab.NewClient(in.GitLab.Host, in.GitLab.TokenValue().Value(), in.GitLab.RunnerTokenValue().Value(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if a.labs == nil {
+		a.labs = map[string]*gitlab.Client{}
+	}
+	a.labs[in.Name] = c
+	return c, nil
+}
+
 // Build constructs the forge client for a connection, for repositories of
 // repo's owner: ForgeCache's Build.
 func (a *Forges) Build(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
@@ -105,6 +126,8 @@ func (a *Forges) Build(ctx context.Context, in *configfile.Connection, repo stri
 		return github.NewClient(app, id)
 	case configfile.ForgeForgejo:
 		return a.bot(in)
+	case configfile.ForgeGitLab:
+		return a.lab(in)
 	default:
 		return nil, fmt.Errorf("worker: forge %s is not implemented", in.Forge)
 	}
@@ -134,6 +157,22 @@ func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[stri
 		}
 	case configfile.ForgeForgejo:
 		c, err := a.bot(in)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range in.Accounts {
+			listed, err := c.Repositories(ctx, account)
+			if err != nil {
+				return nil, err
+			}
+			repos := make([]store.ReachedRepository, 0, len(listed))
+			for _, repo := range listed {
+				repos = append(repos, reached(repo.FullName, repo.DefaultBranch, repo.Archived, repo.Fork, repo.Visibility))
+			}
+			out[strings.ToLower(account)] = repos
+		}
+	case configfile.ForgeGitLab:
+		c, err := a.lab(in)
 		if err != nil {
 			return nil, err
 		}
@@ -224,4 +263,19 @@ func (c *ForgeCache) For(ctx context.Context, in *configfile.Connection, repo st
 		client, _ := res.Val.(forge.Client)
 		return client, nil
 	}
+}
+
+// PullRequestAuthor reads who opened pull request number of repo, and
+// whether the forge marks them a bot: ingest's Authors.
+func (c *ForgeCache) PullRequestAuthor(ctx context.Context, in *configfile.Connection, repo string, number int) (string, bool, error) {
+	client, err := c.For(ctx, in, repo)
+	if err != nil {
+		return "", false, err
+	}
+	owner, name, _ := strings.Cut(repo, "/")
+	pr, err := client.PullRequest(ctx, owner, name, number)
+	if err != nil {
+		return "", false, err
+	}
+	return pr.Author, pr.AuthorIsBot, nil
 }

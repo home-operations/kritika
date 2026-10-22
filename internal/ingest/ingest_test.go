@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -311,5 +314,68 @@ func TestHandlerDispatchOutlivesTheRequest(t *testing.T) {
 	close(release)
 	if err := <-ended; err != nil {
 		t.Fatalf("the dispatch's context ended with the request: %v", err)
+	}
+}
+
+// fakeAuthors answers every pull request with one author.
+type fakeAuthors struct {
+	login string
+	err   error
+	asked []string
+}
+
+func (f *fakeAuthors) PullRequestAuthor(_ context.Context, in *configfile.Connection, repo string, number int) (string, bool, error) {
+	f.asked = append(f.asked, fmt.Sprintf("%s %s#%d", in.Name, repo, number))
+	return f.login, true, f.err
+}
+
+// TestHandlerReadsGitLabAuthor: a GitLab merge request event names the
+// author by id alone, so one another user's action sends is completed
+// from the forge before it is dispatched, or fails.
+func TestHandlerReadsGitLabAuthor(t *testing.T) {
+	t.Setenv("TEST_GL_TOKEN", "glpat")
+	t.Setenv("TEST_GL_HOOK", "whsec_c2lnbmluZy1rZXk=")
+	f := configfiletest.Load(t, `
+gitlab:
+  lab:
+    host: gitlab.example.com
+    accounts: [acme]
+    token: { env: TEST_GL_TOKEN }
+    webhookSecret: { env: TEST_GL_HOOK }
+`)
+	body := `{"user": {"id": 4, "username": "ann"}, "project": {"path_with_namespace": "acme/sub/widgets"},
+	  "object_attributes": {"iid": 7, "action": "open", "state": "opened", "author_id": 3}}`
+	send := func(authors *fakeAuthors) (*fakeDispatcher, int) {
+		disp := &fakeDispatcher{out: Outcome{Status: Enqueued}}
+		h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.DiscardHandler))
+		if authors != nil {
+			h.Authors = authors
+		}
+		key, _ := base64.StdEncoding.DecodeString("c2lnbmluZy1rZXk=")
+		ts := strconv.FormatInt(time.Now().Unix(), 10)
+		mac := hmac.New(sha256.New, key)
+		mac.Write([]byte("m-1." + ts + "." + body))
+		req := httptest.NewRequest(http.MethodPost, "/hooks/lab", strings.NewReader(body))
+		req.SetPathValue("connection", "lab")
+		req.Header.Set("X-Gitlab-Event", "Merge Request Hook")
+		req.Header.Set("webhook-id", "m-1")
+		req.Header.Set("webhook-timestamp", ts)
+		req.Header.Set("webhook-signature", "v1,"+base64.StdEncoding.EncodeToString(mac.Sum(nil)))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return disp, rec.Code
+	}
+	authors := &fakeAuthors{login: "renovate"}
+	disp, code := send(authors)
+	if code != http.StatusAccepted || len(disp.got) != 1 || len(authors.asked) != 1 || authors.asked[0] != "lab acme/sub/widgets#7" {
+		t.Fatalf("code = %d, asked = %q, dispatched = %d", code, authors.asked, len(disp.got))
+	}
+	if pr := disp.got[0].Event.PullRequest; pr.Author != "renovate" || !pr.AuthorIsBot {
+		t.Fatalf("pr = %+v", pr)
+	}
+	for name, authors := range map[string]*fakeAuthors{"no lookup": nil, "a failed lookup": {err: errors.New("boom")}, "no author": {}} {
+		if disp, code := send(authors); code != http.StatusInternalServerError || len(disp.got) != 0 {
+			t.Errorf("%s: code = %d, dispatched = %d", name, code, len(disp.got))
+		}
 	}
 }

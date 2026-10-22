@@ -227,6 +227,12 @@ func connection(in *configfile.Connection) Connection {
 		Name: in.Name, Forge: in.Forge, Accounts: in.Accounts, HookPath: "/hooks/" + in.Name,
 		Credentials: CredentialsSet{WebhookSecret: in.WebhookSecretValue().Value() != ""},
 	}
+	if in.Forge == configfile.ForgeGitLab {
+		c.Host = in.GitLab.Host
+		c.Credentials.Token = in.GitLab.TokenValue().Value() != ""
+		c.Credentials.RunnerToken = in.GitLab.RunnerTokenValue().Value() != ""
+		return c
+	}
 	if in.Forge == configfile.ForgeForgejo {
 		c.Host = in.Forgejo.Host
 		c.Credentials.PrivateKey = in.Forgejo.PrivateKeyValue().Value() != ""

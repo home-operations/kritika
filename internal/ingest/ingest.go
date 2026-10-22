@@ -59,6 +59,12 @@ type DeliveryRecorder interface {
 	RecordUnsigned(ctx context.Context, connectionID string) error
 }
 
+// Authors reads who opened a pull request from the forge, for a webhook
+// that does not name them: GitLab's names the author by id alone.
+type Authors interface {
+	PullRequestAuthor(ctx context.Context, in *configfile.Connection, repo string, number int) (login string, bot bool, err error)
+}
+
 // dispatchTimeout bounds one dispatch, which does not end with its request.
 const dispatchTimeout = 30 * time.Second
 
@@ -71,6 +77,9 @@ type Handler struct {
 	Metrics *metrics.Metrics
 	// Deliveries may be nil.
 	Deliveries DeliveryRecorder
+	// Authors may be nil, when no connection's webhooks leave a pull
+	// request's author out.
+	Authors Authors
 }
 
 // NewHandler builds the hook handler over the current configuration.
@@ -178,6 +187,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// comment or thread event that rolled back with it would be lost.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), dispatchTimeout)
 	defer cancel()
+	// A pull request recorded with no author would lose the one it had, so
+	// one the payload does not name is read from the forge, or the
+	// delivery fails and polling brings the pull request in.
+	if pr := ev.PullRequest; pr != nil && pr.Author == "" && ev.Repository != nil {
+		if h.Authors == nil {
+			logger.Error("webhook dispatch failed", "error", "the payload names no author and none can be read")
+			h.Metrics.Webhook(name, "error")
+			http.Error(w, "dispatch failed", http.StatusInternalServerError)
+			return
+		}
+		pr.Author, pr.AuthorIsBot, err = h.Authors.PullRequestAuthor(ctx, in, ev.Repository.FullName, pr.Number)
+		if err != nil || pr.Author == "" {
+			logger.Error("webhook dispatch failed: the pull request's author could not be read", "error", err)
+			h.Metrics.Webhook(name, "error")
+			http.Error(w, "dispatch failed", http.StatusInternalServerError)
+			return
+		}
+	}
 	out, err := h.disp.Dispatch(ctx, Request{File: file, Account: account, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)

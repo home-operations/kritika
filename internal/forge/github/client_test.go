@@ -416,11 +416,11 @@ func TestGetCommentOutdated(t *testing.T) {
 	f, c := newFakeAPI(t)
 	f.reply("GET /api/v3/repos/o/r/pulls/comments/2", 200, `{"id":2,"body":"inline","path":"a.go","line":4,"original_line":4,"user":{"login":"b[bot]","type":"Bot"}}`)
 	f.reply("GET /api/v3/repos/o/r/pulls/comments/3", 200, `{"id":3,"body":"old","path":"a.go","line":null,"original_line":9,"user":{"login":"b[bot]","type":"Bot"}}`)
-	current, err := c.GetComment(t.Context(), "o", "r", 2, true)
+	current, err := c.GetComment(t.Context(), "o", "r", 1, 2, true)
 	if err != nil || current.Outdated || current.Line != 4 {
 		t.Fatalf("current inline GetComment = %+v, %v", current, err)
 	}
-	outdated, err := c.GetComment(t.Context(), "o", "r", 3, true)
+	outdated, err := c.GetComment(t.Context(), "o", "r", 1, 3, true)
 	if err != nil || !outdated.Outdated || outdated.Line != 0 {
 		t.Fatalf("outdated inline GetComment = %+v, %v", outdated, err)
 	}
@@ -444,11 +444,11 @@ func TestCommentsPermissionAndOpenPullRequests(t *testing.T) {
 	f.reply("GET /api/v3/repos/o/r/collaborators/u/permission", 200, `{"permission":"write","role_name":"maintain"}`)
 	f.reply("GET /api/v3/repos/o/r/pulls", 200, openPullsJSON)
 
-	cm, err := c.GetComment(t.Context(), "o", "r", 1, false)
+	cm, err := c.GetComment(t.Context(), "o", "r", 1, 1, false)
 	if err != nil || cm.Author != "u" || cm.AuthorIsBot || cm.CreatedAt.IsZero() {
 		t.Fatalf("GetComment = %+v, %v", cm, err)
 	}
-	inline, err := c.GetComment(t.Context(), "o", "r", 2, true)
+	inline, err := c.GetComment(t.Context(), "o", "r", 1, 2, true)
 	if err != nil || !inline.Inline || inline.Path != "a.go" || inline.Line != 4 || inline.InReplyTo != 1 || !inline.AuthorIsBot {
 		t.Fatalf("inline GetComment = %+v, %v", inline, err)
 	}

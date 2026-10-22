@@ -34,7 +34,11 @@ type OpenPullRequest struct {
 // Comment is a pull request comment as the forge holds it: a conversation
 // comment, or an inline one on a diff line that may reply to another.
 type Comment struct {
-	ID          int64
+	ID int64
+	// Number is the pull request the comment is on, 0 where whoever made
+	// the value did not say. GitLab addresses a note under its merge
+	// request alone.
+	Number      int
 	Author      string
 	AuthorIsBot bool
 	Body        string
@@ -221,9 +225,12 @@ type Client interface {
 	// number in the forge's web UI.
 	ThreadURL(owner, repo string, number int, id int64) string
 
-	// GetComment fetches one comment; inline selects the review-comment
-	// namespace, which the forge keeps apart from conversation comments.
-	GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (Comment, error)
+	// GetComment fetches comment id on pull request number; inline selects
+	// the review-comment namespace, which GitHub and Forgejo keep apart
+	// from conversation comments. GitLab addresses a note under its merge
+	// request alone, so the number is what finds one on a merge request
+	// since closed.
+	GetComment(ctx context.Context, owner, repo string, number int, id int64, inline bool) (Comment, error)
 	// ListConversation returns the PR's conversation comments, oldest
 	// first. It and ListInline may stop short of the end of a pull request
 	// with thousands.

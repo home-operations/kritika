@@ -288,7 +288,7 @@ func (l *localForge) ThreadResolved(_ context.Context, _, _ string, _ int, id in
 	return resolved, found, l.threadStateErr
 }
 
-func (l *localForge) GetComment(_ context.Context, _, _ string, id int64, inline bool) (forge.Comment, error) {
+func (l *localForge) GetComment(_ context.Context, _, _ string, _ int, id int64, inline bool) (forge.Comment, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if inline {

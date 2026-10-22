@@ -40,10 +40,11 @@ const (
 type Forge string
 
 // Forges kritika serves: github.com through a GitHub App, and a Forgejo
-// instance through a bot account.
+// or GitLab instance through a bot account.
 const (
 	ForgeGitHub  Forge = "github"
 	ForgeForgejo Forge = "forgejo"
+	ForgeGitLab  Forge = "gitlab"
 )
 
 // SecretRef names the environment variable a secret value lives in. Values are resolved at load and never written back to
@@ -483,9 +484,10 @@ type Connection struct {
 	Accounts []string `yaml:"accounts"`
 
 	// App is the credential of a ForgeGitHub connection, Forgejo of a
-	// ForgeForgejo one.
+	// ForgeForgejo one, GitLab of a ForgeGitLab one.
 	App     GitHubApp          `yaml:",inline"`
 	Forgejo ForgejoIntegration `yaml:"-"`
+	GitLab  GitLabBot          `yaml:"-"`
 }
 
 // Repository carries per-repository overrides, the configuration's

@@ -118,6 +118,10 @@
         "gatewayUrl": {
           "type": "string"
         },
+        "gitlab": {
+          "required": [],
+          "type": "object"
+        },
         "ignore": {
           "type": "array"
         },

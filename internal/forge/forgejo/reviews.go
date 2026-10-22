@@ -227,7 +227,7 @@ func (c *Client) inlineComments(ctx context.Context, owner, repo string, number 
 // endpoint answers one with 204, and Forgejo delivers a reply in a code
 // conversation as a conversation comment, so a 204 is looked up among the
 // code comments, as an inline comment is from the start.
-func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (forge.Comment, error) {
+func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id int64, inline bool) (forge.Comment, error) {
 	if !inline {
 		var cm comment
 		err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), id), nil, &cm)

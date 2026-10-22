@@ -37,21 +37,43 @@ export function forgeOf(slug: string): string {
 
 // forgeName is how the forge of an account slug is named in a label.
 export function forgeName(slug: string): string {
-  return forgeOf(slug) === 'forgejo' ? 'Forgejo' : 'GitHub';
+  switch (forgeOf(slug)) {
+    case 'forgejo':
+      return 'Forgejo';
+    case 'gitlab':
+      return 'GitLab';
+  }
+  return 'GitHub';
+}
+
+// repoPath is a repository's full name as two path segments, owner and
+// name: a GitLab project's name holds the subgroups it is in.
+export function repoPath(fullName: string): string {
+  const n = splitRepo(fullName);
+  return `${encodeURIComponent(n.owner)}/${encodeURIComponent(n.repo)}`;
 }
 
 // threadUrl links the thread of an inline comment on a pull request of an
 // account of slug; none for a finding kritika did not post inline, or
 // whose comment id it lacks. GitHub anchors a review comment's thread by
-// its discussion id; Forgejo anchors a code comment as any comment.
+// its discussion id; Forgejo anchors a code comment as any comment, and
+// GitLab every note by its id.
 export function threadUrl(slug: string, pullUrl: string, commentId: number | null): string | undefined {
   if (!commentId) return undefined;
-  return safeHref(forgeOf(slug) === 'github' ? `${pullUrl}#discussion_r${commentId}` : `${pullUrl}#issuecomment-${commentId}`);
+  switch (forgeOf(slug)) {
+    case 'github':
+      return safeHref(`${pullUrl}#discussion_r${commentId}`);
+    case 'gitlab':
+      return safeHref(`${pullUrl}#note_${commentId}`);
+  }
+  return safeHref(`${pullUrl}#issuecomment-${commentId}`);
 }
 
-// commentUrl links a comment on a pull request's conversation.
-export function commentUrl(pullUrl: string, commentId: number | null): string | undefined {
-  return commentId ? safeHref(`${pullUrl}#issuecomment-${commentId}`) : undefined;
+// commentUrl links a comment on a pull request's conversation of an
+// account of slug.
+export function commentUrl(slug: string, pullUrl: string, commentId: number | null): string | undefined {
+  if (!commentId) return undefined;
+  return safeHref(forgeOf(slug) === 'gitlab' ? `${pullUrl}#note_${commentId}` : `${pullUrl}#issuecomment-${commentId}`);
 }
 
 export function cancelPath(slug: string, reviewId: string): string {

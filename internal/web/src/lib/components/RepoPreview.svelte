@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Resource } from '../resource.svelte';
-  import { accountApi, repoRoute } from '../links';
+  import { accountApi, repoPath, repoRoute } from '../links';
   import { href } from '../router.svelte';
   import { shortSha, wholeNumber } from '../format';
   import type { RepoDetail, Repository } from '../types';
@@ -8,7 +8,7 @@
   import Time from './Time.svelte';
 
   let { slug, repo }: { slug: string; repo: Repository } = $props();
-  const res = Resource.live<RepoDetail>(() => `${accountApi(slug)}/repos/${repo.fullName.split('/').map(encodeURIComponent).join('/')}`);
+  const res = Resource.live<RepoDetail>(() => `${accountApi(slug)}/repos/${repoPath(repo.fullName)}`);
   $effect(() => { void repo.enabled; void res.load(); });
 </script>
 

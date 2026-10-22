@@ -296,7 +296,7 @@ func TestConversationComments(t *testing.T) {
 	if err := c.UpdateComment(t.Context(), "acme", "widgets", 10, "x"); !errors.Is(err, forge.ErrNotFound) {
 		t.Fatalf("editing a deleted comment = %v, want ErrNotFound", err)
 	}
-	cm, err := c.GetComment(t.Context(), "acme", "widgets", 3, false)
+	cm, err := c.GetComment(t.Context(), "acme", "widgets", 1, 3, false)
 	if err != nil || cm.Author != "dev" || cm.Inline {
 		t.Fatalf("GetComment = %+v, %v", cm, err)
 	}
@@ -347,14 +347,14 @@ func TestInlineComments(t *testing.T) {
 	}
 	// A reply in a code conversation arrives as a conversation comment,
 	// which the conversation endpoint answers with 204: it is a code comment.
-	cm, err := c.GetComment(t.Context(), "acme", "widgets", 13, false)
+	cm, err := c.GetComment(t.Context(), "acme", "widgets", 1, 13, false)
 	if err != nil || !cm.Inline || cm.Path != "a.go" || cm.Author != "dev" || cm.InReplyTo != 10 {
 		t.Fatalf("GetComment of a code comment = %+v, %v", cm, err)
 	}
-	if cm, err = c.GetComment(t.Context(), "acme", "widgets", 11, true); err != nil || cm.ID != 11 {
+	if cm, err = c.GetComment(t.Context(), "acme", "widgets", 1, 11, true); err != nil || cm.ID != 11 {
 		t.Fatalf("GetComment inline = %+v, %v", cm, err)
 	}
-	if _, err := c.GetComment(t.Context(), "acme", "widgets", 99, true); !errors.Is(err, forge.ErrNotFound) {
+	if _, err := c.GetComment(t.Context(), "acme", "widgets", 1, 99, true); !errors.Is(err, forge.ErrNotFound) {
 		t.Fatalf("an unknown code comment = %v, want ErrNotFound", err)
 	}
 	for id, want := range map[int64][2]bool{10: {true, true}, 11: {false, true}, 99: {false, false}} {

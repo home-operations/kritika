@@ -7,11 +7,14 @@ package webhook
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/home-operations/kritika/internal/configfile"
 )
@@ -43,9 +46,64 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 			sig = "sha256=" + sig
 		}
 		return verifyHMAC(sig, secret, body)
+	case configfile.ForgeGitLab:
+		return verifyGitLab(secret, header, body, time.Now())
 	default:
 		return fmt.Errorf("webhook: unsupported forge %q", forge)
 	}
+}
+
+// gitlabTolerance is how far a GitLab delivery's timestamp may be from
+// now: the signature covers it, so an older one is a replay.
+const gitlabTolerance = 5 * time.Minute
+
+// verifyGitLab checks a delivery signed with a GitLab webhook's signing
+// token: webhook-signature is one or more space-separated "v1," + base64
+// HMAC-SHA256 values over "{webhook-id}.{webhook-timestamp}.{body}", keyed
+// by the base64 the token carries after its "whsec_" prefix. A webhook
+// with only a secret token, which GitLab sends in plain text, is unsigned.
+func verifyGitLab(secret string, header http.Header, body []byte, now time.Time) error {
+	provided := header.Get("webhook-signature")
+	if provided == "" {
+		return ErrMissingSignature
+	}
+	key, err := GitLabSigningKey(secret)
+	if err != nil {
+		return err
+	}
+	id, stamp := header.Get("webhook-id"), header.Get("webhook-timestamp")
+	sec, err := strconv.ParseInt(stamp, 10, 64)
+	if id == "" || err != nil {
+		return ErrSignatureMismatch
+	}
+	if d := now.Sub(time.Unix(sec, 0)); d > gitlabTolerance || d < -gitlabTolerance {
+		return ErrSignatureMismatch
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(id + "." + stamp + "."))
+	mac.Write(body)
+	want := mac.Sum(nil)
+	for sig := range strings.FieldsSeq(provided) {
+		encoded, ok := strings.CutPrefix(sig, "v1,")
+		if !ok {
+			continue
+		}
+		if got, err := base64.StdEncoding.DecodeString(encoded); err == nil && hmac.Equal(got, want) {
+			return nil
+		}
+	}
+	return ErrSignatureMismatch
+}
+
+// GitLabSigningKey is the HMAC key a GitLab webhook signing token holds:
+// the base64 after its "whsec_" prefix, decoded.
+func GitLabSigningKey(token string) ([]byte, error) {
+	encoded, ok := strings.CutPrefix(token, "whsec_")
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if !ok || err != nil || len(key) == 0 {
+		return nil, errors.New(`webhook: a GitLab signing token is "whsec_" followed by base64`)
+	}
+	return key, nil
 }
 
 // Delivered reports whether the request carries the headers forge puts on
@@ -57,6 +115,8 @@ func Delivered(forge configfile.Forge, header http.Header) bool {
 		return header.Get("X-GitHub-Delivery") != "" && header.Get("X-GitHub-Event") != ""
 	case configfile.ForgeForgejo:
 		return header.Get("X-Forgejo-Delivery") != "" && header.Get("X-Forgejo-Event") != ""
+	case configfile.ForgeGitLab:
+		return header.Get("webhook-id") != "" && header.Get("X-Gitlab-Event") != ""
 	default:
 		return false
 	}

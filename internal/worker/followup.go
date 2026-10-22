@@ -85,8 +85,8 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	}
 	owner, repo := pr.ownerRepo()
 	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
-		comment: forge.Comment{ID: args.CommentID, Inline: args.Inline}, asReply: args.Reply, owner: owner, repo: repo, jobID: job.ID,
-		attempt: job.Attempt, maxAttempts: job.MaxAttempts, requested: job.CreatedAt, logger: logger}
+		comment: forge.Comment{ID: args.CommentID, Number: args.Number, Inline: args.Inline}, asReply: args.Reply, owner: owner, repo: repo,
+		jobID: job.ID, attempt: job.Attempt, maxAttempts: job.MaxAttempts, requested: job.CreatedAt, logger: logger}
 	// The job of an answered review request wakes until the review ends,
 	// with nothing to read from the forge each time.
 	awaiting, err := f.awaitingReview(ctx)
@@ -96,7 +96,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 	if awaiting {
 		return f.awaitReview(ctx)
 	}
-	if f.comment, err = client.GetComment(ctx, owner, repo, args.CommentID, args.Inline); err != nil {
+	if f.comment, err = client.GetComment(ctx, owner, repo, args.Number, args.CommentID, args.Inline); err != nil {
 		return err
 	}
 	if f.botLogin, err = client.BotLogin(ctx); err != nil {

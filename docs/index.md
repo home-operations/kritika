@@ -1,6 +1,6 @@
 # kritika
 
-kritika is an AI reviewer for pull requests on GitHub and Forgejo. It reads the change and
+kritika is an AI reviewer for pull requests on GitHub, Forgejo and GitLab. It reads the change and
 related code, posts findings with suggested fixes, and answers follow-up
 questions in comments.
 
@@ -33,7 +33,7 @@ results and costs. Confidence scores and automatic approvals are optional.
 | Add rules for my repository | [Repository settings](repository-config.md) |
 | Find a failed review or check spending | [Dashboard](dashboard.md) |
 | Use scores or automatic approvals | [Confidence and approvals](confidence.md) |
-| Connect a Forgejo instance | [Git forges](forges.md) |
+| Connect a Forgejo or GitLab instance | [Git forges](forges.md) |
 
 The **Operations** pages cover the database, security and monitoring.
 The **Reference** pages list configuration options, providers and Helm values.

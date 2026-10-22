@@ -5,7 +5,7 @@
   import type { ReviewTab, Route } from '../../routes';
   import { Resource, errorMessage, live, pollJobs } from '../../resource.svelte';
   import { isActive, jobCauseText, rerunBody, shortSha, skipText } from '../../format';
-  import { pullRoute, repoRoute, rerunPath, cancelPath, accountApi, forgeName } from '../../links';
+  import { pullRoute, repoRoute, rerunPath, cancelPath, accountApi, forgeName, repoPath } from '../../links';
   import { safeHref } from '../../markdown';
   import { isAdmin } from '../../session.svelte';
   import { clock, ago } from '../../time.svelte';
@@ -38,7 +38,7 @@
   const pull = Resource.json<PullDetail>(() => pullPath ?? '');
   const pullPath = $derived(owner && repo && number !== undefined
     ? `${account}/pulls/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`
-    : res.data ? `${account}/pulls/${res.data.review.pull.repository.split('/').map(encodeURIComponent).join('/')}/${res.data.review.pull.number}` : undefined);
+    : res.data ? `${account}/pulls/${repoPath(res.data.review.pull.repository)}/${res.data.review.pull.number}` : undefined);
   const latest = $derived(pull.data?.reviews.find((r) => r.status !== 'skipped'));
   // Live history updates must not discard the reader's current diff and filters.
   let initialRun = $state<string>();

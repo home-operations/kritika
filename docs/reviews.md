@@ -58,7 +58,9 @@ as a fix; use the dismiss command if you want a lasting dismissal.
 Unresolving a thread takes back its dismissal. Without Contents write
 permission, kritika records dismissals but leaves thread resolution to you.
 On Forgejo, threads are neither read nor resolved: the dismiss command is
-the way, as [Git forges](forges.md#what-works-where) lists.
+the way, as [Git forges](forges.md#what-works-where) lists. On GitLab,
+kritika resolves a fixed finding's thread, but resolving one yourself
+sends no event, so it does not dismiss the finding.
 
 ### Replies in finding threads
 

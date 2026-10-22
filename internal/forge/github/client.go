@@ -339,7 +339,7 @@ func (c *Client) approvals(ctx context.Context, owner, repo string, number int) 
 }
 
 // GetComment implements forge.Client. GitHub resolves a comment by id alone.
-func (c *Client) GetComment(ctx context.Context, owner, repo string, id int64, inline bool) (forge.Comment, error) {
+func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id int64, inline bool) (forge.Comment, error) {
 	if inline {
 		cm, _, err := c.api.PullRequests.GetComment(ctx, owner, repo, id)
 		if err != nil {
