@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.93](https://github.com/home-operations/kritika/compare/0.0.92...0.0.93) (2026-10-22)
+
+
+### Features
+
+* **forge:** review pull requests on Forgejo through a bot account ([#1168](https://github.com/home-operations/kritika/issues/1168)) ([e0c14b1](https://github.com/home-operations/kritika/commit/e0c14b1493ab7f4463212501db9ba085361f1463))
+* **go:** update module github.com/openai/openai-go/v3 (v3.81.0 → v3.82.0) ([#1167](https://github.com/home-operations/kritika/issues/1167)) ([d77bc95](https://github.com/home-operations/kritika/commit/d77bc9537e2a6c32074d0af1632b200fe88e39cb))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool aqua:dadav/helm-schema (0.23.5 → 0.24.0) ([#1164](https://github.com/home-operations/kritika/issues/1164)) ([c29d061](https://github.com/home-operations/kritika/commit/c29d061b722630452bdd6136f17e47ec6b532b8b))
+
 ## [0.0.92](https://github.com/home-operations/kritika/compare/0.0.91...0.0.92) (2026-10-21)
 
 
