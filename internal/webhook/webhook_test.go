@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/home-operations/kritika/internal/configfile"
@@ -82,5 +84,17 @@ func TestDelivered(t *testing.T) {
 	}
 	if Delivered("bitbucket", http.Header{"X-Github-Delivery": {"d-1"}, "X-Github-Event": {"ping"}}) {
 		t.Fatal("an unsupported forge delivers nothing")
+	}
+}
+
+// TestFilterVarsMatchSample: every key a condition can read of a webhook's
+// pull request is one the sample conditions are checked against at load,
+// and the other way round, but pr.lines, which only the diff gives.
+func TestFilterVarsMatchSample(t *testing.T) {
+	got := slices.Sorted(maps.Keys((&PullRequest{}).FilterVars("opened")))
+	sample := configfile.SamplePR()
+	delete(sample, "lines")
+	if want := slices.Sorted(maps.Keys(sample)); !slices.Equal(got, want) {
+		t.Fatalf("FilterVars keys = %q, SamplePR keys = %q", got, want)
 	}
 }

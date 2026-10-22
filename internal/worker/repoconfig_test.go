@@ -280,3 +280,37 @@ func TestFollowUpRepoConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestScoreFor: a pull request confidence.when does not hold for is
+// reviewed as if no confidence model were set.
+func TestScoreFor(t *testing.T) {
+	t.Parallel()
+	scoped := func() Effective {
+		var e Effective
+		e.Confidence = configfile.Confidence{Model: "p/judge", Fallback: "p/other", When: []configfile.When{{Expr: "pr.bot"}}}
+		return e
+	}
+	e := scoped()
+	e.scoreFor(configfile.SamplePR())
+	if e.Confidence.Model != "" || e.Confidence.Fallback != "" {
+		t.Fatalf("confidence = %+v, want no model for a person's pull request", e.Confidence)
+	}
+	e = scoped()
+	bot := configfile.SamplePR()
+	bot["bot"] = true
+	e.scoreFor(bot)
+	if e.Confidence.Model != "p/judge" || e.Confidence.RepoUnscored {
+		t.Fatalf("confidence = %+v, want the model kept for a bot's", e.Confidence)
+	}
+	if e.Confidence.RepoUnscored {
+		t.Fatal("the admin's conditions leaving a pull request out is not the repository's doing")
+	}
+	// A repository's file narrowing scoring leaves the pull request
+	// unscored and unapproved, never approved on its findings alone.
+	e = scoped()
+	e.Confidence.WhenInRepo = []configfile.When{{Expr: "pr.draft"}}
+	e.scoreFor(bot)
+	if e.Confidence.Model != "" || !e.Confidence.RepoUnscored {
+		t.Fatalf("confidence = %+v, want it unscored by the repository", e.Confidence)
+	}
+}

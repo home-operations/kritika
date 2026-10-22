@@ -34,9 +34,9 @@ admin's policy; detailed examples follow.
 | [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                        |
 | [`review.effort`](#models)                                   | how hard they reason                                               | replaces                                        |
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
-| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows                   | replaces, either way                            |
+| [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some | replaces; its `when` holds beside the admin's   |
 | [`review.diagram`](#flow-diagrams)                           | `true` draws the change's flow in the summary                      | replaces, either way                            |
-| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it        | replaces; `risk` may only be lowered            |
+| [`confidence.*`](#confidence)                                | the score that judges a review, and the models that give it        | replaces; `risk` may only be lowered, `when` holds beside the admin's |
 | [`trigger.include`, `trigger.exclude`](#trigger-conditions)  | which pull requests are reviewed                                   | judged beside the admin's lists                 |
 | `comments.inline`                                            | `false` posts the summary alone, without inline comments           | replaces                                        |
 | [`comments.summary`, `comments.finding`](#comment-templates) | templates for the summary and inline comments                      | replaces                                        |
@@ -77,6 +77,21 @@ score, one whose score and risk allow it. It replaces the admin's in
 either direction, so a repository can turn it on where the instance
 leaves it off ([approvals](confidence.md#approvals)).
 
+A block with `when` conditions, as a [rule's](#rules), approves only a
+pull request one of them holds for:
+
+```yaml
+review:
+  approve:
+    when:
+      - name: small bumps
+        expr: pr.bot && pr.labels.exists(l, l.name in ["type/patch", "type/minor", "type/digest"])
+```
+
+The block turns approval on, and its conditions hold beside the admin's:
+a pull request must pass both, so the file cannot approve what the admin's
+conditions keep out, and `approve: true` keeps the admin's conditions.
+
 ### Flow diagrams
 
 With `review.diagram: true`, the summary draws the flow the change adds or
@@ -101,6 +116,11 @@ threshold and the gate in either direction; the models are held to the
 providers `review.model` is ([models](#models)), and the fallback takes
 the scorer's call when the confidence model fails;
 `confidence.risk` may only lower the admin's, and a higher one is dropped.
+`confidence.when` lists conditions, as a rule's `when`, one of which a pull
+request must hold for to be scored, beside the admin's. One the file's
+conditions leave unscored is reviewed without a score and, where the
+admin asks for one, not approved, so the file cannot lift the admin's risk
+policy by narrowing scoring.
 `confidence.instructions` and `confidence.floors` are the admin's alone
 ([confidence and approvals](confidence.md)).
 
@@ -465,6 +485,7 @@ rule's `when` conditions, is a [CEL](https://cel.dev) expression over
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | `number`, `title`, `body`, `author`, `url` | the pull request                                                                                                           |
 | `state`, `open`, `merged`, `draft`, `fork` | its state                                                                                                                  |
+| `bot`                                      | whether a bot opened it, as the forge marks one, or a Forgejo or Gitea connection lists its login under `bots`             |
 | `headRef`, `headSha`, `baseRef`            | its branches and head commit                                                                                               |
 | `createdAt`                                | when it was opened                                                                                                         |
 | `labels`                                   | its labels, each with a `name` and a `color`                                                                               |

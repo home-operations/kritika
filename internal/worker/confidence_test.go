@@ -113,12 +113,15 @@ func TestCarryApproval(t *testing.T) {
 			approved: "o/r#7@abcdef1234: kritika: confidence 4/5 with low risk at abcdef1."},
 		{name: "a threshold raised since withdraws", settings: settings(true, 5), carried: carried(5),
 			dismissed: "o/r#7: kritika: confidence 4/5 is below the threshold of 5 at abcdef1."},
+		{name: "nothing carried for a pull request the repository left unscored withdraws",
+			settings:  configfile.Settings{Review: configfile.Review{Approve: true}, Confidence: configfile.Confidence{RepoUnscored: true}},
+			dismissed: "o/r#7: kritika: this repository's confidence.when leaves it unscored at abcdef1."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &approvalForge{}
-			carryApproval(t.Context(), slog.New(slog.DiscardHandler), f, &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"},
-				tt.settings, tt.carried)
+			carryApproval(t.Context(), slog.New(slog.DiscardHandler), nil, "a", "synchronize", f,
+				&pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, tt.settings, tt.carried)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {
 				t.Fatalf("approved %q dismissed %q, want %q and %q", f.approved, f.dismissed, tt.approved, tt.dismissed)
 			}

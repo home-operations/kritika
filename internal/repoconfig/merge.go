@@ -34,7 +34,8 @@ type Merged struct {
 // appends its context files and rules to the
 // admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
 // their effort, the confidence threshold, how the review comments,
-// whether it approves and whether its summary draws a diagram. A model must be one of a provider
+// whether it approves and whether its summary draws a diagram, and adds
+// approval and confidence conditions that must hold beside the admin's. A model must be one of a provider
 // op.Providers names, and an effort one of model.Efforts or empty, which
 // leaves it to the provider. A value it may not take is dropped, and
 // Dropped says so. A file that does not parse is ignored as a whole: op stands, and the
@@ -78,8 +79,8 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if f.Comments.Inline != nil {
 		m.Review.InlineComments = *f.Comments.Inline
 	}
-	if f.Review.Approve != nil {
-		m.Review.Approve = *f.Review.Approve
+	if a := f.Review.Approve; a != nil {
+		m.Review.Approve, m.Review.ApproveWhenInRepo = a.On, a.When
 	}
 	if f.Review.Diagram != nil {
 		m.Review.Diagram = *f.Review.Diagram
@@ -108,6 +109,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	if f.Confidence.Gate != nil {
 		m.Confidence.Gate = *f.Confidence.Gate
 	}
+	m.Confidence.WhenInRepo = f.Confidence.When
 	switch risk := f.Confidence.Risk; {
 	case risk == "":
 	case risk.Within(op.Confidence.Risk):
@@ -247,6 +249,7 @@ type PullRequest struct {
 	Merged    bool      `json:"merged,omitempty"`
 	Draft     bool      `json:"draft,omitempty"`
 	Fork      bool      `json:"fork,omitempty"`
+	Bot       bool      `json:"bot,omitempty"`
 	HeadRef   string    `json:"headRef"`
 	HeadSHA   string    `json:"headSha"`
 	BaseRef   string    `json:"baseRef"`
@@ -279,7 +282,7 @@ func (p PullRequest) Vars() (map[string]any, error) {
 	}
 	return map[string]any{
 		"event": p.Event, "number": p.Number, "title": p.Title, "author": p.Author, "state": p.State, "open": p.State == "open",
-		"merged": p.Merged, "draft": p.Draft, "fork": p.Fork, "headRef": p.HeadRef, "headSha": p.HeadSHA,
+		"merged": p.Merged, "draft": p.Draft, "fork": p.Fork, "bot": p.Bot, "headRef": p.HeadRef, "headSha": p.HeadSHA,
 		"baseRef": p.BaseRef, "url": p.URL, "body": p.Body, "createdAt": p.CreatedAt, "labels": labels,
 	}, nil
 }

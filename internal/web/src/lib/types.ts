@@ -254,6 +254,10 @@ export interface ReviewBlock {
   inlineComments: boolean;
   dashboard: boolean;
   approve: boolean;
+  // approveWhen is absent when approval holds for every pull request, and
+  // approveWhenInRepo when the repository's .kritika.yaml adds none.
+  approveWhen?: Condition[];
+  approveWhenInRepo?: Condition[];
   diagram: boolean;
   cost: boolean;
   replies: boolean;
@@ -290,6 +294,10 @@ export interface RepoSettings {
     instructions: string;
     // floors is absent when the admin set none.
     floors?: Partial<Record<Risk, string[]>>;
+    // when is absent when every pull request is scored, and whenInRepo
+    // when the repository's .kritika.yaml adds none.
+    when?: Condition[];
+    whenInRepo?: Condition[];
   };
   agent: AgentLimits;
   limits: Limits;

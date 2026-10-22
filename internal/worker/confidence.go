@@ -247,15 +247,23 @@ func skipVerdict(carried *review.Confidence, gate bool, reason string) (forge.St
 
 // carryApproval applies the verdict an unchanged patch carries to
 // kritika's approval, where the repository has it approve: the skip
-// reviewed nothing, but the threshold or the risk ceiling may have moved
-// since the score was given, and an approval must not outlive them. The
-// head is the one the skip was just decided for.
+// reviewed nothing, but the threshold, the risk ceiling or the approval's
+// conditions may have moved since the score was given, and an approval
+// must not outlive them. The head is the one the skip was just decided
+// for, by a review trigger started.
 func carryApproval(
-	ctx context.Context, logger *slog.Logger, client forge.Client, pr *pullRequest, settings configfile.Settings, carried *review.Confidence,
+	ctx context.Context, logger *slog.Logger, st *store.Store, accountID, trigger string, client forge.Client, pr *pullRequest,
+	settings configfile.Settings, carried *review.Confidence,
 ) {
-	if carried == nil || !settings.Review.Approve {
+	if !settings.Review.Approve {
+		return
+	}
+	scope := judgeApproval(ctx, st, accountID, pr.id, trigger, settings.Review, logger)
+	// With no score carried the skip has no verdict to apply, unless the
+	// approval it stands on is one kritika must no longer give.
+	if carried == nil && scope != approvalOutOfScope && !settings.Confidence.RepoUnscored {
 		return
 	}
 	p := &publishPhase{client: client, pr: pr, settings: settings, confidence: carried, logger: logger}
-	p.approve(ctx, review.Counts{}, true)
+	p.approve(ctx, review.Counts{}, true, scope)
 }

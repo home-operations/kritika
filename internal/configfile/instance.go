@@ -69,7 +69,7 @@ func (f *File) FileLayer() FileLayer {
 		set        bool
 	}{
 		{keyEffort, string(deref(d.Review.Effort)), d.Review.Effort != nil},
-		{keyApprove, strconv.FormatBool(deref(d.Review.Approve)), d.Review.Approve != nil},
+		{keyApprove, deref(d.Review.Approve).String(), d.Review.Approve != nil},
 		{keyFixes, strconv.FormatBool(deref(d.Review.Fixes)), d.Review.Fixes != nil},
 		{keyIncremental, strconv.Itoa(deref(d.Review.Incremental)), d.Review.Incremental != nil},
 		{keyDiagram, strconv.FormatBool(deref(d.Review.Diagram)), d.Review.Diagram != nil},
@@ -81,6 +81,7 @@ func (f *File) FileLayer() FileLayer {
 		{keyThreshold, strconv.Itoa(deref(d.Confidence.Threshold)), d.Confidence.Threshold != nil},
 		{keyGate, strconv.FormatBool(deref(d.Confidence.Gate)), d.Confidence.Gate != nil},
 		{keyRisk, string(deref(d.Confidence.Risk)), d.Confidence.Risk != nil},
+		{keyConfidenceWhen, whenLabel(d.Confidence.When), d.Confidence.When != nil},
 		{keyLimit, strconv.Itoa(deref(d.Trigger.Limit)), d.Trigger.Limit != nil},
 	} {
 		if x.set {

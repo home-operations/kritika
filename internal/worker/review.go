@@ -448,7 +448,7 @@ func (w *Review) skipUnchangedBot(
 	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
 		return patch, true, err
 	}
-	carryApproval(ctx, e.logger, client, e.pr, settings, e.carried)
+	carryApproval(ctx, e.logger, w.Store, e.args.AccountID, e.args.Trigger, client, e.pr, settings, e.carried)
 	return patch, true, nil
 }
 

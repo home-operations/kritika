@@ -103,10 +103,10 @@ func LockReviewPreparation(ctx context.Context, tx pgx.Tx, reviewID string) (sta
 func ReadFilterPullRequest(ctx context.Context, tx pgx.Tx, prID string) (repoconfig.PullRequest, error) {
 	var pr repoconfig.PullRequest
 	var openedAt *time.Time
-	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, head_ref, head_sha, base_ref, url, body,
-		opened_at, labels FROM pull_requests WHERE id = $1`, prID).
-		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.HeadRef, &pr.HeadSHA, &pr.BaseRef,
-			&pr.URL, &pr.Body, &openedAt, &pr.Labels)
+	err := tx.QueryRow(ctx, `SELECT number, title, author, state, merged, draft, fork, author_is_bot, head_ref, head_sha, base_ref,
+		url, body, opened_at, labels FROM pull_requests WHERE id = $1`, prID).
+		Scan(&pr.Number, &pr.Title, &pr.Author, &pr.State, &pr.Merged, &pr.Draft, &pr.Fork, &pr.Bot, &pr.HeadRef, &pr.HeadSHA,
+			&pr.BaseRef, &pr.URL, &pr.Body, &openedAt, &pr.Labels)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repoconfig.PullRequest{}, ErrNotFound
 	}

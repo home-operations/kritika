@@ -25,7 +25,7 @@ import (
 func TestFullReviewFallbacksKeepFindings(t *testing.T) {
 	h := newAgenticHarness(t, 868)
 	configured := *h.file
-	configured.Defaults.Review.Approve = new(true)
+	configured.Defaults.Review.Approve = &configfile.Approve{On: true}
 	configured.Defaults.Review.Incremental = new(1)
 	h.review.Current.Set(&configured)
 	h.sm.reset(scriptSubmit)

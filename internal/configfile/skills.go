@@ -82,7 +82,7 @@ func CheckSkills(paths []string, scope map[string]SkillScope) error {
 				return fmt.Errorf("skills.scope.%s.paths[%d] %q is not a valid glob", name, i, g)
 			}
 		}
-		if err := checkWhen(sc.When); err != nil {
+		if err := CheckWhen(sc.When); err != nil {
 			return fmt.Errorf("skills.scope.%s.%w", name, err)
 		}
 	}

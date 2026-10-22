@@ -213,7 +213,7 @@ type ReviewSpec struct {
 	// to the provider.
 	Effort      *model.Effort `yaml:"effort,omitempty"`
 	Fixes       *bool         `yaml:"fixes,omitempty"`
-	Approve     *bool         `yaml:"approve,omitempty"`
+	Approve     *Approve      `yaml:"approve,omitempty"`
 	Incremental *int          `yaml:"incremental,omitempty"`
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
@@ -237,6 +237,10 @@ type ConfidenceSpec struct {
 	Risk         *review.Risk  `yaml:"risk,omitempty"`
 	Instructions *string       `yaml:"instructions,omitempty"`
 	Floors       RiskFloors    `yaml:"floors,omitempty"`
+	// When are the conditions one of which a pull request must hold for to
+	// be scored, as a rule's; a scope that writes them, even empty,
+	// replaces the broader scope's, and none scores every pull request.
+	When []When `yaml:"when,omitempty"`
 }
 
 // RiskFloors is the least risk a change is rated when it touches a path
@@ -287,6 +291,16 @@ type Confidence struct {
 	// held in code whatever the scorer says; the admin's alone, as
 	// Instructions are.
 	Floors RiskFloors `json:"floors,omitempty"`
+	// When are confidence.when's conditions, one of which a pull request
+	// must hold for to be scored, none for every one; one they hold for no
+	// longer is reviewed as if no model were set. WhenInRepo are a
+	// repository file's own, one of which must hold as well.
+	When       []When `json:"when,omitempty"`
+	WhenInRepo []When `json:"whenInRepo,omitempty"`
+	// RepoUnscored is a pull request WhenInRepo left unscored where the
+	// admin asks for a score, so it is not approved: a repository's file
+	// may narrow scoring, never lift the admin's risk policy by it.
+	RepoUnscored bool `json:"repoUnscored,omitzero"`
 }
 
 // MaxConfidence is the highest score, and DefaultConfidenceThreshold the
@@ -603,6 +617,13 @@ type Review struct {
 	// whose score and risk allow it, and to dismiss that approval when a
 	// later review's do not. Off unless set.
 	Approve bool `json:"approve"`
+	// ApproveWhen are review.approve's conditions, one of which a pull
+	// request must hold for to be approved, none for every one; an
+	// approval of one they stop holding for is dismissed.
+	// ApproveWhenInRepo are a repository file's own, one of which must
+	// hold as well, so the file never approves what the admin's keep out.
+	ApproveWhen       []When `json:"approveWhen,omitempty"`
+	ApproveWhenInRepo []When `json:"approveWhenInRepo,omitempty"`
 	// Diagram is true to have the summary draw the flow the change adds
 	// or alters as a Mermaid diagram. Off unless set: it costs output
 	// tokens on every review.

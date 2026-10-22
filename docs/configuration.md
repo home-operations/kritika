@@ -341,7 +341,7 @@ one. They come in five groups, with a few keys beside them:
 | Group        | Keys                                                                                | What they set                              |
 | ------------ | ----------------------------------------------------------------------------------- | ------------------------------------------ |
 | `review`     | `model`, `fallback`, `effort`, `fixes`, `approve`, `incremental`, `diagram`, `cost`, `replies` | what a review runs on and what it says |
-| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors` | how a review is judged                     |
+| `confidence` | `model`, `fallback`, `effort`, `threshold`, `gate`, `risk`, `instructions`, `floors`, `when` | how a review is judged              |
 | `trigger`    | `include`, `exclude`, `limit`                                                       | which pull requests are reviewed, and when |
 | `comments`   | `inline`, `summary`, `finding`, `dashboard`                                         | what is posted                             |
 | `agent`      | `steps`, `output`, `tokens`, `prompt`, `parts`, `timeout`, `commandTimeout`, `fetches` | the bounds of a review's tool loop   |
@@ -437,6 +437,8 @@ value replaces the broader one's, except:
 | `skills.scope`                       | adds up by skill name                                                    | adds up by skill name, the file's winning                         |
 | `review.fixes`                       | replaces                                                                 | can only turn it on                                               |
 | `confidence.risk`                    | replaces                                                                 | can only lower it                                                 |
+| `review.approve`'s `when`            | replaces, with the rest of `review.approve`                              | judged beside the admin's; `approve: true` keeps the admin's      |
+| `confidence.when`                    | replaces, even empty                                                     | judged beside the admin's; a pull request it alone leaves unscored is not approved where a score is asked for |
 | `enabled`                            | replaces                                                                 | can only turn it off                                              |
 
 ### Confidence and risk
