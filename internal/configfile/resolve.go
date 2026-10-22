@@ -185,14 +185,17 @@ func (s *Settings) apply(o *Overrides) {
 	if o.Confidence.Threshold != nil {
 		s.Confidence.Threshold = *o.Confidence.Threshold
 	}
-	if o.Confidence.Gate != nil {
-		s.Confidence.Gate = *o.Confidence.Gate
+	if g := o.Confidence.Gate; g != nil {
+		s.Confidence.Gate, s.Confidence.GateWhen = g.On, g.When
 	}
 	if o.Confidence.Risk != nil {
 		s.Confidence.Risk = *o.Confidence.Risk
 	}
 	if o.Confidence.Instructions != nil {
 		s.Confidence.Instructions = *o.Confidence.Instructions
+	}
+	if o.Confidence.When != nil {
+		s.Confidence.When = o.Confidence.When
 	}
 	if o.Confidence.Floors != nil {
 		s.Confidence.Floors = o.Confidence.Floors
@@ -249,8 +252,8 @@ func (r Review) overlay(o *Overrides) Review {
 	if o.Comments.Dashboard != nil {
 		r.Dashboard = *o.Comments.Dashboard
 	}
-	if o.Review.Approve != nil {
-		r.Approve = *o.Review.Approve
+	if a := o.Review.Approve; a != nil {
+		r.Approve, r.ApproveWhen = a.On, a.When
 	}
 	if o.Review.Diagram != nil {
 		r.Diagram = *o.Review.Diagram

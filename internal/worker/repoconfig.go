@@ -56,6 +56,26 @@ func effective(settings configfile.Settings, doc []byte) (Effective, []string) {
 	return Effective{Merged: m, Found: doc != nil}, notes
 }
 
+// narrowTo turns confidence scoring and its gate off for a pull request,
+// with the filter variables vars, that their conditions do not hold for.
+// One confidence.when's admin conditions leave out is reviewed as a
+// repository with no confidence model is; one only the repository file's
+// leave out is not approved either. One confidence.gate's leave out shows
+// its score and passes.
+func (e *Effective) narrowTo(vars map[string]any) {
+	c := &e.Confidence
+	if !configfile.AnyHolds(c.GateWhen, vars) {
+		c.Gate = false
+	}
+	switch {
+	case c.Model == "":
+	case !configfile.AnyHolds(c.When, vars):
+		c.Model, c.Fallback = "", ""
+	case !configfile.AnyHolds(c.WhenInRepo, vars):
+		c.Model, c.Fallback, c.RepoUnscored = "", "", true
+	}
+}
+
 // repoFiles are the paths the runner reads from the merge base: the files
 // the settings name, and .kritika.yaml itself, which the review's context
 // pack keeps a copy of.
@@ -105,6 +125,7 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 			e.logger.Warn("repository filter failed to evaluate", "filter", by.Label(), "error", err)
 		}
 		if reason == "" {
+			eff.narrowTo(vars)
 			return false, nil
 		}
 		e.filter = ""

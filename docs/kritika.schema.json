@@ -26,8 +26,23 @@
           "description": "true requires a suggested fix on every finding; false cannot lift the admin's requirement."
         },
         "approve": {
-          "type": "boolean",
-          "description": "true approves a pull request whose review finds nothing at P0 or P1, or, with a confidence score, whose score reaches the threshold and whose risk is within confidence.risk; a later review that no longer allows it dismisses the approval; replaces the admin's."
+          "description": "true approves a pull request whose review finds nothing at P0 or P1, or, with a confidence score, whose score reaches the threshold and whose risk is within confidence.risk; a later review that no longer allows it dismisses the approval; replaces the admin's. A block with when approves only a pull request one of its conditions holds for, beside the admin's conditions.",
+          "anyOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["when"],
+              "properties": {
+                "when": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "Conditions, one of which a pull request must hold for to be approved, as a rule's; an approval of one they stop holding for is dismissed.",
+                  "items": { "$ref": "#/$defs/when" }
+                }
+              }
+            }
+          ]
         },
         "diagram": {
           "type": "boolean",
@@ -59,12 +74,32 @@
           "description": "The score a pull request must reach to be approved and, with gate, for its commit status to pass, replacing the admin's."
         },
         "gate": {
-          "type": "boolean",
-          "description": "true fails the commit status under the threshold, so it can be a required check; replaces the admin's."
+          "description": "true fails the commit status under the threshold, so it can be a required check; replaces the admin's. A block with when gates only a pull request one of its conditions holds for; another shows its score and passes.",
+          "anyOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["when"],
+              "properties": {
+                "when": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "Conditions, one of which a pull request must hold for to be gated, as a rule's.",
+                  "items": { "$ref": "#/$defs/when" }
+                }
+              }
+            }
+          ]
         },
         "risk": {
           "enum": ["low", "medium", "high", "critical"],
           "description": "The highest risk a change may be rated and still be approved; it may only lower the admin's."
+        },
+        "when": {
+          "type": "array",
+          "description": "Conditions, one of which a pull request must hold for to be scored, as a rule's, beside the admin's; one they leave unscored is reviewed without a score and, where the admin asks for one, not approved.",
+          "items": { "$ref": "#/$defs/when" }
         }
       }
     },

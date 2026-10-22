@@ -27,7 +27,6 @@ import (
 	"github.com/home-operations/kritika/internal/chunk"
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
-	"github.com/home-operations/kritika/internal/prfilter"
 	"github.com/home-operations/kritika/internal/review"
 )
 
@@ -73,7 +72,7 @@ type Review struct {
 	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
 	Effort   *model.Effort       `yaml:"effort,omitempty"`
 	Fixes    *bool               `yaml:"fixes,omitempty"`
-	Approve  *bool               `yaml:"approve,omitempty"`
+	Approve  *configfile.Switch  `yaml:"approve,omitempty"`
 	Diagram  *bool               `yaml:"diagram,omitempty"`
 }
 
@@ -89,8 +88,9 @@ type Confidence struct {
 	Fallback  configfile.ModelRef `yaml:"fallback,omitempty"`
 	Effort    *model.Effort       `yaml:"effort,omitempty"`
 	Threshold *int                `yaml:"threshold,omitempty"`
-	Gate      *bool               `yaml:"gate,omitempty"`
+	Gate      *configfile.Switch  `yaml:"gate,omitempty"`
 	Risk      review.Risk         `yaml:"risk,omitempty"`
+	When      []configfile.When   `yaml:"when,omitempty"`
 }
 
 // Trigger narrows which pull requests get a review: include and exclude
@@ -156,6 +156,17 @@ func Parse(data []byte) (File, error) {
 	}
 	if err := configfile.CheckRules(f.Rules); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
+	for key, s := range map[string]*configfile.Switch{"review.approve": f.Review.Approve, "confidence.gate": f.Confidence.Gate} {
+		if s == nil {
+			continue
+		}
+		if err := configfile.CheckWhen(s.When); err != nil {
+			return File{}, fmt.Errorf("repoconfig: %s.%w", key, err)
+		}
+	}
+	if err := configfile.CheckWhen(f.Confidence.When); err != nil {
+		return File{}, fmt.Errorf("repoconfig: confidence.%w", err)
 	}
 	var skillPaths []string
 	if f.Skills.Paths != nil {
@@ -334,17 +345,9 @@ func ActiveRules(rules []configfile.Rule, files Files, changed []string) (out []
 // whose conditions holds. A condition that does not compile or evaluate
 // does not hold, as it could not say the rule applies.
 func RulesFor(rules []configfile.Rule, vars map[string]any) []configfile.Rule {
-	holds := func(w configfile.When) bool {
-		prg, err := prfilter.Compile(w.Expr)
-		if err != nil {
-			return false
-		}
-		ok, err := prg.Eval(vars)
-		return err == nil && ok
-	}
 	var out []configfile.Rule
 	for _, r := range rules {
-		if len(r.When) == 0 || slices.ContainsFunc(r.When, holds) {
+		if configfile.AnyHolds(r.When, vars) {
 			out = append(out, r)
 		}
 	}

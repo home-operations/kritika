@@ -2,6 +2,7 @@ package repoconfig
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -104,6 +105,27 @@ func TestMerge(t *testing.T) {
 			name: "approve replaces the admin's", doc: "review: { approve: true }\n",
 			want: func(s *configfile.Settings) { s.Review.Approve = true },
 		},
+		{
+			name: "approval conditions hold beside the admin's", doc: "review: { approve: { when: [{ name: bumps, expr: pr.bot }] } }\n",
+			want: func(s *configfile.Settings) {
+				s.Review.Approve, s.Review.ApproveWhenInRepo = true, []configfile.When{{Name: "bumps", Expr: "pr.bot"}}
+			},
+		},
+		{name: "an approval block with no conditions", doc: "review: { approve: {} }\n", wantErr: "a block must list when conditions"},
+		{name: "an approval condition on the diff", doc: "review: { approve: { when: [{ expr: 'pr.lines > 1' }] } }\n",
+			wantErr: "review.approve.when[0]: pr.lines"},
+		{
+			name: "confidence conditions hold beside the admin's", doc: "confidence: { when: [{ expr: pr.draft }] }\n",
+			want: func(s *configfile.Settings) { s.Confidence.WhenInRepo = []configfile.When{{Expr: "pr.draft"}} },
+		},
+		{name: "a confidence condition that does not compile", doc: "confidence: { when: [{ expr: 'pr.(' }] }\n", wantErr: "confidence.when[0]"},
+		{
+			name: "a gate's conditions replace the admin's", doc: "confidence: { gate: { when: [{ expr: pr.bot }] } }\n",
+			want: func(s *configfile.Settings) {
+				s.Confidence.Gate, s.Confidence.GateWhen = true, []configfile.When{{Expr: "pr.bot"}}
+			},
+		},
+		{name: "a gate condition on the diff", doc: "confidence: { gate: { when: [{ expr: 'pr.lines > 1' }] } }\n", wantErr: "confidence.gate.when[0]: pr.lines"},
 		{
 			name: "diagram replaces the admin's", doc: "review: { diagram: true }\n",
 			want: func(s *configfile.Settings) { s.Review.Diagram = true },
@@ -314,7 +336,7 @@ func TestMergedCheck(t *testing.T) {
 func TestPullRequestVars(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	pr := PullRequest{Number: 7, Title: "Add b", Author: "octocat", State: "closed", Merged: true, Draft: true, Fork: true,
+	pr := PullRequest{Number: 7, Title: "Add b", Author: "octocat", State: "closed", Merged: true, Draft: true, Fork: true, Bot: true,
 		HeadRef: "f", HeadSHA: "abc", BaseRef: "main", URL: "https://forge.example.com/acme/widgets/pulls/7", Body: "Adds b.",
 		CreatedAt: at, Labels: []byte(`[{"name":"deps","color":"ededed"}]`), Event: "manual"}
 	vars, err := pr.Vars()
@@ -322,7 +344,8 @@ func TestPullRequestVars(t *testing.T) {
 		t.Fatal(err)
 	}
 	if vars["number"] != 7 || vars["open"] != false || vars["merged"] != true || vars["body"] != "Adds b." ||
-		vars["createdAt"] != at || vars["headSha"] != "abc" || len(vars["labels"].([]any)) != 1 || vars["event"] != "manual" || len(vars) != 16 {
+		vars["createdAt"] != at || vars["headSha"] != "abc" || len(vars["labels"].([]any)) != 1 || vars["event"] != "manual" || vars["bot"] != true ||
+		len(vars) != 17 {
 		t.Fatalf("vars = %v", vars)
 	}
 	// A pull request that crossed a JSON job document keeps its types.
@@ -384,5 +407,45 @@ func TestMergeContextCollision(t *testing.T) {
 	if !reflect.DeepEqual(got.Review.Context, admin.Review.Context) || !slices.Equal(got.Dropped,
 		[]string{".kritika.yaml: context AGENTS.md was dropped: an admin context entry has that path"}) {
 		t.Fatalf("context = %+v, dropped = %v", got.Review.Context, got.Dropped)
+	}
+}
+
+// TestPullRequestVarsMatchSample: the stored pull request's variables are
+// the keys the sample conditions are checked against, but pr.lines.
+func TestPullRequestVarsMatchSample(t *testing.T) {
+	t.Parallel()
+	vars, err := PullRequest{}.Vars()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sample := configfile.SamplePR()
+	delete(sample, "lines")
+	if got, want := slices.Sorted(maps.Keys(vars)), slices.Sorted(maps.Keys(sample)); !slices.Equal(got, want) {
+		t.Fatalf("Vars keys = %q, SamplePR keys = %q", got, want)
+	}
+}
+
+// TestMergeKeepsAdminApprovalConditions: a file's approve: true turns
+// approval on without dropping the admin's conditions.
+func TestMergeKeepsAdminApprovalConditions(t *testing.T) {
+	t.Parallel()
+	op := configfile.Settings{Review: configfile.Review{ApproveWhen: []configfile.When{{Expr: "pr.bot"}}}}
+	m, err := Merge([]byte("review: { approve: true }\n"), op)
+	if err != nil || !m.Review.Approve || len(m.Review.ApproveWhen) != 1 || len(m.Review.ApproveWhenInRepo) != 0 {
+		t.Fatalf("merged review = %+v, %v", m.Review, err)
+	}
+}
+
+// TestMergeReplacesAdminGate: a file's gate replaces the admin's,
+// conditions and all, where its approval conditions hold beside them.
+func TestMergeReplacesAdminGate(t *testing.T) {
+	t.Parallel()
+	op := configfile.Settings{Confidence: configfile.Confidence{Gate: true, GateWhen: []configfile.When{{Expr: "pr.draft"}}}}
+	m, err := Merge([]byte("confidence: { gate: { when: [{ expr: pr.bot }] } }\n"), op)
+	if err != nil || !m.Confidence.Gate || len(m.Confidence.GateWhen) != 1 || m.Confidence.GateWhen[0].Expr != "pr.bot" {
+		t.Fatalf("merged confidence = %+v, %v; want the file's conditions alone", m.Confidence, err)
+	}
+	if m, err = Merge([]byte("confidence: { gate: true }\n"), op); err != nil || !m.Confidence.Gate || len(m.Confidence.GateWhen) != 0 {
+		t.Fatalf("merged confidence = %+v, %v; want gate: true to gate every pull request", m.Confidence, err)
 	}
 }

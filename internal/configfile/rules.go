@@ -66,18 +66,18 @@ func CheckRules(rules []Rule) error {
 				return fmt.Errorf("rules[%d].paths[%d] %q is not a valid glob", i, j, g)
 			}
 		}
-		if err := checkWhen(r.When); err != nil {
+		if err := CheckWhen(r.When); err != nil {
 			return fmt.Errorf("rules[%d].%w", i, err)
 		}
 	}
 	return nil
 }
 
-// checkWhen rejects a rule's conditions with no expression, a name given
-// twice, or an expression that does not compile, fails against a sample
-// pull request or reads pr.lines: a rule is judged before the diff is
-// fetched. The error starts with the condition's place, as when[i].
-func checkWhen(when []When) error {
+// CheckWhen rejects conditions with no expression, a name given twice, or
+// an expression that does not compile, fails against a sample pull
+// request or reads pr.lines: they are judged before the diff is fetched.
+// The error starts with the condition's place, as when[i].
+func CheckWhen(when []When) error {
 	for i, w := range when {
 		if w.Name != "" && slices.ContainsFunc(when[:i], func(o When) bool { return o.Name == w.Name }) {
 			return fmt.Errorf("when[%d]: name %q is given twice", i, w.Name)

@@ -474,7 +474,8 @@ func (p *publishPhase) writeBack(
 	// A merged or closed pull request's head merges no more, so it is
 	// neither approved nor its approval withdrawn.
 	if p.settings.Review.Approve && p.pr.closed == "" {
-		data.Approval = p.approve(ctx, counts, p.headCurrent(ctx))
+		scope := judgeApproval(ctx, p.w.Store, p.account.ID(), p.pr.id, p.trigger, p.settings.Review, p.logger)
+		data.Approval = p.approve(ctx, counts, p.headCurrent(ctx), scope)
 	}
 	if linked || data.Approval != nil {
 		// The threads and the approval exist only now, so the summary is

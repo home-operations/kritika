@@ -25,7 +25,7 @@ import (
 func TestFullReviewFallbacksKeepFindings(t *testing.T) {
 	h := newAgenticHarness(t, 868)
 	configured := *h.file
-	configured.Defaults.Review.Approve = new(true)
+	configured.Defaults.Review.Approve = &configfile.Switch{On: true}
 	configured.Defaults.Review.Incremental = new(1)
 	h.review.Current.Set(&configured)
 	h.sm.reset(scriptSubmit)
@@ -129,7 +129,7 @@ func TestFullReviewFallbacksKeepFindings(t *testing.T) {
 		scored := configured
 		scored.Defaults.Confidence.Model = new(configfile.ModelRef("gateway/judge"))
 		scored.Defaults.Confidence.Threshold = new(4)
-		scored.Defaults.Confidence.Gate = new(true)
+		scored.Defaults.Confidence.Gate = &configfile.Switch{On: true}
 		h.review.Current.Set(&scored)
 		h.sm.reset(scriptParts)
 		next = h.commit(t, "main.go", content+"\nfunc scored() {}\n")

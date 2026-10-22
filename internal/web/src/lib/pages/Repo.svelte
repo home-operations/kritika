@@ -42,6 +42,12 @@
       .map(([level, globs]) => `${level}: ${(globs ?? []).join(', ')}`)
       .join('; ') || '—';
   const yes = (b: boolean) => (b ? 'yes' : 'no');
+  // bounded is the conditions a setting holds under: the admin's, and the
+  // repository file's, which must hold as well; '' for none.
+  const bounded = (admin: Condition[] = [], repo: Condition[] = []) =>
+    [admin.length ? `when ${conditions(admin)}` : '', repo.length ? `${admin.length ? 'and' : 'when'} ${conditions(repo)} (.kritika.yaml)` : '']
+      .filter(Boolean)
+      .join(' ');
   const unlimited = (n: number) => (n ? wholeNumber(n) : 'unlimited');
 
   // One setting as the page shows it: its label, the policy key its source
@@ -57,13 +63,24 @@
     { label: 'Fallback model', key: 'review.fallback', value: (s) => s.models.fallback || '—', mono: true },
     { label: 'Review effort', key: 'review.effort', value: (s) => s.models.effort || "the provider's default" },
     { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },
+    {
+      label: 'Confidence when',
+      key: 'confidence.when',
+      value: (s) => (!s.confidence.model ? '—' : bounded(s.confidence.when, s.confidence.whenInRepo) || 'every pull request'),
+      mono: true,
+    },
     { label: 'Confidence fallback', key: 'confidence.fallback', value: (s) => (s.confidence.model ? s.confidence.fallback || '—' : '—'), mono: true },
     { label: 'Confidence effort', key: 'confidence.effort', value: (s) => (s.confidence.model ? s.confidence.effort || "the provider's default" : '—') },
     { label: 'Confidence threshold', key: 'confidence.threshold', value: (s) => (s.confidence.model ? `${s.confidence.threshold}/5` : '—') },
     {
       label: 'Confidence gate',
       key: 'confidence.gate',
-      value: (s) => (!s.confidence.model ? '—' : s.confidence.gate ? 'yes: the check fails under the threshold' : 'no: the check reports the score'),
+      value: (s) =>
+        !s.confidence.model
+          ? '—'
+          : s.confidence.gate
+            ? `yes${s.confidence.gateWhen?.length ? ` ${bounded(s.confidence.gateWhen)}` : ''}: the check fails under the threshold`
+            : 'no: the check reports the score',
     },
     {
       label: 'Approve up to risk',
@@ -83,7 +100,11 @@
     { label: 'Require suggested fix', key: 'review.fixes', value: (s) => yes(s.review.requireSuggestedFix) },
     { label: 'Inline comments', key: 'comments', value: (s) => yes(s.review.inlineComments) },
     { label: 'Dashboard in comments', key: 'comments.dashboard', value: (s) => yes(s.review.dashboard) },
-    { label: 'Approve', key: 'review.approve', value: (s) => yes(s.review.approve) },
+    {
+      label: 'Approve',
+      key: 'review.approve',
+      value: (s) => (!s.review.approve ? 'no' : bounded(s.review.approveWhen, s.review.approveWhenInRepo) || 'yes'),
+    },
     { label: 'Flow diagram', key: 'review.diagram', value: (s) => yes(s.review.diagram) },
     { label: 'Cost in footer', key: 'review.cost', value: (s) => yes(s.review.cost) },
     { label: 'Replies in finding threads', key: 'review.replies', value: (s) => yes(s.review.replies) },

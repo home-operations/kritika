@@ -568,6 +568,9 @@ func validateReview(where string, r *Overrides) error {
 	if err := CheckRules(r.Rules); err != nil {
 		return fmt.Errorf("configfile: %s%w", where, err)
 	}
+	if err := checkConditions(where, r); err != nil {
+		return err
+	}
 	if err := CheckSkills(deref(r.Skills.Paths), r.Skills.Scope); err != nil {
 		return fmt.Errorf("configfile: %s%w", where, err)
 	}
@@ -760,6 +763,7 @@ func SamplePR() map[string]any {
 		"merged":    false,
 		"draft":     false,
 		"fork":      false,
+		"bot":       false,
 		"headRef":   "feature",
 		"headSha":   "0000000",
 		"baseRef":   "main",

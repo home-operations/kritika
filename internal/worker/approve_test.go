@@ -16,7 +16,9 @@ type approvalForge struct {
 	forge.Client
 	approved, dismissed string
 	requested           bool
-	err, reviewsErr     error
+	// none is a pull request with no approval of the bot's to dismiss.
+	none            bool
+	err, reviewsErr error
 }
 
 func (f *approvalForge) Approve(_ context.Context, owner, repo string, number int, headSHA, body string) (bool, error) {
@@ -30,6 +32,9 @@ func (f *approvalForge) ChangesRequested(context.Context, string, string, int) (
 
 func (f *approvalForge) DismissApprovals(_ context.Context, owner, repo string, number int, message string) (int, error) {
 	f.dismissed = owner + "/" + repo + "#" + string(rune('0'+number)) + ": " + message
+	if f.none {
+		return 0, f.err
+	}
 	return 1, f.err
 }
 
@@ -82,6 +87,9 @@ func TestApprove(t *testing.T) {
 			outcome:   review.Approval{Reason: "1 P0 and 0 P1 finding(s); an earlier approval, if one stands, could not be dismissed"}},
 		{name: "a head that moved still loses an approval its findings forbid", moved: true, counts: review.Counts{P0: 1},
 			dismissed: withdraws + "1 P0 and 0 P1 finding(s) at abcdef1.", outcome: review.Approval{Reason: "1 P0 and 0 P1 finding(s)"}},
+		{name: "a pull request a repository's confidence.when left unscored withdraws", want: configfile.Confidence{RepoUnscored: true},
+			dismissed: withdraws + "this repository's confidence.when leaves it unscored at abcdef1.",
+			outcome:   review.Approval{Reason: "this repository's confidence.when leaves it unscored"}},
 		{name: "a split review with an unfinished part withdraws", unfinished: 1,
 			dismissed: withdraws + "parts of the change went unreviewed at abcdef1.", outcome: review.Approval{Reason: "parts of the change went unreviewed"}},
 	}
@@ -93,11 +101,50 @@ func TestApprove(t *testing.T) {
 				client: f, pr: &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, logger: slog.New(slog.DiscardHandler),
 				settings: configfile.Settings{Confidence: tt.want}, confidence: tt.confidence, unscored: tt.unscored, unfinished: tt.unfinished,
 			}
-			got := p.approve(t.Context(), tt.counts, !tt.moved)
+			got := p.approve(t.Context(), tt.counts, !tt.moved, approvalInScope)
 			if f.approved != tt.approved || f.dismissed != tt.dismissed {
 				t.Fatalf("approved %q dismissed %q, want %q and %q", f.approved, f.dismissed, tt.approved, tt.dismissed)
 			}
 			if got == nil || *got != tt.outcome {
+				t.Fatalf("outcome = %+v, want %+v", got, tt.outcome)
+			}
+		})
+	}
+}
+
+// TestApproveOutOfScope: a pull request review.approve's conditions do not
+// hold for is never approved, whatever its verdict: an approval the bot
+// gave it is dismissed and said to be, and one it never had gets no word.
+// Conditions that could not be judged leave the approval as it stands.
+func TestApproveOutOfScope(t *testing.T) {
+	t.Parallel()
+	const reason = "review.approve's conditions no longer hold for this pull request"
+	for _, tt := range []struct {
+		name      string
+		scope     approvalScope
+		none      bool
+		err       error
+		dismissed string
+		outcome   *review.Approval
+	}{
+		{name: "an earlier approval is dismissed", scope: approvalOutOfScope,
+			dismissed: "o/r#7: kritika: " + reason + " at abcdef1.", outcome: &review.Approval{Reason: reason}},
+		{name: "none to dismiss says nothing", scope: approvalOutOfScope, none: true, dismissed: "o/r#7: kritika: " + reason + " at abcdef1."},
+		{name: "a dismissal that fails is said to", scope: approvalOutOfScope, err: errors.New("forbidden"),
+			dismissed: "o/r#7: kritika: " + reason + " at abcdef1.",
+			outcome:   &review.Approval{Reason: "review.approve's conditions do not hold for this pull request; an earlier approval, if one stands, could not be dismissed"}},
+		{name: "unjudged conditions touch nothing", scope: approvalUnjudged, outcome: &review.Approval{Reason: "review.approve's conditions could not be judged"}},
+		{name: "a pull request closed since the review began is left as it stands", scope: approvalClosed},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := &approvalForge{none: tt.none, err: tt.err}
+			p := &publishPhase{client: f, pr: &pullRequest{repository: "o/r", number: 7, headSHA: "abcdef1234"}, logger: slog.New(slog.DiscardHandler)}
+			got := p.approve(t.Context(), review.Counts{}, true, tt.scope)
+			if f.approved != "" || f.dismissed != tt.dismissed {
+				t.Fatalf("approved %q dismissed %q, want none and %q", f.approved, f.dismissed, tt.dismissed)
+			}
+			if (got == nil) != (tt.outcome == nil) || (got != nil && *got != *tt.outcome) {
 				t.Fatalf("outcome = %+v, want %+v", got, tt.outcome)
 			}
 		})

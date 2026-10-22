@@ -126,6 +126,7 @@ func (p *PullRequest) FilterVars(event string) map[string]any {
 		"merged":    p.Merged,
 		"draft":     p.Draft,
 		"fork":      p.Fork,
+		"bot":       p.AuthorIsBot,
 		"headRef":   p.HeadRef,
 		"headSha":   p.HeadSHA,
 		"baseRef":   p.BaseRef,
