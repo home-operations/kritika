@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.97](https://github.com/home-operations/kritika/compare/0.0.96...0.0.97) (2026-10-22)
+
+
+### Build System
+
+* **web:** type-check with TypeScript 7 and lint with oxlint ([#1189](https://github.com/home-operations/kritika/issues/1189)) ([dd7cbb3](https://github.com/home-operations/kritika/commit/dd7cbb3e5d55832aa1e1126024a9920797ac79ac))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool aqua:astral-sh/uv (0.13.1 → 0.13.2) ([#1190](https://github.com/home-operations/kritika/issues/1190)) ([17c7d0a](https://github.com/home-operations/kritika/commit/17c7d0ae74b5ced1d75c147e2679e7345ad0d641))
+
 ## [0.0.96](https://github.com/home-operations/kritika/compare/0.0.95...0.0.96) (2026-10-22)
 
 
