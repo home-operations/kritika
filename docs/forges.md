@@ -198,6 +198,30 @@ arrived. Polling keeps merge requests current without one, and finds new
 and renamed projects: kritika does not act on GitLab's project events, so
 leave them off. Mentions need webhooks.
 
+### Sign in with GitLab
+
+People can sign in to the dashboard with their GitLab account, through an
+OAuth application of the instance: a user's, under **Edit profile → Access →
+Applications**, a group's, under its **Settings → Applications**, or the
+instance's, under **Admin → Applications**. Give it the redirect URI
+`<webUrl>/auth/callback/gitlab` and the `openid` and `email` scopes alone,
+and declare it under `auth` with its **Application ID** and **Secret**:
+
+```yaml
+auth:
+  gitlab:
+    host: gitlab.example.com
+    clientId: 5f0c…
+    clientSecret: { env: GITLAB_CLIENT_SECRET }
+```
+
+kritika reads who the person is, their primary email and their groups from
+the instance's OpenID Connect userinfo endpoint, so the token it holds can
+read nothing through the API. A person reads the accounts the instance's
+connections serve that are their own or a top-level group they are a
+member of, directly or through an ancestor group, and a
+[role mapping](configuration.md#role-mappings) can grant more.
+
 ## Gitea
 
 A bot user on a Gitea instance, version 28 or later, declared under
@@ -304,7 +328,7 @@ differences are in what the forge's API lets kritika do around them.
 | A review of a head the pull request moved on from |     ✓     |        ✗        |                   ✓                   |        ✗        | Forgejo and Gitea report a pull request's merge base and diff as they stand, so a review queued before a push fails and the push's review takes over. GitLab keeps the diff of every push.                                                                                                                                                                                                                                                          |
 | Webhook per account                               | the App's | one per account | one per group, or per project on Free | one per account | Added by hand.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Short-lived, read-only token for runs             |     ✓     |        ✓        |                   ✗                   |        ✗        | Forgejo: with a second, read-only integration as `runnerAudience`; a run's token lasts an hour. GitLab and Gitea: `runnerToken` is read-only, but a personal access token lasts until it expires or is deleted.                                                                                                                                                                                                                                     |
-| Dashboard sign-in                                 |     ✓     |        ✓        |                   ✗                   |        ✓        | Through `auth.github`, `auth.forgejo` and `auth.gitea`; a Forgejo or Gitea sign-in places people on its own instance's accounts alone. On GitLab, an `oidc` sign-in through the instance places people by its role mapping alone.                                                                                                                                                                                                                   |
+| Dashboard sign-in                                 |     ✓     |        ✓        |                   ✓                   |        ✓        | Through `auth.github`, `auth.forgejo`, `auth.gitea` and `auth.gitlab`; a sign-in on an instance places people on that instance's accounts alone.                                                                                                                                                                                                                                                                                                    |
 
 A bot account on Forgejo is not marked as a bot, so a pull request opened
 by one, such as a Renovate user, is treated as a person's unless its

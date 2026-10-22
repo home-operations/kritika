@@ -4,6 +4,7 @@
 
 export {
   mdiGithub as githubIcon,
+  mdiGitlab as gitlabIcon,
   mdiThemeLightDark,
   mdiWeatherNight,
   mdiWhiteBalanceSunny,

@@ -21,7 +21,7 @@ var forgejoScopes = []string{"read:user", "read:organization"}
 // API calls a sign-in makes are Forgejo's.
 func newForgejoProvider(s *configfile.SignIn, redirect string, client *http.Client) *forgeProvider {
 	web := "https://" + s.Host
-	return newForgeProvider(s, web, web+"/api/v1", redirect, forgejoScopes, client, forgejoAPI{})
+	return newForgeProvider(s, loginOAuth(web), web+"/api/v1", redirect, forgejoScopes, client, forgejoAPI{})
 }
 
 type forgejoAPI struct{}
@@ -100,7 +100,9 @@ func (forgejoAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (ma
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"login": id.Login, "email": verifiedOnly(id), "orgs": orgs, "teams": teams}, nil
+	vars := identityVars(id, verifiedOnly(id))
+	vars["orgs"], vars["teams"] = orgs, teams
+	return vars, nil
 }
 
 // forgejoPageSize is the page size a listing asks for, the instance's

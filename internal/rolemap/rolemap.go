@@ -46,6 +46,9 @@ const (
 	// person is an active member of) and teams ("org/slug"). A Forgejo or
 	// Gitea sign-in sees the same, a team named by its name.
 	GitHub
+	// GitLab sees login, email and groups, the full paths of the groups the
+	// person is a member of, directly or through an ancestor group.
+	GitLab
 )
 
 // evalCostLimit bounds one evaluation. The expression is the admin's and its
@@ -82,6 +85,13 @@ var (
 			cel.Variable("teams", cel.ListType(cel.StringType)),
 		)
 	})
+	gitlabEnv = sync.OnceValues(func() (*cel.Env, error) {
+		return cel.NewEnv(
+			cel.Variable("login", cel.StringType),
+			cel.Variable("email", cel.StringType),
+			cel.Variable("groups", cel.ListType(cel.StringType)),
+		)
+	})
 )
 
 // Compile parses and type-checks expr for kind. It fails when the
@@ -95,6 +105,8 @@ func Compile(kind Kind, expr string) (*Program, error) {
 		newEnv = oidcEnv
 	case GitHub:
 		newEnv = githubEnv
+	case GitLab:
+		newEnv = gitlabEnv
 	default:
 		return nil, fmt.Errorf("rolemap: unknown kind %d", kind)
 	}

@@ -18,6 +18,7 @@ func TestCompileRejects(t *testing.T) {
 		{"a boolean", GitHub, `"org-1" in orgs`, "must yield a role or a map"},
 		{"a number", GitHub, `1`, "must yield a role or a map"},
 		{"a malformed regex", GitHub, `login.matches("(") ? "admin" : ""`, "missing closing )"},
+		{"a GitHub variable on GitLab", GitLab, `"org-1" in orgs ? "admin" : ""`, "undeclared reference to 'orgs'"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := Compile(tt.kind, tt.expr); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -54,6 +55,8 @@ func TestEval(t *testing.T) {
 		{"every account", OIDC, `{"*": "member"}`, oidc(), Result{Accounts: map[string]bool{AllAccounts: true}}},
 		{"a role or a map", GitHub, `"org-1" in orgs ? "admin" : dyn({"github/org-2": "member"})`, github("x", "org-2"),
 			Result{Accounts: map[string]bool{"github/org-2": true}}},
+		{"an admin by GitLab group", GitLab, `"platform/admins" in groups ? "admin" : ""`,
+			map[string]any{"login": "x", "email": "", "groups": []string{"platform", "platform/admins"}}, Result{Role: RoleAdmin}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			p, err := Compile(tt.kind, tt.expr)
