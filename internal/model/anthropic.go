@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -21,6 +22,8 @@ type AnthropicConfig struct {
 	// BaseURL is the API root, without "/v1"; empty means the SDK's default.
 	BaseURL string
 	APIKey  string
+	// Headers are as OpenAIConfig.Headers.
+	Headers map[string]string
 	// HTTPClient may be nil.
 	HTTPClient *http.Client
 	Pricing    Pricing
@@ -28,10 +31,11 @@ type AnthropicConfig struct {
 
 // Anthropic is a Stepper over the Anthropic Messages API.
 type Anthropic struct {
-	client       anthropic.Client
-	pricing      Pricing
-	now          func() time.Time
-	catalogCache modelCatalog[anthropic.ModelInfo]
+	client         anthropic.Client
+	sessionHeaders map[string]string
+	pricing        Pricing
+	now            func() time.Time
+	catalogCache   modelCatalog[anthropic.ModelInfo]
 }
 
 // NewAnthropic builds the adapter. It ignores the SDK's environment and
@@ -54,7 +58,11 @@ func NewAnthropic(cfg AnthropicConfig) (*Anthropic, error) {
 	if cfg.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(cfg.HTTPClient))
 	}
-	return &Anthropic{client: anthropic.NewClient(opts...), pricing: cfg.Pricing, now: time.Now}, nil
+	static, session := splitHeaders(cfg.Headers)
+	for k, v := range static {
+		opts = append(opts, option.WithHeader(k, v))
+	}
+	return &Anthropic{client: anthropic.NewClient(opts...), sessionHeaders: session, pricing: cfg.Pricing, now: time.Now}, nil
 }
 
 // Step implements Stepper.
@@ -66,13 +74,19 @@ func (a *Anthropic) Step(ctx context.Context, req StepRequest) (StepResponse, er
 	if err != nil {
 		return StepResponse{}, err
 	}
+	var opts []option.RequestOption
+	if req.Session != "" {
+		for k, v := range a.sessionHeaders {
+			opts = append(opts, option.WithHeader(k, strings.ReplaceAll(v, SessionPlaceholder, req.Session)))
+		}
+	}
 	return eachModel(ctx, req, func(id string) (StepResponse, error) {
 		id, alias, err := resolve(id, func(family string) (string, error) { return a.resolveLatest(ctx, family, req.Effort) })
 		if err != nil {
 			return StepResponse{}, err
 		}
 		params.Model = id
-		msg, err := a.client.Messages.New(ctx, params)
+		msg, err := a.client.Messages.New(ctx, params, opts...)
 		if err != nil {
 			return StepResponse{}, err
 		}

@@ -37,6 +37,9 @@ type OpenAIConfig struct {
 	// BaseURL is the API root, ".../v1"; empty means the SDK's default.
 	BaseURL string
 	APIKey  string
+	// Headers are the provider's configured headers, which replace
+	// kritika's own of the same name; see SessionPlaceholder.
+	Headers map[string]string
 	// HTTPClient may be nil.
 	HTTPClient *http.Client
 	// OpenRouter enables OpenRouter's extensions: server-side fallback
@@ -69,8 +72,8 @@ type OpenAIConfig struct {
 	Part int
 }
 
-// sessionHeader carries StepRequest.Session to OpenCode.
-const sessionHeader = "x-opencode-session"
+// OpenCodeSessionHeader carries StepRequest.Session to OpenCode.
+const OpenCodeSessionHeader = "x-opencode-session"
 
 // PartHeader carries, from a runner to the gateway, the part of a split
 // review a step is for.
@@ -84,9 +87,12 @@ type OpenAI struct {
 	reportsModel bool
 	gateway      bool
 	openCode     bool
-	pricing      Pricing
-	now          func() time.Time
-	catalogCache modelCatalog[string]
+	// sessionHeaders are the configured headers that carry a step's
+	// session.
+	sessionHeaders map[string]string
+	pricing        Pricing
+	now            func() time.Time
+	catalogCache   modelCatalog[string]
 }
 
 // withoutEnvironment deletes the headers openai.NewClient adds from the
@@ -135,9 +141,13 @@ func NewOpenAI(cfg OpenAIConfig) (*OpenAI, error) {
 	if cfg.Part > 0 {
 		opts = append(opts, option.WithHeader(PartHeader, strconv.Itoa(cfg.Part)))
 	}
+	static, session := splitHeaders(cfg.Headers)
+	for k, v := range static {
+		opts = append(opts, option.WithHeader(k, v))
+	}
 	return &OpenAI{
 		client: openai.NewClient(opts...), openRouter: cfg.OpenRouter, reportsModel: cfg.OpenRouter || cfg.ReportsModel,
-		gateway: cfg.Gateway, openCode: cfg.OpenCode, pricing: cfg.Pricing, now: time.Now,
+		gateway: cfg.Gateway, openCode: cfg.OpenCode, sessionHeaders: session, pricing: cfg.Pricing, now: time.Now,
 	}, nil
 }
 
@@ -162,8 +172,13 @@ func (o *OpenAI) Step(ctx context.Context, req StepRequest) (StepResponse, error
 		return StepResponse{}, err
 	}
 	var opts []option.RequestOption
-	if o.openCode && req.Session != "" {
-		opts = append(opts, option.WithHeader(sessionHeader, req.Session))
+	if req.Session != "" {
+		if o.openCode {
+			opts = append(opts, option.WithHeader(OpenCodeSessionHeader, req.Session))
+		}
+		for k, v := range o.sessionHeaders {
+			opts = append(opts, option.WithHeader(k, strings.ReplaceAll(v, SessionPlaceholder, req.Session)))
+		}
 	}
 	if o.openRouter {
 		// OpenRouter walks the models list itself, primary first. The

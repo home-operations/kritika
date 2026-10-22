@@ -54,7 +54,7 @@ func (c *Steppers) Stepper(f *configfile.File, t *configfile.Account, name strin
 
 // BuildStepper constructs the adapter a provider's type selects.
 func BuildStepper(p configfile.Provider) (model.Stepper, error) {
-	s, err := model.NewStepper(p.Type, p.BaseURL, p.APIKeyValue().Value(), p.Pricing, nil)
+	s, err := model.NewStepper(p.Type, p.BaseURL, p.APIKeyValue().Value(), p.HeaderValues(), p.Pricing, nil)
 	if err != nil {
 		return nil, fmt.Errorf("adapter: %w", err)
 	}

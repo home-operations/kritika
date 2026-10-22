@@ -99,43 +99,6 @@ func (s Secret) String() string {
 // GoString redacts in %#v output too.
 func (s Secret) GoString() string { return s.String() }
 
-// Provider is a model endpoint. Keys are references, never values, so the
-// file can live in git.
-type Provider struct {
-	Type ProviderType `yaml:"type"`
-	// BaseURL overrides the type's default endpoint.
-	BaseURL string    `yaml:"baseUrl,omitempty"`
-	APIKey  SecretRef `yaml:"apiKey"`
-	// Pricing, keyed by model id or floating alias, computes the cost of
-	// calls the provider does not report a cost for; without a price such
-	// calls are recorded as unpriced, at no cost, while their tokens still
-	// count against limits.
-	Pricing model.Pricing `yaml:"pricing,omitempty"`
-	// Retries is how many more times a review's or a follow-up's step, the
-	// scorer's call or a split review's summary call on one of the
-	// provider's models is tried after it failed in a way another attempt
-	// may not (a 5xx, a 429, a timeout, a cut connection), at most
-	// MaxProviderRetries; zero tries once. A routing proxy that picks a
-	// model per request is where it earns its keep. The embedder does not
-	// use it.
-	Retries int `yaml:"retries,omitempty"`
-
-	apiKey     Secret
-	sessionKey string
-}
-
-// MaxProviderRetries bounds Provider.Retries: with backoff, five more
-// attempts span about a minute, which a runner's deadline absorbs.
-const MaxProviderRetries = 5
-
-// APIKeyValue returns the resolved API key.
-func (p Provider) APIKeyValue() Secret { return p.apiKey }
-
-// ChatGPTSessionKey identifies this provider's stored sign-in, assigned
-// when the file is parsed, so accounts with the same provider name stay
-// separate.
-func (p Provider) ChatGPTSessionKey() string { return p.sessionKey }
-
 // ModelRef names a model as "<provider>/<model>", where provider is a key of
 // the account's or the instance's providers map and model is whatever the
 // provider accepts.

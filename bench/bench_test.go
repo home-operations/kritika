@@ -147,7 +147,7 @@ func TestBench(t *testing.T) {
 	var stepper model.Stepper
 	if !dry {
 		var err error
-		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil); err != nil {
+		if stepper, err = model.NewStepper(model.ProviderOpenRouter, "", key, nil, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		stepper = effortStepper{Stepper: stepper, effort: opts.Effort}

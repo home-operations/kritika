@@ -412,6 +412,12 @@ func acme(entries string) string {
 // acmeAccount is minimal with keys, lines of acme's accounts entry.
 func acmeAccount(keys string) string { return minimal + "accounts:\n  acme:\n" + keys }
 
+// headers is minimal with an openai provider p sending the headers of the
+// flow mapping h.
+func headers(h string) string {
+	return "providers:\n  p:\n    type: openai\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n    headers: { " + h + " }\n" + minimal
+}
+
 // loadBytes is load for a document in bytes.
 func loadBytes(t *testing.T, raw []byte) (*File, error) {
 	t.Helper()
@@ -485,11 +491,13 @@ func TestRuns(t *testing.T) {
 func TestProviders(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
+	t.Setenv("TEST_HEADER", "vk-1")
 	tests := []struct {
 		name    string
 		yaml    string
 		want    Provider
 		pricing model.Pricing
+		headers map[string]string
 	}{
 		{
 			name: "anthropic with pricing",
@@ -513,6 +521,14 @@ func TestProviders(t *testing.T) {
 			yaml: "  p:\n    type: openrouter\n    baseUrl: https://proxy.example.com/api/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n",
 			want: Provider{Type: ProviderOpenRouter, BaseURL: "https://proxy.example.com/api/v1"},
 		},
+		{
+			name: "openai behind a gateway with headers",
+			yaml: "  p:\n    type: openai\n    baseUrl: https://gw.example.com/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+				"    headers:\n      x-bf-eh-x-opencode-session: '{session}'\n      x-gw-key: { env: TEST_HEADER }\n      x-tag: 7\n" +
+				"      x-meta: '{\"team\":\"a\"}'\n",
+			want:    Provider{Type: ProviderOpenAI, BaseURL: "https://gw.example.com/v1"},
+			headers: map[string]string{"x-bf-eh-x-opencode-session": "{session}", "x-gw-key": "vk-1", "x-tag": "7", "x-meta": `{"team":"a"}`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -526,6 +542,9 @@ func TestProviders(t *testing.T) {
 			}
 			if !maps.Equal(p.Pricing, tt.pricing) {
 				t.Fatalf("pricing = %v, want %v", p.Pricing, tt.pricing)
+			}
+			if got := p.HeaderValues(); !maps.Equal(got, tt.headers) {
+				t.Fatalf("headers = %v, want %v", got, tt.headers)
 			}
 		})
 	}
@@ -570,6 +589,7 @@ func TestParseRejects(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
 	t.Setenv("TEST_EMPTY", "")
+	t.Setenv("TEST_SESSION_SECRET", "vk-{session}")
 
 	if _, err := loadBytes(t, []byte(minimal)); err != nil {
 		t.Fatalf("minimal fixture must parse: %v", err)
@@ -612,6 +632,17 @@ func TestParseRejects(t *testing.T) {
 		{"relative base url", "providers:\n  p:\n    type: openai\n    baseUrl: gw.example.com/v1\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" + minimal,
 			"must be an absolute URL"},
 		{"anthropic without key", "providers:\n  p:\n    type: anthropic\n    apiKey: { env: TEST_EMPTY }\n" + minimal, "apiKey resolved to an empty value"},
+		{"a header kritika sets", headers("Authorization: Bearer x"), "providers.p.headers.Authorization: kritika sets this header itself"},
+		{"opencode's session header on opencode", "providers:\n  p:\n    type: opencode\n    apiKey: { env: TEST_WEBHOOK_SECRET }\n" +
+			"    headers: { X-OpenCode-Session: '{session}' }\n" + minimal, "providers.p.headers.X-OpenCode-Session: kritika sets this header itself"},
+		{"an invalid header name", headers("'x tag': a"), `providers.p.headers.x tag: not a valid header name`},
+		{"headers differing in case", headers("x-tag: a, X-Tag: b"), "providers.p.headers.x-tag: another header differs from it only in case"},
+		{"an empty header", headers("x-tag: { env: TEST_EMPTY }"), "providers.p.headers.x-tag resolved to an empty value"},
+		{"an unset header reference", headers("x-tag: { env: TEST_DOES_NOT_EXIST }"), "providers.p.headers.x-tag: environment variable TEST_DOES_NOT_EXIST is not set"},
+		{"a header value with a newline", headers(`x-tag: "a\nb"`), "providers.p.headers.x-tag: the value has a character a header cannot carry"},
+		{"an unknown placeholder", headers("x-tag: 'run-{session_id}'"), "providers.p.headers.x-tag: {session} is the only placeholder"},
+		{"a dotted placeholder", headers("x-tag: '{session.id}'"), "providers.p.headers.x-tag: {session} is the only placeholder"},
+		{"a secret with the session", headers("x-tag: { env: TEST_SESSION_SECRET }"), "providers.p.headers.x-tag: {session} goes in an inline value"},
 		{"model without provider", "review:\n  model: gpt\n" + minimal, "<provider>/<model>"},
 		{"a floating alias without -latest", aliasProviders + "review:\n  model: a/~opus\n" + minimal,
 			`review.model: a floating alias must be ~<family>-latest, got "~opus"`},

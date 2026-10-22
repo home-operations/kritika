@@ -31,6 +31,7 @@ func TestChatGPTProviders(t *testing.T) {
 	for _, tt := range []struct{ name, doc, want string }{
 		{"API key", strings.ReplaceAll(doc, "type: chatgpt", "type: chatgpt, apiKey: { env: TEST_PROVIDER_KEY }"), "uses a stored sign-in"},
 		{"pricing", strings.ReplaceAll(doc, "type: chatgpt", "type: chatgpt, pricing: { gpt-x: { input: 1, output: 2 } }"), "covered by a plan"},
+		{"headers", strings.ReplaceAll(doc, "type: chatgpt", "type: chatgpt, headers: { x-tag: a }"), "a chatgpt provider takes none"},
 		{"embedding", doc + "embedding: { model: openrouter/e1, dims: 8 }\n", "embedding.model"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
