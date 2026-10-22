@@ -30,7 +30,7 @@ run, and hands it a Secret of its own:
 
 | Credential                        | What it can do                                                                                                               |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| a GitHub token minted for the run | read the repository under review and public repositories; the git fetch and `gh` use it, `fetch_repo` does not               |
+| a forge token for the run         | on GitHub, a token minted to read the repository under review and public repositories, which the git fetch and `gh` use; on Forgejo, a token signed for the run as the read-only integration when one is declared, which the git fetch alone uses; `fetch_repo` uses neither |
 | a gateway token                   | reach the egress proxy and, for a review or follow-up, the run's model through the gateway, until `config.gatewayTokenTtl` past the Job's deadline; revoked when the run ends |
 | the runner role's database URI    | connect as the restricted runner role                                                                                          |
 

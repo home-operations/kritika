@@ -1,7 +1,9 @@
 # Setup
 
 This guide gets kritika from a fresh installation to its first GitHub review.
-You do not need a `.kritika.yaml` in your repositories.
+You do not need a `.kritika.yaml` in your repositories. For a Forgejo
+instance, declare a bot as [Git forges](forges.md#forgejo) describes in
+place of the App.
 
 ## Before you start
 

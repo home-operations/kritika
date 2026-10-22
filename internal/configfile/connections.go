@@ -3,19 +3,118 @@ package configfile
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
+	"strings"
 )
 
-// connectionsOf lists the file's apps in the order of their names, each
-// carrying its key as its name.
-func connectionsOf(apps map[string]Connection) []Connection {
-	conns := make([]Connection, 0, len(apps))
-	for _, name := range slices.Sorted(maps.Keys(apps)) {
-		in := apps[name]
-		in.Name, in.Forge = name, ForgeGitHub
-		conns = append(conns, in)
+// ForgejoIntegration is the authorized integration a Forgejo connection
+// calls the instance as: the instance's host, the key kritika signs the
+// integration's tokens with, and the audience Forgejo gave the
+// integration, which is known only once it exists; until it is set the
+// connection serves its key and nothing else. RunnerAudience names a
+// second integration with read access alone that runners fetch as, so
+// the pod that reads untrusted content never holds a token that can
+// write; without one they fetch as the first. PreviousKey is a key being
+// rotated out: served for Forgejo to verify with, signing nothing, until
+// the last token it signed has expired and Forgejo's cache of the key set
+// has turned over.
+type ForgejoIntegration struct {
+	Host           string     `yaml:"host"`
+	Audience       ValueOrRef `yaml:"audience,omitempty"`
+	RunnerAudience ValueOrRef `yaml:"runnerAudience,omitempty"`
+	PrivateKey     SecretRef  `yaml:"privateKey"`
+	PreviousKey    SecretRef  `yaml:"previousKey,omitempty"`
+	WebhookSecret  SecretRef  `yaml:"webhookSecret"`
+
+	audience, runnerAudience               string
+	privateKey, previousKey, webhookSecret Secret
+}
+
+// AudienceValue returns the integration's audience, inline or resolved,
+// "" until the configuration names one.
+func (b ForgejoIntegration) AudienceValue() string { return b.audience }
+
+// RunnerAudienceValue returns the runners' integration's audience, "" for
+// none.
+func (b ForgejoIntegration) RunnerAudienceValue() string { return b.runnerAudience }
+
+// PrivateKeyValue returns the resolved private key PEM.
+func (b ForgejoIntegration) PrivateKeyValue() Secret { return b.privateKey }
+
+// PreviousKeyValue returns the resolved PEM of the key being rotated out,
+// empty for none.
+func (b ForgejoIntegration) PreviousKeyValue() Secret { return b.previousKey }
+
+// WebhookSecretValue returns the resolved webhook secret.
+func (i *Connection) WebhookSecretValue() Secret {
+	if i.Forge == ForgeForgejo {
+		return i.Forgejo.webhookSecret
 	}
-	return conns
+	return i.App.webhookSecret
+}
+
+// where names the connection's entry in errors.
+func (i *Connection) where() string {
+	if i.Forge == ForgeForgejo {
+		return "forgejo." + i.Name
+	}
+	return "apps." + i.Name
+}
+
+// ForgeHosts are the hosts the connection's forge is reached at, which
+// every runner of its accounts may reach: GitHub and its API, or the
+// Forgejo instance, whose API and clone URLs share its host.
+func (i *Connection) ForgeHosts() []string {
+	if i.Forge == ForgeForgejo {
+		return []string{i.Forgejo.Host}
+	}
+	return []string{GitHubHost, GitHubAPIHost}
+}
+
+// forgejoDoc is an entry of the file's forgejo map: the accounts served
+// and the integration that serves them.
+type forgejoDoc struct {
+	Accounts           []string `yaml:"accounts"`
+	ForgejoIntegration `yaml:",inline"`
+}
+
+// connectionsOf lists the file's apps and forgejo entries in the order of
+// their names, each carrying its key as its name. A name in both maps is
+// an error: the name is the hook path, so it names one connection.
+func connectionsOf(apps map[string]Connection, bots map[string]forgejoDoc) ([]Connection, error) {
+	byName := make(map[string]Connection, len(apps)+len(bots))
+	for name, in := range apps {
+		in.Name, in.Forge = name, ForgeGitHub
+		byName[name] = in
+	}
+	for name, doc := range bots {
+		if _, dup := byName[name]; dup {
+			return nil, fmt.Errorf("configfile: forgejo.%s: apps.%s has the name already; a name is one connection's", name, name)
+		}
+		byName[name] = Connection{Name: name, Forge: ForgeForgejo, Accounts: doc.Accounts, Forgejo: doc.ForgejoIntegration}
+	}
+	conns := make([]Connection, 0, len(byName))
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
+		conns = append(conns, byName[name])
+	}
+	return conns, nil
+}
+
+// forgesServing maps each account name conns serve, lowercased, to the
+// forges serving it, so an account entry can be given the forge of its
+// connection.
+func forgesServing(conns []Connection) map[string][]Forge {
+	out := map[string][]Forge{}
+	for _, in := range conns {
+		for _, a := range in.Accounts {
+			key := strings.ToLower(a)
+			if !slices.Contains(out[key], in.Forge) {
+				out[key] = append(out[key], in.Forge)
+			}
+		}
+	}
+	return out
 }
 
 // validateConnections checks one layer's connections: names that are hook
@@ -25,9 +124,9 @@ func validateConnections(conns []Connection) error {
 	served := map[string]string{}
 	for i := range conns {
 		in := &conns[i]
-		where := "apps." + in.Name
+		where := in.where()
 		if !nameRe.MatchString(in.Name) {
-			return fmt.Errorf("configfile: %s: an app's name must be lowercase alphanumerics and hyphens, 1 to 63 characters", where)
+			return fmt.Errorf("configfile: %s: a connection's name must be lowercase alphanumerics and hyphens, 1 to 63 characters", where)
 		}
 		if err := validateAccountNames(in.Accounts, where); err != nil {
 			return err
@@ -38,10 +137,31 @@ func validateConnections(conns []Connection) error {
 		for ai, a := range in.Accounts {
 			key := AccountKey(in.Forge, a)
 			if other, dup := served[key]; dup {
-				return fmt.Errorf("configfile: %s.accounts[%d] %q is served by app %q already; an account is served by one app",
+				return fmt.Errorf("configfile: %s.accounts[%d] %q is served by %q already; an account is served by one connection",
 					where, ai, a, other)
 			}
 			served[key] = in.Name
+		}
+	}
+	return nil
+}
+
+// validateIssuer requires the dashboard's URL, which kritika's Forgejo
+// tokens name as their issuer and Forgejo reads the signing keys from, to
+// be HTTPS once a Forgejo connection exists: Forgejo fetches an issuer's
+// documents over HTTPS alone. A file parsed without the settings has no
+// URL to check.
+func (f *File) validateIssuer() error {
+	if f.Run.WebURL == "" {
+		return nil
+	}
+	if u, err := url.Parse(f.Run.WebURL); err == nil && strings.EqualFold(u.Scheme, "https") {
+		return nil
+	}
+	for i := range f.Connections {
+		if f.Connections[i].Forge == ForgeForgejo {
+			return fmt.Errorf("configfile: %s: webUrl must be https for Forgejo to verify kritika's tokens, got %q",
+				f.Connections[i].where(), f.Run.WebURL)
 		}
 	}
 	return nil

@@ -173,7 +173,7 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 	f.reply("GET /api/v3/repos/o/r/compare/main...abc", 200, `{"merge_base_commit":{"sha":"base123"}}`)
 	f.reply("GET /api/v3/repos/o/r", 200, `{"default_branch":"trunk"}`)
 	f.reply("GET /api/v3/repos/o/r/branches/trunk", 200, `{"name":"trunk","commit":{"sha":"tip456"}}`)
-	sha, err := c.MergeBase(t.Context(), "o", "r", "main", "abc")
+	sha, err := c.MergeBase(t.Context(), "o", "r", 1, "main", "abc")
 	if err != nil || sha != "base123" {
 		t.Fatalf("MergeBase = %q, %v", sha, err)
 	}
@@ -185,7 +185,7 @@ func TestMergeBaseAndBranchTip(t *testing.T) {
 		t.Fatalf("CloneURL = %s", c.CloneURL("o", "r"))
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/main...none", 200, `{}`)
-	if _, err := c.MergeBase(t.Context(), "o", "r", "main", "none"); err == nil {
+	if _, err := c.MergeBase(t.Context(), "o", "r", 1, "main", "none"); err == nil {
 		t.Fatal("a compare without a merge base must error")
 	}
 }
@@ -241,12 +241,12 @@ func TestPullRequestDiff(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(diff))
 	})
-	got, err := c.PullRequestDiff(t.Context(), "o", "r", "base123", "abc")
+	got, err := c.PullRequestDiff(t.Context(), "o", "r", 1, "base123", "abc")
 	if err != nil || got != diff {
 		t.Fatalf("PullRequestDiff = %q, %v", got, err)
 	}
 	f.reply("GET /api/v3/repos/o/r/compare/base123...big", 406, `{"message":"diff too large"}`)
-	if _, err := c.PullRequestDiff(t.Context(), "o", "r", "base123", "big"); err == nil {
+	if _, err := c.PullRequestDiff(t.Context(), "o", "r", 1, "base123", "big"); err == nil {
 		t.Fatal("a diff the forge refuses must be an error")
 	}
 }

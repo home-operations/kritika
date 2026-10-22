@@ -14,14 +14,14 @@ export interface ChecklistItem {
 export function checklist(s: SetupStatus, accounts: AdminAccount[]): ChecklistItem[] {
   return [
     {
-      label: 'A GitHub App is connected',
+      label: 'A forge is connected',
       done: s.connections.length > 0,
-      how: 'Declare the App under apps in the configuration file, its private key and webhook secret referenced from a Secret.',
+      how: 'Declare a GitHub App under apps or a Forgejo bot under forgejo in the configuration file, its secrets referenced from a Secret.',
     },
     {
       label: 'A repository is enabled',
       done: accounts.some((a) => a.live && a.repositories > 0),
-      how: 'Install the App on GitHub on a configured account, then turn on a repository on its Repositories page.',
+      how: 'Install the App, or give the bot access, on a configured account, then turn on a repository on its Repositories page.',
     },
     {
       label: 'A review model is set',

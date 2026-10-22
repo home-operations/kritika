@@ -5,7 +5,7 @@
   import type { ReviewTab, Route } from '../../routes';
   import { Resource, errorMessage, live, pollJobs } from '../../resource.svelte';
   import { isActive, jobCauseText, rerunBody, shortSha, skipText } from '../../format';
-  import { pullRoute, repoRoute, rerunPath, cancelPath, accountApi } from '../../links';
+  import { pullRoute, repoRoute, rerunPath, cancelPath, accountApi, forgeName } from '../../links';
   import { safeHref } from '../../markdown';
   import { isAdmin } from '../../session.svelte';
   import { clock, ago } from '../../time.svelte';
@@ -123,7 +123,7 @@
     <div class="page-head pr-workspace-head flex flex-col gap-2 pb-4 border-b border-solid border-b-line">
       <PageHeader title={ref?.title ?? (owner && repo ? `${owner}/${repo}#${number}` : 'Pull request')} {slug} parents={[{ label: 'Pull requests', route: { name: 'pulls', slug } }, ...(ref ? [{ label: ref.repository, route: repoRoute(slug, ref.repository) }] : [])]}>
         {#snippet actions()}{#if ref}
-          {#if forgeUrl}<a class="btn btn-primary" href={forgeUrl} target="_blank" rel="noopener noreferrer">Review on GitHub ↗</a>{/if}
+          {#if forgeUrl}<a class="btn btn-primary" href={forgeUrl} target="_blank" rel="noopener noreferrer">Review on {forgeName(slug)} ↗</a>{/if}
           {#if isAdmin()}
             <ActionButton label="Re-run" title="Re-run the review?" body={rerunBody(`${ref.repository}#${ref.number}`, pullState === 'open', merged)} path={rerunPath(slug, ref)} done="Re-run queued" ondone={refresh} />
             {#if r && isActive(r.status) && !r.cancelRequestedAt}

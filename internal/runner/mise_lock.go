@@ -24,7 +24,7 @@ func (m *miseTools) lock(ctx context.Context, t *miseTool) ([]string, error) {
 	lctx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
 	saved := m.env
-	m.env = append(slices.Clone(m.env), "MISE_GITHUB_TOKEN="+m.secrets.GitToken)
+	m.env = m.withGitHubToken(m.env)
 	defer func() { m.env = saved }()
 	out := &cappedWriter{max: installOutputBytes}
 	var lock []byte

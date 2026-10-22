@@ -12,29 +12,32 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// Apps holds one GitHub App per connection, built on first use and kept
-// for the life of the process, as the configuration is, so the clients
-// and the listings of a connection share its installation tokens: minted
-// once an hour each, however often the connection is polled.
-type Apps struct {
+// Forges holds one GitHub App or Forgejo client per connection, built on
+// first use and kept for the life of the process, as the configuration
+// is, so the clients and the listings of a connection share its
+// credentials: an App's installation tokens are minted once an hour each,
+// however often the connection is polled.
+type Forges struct {
 	// Metrics may be nil. Rate limits the forge answers with are logged
 	// and counted on it.
 	Metrics *metrics.Metrics
+	// Issuer is the URL kritika's Forgejo tokens name as their issuer,
+	// forgejo.IssuerURL of the dashboard's.
+	Issuer string
 
 	mu   sync.Mutex
 	apps map[string]*github.App
+	bots map[string]*forgejo.Client
 }
 
 // app is connection in's App.
-func (a *Apps) app(in *configfile.Connection) (*github.App, error) {
-	if in.Forge != configfile.ForgeGitHub {
-		return nil, fmt.Errorf("worker: forge %s is not implemented yet", in.Forge)
-	}
+func (a *Forges) app(in *configfile.Connection) (*github.App, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if app, ok := a.apps[in.Name]; ok {
@@ -60,52 +63,107 @@ func (a *Apps) app(in *configfile.Connection) (*github.App, error) {
 	return app, nil
 }
 
-// Build constructs the forge client for a connection, for repositories of
-// repo's owner: ForgeCache's Build.
-func (a *Apps) Build(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
-	app, err := a.app(in)
+// bot is connection in's Forgejo client. The integration is the
+// connection's, so one client serves every account it lists.
+func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if c, ok := a.bots[in.Name]; ok {
+		return c, nil
+	}
+	issuer, err := forgejo.NewIssuer(a.Issuer, in.Forgejo.PrivateKeyValue().Value())
 	if err != nil {
 		return nil, err
 	}
-	// An App is installed, and mints tokens, once per account: the
-	// installation that sees repo is its owner's.
-	owner, name, _ := strings.Cut(repo, "/")
-	id, err := app.DiscoverInstallation(ctx, owner, name)
+	c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), in.Forgejo.RunnerAudienceValue(), nil)
 	if err != nil {
 		return nil, err
 	}
-	return github.NewClient(app, id)
+	if a.bots == nil {
+		a.bots = map[string]*forgejo.Client{}
+	}
+	a.bots[in.Name] = c
+	return c, nil
 }
 
-// Reach lists the repositories connection in's App reaches, by the
-// lowercased login of the account each is under, as the store registers
-// them: the poller's Reach.
-func (a *Apps) Reach(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
-	app, err := a.app(in)
-	if err != nil {
-		return nil, err
-	}
-	reach, err := app.Reach(ctx, in.Accounts)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string][]store.ReachedRepository, len(reach))
-	for _, r := range reach {
-		repos := make([]store.ReachedRepository, 0, len(r.Repositories))
-		for _, repo := range r.Repositories {
-			repos = append(repos, store.ReachedRepository{
-				FullName: repo.FullName, DefaultBranch: repo.DefaultBranch,
-				Traits: &configfile.RepoTraits{Archived: repo.Archived, Fork: repo.Fork, Visibility: repo.Visibility},
-			})
+// Build constructs the forge client for a connection, for repositories of
+// repo's owner: ForgeCache's Build.
+func (a *Forges) Build(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error) {
+	switch in.Forge {
+	case configfile.ForgeGitHub:
+		app, err := a.app(in)
+		if err != nil {
+			return nil, err
 		}
-		out[strings.ToLower(r.Account)] = repos
+		// An App is installed, and mints tokens, once per account: the
+		// installation that sees repo is its owner's.
+		owner, name, _ := strings.Cut(repo, "/")
+		id, err := app.DiscoverInstallation(ctx, owner, name)
+		if err != nil {
+			return nil, err
+		}
+		return github.NewClient(app, id)
+	case configfile.ForgeForgejo:
+		return a.bot(in)
+	default:
+		return nil, fmt.Errorf("worker: forge %s is not implemented", in.Forge)
+	}
+}
+
+// Reach lists the repositories connection in reaches, those its App is
+// installed on or its bot can see, by the lowercased login of the account
+// each is under, as the store registers them: the poller's Reach.
+func (a *Forges) Reach(ctx context.Context, in *configfile.Connection) (map[string][]store.ReachedRepository, error) {
+	out := make(map[string][]store.ReachedRepository, len(in.Accounts))
+	switch in.Forge {
+	case configfile.ForgeGitHub:
+		app, err := a.app(in)
+		if err != nil {
+			return nil, err
+		}
+		reach, err := app.Reach(ctx, in.Accounts)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range reach {
+			repos := make([]store.ReachedRepository, 0, len(r.Repositories))
+			for _, repo := range r.Repositories {
+				repos = append(repos, reached(repo.FullName, repo.DefaultBranch, repo.Archived, repo.Fork, repo.Visibility))
+			}
+			out[strings.ToLower(r.Account)] = repos
+		}
+	case configfile.ForgeForgejo:
+		c, err := a.bot(in)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range in.Accounts {
+			listed, err := c.Repositories(ctx, account)
+			if err != nil {
+				return nil, err
+			}
+			repos := make([]store.ReachedRepository, 0, len(listed))
+			for _, repo := range listed {
+				repos = append(repos, reached(repo.FullName, repo.DefaultBranch, repo.Archived, repo.Fork, repo.Visibility))
+			}
+			out[strings.ToLower(account)] = repos
+		}
+	default:
+		return nil, fmt.Errorf("worker: forge %s is not implemented", in.Forge)
 	}
 	return out, nil
 }
 
-// ForgeCache is the forge.Clients over configured GitHub Apps. One client
-// per App and repository owner, built on first use and kept for the life of
-// the process, as the configuration is.
+func reached(fullName, defaultBranch string, archived, fork bool, visibility string) store.ReachedRepository {
+	return store.ReachedRepository{
+		FullName: fullName, DefaultBranch: defaultBranch,
+		Traits: &configfile.RepoTraits{Archived: archived, Fork: fork, Visibility: visibility},
+	}
+}
+
+// ForgeCache is the forge.Clients over the configured connections. One
+// client per connection and repository owner, built on first use and kept
+// for the life of the process, as the configuration is.
 type ForgeCache struct {
 	Build func(ctx context.Context, in *configfile.Connection, repo string) (forge.Client, error)
 

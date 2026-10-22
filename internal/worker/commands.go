@@ -91,7 +91,8 @@ func (f *followUp) dismiss(ctx context.Context, reason string) (store.FollowupSt
 	}
 	// Best effort, like the review's own thread resolution: the record and
 	// the reply stand either way.
-	if _, err := f.client.ResolveThread(ctx, f.owner, f.repo, f.pr.number, f.comment.InReplyTo, false); err != nil {
+	_, err = f.client.ResolveThread(ctx, f.owner, f.repo, f.pr.number, f.comment.InReplyTo, false)
+	if err != nil && !errors.Is(err, forge.ErrUnsupported) {
 		f.logger.Warn("dismissed finding's thread not resolved", "comment", f.comment.InReplyTo, "error", err)
 	}
 	f.logger.Info("finding dismissed", "fingerprint", fingerprint, "reason", reason)

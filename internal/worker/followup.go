@@ -420,7 +420,7 @@ func (f *followUp) runAgent(
 		Annotations: runnerAnnotations(f.jobID, f.pr.headSHA),
 		Job: runner.Spec{
 			Version: runner.SpecVersion, Kind: runner.KindFollowUp, RunID: runID, CloneURL: f.client.CloneURL(f.owner, f.repo),
-			Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
+			Forge: string(f.account.Forge), Head: f.pr.headSHA, Base: f.diffBase(rec), Ignore: f.settings.Ignore, RepoFiles: f.eff.repoFiles(),
 			Tools: f.eff.Tools, Prompt: prompt, Thread: thread, Reply: f.asReply,
 			Model: &runner.ModelEndpoint{GatewayURL: f.w.GatewayURL, Model: gateway.ModelName},
 			Agent: &runner.AgentLimits{
@@ -629,7 +629,7 @@ func (f *followUp) diffBase(rec reviewRecord) string {
 // agent settings and instructions. It returns why the file stops the
 // follow-up, or "".
 func (f *followUp) repoConfig(ctx context.Context) (string, error) {
-	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.baseRef, f.pr.headSHA)
+	base, err := f.client.MergeBase(ctx, f.owner, f.repo, f.pr.number, f.pr.baseRef, f.pr.headSHA)
 	if err != nil {
 		return "", err
 	}

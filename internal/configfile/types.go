@@ -39,10 +39,12 @@ const (
 // Forge identifies which forge a connection talks to.
 type Forge string
 
-// ForgeGitHub is github.com, the one forge kritika supports. Forge stays a
-// type, and the code that switches on it keeps its switch, so another forge
-// has a place.
-const ForgeGitHub Forge = "github"
+// Forges kritika serves: github.com through a GitHub App, and a Forgejo
+// instance through a bot account.
+const (
+	ForgeGitHub  Forge = "github"
+	ForgeForgejo Forge = "forgejo"
+)
 
 // SecretRef names the environment variable a secret value lives in. Values are resolved at load and never written back to
 // disk or the database.
@@ -465,13 +467,13 @@ func (a GitHubApp) ClientIDValue() string { return a.clientID }
 // PrivateKeyValue returns the resolved private key PEM.
 func (a GitHubApp) PrivateKeyValue() Secret { return a.privateKey }
 
-// Connection is one GitHub App serving the accounts it lists, an entry of
-// the configuration's apps, which are keyed by name. The name is the hook
-// path, /hooks/{name}.
+// Connection is one GitHub App or Forgejo bot serving the accounts it
+// lists, an entry of the configuration's apps or forgejo maps, which are
+// keyed by name. The name is the hook path, /hooks/{name}.
 type Connection struct {
-	// Name is the entry's key under apps.
+	// Name is the entry's key under apps or forgejo.
 	Name string `yaml:"-"`
-	// Forge is always ForgeGitHub; the file does not name it.
+	// Forge is the map the entry came from; the file does not name it.
 	Forge Forge `yaml:"-"`
 	// Accounts are the users and organizations the connection serves: a
 	// webhook for any other account is ignored, and a repository belongs to
@@ -480,11 +482,11 @@ type Connection struct {
 	// served that is not listed.
 	Accounts []string `yaml:"accounts"`
 
-	App GitHubApp `yaml:",inline"`
+	// App is the credential of a ForgeGitHub connection, Forgejo of a
+	// ForgeForgejo one.
+	App     GitHubApp          `yaml:",inline"`
+	Forgejo ForgejoIntegration `yaml:"-"`
 }
-
-// WebhookSecretValue returns the resolved webhook secret.
-func (i *Connection) WebhookSecretValue() Secret { return i.App.webhookSecret }
 
 // Repository carries per-repository overrides, the configuration's
 // owner/name entry for it. Other repositories the connection reaches are

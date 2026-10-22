@@ -74,7 +74,7 @@
               <td class="row-toggle-cell"><RowToggle bind:open={expanded[f.id]} label={`Details for ${f.title}`} controls={`finding-${f.id}`} /></td>
             </tr>
             {#if expanded[f.id]}
-              <tr class="row-preview"><td colspan="4"><div class="row-preview-body"><FindingCard {f} pullUrl={d.review.pull.url} id={`finding-${f.id}`} /></div></td></tr>
+              <tr class="row-preview"><td colspan="4"><div class="row-preview-body"><FindingCard {f} {slug} pullUrl={d.review.pull.url} id={`finding-${f.id}`} /></div></td></tr>
             {/if}
           {/each}
         </tbody>

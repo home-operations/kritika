@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/home-operations/kritika/internal/configfile"
-	"github.com/home-operations/kritika/internal/store"
 )
 
 // How far the instance is from reviewing, for the Configuration page's
@@ -40,19 +39,15 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 // before any webhook names them, and disables the ones an
 // account's listing no longer has, as the leader's sync does.
 func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
-	in, app, err := s.connectionApp(r)
-	if err != nil {
-		return err
-	}
 	// The listing's time is the database's, which stamps the rows a webhook
 	// names meanwhile; this process's clock may differ from it.
 	listedAt, err := s.store.Now(r.Context())
 	if err != nil {
 		return err
 	}
-	accounts, err := app.Reach(r.Context(), in.Accounts)
+	in, accounts, err := s.reach(r)
 	if err != nil {
-		return errForge(err)
+		return err
 	}
 	f := s.current.Get()
 	var res RegisterResult
@@ -61,14 +56,7 @@ func (s *Server) registerReached(w http.ResponseWriter, r *http.Request) error {
 		if !ok || len(a.Repositories) == 0 {
 			continue
 		}
-		repos := make([]store.ReachedRepository, 0, len(a.Repositories))
-		for _, x := range a.Repositories {
-			repos = append(repos, store.ReachedRepository{
-				FullName: x.FullName, DefaultBranch: x.DefaultBranch,
-				Traits: &configfile.RepoTraits{Archived: x.Archived, Fork: x.Fork, Visibility: x.Visibility},
-			})
-		}
-		added, _, err := s.store.RegisterRepositories(r.Context(), acct.ID(), repos, listedAt)
+		added, _, err := s.store.RegisterRepositories(r.Context(), acct.ID(), a.Repositories, listedAt)
 		if err != nil {
 			return err
 		}

@@ -113,7 +113,10 @@ func TestPublicRouting(t *testing.T) {
 		_, _ = w.Write([]byte("hook " + r.PathValue("connection")))
 	})
 	web := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("web")) })
-	srv := httptest.NewServer(Public("/kritika/", hooks, web))
+	issuer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("issuer " + r.PathValue("document")))
+	})
+	srv := httptest.NewServer(Public("/kritika/", hooks, issuer, web))
 	defer srv.Close()
 
 	for _, tt := range []struct {
@@ -128,6 +131,9 @@ func TestPublicRouting(t *testing.T) {
 		{"the bare hooks path is the dashboard's", http.MethodPost, "/hooks", "web"},
 		{"another base path is the dashboard's", http.MethodPost, "/other/hooks/sticky-gecko", "web"},
 		{"the dashboard", http.MethodGet, "/kritika/", "web"},
+		{"the issuer's keys", http.MethodGet, "/forgejo/.well-known/keys", "issuer keys"},
+		{"the issuer's discovery under the base path", http.MethodGet, "/kritika/forgejo/.well-known/openid-configuration", "issuer openid-configuration"},
+		{"a post to the issuer is the dashboard's", http.MethodPost, "/forgejo/.well-known/keys", "web"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tt.method, srv.URL+tt.path, nil)

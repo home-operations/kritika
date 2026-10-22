@@ -7,7 +7,7 @@ reference.
 
 | What you want to change | Where to put it |
 | --- | --- |
-| Sign-in, GitHub Apps, providers and review policy | Helm's `config`, or the application YAML file. |
+| Sign-in, forge connections, providers and review policy | Helm's `config`, or the application YAML file. |
 | Database connections, ingress and runner pods | Helm values such as `database`, `ingress` and `runner`. |
 | Passwords and API keys | Kubernetes Secrets, exposed through `env` or `envFrom`. |
 | Rules for one repository | An optional [`.kritika.yaml`](repository-config.md). |
@@ -185,7 +185,8 @@ A mapping that fails to evaluate refuses the sign-in.
 ## `apps`
 
 `apps` declares the GitHub Apps kritika serves accounts through. The
-[setup guide](setup.md) covers creating one.
+[setup guide](setup.md) covers creating one, and [Git forges](forges.md)
+what each forge supports.
 
 ```yaml
 apps:
@@ -203,6 +204,38 @@ apps:
 | `clientId`      | the App's client ID, inline or, like the secrets, as a reference                                               |
 | `privateKey`    | the App's private key                                                                                          |
 | `webhookSecret` | the same value as the App's webhook secret                                                                     |
+
+## `forgejo`
+
+`forgejo` declares the Forgejo authorized integrations kritika serves
+accounts through, one per instance and set of accounts. [Git forges](forges.md#forgejo)
+covers the bot user, the integration and the webhooks.
+
+```yaml
+forgejo:
+  codeberg:
+    host: codeberg.org
+    accounts: [org-1]
+    audience: 7f1c…
+    runnerAudience: 2b9e…
+    privateKey: { env: FORGEJO_PRIVATE_KEY }
+    webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
+```
+
+| Key              | What                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps` or `forgejo`                                          |
+| `host`           | the instance's hostname, reached over HTTPS                                                                                                                       |
+| `accounts`       | the users and organizations it serves; an account is served by one connection on its forge                                                                       |
+| `audience`       | the audience Forgejo shows for the integration, inline or as a reference; until it is set the connection only serves its key, for the integration to be created |
+| `runnerAudience` | optional: the audience of a second, read-only integration runner pods fetch as, so the pod that reads untrusted content never holds a token that can write        |
+| `privateKey`     | the RSA key kritika signs the integration's tokens with, whose public half it serves at `<webUrl>/forgejo/.well-known/keys`; `webUrl` must be HTTPS             |
+| `previousKey`    | optional: a key being rotated out, served for Forgejo to verify with and signing nothing                                                                          |
+| `webhookSecret`  | the secret of the webhooks added on each account                                                                                                                  |
+
+An entry under `accounts` or `repositories` names an account by its name
+alone, so it is the account's on the forge serving that name; a name
+served on both forges can have no entry.
 
 ## `providers` and `embedding`
 
@@ -585,9 +618,9 @@ then keeps its index.
 
 ## `accounts`
 
-An account is a user or organization an app serves, `github/<name>`. Its
-entry under `accounts`, keyed by its name, holds what is the account's
-alone:
+An account is a user or organization a connection serves,
+`github/<name>` or `forgejo/<name>`. Its entry under `accounts`, keyed by
+its name, holds what is the account's alone:
 
 ```yaml
 accounts:
@@ -609,14 +642,15 @@ an account's entry replaces it key by key:
 `providers` are its own model keys, which its repositories' models can
 name ([an account's own keys](models.md#an-accounts-own-keys)).
 
-An account runs while an app serves it. An entry for an account no app
-serves is kept, but not run, and the Configuration page lists it as not
-served.
+An account runs while a connection serves it. An entry for an account no
+connection serves is kept, but not run, and the Configuration page lists
+it as not served.
 
 ## `egress`
 
 `egress` is what runner pods may reach through kritika's gateway beyond
-`github.com` and `api.github.com`, which an app allows: `allow` and `deny`
+the connections' forges, `github.com` and `api.github.com` for an app and
+the instance's host for a Forgejo bot: `allow` and `deny`
 list hosts, IP addresses and CIDRs, `credentials` names hosts the
 gateway adds a token to, and `cache` names hosts whose downloads the
 gateway keeps for every install, in `gatewayCacheDir`, beyond what a

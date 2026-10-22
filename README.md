@@ -2,7 +2,7 @@
 
 # kritika
 
-**Repository-aware AI pull request review for GitHub.**
+**Repository-aware AI pull request review for GitHub and Forgejo.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/home-operations/kritika/ci.yaml?branch=main&label=ci)](https://github.com/home-operations/kritika/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/actions/workflow/status/home-operations/kritika/release.yaml?branch=main&label=release)](https://github.com/home-operations/kritika/actions/workflows/release.yaml)
@@ -10,7 +10,7 @@
 
 </div>
 
-kritika reviews GitHub pull requests using the code around the change. It posts
+kritika reviews pull requests on GitHub and Forgejo using the code around the change. It posts
 an updated summary, inline findings and suggested fixes. Mention the bot to ask
 a follow-up question or request another review.
 
@@ -32,8 +32,8 @@ a follow-up question or request another review.
 
 - Kubernetes and Helm.
 - Postgres with VectorChord and three database roles.
-- A GitHub App and a model provider credential.
-- An HTTPS address for the dashboard and GitHub webhooks.
+- A GitHub App or a Forgejo bot account, and a model provider credential.
+- An HTTPS address for the dashboard and the forge's webhooks.
 
 The [setup guide](docs/setup.md) walks through installation and the first review.
 No repository configuration file is required.

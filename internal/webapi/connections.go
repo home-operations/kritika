@@ -12,12 +12,13 @@ import (
 
 	"github.com/home-operations/kritika/internal/auth"
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
 	"github.com/home-operations/kritika/internal/store"
 )
 
 // registerConnections mounts the admin's view of the running connections
-// and of the accounts each one's GitHub App is installed on, where an
+// and of the accounts a GitHub App's connection is installed on, where an
 // installation no connection serves can be removed.
 func (s *Server) registerConnections(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/connections", s.admin(s.listConnections))
@@ -46,11 +47,16 @@ func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// connectionApp is the running connection r names and its App.
+// connectionApp is the running connection r names and its App. A
+// connection of another forge has none: the installation routes are a
+// GitHub App's.
 func (s *Server) connectionApp(r *http.Request) (*configfile.Connection, *github.App, error) {
 	in, ok := s.current.Get().Connection(r.PathValue("name"))
 	if !ok {
 		return nil, nil, errNotFound("connection")
+	}
+	if in.Forge != configfile.ForgeGitHub {
+		return nil, nil, errStatus(http.StatusConflict, CodeNotAnApp, "connection "+in.Name+" is a "+string(in.Forge)+" bot, not a GitHub App")
 	}
 	app, err := s.apps.get(in, s.githubAPI)
 	if err != nil {
@@ -87,9 +93,73 @@ func (c *appCache) get(in *configfile.Connection, apiBase string) (*github.App, 
 	return app, nil
 }
 
-// errForge is GitHub failing or refusing a call the admin asked for.
+// errForge is the forge failing or refusing a call the admin asked for.
 func errForge(err error) error {
 	return errStatus(http.StatusBadGateway, CodeForgeError, err.Error())
+}
+
+// reach lists what the running connection r names reaches on each account
+// it serves: the repositories its App's installation there sees, or those
+// its bot can see.
+func (s *Server) reach(r *http.Request) (*configfile.Connection, []reachedAccount, error) {
+	in, ok := s.current.Get().Connection(r.PathValue("name"))
+	if !ok {
+		return nil, nil, errNotFound("connection")
+	}
+	var out []reachedAccount
+	switch in.Forge {
+	case configfile.ForgeGitHub:
+		app, err := s.apps.get(in, s.githubAPI)
+		if err != nil {
+			return nil, nil, errForge(err)
+		}
+		accounts, err := app.Reach(r.Context(), in.Accounts)
+		if err != nil {
+			return nil, nil, errForge(err)
+		}
+		for _, a := range accounts {
+			ra := reachedAccount{Account: a.Account}
+			for _, x := range a.Repositories {
+				ra.Repositories = append(ra.Repositories, reachedRepository(x.FullName, x.DefaultBranch, x.Archived, x.Fork, x.Visibility))
+			}
+			out = append(out, ra)
+		}
+	case configfile.ForgeForgejo:
+		issuer, err := forgejo.NewIssuer(forgejo.IssuerURL(s.webURL), in.Forgejo.PrivateKeyValue().Value())
+		if err != nil {
+			return nil, nil, errForge(err)
+		}
+		c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), "", nil)
+		if err != nil {
+			return nil, nil, errForge(err)
+		}
+		for _, account := range in.Accounts {
+			listed, err := c.Repositories(r.Context(), account)
+			if err != nil {
+				return nil, nil, errForge(err)
+			}
+			ra := reachedAccount{Account: account}
+			for _, x := range listed {
+				ra.Repositories = append(ra.Repositories, reachedRepository(x.FullName, x.DefaultBranch, x.Archived, x.Fork, x.Visibility))
+			}
+			out = append(out, ra)
+		}
+	}
+	return in, out, nil
+}
+
+// reachedAccount is one account a connection serves and what it reaches
+// there.
+type reachedAccount struct {
+	Account      string
+	Repositories []store.ReachedRepository
+}
+
+func reachedRepository(fullName, defaultBranch string, archived, fork bool, visibility string) store.ReachedRepository {
+	return store.ReachedRepository{
+		FullName: fullName, DefaultBranch: defaultBranch,
+		Traits: &configfile.RepoTraits{Archived: archived, Fork: fork, Visibility: visibility},
+	}
 }
 
 func (s *Server) listInstallations(w http.ResponseWriter, r *http.Request) error {

@@ -5,14 +5,14 @@
   import Collapsible from '../../components/Collapsible.svelte';
   import Icon from '../../Icon.svelte';
   import { mdiOpenInNew } from '../../icons';
-  import { threadUrl } from '../../links';
+  import { threadUrl, forgeName } from '../../links';
   import Reactions from '../../components/Reactions.svelte';
   import Pill from '../../components/Pill.svelte';
 
   // pullUrl is the pull request on the forge, where an inline finding's
-  // thread is.
-  let { f, pullUrl = '', compact = false, id }: { f: Finding; pullUrl?: string; compact?: boolean; id?: string } = $props();
-  const thread = $derived(pullUrl ? threadUrl(pullUrl, f.forgeCommentId) : undefined);
+  // thread is, and slug the account, whose forge anchors the thread.
+  let { f, slug, pullUrl = '', compact = false, id }: { f: Finding; slug: string; pullUrl?: string; compact?: boolean; id?: string } = $props();
+  const thread = $derived(pullUrl ? threadUrl(slug, pullUrl, f.forgeCommentId) : undefined);
   const where = $derived(f.endLine > f.line ? `${f.path}:${f.line}-${f.endLine}` : `${f.path}:${f.line}`);
 </script>
 
@@ -30,8 +30,8 @@
     {#if !compact}<span class="mono small muted text-ui-sm">{where}</span>{/if}
     <Reactions up={f.reactionsUp} down={f.reactionsDown} />
     {#if thread}
-      <a class="external small finding-thread text-ui-sm ml-auto" href={thread} target="_blank" rel="noopener noreferrer">Thread on GitHub <Icon path={mdiOpenInNew} size={12} /></a>
-    {:else if f.postedInline}<span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Posted as an inline comment on GitHub">inline</span>{/if}
+      <a class="external small finding-thread text-ui-sm ml-auto" href={thread} target="_blank" rel="noopener noreferrer">Thread on {forgeName(slug)} <Icon path={mdiOpenInNew} size={12} /></a>
+    {:else if f.postedInline}<span class="badge inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Posted as an inline comment on {forgeName(slug)}">inline</span>{/if}
   </header>
   {#if f.status === 'dismissed' && f.dismissReason}<p class="small muted text-ui-sm">Dismissed: {f.dismissReason}</p>{/if}
   {#if f.explanation}<Markdown text={f.explanation} />{/if}

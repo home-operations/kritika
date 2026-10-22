@@ -6,7 +6,7 @@
   import { href, replace } from '../router.svelte';
   import { FINDING_STATUSES, findingFilter, type FindingFilter } from '../routes';
   import { Paged, Resource, errorMessage } from '../resource.svelte';
-  import { accountApi, pullRoute, threadUrl } from '../links';
+  import { accountApi, pullRoute, threadUrl, forgeName } from '../links';
   import { CATEGORIES, SEVERITIES } from '../format';
   import { formatTokens, type Parsed, type TokenSpec } from '../tokensearch';
   import Dialog from '../components/Dialog.svelte';
@@ -226,9 +226,9 @@
                     <a class="mono" href={href(pullRoute(slug, f.pull))} title={f.pull.title}>{f.pull.repository}#{f.pull.number}</a>
                     <span class="finding-sub mono block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">
                       {f.path}:{f.line}
-                      {#if threadUrl(f.pull.url, f.forgeCommentId)}
-                        <a class="external" href={threadUrl(f.pull.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer" title="The finding's thread on GitHub">
-                          <Icon path={mdiOpenInNew} size={11} label="Thread on GitHub" />
+                      {#if threadUrl(slug, f.pull.url, f.forgeCommentId)}
+                        <a class="external" href={threadUrl(slug, f.pull.url, f.forgeCommentId)} target="_blank" rel="noopener noreferrer" title="The finding's thread on {forgeName(slug)}">
+                          <Icon path={mdiOpenInNew} size={11} label="Thread on {forgeName(slug)}" />
                         </a>
                       {/if}
                     </span>
@@ -265,7 +265,7 @@
       </div>
       {#if paged.moreError}<p class="error-text text-danger text-ui-sm whitespace-pre-wrap [word-break:break-word] m-0" role="alert">Could not load more findings: {errorMessage(paged.moreError)} <button class="btn" onclick={() => void step(1)}>Retry</button></p>{/if}
       <p><a class="mono" href={href(pullRoute(slug, inspected.pull))}>{inspected.pull.repository}#{inspected.pull.number}</a> · {inspected.pull.title}</p>
-      {#key inspected.id}<FindingCard f={inspected} pullUrl={inspected.pull.url} />{/key}
+      {#key inspected.id}<FindingCard f={inspected} {slug} pullUrl={inspected.pull.url} />{/key}
       <div class="workspace-actions flex items-center flex-wrap gap-2.5">
         <a class="btn btn-primary" href={href({ ...reviewOf(inspected), tab: 'diff' })}>Inspect in code →</a>
         <a class="btn" href={href(reviewOf(inspected))}>Open review</a>

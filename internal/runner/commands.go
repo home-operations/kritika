@@ -91,16 +91,13 @@ func commandTool(
 	}
 	env, proxied := commandEnv(home, cache)
 	admin := adminEnv(p.Agent.Env, secrets)
-	// gh reaches GitHub over HTTPS, which the gateway cannot add a
-	// credential to, so it carries the run's read-only token; a command
-	// that carries a credential is never a binary the repository chose.
-	commandEnvs := map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}
+	commandEnvs, miseSecrets := p.commandCredentials(secrets)
 	found := map[string]string{}
 	var mise *miseTools
 	if withMise {
 		var miseNotes []string
 		mise, miseNotes, err = newMiseTools(ctx, miseBin, home, env, admin, p.Agent.CacheLocked, repo,
-			slices.Sorted(maps.Keys(commandEnvs)), secrets, logger)
+			slices.Sorted(maps.Keys(commandEnvs)), miseSecrets, logger)
 		notes = append(notes, miseNotes...)
 		if err != nil {
 			logger.Warn("mise tools not offered", "error", err)
@@ -115,6 +112,7 @@ func commandTool(
 			}
 		}
 	}
+	found = p.offered(found)
 	if len(found) == 0 {
 		return nil, nil, notes, cleanup
 	}
@@ -204,6 +202,29 @@ func commandTool(
 		}
 	}
 	return run, fetch, notes, cleanup
+}
+
+// commandCredentials are the variables the commands that carry a
+// credential get, by command, and the secrets mise is given. gh reaches
+// GitHub over HTTPS, which the gateway cannot add a credential to, so it
+// carries the run's read-only token; a command that carries a credential
+// is never a binary the repository chose. On another forge the token is
+// that forge's: gh and mise get none.
+func (p Spec) commandCredentials(secrets Secrets) (map[string][]string, Secrets) {
+	if !p.onGitHub() {
+		secrets.GitToken = ""
+		return map[string][]string{}, secrets
+	}
+	return map[string][]string{"gh": {"GH_TOKEN=" + secrets.GitToken, "GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1"}}, secrets
+}
+
+// offered is found less gh on another forge than GitHub, where gh,
+// signed in nowhere, would only fail.
+func (p Spec) offered(found map[string]string) map[string]string {
+	if !p.onGitHub() {
+		delete(found, "gh")
+	}
+	return found
 }
 
 // curlrc is the configuration curl reads from HOME. Without a terminal

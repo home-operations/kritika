@@ -589,7 +589,7 @@ func TestParseRejects(t *testing.T) {
 		{"duplicate app", minimal + "  acme-bot: { accounts: [other], clientId: x, " +
 			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "already defined"},
 		{"an account two apps serve", minimal + "  acme-two: { accounts: [ACME], clientId: x, " +
-			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "an account is served by one app"},
+			"privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n", "an account is served by one connection"},
 		{"duplicate account entry", minimal + "accounts:\n  acme: {}\n  Acme: {}\n", "duplicates accounts.Acme"},
 		{"an account entry with its owner", minimal + "accounts:\n  acme/x: {}\n", "must be the account's name"},
 		{"an account entry with an unknown key", minimal + "accounts:\n  acme: { mode: single }\n", "field mode not found"},
