@@ -6,7 +6,7 @@ import ts from 'typescript-eslint';
 import svelteConfig from './svelte.config.js';
 
 export default defineConfig(
-  globalIgnores(['dist/', 'dist-mock/', 'playwright-report/', 'test-results/']),
+  globalIgnores(['dist/', 'dist-mock/', 'playwright-report/', 'test-results/', '.svelte-check/']),
   js.configs.recommended,
   ts.configs.recommended,
   svelte.configs.recommended,
