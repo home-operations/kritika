@@ -24,7 +24,9 @@ export default defineConfig({
     // own webServer readiness probe, and baseURL above) would otherwise time
     // out with connection refused despite the server being up. --strictPort
     // fails fast instead of silently picking another port if 4173 is busy.
-    command: 'npm run build && npm run preview -- --port 4173 --host 127.0.0.1 --strictPort',
+    // Vite is called by name, found on the PATH pnpm or npx sets up, since
+    // the Playwright image ui-test-container runs this in has no pnpm.
+    command: 'vite build && vite preview --port 4173 --host 127.0.0.1 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
   },
