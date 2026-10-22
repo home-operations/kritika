@@ -87,12 +87,22 @@ forgejo:
     runnerAudience: 2b9e…
     privateKey: { env: FORGEJO_PRIVATE_KEY }
     webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
+    bots: [renovate-bot]
 ```
 
 `host` is the instance's hostname alone, reached over HTTPS; runner pods
 are allowed to reach it through the [egress gateway](security.md#the-egress-gateway)
 as they are GitHub for an App. A name is one connection's, under `apps`
 or `forgejo`, and an account is served by one connection on its forge.
+
+`bots` lists the logins on the instance that are bots, such as a Renovate
+user. Forgejo marks no account as a bot and allows no `[bot]` in a login,
+so without the list kritika treats every pull request and comment as a
+person's: the summary of a dependency bump gets the praise a bot's leaves
+out, a bot's unchanged patch is reviewed again, and a bot's mention is
+answered. A pull request recorded before its author was listed is marked a
+bot's the next time kritika records it, on a push or an edit; closing or
+merging it does not.
 
 ### Add one webhook per account
 
@@ -267,10 +277,14 @@ gitea:
     token: { env: GITEA_TOKEN }
     runnerToken: { env: GITEA_RUNNER_TOKEN }
     webhookSecret: { env: GITEA_WEBHOOK_SECRET }
+    bots: [renovate]
 ```
 
 `host` is the instance's hostname alone, reached over HTTPS, and runner
 pods may reach it through the [egress gateway](security.md#the-egress-gateway).
+Gitea marks a bot user as one; `bots` lists any other login on the
+instance a bot runs as, such as an ordinary account Renovate uses, which
+kritika then treats as a bot, as on [Forgejo](#configure-the-connection).
 
 ### Add one webhook per account
 
@@ -331,8 +345,9 @@ differences are in what the forge's API lets kritika do around them.
 | Dashboard sign-in                                 |     ✓     |        ✓        |                   ✓                   |        ✓        | Through `auth.github`, `auth.forgejo`, `auth.gitea` and `auth.gitlab`; a sign-in on an instance places people on that instance's accounts alone.                                                                                                                                                                                                                                                                                                    |
 
 A bot account on Forgejo is not marked as a bot, so a pull request opened
-by one, such as a Renovate user, is treated as a person's unless its
-login ends in `[bot]`. GitLab marks its bot and service accounts, which
-kritika reads from the API; a webhook does not, so there it goes by the
-`[bot]` suffix and the names GitLab gives access token users. Gitea marks
-a bot user as GitHub does, in the API and webhooks alike.
+by one, such as a Renovate user, is treated as a person's unless the
+connection lists its login under `bots`. GitLab marks its bot and service
+accounts, which kritika reads from the API; a webhook does not, so there it
+goes by the `[bot]` suffix and the names GitLab gives access token users.
+Gitea marks a bot user as GitHub does, in the API and webhooks alike, and
+a Gitea connection's `bots` adds any other account a bot runs as.

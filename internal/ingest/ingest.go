@@ -205,6 +205,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	markBots(in, ev)
 	out, err := h.disp.Dispatch(ctx, Request{File: file, Account: account, Event: ev})
 	if err != nil {
 		logger.Error("webhook dispatch failed", "error", err)
@@ -230,4 +231,16 @@ func pullNumber(ev webhook.Event) int {
 		return ev.Thread.Number
 	}
 	return 0
+}
+
+// markBots marks the pull request's and the comment's authors as bots when
+// the connection lists them: Forgejo's payloads mark no account a bot, and
+// Gitea's mark its bot users alone.
+func markBots(in *configfile.Connection, ev webhook.Event) {
+	if pr := ev.PullRequest; pr != nil && in.IsBot(pr.Author) {
+		pr.AuthorIsBot = true
+	}
+	if c := ev.Comment; c != nil && in.IsBot(c.Author) {
+		c.AuthorIsBot = true
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Serves reports whether account is one the connection serves.
@@ -34,7 +35,7 @@ func validateAccountNames(accounts []string, where string) error {
 // checkAccountName requires name to be an account's name on the forge: one
 // segment of a repository's full name.
 func checkAccountName(where, name string) error {
-	if strings.TrimSpace(name) == "" || strings.ContainsAny(name, "/ ") {
+	if name == "" || strings.Contains(name, "/") || strings.ContainsFunc(name, unicode.IsSpace) {
 		return fmt.Errorf("configfile: %s %q must be the account's name on the forge", where, name)
 	}
 	return nil

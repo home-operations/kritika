@@ -255,6 +255,7 @@ forgejo:
 | `privateKey`     | the RSA key kritika signs the integration's tokens with, whose public half it serves at `<webUrl>/forgejo/.well-known/keys`; `webUrl` must be HTTPS             |
 | `previousKey`    | optional: a key being rotated out, served for Forgejo to verify with and signing nothing                                                                          |
 | `webhookSecret`  | the secret of the webhooks added on each account                                                                                                                  |
+| `bots`           | optional: the logins on the instance that are bots, such as a Renovate user, whose pull requests and comments kritika treats as a bot's                         |
 
 ## `gitlab`
 
@@ -306,6 +307,7 @@ gitea:
 | `token`         | an access token of the bot user with the `read:user`, `write:repository` and `write:issue` scopes                                           |
 | `runnerToken`   | optional: a token of the user with the `read:repository` scope alone, which runner pods fetch with                                         |
 | `webhookSecret` | the secret of the webhooks added on each account                                                                                             |
+| `bots`          | optional: the logins on the instance that are bots beside the bot users Gitea marks, whose pull requests and comments kritika treats as a bot's |
 
 An entry under `accounts` or `repositories` names an account by its name
 alone, so it is the account's on the forge serving that name; a name

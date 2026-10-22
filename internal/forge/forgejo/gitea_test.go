@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/home-operations/kritika/internal/forge"
 )
@@ -149,5 +150,48 @@ func TestGiteaResolveRepliedThread(t *testing.T) {
 	}
 	if f.called("POST "+repoAPI+"/pulls/comments/5/resolve") != 0 {
 		t.Fatal("the earlier review's conversation must be left as it is")
+	}
+}
+
+// TestBots: the logins a connection lists are bots in everything the
+// client reads, as Gitea's bot users are.
+func TestBots(t *testing.T) {
+	f := newFake(t)
+	f.json("GET", repoAPI+"/pulls", 200, []map[string]any{{"number": 7, "user": map[string]any{"login": "renovate-bot"},
+		"updated_at": "2026-10-20T11:00:00Z", "head": map[string]any{"repo": map[string]any{"full_name": "acme/widgets"}},
+		"base": map[string]any{"repo": map[string]any{"full_name": "acme/widgets"}}}})
+	f.json("GET", repoAPI+"/pulls/7/reviews", 200, []map[string]any{{"id": 100, "state": "COMMENT", "user": map[string]any{"login": "dev"}}})
+	f.json("GET", repoAPI+"/pulls/7/reviews/100/comments", 200, []map[string]any{
+		{"id": 10, "pull_request_review_id": 100, "body": "a", "path": "a.go", "position": 3, "user": map[string]any{"login": "dev"}, "created_at": "2026-10-20T10:00:00Z"},
+		{"id": 11, "pull_request_review_id": 100, "body": "b", "path": "a.go", "position": 3, "user": map[string]any{"login": "renovate-bot"}, "created_at": "2026-10-20T10:00:01Z"},
+	})
+	f.json("GET", repoAPI+"/issues/comments/1", 200, map[string]any{"id": 1, "body": "digest", "user": map[string]any{"login": "renovate-bot"}})
+	f.json("GET", repoAPI+"/pulls/7", 200, map[string]any{"number": 7, "user": map[string]any{"login": "Renovate-Bot"},
+		"head": map[string]any{"sha": "h", "repo": map[string]any{"full_name": "acme/widgets"}}, "base": map[string]any{"repo": map[string]any{"full_name": "acme/widgets"}}})
+	f.json("GET", repoAPI+"/issues/7/comments", 200, []map[string]any{
+		{"id": 1, "body": "digest", "user": map[string]any{"login": "renovate-bot"}},
+		{"id": 2, "body": "lgtm", "user": map[string]any{"login": "dev"}},
+	})
+	c := f.client(t)
+	c.Bots = []string{"renovate-bot"}
+	if pr, err := c.PullRequest(t.Context(), "acme", "widgets", 7); err != nil || !pr.AuthorIsBot {
+		t.Fatalf("PullRequest = %+v, %v; want a listed bot's", pr, err)
+	}
+	comments, err := c.ListConversation(t.Context(), "acme", "widgets", 7)
+	if err != nil || len(comments) != 2 || !comments[0].AuthorIsBot || comments[1].AuthorIsBot {
+		t.Fatalf("ListConversation = %+v, %v", comments, err)
+	}
+	if prs, err := c.ListOpenPullRequests(t.Context(), "acme", "widgets", time.Time{}); err != nil || len(prs) != 1 || !prs[0].AuthorIsBot {
+		t.Fatalf("ListOpenPullRequests = %+v, %v", prs, err)
+	}
+	inline, err := c.ListInline(t.Context(), "acme", "widgets", 7)
+	if err != nil || len(inline) != 2 || inline[0].AuthorIsBot || !inline[1].AuthorIsBot {
+		t.Fatalf("ListInline = %+v, %v", inline, err)
+	}
+	if cm, err := c.GetComment(t.Context(), "acme", "widgets", 7, 1, false); err != nil || !cm.AuthorIsBot {
+		t.Fatalf("GetComment = %+v, %v", cm, err)
+	}
+	if cm, err := c.GetComment(t.Context(), "acme", "widgets", 7, 11, true); err != nil || !cm.AuthorIsBot {
+		t.Fatalf("GetComment inline = %+v, %v", cm, err)
 	}
 }
