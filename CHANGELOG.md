@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.96](https://github.com/home-operations/kritika/compare/0.0.95...0.0.96) (2026-10-22)
+
+
+### Features
+
+* **auth:** sign in with Forgejo ([#1183](https://github.com/home-operations/kritika/issues/1183)) ([59fd9c2](https://github.com/home-operations/kritika/commit/59fd9c2a3a964196a597c596f4aa09e254dee24f))
+* **auth:** sign in with Gitea ([#1184](https://github.com/home-operations/kritika/issues/1184)) ([891d9fd](https://github.com/home-operations/kritika/commit/891d9fd0673edfef0f47fb147055e4669e501762))
+* **auth:** sign in with GitLab ([#1185](https://github.com/home-operations/kritika/issues/1185)) ([d5b3079](https://github.com/home-operations/kritika/commit/d5b3079ed6bf911322a60d8c86dd03c1bdf0752f))
+* **forge:** add Gitea as a forge ([#1178](https://github.com/home-operations/kritika/issues/1178)) ([4b5aa3f](https://github.com/home-operations/kritika/commit/4b5aa3fd458a8cd64e86e417566d4c2f190eb482))
+* **forge:** list the bot accounts of a Forgejo or Gitea connection ([#1187](https://github.com/home-operations/kritika/issues/1187)) ([9cd0058](https://github.com/home-operations/kritika/commit/9cd0058d8d544536639946903b3b2b8a73d40a98))
+* **npm:** update dependency typescript-eslint (8.71.2 → 8.72.0) ([#1179](https://github.com/home-operations/kritika/issues/1179)) ([8b25bc7](https://github.com/home-operations/kritika/commit/8b25bc773ebc6475b3a13c196a28ab367689aa61))
+* **review:** approve, gate and score only the pull requests conditions hold for ([#1188](https://github.com/home-operations/kritika/issues/1188)) ([25c32e5](https://github.com/home-operations/kritika/commit/25c32e5149b9e30a215fb74213a6d86f4d43e786))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool oxfmt (0.73.0 → 0.74.0) ([#1182](https://github.com/home-operations/kritika/issues/1182)) ([11eaa49](https://github.com/home-operations/kritika/commit/11eaa49f828793ac7ab2c1a166b524e3f198041d))
+
 ## [0.0.95](https://github.com/home-operations/kritika/compare/0.0.94...0.0.95) (2026-10-22)
 
 
