@@ -28,6 +28,15 @@ with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
 
+The dashboard's npm dependencies run no install script nobody reviewed:
+`internal/web/.npmrc` sets `strict-allow-scripts`, so `npm ci`, in CI and
+in the image build, fails on a dependency with an install script the
+`allowScripts` field of `internal/web/package.json` does not cover. In
+`internal/web`, `npm install-scripts approve <pkg>` allows one that needs
+its script, and `npm install-scripts deny <pkg>` skips one that works
+without it, as `fsevents`, Vite's macOS file watcher, does: it ships its
+binary built.
+
 ## S3 cache compatibility
 
 `mise run test-s3` runs the gateway cache against a real S3 endpoint. It checks

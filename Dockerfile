@@ -18,7 +18,7 @@ ARG MISE_VERSION
 # the build host, rather than per target under emulation.
 FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:${NODE_VERSION}-trixie-slim AS ui
 WORKDIR /ui
-COPY internal/web/package.json internal/web/package-lock.json ./
+COPY internal/web/package.json internal/web/package-lock.json internal/web/.npmrc ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY internal/web/ ./
 RUN npm run build
