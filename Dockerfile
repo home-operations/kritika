@@ -23,7 +23,9 @@ FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:${NODE_VERSION}-trixie
 ARG PNPM_VERSION
 RUN npm install --global --ignore-scripts "pnpm@${PNPM_VERSION:?PNPM_VERSION is required}"
 WORKDIR /ui
-COPY internal/web/package.json internal/web/pnpm-lock.yaml ./
+# The wildcard takes pnpm-workspace.yaml too once it exists: its allowBuilds
+# and minimumReleaseAgeExclude decide whether the install passes.
+COPY internal/web/package.json internal/web/pnpm-*.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 COPY internal/web/ ./
 RUN pnpm run build

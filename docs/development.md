@@ -28,13 +28,16 @@ with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
 
-The dashboard installs its dependencies with pnpm, which mise pins and
-which runs no dependency's install script nobody reviewed: `pnpm install`,
-locally, in CI and in the image build, fails on a dependency with a build
-script the `allowBuilds` setting of `internal/web/pnpm-workspace.yaml` does
-not name. None has one today, so the file does not exist; in
-`internal/web`, `pnpm approve-builds` records the decision for one that
-does, and the Dockerfile's `ui` stage then copies the file in too.
+The dashboard installs its dependencies with pnpm, which mise pins. Its
+install, locally, in CI and in the image build, fails on a dependency with
+a build script the `allowBuilds` setting of
+`internal/web/pnpm-workspace.yaml` does not name, and on a locked version
+published less than a day ago (pnpm's default `minimumReleaseAge`) that its
+`minimumReleaseAgeExclude` does not name. Neither applies today, so the
+file does not exist. In `internal/web`, `pnpm approve-builds` records a
+build decision there, and pnpm adds an exclusion there itself when an
+install has to take a version that new; commit the file with the lockfile.
+Renovate holds npm updates for three days, so its own updates pass.
 
 ## S3 cache compatibility
 
