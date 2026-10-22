@@ -11,7 +11,7 @@ on:
 # Serialize Pages deploys (matches the official GitHub Pages flow); never cancel
 # an in-flight deploy.
 concurrency:
-  group: pages
+  group: github-pages
   cancel-in-progress: false
 
 permissions:
