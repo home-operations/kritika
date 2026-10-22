@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.0.94](https://github.com/home-operations/kritika/compare/0.0.93...0.0.94) (2026-10-22)
+
+
+### Features
+
+* **forge:** review merge requests on GitLab through a service account ([#1170](https://github.com/home-operations/kritika/issues/1170)) ([ff8a939](https://github.com/home-operations/kritika/commit/ff8a9393ffd2c3682367ed47ac87bfbb88198fe7))
+* **model:** let a provider send configured headers ([#1173](https://github.com/home-operations/kritika/issues/1173)) ([86aebff](https://github.com/home-operations/kritika/commit/86aebffd4d52d75d4eb968fa0670e1b2e0474f1f))
+
+
+### Miscellaneous Chores
+
+* **github-action:** update action jdx/mise-action (v5.2.0 → v5.2.1) ([#1171](https://github.com/home-operations/kritika/issues/1171)) ([767fbb0](https://github.com/home-operations/kritika/commit/767fbb0711c8ce36306c778c4c334b1cf2a603e1))
+
 ## [0.0.93](https://github.com/home-operations/kritika/compare/0.0.92...0.0.93) (2026-10-22)
 
 
