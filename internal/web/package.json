@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "svelte-check --tsconfig ./tsconfig.json --tsgo",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json --tsgo --fail-on-warnings",
     "test:e2e": "playwright test",
     "lint": "oxlint --deny-warnings"
   },

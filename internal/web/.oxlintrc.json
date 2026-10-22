@@ -67,7 +67,7 @@
     "no-unsafe-optional-chaining": "error",
     "no-unused-labels": "error",
     "no-unused-private-class-members": "error",
-    "no-unused-vars": "error",
+    "no-unused-vars": ["error", {}],
     "no-useless-backreference": "error",
     "no-useless-catch": "error",
     "no-useless-escape": "error",
@@ -130,9 +130,15 @@
       }
     },
     {
-      "files": ["*.{js,ts}", "tests/**/*.ts"],
+      "files": ["vite.config.ts", "svelte.config.js", "playwright.config.ts", "tests/**"],
       "env": {
         "node": true
+      }
+    },
+    {
+      "files": ["**/*.js", "**/*.mjs", "**/*.cjs"],
+      "rules": {
+        "no-undef": "error"
       }
     }
   ]
