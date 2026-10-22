@@ -3,6 +3,7 @@ package configfile
 import (
 	"cmp"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -35,6 +36,7 @@ type fileDoc struct {
 	Auth      Auth                  `yaml:"auth,omitempty"`
 	Apps      map[string]Connection `yaml:"apps,omitempty"`
 	Forgejo   map[string]forgejoDoc `yaml:"forgejo,omitempty"`
+	GitLab    map[string]gitlabDoc  `yaml:"gitlab,omitempty"`
 	Providers map[string]Provider   `yaml:"providers,omitempty"`
 	Embedding *Embedding            `yaml:"embedding,omitempty"`
 	Egress    Egress                `yaml:"egress,omitempty"`
@@ -95,7 +97,7 @@ func parse(input config.Document, settings config.Settings) (*File, error) {
 	if err := input.Policy.Load(&doc, yaml.WithKnownFields()); err != nil {
 		return nil, fmt.Errorf("configfile: parse: %w", err)
 	}
-	conns, err := connectionsOf(doc.Apps, doc.Forgejo)
+	conns, err := connectionsOf(doc.Apps, doc.Forgejo, doc.GitLab)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +241,11 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides, forge
 	for _, key := range slices.Sorted(maps.Keys(repos)) {
 		where := "repositories." + key
 		owner, name, ok := strings.Cut(key, "/")
-		if !ok || checkAccountName(where, owner) != nil || strings.TrimSpace(name) == "" || strings.ContainsAny(name, "/ ") {
+		nested := slices.Equal(forges[strings.ToLower(owner)], []Forge{ForgeGitLab})
+		if !ok || checkAccountName(where, owner) != nil || !validRepositoryName(name, nested) {
+			if nested {
+				return nil, fmt.Errorf("configfile: %s: a repository entry is keyed owner/*, owner/name or owner/subgroup/name", where)
+			}
 			return nil, fmt.Errorf("configfile: %s: a repository entry is keyed owner/* or owner/name", where)
 		}
 		if prev, dup := seen[strings.ToLower(key)]; dup {
@@ -261,6 +267,24 @@ func accountsOf(entries map[string]accountDoc, repos map[string]Overrides, forge
 		out = append(out, *byKey[key])
 	}
 	return out, nil
+}
+
+// validRepositoryName reports whether name is a repository's name under
+// its account: "*" for all of them, one segment, or on GitLab, where a
+// project may sit in subgroups, several, none of them empty or "*".
+func validRepositoryName(name string, nested bool) bool {
+	if name == "*" {
+		return true
+	}
+	if strings.TrimSpace(name) == "" || strings.Contains(name, " ") || !nested && strings.Contains(name, "/") {
+		return false
+	}
+	for seg := range strings.SplitSeq(name, "/") {
+		if seg == "" || seg == "*" {
+			return false
+		}
+	}
+	return true
 }
 
 // resolve reads the account's secret references and compiles its filters.
@@ -285,6 +309,21 @@ func (a *Account) resolve(s *secrets) error {
 
 func (i *Connection) resolve(where string, s *secrets) error {
 	var err error
+	if i.Forge == ForgeGitLab {
+		b := &i.GitLab
+		if b.token, err = s.read(b.Token); err != nil {
+			return fmt.Errorf("configfile: %s.token: %w", where, err)
+		}
+		if !b.RunnerToken.empty() {
+			if b.runnerToken, err = s.read(b.RunnerToken); err != nil {
+				return fmt.Errorf("configfile: %s.runnerToken: %w", where, err)
+			}
+		}
+		if b.webhookSecret, err = s.read(b.WebhookSecret); err != nil {
+			return fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
+		}
+		return nil
+	}
 	if i.Forge == ForgeForgejo {
 		b := &i.Forgejo
 		if b.audience, err = b.Audience.resolve(s); err != nil {
@@ -620,8 +659,26 @@ func (i *Connection) validate(where string) error {
 		if b.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
 		}
+	case ForgeGitLab:
+		b := &i.GitLab
+		if b.Host == "" {
+			return fmt.Errorf("configfile: %s.host is required", where)
+		}
+		if err := checkHost(b.Host); err != nil || strings.HasPrefix(b.Host, "*") {
+			return fmt.Errorf("configfile: %s.host: %q must be a lowercase hostname, without a scheme, port or path", where, b.Host)
+		}
+		if b.token.Value() == "" {
+			return fmt.Errorf("configfile: %s.token is required", where)
+		}
+		if b.webhookSecret.Value() == "" {
+			return fmt.Errorf("configfile: %s.webhookSecret is required", where)
+		}
+		encoded, ok := strings.CutPrefix(b.webhookSecret.Value(), "whsec_")
+		if key, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(key) == 0 {
+			return fmt.Errorf("configfile: %s.webhookSecret must be the webhook's signing token, \"whsec_\" followed by base64", where)
+		}
 	default:
-		return fmt.Errorf("configfile: %s: forge must be %s or %s, got %q", where, ForgeGitHub, ForgeForgejo, i.Forge)
+		return fmt.Errorf("configfile: %s: forge must be %s, %s or %s, got %q", where, ForgeGitHub, ForgeForgejo, ForgeGitLab, i.Forge)
 	}
 	return nil
 }

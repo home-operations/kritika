@@ -520,11 +520,12 @@ func polled(action string) bool { return action == ActionPoll || action == Actio
 // none, and the dashboard's choice. A synthetic event of the poller's
 // carries the traits the store had when the poll read them: it is judged by
 // what the store knows now, and writes none of them back, so a webhook
-// recorded since is not undone.
+// recorded since is not undone. Nor does a payload that names none of
+// them, as GitLab's.
 func (s *Service) registerAndCheckRepository(ctx context.Context, req Request) (bool, error) {
 	repo := req.Event.Repository
 	reported := &repo.RepoTraits
-	if polled(req.Event.Action) {
+	if polled(req.Event.Action) || repo.NoTraits {
 		reported = nil
 	}
 	var t configfile.RepoTraits

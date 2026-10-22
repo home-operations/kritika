@@ -98,7 +98,7 @@ func (w *Thread) check(
 		logger.Info("thread change ignored", "reason", "sender has "+string(perm)+" access, write is required")
 		return "", threadIgnored, nil
 	}
-	fingerprint, err = threadFinding(ctx, client, owner, repo, args.CommentID)
+	fingerprint, err = threadFinding(ctx, client, owner, repo, args.Number, args.CommentID)
 	if err != nil {
 		return "", "", err
 	}
@@ -167,12 +167,12 @@ func (w *Thread) apply(
 // inline comment id holds: the one the bot's comment carries a
 // FindingMarker for. "" when the thread is not one of the bot's finding
 // threads.
-func threadFinding(ctx context.Context, client forge.Client, owner, repo string, id int64) (string, error) {
+func threadFinding(ctx context.Context, client forge.Client, owner, repo string, number int, id int64) (string, error) {
 	login, err := client.BotLogin(ctx)
 	if err != nil {
 		return "", err
 	}
-	root, err := client.GetComment(ctx, owner, repo, id, true)
+	root, err := client.GetComment(ctx, owner, repo, number, id, true)
 	if err != nil {
 		return "", fmt.Errorf("worker: read the comment opening the thread: %w", err)
 	}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The running connections, GitHub Apps and Forgejo bots, and the accounts
+  // The running connections, GitHub Apps and Forgejo and GitLab bots, and the accounts
   // an App is installed on: kritika serves only the accounts a connection
   // lists, and an installation on any other can be removed.
   import { sendJSON } from '../../api.svelte';
@@ -72,7 +72,7 @@
               <tr>
                 <td>
                   <span class="mono">{c.name}</span>
-                  <span class="small muted text-ui-sm block">{c.forge === 'github' ? 'GitHub App' : `Forgejo on ${c.host}`}</span>
+                  <span class="small muted text-ui-sm block">{c.forge === 'github' ? 'GitHub App' : `${c.forge === 'gitlab' ? 'GitLab' : 'Forgejo'} on ${c.host}`}</span>
                 </td>
                 <td class="mono small text-ui-sm">{c.accounts.join(', ')}</td>
                 <td>

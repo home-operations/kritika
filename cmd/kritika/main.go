@@ -266,7 +266,7 @@ func serve(
 	} else {
 		logger.Warn("no owner DSN configured; this replica can never migrate or apply configuration")
 	}
-	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, m, public, logger); err != nil {
+	if err := startPublic(ctx, g, st, cfg, current, inserter, svc, forges, m, public, logger); err != nil {
 		return err
 	}
 	return startWorker(ctx, g, st, cfg, current, exec, forges, m, logger)
@@ -293,11 +293,13 @@ func loadConfig(cfg *config.Config) (*configfile.File, error) {
 // starting page.
 func startPublic(
 	ctx context.Context, g *errgroup.Group, st *store.Store, cfg *config.Config, current *configfile.Current,
-	inserter *river.Client[pgx.Tx], svc *ingest.Service, m *metrics.Metrics, public *server.Switch, logger *slog.Logger,
+	inserter *river.Client[pgx.Tx], svc *ingest.Service, forges *worker.ForgeCache, m *metrics.Metrics, public *server.Switch,
+	logger *slog.Logger,
 ) error {
 	hooks := ingest.NewHandler(current, svc, logger.With("listener", "hooks"))
 	hooks.Metrics = m
 	hooks.Deliveries = svc
+	hooks.Authors = forges
 
 	webLogger := logger.With("listener", "web")
 	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})

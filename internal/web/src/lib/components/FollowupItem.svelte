@@ -17,8 +17,8 @@
   // The question is where it was asked, in a thread or on the conversation,
   // and so is its answer; the notice that a limit was reached always goes on
   // the conversation.
-  const asked = $derived(f.inline ? threadUrl(slug, f.pullUrl, f.commentId) : commentUrl(f.pullUrl, f.commentId));
-  const answered = $derived(f.inline && f.status !== 'limited' ? threadUrl(slug, f.pullUrl, f.replyCommentId) : commentUrl(f.pullUrl, f.replyCommentId));
+  const asked = $derived(f.inline ? threadUrl(slug, f.pullUrl, f.commentId) : commentUrl(slug, f.pullUrl, f.commentId));
+  const answered = $derived(f.inline && f.status !== 'limited' ? threadUrl(slug, f.pullUrl, f.replyCommentId) : commentUrl(slug, f.pullUrl, f.replyCommentId));
 </script>
 
 <!-- The chevron is the keyboard's toggle; the card's whitespace is the pointer's, as in the tables. -->

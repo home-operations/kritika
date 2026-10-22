@@ -11,7 +11,7 @@ the service. Application settings live in the [configuration file](configuration
 Sign in as an admin and open **All accounts → Settings**. The setup checklist
 shows what is missing:
 
-1. A GitHub App declared under `apps`, or a Forgejo bot under `forgejo`.
+1. A GitHub App declared under `apps`, a Forgejo bot under `forgejo`, or a GitLab service account under `gitlab`.
 2. An installed App and at least one enabled repository.
 3. A default model in `review.model`.
 4. An optional embedder in `embedding` for finding similar code.

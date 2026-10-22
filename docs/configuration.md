@@ -224,7 +224,7 @@ forgejo:
 
 | Key              | What                                                                                                                                                              |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps` or `forgejo`                                          |
+| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo` or `gitlab`                               |
 | `host`           | the instance's hostname, reached over HTTPS                                                                                                                       |
 | `accounts`       | the users and organizations it serves; an account is served by one connection on its forge                                                                       |
 | `audience`       | the audience Forgejo shows for the integration, inline or as a reference; until it is set the connection only serves its key, for the integration to be created |
@@ -233,9 +233,36 @@ forgejo:
 | `previousKey`    | optional: a key being rotated out, served for Forgejo to verify with and signing nothing                                                                          |
 | `webhookSecret`  | the secret of the webhooks added on each account                                                                                                                  |
 
+## `gitlab`
+
+`gitlab` declares the GitLab service accounts kritika serves accounts
+through, one per instance and set of accounts; GitLab 19 or later is
+needed. [Git forges](forges.md#gitlab) covers the account, its tokens and
+the webhooks.
+
+```yaml
+gitlab:
+  work:
+    host: gitlab.example.com
+    accounts: [platform]
+    token: { env: GITLAB_TOKEN }
+    runnerToken: { env: GITLAB_RUNNER_TOKEN }
+    webhookSecret: { env: GITLAB_WEBHOOK_SIGNING_TOKEN }
+```
+
+| Key             | What                                                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps`, `forgejo` or `gitlab` |
+| `host`          | the instance's hostname, reached over HTTPS                                                                                   |
+| `accounts`      | the top-level groups and users it serves; an account is served by one connection on its forge                                |
+| `token`         | a personal access token of the service account with the `api` scope                                                         |
+| `runnerToken`   | optional: a token of the account with the `read_repository` scope alone, which runner pods fetch with                       |
+| `webhookSecret` | the signing token of the webhooks, `whsec_` followed by base64                                                               |
+
 An entry under `accounts` or `repositories` names an account by its name
 alone, so it is the account's on the forge serving that name; a name
-served on both forges can have no entry.
+served on two forges can have no entry. A GitLab project in a subgroup is
+keyed by its full path, such as `platform/backend/api`.
 
 ## `providers` and `embedding`
 

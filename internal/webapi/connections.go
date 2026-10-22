@@ -14,6 +14,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/github"
+	"github.com/home-operations/kritika/internal/forge/gitlab"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -130,6 +131,22 @@ func (s *Server) reach(r *http.Request) (*configfile.Connection, []reachedAccoun
 			return nil, nil, errForge(err)
 		}
 		c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), "", nil)
+		if err != nil {
+			return nil, nil, errForge(err)
+		}
+		for _, account := range in.Accounts {
+			listed, err := c.Repositories(r.Context(), account)
+			if err != nil {
+				return nil, nil, errForge(err)
+			}
+			ra := reachedAccount{Account: account}
+			for _, x := range listed {
+				ra.Repositories = append(ra.Repositories, reachedRepository(x.FullName, x.DefaultBranch, x.Archived, x.Fork, x.Visibility))
+			}
+			out = append(out, ra)
+		}
+	case configfile.ForgeGitLab:
+		c, err := gitlab.NewClient(in.GitLab.Host, in.GitLab.TokenValue().Value(), "", nil)
 		if err != nil {
 			return nil, nil, errForge(err)
 		}

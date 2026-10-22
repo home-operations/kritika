@@ -48,26 +48,56 @@ func (b ForgejoIntegration) PreviousKeyValue() Secret { return b.previousKey }
 
 // WebhookSecretValue returns the resolved webhook secret.
 func (i *Connection) WebhookSecretValue() Secret {
-	if i.Forge == ForgeForgejo {
+	switch i.Forge {
+	case ForgeForgejo:
 		return i.Forgejo.webhookSecret
+	case ForgeGitLab:
+		return i.GitLab.webhookSecret
 	}
 	return i.App.webhookSecret
 }
 
+// GitLabBot is the service account a GitLab connection calls the instance
+// as: the instance's host, a personal access token of the account with
+// the api scope, and RunnerToken, a second token of the account with the
+// read_repository scope alone that runners fetch with, so the pod that
+// reads untrusted content never holds a token that can write; without
+// one they fetch with the first. GitLab 19 or later is assumed.
+type GitLabBot struct {
+	Host          string    `yaml:"host"`
+	Token         SecretRef `yaml:"token"`
+	RunnerToken   SecretRef `yaml:"runnerToken,omitempty"`
+	WebhookSecret SecretRef `yaml:"webhookSecret"`
+
+	token, runnerToken, webhookSecret Secret
+}
+
+// TokenValue returns the resolved API token.
+func (b GitLabBot) TokenValue() Secret { return b.token }
+
+// RunnerTokenValue returns the resolved runners' token, empty for none.
+func (b GitLabBot) RunnerTokenValue() Secret { return b.runnerToken }
+
 // where names the connection's entry in errors.
 func (i *Connection) where() string {
-	if i.Forge == ForgeForgejo {
+	switch i.Forge {
+	case ForgeForgejo:
 		return "forgejo." + i.Name
+	case ForgeGitLab:
+		return "gitlab." + i.Name
 	}
 	return "apps." + i.Name
 }
 
 // ForgeHosts are the hosts the connection's forge is reached at, which
 // every runner of its accounts may reach: GitHub and its API, or the
-// Forgejo instance, whose API and clone URLs share its host.
+// Forgejo or GitLab instance, whose API and clone URLs share its host.
 func (i *Connection) ForgeHosts() []string {
-	if i.Forge == ForgeForgejo {
+	switch i.Forge {
+	case ForgeForgejo:
 		return []string{i.Forgejo.Host}
+	case ForgeGitLab:
+		return []string{i.GitLab.Host}
 	}
 	return []string{GitHubHost, GitHubAPIHost}
 }
@@ -79,20 +109,33 @@ type forgejoDoc struct {
 	ForgejoIntegration `yaml:",inline"`
 }
 
-// connectionsOf lists the file's apps and forgejo entries in the order of
-// their names, each carrying its key as its name. A name in both maps is
-// an error: the name is the hook path, so it names one connection.
-func connectionsOf(apps map[string]Connection, bots map[string]forgejoDoc) ([]Connection, error) {
-	byName := make(map[string]Connection, len(apps)+len(bots))
+// gitlabDoc is an entry of the file's gitlab map: the accounts served and
+// the service account that serves them.
+type gitlabDoc struct {
+	Accounts  []string `yaml:"accounts"`
+	GitLabBot `yaml:",inline"`
+}
+
+// connectionsOf lists the file's apps, forgejo and gitlab entries in the
+// order of their names, each carrying its key as its name. A name in two
+// maps is an error: the name is the hook path, so it names one connection.
+func connectionsOf(apps map[string]Connection, bots map[string]forgejoDoc, gitlabs map[string]gitlabDoc) ([]Connection, error) {
+	byName := make(map[string]Connection, len(apps)+len(bots)+len(gitlabs))
 	for name, in := range apps {
 		in.Name, in.Forge = name, ForgeGitHub
 		byName[name] = in
 	}
 	for name, doc := range bots {
-		if _, dup := byName[name]; dup {
-			return nil, fmt.Errorf("configfile: forgejo.%s: apps.%s has the name already; a name is one connection's", name, name)
+		if other, dup := byName[name]; dup {
+			return nil, fmt.Errorf("configfile: forgejo.%s: %s has the name already; a name is one connection's", name, other.where())
 		}
 		byName[name] = Connection{Name: name, Forge: ForgeForgejo, Accounts: doc.Accounts, Forgejo: doc.ForgejoIntegration}
+	}
+	for name, doc := range gitlabs {
+		if other, dup := byName[name]; dup {
+			return nil, fmt.Errorf("configfile: gitlab.%s: %s has the name already; a name is one connection's", name, other.where())
+		}
+		byName[name] = Connection{Name: name, Forge: ForgeGitLab, Accounts: doc.Accounts, GitLab: doc.GitLabBot}
 	}
 	conns := make([]Connection, 0, len(byName))
 	for _, name := range slices.Sorted(maps.Keys(byName)) {

@@ -33,6 +33,10 @@ linters:
       min-complexity: 30
     lll:
       line-length: 140
+    misspell:
+      # GitLab's API spells a thing a note is on so.
+      ignore-rules:
+        - noteable
     revive:
       rules:
         - name: comment-spacings

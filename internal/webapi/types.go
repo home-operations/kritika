@@ -105,18 +105,21 @@ type InstanceSetting struct {
 type CredentialsSet struct {
 	// ClientID is a GitHub App's; Audience and RunnerAudience a Forgejo
 	// integration's, the second the read-only one runners fetch as; both
-	// have a PrivateKey.
+	// have a PrivateKey. Token and RunnerToken are a GitLab service
+	// account's, the second read-only.
 	ClientID       bool `json:"clientId,omitzero"`
 	PrivateKey     bool `json:"privateKey,omitzero"`
 	Audience       bool `json:"audience,omitzero"`
 	RunnerAudience bool `json:"runnerAudience,omitzero"`
+	Token          bool `json:"token,omitzero"`
+	RunnerToken    bool `json:"runnerToken,omitzero"`
 	WebhookSecret  bool `json:"webhookSecret"`
 }
 
-// Connection is one GitHub App or Forgejo integration and the accounts it
-// serves. HookPath is where its webhook arrives, under the dashboard's
-// URL; Host is the Forgejo instance an integration talks to, empty for
-// GitHub.
+// Connection is one GitHub App, Forgejo integration or GitLab service
+// account and the accounts it serves. HookPath is where its webhook
+// arrives, under the dashboard's URL; Host is the Forgejo or GitLab
+// instance it talks to, empty for GitHub.
 type Connection struct {
 	Name        string           `json:"name"`
 	Forge       configfile.Forge `json:"forge"`

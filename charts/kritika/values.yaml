@@ -74,6 +74,7 @@ strategy:
 #   auth: { type: object }
 #   apps: { type: object }
 #   forgejo: { type: object }
+#   gitlab: { type: object }
 #   providers: { type: object }
 #   embedding: { type: object }
 #   egress: { type: object }
@@ -111,6 +112,12 @@ config: {}
 #     audience: <the authorized integration's audience>
 #     privateKey: { env: FORGEJO_PRIVATE_KEY }
 #     webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
+# gitlab:
+#   work:
+#     host: gitlab.example.com
+#     accounts: [group-1]
+#     token: { env: GITLAB_TOKEN }
+#     webhookSecret: { env: GITLAB_WEBHOOK_SIGNING_TOKEN }
 # providers:
 #   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
 # review:

@@ -106,7 +106,7 @@ func (f *followUp) dismissedFinding(ctx context.Context) (string, error) {
 	if !f.comment.Inline || f.comment.InReplyTo == 0 {
 		return "", nil
 	}
-	root, err := f.client.GetComment(ctx, f.owner, f.repo, f.comment.InReplyTo, true)
+	root, err := f.client.GetComment(ctx, f.owner, f.repo, f.pr.number, f.comment.InReplyTo, true)
 	if err != nil {
 		return "", err
 	}

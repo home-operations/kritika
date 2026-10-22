@@ -72,10 +72,13 @@ type Event struct {
 
 // Repository identifies a repository as the forge names it.
 type Repository struct {
-	// FullName is "owner/repo".
+	// FullName is "owner/repo", or "group/subgroup/project" on GitLab.
 	FullName      string
 	DefaultBranch string
 	configfile.RepoTraits
+	// NoTraits is set when the payload says nothing of the traits, which
+	// then stay as the store knows them.
+	NoTraits bool
 }
 
 // PullRequest carries the fields the filter and the review pipeline need.
@@ -203,6 +206,8 @@ func Parse(forge configfile.Forge, header http.Header, body []byte) (Event, erro
 		return parseGitHub(header.Get("X-GitHub-Event"), header.Get("X-GitHub-Delivery"), body)
 	case configfile.ForgeForgejo:
 		return parseForgejo(header.Get("X-Forgejo-Event"), header.Get("X-Forgejo-Delivery"), body)
+	case configfile.ForgeGitLab:
+		return parseGitLab(header.Get("X-Gitlab-Event"), header.Get("webhook-id"), body)
 	}
 	return Event{}, fmt.Errorf("webhook: unsupported forge %q", forge)
 }

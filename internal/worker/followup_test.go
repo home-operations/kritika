@@ -34,7 +34,7 @@ func (f *threadForge) Permission(context.Context, string, string, string) (forge
 	return f.permission, f.permErr
 }
 
-func (f *threadForge) GetComment(_ context.Context, _, _ string, id int64, _ bool) (forge.Comment, error) {
+func (f *threadForge) GetComment(_ context.Context, _, _ string, _ int, id int64, _ bool) (forge.Comment, error) {
 	if c, ok := f.threads[id]; ok {
 		return c, nil
 	}
