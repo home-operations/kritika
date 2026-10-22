@@ -32,13 +32,12 @@ type ReviewInfo struct {
 	ReplacedByReviewID *string `json:"replacedByReviewId"`
 }
 
-// Summary is a review's take, praise and merge impact. Diagram is the Mermaid
+// Summary is a review's overall take and praise. Diagram is the Mermaid
 // source of its flow diagram, "" when the review drew none.
 type Summary struct {
 	Headline string   `json:"headline,omitempty"`
 	Take     string   `json:"take"`
 	Praise   []string `json:"praise"`
-	Impact   []string `json:"impact,omitempty"`
 	Diagram  string   `json:"diagram,omitempty"`
 }
 

@@ -260,7 +260,7 @@ func (m *scriptedModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if script == scriptParts || script == scriptPartFails {
 		finish = "tool_calls"
-		message = tool("submit_review", `{"summary":{"take":"Reviews its part.","praise":[],"impact":["The split package changes its public interface."]},"findings":[]}`)
+		message = tool("submit_review", `{"summary":{"take":"Reviews its part.","praise":[]},"findings":[]}`)
 		switch {
 		case merging:
 			message = tool("summary", `{"headline":"Adds two directories","take":"The whole change, merged.","praise":[]}`)
@@ -2205,9 +2205,6 @@ func checkAgentSplitsALargeReview(t *testing.T, h *agenticHarness) {
 		}
 		if !slices.Equal(indexes, wantIndexes) || partial != (round.script == scriptPartFails) {
 			t.Fatalf("round %d: timeline indexes %v, partial %v", i+1, indexes, partial)
-		}
-		if !partial && !strings.Contains(sticky, "The split package changes its public interface.") {
-			t.Fatalf("round %d lost the parts' impact: %s", i+1, sticky)
 		}
 		if merged := strings.Contains(sticky, "The whole change, merged."); merges != wantMerges || merged != round.merged {
 			t.Fatalf("round %d: %d merge calls, merged take shown %v; want %d, %v", i+1, merges, merged, wantMerges, round.merged)

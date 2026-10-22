@@ -60,7 +60,7 @@ func checkMerge(f mergeCase, raw string) error {
 	if f.Diagram && s.Diagram == "" {
 		return fmt.Errorf("bench: missing diagram")
 	}
-	text := strings.ToLower(s.Take + "\n" + strings.Join(s.Impact, "\n"))
+	text := strings.ToLower(s.Take)
 	for _, evidence := range f.Evidence {
 		if !strings.Contains(text, strings.ToLower(evidence)) {
 			return fmt.Errorf("bench: missing evidence marker %q (inspect paraphrases manually)", evidence)

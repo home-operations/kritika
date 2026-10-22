@@ -25,8 +25,7 @@ const mergeFailedNote = "The summary joins the parts' own: writing one from them
 // mergeSummary writes a split review's summary from its parts' with one
 // call to the review model at its effort, recorded and charged as the
 // review's, and the findings they reported; the parts' checked notes, which
-// res already carries, are kept. If synthesis omits impact, the parts'
-// notes stand. With one part's summary there is
+// res already carries, are kept, and with one part's summary there is
 // nothing to merge. It returns the answer carriedDiagram reads: the merge
 // call's, shaped as the agent's, when it wrote the summary, answer
 // otherwise; and the note the summary states when the call failed and res
@@ -68,9 +67,6 @@ func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart
 	if err != nil {
 		p.logger.Warn("split review's summary not written from its parts'", "error", err)
 		return answer, mergeFailedNote
-	}
-	if len(s.Impact) == 0 {
-		s.Impact = res.Summary.Impact
 	}
 	s.Checked = res.Summary.Checked
 	res.Summary = s

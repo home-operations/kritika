@@ -169,8 +169,8 @@ func unsplitPaths(p Spec, split [][]string) []string {
 }
 
 // partSpec is p for one part of a split review: the last review's and the
-// dismissed findings on paths alone. Whole-review diagrams and impact
-// have no per-file scope; each part must establish its own.
+// dismissed findings on paths alone, and no diagram to carry forward, since
+// the review's summary is written from all the parts'.
 func partSpec(p Spec, paths []string) Spec {
 	prompt := *p.Prompt
 	theirs := func(path string) bool { return !slices.Contains(paths, path) }
@@ -179,7 +179,6 @@ func partSpec(p Spec, paths []string) Spec {
 		return theirs(d.Path)
 	})
 	prompt.PriorDiagram = ""
-	prompt.PriorImpact = nil
 	p.Prompt = &prompt
 	return p
 }

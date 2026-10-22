@@ -24,11 +24,8 @@
     "diff": "diff --git a/migrations/004.sql b/migrations/004.sql\n--- /dev/null\n+++ b/migrations/004.sql\n@@ -0,0 +1 @@\n+DROP TABLE accounts;\n",
     "result": {
       "summary": {
-        "take": "Removes the account records table.",
-        "praise": [],
-        "impact": [
-          "migrations/004.sql permanently deletes account records; reverting application code cannot restore them."
-        ]
+        "take": "Removes the account records table. migrations/004.sql permanently deletes account records; reverting application code cannot restore them.",
+        "praise": []
       },
       "findings": [
         {
@@ -51,11 +48,8 @@
     "diff": "diff --git a/roles.sql b/roles.sql\n--- a/roles.sql\n+++ b/roles.sql\n@@ -1 +1 @@\n-ALTER ROLE app NOSUPERUSER;\n+ALTER ROLE app SUPERUSER;\n",
     "result": {
       "summary": {
-        "take": "Gives the application login superuser access.",
-        "praise": [],
-        "impact": [
-          "roles.sql grants administrative access to production data to app. A revert cannot undo actions taken while it held access."
-        ]
+        "take": "Gives the application login superuser access. roles.sql grants administrative access to production data to app, and a revert cannot undo actions taken while it held access.",
+        "praise": []
       },
       "findings": [
         {

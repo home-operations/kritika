@@ -202,7 +202,7 @@ func checkFullCarried(t *testing.T, h *agenticHarness, id string, original revie
 	if inline != 1 || resolved != 0 || approvals != 0 {
 		t.Fatalf("inline = %d, resolved = %d, approvals = %d; want one original thread, unresolved, and no approval", inline, resolved, approvals)
 	}
-	for _, want := range []string{"**1 finding** · 1 P1", "**Not approved**", "not rechecked since `" + h.head[:7] + "`",
+	for _, want := range []string{"**Not approved**", "not rechecked since `" + h.head[:7] + "`",
 		fmt.Sprintf("[b is unused](local://acme/widgets/pull/%d#r%d)", h.number, thread)} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("summary lacks %q:\n%s", want, body)

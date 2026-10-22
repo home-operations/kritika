@@ -8,20 +8,16 @@
         "Paths": ["storage/migrate.go"],
         "Summary": {
           "headline": "Migrate record format",
-          "take": "Writes the v2 record format.",
-          "praise": [],
-          "impact": [
-            "storage/migrate.go requires a backup before migration; old binaries cannot read v2 records."
-          ]
+          "take": "Writes the v2 record format. storage/migrate.go requires a backup before migration; old binaries cannot read v2 records.",
+          "praise": []
         }
       },
       {
         "Paths": ["storage/read.go"],
         "Summary": {
           "headline": "Read the v2 format",
-          "take": "Reads v2 records.",
-          "praise": ["Rejects unknown versions."],
-          "impact": ["storage/read.go rejects v1 records after migration."]
+          "take": "Reads v2 records; storage/read.go rejects v1 records after migration.",
+          "praise": ["Rejects unknown versions."]
         }
       }
     ],
@@ -38,9 +34,8 @@
         "Paths": ["queue.go"],
         "Summary": {
           "headline": "Bound queued tasks",
-          "take": "queue.go rejects tasks when its capacity of 16 is reached.",
+          "take": "queue.go rejects tasks when its capacity of 16 is reached, returning ErrFull to callers.",
           "praise": [],
-          "impact": ["queue.go returns ErrFull to callers when 16 tasks are queued."],
           "diagram": "flowchart LR\n  caller --> queue"
         }
       },
@@ -50,7 +45,6 @@
           "headline": "Drain queued tasks",
           "take": "worker.go drains queued tasks before shutdown returns.",
           "praise": [],
-          "impact": ["worker.go shutdown waits for queued tasks to finish."],
           "diagram": "flowchart LR\n  queue --> worker"
         }
       }

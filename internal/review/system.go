@@ -53,7 +53,10 @@ when the prompt shows them, are what the change is meant to do: judge whether it
 what it leaves out or does differently as a finding, as you would a behaviour change the description does not
 mention. A comment that admits a risk and names a mitigation does not close the risk: judge whether the mitigation
 actually covers it, and when it does not, report the finding with its concrete change as you would had the comment
-not been there. A secret in plain text, or a file that carries one (a Terraform or OpenTofu plan or state file, a
+not been there. An intended or documented change is not automatically safe either: destructive data loss, security
+regressions and outages still require findings when the evidence shows a defect or a missing safeguard. Do not treat
+a behavior change alone as a defect.
+A secret in plain text, or a file that carries one (a Terraform or OpenTofu plan or state file, a
 key, a database dump), written to an artifact, a cache, a log or the repository is a finding in its own right.
 Access controls around it never close it: the repository's visibility, permissions, retention and branch protection
 change independently of the code, and anything with read access reaches the file while it exists. Encrypting the
@@ -75,36 +78,20 @@ replace, tab for tab and space for space, and move the outer indentation only wh
 finding with a fix an agent_prompt. If
 nothing is worth flagging, return an empty findings list; the take still describes the change.`
 
-// summarySpec is a summary's headline, take, praise and impact, as every prompt
+// summarySpec is a summary's headline, take and praise, as every prompt
 // that writes one states them.
 const summarySpec = `The summary's headline is one sentence, under twelve words, on what the change
-does ("Bumps uv to 0.12.19 and drops the lock sidecar"): it opens the comment, so it carries no verdict and no
-markdown. The take is two to four sentences on what the change does and whether it is sound. Defects it mentions
-must also be findings. Material merge consequences and specific operational checks belong in impact, even when
-the change is sound. Omit generic caveats about what a diff cannot show or runtime behavior you cannot verify.
-The take does not give a verdict, count the findings or say there are none, and does not list what you read or how you read
-it: kritika states the count and lists the sources itself. Praise lists at most three specific things done well, and
-is empty when nothing stands out.`
-
-// summaryImpact follows systemRules: what the summary's impact notes
-// are and are not.
-const summaryImpact = `
-
-The summary's impact is an optional list of material consequences of merging this change and specific checks a
-person or agent should make. Include only what helps decide whether or when to merge, or verify the result. Where
-relevant, explain when an effect takes place, what it reaches or interrupts, what a revert cannot undo, or what to
-check and the expected result. These are examples, not a checklist. Skills can identify relevant domain evidence.
-Each note names the repository file or symbol, or links the upstream source you read, that supports it. Distinguish
-what that evidence establishes from a live condition that still needs checking. For an unverified condition, name
-the concrete check and its expected result; never claim it passed. Do not infer a rollout, migration, outage or
-irreversibility from a version number or filename alone. Omit generic caveats, routine advice such as monitoring
-logs, and unsupported assurances about safety or reversibility. An ordinary bump or documentation change with no
-established material consequence has no impact notes. Defects still belong in findings; do not recast them as
-impact notes. An intended or documented change is not automatically safe: destructive data loss, security
-regressions and outages still require findings when the evidence shows a defect or a missing safeguard. Do not
-treat a behavior change alone as a defect. Keep at most five short notes, each at most 1024 bytes.
-The notes describe the change at the current head, not only the latest commits. In a split review, establish
-impact for this part's assigned files.`
+does ("Bumps uv to 0.12.19 and drops the lock sidecar"): it opens the summary, so it carries no verdict and no
+markdown. The take is two to four sentences that carry on from the headline. Say how the change does it and, where
+the evidence you read establishes it, what merging sets off, such as what takes effect and when, what restarts or is
+interrupted, what a revert would not undo, or one concrete check to make after merging with the result to expect.
+Name the file, symbol or upstream source such a claim rests on, never claim a check passed, and do not infer a
+rollout, migration, outage or irreversibility from a version number or filename alone. A defect belongs in a finding,
+never only in the take, and the take does not restate the findings or their fixes: kritika lists the findings, and
+the sources, itself. The take gives no verdict, does not count the findings or say there are none, and does not
+reassure that nothing else changes or that the merge is safe. It omits what you read and how, generic caveats about
+what a diff cannot show, and routine advice such as watching logs. Praise lists at most three specific things done
+well, and is empty when nothing stands out.`
 
 // summaryDiagram follows systemRules when the repository asks for a
 // diagram in the summary, and the merge prompt when its summary carries
@@ -212,7 +199,7 @@ review changed. Name the usage, its path and line, in the explanation. A change 
 finding: list what you searched under checked.
 5. Read major and minor steps upstream first; when the steps or tokens run short, leave patch steps, and digests
 under a tag that names a version, to the description. Notes of a major or minor step you could not read, or
-left unread, are not safe by their silence: put the check in impact, which notes to read and for which of this
+left unread, are not safe by their silence: say in the take which notes to read and for which of this
 repository's usages, and never say that nothing affects them.
 6. Do not propose adopting what the new version adds: the review is about what the update does to this code.`
 
@@ -231,7 +218,7 @@ type Rule struct {
 // asks for a diagram in the summary, and bumps says the change moves
 // versions (see Bumps), which the user message lists.
 func SystemPrompt(rules []Rule, skills []Skill, commands []string, fetch, search, diagram, bumps bool) string {
-	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules + summaryImpact
+	system := systemLead + agenticSees + "\n\n" + systemReport + systemRules
 	if diagram {
 		system += summaryDiagram
 	}

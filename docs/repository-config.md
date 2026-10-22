@@ -296,7 +296,6 @@ The summary template's dot is the review:
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                    |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
 | `.Result.Summary.Diagram`                                                    | Mermaid source for the flow the change adds or alters, "" unless `review.diagram` is on and the change has one           |
-| `.Result.Summary.Impact`                                                     | optional list of evidence-backed merge consequences and specific operational checks; empty when none are established       |
 | `.Result.Findings`                                                           | the findings, each as the inline template sees one; an earlier one an incremental re-review carried on unchecked has `.CarriedFrom`, the head it was last reported at, whose lines its `.URL` links |
 | `.Counts.P0`, `.Counts.P1`, `.Counts.P2`, `.Counts.Total`                   | the findings by severity and all of them, those outside the diff and those carried on unchecked included                 |
 | `.Unanchored`                                                                | the findings on lines the diff does not show                                                                             |
@@ -309,7 +308,7 @@ The summary template's dot is the review:
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
 | `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` (the scorer's own), `.Explanation` (the reason, then how a floor held the risk when one did), `.Rated` and `.Held` (the scorer's rating and the path that held it, "" when none did) and `.Model` |
 | `.Approval`                                                                  | nil unless `review.approve` is on: `.Approved` and `.Reason`, "" when a confidence score approved it                     |
-| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its re-run badge points; both "" when the admin's `comments.dashboard` is off |
+| `.WebURL`, `.PullURL`                                                        | the dashboard's origin, which serves the built-in template's severity badges, and the pull request's page on it, where its View and Re-run badges point; both "" when the admin's `comments.dashboard` is off |
 
 The inline template's dot is one finding, with the dashboard's origin
 beside it:

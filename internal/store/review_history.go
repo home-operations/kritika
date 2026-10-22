@@ -20,7 +20,7 @@ const reusableBaselineSQL = ` FROM reviews WHERE pull_request_id = $1 AND id::te
 
 type CompletedReview struct {
 	ID, HeadSHA, Trigger, MergeBase, Diagram string
-	Changed, Checked, Impact                 []string
+	Changed, Checked                         []string
 	Findings                                 []CompletedFinding
 	Confidence                               *review.Confidence
 }
@@ -37,9 +37,8 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 	var p CompletedReview
 	var confidence []byte
 	err := tx.QueryRow(ctx, `SELECT id, head_sha, trigger, merge_base_sha, coalesce(summary->>'diagram', ''),
-		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')),
-		ARRAY(SELECT jsonb_array_elements_text(summary->'impact')), confidence`+reusableBaselineSQL, prID, "").
-		Scan(&p.ID, &p.HeadSHA, &p.Trigger, &p.MergeBase, &p.Diagram, &p.Checked, &p.Impact, &confidence)
+		ARRAY(SELECT jsonb_array_elements_text(summary->'checked')), confidence`+reusableBaselineSQL, prID, "").
+		Scan(&p.ID, &p.HeadSHA, &p.Trigger, &p.MergeBase, &p.Diagram, &p.Checked, &confidence)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CompletedReview{}, nil
 	}

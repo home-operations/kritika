@@ -36,8 +36,9 @@ reason. A model from a different vendor can provide a second opinion.
 - **P2** findings do not reduce it by themselves.
 - Dismissed findings stop counting at the next review.
 
-The scorer can raise its own evidence-backed concerns. Merge impact notes and
-post-deployment checks do not lower the score by themselves.
+The scorer can raise its own evidence-backed concerns. What the summary says
+merging sets off, and post-deployment checks, do not lower the score by
+themselves.
 
 Scoring uses tokens and adds cost. It has no tools and sees only the supplied
 prompt, which may take twice the agent's `agent.prompt` budget, up to 96,000

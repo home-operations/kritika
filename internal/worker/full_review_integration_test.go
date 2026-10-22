@@ -76,7 +76,6 @@ func checkFullSettled(
 	resolved := slices.Clone(lf.resolved[resolvedBefore:])
 	lf.mu.Unlock()
 	for _, want := range []string{
-		"**3 findings** · 1 P0 · 2 P1",
 		fmt.Sprintf("[f8 is still wrong](local://onedr0p/home-ops/pull/5#r%d) · correctness · not rechecked since `%s`", threads[left.Title], head[:7]),
 		"<summary>Earlier findings (1 resolved)</summary>",
 		fmt.Sprintf("[f8 is fixed](local://onedr0p/home-ops/pull/5#r%d) · maintainability · resolved", threads[fixed.Title]),
