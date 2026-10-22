@@ -312,6 +312,43 @@ func TestForgesBuildGitLabOnce(t *testing.T) {
 	}
 }
 
+// TestForgesBuildGiteaOnce: a Gitea connection's clients share one
+// client, whichever owner they are built for, calling with the bot's
+// access token, and runners fetch with the read-only one.
+func TestForgesBuildGiteaOnce(t *testing.T) {
+	t.Setenv("TEST_GT_TOKEN", "gitea-api")
+	t.Setenv("TEST_GT_READ", "gitea-read")
+	t.Setenv("TEST_GT_HOOK", "gitea-hook")
+	file, err := configfile.Parse([]byte(`
+gitea:
+  acme-tea:
+    host: gitea.example.com
+    accounts: [acme]
+    token: { env: TEST_GT_TOKEN }
+    runnerToken: { env: TEST_GT_READ }
+    webhookSecret: { env: TEST_GT_HOOK }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := file.Connection("acme-tea")
+	forges := &Forges{}
+	first, err := forges.Build(t.Context(), in, "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := forges.Build(t.Context(), in, "other/gadgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again || first.CloneURL("acme", "widgets") != "https://gitea.example.com/acme/widgets.git" {
+		t.Fatalf("clients = %p %p, clone URL %s", first, again, first.CloneURL("acme", "widgets"))
+	}
+	if tok, err := first.GitToken(t.Context(), "widgets"); err != nil || tok != "gitea-read" {
+		t.Fatalf("GitToken = %q, %v; want the read-only token", tok, err)
+	}
+}
+
 // TestForgeCachePullRequestAuthor: the author a GitLab webhook leaves out
 // is read from the merge request.
 func TestForgeCachePullRequestAuthor(t *testing.T) {

@@ -16,7 +16,7 @@ export function checklist(s: SetupStatus, accounts: AdminAccount[]): ChecklistIt
     {
       label: 'A forge is connected',
       done: s.connections.length > 0,
-      how: 'Declare a GitHub App under apps, a Forgejo bot under forgejo or a GitLab service account under gitlab in the configuration file, its secrets referenced from a Secret.',
+      how: 'Declare a GitHub App under apps, a Forgejo bot under forgejo, a GitLab service account under gitlab or a Gitea bot under gitea in the configuration file, its secrets referenced from a Secret.',
     },
     {
       label: 'A repository is enabled',

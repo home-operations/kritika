@@ -80,7 +80,7 @@ func TestDelivered(t *testing.T) {
 			}
 		})
 	}
-	if Delivered("gitea", http.Header{"X-Github-Delivery": {"d-1"}, "X-Github-Event": {"ping"}}) {
+	if Delivered("bitbucket", http.Header{"X-Github-Delivery": {"d-1"}, "X-Github-Event": {"ping"}}) {
 		t.Fatal("an unsupported forge delivers nothing")
 	}
 }

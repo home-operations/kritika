@@ -17,13 +17,16 @@ import (
 	"github.com/home-operations/kritika/internal/forge"
 )
 
-// fakeForge is enough of a Forgejo instance for the client: a mux of the
-// routes a test registers, and a log of what was called.
+// fakeForge is enough of a Forgejo or Gitea instance for the client: a
+// mux of the routes a test registers, and a log of what was called.
 type fakeForge struct {
 	t      *testing.T
 	mux    *http.ServeMux
 	srv    *httptest.Server
 	issuer *Issuer
+	// token is the Gitea access token every call must carry; empty for
+	// Forgejo, whose calls carry a token the issuer signed.
+	token string
 
 	mu    sync.Mutex
 	calls []string
@@ -33,16 +36,34 @@ type fakeForge struct {
 
 func newFake(t *testing.T) *fakeForge {
 	t.Helper()
-	f := &fakeForge{t: t, mux: http.NewServeMux(), bodies: map[string][]string{}}
+	return startFake(t, "")
+}
+
+// newGiteaFake is a Gitea instance, which takes the bot's access token.
+func newGiteaFake(t *testing.T) *fakeForge {
+	t.Helper()
+	return startFake(t, "gitea-api")
+}
+
+func startFake(t *testing.T, apiToken string) *fakeForge {
+	t.Helper()
+	f := &fakeForge{t: t, mux: http.NewServeMux(), bodies: map[string][]string{}, token: apiToken}
 	f.issuer = testIssuer(t)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Every call carries a token of the integration, signed by the
-		// issuer, as Forgejo checks it.
+		// issuer, as Forgejo checks it, or Gitea's access token.
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok {
+		switch {
+		case !ok:
 			t.Errorf("%s %s: Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
-		} else if claims, _ := verify(t, f.issuer, token); len(claims.Audience) != 1 || claims.Audience[0] != "aud-api" || claims.Issuer != f.issuer.URL() {
-			t.Errorf("%s %s: token claims = %+v", r.Method, r.URL.Path, claims)
+		case f.token != "":
+			if token != f.token {
+				t.Errorf("%s %s: token = %q, want Gitea's %q", r.Method, r.URL.Path, token, f.token)
+			}
+		default:
+			if claims, _ := verify(t, f.issuer, token); len(claims.Audience) != 1 || claims.Audience[0] != "aud-api" || claims.Issuer != f.issuer.URL() {
+				t.Errorf("%s %s: token claims = %+v", r.Method, r.URL.Path, claims)
+			}
 		}
 		body, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
@@ -60,6 +81,15 @@ func newFake(t *testing.T) *fakeForge {
 func (f *fakeForge) client(t *testing.T) *Client {
 	t.Helper()
 	c, err := NewClient(f.srv.URL, f.issuer, "aud-api", "aud-runner", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func (f *fakeForge) giteaClient(t *testing.T) *Client {
+	t.Helper()
+	c, err := NewGiteaClient(f.srv.URL, f.token, "gitea-read", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

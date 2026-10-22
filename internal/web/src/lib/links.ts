@@ -42,6 +42,8 @@ export function forgeName(slug: string): string {
       return 'Forgejo';
     case 'gitlab':
       return 'GitLab';
+    case 'gitea':
+      return 'Gitea';
   }
   return 'GitHub';
 }
@@ -56,8 +58,8 @@ export function repoPath(fullName: string): string {
 // threadUrl links the thread of an inline comment on a pull request of an
 // account of slug; none for a finding kritika did not post inline, or
 // whose comment id it lacks. GitHub anchors a review comment's thread by
-// its discussion id; Forgejo anchors a code comment as any comment, and
-// GitLab every note by its id.
+// its discussion id; Forgejo and Gitea anchor a code comment as any
+// comment, and GitLab every note by its id.
 export function threadUrl(slug: string, pullUrl: string, commentId: number | null): string | undefined {
   if (!commentId) return undefined;
   switch (forgeOf(slug)) {

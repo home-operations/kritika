@@ -2,10 +2,12 @@ package forgejo
 
 import "time"
 
-// user is a user as the REST API carries one. Forgejo marks no account as
-// a bot, so bots are told by the login-suffix heuristic alone.
+// user is a user as the REST API carries one. Gitea types a bot user Bot,
+// as GitHub does; Forgejo types no account, so its bots are told by the
+// login-suffix heuristic alone.
 type user struct {
 	Login string `json:"login"`
+	Type  string `json:"type"`
 }
 
 type label struct {

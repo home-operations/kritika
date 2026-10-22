@@ -1,9 +1,10 @@
 # Git forges
 
 kritika reviews pull requests on GitHub, through a GitHub App, on a
-Forgejo instance, through an authorized integration of a bot user, and on
-a GitLab instance, through a service account. A connection is one App,
-integration or service account and the accounts it serves; the
+Forgejo instance, through an authorized integration of a bot user, on a
+GitLab instance, through a service account, and on a Gitea instance,
+through a bot user's access tokens. A connection is one App, integration,
+service account or bot user and the accounts it serves; the
 [configuration reference](configuration.md#apps) has every key. This page
 says what each forge needs and what works on it.
 
@@ -176,36 +177,106 @@ arrived. Polling keeps merge requests current without one, and finds new
 and renamed projects: kritika does not act on GitLab's project events, so
 leave them off. Mentions need webhooks.
 
+## Gitea
+
+A bot user on a Gitea instance, version 28 or later, declared under
+`gitea` with the instance's host. Gitea has nothing like Forgejo's
+authorized integrations, so the user's access tokens are the credential,
+held in a Secret.
+
+### The bot user and its tokens
+
+Create a user for kritika and give it access to the repositories it
+reviews, for example through an organization team with write access. That
+is what posting findings, resolving their threads, approving and setting
+a commit status take. Two things need more, as on Forgejo:
+
+- Answering a mention checks the commenter's permission, which Gitea
+  reveals only to repository and site admins: without admin access,
+  reviews still run, but no mention or command is answered.
+- Dismissing a stale approval of its own needs repository admin access.
+
+Then, signed in as the user, open **Settings → Applications** and
+generate two access tokens with **All** repository and organization
+access:
+
+1. One with **Read** on `user` and **Read and Write** on `repository` and
+   `issue`, the scopes `read:user`, `write:repository` and `write:issue`:
+   the connection's `token`, which kritika calls the API with.
+2. One with **Read** on `repository` alone, the connection's
+   `runnerToken`, which runner pods fetch with, so the pod that reads
+   untrusted pull request content never holds a token that can write.
+   Without one, runners fetch with the first.
+
+Gitea's access tokens do not expire. Rotate one by generating its
+successor, updating the Secret and rolling kritika out, then deleting the
+old one.
+
+### Configure the connection
+
+```yaml
+gitea:
+  home:
+    host: gitea.example.com
+    accounts: [org-1]
+    token: { env: GITEA_TOKEN }
+    runnerToken: { env: GITEA_RUNNER_TOKEN }
+    webhookSecret: { env: GITEA_WEBHOOK_SECRET }
+```
+
+`host` is the instance's hostname alone, reached over HTTPS, and runner
+pods may reach it through the [egress gateway](security.md#the-egress-gateway).
+
+### Add one webhook per account
+
+Add a Gitea webhook to each organization, or user, in the connection's
+`accounts`. Each covers every repository its owner has, including ones
+added later.
+
+- **Target URL:** `https://<kritika host>/hooks/<name>`, HTTP method POST,
+  with the `application/json` content type: Gitea signs the JSON, so a
+  form-encoded delivery fails the check.
+- **Secret:** the connection's `webhookSecret`.
+- **Trigger on:** custom events: Push and Repository, and under pull
+  request events, Pull Request, Pull Request Synchronized and Pull Request
+  Comment. Repository makes a new or renamed repository known before its
+  first pull request.
+
+The dashboard's Connections section shows whether a verified webhook has
+arrived. Polling keeps pull requests current without one, but mentions
+need webhooks.
+
 ## What works where
 
 The review itself, its findings, summary, suggested fixes, commit status,
 confidence score and approval are the same on every forge. The
 differences are in what the forge's API lets kritika do around them.
 
-| Feature                                           |  GitHub   |     Forgejo     |               GitLab                | Notes                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------- | :-------: | :-------------: | :---------------------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reviews on open, push and reopen                  |     ✓     |        ✓        |                  ✓                  |                                                                                                                                                                                                                                                                                         |
-| Inline findings with suggested fixes              |     ✓     |        ✓        |                  ✓                  | Forgejo: a range is sent as Forgejo takes one; an instance without range comments anchors the finding on the range's first line, and one that renders no suggestion fences shows the fix as a code block. GitLab: a finding on a range sits on its last line and its fix covers the range. |
-| Sticky summary comment                            |     ✓     |        ✓        |                  ✓                  |                                                                                                                                                                                                                                                                                         |
-| Commit status, confidence gate                    |     ✓     |        ✓        |                  ✓                  | GitLab: the status is a job of an external pipeline on the commit, and a review that reached no verdict reports canceled.                                                                                                                                                              |
-| Approval and its dismissal                        |     ✓     |        ✓        |                  ✓                  | Forgejo: dismissing needs the bot to be a repository admin. GitLab: the approval names the head it approves, and its message and a dismissal's are posted as comments, since a GitLab approval carries none.                                                                            |
-| Reactions on the pull request and mentions        |     ✓     |        ✓        |                  ✓                  |                                                                                                                                                                                                                                                                                         |
-| Mentions and commands on the conversation         |     ✓     |        ✓        |                  ✓                  | Forgejo: the bot needs admin access to check who asked.                                                                                                                                                                                                                                 |
-| Mentions and `dismiss` in a finding's thread      |     ✓     |        ✓        |                  ✓                  | Forgejo: a reply in a code conversation is answered; code comments submitted with a review carry no event, so a mention there goes unanswered.                                                                                                                                          |
-| Replies in finding threads without a mention      |     ✓     |        ✗        |                  ✗                  | Forgejo's comment event does not say which comment a reply answers, and GitLab's names its discussion but not the note it answers, so a reply that does not mention the bot is not read.                                                                                                                                                                 |
-| Resolving a fixed finding's thread                |     ✓     |        ✗        |                  ✓                  | Forgejo's API cannot resolve a conversation: kritika marks the finding fixed in its summary and leaves the conversation to be resolved by hand.                                                                                                                                         |
-| Dismissing a finding by resolving its thread      |     ✓     |        ✗        |                  ✗                  | Neither forge sends an event when a thread is resolved. Use `@<bot> dismiss <reason>` in the thread instead.                                                                                                                                                                            |
-| Outdated thread detection                         |     ✓     |        ✗        |                  ✓                  | Forgejo does not say whether a code comment's lines have changed since.                                                                                                                                                                                                                |
-| 👍 and 👎 counts on findings in the dashboard      |     ✓     |        ✗        |                  ✗                  | Forgejo lists no reactions with a code comment; GitLab lists them per comment, a request each, which kritika does not make.                                                                                                                                                             |
-| `gh` or `glab` for the agent                      |     ✓     |        ✗        |                  ✗                  | `gh` speaks to GitHub alone, and GitLab's run token can only fetch, so neither forge gets a CLI; `curl` through the gateway and `fetch_repo` still are.                                                                                                                                                                      |
-| Repositories discovered from the forge            |     ✓     |        ✓        |                  ✓                  | Every repository the bot can see under the account; a private one needs the bot to have access. GitLab: a group's subgroups' projects too.                                                                                                                                              |
-| New and renamed repositories by webhook           |     ✓     |        ✓        |                  ✗                  | kritika does not act on GitLab's project events, so polling finds them.                                                                                                                                                                                                                                |
-| A review of a head the pull request moved on from |     ✓     |        ✗        |                  ✓                  | Forgejo reports a pull request's merge base and diff as they stand, so a review queued before a push fails and the push's review takes over. GitLab keeps the diff of every push.                                                                                                      |
-| Webhook per account                               | the App's | one per account | one per group, or per project on Free | Added by hand.                                                                                                                                                                                                                                                                          |
-| Short-lived, read-only token for runs             |     ✓     |        ✓        |                  ✗                  | Forgejo: with a second, read-only integration as `runnerAudience`; a run's token lasts an hour. GitLab: `runnerToken` is read-only, but a personal access token lasts until it expires.                                                                                                 |
+| Feature                                           |  GitHub   |     Forgejo     |                GitLab                 |      Gitea      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------- | :-------: | :-------------: | :-----------------------------------: | :-------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reviews on open, push and reopen                  |     ✓     |        ✓        |                   ✓                   |        ✓        |                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Inline findings with suggested fixes              |     ✓     |        ✓        |                   ✓                   |        ✓        | Forgejo: a range is sent as Forgejo takes one; an instance without range comments anchors the finding on the range's first line, and one that renders no suggestion fences shows the fix as a code block. GitLab: a finding on a range sits on its last line and its fix covers the range. Gitea: a comment is on one line, so a finding on a range sits on its first, and its fix shows as a code block, since Gitea renders no suggestion fences. |
+| Sticky summary comment                            |     ✓     |        ✓        |                   ✓                   |        ✓        |                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Commit status, confidence gate                    |     ✓     |        ✓        |                   ✓                   |        ✓        | GitLab: the status is a job of an external pipeline on the commit, and a review that reached no verdict reports canceled.                                                                                                                                                                                                                                                                                                                           |
+| Approval and its dismissal                        |     ✓     |        ✓        |                   ✓                   |        ✓        | Forgejo and Gitea: dismissing needs the bot to be a repository admin. GitLab: the approval names the head it approves, and its message and a dismissal's are posted as comments, since a GitLab approval carries none.                                                                                                                                                                                                                              |
+| Reactions on the pull request and mentions        |     ✓     |        ✓        |                   ✓                   |        ✓        |                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Mentions and commands on the conversation         |     ✓     |        ✓        |                   ✓                   |        ✓        | Forgejo and Gitea: the bot needs admin access to check who asked.                                                                                                                                                                                                                                                                                                                                                                                   |
+| Mentions and `dismiss` in a finding's thread      |     ✓     |        ✓        |                   ✓                   |        ✓        | Forgejo and Gitea: a reply in a code conversation is answered; code comments submitted with a review carry no event, so a mention there goes unanswered.                                                                                                                                                                                                                                                                                            |
+| Replies in finding threads without a mention      |     ✓     |        ✗        |                   ✗                   |        ✗        | Forgejo's and Gitea's comment event does not say which comment a reply answers, and GitLab's names its discussion but not the note it answers, so a reply that does not mention the bot is not read.                                                                                                                                                                                                                                                |
+| Resolving a fixed finding's thread                |     ✓     |        ✗        |                   ✓                   |        ✓        | Forgejo's API cannot resolve a conversation: kritika marks the finding fixed in its summary and leaves the conversation to be resolved by hand. Gitea's diff view shows every review's comments on a line as one conversation, in the state of the oldest, so a thread kritika resolves still shows open there when an earlier review commented on the same line.                                                                                   |
+| Dismissing a finding by resolving its thread      |     ✓     |        ✗        |                   ✗                   |        ✗        | No forge but GitHub sends an event when a thread is resolved. Use `@<bot> dismiss <reason>` in the thread instead.                                                                                                                                                                                                                                                                                                                                  |
+| Outdated thread detection                         |     ✓     |        ✗        |                   ✓                   |        ✗        | Forgejo and Gitea do not say whether a code comment's lines have changed since.                                                                                                                                                                                                                                                                                                                                                                     |
+| 👍 and 👎 counts on findings in the dashboard      |     ✓     |        ✗        |                   ✗                   |        ✗        | Forgejo lists no reactions with a code comment; GitLab and Gitea list them per comment, a request each, which kritika does not make.                                                                                                                                                                                                                                                                                                                |
+| `gh` or `glab` for the agent                      |     ✓     |        ✗        |                   ✗                   |        ✗        | `gh` speaks to GitHub alone, and GitLab's run token can only fetch, so no other forge gets a CLI; `curl` through the gateway and `fetch_repo` still are.                                                                                                                                                                                                                                                                                            |
+| Repositories discovered from the forge            |     ✓     |        ✓        |                   ✓                   |        ✓        | Every repository the bot can see under the account; a private one needs the bot to have access. GitLab: a group's subgroups' projects too.                                                                                                                                                                                                                                                                                                          |
+| New and renamed repositories by webhook           |     ✓     |        ✓        |                   ✗                   |        ✓        | kritika does not act on GitLab's project events, so polling finds them.                                                                                                                                                                                                                                                                                                                                                                             |
+| A review of a head the pull request moved on from |     ✓     |        ✗        |                   ✓                   |        ✗        | Forgejo and Gitea report a pull request's merge base and diff as they stand, so a review queued before a push fails and the push's review takes over. GitLab keeps the diff of every push.                                                                                                                                                                                                                                                          |
+| Webhook per account                               | the App's | one per account | one per group, or per project on Free | one per account | Added by hand.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Short-lived, read-only token for runs             |     ✓     |        ✓        |                   ✗                   |        ✗        | Forgejo: with a second, read-only integration as `runnerAudience`; a run's token lasts an hour. GitLab and Gitea: `runnerToken` is read-only, but a personal access token lasts until it expires or is deleted.                                                                                                                                                                                                                                     |
 
 A bot account on Forgejo is not marked as a bot, so a pull request opened
 by one, such as a Renovate user, is treated as a person's unless its
 login ends in `[bot]`. GitLab marks its bot and service accounts, which
 kritika reads from the API; a webhook does not, so there it goes by the
-`[bot]` suffix and the names GitLab gives access token users.
+`[bot]` suffix and the names GitLab gives access token users. Gitea marks
+a bot user as GitHub does, in the API and webhooks alike.

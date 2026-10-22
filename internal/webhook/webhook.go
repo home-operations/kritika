@@ -46,6 +46,14 @@ func Verify(forge configfile.Forge, secret string, header http.Header, body []by
 			sig = "sha256=" + sig
 		}
 		return verifyHMAC(sig, secret, body)
+	case configfile.ForgeGitea:
+		// X-Gitea-Signature, as Forgejo's own header: Gitea sends no
+		// X-Forgejo-* header, and Forgejo sends X-Gitea-* too.
+		sig := header.Get("X-Gitea-Signature")
+		if sig != "" {
+			sig = "sha256=" + sig
+		}
+		return verifyHMAC(sig, secret, body)
 	case configfile.ForgeGitLab:
 		return verifyGitLab(secret, header, body, time.Now())
 	default:
@@ -115,6 +123,8 @@ func Delivered(forge configfile.Forge, header http.Header) bool {
 		return header.Get("X-GitHub-Delivery") != "" && header.Get("X-GitHub-Event") != ""
 	case configfile.ForgeForgejo:
 		return header.Get("X-Forgejo-Delivery") != "" && header.Get("X-Forgejo-Event") != ""
+	case configfile.ForgeGitea:
+		return header.Get("X-Gitea-Delivery") != "" && header.Get("X-Gitea-Event") != ""
 	case configfile.ForgeGitLab:
 		return header.Get("webhook-id") != "" && header.Get("X-Gitlab-Event") != ""
 	default:

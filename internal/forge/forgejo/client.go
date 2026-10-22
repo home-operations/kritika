@@ -1,13 +1,17 @@
-// Package forgejo implements forge.Client against a Forgejo instance's REST
-// API, https://<host>/api/v1, with the standard library's HTTP client:
-// requests and responses are written out for the subset of the API kritika
-// needs, which keeps a context on every call. kritika authenticates as an
-// authorized integration of a user on the instance, with tokens its
-// Issuer signs.
+// Package forgejo implements forge.Client against a Forgejo or Gitea
+// instance's REST API, https://<host>/api/v1, with the standard library's
+// HTTP client: requests and responses are written out for the subset of
+// the API kritika needs, which keeps a context on every call. On Forgejo
+// kritika authenticates as an authorized integration of a user on the
+// instance, with tokens its Issuer signs; Gitea has no such integration,
+// so there it calls with a bot user's access tokens. Gitea speaks the
+// API Forgejo does, and where the two have parted, replying in a code
+// conversation and resolving one, takes routes of its own.
 package forgejo
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -59,7 +63,8 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// Client is one authorized integration's access to a Forgejo instance.
+// Client is one authorized integration's access to a Forgejo instance,
+// or one bot user's to a Gitea instance.
 type Client struct {
 	http     *http.Client
 	api, web string
@@ -69,7 +74,12 @@ type Client struct {
 	// with read access alone, so the pod that reads untrusted content
 	// never holds a token that can write; audience when there is none.
 	audience, runnerAudience string
-	now                      func() time.Time
+	// gitea is a Gitea instance, called with apiToken, a runner fetching
+	// with runnerToken: access tokens of the bot user, split as the
+	// audiences are.
+	gitea                 bool
+	apiToken, runnerToken string
+	now                   func() time.Time
 
 	mu    sync.Mutex
 	login string
@@ -86,11 +96,38 @@ type Client struct {
 // runners fetching as runnerAudience when set. A nil httpClient is
 // http.DefaultClient.
 func NewClient(host string, issuer *Issuer, audience, runnerAudience string, httpClient *http.Client) (*Client, error) {
-	if host == "" {
-		return nil, errors.New("forgejo: host is required")
-	}
 	if audience == "" {
 		return nil, errors.New("forgejo: audience is required: create the authorized integration on the instance and set its audience")
+	}
+	c, err := newClient(host, httpClient)
+	if err != nil {
+		return nil, err
+	}
+	if runnerAudience == "" {
+		runnerAudience = audience
+	}
+	c.issuer, c.audience, c.runnerAudience = issuer, audience, runnerAudience
+	return c, nil
+}
+
+// NewGiteaClient builds a Client for a Gitea instance at host, as
+// NewClient does, calling the API with token, an access token of the bot
+// user, and runners fetching with runnerToken when set.
+func NewGiteaClient(host, token, runnerToken string, httpClient *http.Client) (*Client, error) {
+	if token == "" {
+		return nil, errors.New("forgejo: a Gitea access token is required")
+	}
+	c, err := newClient(host, httpClient)
+	if err != nil {
+		return nil, err
+	}
+	c.gitea, c.apiToken, c.runnerToken = true, token, cmp.Or(runnerToken, token)
+	return c, nil
+}
+
+func newClient(host string, httpClient *http.Client) (*Client, error) {
+	if host == "" {
+		return nil, errors.New("forgejo: host is required")
 	}
 	web := host
 	if !strings.Contains(web, "://") {
@@ -103,18 +140,15 @@ func NewClient(host string, issuer *Issuer, audience, runnerAudience string, htt
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	if runnerAudience == "" {
-		runnerAudience = audience
-	}
-	return &Client{
-		http: httpClient, api: web + "/api/v1", web: web, issuer: issuer, audience: audience, runnerAudience: runnerAudience,
-		now: time.Now,
-	}, nil
+	return &Client{http: httpClient, api: web + "/api/v1", web: web, now: time.Now}, nil
 }
 
-// bearer is the token the API is called with: the one in use while it has
-// a minute left, else a new one.
+// bearer is the token the API is called with: Gitea's access token, or
+// the one in use while it has a minute left, else a new one.
 func (c *Client) bearer() (string, error) {
+	if c.gitea {
+		return c.apiToken, nil
+	}
 	c.tokenMu.Lock()
 	defer c.tokenMu.Unlock()
 	now := c.now()
@@ -313,9 +347,12 @@ func (c *Client) CloneURL(owner, repo string) string {
 }
 
 // GitToken implements forge.Client with a token of the runner's
-// integration, signed for the run: Forgejo takes it as the password of a
-// git fetch over HTTPS.
+// integration, signed for the run, or the runner's Gitea access token:
+// either forge takes it as the password of a git fetch over HTTPS.
 func (c *Client) GitToken(context.Context, string) (string, error) {
+	if c.gitea {
+		return c.runnerToken, nil
+	}
 	return c.issuer.Token(c.runnerAudience, runnerTokenTTL, c.now())
 }
 
@@ -547,14 +584,14 @@ func (c *Client) Repositories(ctx context.Context, account string) ([]Repository
 
 func conversationComment(cm comment) forge.Comment {
 	return forge.Comment{
-		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: isBot(cm.User.Login), Body: cm.Body, CreatedAt: cm.CreatedAt,
+		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
 	}
 }
 
 // inlineComment maps a code comment, replying to root, 0 when it is one.
 func inlineComment(cm pullReviewComment, root int64) forge.Comment {
 	return forge.Comment{
-		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: isBot(cm.User.Login), Body: cm.Body, CreatedAt: cm.CreatedAt,
+		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
 		Inline: true, Path: cm.Path, Line: cm.Position, InReplyTo: root,
 	}
 }
@@ -569,7 +606,7 @@ func fullName(r *repository) string {
 func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	out := forge.OpenPullRequest{UpdatedAt: pr.UpdatedAt}
 	out.Number, out.Title, out.Body = pr.Number, pr.Title, pr.Body
-	out.Author, out.AuthorIsBot = pr.User.Login, isBot(pr.User.Login)
+	out.Author, out.AuthorIsBot = pr.User.Login, isBot(pr.User)
 	out.State, out.Merged, out.Draft = pr.State, pr.Merged, pr.Draft
 	// A fork PR's head lives in another repository than its base; a deleted
 	// fork leaves head.repo null, which is not the base repository either.
@@ -585,6 +622,4 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	return out
 }
 
-// isBot is the login-suffix half of webhook.IsBot: Forgejo's user model
-// has no type.
-func isBot(login string) bool { return webhook.IsBot("", login) }
+func isBot(u user) bool { return webhook.IsBot(u.Type, u.Login) }

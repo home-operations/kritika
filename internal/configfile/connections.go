@@ -53,6 +53,8 @@ func (i *Connection) WebhookSecretValue() Secret {
 		return i.Forgejo.webhookSecret
 	case ForgeGitLab:
 		return i.GitLab.webhookSecret
+	case ForgeGitea:
+		return i.Gitea.webhookSecret
 	}
 	return i.App.webhookSecret
 }
@@ -78,6 +80,63 @@ func (b GitLabBot) TokenValue() Secret { return b.token }
 // RunnerTokenValue returns the resolved runners' token, empty for none.
 func (b GitLabBot) RunnerTokenValue() Secret { return b.runnerToken }
 
+// GiteaBot is the bot user a Gitea connection calls the instance as: the
+// instance's host, an access token of the user with the read:user,
+// write:repository and write:issue scopes, and RunnerToken, a second
+// token of the user with read:repository alone that runners fetch with,
+// so the pod that reads untrusted content never holds a token that can
+// write; without one they fetch with the first. Gitea 28 or later is
+// assumed.
+type GiteaBot struct {
+	Host          string    `yaml:"host"`
+	Token         SecretRef `yaml:"token"`
+	RunnerToken   SecretRef `yaml:"runnerToken,omitempty"`
+	WebhookSecret SecretRef `yaml:"webhookSecret"`
+
+	token, runnerToken, webhookSecret Secret
+}
+
+// TokenValue returns the resolved API token.
+func (b GiteaBot) TokenValue() Secret { return b.token }
+
+// RunnerTokenValue returns the resolved runners' token, empty for none.
+func (b GiteaBot) RunnerTokenValue() Secret { return b.runnerToken }
+
+// readTokens reads the secrets a GitLab or Gitea bot holds: its token,
+// its runners' token when one is given, and its webhook secret.
+func readTokens(where string, s *secrets, token, runnerToken, webhookSecret SecretRef) (Secret, Secret, Secret, error) {
+	var tok, runner, hook Secret
+	var err error
+	if tok, err = s.read(token); err != nil {
+		return tok, runner, hook, fmt.Errorf("configfile: %s.token: %w", where, err)
+	}
+	if !runnerToken.empty() {
+		if runner, err = s.read(runnerToken); err != nil {
+			return tok, runner, hook, fmt.Errorf("configfile: %s.runnerToken: %w", where, err)
+		}
+	}
+	if hook, err = s.read(webhookSecret); err != nil {
+		return tok, runner, hook, fmt.Errorf("configfile: %s.webhookSecret: %w", where, err)
+	}
+	return tok, runner, hook, nil
+}
+
+func (b *GiteaBot) validate(where string) error {
+	if b.Host == "" {
+		return fmt.Errorf("configfile: %s.host is required", where)
+	}
+	if err := checkHost(b.Host); err != nil || strings.HasPrefix(b.Host, "*") {
+		return fmt.Errorf("configfile: %s.host: %q must be a lowercase hostname, without a scheme, port or path", where, b.Host)
+	}
+	if b.token.Value() == "" {
+		return fmt.Errorf("configfile: %s.token is required", where)
+	}
+	if b.webhookSecret.Value() == "" {
+		return fmt.Errorf("configfile: %s.webhookSecret is required", where)
+	}
+	return nil
+}
+
 // where names the connection's entry in errors.
 func (i *Connection) where() string {
 	switch i.Forge {
@@ -85,19 +144,24 @@ func (i *Connection) where() string {
 		return "forgejo." + i.Name
 	case ForgeGitLab:
 		return "gitlab." + i.Name
+	case ForgeGitea:
+		return "gitea." + i.Name
 	}
 	return "apps." + i.Name
 }
 
 // ForgeHosts are the hosts the connection's forge is reached at, which
 // every runner of its accounts may reach: GitHub and its API, or the
-// Forgejo or GitLab instance, whose API and clone URLs share its host.
+// Forgejo, GitLab or Gitea instance, whose API and clone URLs share its
+// host.
 func (i *Connection) ForgeHosts() []string {
 	switch i.Forge {
 	case ForgeForgejo:
 		return []string{i.Forgejo.Host}
 	case ForgeGitLab:
 		return []string{i.GitLab.Host}
+	case ForgeGitea:
+		return []string{i.Gitea.Host}
 	}
 	return []string{GitHubHost, GitHubAPIHost}
 }
@@ -116,11 +180,21 @@ type gitlabDoc struct {
 	GitLabBot `yaml:",inline"`
 }
 
-// connectionsOf lists the file's apps, forgejo and gitlab entries in the
-// order of their names, each carrying its key as its name. A name in two
-// maps is an error: the name is the hook path, so it names one connection.
-func connectionsOf(apps map[string]Connection, bots map[string]forgejoDoc, gitlabs map[string]gitlabDoc) ([]Connection, error) {
-	byName := make(map[string]Connection, len(apps)+len(bots)+len(gitlabs))
+// giteaDoc is an entry of the file's gitea map: the accounts served and
+// the bot user that serves them.
+type giteaDoc struct {
+	Accounts []string `yaml:"accounts"`
+	GiteaBot `yaml:",inline"`
+}
+
+// connectionsOf lists the file's apps, forgejo, gitlab and gitea entries
+// in the order of their names, each carrying its key as its name. A name
+// in two maps is an error: the name is the hook path, so it names one
+// connection.
+func connectionsOf(
+	apps map[string]Connection, bots map[string]forgejoDoc, gitlabs map[string]gitlabDoc, giteas map[string]giteaDoc,
+) ([]Connection, error) {
+	byName := make(map[string]Connection, len(apps)+len(bots)+len(gitlabs)+len(giteas))
 	for name, in := range apps {
 		in.Name, in.Forge = name, ForgeGitHub
 		byName[name] = in
@@ -136,6 +210,12 @@ func connectionsOf(apps map[string]Connection, bots map[string]forgejoDoc, gitla
 			return nil, fmt.Errorf("configfile: gitlab.%s: %s has the name already; a name is one connection's", name, other.where())
 		}
 		byName[name] = Connection{Name: name, Forge: ForgeGitLab, Accounts: doc.Accounts, GitLab: doc.GitLabBot}
+	}
+	for name, doc := range giteas {
+		if other, dup := byName[name]; dup {
+			return nil, fmt.Errorf("configfile: gitea.%s: %s has the name already; a name is one connection's", name, other.where())
+		}
+		byName[name] = Connection{Name: name, Forge: ForgeGitea, Accounts: doc.Accounts, Gitea: doc.GiteaBot}
 	}
 	conns := make([]Connection, 0, len(byName))
 	for _, name := range slices.Sorted(maps.Keys(byName)) {

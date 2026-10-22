@@ -118,6 +118,10 @@
         "gatewayUrl": {
           "type": "string"
         },
+        "gitea": {
+          "required": [],
+          "type": "object"
+        },
         "gitlab": {
           "required": [],
           "type": "object"

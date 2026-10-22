@@ -295,8 +295,16 @@ func (c *Client) ListInline(ctx context.Context, owner, repo string, number int)
 // ReplyInline implements forge.Client. Forgejo has no reply relation: a
 // reply is a code comment on the thread's line posted into the review of
 // the comment replied to, which Forgejo shows in that conversation, as
-// its own reply form does.
+// its own reply form does. Gitea has a route that posts the same comment.
 func (c *Client) ReplyInline(ctx context.Context, owner, repo string, number int, to forge.Comment, body string) (int64, error) {
+	if c.gitea {
+		var posted pullReviewComment
+		path := fmt.Sprintf("%s/pulls/%d/comments/%d/replies", repoPath(owner, repo), number, to.ID)
+		if err := c.do(ctx, http.MethodPost, path, commentBody{Body: body}, &posted); err != nil {
+			return 0, fmt.Errorf("forgejo: reply to code comment %d on #%d: %w", to.ID, number, err)
+		}
+		return posted.ID, nil
+	}
 	raw, err := c.rawInline(ctx, owner, repo, number)
 	if err != nil {
 		return 0, err
@@ -331,8 +339,36 @@ func (c *Client) ThreadResolved(ctx context.Context, owner, repo string, number 
 	return state, found, nil
 }
 
-// ResolveThread implements forge.Client: Forgejo's API has no call that
-// resolves a conversation, so none is resolved.
-func (c *Client) ResolveThread(context.Context, string, string, int, int64, bool) (bool, error) {
-	return false, forge.ErrUnsupported
+// ResolveThread implements forge.Client. Forgejo's API has no call that
+// resolves a conversation, so none is resolved there. Gitea resolves one
+// by its root, the comment its timeline shows the conversation's state
+// on; its diff view shows the oldest comment on the line instead, which
+// is another review's when an earlier one commented there.
+func (c *Client) ResolveThread(ctx context.Context, owner, repo string, number int, id int64, onlyOwn bool) (bool, error) {
+	if !c.gitea {
+		return false, forge.ErrUnsupported
+	}
+	comments, resolved, err := c.inlineComments(ctx, owner, repo, number)
+	if err != nil {
+		return false, err
+	}
+	i := slices.IndexFunc(comments, func(cm forge.Comment) bool { return cm.ID == id })
+	if i < 0 || comments[i].InReplyTo != 0 || resolved[id] {
+		return false, nil
+	}
+	if onlyOwn {
+		login, err := c.BotLogin(ctx)
+		if err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(comments, func(cm forge.Comment) bool {
+			return (cm.ID == id || cm.InReplyTo == id) && cm.Author != login
+		}) {
+			return false, nil
+		}
+	}
+	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/comments/%d/resolve", repoPath(owner, repo), id), nil, nil); err != nil {
+		return false, fmt.Errorf("forgejo: resolve the conversation of code comment %d on #%d: %w", id, number, err)
+	}
+	return true, nil
 }

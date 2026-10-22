@@ -206,6 +206,8 @@ func Parse(forge configfile.Forge, header http.Header, body []byte) (Event, erro
 		return parseGitHub(header.Get("X-GitHub-Event"), header.Get("X-GitHub-Delivery"), body)
 	case configfile.ForgeForgejo:
 		return parseForgejo(header.Get("X-Forgejo-Event"), header.Get("X-Forgejo-Delivery"), body)
+	case configfile.ForgeGitea:
+		return parseForgejo(header.Get("X-Gitea-Event"), header.Get("X-Gitea-Delivery"), body)
 	case configfile.ForgeGitLab:
 		return parseGitLab(header.Get("X-Gitlab-Event"), header.Get("webhook-id"), body)
 	}
@@ -315,15 +317,16 @@ func (p ghPR) event() *PullRequest {
 	return pr
 }
 
-// forgejoActions are the pull request actions Forgejo names differently
-// from GitHub, by GitHub's name, which the rest of kritika acts on.
+// forgejoActions are the pull request actions Forgejo and Gitea name
+// differently from GitHub, by GitHub's name, which the rest of kritika
+// acts on.
 var forgejoActions = map[string]string{"synchronized": "synchronize", "label_updated": "labeled", "label_cleared": "unlabeled"}
 
-// parseForgejo takes the events Forgejo shares with GitHub's shapes. A
-// review event, pull_request_comment, approved or rejected, carries the
-// review's body alone and nothing of its code comments, so it is ignored:
-// a reply in a code conversation arrives as an issue_comment. Forgejo
-// sends no event for a review thread being resolved.
+// parseForgejo takes the events Forgejo and Gitea share with GitHub's
+// shapes. A review event, pull_request_comment, approved or rejected,
+// carries the review's body alone and nothing of its code comments, so it
+// is ignored: a reply in a code conversation arrives as an issue_comment.
+// Neither forge sends an event for a review thread being resolved.
 func parseForgejo(event, delivery string, body []byte) (Event, error) {
 	var ev Event
 	var err error
@@ -538,12 +541,16 @@ func parseRepository(delivery string, body []byte) (Event, error) {
 		Action     string `json:"action"`
 		Repository ghRepo `json:"repository"`
 		// A rename's changes name the old name, a transfer's the old owner.
+		// Gitea names the old name at the top of its changes.
 		Changes struct {
 			Repository struct {
 				Name struct {
 					From string `json:"from"`
 				} `json:"name"`
 			} `json:"repository"`
+			Name struct {
+				From string `json:"from"`
+			} `json:"name"`
 			Owner struct {
 				From struct {
 					User         ghUser `json:"user"`
@@ -564,7 +571,8 @@ func parseRepository(delivery string, body []byte) (Event, error) {
 	}
 	if owner, name, ok := strings.Cut(p.Repository.FullName, "/"); ok {
 		from := p.Changes.Owner.From
-		previous := cmp.Or(from.Organization.Login, from.User.Login, owner) + "/" + cmp.Or(p.Changes.Repository.Name.From, name)
+		oldName := cmp.Or(p.Changes.Repository.Name.From, p.Changes.Name.From, name)
+		previous := cmp.Or(from.Organization.Login, from.User.Login, owner) + "/" + oldName
 		if previous != p.Repository.FullName {
 			ev.Previous = previous
 		}

@@ -75,6 +75,7 @@ strategy:
 #   apps: { type: object }
 #   forgejo: { type: object }
 #   gitlab: { type: object }
+#   gitea: { type: object }
 #   providers: { type: object }
 #   embedding: { type: object }
 #   egress: { type: object }
@@ -118,6 +119,12 @@ config: {}
 #     accounts: [group-1]
 #     token: { env: GITLAB_TOKEN }
 #     webhookSecret: { env: GITLAB_WEBHOOK_SIGNING_TOKEN }
+# gitea:
+#   home:
+#     host: gitea.example.com
+#     accounts: [org-1]
+#     token: { env: GITEA_TOKEN }
+#     webhookSecret: { env: GITEA_WEBHOOK_SECRET }
 # providers:
 #   openrouter: { type: openrouter, apiKey: { env: OPENROUTER_API_KEY } }
 # review:
