@@ -1,5 +1,5 @@
 // Package auth signs humans in to the dashboard, as the local admin or
-// through the file's OIDC, GitHub, Forgejo and Gitea sign-ins, decides what each may do
+// through the file's OIDC, GitHub, Forgejo, Gitea and GitLab sign-ins, decides what each may do
 // from the sign-in's role mapping and the forge, keeps their sessions, and
 // guards the dashboard's routes.
 package auth
@@ -162,6 +162,8 @@ func buildProvider(
 		return newGitHubProvider(s, redirect, client), nil
 	case configfile.SignInForgejo, configfile.SignInGitea:
 		return newForgejoProvider(s, redirect, client), nil
+	case configfile.SignInGitLab:
+		return newGitLabProvider(s, redirect, client), nil
 	default:
 		return nil, fmt.Errorf("auth: unsupported sign-in type %q", s.Type())
 	}

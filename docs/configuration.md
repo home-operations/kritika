@@ -102,6 +102,7 @@ existing Kubernetes Secrets.
 | `forgejo.clientSecret` | Environment reference for the client secret. |
 | `forgejo.roleMappingExpr` | Expression mapping Forgejo identity to a dashboard role. |
 | `gitea.*` | As `forgejo.*`, for a Gitea instance. |
+| `gitlab.*` | As `forgejo.*`, for a GitLab instance. |
 
 ```yaml
 auth:
@@ -139,12 +140,14 @@ auth:
 - `forgejo` signs in through an OAuth2 application of the Forgejo instance
   at `host`, as [Git forges](forges.md#sign-in-with-forgejo) describes, and
   `gitea` through one of the Gitea instance at its `host`, as
-  [Git forges](forges.md#sign-in-with-gitea) does.
+  [Git forges](forges.md#sign-in-with-gitea) does, and `gitlab` through an
+  OAuth application of the GitLab instance at its `host`, as
+  [Git forges](forges.md#sign-in-with-gitlab) does.
 - `sessionTTL` is how long a dashboard session lasts, between 5 minutes and
   30 days. It defaults to 12 hours.
 
 A provider must allow the callback URL `<KRITIKA_WEB_URL>/auth/callback/<type>`:
-`oidc`, `github`, `forgejo` or `gitea`. The dashboard refuses to start
+`oidc`, `github`, `forgejo`, `gitea` or `gitlab`. The dashboard refuses to start
 with no way to sign in. The configuration is refused when nothing could
 make an admin: set an admin password, or a `roleMappingExpr` on a
 provider.
@@ -164,8 +167,8 @@ makes.
 
 A session holds the role its sign-in gave it. Editing a provider's role
 mapping, or rotating the admin password, ends the sessions it granted, so
-the next request signs in again under the new rules. A Forgejo or Gitea
-sign-in's sessions also end when the accounts its instance's connections serve
+the next request signs in again under the new rules. A Forgejo, Gitea or
+GitLab sign-in's sessions also end when the accounts its instance's connections serve
 change, such as an account moving to another instance.
 
 #### Role mappings
@@ -186,18 +189,19 @@ yields a role on one branch and a map on the other wraps one in `dyn()`.
 | OIDC     | `claims`, the ID token's claims merged with the UserInfo response; `roles`, the values of the claim `rolesClaim` names, read from a list, a map's keys, or a single string |
 | GitHub   | `login`; `email`; `orgs`, the organizations the user is an active member of; `teams`, each as `"<org>/<team>"`                                                             |
 | Forgejo, Gitea | as GitHub's, a team named by its name; `email` is empty unless the instance verified the address                                                                   |
+| GitLab   | `login`; `email`, empty unless the instance verified the address; `groups`, the full paths of the groups the user is a member of, directly or through an ancestor group |
 
 When the mapping places nobody:
 
 - An OIDC sign-in is refused, unless `defaultRole: member` lets it read
   every account. `defaultRole` defaults to `none`, so a wrong mapping fails
   closed.
-- A GitHub, Forgejo or Gitea sign-in reads the accounts serving the user's
-  own account, or an organization they are an active member of, and is
-  refused when there are none. Accounts a mapping names are added to those.
-  A Forgejo or Gitea sign-in reads only the accounts a connection serves on
-  its own instance: an account of the same name on another instance is not
-  the user's.
+- A GitHub, Forgejo, Gitea or GitLab sign-in reads the accounts serving the
+  user's own account, or an organization they are an active member of, a
+  top-level group on GitLab, and is refused when there are none. Accounts a
+  mapping names are added to those. A sign-in on a Forgejo, Gitea or GitLab
+  instance reads only the accounts a connection serves on that instance:
+  an account of the same name on another instance is not the user's.
 
 A mapping that fails to evaluate refuses the sign-in.
 

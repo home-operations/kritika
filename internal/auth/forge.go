@@ -43,14 +43,14 @@ type forgeProvider struct {
 }
 
 func newForgeProvider(
-	s *configfile.SignIn, web, apiBase, redirect string, scopes []string, client *http.Client, api forgeAPI,
+	s *configfile.SignIn, endpoint oauth2.Endpoint, apiBase, redirect string, scopes []string, client *http.Client, api forgeAPI,
 ) *forgeProvider {
 	return &forgeProvider{
 		signIn: s,
 		conf: &oauth2.Config{
 			ClientID:     s.ClientIDValue(),
 			ClientSecret: s.ClientSecretValue().Value(),
-			Endpoint:     oauth2.Endpoint{AuthURL: web + "/login/oauth/authorize", TokenURL: web + "/login/oauth/access_token"},
+			Endpoint:     endpoint,
 			RedirectURL:  redirect,
 			Scopes:       scopes,
 		},
@@ -94,6 +94,18 @@ func (p *forgeProvider) Exchange(ctx context.Context, code, pkceVerifier, _ stri
 		},
 	}
 	return id, facts, nil
+}
+
+// identityVars are the role mapping variables every forge sign-in has: the
+// login, and email as the sign-in lets a mapping see it.
+func identityVars(id Identity, email string) map[string]any {
+	return map[string]any{"login": id.Login, "email": email}
+}
+
+// loginOAuth is the OAuth endpoint pair GitHub, Forgejo and Gitea share
+// under their web URL.
+func loginOAuth(web string) oauth2.Endpoint {
+	return oauth2.Endpoint{AuthURL: web + "/login/oauth/authorize", TokenURL: web + "/login/oauth/access_token"}
 }
 
 // apiClient calls a forge's REST API as the signed-in user.

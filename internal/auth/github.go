@@ -18,7 +18,7 @@ var githubScopes = []string{"read:user", "user:email", "read:org"}
 // newGitHubProvider signs in through a GitHub OAuth app, or a GitHub App's
 // own client, on github.com.
 func newGitHubProvider(s *configfile.SignIn, redirect string, client *http.Client) *forgeProvider {
-	p := newForgeProvider(s, "https://github.com", "https://api.github.com", redirect, githubScopes, client, githubAPI{})
+	p := newForgeProvider(s, loginOAuth("https://github.com"), "https://api.github.com", redirect, githubScopes, client, githubAPI{})
 	p.headers = map[string]string{"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 	return p
 }
@@ -116,7 +116,9 @@ func (githubAPI) mappingVars(ctx context.Context, c apiClient, id Identity) (map
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"login": id.Login, "email": id.Email, "orgs": orgs, "teams": teams}, nil
+	vars := identityVars(id, id.Email)
+	vars["orgs"], vars["teams"] = orgs, teams
+	return vars, nil
 }
 
 // githubPages calls fn with each page of the list at path, which must end

@@ -213,3 +213,24 @@ func TestAuthGitea(t *testing.T) {
 		t.Fatalf("a Gitea sign-in without a host = %v", err)
 	}
 }
+
+func TestAuthGitLab(t *testing.T) {
+	authEnv(t)
+	gitlab := strings.NewReplacer("forgejo", "gitlab", "forge.example.com", "gitlab.example.com", `in orgs`, `in groups`).Replace(forgejoSignIn)
+	f, err := loadBytes(t, []byte(authMinimal+gitlab+minimal))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	gl, ok := f.Auth.SignInByType(SignInGitLab)
+	if !ok || gl.Label() != "GitLab" || gl.Host != "gitlab.example.com" || gl.Mapping() == nil {
+		t.Fatalf("gitlab = %+v, %v", gl, ok)
+	}
+	for name, doc := range map[string]string{
+		"a GitHub variable": strings.Replace(gitlab, "in groups", "in orgs", 1),
+		"no host":           strings.Replace(gitlab, "    host: gitlab.example.com\n", "", 1),
+	} {
+		if _, err := loadBytes(t, []byte(authMinimal+doc+minimal)); err == nil || !strings.Contains(err.Error(), "auth.gitlab.") {
+			t.Fatalf("%s = %v, want auth.gitlab refused", name, err)
+		}
+	}
+}
