@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.98](https://github.com/home-operations/kritika/compare/0.0.97...0.0.98) (2026-10-22)
+
+
+### Build System
+
+* **web:** switch the dashboard to pnpm and Node 26 ([#1192](https://github.com/home-operations/kritika/issues/1192)) ([2649e14](https://github.com/home-operations/kritika/commit/2649e14c561504b79bbdfa261e0f470439b26c8d))
+
 ## [0.0.97](https://github.com/home-operations/kritika/compare/0.0.96...0.0.97) (2026-10-22)
 
 
