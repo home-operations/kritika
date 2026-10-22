@@ -143,7 +143,7 @@ func (h *Handler) localSignIn(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, errorBody{Code: codeInvalidCredentials})
 		return
 	}
-	key, _ := GrantKey(file.Auth, string(configfile.SignInLocal))
+	key, _ := GrantKey(file, string(configfile.SignInLocal))
 	id := Identity{Provider: string(configfile.SignInLocal), Origin: localOrigin, Subject: user, Login: user, DisplayName: user}
 	token, expires, err := h.replaceSession(r, id, store.SessionGrant{Role: RoleAdmin, Key: key}, file.Auth.SessionTTLOrDefault())
 	if err != nil {

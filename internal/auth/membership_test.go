@@ -136,7 +136,7 @@ func TestGrant(t *testing.T) {
 			if g.Role != tt.role || g.AllAccounts != tt.all || !slices.Equal(g.Accounts, tt.accounts) {
 				t.Fatalf("grant = %+v, want role %s, all %v, accounts %v", g, tt.role, tt.all, tt.accounts)
 			}
-			if want, _ := GrantKey(file.Auth, string(tt.typ)); g.Key == "" || g.Key != want {
+			if want, _ := GrantKey(file, string(tt.typ)); g.Key == "" || g.Key != want {
 				t.Fatalf("key = %q, want %q", g.Key, want)
 			}
 			if (len(o.calls) > 0) != tt.asked {
@@ -190,7 +190,7 @@ func TestGrantKey(t *testing.T) {
 		"    roleMappingExpr: 'login == \"a\" ? \"admin\" : \"\"'\n"
 	key := func(auth, provider string) string {
 		t.Helper()
-		k, ok := GrantKey(testFile(t, auth).Auth, provider)
+		k, ok := GrantKey(testFile(t, auth), provider)
 		if !ok {
 			t.Fatalf("GrantKey(%s) not configured", provider)
 		}
@@ -211,10 +211,10 @@ func TestGrantKey(t *testing.T) {
 	}
 	t.Setenv("TEST_AUTH_SECRET", "rotated")
 	f := configfiletest.Load(t, base+connectionsYAML)
-	if k, _ := GrantKey(f.Auth, "local"); k == local {
+	if k, _ := GrantKey(f, "local"); k == local {
 		t.Fatal("rotating the password kept the key")
 	}
-	if _, ok := GrantKey(f.Auth, "oidc"); ok {
+	if _, ok := GrantKey(f, "oidc"); ok {
 		t.Fatal("an unconfigured sign-in has a key")
 	}
 }

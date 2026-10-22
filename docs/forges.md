@@ -111,6 +111,27 @@ The dashboard's Connections section shows whether a verified webhook has
 arrived. Polling keeps pull requests current without one, but mentions
 need webhooks.
 
+### Sign in with Forgejo
+
+People can sign in to the dashboard with their Forgejo account, through an
+OAuth2 application of the instance. Under **Settings → Applications →
+Manage OAuth2 applications**, of a user or of the site, create one with the
+redirect URI `<webUrl>/auth/callback/forgejo`, as a confidential client,
+and declare it under `auth`:
+
+```yaml
+auth:
+  forgejo:
+    host: codeberg.org
+    clientId: 0a1b2c3d-…
+    clientSecret: { env: FORGEJO_CLIENT_SECRET }
+```
+
+kritika asks for the `read:user` and `read:organization` scopes alone. A
+person reads the accounts the instance's connections serve that are their
+own or an organization they are a member of, and a [role mapping](configuration.md#role-mappings)
+can grant more.
+
 ## GitLab
 
 A service account on a GitLab instance, version 19 or later, declared
@@ -273,6 +294,7 @@ differences are in what the forge's API lets kritika do around them.
 | A review of a head the pull request moved on from |     ✓     |        ✗        |                   ✓                   |        ✗        | Forgejo and Gitea report a pull request's merge base and diff as they stand, so a review queued before a push fails and the push's review takes over. GitLab keeps the diff of every push.                                                                                                                                                                                                                                                          |
 | Webhook per account                               | the App's | one per account | one per group, or per project on Free | one per account | Added by hand.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Short-lived, read-only token for runs             |     ✓     |        ✓        |                   ✗                   |        ✗        | Forgejo: with a second, read-only integration as `runnerAudience`; a run's token lasts an hour. GitLab and Gitea: `runnerToken` is read-only, but a personal access token lasts until it expires or is deleted.                                                                                                                                                                                                                                     |
+| Dashboard sign-in                                 |     ✓     |        ✓        |                   ✗                   |        ✗        | Through `auth.github` and `auth.forgejo`; a Forgejo sign-in places people on its own instance's accounts alone. On GitLab and Gitea, an `oidc` sign-in through the instance places people by its role mapping alone.                                                                                                                                                                                                                                |
 
 A bot account on Forgejo is not marked as a bot, so a pull request opened
 by one, such as a Renovate user, is treated as a person's unless its

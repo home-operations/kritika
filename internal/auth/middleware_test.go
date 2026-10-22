@@ -169,8 +169,8 @@ func TestHonoured(t *testing.T) {
 		"    clientSecret: { env: TEST_AUTH_SECRET }\n    roleMappingExpr: '\"a\" in roles ? \"admin\" : \"\"'\n"
 	file := testFile(t, auth)
 	s, _ := file.Auth.SignInByType(configfile.SignInOIDC)
-	oidcKey, _ := GrantKey(file.Auth, "oidc")
-	localKey, _ := GrantKey(file.Auth, "local")
+	oidcKey, _ := GrantKey(file, "oidc")
+	localKey, _ := GrantKey(file, "local")
 	sess := func(provider, origin, key string) store.Session {
 		return store.Session{Identity: store.SignInIdentity{Provider: provider, Origin: origin}, Grant: store.SessionGrant{Key: key}}
 	}
@@ -186,7 +186,7 @@ func TestHonoured(t *testing.T) {
 		{"a sign-in since removed", sess("github", "github:https://github.com", oidcKey), false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := honoured(file.Auth, tt.sess); got != tt.want {
+			if got := honoured(file, tt.sess); got != tt.want {
 				t.Fatalf("honoured = %v, want %v", got, tt.want)
 			}
 		})

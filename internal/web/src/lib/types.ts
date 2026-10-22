@@ -31,7 +31,7 @@ export interface UserSettings {
 }
 
 // local is the admin's username and password form, posted to /auth/local.
-export type SignInProviderType = 'local' | 'oidc' | 'github';
+export type SignInProviderType = 'local' | 'oidc' | 'github' | 'forgejo';
 
 export interface SignInProvider {
   name: string;
