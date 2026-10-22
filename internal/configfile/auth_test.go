@@ -193,3 +193,23 @@ func TestAuthForgejoRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthGitea(t *testing.T) {
+	authEnv(t)
+	gitea := strings.ReplaceAll(forgejoSignIn, "forgejo", "gitea")
+	f, err := loadBytes(t, []byte(authMinimal+forgejoSignIn+gitea+minimal))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	gt, ok := f.Auth.SignInByType(SignInGitea)
+	if !ok || gt.Label() != "Gitea" || gt.Host != "forge.example.com" || gt.Mapping() == nil {
+		t.Fatalf("gitea = %+v, %v", gt, ok)
+	}
+	if got := f.Auth.SignIns(); len(got) != 4 || got[3] != gt {
+		t.Fatalf("SignIns = %v", got)
+	}
+	if _, err := loadBytes(t, []byte(authMinimal+strings.Replace(gitea, "    host: forge.example.com\n", "", 1)+minimal)); err == nil ||
+		!strings.Contains(err.Error(), "auth.gitea.host is required") {
+		t.Fatalf("a Gitea sign-in without a host = %v", err)
+	}
+}
