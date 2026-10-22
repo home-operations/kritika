@@ -229,8 +229,9 @@ func connection(in *configfile.Connection) Connection {
 	}
 	if in.Forge == configfile.ForgeForgejo {
 		c.Host = in.Forgejo.Host
-		c.Credentials.Token = in.Forgejo.TokenValue().Value() != ""
-		c.Credentials.GitToken = in.Forgejo.GitToken.Env != ""
+		c.Credentials.PrivateKey = in.Forgejo.PrivateKeyValue().Value() != ""
+		c.Credentials.Audience = in.Forgejo.AudienceValue() != ""
+		c.Credentials.RunnerAudience = in.Forgejo.RunnerAudienceValue() != ""
 		return c
 	}
 	c.Credentials.ClientID, c.Credentials.PrivateKey = in.App.ClientIDValue() != "", in.App.PrivateKeyValue().Value() != ""

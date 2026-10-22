@@ -125,7 +125,11 @@ func (s *Server) reach(r *http.Request) (*configfile.Connection, []reachedAccoun
 			out = append(out, ra)
 		}
 	case configfile.ForgeForgejo:
-		c, err := forgejo.NewClient(in.Forgejo.Host, in.Forgejo.TokenValue().Value(), "", nil)
+		issuer, err := forgejo.NewIssuer(forgejo.IssuerURL(s.webURL), in.Forgejo.PrivateKeyValue().Value())
+		if err != nil {
+			return nil, nil, errForge(err)
+		}
+		c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), "", nil)
 		if err != nil {
 			return nil, nil, errForge(err)
 		}

@@ -27,6 +27,9 @@ type Forges struct {
 	// Metrics may be nil. Rate limits the forge answers with are logged
 	// and counted on it.
 	Metrics *metrics.Metrics
+	// Issuer is the URL kritika's Forgejo tokens name as their issuer,
+	// forgejo.IssuerURL of the dashboard's.
+	Issuer string
 
 	mu   sync.Mutex
 	apps map[string]*github.App
@@ -60,7 +63,7 @@ func (a *Forges) app(in *configfile.Connection) (*github.App, error) {
 	return app, nil
 }
 
-// bot is connection in's Forgejo client. The bot's token is the
+// bot is connection in's Forgejo client. The integration is the
 // connection's, so one client serves every account it lists.
 func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
 	a.mu.Lock()
@@ -68,7 +71,11 @@ func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
 	if c, ok := a.bots[in.Name]; ok {
 		return c, nil
 	}
-	c, err := forgejo.NewClient(in.Forgejo.Host, in.Forgejo.TokenValue().Value(), in.Forgejo.GitTokenValue().Value(), nil)
+	issuer, err := forgejo.NewIssuer(a.Issuer, in.Forgejo.PrivateKeyValue().Value())
+	if err != nil {
+		return nil, err
+	}
+	c, err := forgejo.NewClient(in.Forgejo.Host, issuer, in.Forgejo.AudienceValue(), in.Forgejo.RunnerAudienceValue(), nil)
 	if err != nil {
 		return nil, err
 	}

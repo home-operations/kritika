@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -35,16 +36,17 @@ apps:
 	return in
 }
 
-// forgejoConnection is a Forgejo connection of name, its tokens read from
-// TEST_FORGEJO_TOKEN and TEST_WEBHOOK_SECRET.
-func forgejoConnection(t *testing.T, name string) *configfile.Connection {
+// forgejoConnection is a Forgejo connection of name with fields, its key
+// and webhook secret read from TEST_PRIVATE_KEY and TEST_WEBHOOK_SECRET.
+func forgejoConnection(t *testing.T, name, fields string) *configfile.Connection {
 	t.Helper()
 	file, err := configfile.Parse([]byte(`
 forgejo:
   ` + name + `:
     host: forge.example.com
     accounts: [acme]
-    token: { env: TEST_FORGEJO_TOKEN }
+    ` + fields + `
+    privateKey: { env: TEST_PRIVATE_KEY }
     webhookSecret: { env: TEST_WEBHOOK_SECRET }
 `))
 	if err != nil {
@@ -55,12 +57,20 @@ forgejo:
 }
 
 // TestForgesBuildForgejoOnce: a Forgejo connection's clients share one
-// bot client, whichever owner they are built for.
+// integration client, whichever owner they are built for, and none is
+// built before the integration's audience is known.
 func TestForgesBuildForgejoOnce(t *testing.T) {
-	t.Setenv("TEST_FORGEJO_TOKEN", "fj")
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_PRIVATE_KEY", string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})))
 	t.Setenv("TEST_WEBHOOK_SECRET", "s")
-	in := forgejoConnection(t, "acme-forge")
-	forges := &Forges{}
+	forges := &Forges{Issuer: "https://kritika.example.com/forgejo"}
+	if _, err := forges.Build(t.Context(), forgejoConnection(t, "acme-forge", ""), "acme/widgets"); err == nil || !strings.Contains(err.Error(), "audience") {
+		t.Fatalf("Build without an audience = %v; want it refused until the integration exists", err)
+	}
+	in := forgejoConnection(t, "acme-forge", "audience: aud-1")
 	first, err := forges.Build(t.Context(), in, "acme/widgets")
 	if err != nil {
 		t.Fatal(err)
@@ -72,8 +82,8 @@ func TestForgesBuildForgejoOnce(t *testing.T) {
 	if first != again || first.CloneURL("acme", "widgets") != "https://forge.example.com/acme/widgets.git" {
 		t.Fatalf("clients = %p %p, clone URL %s", first, again, first.CloneURL("acme", "widgets"))
 	}
-	if tok, _ := first.GitToken(t.Context(), "widgets"); tok != "fj" {
-		t.Fatalf("GitToken = %q, want the bot's token when no read-only one is set", tok)
+	if tok, err := first.GitToken(t.Context(), "widgets"); err != nil || strings.Count(tok, ".") != 2 {
+		t.Fatalf("GitToken = %q, %v; want a signed token", tok, err)
 	}
 }
 

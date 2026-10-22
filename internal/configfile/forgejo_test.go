@@ -12,28 +12,29 @@ func forgejoMinimal(fields string) string {
 	return `
 forgejo:
   acme-forge: { host: forge.example.com, accounts: [acme], ` + fields +
-		`token: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
+		`privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }
 `
 }
 
 func forgejoEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("TEST_FORGEJO_TOKEN", "fj-token")
-	t.Setenv("TEST_FORGEJO_READ_TOKEN", "fj-read")
+	t.Setenv("TEST_PRIVATE_KEY", "pem")
+	t.Setenv("TEST_AUDIENCE", "aud-from-env")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_EMPTY", "")
 }
 
 func TestParseForgejoConnection(t *testing.T) {
 	forgejoEnv(t)
-	f := mustLoad(t, forgejoMinimal("gitToken: { env: TEST_FORGEJO_READ_TOKEN }, ")+"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\nrepositories:\n  acme/*: { trigger: { limit: 2 } }\n")
+	f := mustLoad(t, forgejoMinimal("audience: aud-1, runnerAudience: { env: TEST_AUDIENCE }, ")+
+		"accounts:\n  acme: { limits: { reviewsPerDay: 3 } }\nrepositories:\n  acme/*: { trigger: { limit: 2 } }\n")
 	in, ok := f.Connection("acme-forge")
 	if !ok || in.Forge != ForgeForgejo || in.Forgejo.Host != "forge.example.com" || !slices.Equal(in.Accounts, []string{"acme"}) {
 		t.Fatalf("connection = %+v", in)
 	}
-	if in.Forgejo.TokenValue().Value() != "fj-token" || in.Forgejo.GitTokenValue().Value() != "fj-read" || in.WebhookSecretValue().Value() != "whsec" {
-		t.Fatalf("secrets = %q %q %q", in.Forgejo.TokenValue(), in.Forgejo.GitTokenValue(), in.WebhookSecretValue())
+	if in.Forgejo.AudienceValue() != "aud-1" || in.Forgejo.RunnerAudienceValue() != "aud-from-env" ||
+		in.Forgejo.PrivateKeyValue().Value() != "pem" || in.WebhookSecretValue().Value() != "whsec" {
+		t.Fatalf("credentials = %q %q %q %q", in.Forgejo.AudienceValue(), in.Forgejo.RunnerAudienceValue(), in.Forgejo.PrivateKeyValue(), in.WebhookSecretValue())
 	}
 	if got := in.ForgeHosts(); !slices.Equal(got, []string{"forge.example.com"}) {
 		t.Fatalf("ForgeHosts = %q", got)
@@ -52,17 +53,46 @@ func TestParseForgejoConnection(t *testing.T) {
 	if !rules.Allows("forge.example.com") || rules.Allows("github.com") {
 		t.Fatalf("a Forgejo connection allows its host alone; allow = %v", rules.Allow.Hosts)
 	}
-	if got := f.SecretEnv(); !slices.Equal(got, []string{"TEST_FORGEJO_READ_TOKEN", "TEST_FORGEJO_TOKEN", "TEST_WEBHOOK_SECRET"}) {
+	if got := f.SecretEnv(); !slices.Equal(got, []string{"TEST_AUDIENCE", "TEST_PRIVATE_KEY", "TEST_WEBHOOK_SECRET"}) {
 		t.Fatalf("SecretEnv = %q", got)
 	}
 }
 
-func TestParseForgejoGitTokenDefaultsToToken(t *testing.T) {
+// TestParseForgejoPreviousKey: a key being rotated out resolves beside
+// the signing key.
+func TestParseForgejoPreviousKey(t *testing.T) {
+	forgejoEnv(t)
+	t.Setenv("TEST_OLD_KEY", "old-pem")
+	f := mustLoad(t, forgejoMinimal("previousKey: { env: TEST_OLD_KEY }, "))
+	in, _ := f.Connection("acme-forge")
+	if in.Forgejo.PreviousKeyValue().Value() != "old-pem" || in.Forgejo.PrivateKeyValue().Value() != "pem" {
+		t.Fatalf("keys = %q %q", in.Forgejo.PrivateKeyValue(), in.Forgejo.PreviousKeyValue())
+	}
+}
+
+// TestParseForgejoNeedsHTTPS: Forgejo reads kritika's keys over HTTPS
+// alone, so a Forgejo connection needs an https web URL; a GitHub App
+// does not.
+func TestParseForgejoNeedsHTTPS(t *testing.T) {
+	forgejoEnv(t)
+	for _, u := range []string{"http://kritika.example.com", "HTTP://kritika.example.com", "Http://kritika.example.com/base"} {
+		if _, err := load(t, "webUrl: "+u+"\n"+forgejoMinimal("")); err == nil || !strings.Contains(err.Error(), "webUrl must be https") {
+			t.Fatalf("web URL %s = %v, want it refused", u, err)
+		}
+	}
+	mustLoad(t, "webUrl: https://kritika.example.com\n"+forgejoMinimal(""))
+	mustLoad(t, "webUrl: http://kritika.example.com\n"+minimal)
+}
+
+// TestParseForgejoWithoutAudience: the audience exists only once the
+// integration does, which needs kritika's keys served, so a connection
+// loads without one.
+func TestParseForgejoWithoutAudience(t *testing.T) {
 	forgejoEnv(t)
 	f := mustLoad(t, forgejoMinimal(""))
 	in, _ := f.Connection("acme-forge")
-	if in.Forgejo.GitTokenValue().Value() != "fj-token" {
-		t.Fatalf("GitTokenValue = %q, want the API token", in.Forgejo.GitTokenValue())
+	if in.Forgejo.AudienceValue() != "" || in.Forgejo.RunnerAudienceValue() != "" {
+		t.Fatalf("audiences = %q %q, want none", in.Forgejo.AudienceValue(), in.Forgejo.RunnerAudienceValue())
 	}
 }
 
@@ -101,17 +131,19 @@ func TestParseForgejoRejects(t *testing.T) {
 		want string
 	}{
 		{"a name both maps use", strings.Replace(minimal, "acme-bot:", "acme-forge:", 1) + forgejoMinimal(""), "apps.acme-forge has the name already"},
-		{"the same account on one forge twice", forgejoMinimal("") + "  other: { host: forge.example.com, accounts: [ACME], token: { env: TEST_FORGEJO_TOKEN }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n",
+		{"the same account on one forge twice", forgejoMinimal("") + "  other: { host: forge.example.com, accounts: [ACME], privateKey: { env: TEST_PRIVATE_KEY }, webhookSecret: { env: TEST_WEBHOOK_SECRET } }\n",
 			"served by \"acme-forge\" already"},
 		{"no host", strings.Replace(forgejoMinimal(""), "host: forge.example.com, ", "", 1), "forgejo.acme-forge.host is required"},
 		{"a host with a scheme", strings.Replace(forgejoMinimal(""), "forge.example.com", "https://forge.example.com", 1), "forgejo.acme-forge.host"},
 		{"a host with a path", strings.Replace(forgejoMinimal(""), "forge.example.com", "forge.example.com/api", 1), "forgejo.acme-forge.host"},
 		{"an uppercase host", strings.Replace(forgejoMinimal(""), "forge.example.com", "Forge.example.com", 1), "forgejo.acme-forge.host"},
-		{"no token", strings.Replace(forgejoMinimal(""), "token: { env: TEST_FORGEJO_TOKEN }, ", "", 1), "forgejo.acme-forge.token: reference must set env"},
-		{"an empty token", strings.Replace(forgejoMinimal(""), "TEST_FORGEJO_TOKEN", "TEST_EMPTY", 1), "forgejo.acme-forge.token is required"},
-		{"an empty git token", forgejoMinimal("gitToken: { env: TEST_EMPTY }, "), "forgejo.acme-forge.gitToken resolved to an empty value"},
+		{"no private key", strings.Replace(forgejoMinimal(""), "privateKey: { env: TEST_PRIVATE_KEY }, ", "", 1), "forgejo.acme-forge.privateKey: reference must set env"},
+		{"an empty private key", strings.Replace(forgejoMinimal(""), "TEST_PRIVATE_KEY", "TEST_EMPTY", 1), "forgejo.acme-forge.privateKey is required"},
+		{"an audience reference unset", forgejoMinimal("audience: { env: TEST_DOES_NOT_EXIST }, "), "forgejo.acme-forge.audience: environment variable TEST_DOES_NOT_EXIST is not set"},
+		{"a runner audience alone", forgejoMinimal("runnerAudience: aud-read, "), "forgejo.acme-forge.runnerAudience needs audience set"},
 		{"no webhook secret", strings.Replace(forgejoMinimal(""), ", webhookSecret: { env: TEST_WEBHOOK_SECRET }", "", 1), "forgejo.acme-forge.webhookSecret: reference must set env"},
 		{"a GitHub App field", forgejoMinimal("clientId: x, "), "field clientId not found"},
+		{"a token field", forgejoMinimal("token: { env: TEST_WEBHOOK_SECRET }, "), "field token not found"},
 		{"a bad name", strings.Replace(forgejoMinimal(""), "acme-forge:", "Acme Forge:", 1), "forgejo.Acme Forge: a connection's name"},
 		{"the host denied", forgejoMinimal("") + "egress:\n  deny: [forge.example.com]\n", "forge.example.com is denied, which a connection needs"},
 	}

@@ -103,18 +103,20 @@ type InstanceSetting struct {
 // CredentialsSet says which of a connection's secrets resolve to a
 // value; the values themselves are never exposed.
 type CredentialsSet struct {
-	// ClientID and PrivateKey are a GitHub App's; Token and GitToken a
-	// Forgejo bot's, the second its read-only one for runners.
-	ClientID      bool `json:"clientId,omitzero"`
-	PrivateKey    bool `json:"privateKey,omitzero"`
-	Token         bool `json:"token,omitzero"`
-	GitToken      bool `json:"gitToken,omitzero"`
-	WebhookSecret bool `json:"webhookSecret"`
+	// ClientID is a GitHub App's; Audience and RunnerAudience a Forgejo
+	// integration's, the second the read-only one runners fetch as; both
+	// have a PrivateKey.
+	ClientID       bool `json:"clientId,omitzero"`
+	PrivateKey     bool `json:"privateKey,omitzero"`
+	Audience       bool `json:"audience,omitzero"`
+	RunnerAudience bool `json:"runnerAudience,omitzero"`
+	WebhookSecret  bool `json:"webhookSecret"`
 }
 
-// Connection is one GitHub App or Forgejo bot and the accounts it serves.
-// HookPath is where its webhook arrives, under the dashboard's URL; Host
-// is the Forgejo instance a bot talks to, empty for GitHub.
+// Connection is one GitHub App or Forgejo integration and the accounts it
+// serves. HookPath is where its webhook arrives, under the dashboard's
+// URL; Host is the Forgejo instance an integration talks to, empty for
+// GitHub.
 type Connection struct {
 	Name        string           `json:"name"`
 	Forge       configfile.Forge `json:"forge"`

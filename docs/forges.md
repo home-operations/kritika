@@ -1,9 +1,10 @@
 # Git forges
 
 kritika reviews pull requests on GitHub, through a GitHub App, and on a
-Forgejo instance, through a bot account. A connection is one App or one
-bot and the accounts it serves; the [configuration reference](configuration.md#apps)
-has every key. This page says what each forge needs and what works on it.
+Forgejo instance, through an authorized integration of a bot user. A
+connection is one App or one integration and the accounts it serves; the
+[configuration reference](configuration.md#apps) has every key. This page
+says what each forge needs and what works on it.
 
 ## GitHub
 
@@ -24,11 +25,15 @@ apps:
 
 ## Forgejo
 
-A bot user on the Forgejo instance, declared under `forgejo` with the
-instance's host. kritika posts reviews, comments and statuses as this
-user.
+An [authorized integration](https://forgejo.org/docs/latest/user/api/authorized-integrations/)
+of a bot user on the instance, declared under `forgejo` with the
+instance's host. kritika signs a short-lived token for each call with a
+private key of its own, and Forgejo verifies it against the keys kritika
+publishes at `<webUrl>/forgejo/.well-known/keys`, so no long-lived
+credential exists on either side. Forgejo 16 or later is needed; the
+instance must reach kritika's URL over HTTPS, as it must for webhooks.
 
-### The bot account
+### The bot user and its integration
 
 Create a user for kritika and give it access to the repositories it
 reviews, for example through an organization team with write access. Two
@@ -40,20 +45,34 @@ things need more:
 - Dismissing a stale approval of its own needs repository admin access,
   which Forgejo asks of anyone dismissing a review.
 
-Create an access token for the bot with these scopes:
+Then, in order:
 
-- `read:user`, to learn its own login.
-- `write:repository`, for pull requests, reviews, statuses, files and the
-  listing of each account's repositories.
-- `write:issue`, for conversation comments and reactions.
+1. Generate an RSA private key, for example with
+   `openssl genrsa -out forgejo.pem 4096`, and deploy kritika with the
+   connection declared, its `privateKey` referenced from a Secret and no
+   `audience` yet. kritika serves the key's public half at once.
+2. Signed in as the bot user, open **Settings → Authorized Integrations**
+   and create one of the **Generic JWT** type with the issuer
+   `<webUrl>/forgejo`, the dashboard's URL plus `/forgejo`. Forgejo fetches
+   kritika's discovery document and keys as it saves. Grant the capabilities
+   `read:user`, `write:repository` and `write:issue`, on the repositories
+   the connection's accounts hold. An optional claim rule on `sub` with the
+   value `kritika` pins the tokens' subject.
+3. Copy the **Audience** Forgejo shows once the integration is saved into
+   the connection's `audience` and roll kritika out again.
 
-No organization scope is needed: repositories are listed through the
-account's user listing, which covers organizations.
+A second integration with `read:repository` alone, its audience given as
+`runnerAudience`, is what runner pods fetch with, so the pod that reads
+untrusted pull request content never holds a token that can write.
+Without one, runners fetch as the first integration.
 
-A second token with `read:repository` alone, given as `gitToken`, is
-what runner pods fetch with, so the token that can write never enters the
-pod that reads untrusted pull request content. Without one, runners fetch
-with the bot's token.
+To rotate the key, publish the new one first: deploy it as `previousKey`,
+which kritika serves and signs nothing with, and wait for Forgejo's cache
+of the key set to turn over, ten minutes by default, since Forgejo does
+not refetch the set on an unknown key. Then swap the two fields, so the
+new key signs and the old is still served, and drop `previousKey` once
+the last token the old key signed has expired, an hour for a runner's,
+and the cache has turned over again.
 
 ### Configure the connection
 
@@ -62,8 +81,9 @@ forgejo:
   codeberg:
     host: codeberg.org
     accounts: [org-1]
-    token: { env: FORGEJO_TOKEN }
-    gitToken: { env: FORGEJO_READ_TOKEN }
+    audience: 7f1c…
+    runnerAudience: 2b9e…
+    privateKey: { env: FORGEJO_PRIVATE_KEY }
     webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
 ```
 
@@ -110,11 +130,11 @@ differences are in what the forge's API lets kritika do around them.
 | Dismissing a finding by resolving its thread |   ✓    |    ✗    | Forgejo sends no event when a conversation is resolved. Use `@<bot> dismiss <reason>` in the thread instead.                                   |
 | Outdated thread detection                    |   ✓    |    ✗    | Forgejo does not say whether a code comment's lines have changed since.                                                                        |
 | 👍 and 👎 counts on findings in the dashboard |   ✓    |    ✗    | Forgejo lists no reactions with a code comment.                                                                                                |
-| `gh` for the agent                           |   ✓    |    ✗    | The run's token is the bot's, so `gh` is not offered; `curl` through the gateway and `fetch_repo` still are.                                  |
-| Repositories discovered from the forge       |   ✓    |    ✓    | Every repository the bot can see under the account; a private one needs the bot to have access.                                                |
+| `gh` for the agent                           |   ✓    |    ✗    | The run's token is the integration's, so `gh` is not offered; `curl` through the gateway and `fetch_repo` still are.                           |
+| Repositories discovered from the forge       |   ✓    |    ✓    | Every repository the bot user can see under the account; a private one needs the bot to have access.                                           |
 | A review of a head the pull request moved on from |   ✓    |    ✗    | Forgejo reports a pull request's merge base and diff as they stand, so a review queued before a push fails and the push's review takes over.    |
 | Webhook per account                          | the App's |  one per account | Added by hand on each organization or user.                                                                                           |
-| Short-lived, read-only token for runs        |   ✓    |    ✗    | Give the bot a read-only `gitToken` instead; it is static.                                                                                      |
+| Short-lived, read-only token for runs        |   ✓    |    ✓    | With a second, read-only integration as `runnerAudience`; a run's token lasts an hour.                                                         |
 
 A bot account on Forgejo is not marked as a bot, so a pull request opened
 by one, such as a Renovate user, is treated as a person's unless its

@@ -484,8 +484,8 @@ type Connection struct {
 
 	// App is the credential of a ForgeGitHub connection, Forgejo of a
 	// ForgeForgejo one.
-	App     GitHubApp  `yaml:",inline"`
-	Forgejo ForgejoBot `yaml:"-"`
+	App     GitHubApp          `yaml:",inline"`
+	Forgejo ForgejoIntegration `yaml:"-"`
 }
 
 // Repository carries per-repository overrides, the configuration's

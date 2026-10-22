@@ -207,28 +207,31 @@ apps:
 
 ## `forgejo`
 
-`forgejo` declares the Forgejo bots kritika serves accounts through, one
-per instance and set of accounts. [Git forges](forges.md#forgejo) covers
-the bot account, its tokens and the webhooks.
+`forgejo` declares the Forgejo authorized integrations kritika serves
+accounts through, one per instance and set of accounts. [Git forges](forges.md#forgejo)
+covers the bot user, the integration and the webhooks.
 
 ```yaml
 forgejo:
   codeberg:
     host: codeberg.org
     accounts: [org-1]
-    token: { env: FORGEJO_TOKEN }
-    gitToken: { env: FORGEJO_READ_TOKEN }
+    audience: 7f1c…
+    runnerAudience: 2b9e…
+    privateKey: { env: FORGEJO_PRIVATE_KEY }
     webhookSecret: { env: FORGEJO_WEBHOOK_SECRET }
 ```
 
-| Key             | What                                                                                                                      |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| the entry's key | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps` or `forgejo`  |
-| `host`          | the instance's hostname, reached over HTTPS                                                                               |
-| `accounts`      | the users and organizations it serves; an account is served by one connection on its forge                               |
-| `token`         | the bot's access token, which kritika calls the API with                                                                  |
-| `gitToken`      | optional: a read-only token runner pods fetch with, so the pod that reads untrusted content never holds one that can write |
-| `webhookSecret` | the secret of the webhooks added on each account                                                                          |
+| Key              | What                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the entry's key  | the connection's name, which is its webhook path, `/hooks/<name>`; a name is one connection's, under `apps` or `forgejo`                                          |
+| `host`           | the instance's hostname, reached over HTTPS                                                                                                                       |
+| `accounts`       | the users and organizations it serves; an account is served by one connection on its forge                                                                       |
+| `audience`       | the audience Forgejo shows for the integration, inline or as a reference; until it is set the connection only serves its key, for the integration to be created |
+| `runnerAudience` | optional: the audience of a second, read-only integration runner pods fetch as, so the pod that reads untrusted content never holds a token that can write        |
+| `privateKey`     | the RSA key kritika signs the integration's tokens with, whose public half it serves at `<webUrl>/forgejo/.well-known/keys`; `webUrl` must be HTTPS             |
+| `previousKey`    | optional: a key being rotated out, served for Forgejo to verify with and signing nothing                                                                          |
+| `webhookSecret`  | the secret of the webhooks added on each account                                                                                                                  |
 
 An entry under `accounts` or `repositories` names an account by its name
 alone, so it is the account's on the forge serving that name; a name

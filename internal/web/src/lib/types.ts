@@ -129,13 +129,13 @@ export interface AdminAccount extends AccountSummary {
 }
 
 // CredentialsSet says which of a connection's credentials are set: a
-// GitHub App's client id and private key, or a Forgejo bot's token and
-// its read-only git token.
+// GitHub App's client id, a Forgejo integration's audience and the
+// read-only one runners fetch as, and the private key both sign with.
 export interface CredentialsSet {
   clientId?: boolean;
   privateKey?: boolean;
-  token?: boolean;
-  gitToken?: boolean;
+  audience?: boolean;
+  runnerAudience?: boolean;
   webhookSecret: boolean;
 }
 

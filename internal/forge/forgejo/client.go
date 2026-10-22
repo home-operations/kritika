@@ -1,7 +1,9 @@
 // Package forgejo implements forge.Client against a Forgejo instance's REST
 // API, https://<host>/api/v1, with the standard library's HTTP client:
 // requests and responses are written out for the subset of the API kritika
-// needs, which keeps a context on every call.
+// needs, which keeps a context on every call. kritika authenticates as an
+// authorized integration of a user on the instance, with tokens its
+// Issuer signs.
 package forgejo
 
 import (
@@ -57,26 +59,38 @@ func (e *apiError) Unwrap() error {
 	return nil
 }
 
-// Client is one bot account's access to a Forgejo instance.
+// Client is one authorized integration's access to a Forgejo instance.
 type Client struct {
 	http     *http.Client
 	api, web string
-	token    string
-	// gitToken is what GitToken hands a runner: a read-only token, so the
-	// pod that reads untrusted content never holds one that can write.
-	gitToken string
+	issuer   *Issuer
+	// audience names the integration kritika calls the API as, and
+	// runnerAudience the one a runner fetches as: a second integration
+	// with read access alone, so the pod that reads untrusted content
+	// never holds a token that can write; audience when there is none.
+	audience, runnerAudience string
+	now                      func() time.Time
 
 	mu    sync.Mutex
 	login string
+	// token is the API token in use and expires when it does; it is
+	// replaced before then. Its own lock: a call holding mu mints one.
+	tokenMu sync.Mutex
+	token   string
+	expires time.Time
 }
 
 // NewClient builds a Client for host, a hostname reached over HTTPS, or a
-// URL with its scheme, which tests point at a server of their own. token
-// calls the API; gitToken, or token when it is empty, is what runners
-// fetch with. A nil httpClient is http.DefaultClient.
-func NewClient(host, token, gitToken string, httpClient *http.Client) (*Client, error) {
+// URL with its scheme, which tests point at a server of their own, calling
+// the API as the integration of audience with tokens issuer signs, and
+// runners fetching as runnerAudience when set. A nil httpClient is
+// http.DefaultClient.
+func NewClient(host string, issuer *Issuer, audience, runnerAudience string, httpClient *http.Client) (*Client, error) {
 	if host == "" {
 		return nil, errors.New("forgejo: host is required")
+	}
+	if audience == "" {
+		return nil, errors.New("forgejo: audience is required: create the authorized integration on the instance and set its audience")
 	}
 	web := host
 	if !strings.Contains(web, "://") {
@@ -89,10 +103,30 @@ func NewClient(host, token, gitToken string, httpClient *http.Client) (*Client, 
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	if gitToken == "" {
-		gitToken = token
+	if runnerAudience == "" {
+		runnerAudience = audience
 	}
-	return &Client{http: httpClient, api: web + "/api/v1", web: web, token: token, gitToken: gitToken}, nil
+	return &Client{
+		http: httpClient, api: web + "/api/v1", web: web, issuer: issuer, audience: audience, runnerAudience: runnerAudience,
+		now: time.Now,
+	}, nil
+}
+
+// bearer is the token the API is called with: the one in use while it has
+// a minute left, else a new one.
+func (c *Client) bearer() (string, error) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	now := c.now()
+	if c.token != "" && now.Before(c.expires.Add(-time.Minute)) {
+		return c.token, nil
+	}
+	token, err := c.issuer.Token(c.audience, tokenTTL, now)
+	if err != nil {
+		return "", err
+	}
+	c.token, c.expires = token, now.Add(tokenTTL)
+	return token, nil
 }
 
 // do sends an API request and decodes its JSON answer into out, when out
@@ -117,7 +151,11 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "token "+c.token)
+	token, err := c.bearer()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -274,9 +312,12 @@ func (c *Client) CloneURL(owner, repo string) string {
 	return c.web + "/" + owner + "/" + repo + ".git"
 }
 
-// GitToken implements forge.Client with the static token a runner fetches
-// with.
-func (c *Client) GitToken(context.Context, string) (string, error) { return c.gitToken, nil }
+// GitToken implements forge.Client with a token of the runner's
+// integration, signed for the run: Forgejo takes it as the password of a
+// git fetch over HTTPS.
+func (c *Client) GitToken(context.Context, string) (string, error) {
+	return c.issuer.Token(c.runnerAudience, runnerTokenTTL, c.now())
+}
 
 // BranchTip implements forge.Client.
 func (c *Client) BranchTip(ctx context.Context, owner, repo, branch string) (string, string, error) {
@@ -315,7 +356,11 @@ func (c *Client) FileAt(ctx context.Context, owner, repo, ref, path string) ([]b
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "token "+c.token)
+	token, err := c.bearer()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("forgejo: %s of %s/%s at %s: %w", path, owner, repo, ref, err)

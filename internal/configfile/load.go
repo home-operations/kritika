@@ -287,12 +287,18 @@ func (i *Connection) resolve(where string, s *secrets) error {
 	var err error
 	if i.Forge == ForgeForgejo {
 		b := &i.Forgejo
-		if b.token, err = s.read(b.Token); err != nil {
-			return fmt.Errorf("configfile: %s.token: %w", where, err)
+		if b.audience, err = b.Audience.resolve(s); err != nil {
+			return fmt.Errorf("configfile: %s.audience: %w", where, err)
 		}
-		if !b.GitToken.empty() {
-			if b.gitToken, err = s.read(b.GitToken); err != nil {
-				return fmt.Errorf("configfile: %s.gitToken: %w", where, err)
+		if b.runnerAudience, err = b.RunnerAudience.resolve(s); err != nil {
+			return fmt.Errorf("configfile: %s.runnerAudience: %w", where, err)
+		}
+		if b.privateKey, err = s.read(b.PrivateKey); err != nil {
+			return fmt.Errorf("configfile: %s.privateKey: %w", where, err)
+		}
+		if !b.PreviousKey.empty() {
+			if b.previousKey, err = s.read(b.PreviousKey); err != nil {
+				return fmt.Errorf("configfile: %s.previousKey: %w", where, err)
 			}
 		}
 		if b.webhookSecret, err = s.read(b.WebhookSecret); err != nil {
@@ -320,6 +326,9 @@ func (f *File) validate(accounts []Account) error {
 	}
 	// Connections first: egress checks their hosts.
 	if err := validateConnections(f.Connections); err != nil {
+		return err
+	}
+	if err := f.validateIssuer(); err != nil {
 		return err
 	}
 	if err := f.validateEgress(); err != nil {
@@ -602,11 +611,11 @@ func (i *Connection) validate(where string) error {
 		if err := checkHost(b.Host); err != nil || strings.HasPrefix(b.Host, "*") {
 			return fmt.Errorf("configfile: %s.host: %q must be a lowercase hostname, without a scheme, port or path", where, b.Host)
 		}
-		if b.token.Value() == "" {
-			return fmt.Errorf("configfile: %s.token is required", where)
+		if b.privateKey.Value() == "" {
+			return fmt.Errorf("configfile: %s.privateKey is required", where)
 		}
-		if !b.GitToken.empty() && b.gitToken.Value() == "" {
-			return fmt.Errorf("configfile: %s.gitToken resolved to an empty value", where)
+		if b.runnerAudience != "" && b.audience == "" {
+			return fmt.Errorf("configfile: %s.runnerAudience needs audience set", where)
 		}
 		if b.webhookSecret.Value() == "" {
 			return fmt.Errorf("configfile: %s.webhookSecret is required", where)

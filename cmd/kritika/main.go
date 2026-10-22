@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
+	"github.com/go-jose/go-jose/v4"
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/riverqueue/river"
@@ -31,6 +32,7 @@ import (
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/egress"
 	"github.com/home-operations/kritika/internal/executor"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/gateway"
 	"github.com/home-operations/kritika/internal/ingest"
 	"github.com/home-operations/kritika/internal/jobs"
@@ -244,7 +246,7 @@ func serve(
 	// One App or bot per connection and one forge client per connection
 	// and account, shared by the workers and the leader's poll, so an
 	// installation's token is minted once.
-	apps := &worker.Forges{Metrics: m}
+	apps := &worker.Forges{Metrics: m, Issuer: forgejo.IssuerURL(cfg.WebURLParsed())}
 	forges := &worker.ForgeCache{Build: apps.Build}
 	svc := ingest.NewService(st, inserter)
 	if st.LeaderEligible() {
@@ -307,7 +309,12 @@ func startPublic(
 		WebURL: cfg.WebURLParsed(), Version: version, Logger: webLogger, Actions: webapi.JobActions{Queue: inserter}, Env: cfg.Env(),
 	})
 	g.Go(func() error { return api.Run(server.Lingering(ctx, linger)) })
-	public.Set(server.Public(cfg.WebBasePath(), hooks, api.Handler()))
+	// The keys every Forgejo connection's tokens are verified with, read
+	// from the configuration on each request so a rotated key is served
+	// at once.
+	issuerURL := forgejo.IssuerURL(cfg.WebURLParsed())
+	keys := func() []jose.JSONWebKey { return forgejo.Keys(issuerURL, current.Get(), logger) }
+	public.Set(server.Public(cfg.WebBasePath(), hooks, forgejo.Discovery(issuerURL, keys), api.Handler()))
 	return nil
 }
 

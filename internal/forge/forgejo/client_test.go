@@ -20,9 +20,10 @@ import (
 // fakeForge is enough of a Forgejo instance for the client: a mux of the
 // routes a test registers, and a log of what was called.
 type fakeForge struct {
-	t   *testing.T
-	mux *http.ServeMux
-	srv *httptest.Server
+	t      *testing.T
+	mux    *http.ServeMux
+	srv    *httptest.Server
+	issuer *Issuer
 
 	mu    sync.Mutex
 	calls []string
@@ -33,9 +34,15 @@ type fakeForge struct {
 func newFake(t *testing.T) *fakeForge {
 	t.Helper()
 	f := &fakeForge{t: t, mux: http.NewServeMux(), bodies: map[string][]string{}}
+	f.issuer = testIssuer(t)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "token tok" {
+		// Every call carries a token of the integration, signed by the
+		// issuer, as Forgejo checks it.
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok {
 			t.Errorf("%s %s: Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		} else if claims, _ := verify(t, f.issuer, token); len(claims.Audience) != 1 || claims.Audience[0] != "aud-api" || claims.Issuer != f.issuer.URL() {
+			t.Errorf("%s %s: token claims = %+v", r.Method, r.URL.Path, claims)
 		}
 		body, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
@@ -52,7 +59,7 @@ func newFake(t *testing.T) *fakeForge {
 
 func (f *fakeForge) client(t *testing.T) *Client {
 	t.Helper()
-	c, err := NewClient(f.srv.URL, "tok", "", nil)
+	c, err := NewClient(f.srv.URL, f.issuer, "aud-api", "aud-runner", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,29 +102,40 @@ func (f *fakeForge) body(key string) map[string]any {
 const repoAPI = "/api/v1/repos/acme/widgets"
 
 func TestNewClient(t *testing.T) {
+	issuer := testIssuer(t)
 	for _, tt := range []struct {
 		host, api, web string
 	}{
 		{"forge.example.com", "https://forge.example.com/api/v1", "https://forge.example.com"},
 		{"http://127.0.0.1:8080/", "http://127.0.0.1:8080/api/v1", "http://127.0.0.1:8080"},
 	} {
-		c, err := NewClient(tt.host, "t", "", nil)
+		c, err := NewClient(tt.host, issuer, "aud", "", nil)
 		if err != nil || c.api != tt.api || c.web != tt.web {
 			t.Fatalf("NewClient(%q) = %+v, %v", tt.host, c, err)
 		}
 	}
 	for _, host := range []string{"", "://", "https://"} {
-		if _, err := NewClient(host, "t", "", nil); err == nil {
+		if _, err := NewClient(host, issuer, "aud", "", nil); err == nil {
 			t.Fatalf("NewClient(%q) must fail", host)
 		}
 	}
-	c, _ := NewClient("forge.example.com", "api", "read", nil)
-	if tok, _ := c.GitToken(t.Context(), "widgets"); tok != "read" {
-		t.Fatalf("GitToken = %q, want the read token", tok)
+	if _, err := NewClient("forge.example.com", issuer, "", "", nil); err == nil || !strings.Contains(err.Error(), "audience") {
+		t.Fatalf("without an audience = %v; the integration must exist first", err)
 	}
-	c, _ = NewClient("forge.example.com", "api", "", nil)
-	if tok, _ := c.GitToken(t.Context(), "widgets"); tok != "api" {
-		t.Fatalf("GitToken = %q, want the API token when no read token is set", tok)
+	// A runner's token is the read-only integration's when there is one,
+	// else the API's, and lasts the run's hour.
+	c, _ := NewClient("forge.example.com", issuer, "aud-api", "aud-read", nil)
+	tok, err := c.GitToken(t.Context(), "widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-read" || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) != runnerTokenTTL+skew {
+		t.Fatalf("runner token claims = %+v", claims)
+	}
+	c, _ = NewClient("forge.example.com", issuer, "aud-api", "", nil)
+	tok, _ = c.GitToken(t.Context(), "widgets")
+	if claims, _ := verify(t, issuer, tok); claims.Audience[0] != "aud-api" {
+		t.Fatalf("runner token without a read-only integration = %+v", claims)
 	}
 	if c.CloneURL("acme", "widgets") != "https://forge.example.com/acme/widgets.git" {
 		t.Fatalf("CloneURL = %s", c.CloneURL("acme", "widgets"))
@@ -648,5 +666,30 @@ func TestPullRequestDiffCatchesAPush(t *testing.T) {
 	}
 	if _, err := c.PullRequestDiff(t.Context(), "acme", "widgets", 10, "other", "h2"); err == nil || !strings.Contains(err.Error(), "merges from") {
 		t.Fatalf("PullRequestDiff with another merge base = %v, want a refusal", err)
+	}
+}
+
+// TestBearerIsReused: one token serves the calls within its life and is
+// replaced a minute before it ends.
+func TestBearerIsReused(t *testing.T) {
+	f := newFake(t)
+	f.json("GET", "/api/v1/user", 200, map[string]any{"login": "kritika-bot"})
+	c := f.client(t)
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	c.now = func() time.Time { return now }
+	first, err := c.bearer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(tokenTTL - 2*time.Minute)
+	if again, _ := c.bearer(); again != first {
+		t.Fatal("a token with two minutes left is kept")
+	}
+	now = now.Add(time.Minute)
+	if again, _ := c.bearer(); again == first {
+		t.Fatal("a token with a minute left is replaced")
+	}
+	if _, err := c.BotLogin(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }
