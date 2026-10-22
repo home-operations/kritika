@@ -21,6 +21,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,6 +81,11 @@ type Client struct {
 	gitea                 bool
 	apiToken, runnerToken string
 	now                   func() time.Time
+
+	// Bots are logins on the instance that are bots though the forge does
+	// not say so, as a connection lists them; set before the client is
+	// shared.
+	Bots []string
 
 	mu    sync.Mutex
 	login string
@@ -538,7 +544,7 @@ func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string, s
 	}
 	out := make([]forge.OpenPullRequest, 0, len(prs))
 	for _, pr := range prs {
-		out = append(out, openPullRequest(pr))
+		out = append(out, c.openPullRequest(pr))
 	}
 	return out, nil
 }
@@ -549,7 +555,7 @@ func (c *Client) PullRequest(ctx context.Context, owner, repo string, number int
 	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/pulls/%d", repoPath(owner, repo), number), nil, &pr); err != nil {
 		return forge.OpenPullRequest{}, fmt.Errorf("forgejo: pull request %d of %s/%s: %w", number, owner, repo, err)
 	}
-	out := openPullRequest(pr)
+	out := c.openPullRequest(pr)
 	out.ClosedAt = pr.ClosedAt
 	out.Additions, out.Deletions, out.ChangedFiles = pr.Additions, pr.Deletions, pr.ChangedFiles
 	return out, nil
@@ -582,16 +588,16 @@ func (c *Client) Repositories(ctx context.Context, account string) ([]Repository
 	return out, nil
 }
 
-func conversationComment(cm comment) forge.Comment {
+func (c *Client) conversationComment(cm comment) forge.Comment {
 	return forge.Comment{
-		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
+		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: c.isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
 	}
 }
 
 // inlineComment maps a code comment, replying to root, 0 when it is one.
-func inlineComment(cm pullReviewComment, root int64) forge.Comment {
+func (c *Client) inlineComment(cm pullReviewComment, root int64) forge.Comment {
 	return forge.Comment{
-		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
+		ID: cm.ID, Author: cm.User.Login, AuthorIsBot: c.isBot(cm.User), Body: cm.Body, CreatedAt: cm.CreatedAt,
 		Inline: true, Path: cm.Path, Line: cm.Position, InReplyTo: root,
 	}
 }
@@ -603,10 +609,10 @@ func fullName(r *repository) string {
 	return r.FullName
 }
 
-func openPullRequest(pr pullRequest) forge.OpenPullRequest {
+func (c *Client) openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	out := forge.OpenPullRequest{UpdatedAt: pr.UpdatedAt}
 	out.Number, out.Title, out.Body = pr.Number, pr.Title, pr.Body
-	out.Author, out.AuthorIsBot = pr.User.Login, isBot(pr.User)
+	out.Author, out.AuthorIsBot = pr.User.Login, c.isBot(pr.User)
 	out.State, out.Merged, out.Draft = pr.State, pr.Merged, pr.Draft
 	// A fork PR's head lives in another repository than its base; a deleted
 	// fork leaves head.repo null, which is not the base repository either.
@@ -622,4 +628,6 @@ func openPullRequest(pr pullRequest) forge.OpenPullRequest {
 	return out
 }
 
-func isBot(u user) bool { return webhook.IsBot(u.Type, u.Login) }
+func (c *Client) isBot(u user) bool {
+	return webhook.IsBot(u.Type, u.Login) || slices.ContainsFunc(c.Bots, func(b string) bool { return strings.EqualFold(b, u.Login) })
+}

@@ -379,3 +379,56 @@ gitlab:
 		}
 	}
 }
+
+// TestHandlerMarksListedBots: a pull request or comment by a login a
+// Forgejo or Gitea connection lists as a bot is dispatched as a bot's.
+func TestHandlerMarksListedBots(t *testing.T) {
+	t.Setenv("TEST_FJ_KEY", "key")
+	t.Setenv("TEST_FJ_HOOK", "hook-secret")
+	f := configfiletest.Load(t, `
+forgejo:
+  home: { host: forge.example.com, accounts: [acme], bots: [bot-owl], privateKey: { env: TEST_FJ_KEY }, webhookSecret: { env: TEST_FJ_HOOK } }
+gitea:
+  tea: { host: gitea.example.com, accounts: [acme], bots: [bot-owl], token: { env: TEST_FJ_KEY }, webhookSecret: { env: TEST_FJ_HOOK } }
+`)
+	repo := `"repository": {"full_name": "acme/widgets", "owner": {"login": "acme"}}`
+	pull := `{"action": "opened", "pull_request": {"number": 7, "user": {"login": "Bot-Owl"}, "head": {"sha": "h"}}, ` + repo + `}`
+	comment := `{"action": "created", "is_pull": true, "issue": {"number": 7}, "comment": {"id": 5, "body": "@kritika hi", "user": {"login": "bot-owl"}}, ` + repo + `}`
+	for _, tt := range []struct {
+		name, conn, prefix, event, body string
+		kind                            webhook.Kind
+	}{
+		{"forgejo pull request", "home", "X-Forgejo-", "pull_request", pull, webhook.KindPullRequest},
+		{"forgejo comment", "home", "X-Forgejo-", "issue_comment", comment, webhook.KindComment},
+		{"gitea pull request", "tea", "X-Gitea-", "pull_request", pull, webhook.KindPullRequest},
+		{"gitea comment", "tea", "X-Gitea-", "issue_comment", comment, webhook.KindComment},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			disp := &fakeDispatcher{out: Outcome{Status: Enqueued}}
+			h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.DiscardHandler))
+			mac := hmac.New(sha256.New, []byte("hook-secret"))
+			mac.Write([]byte(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/hooks/"+tt.conn, strings.NewReader(tt.body))
+			req.SetPathValue("connection", tt.conn)
+			req.Header.Set(tt.prefix+"Event", tt.event)
+			req.Header.Set(tt.prefix+"Delivery", "d-1")
+			req.Header.Set(tt.prefix+"Signature", hex.EncodeToString(mac.Sum(nil)))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusAccepted || len(disp.got) != 1 || disp.got[0].Event.Kind != tt.kind {
+				t.Fatalf("code = %d, dispatched = %+v", rec.Code, disp.got)
+			}
+			ev := disp.got[0].Event
+			switch tt.kind {
+			case webhook.KindPullRequest:
+				if ev.PullRequest == nil || !ev.PullRequest.AuthorIsBot {
+					t.Fatalf("pr = %+v, want a bot's", ev.PullRequest)
+				}
+			default:
+				if ev.Comment == nil || !ev.Comment.AuthorIsBot {
+					t.Fatalf("comment = %+v, want a bot's", ev.Comment)
+				}
+			}
+		})
+	}
+}

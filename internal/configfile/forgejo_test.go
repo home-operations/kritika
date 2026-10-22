@@ -156,3 +156,27 @@ func TestParseForgejoRejects(t *testing.T) {
 		})
 	}
 }
+
+// TestParseForgeBots: a Forgejo or Gitea connection lists the logins on its
+// instance that are bots, matched in any case; other forges take none.
+func TestParseForgeBots(t *testing.T) {
+	forgejoEnv(t)
+	giteaEnv(t)
+	gitlabEnv(t)
+	f := mustLoad(t, forgejoMinimal("bots: [renovate-bot], ")+giteaMinimal("bots: [Deps], "))
+	fj, _ := f.Connection("acme-forge")
+	gt, _ := f.Connection("acme-tea")
+	if !fj.IsBot("Renovate-Bot") || fj.IsBot("dev") || !gt.IsBot("deps") || gt.IsBot("renovate-bot") {
+		t.Fatalf("bots = %q, %q", fj.Bots(), gt.Bots())
+	}
+	for name, tt := range map[string]struct{ yaml, want string }{
+		"a bot with a slash":   {forgejoMinimal("bots: [acme/bot], "), "forgejo.acme-forge.bots[0]"},
+		"a blank bot":          {giteaMinimal(`bots: [" "], `), "gitea.acme-tea.bots[0]"},
+		"a bot with a newline": {giteaMinimal(`bots: ["renovate\n"], `), "gitea.acme-tea.bots[0]"},
+		"bots on gitlab":       {gitlabMinimal("bots: [x], "), "field bots not found"},
+	} {
+		if _, err := load(t, tt.yaml); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("%s: err = %v, want %q", name, err, tt.want)
+		}
+	}
+}

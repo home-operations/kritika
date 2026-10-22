@@ -18,7 +18,8 @@ import (
 // write; without one they fetch as the first. PreviousKey is a key being
 // rotated out: served for Forgejo to verify with, signing nothing, until
 // the last token it signed has expired and Forgejo's cache of the key set
-// has turned over.
+// has turned over. Bots are the logins on the instance that are bots:
+// Forgejo marks no account as one, and allows no "[bot]" in a login.
 type ForgejoIntegration struct {
 	Host           string     `yaml:"host"`
 	Audience       ValueOrRef `yaml:"audience,omitempty"`
@@ -26,6 +27,7 @@ type ForgejoIntegration struct {
 	PrivateKey     SecretRef  `yaml:"privateKey"`
 	PreviousKey    SecretRef  `yaml:"previousKey,omitempty"`
 	WebhookSecret  SecretRef  `yaml:"webhookSecret"`
+	Bots           []string   `yaml:"bots,omitempty"`
 
 	audience, runnerAudience               string
 	privateKey, previousKey, webhookSecret Secret
@@ -86,12 +88,14 @@ func (b GitLabBot) RunnerTokenValue() Secret { return b.runnerToken }
 // token of the user with read:repository alone that runners fetch with,
 // so the pod that reads untrusted content never holds a token that can
 // write; without one they fetch with the first. Gitea 28 or later is
-// assumed.
+// assumed. Bots are logins on the instance that are bots beside the bot
+// users Gitea marks as such: an ordinary account a bot runs as is not.
 type GiteaBot struct {
 	Host          string    `yaml:"host"`
 	Token         SecretRef `yaml:"token"`
 	RunnerToken   SecretRef `yaml:"runnerToken,omitempty"`
 	WebhookSecret SecretRef `yaml:"webhookSecret"`
+	Bots          []string  `yaml:"bots,omitempty"`
 
 	token, runnerToken, webhookSecret Secret
 }
@@ -135,6 +139,23 @@ func (b *GiteaBot) validate(where string) error {
 		return fmt.Errorf("configfile: %s.webhookSecret is required", where)
 	}
 	return nil
+}
+
+// Bots are the logins the connection lists as bots, on a Forgejo or Gitea
+// instance; none elsewhere.
+func (i *Connection) Bots() []string {
+	switch i.Forge {
+	case ForgeForgejo:
+		return i.Forgejo.Bots
+	case ForgeGitea:
+		return i.Gitea.Bots
+	}
+	return nil
+}
+
+// IsBot reports whether login is one of the connection's Bots.
+func (i *Connection) IsBot(login string) bool {
+	return slices.ContainsFunc(i.Bots(), func(b string) bool { return strings.EqualFold(b, login) })
 }
 
 // where names the connection's entry in errors.
@@ -253,6 +274,11 @@ func validateConnections(conns []Connection) error {
 		}
 		if err := validateAccountNames(in.Accounts, where); err != nil {
 			return err
+		}
+		for bi, b := range in.Bots() {
+			if err := checkAccountName(fmt.Sprintf("%s.bots[%d]", where, bi), b); err != nil {
+				return err
+			}
 		}
 		if err := in.validate(where); err != nil {
 			return err

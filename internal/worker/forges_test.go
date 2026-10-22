@@ -18,6 +18,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/forge"
+	"github.com/home-operations/kritika/internal/forge/forgejo"
 	"github.com/home-operations/kritika/internal/forge/gitlab"
 )
 
@@ -327,6 +328,7 @@ gitea:
     token: { env: TEST_GT_TOKEN }
     runnerToken: { env: TEST_GT_READ }
     webhookSecret: { env: TEST_GT_HOOK }
+    bots: [deps]
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -346,6 +348,9 @@ gitea:
 	}
 	if tok, err := first.GitToken(t.Context(), "widgets"); err != nil || tok != "gitea-read" {
 		t.Fatalf("GitToken = %q, %v; want the read-only token", tok, err)
+	}
+	if c, ok := first.(*forgejo.Client); !ok || !slices.Equal(c.Bots, []string{"deps"}) {
+		t.Fatalf("client bots = %+v; want the connection's", first)
 	}
 }
 

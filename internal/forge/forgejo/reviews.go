@@ -217,7 +217,7 @@ func (c *Client) inlineComments(ctx context.Context, owner, repo string, number 
 			root = 0
 		}
 		resolved[cm.ID] = cm.Resolver != nil
-		out = append(out, inlineComment(cm, root))
+		out = append(out, c.inlineComment(cm, root))
 	}
 	return out, resolved, nil
 }
@@ -232,7 +232,7 @@ func (c *Client) GetComment(ctx context.Context, owner, repo string, _ int, id i
 		var cm comment
 		err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), id), nil, &cm)
 		if err == nil {
-			return conversationComment(cm), nil
+			return c.conversationComment(cm), nil
 		}
 		if !errors.Is(err, errNoContent) {
 			return forge.Comment{}, fmt.Errorf("forgejo: comment %d: %w", id, err)
@@ -278,7 +278,7 @@ func (c *Client) ListConversation(ctx context.Context, owner, repo string, numbe
 	}
 	out := make([]forge.Comment, 0, len(raw))
 	for _, cm := range raw {
-		out = append(out, conversationComment(cm))
+		out = append(out, c.conversationComment(cm))
 	}
 	// Stable: Forgejo's times are whole seconds, and it lists comments made
 	// in the same second in the order they were made.

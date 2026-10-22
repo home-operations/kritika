@@ -78,6 +78,7 @@ func (a *Forges) bot(in *configfile.Connection) (*forgejo.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.Bots = in.Bots()
 	if a.bots == nil {
 		a.bots = map[string]*forgejo.Client{}
 	}
