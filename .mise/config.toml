@@ -25,6 +25,7 @@ golangci-lint = "2.15.0"
 lefthook = "2.2.2"
 node = "26.12.1"
 oxfmt = "0.74.0"
+pnpm = "12.15.0"
 shellcheck = "0.11.0"
 yq = "4.54.1"
 zizmor = "1.31.1"
@@ -177,7 +178,7 @@ else
   runner="ttl.sh/kritika-$(id -un)-$suffix-tools:24h"
 fi
 build() {
-  docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg MISE_VERSION="$(mise config get -f .mise/config.toml min_version)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" "$@" .
+  docker build --build-arg GO_VERSION="$(mise config get -f .mise/config.toml tools.go)" --build-arg NODE_VERSION="$(mise config get -f .mise/config.toml tools.node)" --build-arg PNPM_VERSION="$(mise config get -f .mise/config.toml tools.pnpm)" --build-arg MISE_VERSION="$(mise config get -f .mise/config.toml min_version)" --build-arg VERSION=dev --build-arg REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)" "$@" .
 }
 build -t "$image"
 build --target tools -t "$runner"
@@ -221,24 +222,24 @@ kubectl -n kritika logs deployment/kritika --follow
 """
 
 [tasks.ui-install]
-description = "Install the dashboard UI's npm dependencies from its lockfile"
+description = "Install the dashboard UI's dependencies from its lockfile (pnpm)"
 dir = "internal/web"
-run = "npm ci"
+run = "pnpm install --frozen-lockfile"
 
 [tasks.ui-lint]
 description = "Lint the dashboard UI (oxlint)"
 dir = "internal/web"
-run = "npm run lint"
+run = "pnpm run lint"
 
 [tasks.ui-typecheck]
 description = "Type-check the dashboard UI (svelte-check)"
 dir = "internal/web"
-run = "npm run typecheck"
+run = "pnpm run typecheck"
 
 [tasks.ui-build]
 description = "Build the dashboard UI into internal/web/dist for go:embed"
 dir = "internal/web"
-run = "npm run build"
+run = "pnpm run build"
 
 [tasks.ui-mock]
 description = "Build the dashboard and serve it on http://localhost:5544 against mocked API data (the Playwright goldens), for reviewing UI work without a backend; `mise watch ui-mock -r` rebuilds and restarts it on every source change"
@@ -249,17 +250,17 @@ sources = [
   "tests/golden.ts",
   "tests/mock-server.ts",
 ]
-run = ["npx vite build --outDir dist-mock", "node tests/mock-server.ts"]
+run = ["pnpm exec vite build --outDir dist-mock", "node tests/mock-server.ts"]
 
 [tasks.ui-test]
 description = "Run the dashboard UI's Playwright end-to-end tests"
 dir = "internal/web"
-run = "npm run test:e2e"
+run = "pnpm run test:e2e"
 
 [tasks.ui-test-container]
 description = "Run the dashboard UI's Playwright suite inside Microsoft's pinned official Playwright image, for hosts (e.g. NixOS) that lack the system libraries Chromium needs to run outside a container"
 run = """
-version="$(node -p "require('./internal/web/package-lock.json').packages['node_modules/@playwright/test'].version")"
+version="$(node -p "require('./internal/web/node_modules/@playwright/test/package.json').version")"
 docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/work -w /work/internal/web -e CI=1 "mcr.microsoft.com/playwright:v${version}-noble" npx playwright test
 """
 

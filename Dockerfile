@@ -17,11 +17,16 @@ ARG MISE_VERSION
 # The built UI is the same bytes on every platform, so it is built once, on
 # the build host, rather than per target under emulation.
 FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:${NODE_VERSION}-trixie-slim AS ui
+# PNPM_VERSION is supplied as the others are. The Node image ships no pnpm,
+# and its npm package's install script only swaps the wrappers that run it
+# through Node for its native binary, so it is installed without scripts.
+ARG PNPM_VERSION
+RUN npm install --global --ignore-scripts "pnpm@${PNPM_VERSION:?PNPM_VERSION is required}"
 WORKDIR /ui
-COPY internal/web/package.json internal/web/package-lock.json internal/web/.npmrc ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+COPY internal/web/package.json internal/web/pnpm-lock.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 COPY internal/web/ ./
-RUN npm run build
+RUN pnpm run build
 
 # ---- Go build -------------------------------------------------------------
 FROM mirror.gcr.io/library/golang:${GO_VERSION}-trixie AS builder

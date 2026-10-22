@@ -28,14 +28,13 @@ with `mise -C build/tools lock -p linux-x64,linux-arm64`. `mise run
 generate` rebuilds the chart's README and schema from `values.yaml`; the
 Renovate regeneration workflow commits both.
 
-The dashboard's npm dependencies run no install script nobody reviewed:
-`internal/web/.npmrc` sets `strict-allow-scripts`, so `npm ci`, in CI and
-in the image build, fails on a dependency with an install script the
-`allowScripts` field of `internal/web/package.json` does not cover. In
-`internal/web`, `npm install-scripts approve <pkg>` allows one that needs
-its script, and `npm install-scripts deny <pkg>` skips one that works
-without it, as `fsevents`, Vite's macOS file watcher, does: it ships its
-binary built.
+The dashboard installs its dependencies with pnpm, which mise pins and
+which runs no dependency's install script nobody reviewed: `pnpm install`,
+locally, in CI and in the image build, fails on a dependency with a build
+script the `allowBuilds` setting of `internal/web/pnpm-workspace.yaml` does
+not name. None has one today, so the file does not exist; in
+`internal/web`, `pnpm approve-builds` records the decision for one that
+does, and the Dockerfile's `ui` stage then copies the file in too.
 
 ## S3 cache compatibility
 

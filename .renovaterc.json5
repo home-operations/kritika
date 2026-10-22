@@ -2,10 +2,9 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>home-operations/renovate-config"],
   postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
-  // npm 12's --package-lock-only refuses registry tarballs of packages with
-  // bundleDependencies (@tailwindcss/oxide-wasm32-wasi): npm/cli#9800.
-  // npm 11 is also what the pinned Node bundles for CI and the image.
-  constraints: { npm: "^11" },
+  // The lockfile's version 9.0 alone would let Renovate update it with any
+  // pnpm >= 9; this keeps it on the major mise pins.
+  constraints: { pnpm: "^12" },
   customManagers: [
     {
       // The Dockerfile takes the -tools image's mise from min_version.
