@@ -165,7 +165,7 @@ apps:
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
   beta-bot:
     accounts: [beta]
-    clientId: Iv1.test
+    clientId: Iv1.beta-bot
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
 `

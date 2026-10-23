@@ -90,6 +90,12 @@ const (
 	uninstallEvery = time.Minute
 )
 
+// installationFresh is how old an installation may be when its event
+// arrives and still be removed. GitHub delivers it within seconds, but the
+// App's owner can redeliver it for days, and one redelivered after its
+// account was dropped from the configuration is the operator's.
+const installationFresh = 10 * time.Minute
+
 // Handler serves POST /hooks/{connection}.
 type Handler struct {
 	current *configfile.Current
@@ -255,7 +261,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // newInstallation reports whether ev is an App's installation on an
 // account as it is made.
 func newInstallation(ev webhook.Event) bool {
-	return ev.Kind == webhook.KindInstallation && ev.Action == actionCreated && ev.Installation.ID != 0
+	return ev.Kind == webhook.KindInstallation && ev.Action == actionCreated && ev.Installation.ID != 0 &&
+		time.Since(ev.Installation.CreatedAt) < installationFresh
 }
 
 // uninstall removes the App from an account no connection serves as it is

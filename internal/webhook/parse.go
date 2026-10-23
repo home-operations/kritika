@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -186,6 +187,9 @@ type Push struct {
 // App may now see.
 type Installation struct {
 	ID int64
+	// CreatedAt is when the installation was made; zero when the payload
+	// gives no time it can be read as.
+	CreatedAt time.Time
 	// Repositories is the full list on "created", the delta on
 	// "added"/"removed"; the action says which.
 	Repositories []string
@@ -582,12 +586,28 @@ func parseRepository(delivery string, body []byte) (Event, error) {
 	return ev, nil
 }
 
+// installedAt reads an installation's created_at, which GitHub gives as an
+// RFC 3339 string or as Unix seconds. One it cannot read is zero rather
+// than an error: a served account's installation event must not fail on
+// it.
+func installedAt(raw json.RawMessage) time.Time {
+	if n, err := strconv.ParseInt(string(raw), 10, 64); err == nil {
+		return time.Unix(n, 0)
+	}
+	var t time.Time
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
 func parseInstallation(delivery string, body []byte) (Event, error) {
 	var p struct {
 		Action       string `json:"action"`
 		Installation struct {
-			ID      int64  `json:"id"`
-			Account ghUser `json:"account"`
+			ID        int64           `json:"id"`
+			Account   ghUser          `json:"account"`
+			CreatedAt json.RawMessage `json:"created_at"`
 		} `json:"installation"`
 		Repositories []struct {
 			FullName string `json:"full_name"`
@@ -602,7 +622,7 @@ func parseInstallation(delivery string, body []byte) (Event, error) {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Event{}, fmt.Errorf("webhook: installation payload: %w", err)
 	}
-	inst := &Installation{ID: p.Installation.ID}
+	inst := &Installation{ID: p.Installation.ID, CreatedAt: installedAt(p.Installation.CreatedAt)}
 	for _, r := range p.Repositories {
 		inst.Repositories = append(inst.Repositories, r.FullName)
 	}

@@ -46,7 +46,7 @@ apps:
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
   webapi-b-bot:
     accounts: [wb]
-    clientId: Iv1.test
+    clientId: Iv1.webapi-b-bot
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
 `

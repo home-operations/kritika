@@ -138,7 +138,8 @@ request can be refused while one is already queued or running.
 kritika uninstalls an App from an account the configuration does not serve
 as it is installed there. Uninstall is for an installation it left: one
 made before its account was dropped from the configuration, one whose
-webhook never arrived, or one past its limit of removals.
+webhook never arrived or came more than ten minutes late, or one past its
+limit of removals.
 
 ## Operational notes
 

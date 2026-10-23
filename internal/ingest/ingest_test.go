@@ -440,19 +440,33 @@ gitea:
 type fakeUninstaller struct {
 	got []string
 	err error
+	// ctxErr and deadline are the last call's context's.
+	ctxErr   error
+	deadline bool
 }
 
-func (f *fakeUninstaller) Uninstall(_ context.Context, in *configfile.Connection, account string, installation int64) error {
+func (f *fakeUninstaller) Uninstall(ctx context.Context, in *configfile.Connection, account string, installation int64) error {
 	f.got = append(f.got, fmt.Sprintf("%s/%s#%d", in.Name, account, installation))
+	f.ctxErr = ctx.Err()
+	_, f.deadline = ctx.Deadline()
 	return f.err
 }
 
-// installationBody is an installation event of action on account, with
-// the installation's id when it is not 0.
+// installationBody is an installation event of action on account, made
+// now, with the installation's id when it is not 0.
 func installationBody(action, account string, id int64) string {
+	return installationBodyAt(action, account, id, strconv.FormatInt(time.Now().Unix(), 10))
+}
+
+// installationBodyAt is installationBody with createdAt, a JSON value, as
+// the installation's created_at, none when it is "".
+func installationBodyAt(action, account string, id int64, createdAt string) string {
 	inst := `"account":{"login":"` + account + `","type":"Organization"}`
 	if id != 0 {
 		inst = `"id":` + strconv.FormatInt(id, 10) + `,` + inst
+	}
+	if createdAt != "" {
+		inst += `,"created_at":` + createdAt
 	}
 	return `{"action":"` + action + `","installation":{` + inst + `},"repositories":[{"full_name":"` + account + `/a"}]}`
 }
@@ -460,7 +474,12 @@ func installationBody(action, account string, id int64) string {
 // sendHook delivers a signed GitHub event to h's bot-ross hook.
 func sendHook(t *testing.T, h *Handler, event, body string) int {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/hooks/bot-ross", strings.NewReader(body))
+	return sendHookCtx(t.Context(), h, event, body)
+}
+
+// sendHookCtx is sendHook with the request's context ctx.
+func sendHookCtx(ctx context.Context, h *Handler, event, body string) int {
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/hooks/bot-ross", strings.NewReader(body))
 	req.SetPathValue("connection", "bot-ross")
 	req.Header.Set("X-GitHub-Event", event)
 	req.Header.Set("X-GitHub-Delivery", "d-1")
@@ -511,8 +530,16 @@ func TestHandlerUninstallsFromUndeclaredAccounts(t *testing.T) {
 	}{
 		{name: "installed on an undeclared account", event: "installation", body: installationBody("created", "stranger", 7),
 			uninstalled: []string{"bot-ross/stranger#7"}, outcome: "uninstalled"},
+		{name: "installed at an RFC 3339 time", event: "installation",
+			body:        installationBodyAt("created", "stranger", 7, `"`+time.Now().Format(time.RFC3339)+`"`),
+			uninstalled: []string{"bot-ross/stranger#7"}, outcome: "uninstalled"},
 		{name: "the forge refuses", event: "installation", body: installationBody("created", "stranger", 7), err: errors.New("boom"),
 			uninstalled: []string{"bot-ross/stranger#7"}, outcome: "error"},
+		{name: "redelivered after its account was dropped", event: "installation",
+			body:    installationBodyAt("created", "stranger", 7, strconv.FormatInt(time.Now().Add(-2*24*time.Hour).Unix(), 10)),
+			outcome: "undeclared_account"},
+		{name: "no installation time", event: "installation", body: installationBodyAt("created", "stranger", 7, ""),
+			outcome: "undeclared_account"},
 		{name: "installed on a served account", event: "installation", body: installationBody("created", "Home-Operations", 7),
 			dispatched: true, outcome: Recorded},
 		{name: "uninstalled from an undeclared account", event: "installation", body: installationBody("deleted", "stranger", 7),
@@ -568,5 +595,24 @@ func TestHandlerLimitsUninstalls(t *testing.T) {
 	got := webhookOutcomes(t, reg)
 	if len(u.got) != uninstallBurst || got["uninstalled"] != uninstallBurst || got["uninstall_limited"] != 2 {
 		t.Fatalf("uninstalled %d, outcomes %v; want %d uninstalled and 2 limited", len(u.got), got, uninstallBurst)
+	}
+}
+
+// TestHandlerUninstallOutlivesItsRequest: a removal the forge was asked
+// for finishes, bounded, when GitHub hangs up, so its audit row is not
+// rolled back after the installation is gone.
+func TestHandlerUninstallOutlivesItsRequest(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s3cret")
+	h := NewHandler(configfile.NewCurrent(configfiletest.Load(t, configYAML)), &fakeDispatcher{}, slog.New(slog.DiscardHandler))
+	u := &fakeUninstaller{}
+	h.Uninstaller = u
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if code := sendHookCtx(ctx, h, "installation", installationBody("created", "stranger", 7)); code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", code)
+	}
+	if len(u.got) != 1 || u.ctxErr != nil || !u.deadline {
+		t.Fatalf("uninstalled %q with context error %v, deadline %v; want one, live and bounded", u.got, u.ctxErr, u.deadline)
 	}
 }

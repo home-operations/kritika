@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -138,12 +139,20 @@ func TestParseGitHubPushInstallationPingAndUnknown(t *testing.T) {
 	if err != nil || ev.Kind != KindInstallation || ev.Account != "onedr0p" || ev.Installation.ID != 42 || len(ev.Installation.Repositories) != 1 {
 		t.Fatalf("installation = %+v %v", ev, err)
 	}
-	created := `{"action":"created","installation":{"id":7,"account":{"login":"stranger","type":"Organization"}},
-	  "repositories":[{"full_name":"stranger/a"},{"full_name":"stranger/b"}]}`
-	ev, err = Parse(configfile.ForgeGitHub, gh("installation"), []byte(created))
-	if err != nil || ev.Kind != KindInstallation || ev.Action != "created" || ev.Account != "stranger" ||
-		ev.Installation.ID != 7 || len(ev.Installation.Repositories) != 2 {
-		t.Fatalf("installation created = %+v %v", ev, err)
+	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	for createdAt, want := range map[string]time.Time{
+		strconv.FormatInt(at.Unix(), 10): at,
+		`"2026-10-23T14:00:00+02:00"`:    at,
+		`"yesterday"`:                    {},
+		`null`:                           {},
+	} {
+		created := `{"action":"created","installation":{"id":7,"account":{"login":"stranger","type":"Organization"},
+		  "created_at":` + createdAt + `},"repositories":[{"full_name":"stranger/a"},{"full_name":"stranger/b"}]}`
+		ev, err = Parse(configfile.ForgeGitHub, gh("installation"), []byte(created))
+		if err != nil || ev.Kind != KindInstallation || ev.Action != "created" || ev.Account != "stranger" ||
+			ev.Installation.ID != 7 || !ev.Installation.CreatedAt.Equal(want) || len(ev.Installation.Repositories) != 2 {
+			t.Fatalf("installation created at %s = %+v %v", createdAt, ev, err)
+		}
 	}
 	ev, _ = Parse(configfile.ForgeGitHub, gh("ping"), []byte(`{"zen":"x"}`))
 	if ev.Kind != KindPing {

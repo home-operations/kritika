@@ -140,9 +140,10 @@ it. kritika uninstalls the App from an account no connection serves as soon
 as it is installed there, so an installation made before its account is
 listed, or one that reaches a replica still running the previous
 configuration, is removed and has to be made again. Each removal is in the
-audit log. A replica removes at most five at once and one a minute after
-that; an installation past that stays, as does one made before its account
-was dropped from `apps`, until an admin uninstalls it from the dashboard.
+audit log. Only an installation made in the last ten minutes is removed,
+at most five at once and one a minute after that per replica. Any other,
+such as one made before its account was dropped from `apps`, stays until an
+admin uninstalls it from the dashboard.
 
 Installing the App grants access. Newly discovered repositories still need to
 be enabled in the dashboard.
