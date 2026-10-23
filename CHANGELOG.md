@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.0.99](https://github.com/home-operations/kritika/compare/0.0.98...0.0.99) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **review:** run several agents on a pull request ([#1197](https://github.com/home-operations/kritika/issues/1197))
+* **config:** drop the repositories map from the configuration file ([#1199](https://github.com/home-operations/kritika/issues/1199))
+
+### Features
+
+* **agent:** wrap a review up before its time runs out, and say when one was cut short ([#1204](https://github.com/home-operations/kritika/issues/1204)) ([91251e6](https://github.com/home-operations/kritika/commit/91251e6079dc6f6d306d339aa1a0a180c788adeb))
+* **config:** drop the repositories map from the configuration file ([#1199](https://github.com/home-operations/kritika/issues/1199)) ([a836fe9](https://github.com/home-operations/kritika/commit/a836fe9561aec0d175a66560cec8460a50964222))
+* **review:** route a pull request to another review model by conditions ([#1198](https://github.com/home-operations/kritika/issues/1198)) ([dabf0dc](https://github.com/home-operations/kritika/commit/dabf0dc63f72956a6c54918ad89f264847a141e6))
+* **review:** run several agents on a pull request ([#1197](https://github.com/home-operations/kritika/issues/1197)) ([1d6f7c7](https://github.com/home-operations/kritika/commit/1d6f7c7e729ad8551920865d424673a5b918024b))
+
+
+### Bug Fixes
+
+* **review:** let a finding's agent prompt put lines to write on their own lines ([#1201](https://github.com/home-operations/kritika/issues/1201)) ([e431bc7](https://github.com/home-operations/kritika/commit/e431bc70f150aedf6bd42aaa13f8443e6cc81e71))
+
+
+### Code Refactoring
+
+* remove dead code, use Go 1.27 idioms and align the docs ([#1203](https://github.com/home-operations/kritika/issues/1203)) ([9ee55f5](https://github.com/home-operations/kritika/commit/9ee55f506b1706f4a96eed5d0bcd8fbb1a0588fc))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool aqua:astral-sh/uv (0.13.2 → 0.13.3) ([#1194](https://github.com/home-operations/kritika/issues/1194)) ([2ff8f4e](https://github.com/home-operations/kritika/commit/2ff8f4e07ef13c95111d3d4a0208d3eae9a34148))
+* **mise:** update tool aqua:astral-sh/uv (0.13.3 → 0.13.4) ([#1202](https://github.com/home-operations/kritika/issues/1202)) ([99ca96b](https://github.com/home-operations/kritika/commit/99ca96b989d21ece4fd9c6ccf65cb137924acea5))
+
 ## [0.0.98](https://github.com/home-operations/kritika/compare/0.0.97...0.0.98) (2026-10-22)
 
 
