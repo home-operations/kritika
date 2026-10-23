@@ -185,6 +185,7 @@ type Push struct {
 // Installation is a GitHub App installation change: which repositories the
 // App may now see.
 type Installation struct {
+	ID int64
 	// Repositories is the full list on "created", the delta on
 	// "added"/"removed"; the action says which.
 	Repositories []string
@@ -585,6 +586,7 @@ func parseInstallation(delivery string, body []byte) (Event, error) {
 	var p struct {
 		Action       string `json:"action"`
 		Installation struct {
+			ID      int64  `json:"id"`
 			Account ghUser `json:"account"`
 		} `json:"installation"`
 		Repositories []struct {
@@ -600,7 +602,7 @@ func parseInstallation(delivery string, body []byte) (Event, error) {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Event{}, fmt.Errorf("webhook: installation payload: %w", err)
 	}
-	inst := &Installation{}
+	inst := &Installation{ID: p.Installation.ID}
 	for _, r := range p.Repositories {
 		inst.Repositories = append(inst.Repositories, r.FullName)
 	}

@@ -14,7 +14,8 @@ A GitHub App, registered as the [setup guide](setup.md#register-the-github-app)
 describes and declared under `apps`. The App's webhook reaches kritika at
 `/hooks/<name>`; installation events keep the served repositories current,
 and kritika mints a short-lived, read-only installation token for each
-run.
+run. An installation on an account the App does not serve is removed as it
+is made: see [accounts a connection does not serve](#accounts-a-connection-does-not-serve).
 
 ```yaml
 apps:
@@ -351,3 +352,21 @@ accounts, which kritika reads from the API; a webhook does not, so there it
 goes by the `[bot]` suffix and the names GitLab gives access token users.
 Gitea marks a bot user as GitHub does, in the API and webhooks alike, and
 a Gitea connection's `bots` adds any other account a bot runs as.
+
+## Accounts a connection does not serve
+
+Anyone can install a public GitHub App, and GitHub then sends kritika that
+installation's events, signed with the App's own secret. kritika ignores
+them, and uninstalls the App from the account as soon as it is installed
+there, as the [setup guide](setup.md#install-the-app) describes. An
+`apps` entry is the only one with its `clientId`: the App has one webhook,
+so a second entry's accounts would be strangers on the first's hook path.
+
+On Forgejo, GitLab and Gitea there is nothing to install. Anyone can add
+kritika's bot user or service account to their own repositories, but
+kritika lists and polls only the accounts a connection serves, and refuses
+a webhook not signed with the connection's `webhookSecret`. Being added
+still gives kritika's credential access to their repositories: on Forgejo,
+grant the integration's capabilities only on the repositories the
+connection's accounts hold, so its tokens reach no others. Gitea's tokens
+and GitLab's reach whatever the bot is added to.

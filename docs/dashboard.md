@@ -135,6 +135,11 @@ Admins can:
 Re-run, cancel and reindex requests queue work. A duplicate review or index
 request can be refused while one is already queued or running.
 
+kritika uninstalls an App from an account the configuration does not serve
+as it is installed there. Uninstall is for an installation it left: one
+made before its account was dropped from the configuration, one whose
+webhook never arrived, or one past its limit of removals.
+
 ## Operational notes
 
 A configuration that fails validation prevents startup. If the leader cannot

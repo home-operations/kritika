@@ -22,6 +22,10 @@ type AuditEntry struct {
 	Detail    json.RawMessage
 }
 
+// AuditAppUninstall is the action of an App's removal from an account no
+// connection serves, by an admin or by kritika as it is installed there.
+const AuditAppUninstall = "app.uninstall"
+
 // AuditEvent is one audit log row.
 type AuditEvent struct {
 	ID        int64

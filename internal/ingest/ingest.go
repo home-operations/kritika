@@ -1,7 +1,9 @@
 // Package ingest is the only surface a forge reaches. It looks the
 // connection up by hook path, verifies the signature with that
 // connection's secret, parses the payload into a forge-neutral event, and
-// hands it to a Dispatcher. It never does work itself.
+// hands it to a Dispatcher, or, for a GitHub App just installed on an
+// account no connection serves, to an Uninstaller. It never does work
+// itself.
 package ingest
 
 import (
@@ -11,6 +13,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/metrics"
@@ -65,8 +69,26 @@ type Authors interface {
 	PullRequestAuthor(ctx context.Context, in *configfile.Connection, repo string, number int) (login string, bot bool, err error)
 }
 
+// Uninstaller removes a GitHub App's installation from an account no
+// connection serves, and audits it. The store-backed implementation is
+// Service.
+type Uninstaller interface {
+	Uninstall(ctx context.Context, in *configfile.Connection, account string, installation int64) error
+}
+
 // dispatchTimeout bounds one dispatch, which does not end with its request.
 const dispatchTimeout = 30 * time.Second
+
+// uninstallBurst and uninstallEvery bound the uninstalls one replica
+// makes. Each is a call with the App's own credential, which also mints
+// the served accounts' tokens, and an audit row, so a stranger installing
+// the App over and over must not spend either without limit. Past the
+// bound an installation is ignored as any other webhook for an undeclared
+// account is, and stays until an admin removes it or it is made again.
+const (
+	uninstallBurst = 5
+	uninstallEvery = time.Minute
+)
 
 // Handler serves POST /hooks/{connection}.
 type Handler struct {
@@ -80,11 +102,19 @@ type Handler struct {
 	// Authors may be nil, when no connection's webhooks leave a pull
 	// request's author out.
 	Authors Authors
+	// Uninstaller may be nil, which leaves a GitHub App installed on an
+	// account no connection serves for an admin to remove.
+	Uninstaller Uninstaller
+
+	uninstalls *rate.Limiter
 }
 
 // NewHandler builds the hook handler over the current configuration.
 func NewHandler(current *configfile.Current, disp Dispatcher, logger *slog.Logger) *Handler {
-	return &Handler{current: current, disp: disp, logger: logger}
+	return &Handler{
+		current: current, disp: disp, logger: logger,
+		uninstalls: rate.NewLimiter(rate.Every(uninstallEvery), uninstallBurst),
+	}
 }
 
 // ServeHTTP verifies, parses and dispatches. Status codes: 404 for an
@@ -166,6 +196,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Metrics.Webhook(name, Ignored)
 		w.WriteHeader(http.StatusAccepted)
 		return
+	case account == nil && h.Uninstaller != nil && newInstallation(ev):
+		h.Metrics.Webhook(name, h.uninstall(r.Context(), logger, in, ev))
+		w.WriteHeader(http.StatusAccepted)
+		return
 	case account == nil:
 		// A public App can be installed by anyone; only the declared
 		// accounts are served. Accepted, so the forge does not retry.
@@ -216,6 +250,34 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.Info("webhook handled", "status", out.Status, "reason", out.Reason, "job", out.Job)
 	h.Metrics.Webhook(name, out.Status)
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// newInstallation reports whether ev is an App's installation on an
+// account as it is made.
+func newInstallation(ev webhook.Event) bool {
+	return ev.Kind == webhook.KindInstallation && ev.Action == actionCreated && ev.Installation.ID != 0
+}
+
+// uninstall removes the App from an account no connection serves as it is
+// installed there, and returns the delivery's outcome. Only a new
+// installation is removed: one made before its account was dropped from
+// the configuration is the operator's, and stays.
+func (h *Handler) uninstall(ctx context.Context, logger *slog.Logger, in *configfile.Connection, ev webhook.Event) string {
+	logger = logger.With("account", ev.Account, "installation", ev.Installation.ID)
+	if !h.uninstalls.Allow() {
+		logger.Warn("App installed on an undeclared account left installed: too many uninstalls of late")
+		return "uninstall_limited"
+	}
+	// Not ended with the request: a removal the forge made after the
+	// request was cut would roll its audit row back.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dispatchTimeout)
+	defer cancel()
+	if err := h.Uninstaller.Uninstall(ctx, in, ev.Account, ev.Installation.ID); err != nil {
+		logger.Error("App installed on an undeclared account not uninstalled", "error", err)
+		return "error"
+	}
+	logger.Warn("App uninstalled from an undeclared account")
+	return "uninstalled"
 }
 
 // pullNumber is the pull request ev concerns, whether the event is the

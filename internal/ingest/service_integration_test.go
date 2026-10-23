@@ -5,6 +5,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -988,6 +989,60 @@ func TestRecordDelivery(t *testing.T) {
 
 // TestRecordUnsigned: an unsigned delivery is recorded apart from verified
 // ones, and read back with them.
+// TestUninstallAudits: an uninstall is audited with no actor once the
+// forge has removed the installation, and not at all when it refused.
+func TestUninstallAudits(t *testing.T) {
+	svc, st, f := setupService(t)
+	ctx := t.Context()
+	in, _ := f.Connection("bot-ross")
+	audited := func() []store.AuditEvent {
+		t.Helper()
+		events, _, err := st.ListAudit(ctx, "", store.Page{Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []store.AuditEvent
+		for _, e := range events {
+			if e.Target == "bot-ross/uninstalled-stranger" {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	if err := svc.Uninstall(ctx, in, "uninstalled-stranger", 7); err == nil || len(audited()) != 0 {
+		t.Fatalf("Uninstall with no App = %v, audited %d; want refused, none", err, len(audited()))
+	}
+	var removed []int64
+	svc.UninstallApp = func(_ context.Context, got *configfile.Connection, installation int64) error {
+		if got.Name != "bot-ross" {
+			t.Errorf("connection = %s", got.Name)
+		}
+		removed = append(removed, installation)
+		if installation == 8 {
+			return errors.New("forge refused")
+		}
+		return nil
+	}
+	if err := svc.Uninstall(ctx, in, "uninstalled-stranger", 8); err == nil || len(audited()) != 0 {
+		t.Fatalf("refused Uninstall = %v, audited %d; want the error, none", err, len(audited()))
+	}
+	if err := svc.Uninstall(ctx, in, "uninstalled-stranger", 7); err != nil {
+		t.Fatal(err)
+	}
+	events := audited()
+	if len(events) != 1 || !reflect.DeepEqual(removed, []int64{8, 7}) {
+		t.Fatalf("audited %+v, removed %v", events, removed)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal(events[0].Detail, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if e := events[0]; e.Actor != nil || e.Action != store.AuditAppUninstall || e.AccountID != "" ||
+		!reflect.DeepEqual(detail, map[string]any{"installation": float64(7), "automatic": true}) {
+		t.Fatalf("audit event = %+v, detail %v", e, detail)
+	}
+}
+
 func TestRecordUnsigned(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()

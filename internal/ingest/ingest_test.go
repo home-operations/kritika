@@ -13,13 +13,17 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/configfile/configfiletest"
+	"github.com/home-operations/kritika/internal/metrics"
 	"github.com/home-operations/kritika/internal/webhook"
 )
 
@@ -430,5 +434,139 @@ gitea:
 				}
 			}
 		})
+	}
+}
+
+type fakeUninstaller struct {
+	got []string
+	err error
+}
+
+func (f *fakeUninstaller) Uninstall(_ context.Context, in *configfile.Connection, account string, installation int64) error {
+	f.got = append(f.got, fmt.Sprintf("%s/%s#%d", in.Name, account, installation))
+	return f.err
+}
+
+// installationBody is an installation event of action on account, with
+// the installation's id when it is not 0.
+func installationBody(action, account string, id int64) string {
+	inst := `"account":{"login":"` + account + `","type":"Organization"}`
+	if id != 0 {
+		inst = `"id":` + strconv.FormatInt(id, 10) + `,` + inst
+	}
+	return `{"action":"` + action + `","installation":{` + inst + `},"repositories":[{"full_name":"` + account + `/a"}]}`
+}
+
+// sendHook delivers a signed GitHub event to h's bot-ross hook.
+func sendHook(t *testing.T, h *Handler, event, body string) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/hooks/bot-ross", strings.NewReader(body))
+	req.SetPathValue("connection", "bot-ross")
+	req.Header.Set("X-GitHub-Event", event)
+	req.Header.Set("X-GitHub-Delivery", "d-1")
+	req.Header.Set("X-Hub-Signature-256", sign("s3cret", []byte(body)))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+// webhookOutcomes sums kritika_webhooks_total by outcome.
+func webhookOutcomes(t *testing.T, reg *prometheus.Registry) map[string]float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]float64{}
+	for _, mf := range families {
+		if mf.GetName() != "kritika_webhooks_total" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "outcome" {
+					out[l.GetValue()] += m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return out
+}
+
+// TestHandlerUninstallsFromUndeclaredAccounts: the App is removed from an
+// account no connection serves as it is installed there, and from no
+// other: a served account's installation is dispatched, and another
+// action on an undeclared account's, as any of its events, is ignored.
+func TestHandlerUninstallsFromUndeclaredAccounts(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s3cret")
+	f := configfiletest.Load(t, configYAML)
+	for _, tt := range []struct {
+		name, event, body string
+		noUninstaller     bool
+		err               error
+		uninstalled       []string
+		dispatched        bool
+		outcome           string
+	}{
+		{name: "installed on an undeclared account", event: "installation", body: installationBody("created", "stranger", 7),
+			uninstalled: []string{"bot-ross/stranger#7"}, outcome: "uninstalled"},
+		{name: "the forge refuses", event: "installation", body: installationBody("created", "stranger", 7), err: errors.New("boom"),
+			uninstalled: []string{"bot-ross/stranger#7"}, outcome: "error"},
+		{name: "installed on a served account", event: "installation", body: installationBody("created", "Home-Operations", 7),
+			dispatched: true, outcome: Recorded},
+		{name: "uninstalled from an undeclared account", event: "installation", body: installationBody("deleted", "stranger", 7),
+			outcome: "undeclared_account"},
+		{name: "repositories added on an undeclared account", event: "installation_repositories",
+			body: installationBody("added", "stranger", 7), outcome: "undeclared_account"},
+		{name: "no installation id", event: "installation", body: installationBody("created", "stranger", 0),
+			outcome: "undeclared_account"},
+		{name: "no uninstaller", event: "installation", body: installationBody("created", "stranger", 7), noUninstaller: true,
+			outcome: "undeclared_account"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			disp := &fakeDispatcher{out: Outcome{Status: Recorded}}
+			reg := prometheus.NewRegistry()
+			h := NewHandler(configfile.NewCurrent(f), disp, slog.New(slog.DiscardHandler))
+			h.Metrics = metrics.New(reg)
+			u := &fakeUninstaller{err: tt.err}
+			if !tt.noUninstaller {
+				h.Uninstaller = u
+			}
+			if code := sendHook(t, h, tt.event, tt.body); code != http.StatusAccepted {
+				t.Fatalf("status = %d, want 202", code)
+			}
+			if !slices.Equal(u.got, tt.uninstalled) {
+				t.Fatalf("uninstalled = %q, want %q", u.got, tt.uninstalled)
+			}
+			if (len(disp.got) > 0) != tt.dispatched {
+				t.Fatalf("dispatched = %v, want %v", len(disp.got) > 0, tt.dispatched)
+			}
+			if got := webhookOutcomes(t, reg); got[tt.outcome] != 1 || len(got) != 1 {
+				t.Fatalf("outcomes = %v, want one %s", got, tt.outcome)
+			}
+		})
+	}
+}
+
+// TestHandlerLimitsUninstalls: past its burst a replica uninstalls no
+// more, and ignores the installation as it would any other webhook for an
+// undeclared account.
+func TestHandlerLimitsUninstalls(t *testing.T) {
+	t.Setenv("TEST_PEM", "pem")
+	t.Setenv("TEST_SECRET", "s3cret")
+	reg := prometheus.NewRegistry()
+	h := NewHandler(configfile.NewCurrent(configfiletest.Load(t, configYAML)), &fakeDispatcher{}, slog.New(slog.DiscardHandler))
+	h.Metrics = metrics.New(reg)
+	u := &fakeUninstaller{}
+	h.Uninstaller = u
+	for i := range uninstallBurst + 2 {
+		if code := sendHook(t, h, "installation", installationBody("created", "stranger", int64(i+1))); code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202", code)
+		}
+	}
+	got := webhookOutcomes(t, reg)
+	if len(u.got) != uninstallBurst || got["uninstalled"] != uninstallBurst || got["uninstall_limited"] != 2 {
+		t.Fatalf("uninstalled %d, outcomes %v; want %d uninstalled and 2 limited", len(u.got), got, uninstallBurst)
 	}
 }

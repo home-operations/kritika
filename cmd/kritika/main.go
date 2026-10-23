@@ -249,6 +249,7 @@ func serve(
 	apps := &worker.Forges{Metrics: m, Issuer: forgejo.IssuerURL(cfg.WebURLParsed())}
 	forges := &worker.ForgeCache{Build: apps.Build}
 	svc := ingest.NewService(st, inserter)
+	svc.UninstallApp = apps.UninstallApp
 	if st.LeaderEligible() {
 		kube, _ := exec.(*executor.Kube)
 		var events *executor.Events
@@ -300,6 +301,7 @@ func startPublic(
 	hooks.Metrics = m
 	hooks.Deliveries = svc
 	hooks.Authors = forges
+	hooks.Uninstaller = svc
 
 	webLogger := logger.With("listener", "web")
 	authHandler, err := auth.New(auth.Config{Store: st, Current: current, WebURL: cfg.WebURLParsed(), Logger: webLogger})

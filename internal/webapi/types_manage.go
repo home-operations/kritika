@@ -3,6 +3,8 @@ package webapi
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/home-operations/kritika/internal/store"
 )
 
 // The management API's JSON shapes; internal/web/src/lib/types.ts mirrors
@@ -61,7 +63,7 @@ type AuditAction string
 
 // Audited actions.
 const (
-	AuditAppUninstall AuditAction = "app.uninstall"
+	AuditAppUninstall AuditAction = store.AuditAppUninstall
 	AuditReviewRerun  AuditAction = "review.rerun"
 	AuditReviewCancel AuditAction = "review.cancel"
 	AuditRepoReindex  AuditAction = "repo.reindex"

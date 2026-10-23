@@ -135,8 +135,15 @@ func TestParseGitHubPushInstallationPingAndUnknown(t *testing.T) {
 	inst := `{"action":"added","installation":{"id":42,"account":{"login":"onedr0p","type":"User"}},
 	  "repositories_added":[{"full_name":"onedr0p/home-ops"}],"repositories_removed":[]}`
 	ev, err = Parse(configfile.ForgeGitHub, gh("installation_repositories"), []byte(inst))
-	if err != nil || ev.Kind != KindInstallation || ev.Account != "onedr0p" || len(ev.Installation.Repositories) != 1 {
+	if err != nil || ev.Kind != KindInstallation || ev.Account != "onedr0p" || ev.Installation.ID != 42 || len(ev.Installation.Repositories) != 1 {
 		t.Fatalf("installation = %+v %v", ev, err)
+	}
+	created := `{"action":"created","installation":{"id":7,"account":{"login":"stranger","type":"Organization"}},
+	  "repositories":[{"full_name":"stranger/a"},{"full_name":"stranger/b"}]}`
+	ev, err = Parse(configfile.ForgeGitHub, gh("installation"), []byte(created))
+	if err != nil || ev.Kind != KindInstallation || ev.Action != "created" || ev.Account != "stranger" ||
+		ev.Installation.ID != 7 || len(ev.Installation.Repositories) != 2 {
+		t.Fatalf("installation created = %+v %v", ev, err)
 	}
 	ev, _ = Parse(configfile.ForgeGitHub, gh("ping"), []byte(`{"zen":"x"}`))
 	if ev.Kind != KindPing {
