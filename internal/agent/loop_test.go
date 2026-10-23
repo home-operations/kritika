@@ -874,13 +874,15 @@ func TestRunWaitsOutATransientStepFailure(t *testing.T) {
 		})
 	}
 
+	// The first wait ends where the time the run keeps to submit in starts,
+	// and the step goes again told to submit; the ctx cuts that one's wait.
 	t.Run("a wait the ctx cut ends the run canceled", func(t *testing.T) {
 		stepRetryWaits = []time.Duration{time.Hour}
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
 		s := &outageStepper{outage: 5}
-		if res := (Run{Stepper: s, Model: "m", User: "review", Submit: testSubmitDef}).Do(ctx); res.Stop != StopCanceled || s.calls != 1 {
-			t.Fatalf("stop = %s after %d calls, want canceled after one", res.Stop, s.calls)
+		if res := (Run{Stepper: s, Model: "m", User: "review", Submit: testSubmitDef}).Do(ctx); res.Stop != StopCanceled || s.calls != 2 {
+			t.Fatalf("stop = %s after %d calls, want canceled after two", res.Stop, s.calls)
 		}
 	})
 }
@@ -926,15 +928,19 @@ func TestRunWrapsUpBeforeItsDeadline(t *testing.T) {
 		// at 7m30s, 2m30s before the deadline, is told.
 		{name: "the slowest answer sets the time kept", timeout: 10 * time.Minute, took: 90 * time.Second, tools: 5, told: 5},
 		// Four minutes in all keep a quarter, 1m, over two 10s answers: the
-		// step that starts at 3m10s is told.
-		{name: "a short run keeps a quarter of its time", timeout: 4 * time.Minute, took: 10 * time.Second, tools: 19, told: 19},
+		// step that starts at 3m, with 1m left, is told.
+		{name: "a short run keeps a quarter of its time", timeout: 4 * time.Minute, took: 10 * time.Second, tools: 18, told: 18},
 		{name: "a run with no deadline is never told", took: time.Hour, tools: 3, told: -1},
 		// The first answer comes after a 3m wait, which would have the Run
 		// keep 6m of the 5m left had it counted.
 		{name: "a wait between attempts is not an answer's time", timeout: 8 * time.Minute, failOn: 1, tools: 1, told: -1},
-		// The second step fails, and its 3m wait leaves 30s of the 3m30s, a
-		// quarter of which is kept: it goes again told to submit.
+		// The second step fails, and its 3m wait would run into the quarter
+		// of the 3m30s kept: it ends where that starts, and the step goes
+		// again told to submit.
 		{name: "a wait into the time kept sends the step again told to submit", timeout: 3*time.Minute + 30*time.Second, failOn: 2,
+			tools: 1, told: 1},
+		// A 3m wait would outlast the 2m30s itself.
+		{name: "a wait past the deadline ends where the time kept starts", timeout: 2*time.Minute + 30*time.Second, failOn: 2,
 			tools: 1, told: 1},
 	}
 	for _, tt := range tests {

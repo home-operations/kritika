@@ -308,9 +308,13 @@ type clock struct {
 	slowest         time.Duration
 }
 
-// due says whether the time left is under what wrapUpReserve keeps.
-func (c clock) due() bool {
-	return c.timed && time.Until(c.deadline) < wrapUpReserve(c.slowest, c.deadline.Sub(c.begun))
+// due says whether the time left is no more than what wrapUpReserve keeps.
+func (c clock) due() bool { return c.timed && c.dueIn() <= 0 }
+
+// dueIn is how long until the time left is no more than what wrapUpReserve
+// keeps, 0 or less once it is.
+func (c clock) dueIn() time.Duration {
+	return time.Until(c.deadline) - wrapUpReserve(c.slowest, c.deadline.Sub(c.begun))
 }
 
 // errWrapUp ends a step's retries once the Run's time is due for a
@@ -319,8 +323,8 @@ func (c clock) due() bool {
 var errWrapUp = errors.New("agent: time to submit")
 
 // forcedBy is the limit that has step, from 0, told to submit, "" for
-// none: the last step, nine tenths of the tokens spent, or less time left
-// than wrapUpReserve keeps.
+// none: the last step, nine tenths of the tokens spent, or no more time
+// left than wrapUpReserve keeps.
 func forcedBy(step int, spent int64, limits Limits, c clock) ForcedBy {
 	switch {
 	case step >= limits.MaxSteps-1:
@@ -395,7 +399,7 @@ func (r Run) endedWith(toolDefs []model.ToolDef, messages []model.Message, resp 
 
 // Do runs the loop to completion. The model is told to submit with what it
 // has on the last step it may take, once 90% of its tokens are spent, and,
-// when ctx has a deadline, once the time left is under wrapUpReserve.
+// when ctx has a deadline, once the time left is no more than wrapUpReserve.
 func (r Run) Do(ctx context.Context) (result Result) {
 	limits := r.Limits.WithDefaults()
 
@@ -474,7 +478,7 @@ func (r Run) Do(ctx context.Context) (result Result) {
 		}
 
 		start := time.Now()
-		resp, answered, err := r.step(ctx, req, c.due, forced)
+		resp, answered, err := r.step(ctx, req, c, forced)
 		c.slowest = max(c.slowest, answered)
 		if errors.Is(err, errWrapUp) {
 			// The same step goes again, told to submit.
@@ -600,9 +604,9 @@ func (r Run) Do(ctx context.Context) (result Result) {
 // transient and ctx lives, and says how long the last attempt took: the
 // waits between attempts are not the model's, and would make a Run keep
 // far more time to submit in than a submission takes. A req not told to
-// submit, forced false, is not sent again once a wait leaves the Run due
-// to wrap up; step returns errWrapUp instead.
-func (r Run) step(ctx context.Context, req model.StepRequest, due func() bool, forced bool) (model.StepResponse, time.Duration, error) {
+// submit, forced false, is not sent again into the time c keeps to submit
+// in: a wait ends where that time starts, and step returns errWrapUp.
+func (r Run) step(ctx context.Context, req model.StepRequest, c clock, forced bool) (model.StepResponse, time.Duration, error) {
 	attempt := func() (model.StepResponse, time.Duration, error) {
 		start := time.Now()
 		resp, err := r.Stepper.Step(ctx, req)
@@ -613,13 +617,20 @@ func (r Run) step(ctx context.Context, req model.StepRequest, due func() bool, f
 		if err == nil || !model.Transient(err) {
 			break
 		}
+		var wrapUp <-chan time.Time
+		if !forced && c.timed {
+			in := c.dueIn()
+			if in <= 0 {
+				return resp, took, errWrapUp
+			}
+			wrapUp = time.After(in)
+		}
 		select {
 		case <-ctx.Done():
 			return resp, took, err
+		case <-wrapUp:
+			return resp, took, errWrapUp
 		case <-time.After(wait):
-			if !forced && due() {
-				return resp, took, errWrapUp
-			}
 			resp, took, err = attempt()
 		}
 	}

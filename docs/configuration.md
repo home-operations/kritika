@@ -575,10 +575,10 @@ a new title.
 
 - **Submitting:** the last step is told to submit what the review has
   found, as is any step once the review has spent nine tenths of its
-  `tokens`, or once its `timeout` is close: the time left is under twice
-  its slowest step's answer, and at least two minutes, or a quarter of the
-  time the loop was given when that is less, which for a part of a split
-  review can be under its `timeout`. A step told to submit that does not,
+  `tokens`, or once its `timeout` is close: the time left is no more than
+  twice its slowest step's answer, and at least two minutes, or a quarter
+  of the time the loop was given when that is less, which for a part of a
+  split review can be under its `timeout`. A step told to submit that does not,
   because the submission was rejected, it answered in prose or it called
   another tool, which is refused, is told again, up to twice, so the steps
   spent reading are not lost to one slip at the end. A review submitted
