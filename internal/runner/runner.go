@@ -308,6 +308,11 @@ func wholePrompt(
 	ctx context.Context, p Spec, secrets Secrets, head *object.Tree, ignore []string, res *gitfetch.Result, in promptInputs,
 	scope review.Scope, chunks []contextpack.Chunk, tools *agentTools, logger *slog.Logger,
 ) (agentPrompt, []contextpack.Chunk) {
+	promptSpec := *p.Prompt
+	promptSpec.Prior = slices.DeleteFunc(slices.Clone(promptSpec.Prior), func(f review.Finding) bool {
+		return !f.RaisedBy(review.DefaultReviewer)
+	})
+	p.Prompt = &promptSpec
 	var similar []contextpack.Chunk
 	similar, tools.search = similarContext(ctx, p, secrets, res, logger)
 	chunks = append(chunks, similar...)

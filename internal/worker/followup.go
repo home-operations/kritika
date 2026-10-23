@@ -382,6 +382,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		prompt.Reviewers = []runner.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
 		models := r.Models(f.settings.Models)
 		ref = models.Review
+		f.settings.Models.Effort = models.Effort
 		answering = &store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort)}
 	}
 	var agent *store.AgentRunRow

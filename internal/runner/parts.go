@@ -173,8 +173,8 @@ func partSimilarCode(
 	return out, nil
 }
 
-// unsplitPaths are the files of the last review's findings, those
-// reviewer raised where it names one, and of the dismissed findings that
+// unsplitPaths are the files of the last review's findings that reviewer
+// raised (the default reviewer when unnamed), and of the dismissed findings that
 // no part of split reviews, which the first part checks again, as a review
 // not split would.
 func unsplitPaths(p Spec, reviewer string, split [][]string) []string {
@@ -185,7 +185,7 @@ func unsplitPaths(p Spec, reviewer string, split [][]string) []string {
 		}
 	}
 	for _, f := range p.Prompt.Prior {
-		if reviewer == "" || f.RaisedBy(reviewer) {
+		if f.RaisedBy(cmp.Or(reviewer, review.DefaultReviewer)) {
 			add(f.Path)
 		}
 	}
@@ -197,13 +197,13 @@ func unsplitPaths(p Spec, reviewer string, split [][]string) []string {
 
 // partSpec is p for one part of a split review: the last review's and the
 // dismissed findings on paths alone, of the last review's only those
-// reviewer raised where it names one, and no diagram to carry forward,
+// reviewer raised (the default reviewer when unnamed), and no diagram to carry forward,
 // since the review's summary is written from all the parts'.
 func partSpec(p Spec, paths []string, reviewer string) Spec {
 	prompt := *p.Prompt
 	theirs := func(path string) bool { return !slices.Contains(paths, path) }
 	prompt.Prior = slices.DeleteFunc(slices.Clone(prompt.Prior), func(f review.Finding) bool {
-		return theirs(f.Path) || reviewer != "" && !f.RaisedBy(reviewer)
+		return theirs(f.Path) || !f.RaisedBy(cmp.Or(reviewer, review.DefaultReviewer))
 	})
 	prompt.Dismissed = slices.DeleteFunc(slices.Clone(prompt.Dismissed), func(d review.DismissedFinding) bool {
 		return theirs(d.Path)

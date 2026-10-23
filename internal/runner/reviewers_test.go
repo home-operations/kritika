@@ -246,6 +246,49 @@ func TestFollowUpRole(t *testing.T) {
 	}
 }
 
+func TestDefaultReviewPriorOwnership(t *testing.T) {
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"indexed":false}`))
+	}))
+	t.Cleanup(gw.Close)
+	head := tree(t, map[string]string{"main.go": "package main\n"})
+	for _, scope := range []review.Scope{review.ScopeFull, review.ScopeIncremental} {
+		for _, split := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/split=%t", scope, split), func(t *testing.T) {
+				s := reviewSpec()
+				s.Model.GatewayURL, s.PriorHead = gw.URL, shaB
+				s.Prompt.Prior = []review.Finding{
+					{Path: "main.go", Line: 1, Severity: review.SeverityP1, Title: "default finding"},
+					{Path: "main.go", Line: 1, Severity: review.SeverityP1, Title: "lens finding", Agents: []string{"security"}},
+					{Path: "main.go", Line: 1, Severity: review.SeverityP1, Title: "shared finding", Agents: []string{"security", review.DefaultReviewer}},
+				}
+				res := &gitfetch.Result{Diff: agentDiff, DeltaDiff: agentDiff, Changed: []string{"main.go"}}
+				var tools agentTools
+				logger := slog.New(slog.DiscardHandler)
+				var prompt agentPrompt
+				if split {
+					parts, _, _, err := partPrompts(t.Context(), s, Secrets{}, head, head, res, nil, nil,
+						splitShares([][]string{{"main.go"}}, scope), &tools, logger)
+					if err != nil {
+						t.Fatal(err)
+					}
+					prompt = parts[0].prompt
+				} else {
+					prompt, _ = wholePrompt(t.Context(), s, Secrets{}, head, nil, res,
+						newPromptInputs(s, nil, nil, res.Changed), scope, nil, &tools, logger)
+				}
+				if strings.Contains(prompt.user, "lens finding") || !strings.Contains(prompt.user, "default finding") ||
+					!strings.Contains(prompt.user, "shared finding") {
+					t.Fatalf("default prompt must recheck only findings it raised:\n%s", prompt.user)
+				}
+				if len(s.Prompt.Prior) != 3 {
+					t.Fatal("building the prompt changed the prior findings used for publication")
+				}
+			})
+		}
+	}
+}
+
 // TestRoleWithinBudget: a reviewer's instructions are part of the system
 // prompt the user message is budgeted against, so long ones leave less of
 // the diff in it rather than passing the opening prompt's bound.
