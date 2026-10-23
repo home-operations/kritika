@@ -51,6 +51,7 @@ type publicationSnapshot struct {
 	Review          configfile.Review
 	ConfidenceRule  configfile.Confidence
 	Effort          model.Effort
+	Route           string `json:",omitempty"`
 	MaxAutoReviews  int
 	Templates       review.Templates
 	Scope           review.Scope
@@ -97,7 +98,7 @@ func (p *publishPhase) checkpoint(ctx context.Context, answer *publicationAnswer
 	defer p.timeStage("checkpoint")()
 	snapshot := publicationSnapshot{
 		Version: 1, Review: p.settings.Review, ConfidenceRule: p.settings.Confidence,
-		Effort: p.settings.Models.Effort, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
+		Effort: p.settings.Models.Effort, Route: p.settings.Models.Route, MaxAutoReviews: p.settings.MaxAutoReviews, Templates: p.templates,
 		Scope: p.scope, Trigger: p.trigger, Closed: p.pr.closed, RepoNotes: p.repoNotes,
 		PriorID: p.prior.id, PriorConfidence: p.prior.confidence, PriorHead: p.prior.headSHA, PriorDiagram: p.prior.diagram,
 		Prior:     snapshotFindings(p.prior.findings),
@@ -160,7 +161,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 		return nil, fmt.Errorf("worker: unsupported publication version %d", s.Version)
 	}
 	p.settings = configfile.Settings{Review: s.Review, Confidence: s.ConfidenceRule,
-		Models: configfile.Models{Effort: s.Effort}, MaxAutoReviews: s.MaxAutoReviews}
+		Models: configfile.Models{Effort: s.Effort, Route: s.Route}, MaxAutoReviews: s.MaxAutoReviews}
 	// Whether the comments carry the dashboard's URL follows the
 	// configuration the publication resumes under, not the one it was saved
 	// with: the restart that turned comments.dashboard off may be what

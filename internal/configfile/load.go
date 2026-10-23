@@ -468,19 +468,17 @@ func (f *File) validateAccount(a *Account) error {
 // models name providers declared for account t (nil for the file's own),
 // and its trigger, agent, review and comments keys are in range.
 func (f *File) validateOverrides(where string, t *Account, r *Overrides) error {
-	for _, m := range []struct {
-		key string
-		ref *ModelRef
-	}{
-		{keyModel, r.Review.Model}, {keyFallback, r.Review.Fallback},
-		{keyScorer, r.Confidence.Model}, {keyScorerFallback, r.Confidence.Fallback},
-	} {
+	for _, m := range append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
+		namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback}) {
 		if m.ref == nil || *m.ref == "" {
 			continue
 		}
 		if err := f.checkModelRef(where+m.key, t, *m.ref); err != nil {
 			return err
 		}
+	}
+	if err := r.Review.Model.check(where); err != nil {
+		return err
 	}
 	for _, e := range []struct {
 		key    string

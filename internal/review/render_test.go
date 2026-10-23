@@ -220,6 +220,17 @@ func TestRenderSummaryCost(t *testing.T) {
 	}
 }
 
+// TestRenderSummaryRoute: the footer names the route that picked the
+// model after it, escaped, since a glob's * would read as emphasis.
+func TestRenderSummaryRoute(t *testing.T) {
+	d := sampleData()
+	d.Effort, d.Route = "high", FooterText("deep (db/migrations/**)")
+	body, _ := RenderSummary(t.Context(), Templates{}, d)
+	if !strings.Contains(body, ` · vendor/model-x/high via deep (db/migrations/\*\*)</sub>`) {
+		t.Fatalf("footer without the route:\n%s", body)
+	}
+}
+
 func TestFormatCost(t *testing.T) {
 	for _, tt := range []struct {
 		amount   float64

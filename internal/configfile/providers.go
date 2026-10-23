@@ -111,13 +111,8 @@ type UnpricedModel struct {
 func (f *File) UnpricedModels() []UnpricedModel {
 	var out []UnpricedModel
 	check := func(where string, t *Account, r *Overrides) {
-		for _, m := range []struct {
-			key string
-			ref *ModelRef
-		}{
-			{keyModel, r.Review.Model}, {keyFallback, r.Review.Fallback},
-			{keyScorer, r.Confidence.Model}, {keyScorerFallback, r.Confidence.Fallback},
-		} {
+		for _, m := range append(r.Review.Model.refs(), namedRef{keyFallback, r.Review.Fallback},
+			namedRef{keyScorer, r.Confidence.Model}, namedRef{keyScorerFallback, r.Confidence.Fallback}) {
 			if m.ref == nil || *m.ref == "" {
 				continue
 			}

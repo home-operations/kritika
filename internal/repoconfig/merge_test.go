@@ -449,3 +449,58 @@ func TestMergeReplacesAdminGate(t *testing.T) {
 		t.Fatalf("merged confidence = %+v, %v; want gate: true to gate every pull request", m.Confidence, err)
 	}
 }
+
+// TestMergeModelRoutes: a file's review.model list applies whole, or is
+// dropped whole when one of its models or efforts may not be taken, and a
+// file's own model replaces the admin's routes.
+func TestMergeModelRoutes(t *testing.T) {
+	t.Parallel()
+	doc := "review:\n  model:\n    - { name: deep, model: p/big, effort: max, fallback: own/small, when: [{ paths: ['db/**'] }] }\n    - model: own/small\n"
+	m, err := Merge([]byte(doc), adminSettings())
+	if err != nil || len(m.Dropped) > 0 {
+		t.Fatalf("Merge = %v, dropped %q", err, m.Dropped)
+	}
+	if m.Models.Review != "own/small" || m.Models.Effort != model.EffortHigh || len(m.Models.Routes) != 1 {
+		t.Fatalf("models = %+v; the file's default and routes, the admin's effort", m.Models)
+	}
+	picked, err := m.Models.Pick(configfile.SamplePR(), &configfile.Diff{Changed: []string{"db/0042.sql"}})
+	if err != nil || picked.Review != "p/big" || picked.Effort != model.EffortMax || picked.Fallback != "own/small" || picked.Route != "deep (db/**)" {
+		t.Fatalf("Pick = %+v, %v", picked, err)
+	}
+
+	op := adminSettings()
+	op.Models.Routes = m.Models.Routes
+	if m, err := Merge([]byte("review: { model: own/small }\n"), op); err != nil || m.Models.Review != "own/small" || m.Models.Routes != nil {
+		t.Fatalf("models = %+v, %v; a file's model replaces the admin's routes", m.Models, err)
+	}
+
+	route := func(fields string) string {
+		return "review:\n  model:\n    - { model: p/big, " + fields + "when: [{ expr: pr.bot }] }\n    - model: own/small\n"
+	}
+	for _, tt := range []struct {
+		name, doc, dropped string
+	}{
+		{"a route's model of another provider", strings.Replace(route(""), "p/big", "q/big", 1),
+			`.kritika.yaml: review.model was dropped: [0].model "q/big" is not a model of own, p`},
+		{"a route's fallback of another provider", route("fallback: q/small, "),
+			`.kritika.yaml: review.model was dropped: [0].fallback "q/small" is not a model of own, p`},
+		{"a route's effort that is no level", route("effort: loud, "), `.kritika.yaml: review.model was dropped: [0].effort "loud" is not one of none,`},
+		{"a default of another provider", strings.Replace(route(""), "own/small", "q/small", 1),
+			`.kritika.yaml: review.model was dropped: "q/small" is not a model of own, p`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := Merge([]byte(tt.doc), adminSettings())
+			if err != nil || len(m.Dropped) != 1 || !strings.HasPrefix(m.Dropped[0], tt.dropped) {
+				t.Fatalf("Merge = %v, dropped %q, want %q", err, m.Dropped, tt.dropped)
+			}
+			if !reflect.DeepEqual(m.Models, adminSettings().Models) {
+				t.Fatalf("models = %+v; the admin's stand", m.Models)
+			}
+		})
+	}
+
+	if _, err := Merge([]byte("review:\n  model:\n    - model: p/big\n    - model: own/small\n"), adminSettings()); err == nil ||
+		!strings.Contains(err.Error(), "[0]: when is required") {
+		t.Fatalf("err = %v; a route without conditions does not parse", err)
+	}
+}

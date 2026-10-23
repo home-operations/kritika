@@ -59,7 +59,12 @@ var goldenRepo = Repository{
 }
 
 var goldenRepoSettings = RepoSettings{
-	Enabled: true, Models: configfile.Models{Review: "openrouter/acme-large", Effort: "high"}, Filters: configfile.Filters{
+	Enabled: true, Models: configfile.Models{
+		Review: "openrouter/acme-large", Effort: "high",
+		Routes: []configfile.ModelRoute{{Name: "deep", Model: "openrouter/acme-xl", Effort: new(model.EffortMax), When: []configfile.Filter{
+			{Name: "migrations", Paths: []string{"db/migrations/**"}}, {Expr: "pr.lines > 800"},
+		}}},
+	}, Filters: configfile.Filters{
 		Include: []configfile.Filter{{Expr: `pr.author.startsWith("renovate")`}, {Name: "wanted", Expr: `pr.labels.exists(l, l.name == "needs-review")`}},
 		Exclude: []configfile.Filter{{Name: "drafts", Expr: "pr.draft"}},
 	},
@@ -140,7 +145,7 @@ var goldens = map[string]any{
 			ReviewID: "rev-1", Commit: "def456", Found: true,
 			Settings: func() RepoSettings {
 				s := goldenRepoSettings
-				s.Models.Review = "openrouter/acme-small"
+				s.Models.Review, s.Models.Routes = "openrouter/acme-small", nil
 				return s
 			}(),
 			Filters: configfile.Filters{Include: []configfile.Filter{}, Exclude: []configfile.Filter{{Name: "skip-label", Expr: `pr.labels.exists(l, l.name == "skip-review")`}}},

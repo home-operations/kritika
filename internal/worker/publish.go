@@ -294,7 +294,8 @@ func (p *publishPhase) incomplete(ctx context.Context, reason, modelName string)
 		web, pull := p.dashboard(owner, repo)
 		body, _ := review.RenderSummary(ctx, review.Templates{}, review.RenderData{
 			Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-			Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
+			Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
+			HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 			Incomplete: reason, Notes: slices.Concat(p.repoNotes, p.agent.CommandErrors), WebURL: web, PullURL: pull,
 		})
 		commentID, err := p.upsertSticky(ctx, body)
@@ -434,7 +435,8 @@ func (p *publishPhase) writeBack(
 	counts := review.Result{Findings: reported}.Counts()
 	data := review.RenderData{
 		Number: p.pr.number, HeadSHA: p.pr.headSHA, HeadURL: p.client.CommitURL(owner, repo, p.pr.headSHA), Model: modelName,
-		Effort: string(p.settings.Models.Effort), HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
+		Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
+		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,

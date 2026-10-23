@@ -6,17 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
 	"github.com/home-operations/kritika/internal/configfile"
+	"github.com/home-operations/kritika/internal/contextpack"
 	"github.com/home-operations/kritika/internal/forge"
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/repoconfig"
 	"github.com/home-operations/kritika/internal/review"
 	"github.com/home-operations/kritika/internal/store"
+	"github.com/home-operations/kritika/internal/udiff"
 )
 
 // Effective is a repository's settings once its .kritika.yaml is applied.
@@ -76,6 +79,43 @@ func (e *Effective) narrowTo(vars map[string]any) {
 	}
 }
 
+// pickRoute has eff's model routes pick the review's model for the pull
+// request with the filter variables vars, reading the forge's diff when
+// one of their conditions needs it. A diff the forge will not give leaves
+// those conditions not holding, so the pull request gets the default.
+func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
+	if len(eff.Models.Routes) == 0 {
+		return
+	}
+	var d *configfile.Diff
+	if eff.Models.NeedsDiff() {
+		if diff, err := forgeDiff(); err != nil {
+			logger.Warn("forge diff not read; model routes on paths or lines do not hold", "error", err)
+		} else {
+			d = &configfile.Diff{Lines: contextpack.ChangedLines(diff, eff.Ignore), Changed: changedPaths(diff)}
+		}
+	}
+	picked, err := eff.Models.Pick(vars, d)
+	if err != nil {
+		logger.Warn("model route condition failed to evaluate", "error", err)
+	}
+	if picked.Route != "" {
+		logger.Info("model route picked", "route", picked.Route, "model", picked.Review)
+	}
+	eff.Models = picked
+}
+
+// changedPaths are the paths a unified diff changes, each named as the
+// runner names it: head-side, base-side once deleted.
+func changedPaths(diff string) []string {
+	files := udiff.Parse(diff)
+	out := make([]string, len(files))
+	for i, f := range files {
+		out[i] = f.Path()
+	}
+	return out
+}
+
 // repoFiles are the paths the runner reads from the merge base: the files
 // the settings name, and .kritika.yaml itself, which the review's context
 // pack keeps a copy of.
@@ -96,6 +136,7 @@ func (e *Effective) templates(files repoconfig.Files) review.Templates {
 
 // skipByRepo ends a review the merge-base .kritika.yaml disables or filters
 // out before a runner is spent on it, with a success status saying why. It
+// returns the filter variables it judged a review that goes on by, and
 // reports whether it ended the review, with the error of recording that.
 //
 // A label change that reaches ingest while this job is still to finish
@@ -104,7 +145,9 @@ func (e *Effective) templates(files repoconfig.Files) review.Templates {
 // only once the labels are seen unchanged in the transaction that
 // completes the job, under the pull request's row lock that ingest's own
 // write waits on; labels that moved are judged again.
-func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], eff *Effective) (bool, error) {
+func (w *Review) skipByRepo(
+	ctx context.Context, e earlyEnd, job *river.Job[jobs.ReviewArgs], eff *Effective,
+) (map[string]any, bool, error) {
 	for {
 		var judged repoconfig.PullRequest
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
@@ -112,12 +155,12 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 			judged, err = store.ReadFilterPullRequest(ctx, tx, e.pr.id)
 			return err
 		}); err != nil {
-			return true, err
+			return nil, true, err
 		}
 		judged.Event = e.args.Trigger
 		vars, err := judged.Vars()
 		if err != nil {
-			return true, err
+			return nil, true, err
 		}
 		// With no changed paths yet, only enabled and the filter can skip.
 		reason, by, err := eff.Check(vars, nil)
@@ -126,14 +169,14 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 		}
 		if reason == "" {
 			eff.narrowTo(vars)
-			return false, nil
+			return vars, false, nil
 		}
 		e.filter = ""
 		if by != nil {
 			e.filter = by.Name
 		}
 		if err := w.recordSkip(ctx, e, string(reason)); err != nil {
-			return true, err
+			return nil, true, err
 		}
 		moved := false
 		if err := w.Store.WithAccount(ctx, e.args.AccountID, func(tx pgx.Tx) error {
@@ -146,10 +189,10 @@ func (w *Review) skipByRepo(ctx context.Context, e earlyEnd, job *river.Job[jobs
 			}
 			return completeJob(ctx, tx, job)
 		}); err != nil {
-			return true, err
+			return nil, true, err
 		}
 		if !moved {
-			return true, nil
+			return nil, true, nil
 		}
 	}
 }

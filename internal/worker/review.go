@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -415,12 +416,12 @@ func (e earlyEnd) status(status store.ReviewStatus, reason string) (forge.Status
 // records, and whether it ended the review, with the error of recording
 // that.
 func (w *Review) skipUnchangedBot(
-	ctx context.Context, e earlyEnd, client forge.Client, owner, repo string, settings configfile.Settings,
+	ctx context.Context, e earlyEnd, forgeDiff func() (string, error), settings configfile.Settings,
 ) (string, bool, error) {
 	if !e.pr.authorIsBot || e.args.Trigger == jobs.TriggerManual {
 		return "", false, nil
 	}
-	patch, unchanged := w.botPatch(ctx, e.logger, client, owner, repo, e.args.AccountID, e.pr, e.mergeBase)
+	patch, unchanged := w.botPatch(ctx, e.logger, forgeDiff, e.args.AccountID, e.pr)
 	if !unchanged {
 		return patch, false, nil
 	}
@@ -448,7 +449,7 @@ func (w *Review) skipUnchangedBot(
 	if err := w.end(ctx, e, store.ReviewSkipped, ""); err != nil {
 		return patch, true, err
 	}
-	carryApproval(ctx, e.logger, w.Store, e.args.AccountID, e.args.Trigger, client, e.pr, settings, e.carried)
+	carryApproval(ctx, e.logger, w.Store, e.args.AccountID, e.args.Trigger, e.client, e.pr, settings, e.carried)
 	return patch, true, nil
 }
 
@@ -470,9 +471,9 @@ type begun struct {
 // merge-base .kritika.yaml or as an unchanged bot rebase.
 // The admin's model's slots are checked before any forge call, so a job
 // snoozed through a busy spell costs the forge nothing each time it wakes;
-// a repository that chooses another model then waits for that model's
-// slots too. It reports whether it ended the job, with the error of that or
-// of getting this far.
+// a repository, or a model route, that chooses another model then waits
+// for that model's slots too. It reports whether it ended the job, with
+// the error of that or of getting this far.
 func (w *Review) begin(
 	ctx context.Context, job *river.Job[jobs.ReviewArgs], file *configfile.File, account *configfile.Account,
 	logger *slog.Logger, started time.Time,
@@ -533,9 +534,14 @@ func (w *Review) begin(
 		return begun{}, true, err
 	}
 	eff, parseNotes := effective(settings, doc)
-	if done, err := w.skipByRepo(ctx, e, job, &eff); done {
+	vars, done, err := w.skipByRepo(ctx, e, job, &eff)
+	if done {
 		return begun{}, true, err
 	}
+	forgeDiff := sync.OnceValues(func() (string, error) {
+		return client.PullRequestDiff(ctx, owner, repo, pr.number, e.mergeBase, pr.headSHA)
+	})
+	pickRoute(e.logger, &eff, vars, forgeDiff)
 	if eff.Models.Review != settings.Models.Review {
 		if held, err := w.slotsHeld(ctx, e, job, account.ID(), eff.Settings); held {
 			return begun{}, true, err
@@ -545,7 +551,7 @@ func (w *Review) begin(
 	if err != nil {
 		return begun{}, true, err
 	}
-	forgePatch, done, err := w.skipUnchangedBot(ctx, e, client, owner, repo, eff.Settings)
+	forgePatch, done, err := w.skipUnchangedBot(ctx, e, forgeDiff, eff.Settings)
 	if done {
 		return begun{}, true, err
 	}
@@ -670,9 +676,9 @@ func clearSlotWait(ctx context.Context, logger *slog.Logger, job *river.Job[jobs
 // before it without one, tells nothing: the pull request is then reviewed
 // as usual.
 func (w *Review) botPatch(
-	ctx context.Context, logger *slog.Logger, client forge.Client, owner, repo, accountID string, pr *pullRequest, mergeBase string,
+	ctx context.Context, logger *slog.Logger, forgeDiff func() (string, error), accountID string, pr *pullRequest,
 ) (patch string, unchanged bool) {
-	diff, err := client.PullRequestDiff(ctx, owner, repo, pr.number, mergeBase, pr.headSHA)
+	diff, err := forgeDiff()
 	if err != nil {
 		logger.Warn("forge diff not read; the runner checks the patch", "error", err)
 		return "", false

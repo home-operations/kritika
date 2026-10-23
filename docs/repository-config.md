@@ -31,7 +31,7 @@ admin's policy; detailed examples follow.
 | Key                                                          | What it sets                                                       | Against the admin's value                       |
 | ------------------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
 | `enabled`                                                    | `false` stops reviews, follow-ups and indexing                     | can only turn the repository off                |
-| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on                        | replaces                                        |
+| [`review.model`, `review.fallback`](#models)                 | the models the review and follow-ups run on, or routes that pick one per pull request | replaces                         |
 | [`review.effort`](#models)                                   | how hard they reason                                               | replaces                                        |
 | `review.fixes`                                               | `true` requires a suggested fix on every finding                   | can only turn it on                             |
 | [`review.approve`](#approvals)                               | `true` approves a pull request the review allows, `when` only some | replaces; its `when` holds beside the admin's   |
@@ -59,9 +59,12 @@ naming one of them, or any other unknown key, does not parse.
 `review.model` and `review.fallback` are each a `<provider>/<model>` of a
 provider the instance or the repository's account declares, used for the
 review and for follow-ups. A model of any other provider is dropped; the
-account's limits bound what a choice can cost. A review whose model fails
-goes on with the fallback, on the same provider or another, and so does a
-follow-up.
+account's limits bound what a choice can cost. `review.model` may also be
+a list of [model routes](models.md#model-routes), which pick the review's
+model per pull request; it replaces the admin's model and routes, and is
+dropped whole when one of the models it names, or a route's effort, may
+not be taken. A review whose model fails goes on with the fallback, on
+the same provider or another, and so does a follow-up.
 
 `review.effort` and `confidence.effort` set how hard the review model and
 the scorer, each with its fallback, reason, one of `none`, `minimal`, `low`,
@@ -315,6 +318,7 @@ The summary template's dot is the review:
 | `.Reviews`                                                                   | how many reviews of the pull request this one makes                                                                      |
 | `.Model`                                                                     | the review model                                                                                                         |
 | `.Effort`                                                                    | the effort it reasoned at, "" for the provider's default                                                                 |
+| `.Route`                                                                     | the [model route](models.md#model-routes) that picked the model and the condition that held, escaped for Markdown, "" for the default |
 | `.Cost`                                                                      | what the pull request's reviews have cost, "" unless the admin's `review.cost` is on                                     |
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                    |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |

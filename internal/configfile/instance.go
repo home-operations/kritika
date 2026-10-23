@@ -58,7 +58,7 @@ func (f *File) FileLayer() FileLayer {
 		out.Providers[name] = FileProvider{Type: p.Type, BaseURL: p.BaseURL, Source: SourceFile}
 	}
 	if r := f.Defaults.Review.Model; r != nil {
-		out.Review = FileValue{Value: string(*r), Source: SourceFile}
+		out.Review = FileValue{Value: r.String(), Source: SourceFile}
 	}
 	if r := f.Defaults.Review.Fallback; r != nil {
 		out.Fallback = FileValue{Value: string(*r), Source: SourceFile}

@@ -135,14 +135,25 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 	return m, nil
 }
 
-// choose applies the models f chooses: a model of one of providers.
+// choose applies the models f chooses: a model of one of providers. A
+// review.model list is applied whole or dropped whole, since one without
+// a route would pick another model than the file says.
 func (m *Merged) choose(f *File, providers []string) {
+	if rm := f.Review.Model; rm.Default != "" {
+		switch why := routesDropped(rm, providers); {
+		case why == "":
+			m.Models.Review, m.Models.Routes = rm.Default, rm.Routes
+		case len(rm.Routes) == 0:
+			m.drop("review.model", strconv.Quote(string(rm.Default)), "a model of "+list(providers))
+		default:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: review.model was dropped: %s", FileName, why))
+		}
+	}
 	for _, c := range []struct {
 		field string
 		want  configfile.ModelRef
 		dst   *configfile.ModelRef
 	}{
-		{"review.model", f.Review.Model, &m.Models.Review},
 		{"review.fallback", f.Review.Fallback, &m.Models.Fallback},
 		{"confidence.model", f.Confidence.Model, &m.Confidence.Model},
 		{"confidence.fallback", f.Confidence.Fallback, &m.Confidence.Fallback},
@@ -156,6 +167,30 @@ func (m *Merged) choose(f *File, providers []string) {
 			m.drop(c.field, strconv.Quote(string(c.want)), "a model of "+list(providers))
 		}
 	}
+}
+
+// routesDropped says why the file's review.model may not apply, "" when
+// it may: a model, a route's or its fallback, of a provider not among
+// providers, or a route's effort that is no level.
+func routesDropped(rm configfile.ReviewModel, providers []string) string {
+	allowed := func(ref configfile.ModelRef) bool {
+		return ref.Model() != "" && slices.Contains(providers, ref.Provider())
+	}
+	if !allowed(rm.Default) {
+		return fmt.Sprintf("%q is not a model of %s", rm.Default, list(providers))
+	}
+	for i, r := range rm.Routes {
+		if !allowed(r.Model) {
+			return fmt.Sprintf("[%d].model %q is not a model of %s", i, r.Model, list(providers))
+		}
+		if r.Fallback != nil && *r.Fallback != "" && !allowed(*r.Fallback) {
+			return fmt.Sprintf("[%d].fallback %q is not a model of %s", i, *r.Fallback, list(providers))
+		}
+		if r.Effort != nil && *r.Effort != "" && !r.Effort.Valid() {
+			return fmt.Sprintf("[%d].effort %q is not one of %s", i, *r.Effort, model.EffortLevels)
+		}
+	}
+	return ""
 }
 
 // own is the file's conditions of one list it may keep: all but those

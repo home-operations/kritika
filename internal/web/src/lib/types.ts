@@ -165,6 +165,17 @@ export interface Models {
   review: string;
   fallback: string;
   effort: string;
+  // routes pick another model for a pull request one of whose conditions
+  // holds, the first that does winning; review is the default.
+  routes?: ModelRoute[];
+}
+
+export interface ModelRoute {
+  name?: string;
+  model: string;
+  effort?: string;
+  fallback?: string;
+  when: Condition[];
 }
 
 export interface Limits {

@@ -136,6 +136,12 @@ type Models struct {
 	// Effort is how hard the review model, and the fallback that takes its
 	// step, reasons; empty leaves it to the provider.
 	Effort model.Effort `json:"effort"`
+	// Routes are review.model's routes, which Pick judges for a pull
+	// request; Review, Fallback and Effort are what one none picks gets.
+	Routes []ModelRoute `json:"routes,omitempty"`
+	// Route names the route Pick took for the pull request under review,
+	// "" for none.
+	Route string `json:"route,omitzero"`
 }
 
 // Limits bound what an account may consume, as resolved. A cap of zero is no
@@ -207,8 +213,8 @@ type Overrides struct {
 // draws the change's flow, and whether its footer states the pull
 // request's spend.
 type ReviewSpec struct {
-	Model    *ModelRef `yaml:"model,omitempty"`
-	Fallback *ModelRef `yaml:"fallback,omitempty"`
+	Model    *ReviewModel `yaml:"model,omitempty"`
+	Fallback *ModelRef    `yaml:"fallback,omitempty"`
 	// Effort is one of model.Efforts; written empty, it leaves the effort
 	// to the provider.
 	Effort      *model.Effort `yaml:"effort,omitempty"`

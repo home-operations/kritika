@@ -16,13 +16,14 @@
   {#snippet children(d)}
     {@const settings = d.repoConfig?.settings ?? d.settings}
     {@const run = d.indexRuns[0]}
+    {@const routes = settings.models.routes?.length ?? 0}
     <div class="row-preview-grid">
       <div class="min-w-0">
         <h2 class="preview-heading">Review settings</h2>
         <dl class="preview-facts">
           <dt>Reviews</dt><dd>{d.enabled && (d.repoConfig?.settings.enabled ?? true) ? 'Enabled' : 'Disabled'}</dd>
           <dt>Default branch</dt><dd class="mono">{d.defaultBranch}</dd>
-          <dt>Review model</dt><dd class="mono">{settings.models.review || 'Not configured'}</dd>
+          <dt>Review model</dt><dd class="mono">{settings.models.review || 'Not configured'}{#if routes}<span class="muted"> and {routes} route{routes === 1 ? '' : 's'}</span>{/if}</dd>
         </dl>
         {#if d.repoConfig?.ignored}<p class="text-danger wrap-anywhere mt-1">Repository configuration ignored: {d.repoConfig.ignored}</p>{/if}
       </div>

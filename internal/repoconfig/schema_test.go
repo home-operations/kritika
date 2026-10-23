@@ -31,6 +31,8 @@ func TestSchemaMatchesFile(t *testing.T) {
 	}{
 		{"the file", nil, yamlKeys[File]()},
 		{"review", []string{"properties", "review"}, yamlKeys[Review]()},
+		{"model route", []string{"$defs", "modelRoute"}, yamlKeys[configfile.ModelRoute]()},
+		{"model route when", []string{"$defs", "modelRoute", "properties", "when", "items"}, yamlKeys[configfile.Filter]()},
 		{"confidence", []string{"properties", "confidence"}, yamlKeys[Confidence]()},
 		{"trigger", []string{"properties", "trigger"}, yamlKeys[Trigger]()},
 		{"include", []string{"properties", "trigger", "properties", "include", "items"}, yamlKeys[configfile.Filter]()},
