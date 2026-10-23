@@ -111,13 +111,13 @@ type reviewerPlan struct {
 // planReviewers decides which of the spec's reviewers review the change
 // and how, scope being what the review builds on and deltaPaths the files
 // changed since the last review, less the ignored ones. A reviewer
-// applies when a changed file matches its paths, or it has none; on a
-// review that builds on the last one, a reviewer other than the default
-// one that the last review ran applies only when one of those files
-// changed since. A review whose reviewers are the default one alone, or
-// none, is not planned in shares. Each reviewer's files are cut into parts
-// as a review's are, within its share of the parts the run is granted, the
-// diff since the last review cut for a reviewer the last review ran.
+// applies when a file the change touches matches its paths, or it has
+// none, judged over the whole change as its when conditions were, so the
+// reviewers a pull request gets do not shift from push to push. A review
+// whose reviewers are the default one alone, or none, is not planned in
+// shares. Each reviewer's files are cut into parts as a review's are,
+// within its share of the parts the run is granted, the diff since the
+// last review cut for a reviewer the last review ran.
 func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths []string) reviewerPlan {
 	reviewers := p.Prompt.Reviewers
 	if reviewers == nil {
@@ -146,11 +146,7 @@ func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths 
 		if len(r.Paths) > 0 {
 			files = slices.DeleteFunc(slices.Clone(files), func(c string) bool { return !chunk.Matches(r.Paths, c) })
 		}
-		switch {
-		case len(files) == 0:
-			continue
-		case r.Name != review.DefaultReviewer && rscope == review.ScopeIncremental &&
-			!slices.ContainsFunc(deltaPaths, func(d string) bool { return slices.Contains(files, d) }):
+		if len(files) == 0 {
 			continue
 		}
 		apply = append(apply, applied{reviewer: r, files: files, scope: rscope})

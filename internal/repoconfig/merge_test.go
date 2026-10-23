@@ -526,6 +526,10 @@ func TestMergeReviewers(t *testing.T) {
     rules: [{ id: pin-actions, rule: Pin actions. }, { id: no-secrets, rule: Weaker. }, { id: wrap-errors, rule: Weaker. }]
     skills: { scope: { gha: { load: false }, sql: { paths: ['**/*.sql'] } } }
   perf: { instructions: Mind allocations., model: own/fast, fallback: nope/x }
+  deps:
+    model:
+      - { model: own/fast, when: [{ name: bumps, expr: 'pr.headRef.startsWith("renovate/")' }] }
+      - model: nope/x
 `), op)
 	if err != nil {
 		t.Fatal(err)
@@ -547,8 +551,11 @@ func TestMergeReviewers(t *testing.T) {
 	if _, ok := m.Reviewers[review.DefaultReviewer]; ok {
 		t.Error("the file turned the default reviewer off")
 	}
-	if perf := m.Reviewers["perf"]; perf.Model != "own/fast" || perf.Fallback != "" || perf.Instructions != "Mind allocations." {
+	if perf := m.Reviewers["perf"]; perf.Model.Default != "own/fast" || perf.Fallback != "" || perf.Instructions != "Mind allocations." {
 		t.Errorf("perf = %+v, want the file's with its fallback of no provider dropped", perf)
+	}
+	if deps := m.Reviewers["deps"]; deps.Model != nil {
+		t.Errorf("deps' model = %+v, want a list with a model of no provider dropped whole", deps.Model)
 	}
 	if op.Reviewers["security"].Rules[0].ID != "no-secrets" || len(op.Reviewers["security"].Rules) != 1 {
 		t.Error("merging changed the admin's settings")
@@ -557,6 +564,7 @@ func TestMergeReviewers(t *testing.T) {
 		"reviewers.default was dropped", "reviewers.security was dropped but for its rules and skills",
 		"reviewers.security.rules no-secrets was dropped", "reviewers.security.rules wrap-errors was dropped",
 		"reviewers.security.skills.scope.gha was dropped", `reviewers.perf.fallback "nope/x" was dropped`,
+		"reviewers.deps.model was dropped",
 	} {
 		if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, want) }) {
 			t.Errorf("dropped %q lacks %q", m.Dropped, want)

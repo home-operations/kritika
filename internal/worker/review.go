@@ -555,7 +555,7 @@ func (w *Review) begin(
 	forgeDiff := sync.OnceValues(func() (string, error) {
 		return client.PullRequestDiff(ctx, owner, repo, pr.number, e.mergeBase, pr.headSHA)
 	})
-	pickRoute(e.logger, &eff, vars, forgeDiff)
+	pickModels(e.logger, &eff, vars, forgeDiff)
 	if routed || eff.Models.Review != settings.Models.Review {
 		if held, err := w.slotsHeld(ctx, e, job, account.ID(), eff.Settings); held {
 			return begun{}, true, err

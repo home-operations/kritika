@@ -87,15 +87,23 @@ func (m *ReviewModel) Compile() error {
 // check compiles m's conditions in place and checks its routes' efforts,
 // named in errors as validateOverrides names its keys.
 func (m *ReviewModel) check() error {
+	if err := m.checkAt(keyModel); err != nil {
+		return fmt.Errorf("configfile: %w", err)
+	}
+	return nil
+}
+
+// checkAt is check for m written under key, which the errors start with.
+func (m *ReviewModel) checkAt(key string) error {
 	if m == nil {
 		return nil
 	}
 	if err := m.Compile(); err != nil {
-		return fmt.Errorf("configfile: %s%w", keyModel, err)
+		return fmt.Errorf("%s%w", key, err)
 	}
 	for i, r := range m.Routes {
 		if r.Effort != nil && *r.Effort != "" && !r.Effort.Valid() {
-			return fmt.Errorf("configfile: %s[%d].effort must be %s, got %q", keyModel, i, model.EffortLevels, *r.Effort)
+			return fmt.Errorf("%s[%d].effort must be %s, got %q", key, i, model.EffortLevels, *r.Effort)
 		}
 	}
 	return nil
@@ -109,15 +117,30 @@ type namedRef struct {
 
 // refs are the models m names with the keys they are written under: the
 // default, then each route's model and fallback; nil m names none.
-func (m *ReviewModel) refs() []namedRef {
+func (m *ReviewModel) refs() []namedRef { return m.refsAt(keyModel) }
+
+// refsAt is refs for m written under key.
+func (m *ReviewModel) refsAt(key string) []namedRef {
 	if m == nil {
 		return nil
 	}
-	out := []namedRef{{keyModel, &m.Default}}
+	out := []namedRef{{key, &m.Default}}
 	for i := range m.Routes {
 		r := &m.Routes[i]
-		out = append(out, namedRef{fmt.Sprintf("%s[%d].model", keyModel, i), &r.Model},
-			namedRef{fmt.Sprintf("%s[%d].fallback", keyModel, i), r.Fallback})
+		out = append(out, namedRef{fmt.Sprintf("%s[%d].model", key, i), &r.Model},
+			namedRef{fmt.Sprintf("%s[%d].fallback", key, i), r.Fallback})
+	}
+	return out
+}
+
+// Refs are the models m names: the default, then each route's model and
+// fallback, the ones it sets; nil m names none.
+func (m *ReviewModel) Refs() []ModelRef {
+	var out []ModelRef
+	for _, r := range m.refs() {
+		if r.ref != nil && *r.ref != "" {
+			out = append(out, *r.ref)
+		}
 	}
 	return out
 }
@@ -154,37 +177,53 @@ func (m Models) Pick(vars map[string]any, d *Diff) (Models, error) {
 	}
 	var errs []error
 	for _, r := range m.Routes {
-		for _, c := range r.When {
-			// Settings read back from JSON carry no compiled program, and a
-			// condition without one would hold on its globs alone.
-			if c.prg == nil && strings.TrimSpace(c.Expr) != "" {
-				if err := c.Compile(); err != nil {
-					errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
-					continue
-				}
-			}
-			if d == nil && c.needsDiff() {
-				continue
-			}
-			ok, err := c.holds(vars, d)
-			if err != nil {
+		c, ok, err := firstHolding(r.When, vars, d)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !ok {
+			continue
+		}
+		m.Review, m.Route = r.Model, routeLabel(r, c)
+		if r.Effort != nil {
+			m.Effort = *r.Effort
+		}
+		if r.Fallback != nil {
+			m.Fallback = *r.Fallback
+		}
+		return m, errors.Join(errs...)
+	}
+	return m, errors.Join(errs...)
+}
+
+// firstHolding is the first of conds that holds for a pull request with
+// the filter variables vars and the diff d, as Pick judges them: without
+// d, one that needs it does not hold, and one that fails to evaluate does
+// not hold either, its error returned for the log.
+func firstHolding(conds []Filter, vars map[string]any, d *Diff) (Filter, bool, error) {
+	var errs []error
+	for _, c := range conds {
+		// Settings read back from JSON carry no compiled program, and a
+		// condition without one would hold on its globs alone.
+		if c.prg == nil && strings.TrimSpace(c.Expr) != "" {
+			if err := c.Compile(); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
 				continue
 			}
-			if !ok {
-				continue
-			}
-			m.Review, m.Route = r.Model, routeLabel(r, c)
-			if r.Effort != nil {
-				m.Effort = *r.Effort
-			}
-			if r.Fallback != nil {
-				m.Fallback = *r.Fallback
-			}
-			return m, errors.Join(errs...)
+		}
+		if d == nil && c.needsDiff() {
+			continue
+		}
+		ok, err := c.holds(vars, d)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", c.Label(), err))
+			continue
+		}
+		if ok {
+			return c, true, errors.Join(errs...)
 		}
 	}
-	return m, errors.Join(errs...)
+	return Filter{}, false, errors.Join(errs...)
 }
 
 // routeLabel names route r and the condition c that picked it, as

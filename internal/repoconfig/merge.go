@@ -169,14 +169,17 @@ func (m *Merged) reviewers(file map[string]configfile.Reviewer, op configfile.Se
 			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: %d reviewers besides the default one are the most a review runs",
 				FileName, key, configfile.MaxReviewers))
 		default:
-			for _, c := range []struct {
-				field string
-				ref   *configfile.ModelRef
-			}{{key + ".model", &r.Model}, {key + ".fallback", &r.Fallback}} {
-				if *c.ref != "" && (c.ref.Model() == "" || !slices.Contains(op.Providers, c.ref.Provider())) {
-					m.drop(c.field, strconv.Quote(string(*c.ref)), "a model of "+list(op.Providers))
-					*c.ref = ""
+			// A model list is applied whole or dropped whole, as
+			// review.model's is.
+			if r.Model != nil {
+				if why := routesDropped(*r.Model, op.Providers); why != "" {
+					m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s.model was dropped: %s", FileName, key, why))
+					r.Model = nil
 				}
+			}
+			if f := r.Fallback; f != "" && (f.Model() == "" || !slices.Contains(op.Providers, f.Provider())) {
+				m.drop(key+".fallback", strconv.Quote(string(f)), "a model of "+list(op.Providers))
+				r.Fallback = ""
 			}
 			m.Reviewers[name] = r
 		}

@@ -164,7 +164,7 @@ func reviewerModelKeys(settings configfile.Settings) []string {
 		if name == review.DefaultReviewer || !r.On() {
 			continue
 		}
-		if m := string(reviewerModels(r, settings.Models).Review); m != string(settings.Models.Review) && !slices.Contains(out, m) {
+		if m := string(r.Models(settings.Models).Review); m != string(settings.Models.Review) && !slices.Contains(out, m) {
 			out = append(out, m)
 		}
 	}

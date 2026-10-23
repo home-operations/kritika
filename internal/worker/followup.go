@@ -380,7 +380,7 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		// rules and models, while it is on.
 		prompt.Rules = repoconfig.RulesFor(r.Rules, rec.vars)
 		prompt.Reviewers = []runner.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
-		models := reviewerModels(r, f.settings.Models)
+		models := r.Models(f.settings.Models)
 		ref = models.Review
 		answering = &store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort)}
 	}

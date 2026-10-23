@@ -67,8 +67,12 @@ func TestPlanReviewers(t *testing.T) {
 			want: []share{{"security", []string{"auth/login.go"}, review.ScopeFull}},
 		},
 		{
-			name:      "on a re-review, a reviewer none of whose files changed since is left out",
+			name:      "on a re-review, a reviewer none of whose files changed since still runs, judged over the whole change",
 			reviewers: []Reviewer{def, security}, scope: review.ScopeIncremental,
+			want: []share{
+				{review.DefaultReviewer, []string{"auth/login.go", "web/page.go", "old/x.go"}, review.ScopeIncremental},
+				{"security", []string{"auth/login.go"}, review.ScopeIncremental},
+			},
 		},
 		{
 			name:      "on a re-review, a reviewer the last review did not run reviews its files whole",

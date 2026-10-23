@@ -25,14 +25,17 @@ type reviewers struct {
 	specs      []runner.Reviewer
 	defaultOff bool
 	note       string
+	// routes say which model route each reviewer that took one took.
+	routes []string
 }
 
-// notes are what the summary states of the reviewers: the note, if any.
+// notes are what the summary states of the reviewers: the note, if any,
+// and the model routes they took.
 func (r reviewers) notes() []string {
 	if r.note == "" {
-		return nil
+		return r.routes
 	}
-	return []string{r.note}
+	return append([]string{r.note}, r.routes...)
 }
 
 // count is how many reviewers the review runs, which its parts, grant
@@ -41,8 +44,8 @@ func (r reviewers) count() int { return max(1, len(r.specs)) }
 
 // chooseReviewers is the reviewers a review of a pull request with the filter
 // variables vars runs, settings being the repository's: the default one
-// unless it is off, then each other one that is on and one of whose when
-// conditions holds, by name. only, when it names a reviewer, is the one a
+// unless it is off, then each other one that is on and whose when
+// conditions judgeReviewers found to hold, by name. only, when it names a reviewer, is the one a
 // review someone asked for runs alone, whatever its paths and conditions;
 // one that names none that is on runs them all, with a note. A reviewer the last
 // review, prior, did not run is marked to review the whole change. specs
@@ -72,8 +75,11 @@ func chooseReviewers(settings Effective, vars map[string]any, prior priorReview,
 	}
 	for _, name := range names {
 		r := settings.Reviewers[name]
-		if name == review.DefaultReviewer || !r.On() || only == "" && !configfile.AnyHolds(r.When, vars) {
+		if name == review.DefaultReviewer || !r.On() || only == "" && !settings.Held[name] {
 			continue
+		}
+		if route := settings.Routes[name]; route != "" {
+			out.routes = append(out.routes, fmt.Sprintf("The %s reviewer reviewed on its model route %s", name, route))
 		}
 		spec := runner.Reviewer{
 			Name: name, Instructions: r.Instructions, File: r.File, Categories: r.Categories, Paths: r.Paths,
@@ -118,7 +124,7 @@ func (w *Review) reviewerGrants(
 		if spec.Name == review.DefaultReviewer {
 			continue
 		}
-		models := reviewerModels(settings.Reviewers[spec.Name], settings.Models)
+		models := settings.Reviewers[spec.Name].Models(settings.Models)
 		models = pinModels(ctx, logger, w.Steppers, file, account, models)
 		if out == nil {
 			out = map[string]store.ReviewerGrant{}
@@ -126,17 +132,6 @@ func (w *Review) reviewerGrants(
 		out[spec.Name] = store.ReviewerGrant{Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort)}
 	}
 	return out
-}
-
-// reviewerModels are r's models: its own, the repository's, defaults,
-// where it sets none.
-func reviewerModels(r configfile.Reviewer, defaults configfile.Models) configfile.Models {
-	models := configfile.Models{Review: cmp.Or(r.Model, defaults.Review), Fallback: cmp.Or(r.Fallback, defaults.Fallback),
-		Effort: defaults.Effort}
-	if r.Effort != nil {
-		models.Effort = *r.Effort
-	}
-	return models
 }
 
 // ranReviewers are the reviewers whose parts a review's agent run lists,

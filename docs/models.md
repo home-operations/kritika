@@ -514,6 +514,10 @@ review:
   ([repository models](repository-config.md#models)).
 - A route's model waits for its own [`concurrency`](configuration.md#accounts)
   slots, as a repository's own model does. Follow-ups run on the default.
+- A [reviewer](repository-config.md#reviewers) takes routes in its own
+  `model` the same way, picked once per review; one that writes no model
+  reviews on what `review.model` picks. The summary names a reviewer's
+  route in a note.
 
 Since `paths` holds when any changed file matches, routes suit picking a
 stronger model for what a change touches. A pull request a route misses

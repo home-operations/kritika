@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,11 @@ type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritika.yaml.
 	Found bool
+	// Held are the reviewers other than the default one whose when
+	// conditions judgeReviewers found to hold for the pull request, and
+	// Routes the model route each one it took, by name.
+	Held   map[string]bool
+	Routes map[string]string
 }
 
 // readRepoConfig reads .kritika.yaml at ref through the forge: nil when the
@@ -89,11 +95,7 @@ func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDi
 	}
 	var d *configfile.Diff
 	if eff.Models.NeedsDiff() {
-		if diff, err := forgeDiff(); err != nil {
-			logger.Warn("forge diff not read; model routes on paths or lines do not hold", "error", err)
-		} else {
-			d = &configfile.Diff{Lines: contextpack.ChangedLines(diff, eff.Ignore), Changed: changedPaths(diff)}
-		}
+		d = pullDiff(logger, eff, forgeDiff)
 	}
 	picked, err := eff.Models.Pick(vars, d)
 	if err != nil {
@@ -103,6 +105,61 @@ func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDi
 		logger.Info("model route picked", "route", picked.Route, "model", picked.Review)
 	}
 	eff.Models = picked
+}
+
+// pickModels has eff's model routes pick the review's model (pickRoute),
+// then judges its reviewers and picks theirs (judgeReviewers).
+func pickModels(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
+	pickRoute(logger, eff, vars, forgeDiff)
+	judgeReviewers(logger, eff, vars, forgeDiff)
+}
+
+// pullDiff is the pull request's diff as a condition judges it, nil when
+// the forge will not give it: conditions on paths or lines then do not
+// hold.
+func pullDiff(logger *slog.Logger, eff *Effective, forgeDiff func() (string, error)) *configfile.Diff {
+	diff, err := forgeDiff()
+	if err != nil {
+		logger.Warn("forge diff not read; conditions on paths or lines do not hold", "error", err)
+		return nil
+	}
+	return &configfile.Diff{Lines: contextpack.ChangedLines(diff, eff.Ignore), Changed: changedPaths(diff)}
+}
+
+// judgeReviewers judges, over the whole pull request, whether the when
+// conditions of each of eff's reviewers other than the default one that is
+// on hold, and has each one's model routes pick its model as pickRoute
+// picks the review's, after it, reading the forge's diff when a condition
+// needs it. Each such reviewer's model is then the one it picked, with its
+// fallback and effort.
+func judgeReviewers(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
+	var d *configfile.Diff
+	if slices.ContainsFunc(slices.Collect(maps.Values(eff.Reviewers)), configfile.Reviewer.NeedsDiff) {
+		d = pullDiff(logger, eff, forgeDiff)
+	}
+	reviewers := maps.Clone(eff.Reviewers)
+	eff.Held, eff.Routes = map[string]bool{}, map[string]string{}
+	for name, r := range reviewers {
+		if name == review.DefaultReviewer || !r.On() {
+			continue
+		}
+		held, err := r.Holds(vars, d)
+		if err != nil {
+			logger.Warn("reviewer condition failed to evaluate", "reviewer", name, "error", err)
+		}
+		picked, err := r.Models(eff.Models).Pick(vars, d)
+		if err != nil {
+			logger.Warn("reviewer model route condition failed to evaluate", "reviewer", name, "error", err)
+		}
+		eff.Held[name] = held
+		if picked.Route != "" && r.Model != nil {
+			eff.Routes[name] = picked.Route
+			logger.Info("reviewer model route picked", "reviewer", name, "route", picked.Route, "model", picked.Review)
+		}
+		r.Model, r.Fallback, r.Effort = &configfile.ReviewModel{Default: picked.Review}, picked.Fallback, &picked.Effort
+		reviewers[name] = r
+	}
+	eff.Reviewers = reviewers
 }
 
 // changedPaths are the paths a unified diff changes, each named as the

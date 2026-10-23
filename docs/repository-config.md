@@ -275,9 +275,16 @@ reviewers:
       Review as an application security engineer. Trace every input that
       reaches a query, a shell, a path or a redirect, and name the exploit.
     categories: [security]
-    model: anthropic/claude-opus-5-5
-    effort: high
+    model:
+      - name: deep
+        model: anthropic/claude-opus-5-5
+        effort: high
+        when: [{ name: large, expr: pr.lines > 800 }]
+      - model: anthropic/claude-sonnet-5-5
     paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"]
+    when:
+      - { name: auth, paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"] }
+      - { name: deps, expr: 'pr.headRef.startsWith("renovate/")' }
     rules:
       - id: pin-actions
         rule: Third-party actions are pinned to a commit digest.
@@ -289,9 +296,9 @@ reviewers:
 | `instructions` | what the reviewer reviews for, at most 8000 characters, added after kritika's own instructions                                             |
 | `file`         | instead of `instructions`, a file read from the merge base whose content they are; the first 32 KiB is used                                |
 | `categories`   | the only finding categories it may report; its schema and its submission check refuse the rest. Every category when unset                 |
-| `model`, `fallback`, `effort` | as `review.*`, for this reviewer, a single model rather than [routes](models.md); where unset, what `review.model` picks for the pull request, its route included |
-| `paths`        | it reviews only the changed files that match one, and a pull request that changes none is not reviewed by it                               |
-| `when`         | conditions as a rule's: it runs only on a pull request one of them holds for                                                               |
+| `model`, `fallback`, `effort` | as `review.*`, for this reviewer: a model, or [routes](models.md) that end with one, picked once per review as the default reviewer's are, and named in the summary. Where unset, what `review.model` picks for the pull request, its route included. A list with a model of a provider the account may not use is dropped whole |
+| `paths`        | the changed files it reads, every one when unset; a pull request that changes none of them is not reviewed by it                          |
+| `when`         | conditions in a model route's shape, `{name, expr}` or `{name, paths}` with `pr.lines` usable: it runs only on a pull request one of them holds for |
 | `rules`        | its checks, in place of the repository's, which are the default reviewer's                                                                 |
 | `skills.scope` | skill scopes laid over the repository's for this reviewer, so a skill can be given whole to it alone                                       |
 | `agent`        | `steps`, `tokens` and `timeout` (at least `1s`) for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them |
@@ -311,11 +318,14 @@ reviewers:
   A reviewer whose parts did not all submit leaves the review
   [incomplete](reviews.md#the-commit-status), its findings posted and named
   in the summary; a retry of the same job reuses the parts that did.
+- **Judged over the whole pull request.** Which reviewers run, and on
+  which model, is decided from the whole change before any model is
+  called, as model routes are, so a pull request keeps its reviewers from
+  push to push and its author cannot talk one away.
 - **Incremental per reviewer.** A re-review builds on the last one only for
-  the reviewers the last one ran: one it did not, whose paths a push
-  touches for the first time say, reviews its files whole, and none of its
-  findings is held back. A reviewer none of whose files changed since the
-  last review does not run on a re-review.
+  the reviewers the last one ran: one it did not, whose `when` first holds
+  on a later push say, reviews its files whole, and none of its findings
+  is held back.
 - **Follow-ups.** A reply or mention in a finding's thread is answered by
   the reviewer that raised it, with its instructions, rules and model,
   while that reviewer is on; the default reviewer answers otherwise.

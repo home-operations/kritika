@@ -278,8 +278,8 @@
             "items": { "enum": ["correctness", "security", "performance", "reliability", "maintainability", "tests"] }
           },
           "model": {
-            "$ref": "#/$defs/model",
-            "description": "The reviewer's model; review.model's when unset."
+            "$ref": "#/properties/review/properties/model",
+            "description": "The reviewer's model, or a list of routes that ends with it, as review.model takes them; unset, the model review.model picks for the pull request. A list with a model of a provider the account may not use is dropped whole."
           },
           "fallback": {
             "$ref": "#/$defs/model",
@@ -291,13 +291,13 @@
           },
           "paths": {
             "type": "array",
-            "description": "Review only the changed files that match one of these; a pull request that changes none is not reviewed by it.",
+            "description": "The changed files the reviewer reads, every one when unset; a pull request that changes none of them is not reviewed by it.",
             "items": { "$ref": "#/$defs/glob" }
           },
           "when": {
             "type": "array",
-            "description": "Conditions on the pull request: the reviewer runs only when one of them holds.",
-            "items": { "$ref": "#/$defs/when" }
+            "description": "Conditions as a model route's, judged over the whole pull request: the reviewer runs only when one of them holds.",
+            "items": { "$ref": "#/$defs/condition" }
           },
           "rules": {
             "$ref": "#/properties/rules",

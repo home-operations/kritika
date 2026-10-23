@@ -46,6 +46,8 @@ func TestSchemaMatchesFile(t *testing.T) {
 		{"skill scope when", []string{"properties", "skills", "properties", "scope", "additionalProperties", "properties", "when", "items"},
 			yamlKeys[configfile.When]()},
 		{"reviewer", []string{"properties", "reviewers", "additionalProperties"}, yamlKeys[configfile.Reviewer]()},
+		{"reviewer when", []string{"properties", "reviewers", "additionalProperties", "properties", "when", "items"},
+			yamlKeys[configfile.Filter]()},
 		{"reviewer agent", []string{"properties", "reviewers", "additionalProperties", "properties", "agent"},
 			yamlKeys[configfile.ReviewerAgent]()},
 		{"tool", []string{"properties", "tools", "additionalProperties", "anyOf", "1"},

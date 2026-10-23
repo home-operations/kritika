@@ -32,17 +32,20 @@ type Reviewer struct {
 	// Categories are the only categories the reviewer may report, every
 	// one when none is listed.
 	Categories []review.Category `yaml:"categories,omitempty" json:"categories,omitempty"`
-	// Model, Fallback and Effort are its review model, the one that takes
-	// a step the model fails and how hard they reason, the repository's
-	// review.model, review.fallback and review.effort when unset.
-	Model    ModelRef      `yaml:"model,omitempty" json:"model,omitempty"`
+	// Model, Fallback and Effort are its review model, as review.model
+	// writes one, a model or routes ending with one, the one that takes a
+	// step the model fails and how hard they reason; unset, the model
+	// review.model picks for the pull request, with its fallback and
+	// effort.
+	Model    *ReviewModel  `yaml:"model,omitempty" json:"model,omitempty"`
 	Fallback ModelRef      `yaml:"fallback,omitempty" json:"fallback,omitempty"`
 	Effort   *model.Effort `yaml:"effort,omitempty" json:"effort,omitempty"`
-	// Paths narrow the reviewer to the changed files one of them matches,
-	// and When to a pull request one of those conditions holds for; a
-	// pull request that changes none of them is not reviewed by it.
+	// Paths are the changed files the reviewer reads, every one when
+	// none: a pull request that changes none of them is not reviewed by
+	// it. When are conditions as a model route's, judged over the whole
+	// pull request, one of which must hold for the reviewer to run.
 	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
-	When  []When   `yaml:"when,omitempty" json:"when,omitempty"`
+	When  []Filter `yaml:"when,omitempty" json:"when,omitempty"`
 	// Rules are checks the reviewer makes, in place of the
 	// configuration's, which are the default reviewer's.
 	Rules []Rule `yaml:"rules,omitempty" json:"rules,omitempty"`
@@ -80,6 +83,51 @@ func (r Reviewer) Bounds(a AgentSettings) AgentSettings {
 	return a
 }
 
+// Holds reports whether r's when conditions let it run on a pull request
+// with the filter variables vars and the diff d, nil when the diff could
+// not be read: one of them holds, or there are none. A condition is
+// judged as a model route's is (see Models.Pick), and the error of one
+// that fails to evaluate is returned for the log.
+func (r Reviewer) Holds(vars map[string]any, d *Diff) (bool, error) {
+	if len(r.When) == 0 {
+		return true, nil
+	}
+	if d != nil {
+		vars = maps.Clone(vars)
+		vars[linesVar] = d.Lines
+	}
+	_, ok, err := firstHolding(r.When, vars, d)
+	return ok, err
+}
+
+// NeedsDiff reports whether one of r's conditions, or of its model's
+// routes, cannot be judged before the pull request's diff is read.
+func (r Reviewer) NeedsDiff() bool {
+	if slices.ContainsFunc(r.When, Filter.needsDiff) {
+		return true
+	}
+	return r.Model != nil && (Models{Routes: r.Model.Routes}).NeedsDiff()
+}
+
+// Models are r's models, from which Models.Pick picks a pull request's:
+// its own, or defaults where it writes no model, which are the default
+// reviewer's as review.model picked them; its fallback and effort replace
+// theirs where it writes them.
+func (r Reviewer) Models(defaults Models) Models {
+	out := defaults
+	out.Routes = nil
+	if r.Model != nil {
+		out.Review, out.Routes, out.Route = r.Model.Default, r.Model.Routes, ""
+	}
+	if r.Fallback != "" {
+		out.Fallback = r.Fallback
+	}
+	if r.Effort != nil {
+		out.Effort = *r.Effort
+	}
+	return out
+}
+
 // MaxReviewerChars bounds a reviewer's instructions written as text.
 const MaxReviewerChars = 8000
 
@@ -93,7 +141,8 @@ const MaxReviewers = 8
 // MaxReviewers others, or one whose instructions are both or overlong,
 // whose file is outside the repository, whose categories are not
 // categories, whose paths, conditions, rules, skills or bounds are not
-// valid, or whose effort is not an effort. Its models are its caller's to
+// valid, or whose effort is not an effort, and compiles their when
+// conditions and model routes in place. Its models are its caller's to
 // check: what they may name depends on the scope. The error starts with
 // the key, as reviewers.name.
 func CheckReviewers(reviewers map[string]Reviewer) error {
@@ -149,8 +198,17 @@ func checkReviewer(name string, r Reviewer) error {
 			return fmt.Errorf(".paths[%d] %q is not a valid glob", i, g)
 		}
 	}
-	if err := CheckWhen(r.When); err != nil {
-		return fmt.Errorf(".%w", err)
+	for i := range r.When {
+		w := &r.When[i]
+		if w.Name != "" && slices.ContainsFunc(r.When[:i], func(o Filter) bool { return o.Name == w.Name }) {
+			return fmt.Errorf(".when[%d]: name %q is given twice", i, w.Name)
+		}
+		if err := w.Compile(); err != nil {
+			return fmt.Errorf(".when[%d]: %w", i, err)
+		}
+	}
+	if err := r.Model.checkAt(".model"); err != nil {
+		return err
 	}
 	if err := CheckRules(r.Rules); err != nil {
 		return fmt.Errorf(".%w", err)
@@ -180,7 +238,7 @@ func (a ReviewerAgent) check() error {
 
 // onlyEnabled reports whether r writes no key but enabled.
 func (r Reviewer) onlyEnabled() bool {
-	return r.Instructions == "" && r.File == "" && len(r.Categories) == 0 && r.Model == "" && r.Fallback == "" &&
+	return r.Instructions == "" && r.File == "" && len(r.Categories) == 0 && r.Model == nil && r.Fallback == "" &&
 		r.Effort == nil && len(r.Paths) == 0 && len(r.When) == 0 && len(r.Rules) == 0 && r.Skills.Paths == nil &&
 		len(r.Skills.Scope) == 0 && r.Agent == (ReviewerAgent{})
 }
@@ -233,14 +291,12 @@ func (f *File) validateReviewers(reviewers map[string]Reviewer) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(reviewers)) {
 		r := reviewers[name]
-		for _, m := range []struct {
-			key string
-			ref ModelRef
-		}{{"model", r.Model}, {"fallback", r.Fallback}} {
-			if m.ref == "" {
+		refs := append(r.Model.refsAt("reviewers."+name+".model"), namedRef{"reviewers." + name + ".fallback", &r.Fallback})
+		for _, m := range refs {
+			if m.ref == nil || *m.ref == "" {
 				continue
 			}
-			if err := f.checkModelRef("reviewers."+name+"."+m.key, m.ref); err != nil {
+			if err := f.checkModelRef(m.key, *m.ref); err != nil {
 				return err
 			}
 		}
