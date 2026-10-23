@@ -98,8 +98,8 @@ func TestAnthropicStepResponses(t *testing.T) {
 			if got.path != "/gw/v1/messages" {
 				t.Fatalf("path = %q; the base URL prefix must be kept", got.path)
 			}
-			if got.header.Get("X-Api-Key") != "test-key" {
-				t.Fatalf("x-api-key = %q", got.header.Get("X-Api-Key"))
+			if got.header.Get("Authorization") != "Bearer test-key" {
+				t.Fatalf("authorization = %q", got.header.Get("Authorization"))
 			}
 			if field(got.body, "model") != "acme-large" || field(got.body, "max_tokens") != float64(500) {
 				t.Fatalf("request = %v", got.body)

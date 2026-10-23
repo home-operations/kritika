@@ -71,7 +71,7 @@ func TestAnthropicLatestModels(t *testing.T) {
 		{ID: "claude-opus-4-6", Line: "opus", Lifecycle: "active", CreatedAt: "2026-03-01T00:00:00Z"},
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Api-Key") != "test-key" {
+		if r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Error("request did not use the configured API key")
 		}
 		if r.URL.Path == "/gw/v1/models" {
@@ -362,7 +362,7 @@ func TestAnthropicCatalogPerProvider(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			reads.Add(1)
-			writeAnthropicCatalog(t, w, []catalogModel{{ID: r.Header.Get("X-Api-Key") + "-model", Line: "opus", Lifecycle: "active"}}, false)
+			writeAnthropicCatalog(t, w, []catalogModel{{ID: strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") + "-model", Line: "opus", Lifecycle: "active"}}, false)
 			return
 		}
 		writeAnthropicAnswer(t, w)

@@ -109,11 +109,12 @@ providers:
 ```
 
 - `{session}` is the only placeholder, and goes in an inline value.
-- `apiKey`, the SDKs or Go's HTTP client set `Authorization`,
-  `X-Api-Key`, `Host`, `Accept`, `Accept-Encoding`, `Content-Type`,
-  `Content-Length`, `Content-Encoding`, `Transfer-Encoding` and
-  `Connection`, which are refused, as is `x-opencode-session` on a
-  provider of type `opencode`, which sends its own.
+- `apiKey`, the SDKs or Go's HTTP client set `Authorization`, `Host`,
+  `Accept`, `Accept-Encoding`, `Content-Type`, `Content-Length`,
+  `Content-Encoding`, `Transfer-Encoding` and `Connection`, which are
+  refused, as are `X-Api-Key`, which would send a second key, and
+  `x-opencode-session` on a provider of type `opencode`, which sends
+  its own.
 - A `chatgpt` provider takes none, and the [embedder](#the-embedder)
   sends none.
 
