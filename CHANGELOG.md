@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.0.100](https://github.com/home-operations/kritika/compare/0.0.99...0.0.100) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** move to anthropic-sdk-go v2 and update Go and UI dependencies ([#1209](https://github.com/home-operations/kritika/issues/1209))
+* **config:** refuse two apps entries with one clientId ([#1205](https://github.com/home-operations/kritika/issues/1205))
+
+### Features
+
+* **deps:** move to anthropic-sdk-go v2 and update Go and UI dependencies ([#1209](https://github.com/home-operations/kritika/issues/1209)) ([a112266](https://github.com/home-operations/kritika/commit/a112266d49ad0416059ec88e300f02ce21427dd9))
+* **go:** update module github.com/anthropics/anthropic-sdk-go (v1.82.0 → v1.83.0) ([#1208](https://github.com/home-operations/kritika/issues/1208)) ([fc2c247](https://github.com/home-operations/kritika/commit/fc2c247c0a13a53814fd2639983c3611db251a33))
+
+
+### Bug Fixes
+
+* **config:** refuse two apps entries with one clientId ([#1205](https://github.com/home-operations/kritika/issues/1205)) ([0b689d8](https://github.com/home-operations/kritika/commit/0b689d8e8ba7ea43b60e622bebdb716f45fe9ee1))
+
+
+### Miscellaneous Chores
+
+* **mise:** update tool cosign (3.1.3 → 3.1.4) ([#1206](https://github.com/home-operations/kritika/issues/1206)) ([cc6f0e7](https://github.com/home-operations/kritika/commit/cc6f0e7e2749034e70a681a2a8b48f3778bc9cda))
+
 ## [0.0.99](https://github.com/home-operations/kritika/compare/0.0.98...0.0.99) (2026-10-23)
 
 
