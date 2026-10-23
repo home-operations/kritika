@@ -30,22 +30,14 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
-	f := configfiletest.Load(t, configYAML+`repositories:
-  onedr0p/*: { trigger: { exclude: [{ name: drafts, expr: pr.draft }] } }
-  onedr0p/home-ops: {}
-  onedr0p/replies: { review: { replies: true } }
-  onedr0p/polled: {}
-  onedr0p/at-once: {}
-  onedr0p/opened-only: { trigger: { include: [{ expr: 'pr.event == "opened"' }] } }
-  onedr0p/labelled: { trigger: { exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == "skip-review")' }] } }
-  onedr0p/no-forks: { trigger: { exclude: [{ name: forks, expr: pr.fork }] } }
-  onedr0p/no-locks: { trigger: { exclude: [{ name: locks, paths: ["**/*.lock"] }, { name: too-large, expr: pr.lines > 2000 }] } }
-  onedr0p/source-only: { trigger: { include: [{ name: source, paths: ["src/**"] }] } }
-  onedr0p/bots-or-source: { trigger: { include: [{ name: bots, expr: 'pr.author.startsWith("renovate")' }, { name: source, paths: ["src/**"] }] } }
-`)
+	f := withRoot(t, "")
 	if err := st.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	// Each test's repositories, turned on; a test that needs other settings
+	// loads a configuration of its own with withRoot.
+	storetest.Repositories(t, st, f, "onedr0p/home-ops", "onedr0p/replies", "onedr0p/polled", "onedr0p/at-once", "onedr0p/opened-only",
+		"onedr0p/labelled", "onedr0p/no-forks", "onedr0p/no-locks", "onedr0p/source-only", "onedr0p/bots-or-source")
 	// onedr0p/disabled is one an admin turned off.
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -66,6 +58,20 @@ func setupService(t *testing.T) (*Service, *store.Store, *configfile.File) {
 
 // request is ev as delivered to bot-ross for the account it names, or
 // else the owner of its repository.
+// withRoot is the service's configuration with root, lines written at the
+// file's root, beside the drafts exclusion every test's reviews are under.
+func withRoot(t *testing.T, root string) *configfile.File {
+	t.Helper()
+	return configfiletest.Load(t, configYAML+"trigger:\n  exclude: [{ name: drafts, expr: pr.draft }]\n"+root)
+}
+
+// withTrigger is withRoot with a trigger block of its own in place of the
+// drafts exclusion: trigger's lines, indented under the key.
+func withTrigger(t *testing.T, trigger string) *configfile.File {
+	t.Helper()
+	return configfiletest.Load(t, configYAML+"trigger:\n"+trigger)
+}
+
 func request(f *configfile.File, ev webhook.Event) Request {
 	in, _ := f.Connection("bot-ross")
 	owner := ev.Account
@@ -137,17 +143,18 @@ func TestDispatchPullRequest(t *testing.T) {
 			name   string
 			action string
 			repo   string
+			file   *configfile.File
 			pr     *webhook.PullRequest
 			reason string
 		}{
-			{"draft filtered", "opened", "onedr0p/home-ops", &draft, "filter"},
-			{"fork excluded", "opened", "onedr0p/no-forks", &fork, "filter"},
-			{"disabled repository", "opened", "onedr0p/disabled", pr, "disabled"},
-			{"filtered on the event", "synchronize", "onedr0p/opened-only", pr, "filter"},
+			{"draft filtered", "opened", "onedr0p/home-ops", f, &draft, "filter"},
+			{"fork excluded", "opened", "onedr0p/no-forks", withTrigger(t, "  exclude: [{ name: forks, expr: pr.fork }]\n"), &fork, "filter"},
+			{"disabled repository", "opened", "onedr0p/disabled", f, pr, "disabled"},
+			{"filtered on the event", "synchronize", "onedr0p/opened-only", withTrigger(t, "  include: [{ expr: 'pr.event == \"opened\"' }]\n"), pr, "filter"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: tt.action, Repository: repo(tt.repo), PullRequest: tt.pr}))
+				out, err := svc.Dispatch(ctx, request(tt.file, webhook.Event{Kind: webhook.KindPullRequest, Action: tt.action, Repository: repo(tt.repo), PullRequest: tt.pr}))
 				if err != nil || out.Status != Skipped || out.Reason != tt.reason {
 					t.Fatalf("out = %+v, %v; want skipped %s", out, err, tt.reason)
 				}
@@ -181,20 +188,23 @@ func TestDispatchPullRequest(t *testing.T) {
 // keeps no pull request out at ingest, an inclusion among them standing in
 // for the ones that do not hold yet.
 func TestDispatchLeavesDiffConditions(t *testing.T) {
-	svc, _, f := setupService(t)
+	svc, _, _ := setupService(t)
 	ctx := t.Context()
 	tests := []struct {
-		name   string
-		repo   string
-		number int
-		head   string
+		name    string
+		repo    string
+		trigger string
+		number  int
+		head    string
 	}{
-		{"an exclude with paths", "onedr0p/no-locks", 81, "d01"},
-		{"an include with paths alone", "onedr0p/source-only", 82, "d02"},
-		{"an include that fails beside one with paths", "onedr0p/bots-or-source", 83, "d03"},
+		{"an exclude with paths", "onedr0p/no-locks", `  exclude: [{ name: locks, paths: ["**/*.lock"] }, { name: too-large, expr: pr.lines > 2000 }]`, 81, "d01"},
+		{"an include with paths alone", "onedr0p/source-only", `  include: [{ name: source, paths: ["src/**"] }]`, 82, "d02"},
+		{"an include that fails beside one with paths", "onedr0p/bots-or-source",
+			`  include: [{ name: bots, expr: 'pr.author.startsWith("renovate")' }, { name: source, paths: ["src/**"] }]`, 83, "d03"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			f := withTrigger(t, tt.trigger+"\n")
 			pr := &webhook.PullRequest{Number: tt.number, Title: "t", Author: "devin", State: "open", HeadRef: "f", HeadSHA: tt.head, BaseRef: "main"}
 			out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo(tt.repo), PullRequest: pr}))
 			if err != nil || out != (Outcome{Status: Enqueued, Job: "review"}) {
@@ -214,18 +224,19 @@ func TestDispatchForkRecorded(t *testing.T) {
 	tests := []struct {
 		name   string
 		repo   string
+		file   *configfile.File
 		number int
 		head   string
 		want   Outcome
 		jobs   int
 	}{
-		{"no fork exclusion", "onedr0p/home-ops", 70, "eee", Outcome{Status: Enqueued, Job: "review"}, 1},
-		{"forks excluded", "onedr0p/no-forks", 71, "fff", Outcome{Status: Skipped, Reason: reasonFilter}, 0},
+		{"no fork exclusion", "onedr0p/home-ops", f, 70, "eee", Outcome{Status: Enqueued, Job: "review"}, 1},
+		{"forks excluded", "onedr0p/no-forks", withTrigger(t, "  exclude: [{ name: forks, expr: pr.fork }]\n"), 71, "fff", Outcome{Status: Skipped, Reason: reasonFilter}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fork := &webhook.PullRequest{Number: tt.number, Title: "t", Author: "someone", State: "open", HeadRef: "f", HeadSHA: tt.head, BaseRef: "main", Fork: true}
-			out, err := svc.Dispatch(ctx, request(f, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo(tt.repo), PullRequest: fork}))
+			out, err := svc.Dispatch(ctx, request(tt.file, webhook.Event{Kind: webhook.KindPullRequest, Action: "opened", Repository: repo(tt.repo), PullRequest: fork}))
 			if err != nil || out != tt.want {
 				t.Fatalf("out = %+v, %v; want %+v", out, err, tt.want)
 			}
@@ -463,11 +474,26 @@ func TestDispatchStaleEvent(t *testing.T) {
 }
 
 // TestDispatchSkipsArchivedAndForks: nothing runs for an archived
-// repository, or a fork its own entry does not turn on, whatever the
-// account's settings say.
+// repository, or a fork nobody turned on, whatever the configuration says.
 func TestDispatchSkipsArchivedAndForks(t *testing.T) {
-	svc, _, f := setupService(t)
+	svc, st, f := setupService(t)
 	ctx := t.Context()
+	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	// home-ops stands for a repository with no dashboard choice, which what
+	// the forge says of it decides for.
+	id := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
+	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = NULL, turned_at = NULL WHERE id = $1`, id)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error { return store.TurnOn(ctx, tx, id, true) }); err != nil {
+			t.Error(err)
+		}
+	})
 	for _, traits := range []configfile.RepoTraits{{Fork: true}, {Archived: true}} {
 		r := &webhook.Repository{FullName: "onedr0p/home-ops", DefaultBranch: "main", RepoTraits: traits}
 		for _, ev := range []webhook.Event{
@@ -665,26 +691,27 @@ func TestDispatchCommentPush(t *testing.T) {
 }
 
 // TestDispatchReply: a reply in an inline thread that mentions no one is a
-// follow-up where the repository answers replies in finding threads, and
+// follow-up where the configuration answers replies in finding threads, and
 // its job says so; a root inline comment, or a reply where they are off,
 // is not.
 func TestDispatchReply(t *testing.T) {
 	svc, st, f := setupService(t)
 	ctx := t.Context()
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
+	replies := withRoot(t, "review: { replies: true }\n")
 	reply := &webhook.Comment{ID: 511, Number: 7, Author: "devin", Body: "the caller holds the lock", Inline: true, InReplyTo: 500}
-	event := func(repo *webhook.Repository, c *webhook.Comment) Request {
+	event := func(f *configfile.File, repo *webhook.Repository, c *webhook.Comment) Request {
 		return request(f, webhook.Event{Kind: webhook.KindComment, Action: "created", Repository: repo, Comment: c})
 	}
-	if out, _ := svc.Dispatch(ctx, event(repo("onedr0p/home-ops"), reply)); out.Reason != "no-mention" {
+	if out, _ := svc.Dispatch(ctx, event(f, repo("onedr0p/home-ops"), reply)); out.Reason != "no-mention" {
 		t.Fatalf("reply where replies are off = %+v", out)
 	}
 	root := *reply
 	root.ID, root.InReplyTo = 512, 0
-	if out, _ := svc.Dispatch(ctx, event(repo("onedr0p/replies"), &root)); out.Reason != "no-mention" {
+	if out, _ := svc.Dispatch(ctx, event(replies, repo("onedr0p/replies"), &root)); out.Reason != "no-mention" {
 		t.Fatalf("root inline comment = %+v", out)
 	}
-	if out, err := svc.Dispatch(ctx, event(repo("onedr0p/replies"), reply)); err != nil || out.Status != Enqueued || out.Job != "followup" {
+	if out, err := svc.Dispatch(ctx, event(replies, repo("onedr0p/replies"), reply)); err != nil || out.Status != Enqueued || out.Job != "followup" {
 		t.Fatalf("reply = %+v, %v", out, err)
 	}
 	var asReply bool
@@ -1061,8 +1088,9 @@ func TestDispatchRecordsEdits(t *testing.T) {
 // says of it, and starts a review of a head that has none a label could
 // not change, unless one is still to come.
 func TestDispatchLabelChange(t *testing.T) {
-	svc, st, f := setupService(t)
+	svc, st, _ := setupService(t)
 	ctx := t.Context()
+	f := withTrigger(t, "  exclude: [{ name: skip-label, expr: 'pr.labels.exists(l, l.name == \"skip-review\")' }]\n")
 	account, _ := f.Account(configfile.ForgeGitHub, "onedr0p")
 	rid := configfile.RepositoryID(account.ID(), "onedr0p/labelled")
 	label := func(names ...string) []webhook.Label {

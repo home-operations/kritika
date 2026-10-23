@@ -85,17 +85,17 @@ func (m *ReviewModel) Compile() error {
 }
 
 // check compiles m's conditions in place and checks its routes' efforts,
-// named in errors under where as validateOverrides names its keys.
-func (m *ReviewModel) check(where string) error {
+// named in errors as validateOverrides names its keys.
+func (m *ReviewModel) check() error {
 	if m == nil {
 		return nil
 	}
 	if err := m.Compile(); err != nil {
-		return fmt.Errorf("configfile: %s%s%w", where, keyModel, err)
+		return fmt.Errorf("configfile: %s%w", keyModel, err)
 	}
 	for i, r := range m.Routes {
 		if r.Effort != nil && *r.Effort != "" && !r.Effort.Valid() {
-			return fmt.Errorf("configfile: %s%s[%d].effort must be %s, got %q", where, keyModel, i, model.EffortLevels, *r.Effort)
+			return fmt.Errorf("configfile: %s[%d].effort must be %s, got %q", keyModel, i, model.EffortLevels, *r.Effort)
 		}
 	}
 	return nil

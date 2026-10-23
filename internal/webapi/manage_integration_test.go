@@ -43,8 +43,6 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-repositories:
-  md/one: {}
 `
 
 // fakeActions records each action with the account its transaction was
@@ -126,6 +124,7 @@ func newManageEnv(t *testing.T) *manageEnv {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	storetest.Repositories(t, st, file, "md/one")
 
 	webURL, _ := url.Parse("https://kritika.example")
 	e.current = configfile.NewCurrent(file)

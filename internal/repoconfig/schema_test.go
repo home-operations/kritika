@@ -81,10 +81,7 @@ func yamlKeys[T any]() []string { return leafKeys(reflect.TypeFor[T](), "", fals
 // TestFileKeysAreSettings checks the keys .kritika.yaml takes are settings
 // an admin writes too, spelled the same.
 func TestFileKeysAreSettings(t *testing.T) {
-	keys := make([]string, 0, len(configfile.Policies))
-	for _, p := range configfile.Policies {
-		keys = append(keys, p.Key)
-	}
+	keys := configfile.Policies
 	for _, key := range leafKeys(reflect.TypeFor[File](), "", true) {
 		// tools has no admin counterpart: the image's tools are the admin's.
 		if key == "tools" {

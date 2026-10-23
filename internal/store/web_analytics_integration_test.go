@@ -21,6 +21,7 @@ func TestReadAnalytics(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("analytics"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "analytics", "analytics/one")
 	account := accountID(t, s, "analytics")
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	to := from.AddDate(0, 0, 3)

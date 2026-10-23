@@ -50,13 +50,10 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request, t *accountSco
 	}
 	in := make([]repoRules, 0, len(repos))
 	for _, row := range repos {
-		if !row.Enabled || !t.file.Runs(t.account, row.FullName, row.RepoTraits) {
+		if !row.Enabled || !t.file.Runs(t.account, row.RepoTraits) {
 			continue
 		}
-		rr := repoRules{
-			name: row.FullName, settings: t.file.Settings(t.account, row.FullName), sources: t.file.Sources(t.account, row.FullName),
-			ruleScopes: t.file.RuleScopes(t.account, row.FullName),
-		}
+		rr := repoRules{name: row.FullName, settings: t.file.Settings(t.account), sources: t.file.Sources(t.account)}
 		if f, ok := files[row.ID]; ok && f.Doc != nil {
 			rr.doc = []byte(*f.Doc)
 		}
@@ -85,26 +82,21 @@ func countCitations(rules []Rule, cited []store.RuleCitation) []Rule {
 
 // repoRules is what one repository's rules come from.
 type repoRules struct {
-	name       string
-	settings   configfile.Settings
-	sources    map[string]configfile.Source
-	ruleScopes map[string]configfile.Scope
+	name     string
+	settings configfile.Settings
+	sources  map[string]configfile.Source
 	// doc is the .kritika.yaml its last review read, nil for none.
 	doc []byte
 }
 
 // collectRules lists each rule once, with every repository that reads it,
-// ordered by kind, path or id, and source; a rule a repository's entry
-// sets is listed for that repository alone. A .kritika.yaml that does not
+// ordered by kind, path or id, and source. A .kritika.yaml that does not
 // parse adds nothing, as a review ignores it.
 func collectRules(repos []repoRules) []Rule {
 	byKey := map[string]*Rule{}
 	add := func(r Rule, repo string) {
 		parts := []string{string(r.Kind), r.ID, r.Text, r.Path, r.Description, strings.Join(r.Paths, "\x00"), whenKey(r.When), string(r.Source)}
 		key := strings.Join(parts, "\x01")
-		if r.Source == RuleFromEntry {
-			key += "\x01" + repo
-		}
 		if got, ok := byKey[key]; ok {
 			got.Repositories = append(got.Repositories, repo)
 			return
@@ -119,8 +111,9 @@ func collectRules(repos []repoRules) []Rule {
 			add(Rule{Kind: RuleContext, Path: c.Path, Description: c.Description, Paths: c.Paths, Source: contextFrom}, rr.name)
 		}
 		for _, w := range own.Rules {
-			source := ruleFrom[rr.ruleScopes[w.ID]]
-			add(Rule{Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: w.Paths, When: w.When, Source: source}, rr.name)
+			add(Rule{
+				Kind: RuleWritten, ID: w.ID, Text: w.Rule, Path: w.File, Paths: w.Paths, When: w.When, Source: RuleSource(configfile.SourceDefaults),
+			}, rr.name)
 		}
 		if rr.doc == nil {
 			continue
@@ -150,14 +143,6 @@ func collectRules(repos []repoRules) []Rule {
 			cmp.Compare(a.Description, b.Description), cmp.Compare(a.Text, b.Text))
 	})
 	return out
-}
-
-// ruleFrom is the source of a rule the configuration writes, by the scope
-// that writes it.
-var ruleFrom = map[configfile.Scope]RuleSource{
-	configfile.ScopeDefaults:   RuleSource(configfile.SourceDefaults),
-	configfile.ScopeAccount:    RuleSource(configfile.SourceAccount),
-	configfile.ScopeRepository: RuleFromEntry,
 }
 
 // whenKey is a rule's conditions as one string, for telling rows apart.

@@ -9,7 +9,7 @@ import (
 )
 
 // Rule is a check a review makes, written in the configuration, by an id
-// findings cite it by and narrower scopes replace it by. The check is
+// findings cite it by and a repository's file may not reuse. The check is
 // Rule's text or the content of File, a repository file read from the merge
 // base, exactly one of them. With Paths it applies only when a changed path
 // matches one of them, and with When only to a pull request one of those
@@ -93,41 +93,4 @@ func CheckWhen(when []When) error {
 		}
 	}
 	return nil
-}
-
-// RuleScopes says, by id, which scope writes each rule Settings(a,
-// fullName) runs: the file's own, the account, or its entry for the
-// repository.
-func (f *File) RuleScopes(a *Account, fullName string) map[string]Scope {
-	out := map[string]Scope{}
-	for _, r := range f.Defaults.Rules {
-		out[r.ID] = ScopeDefaults
-	}
-	for _, r := range a.Rules {
-		out[r.ID] = ScopeAccount
-	}
-	if e := a.Repository(fullName); e != nil {
-		for _, r := range e.Rules {
-			out[r.ID] = ScopeRepository
-		}
-	}
-	return out
-}
-
-// WithRules is rules with more laid over them: one of more with an id
-// rules already has replaces that rule where it stands, and the rest
-// follow in order.
-func WithRules(rules, more []Rule) []Rule {
-	if len(more) == 0 {
-		return rules
-	}
-	out := slices.Clone(rules)
-	for _, r := range more {
-		if i := slices.IndexFunc(out, func(o Rule) bool { return o.ID == r.ID }); i >= 0 {
-			out[i] = r
-		} else {
-			out = append(out, r)
-		}
-	}
-	return out
 }

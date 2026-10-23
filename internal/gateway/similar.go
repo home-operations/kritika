@@ -95,7 +95,7 @@ func (g *Server) similarCode(w http.ResponseWriter, r *http.Request) {
 	}
 	chunks, tokens, indexed, err := g.similar(ctx, c.file, similarRequest{
 		account: c.account, repositoryID: c.grant.RepositoryID, reviewID: c.usageReview(), jobID: jobID,
-		slots: c.file.Settings(c.account, "").Limits.Concurrency, queries: req.Queries, exclude: req.Exclude,
+		slots: c.file.Settings(c.account).Limits.Concurrency, queries: req.Queries, exclude: req.Exclude,
 	}, c.logger)
 	cctx, cancel := detach(ctx)
 	defer cancel()

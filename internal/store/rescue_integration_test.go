@@ -73,6 +73,7 @@ func newRescueFixture(t *testing.T, ctx context.Context, s *Store) rescueFixture
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	f := rescueFixture{
 		alpha:     accountID(t, s, "alpha"),
 		silent:    insertRiverJob(t, ctx, s, "review", "running", 1, 25, 10*time.Minute, `{}`),
@@ -220,6 +221,7 @@ func TestOrphanedRuns(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	live := insertRiverJob(t, ctx, s, "review", "running", 1, 25, time.Minute, `{}`)
 	retried := insertRiverJob(t, ctx, s, "review", "retryable", 1, 25, 10*time.Minute, `{}`)
@@ -424,6 +426,7 @@ func TestRecordRunnerRunLeavesUnknownTimesNull(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("unstarted"))); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "unstarted", "unstarted/one")
 	account := accountID(t, s, "unstarted")
 	runID, _ := insertRun(t, ctx, s, account, insertReview(t, ctx, s, account), 0)
 	var scheduled, started *time.Time
@@ -452,6 +455,7 @@ func TestRescuePublication(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	for _, tt := range []struct {
 		name                 string

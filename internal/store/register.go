@@ -27,10 +27,9 @@ type ReachedRepository struct {
 // clock as Now reads it: the forge-reported repositories it lacks,
 // deleted, renamed, transferred or no longer reached, are disabled as an
 // installation event would, unless named since listedAt, as a webhook may
-// have done after the listing. An empty listing
-// disables nothing, so a bad one never disables a whole account, and the
-// repositories the configuration lists are left alone. It returns how many
-// were new and how many it disabled.
+// have done after the listing. An empty listing disables nothing, so a bad
+// one never disables a whole account. It returns how many were new and how
+// many it disabled.
 func (s *Store) RegisterRepositories(
 	ctx context.Context, accountID string, repos []ReachedRepository, listedAt time.Time,
 ) (added, disabled int, err error) {
@@ -50,7 +49,7 @@ func (s *Store) RegisterRepositories(
 			}
 		}
 		tag, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false, disabled_at = coalesce(disabled_at, now()), updated_at = now()
-			WHERE account_id = $1 AND managed_by = 'forge' AND enabled AND id <> ALL($2::uuid[]) AND updated_at < $3`,
+			WHERE account_id = $1 AND enabled AND id <> ALL($2::uuid[]) AND updated_at < $3`,
 			accountID, ids, listedAt)
 		if err != nil {
 			return fmt.Errorf("store: disable repositories no longer listed: %w", err)
@@ -62,13 +61,12 @@ func (s *Store) RegisterRepositories(
 }
 
 // EnsureRepository records repository r of account accountID as the forge
-// names it, spelling included, and returns its id and whether it is new. A
-// row the forge manages is reachable (enabled), since the forge just named
-// it, but starts turned off until an admin enables it in the dashboard.
-// Existing rows keep their turned_on choice. A row the spec lists keeps its
-// enabled flag. A DefaultBranch of "" leaves the known one, and so does a
-// nil Traits the known traits, and so does a Visibility of "" the known
-// visibility. A row enabled again loses
+// names it, spelling included, and returns its id and whether it is new.
+// The row is reachable (enabled), since the forge just named it, but
+// starts turned off until an admin enables it in the dashboard. Existing
+// rows keep their turned_on choice. A DefaultBranch of "" leaves the known
+// one, and so does a nil Traits the known traits, and so does a Visibility
+// of "" the known visibility. A row enabled again loses
 // the time the index sweep found it stopped: it may run, and stop again,
 // before the next sweep sees it. updated_at is the time of the write, not
 // of the transaction's start, for RegisterRepositories to leave a row
@@ -92,19 +90,17 @@ func ensureRepository(
 	}
 	// xmax is 0 only on a row the statement inserted, not one it updated.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO repositories (id, account_id, name, default_branch, managed_by, enabled, turned_on, archived, fork, visibility, updated_at)
-		VALUES ($1, $2, $3, $4, 'forge', true, false, coalesce($5, false), coalesce($6, false), $7, clock_timestamp())
+		INSERT INTO repositories (id, account_id, name, default_branch, enabled, turned_on, archived, fork, visibility, updated_at)
+		VALUES ($1, $2, $3, $4, true, false, coalesce($5, false), coalesce($6, false), $7, clock_timestamp())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			default_branch = CASE WHEN EXCLUDED.default_branch <> '' AND ($8::timestamptz IS NULL OR repositories.updated_at < $8)
 				THEN EXCLUDED.default_branch ELSE repositories.default_branch END,
-			enabled = CASE WHEN repositories.managed_by = 'forge'
-				AND ($8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8)
+			enabled = CASE WHEN $8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8
 				THEN true ELSE repositories.enabled END,
-			disabled_at = CASE WHEN repositories.managed_by = 'forge'
-				AND ($8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8)
+			disabled_at = CASE WHEN $8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8
 				THEN NULL ELSE repositories.disabled_at END,
-			stopped_at = CASE WHEN repositories.managed_by = 'forge' AND NOT repositories.enabled
+			stopped_at = CASE WHEN NOT repositories.enabled
 				AND ($8::timestamptz IS NULL OR repositories.disabled_at IS NULL OR repositories.disabled_at < $8)
 				THEN NULL ELSE repositories.stopped_at END,
 			archived = CASE WHEN $8::timestamptz IS NULL OR repositories.updated_at < $8
@@ -162,8 +158,7 @@ func RepositoryTraits(ctx context.Context, tx pgx.Tx, id string, reported *confi
 // account, unless an admin has already chosen a state for the new name.
 func PreserveRenamedEnablement(ctx context.Context, tx pgx.Tx, previousID, id string) error {
 	_, err := tx.Exec(ctx, `UPDATE repositories r SET turned_on = old.turned_on, turned_at = old.turned_at
-		FROM repositories old WHERE old.id = $1 AND r.id = $2 AND r.account_id = old.account_id AND r.turned_at IS NULL
-			AND (r.managed_by = 'forge' OR old.turned_at IS NOT NULL)`,
+		FROM repositories old WHERE old.id = $1 AND r.id = $2 AND r.account_id = old.account_id AND r.turned_at IS NULL`,
 		previousID, id)
 	if err != nil {
 		return fmt.Errorf("store: preserve renamed repository enablement: %w", err)

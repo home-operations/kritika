@@ -17,6 +17,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("review-similar"))); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "review-similar", "review-similar/one")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +26,7 @@ func TestSimilarWithoutExclusions(t *testing.T) {
 	})
 	account := accountID(t, s, "review-similar")
 	repo := configfile.RepositoryID(account, "review/similar")
-	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories(id,account_id,name,managed_by) VALUES($1,$2,'review/similar','file')`, repo, account); err != nil {
+	if _, err := s.owner.Exec(ctx, `INSERT INTO repositories(id,account_id,name) VALUES($1,$2,'review/similar')`, repo, account); err != nil {
 		t.Fatal(err)
 	}
 	var run string

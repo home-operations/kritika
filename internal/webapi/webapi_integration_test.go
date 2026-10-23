@@ -49,10 +49,6 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-repositories:
-  wa/one: {}
-  wa/two: {}
-  wb/one: {}
 `
 
 // followupComment is answered in both accounts, as comment ids from two
@@ -95,6 +91,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	storetest.Repositories(t, st, file, "wa/one", "wa/two", "wb/one")
 	cur := configfile.NewCurrent(file)
 	webURL, _ := url.Parse("https://kritika.example")
 	h, err := auth.New(auth.Config{Store: st, Current: cur, WebURL: webURL, Logger: logger})

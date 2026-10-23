@@ -354,10 +354,11 @@ func setupIndexResume(t *testing.T, scenario string) *resumeSetup {
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "test-provider-key")
 	name := "onedr0p/resume-" + uuid.NewString()
-	file := configfiletest.Load(t, strings.ReplaceAll(configYAML, "onedr0p/home-ops", name))
+	file := configfiletest.Load(t, configYAML)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, name)
 	if _, err := st.EnsureIndexSchema(ctx, "kritika_app", file.Embedding.Model, 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +390,7 @@ func setupIndexResume(t *testing.T, scenario string) *resumeSetup {
 		return &river.Job[jobs.IndexArgs]{JobRow: row, Args: args}
 	}
 	if scenario == "incremental" {
-		seedResumeBase(t, st, file, account, repo, name)
+		seedResumeBase(t, st, file, account, repo)
 	}
 	return &resumeSetup{st, file, account, repo, queue, claim}
 }
@@ -454,10 +455,10 @@ func workResumeAttempt(t *testing.T, w *Index, ctx context.Context, job *river.J
 	}
 }
 
-func seedResumeBase(t *testing.T, st *store.Store, file *configfile.File, account *configfile.Account, repo, name string) {
+func seedResumeBase(t *testing.T, st *store.Store, file *configfile.File, account *configfile.Account, repo string) {
 	t.Helper()
 	ctx := t.Context()
-	eff, _ := effective(file.Settings(account, name), nil)
+	eff, _ := effective(file.Settings(account), nil)
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		var run string
 		if err := tx.QueryRow(ctx, `INSERT INTO index_runs(account_id,repository_id,commit_sha,embed_model,embed_dims,mode,status,ignore_hash)

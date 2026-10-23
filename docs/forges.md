@@ -186,8 +186,8 @@ gitlab:
 `host` is the instance's hostname alone, reached over HTTPS, and runner
 pods may reach it through the [egress gateway](security.md#the-egress-gateway).
 An account is a top-level group, whose subgroups' projects it serves too,
-or a user. A project in a subgroup is named by its full path, so a
-repository entry for it is keyed `platform/backend/api`.
+or a user. A project in a subgroup is named by its full path, such as
+`platform/backend/api`.
 
 ### Add the webhooks
 

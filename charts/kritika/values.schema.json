@@ -168,10 +168,6 @@
           "required": [],
           "type": "object"
         },
-        "repositories": {
-          "required": [],
-          "type": "object"
-        },
         "review": {
           "required": [],
           "type": "object"

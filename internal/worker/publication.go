@@ -166,7 +166,7 @@ func (p *publishPhase) restore(payload json.RawMessage) (*publicationAnswer, err
 	// configuration the publication resumes under, not the one it was saved
 	// with: the restart that turned comments.dashboard off may be what
 	// interrupted it.
-	p.settings.Review.Dashboard = p.file.Settings(p.account, p.pr.repository).Review.Dashboard
+	p.settings.Review.Dashboard = p.file.Settings(p.account).Review.Dashboard
 	p.templates, p.scope, p.trigger = s.Templates, s.Scope, s.Trigger
 	p.pr.closed = s.Closed
 	p.repoNotes = s.RepoNotes

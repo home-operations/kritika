@@ -16,20 +16,17 @@ import (
 func TestRenamePreservesEnablement(t *testing.T) {
 	svc, st, f := setupService(t)
 	for _, tt := range []struct {
-		name                           string
-		choice                         *bool
-		destination                    *bool
-		transfer                       bool
-		want                           *bool
-		pending, configuredDestination bool
+		name        string
+		choice      *bool
+		destination *bool
+		transfer    bool
+		want        *bool
 	}{
 		{name: "legacy-default"},
 		{name: "enabled", choice: new(true), want: new(true)},
 		{name: "disabled", choice: new(false), want: new(false)},
 		{name: "destination-choice", choice: new(true), destination: new(false), want: new(false)},
 		{name: "transfer-needs-opt-in", choice: new(true), transfer: true, want: new(false)},
-		{name: "configured-destination", pending: true, configuredDestination: true},
-		{name: "explicit-off-overrides-config", choice: new(false), configuredDestination: true, want: new(false)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
@@ -54,7 +51,7 @@ func TestRenamePreservesEnablement(t *testing.T) {
 						t.Error(err)
 					}
 				})
-				if seed.name == name && seed.choice == nil && !tt.configuredDestination {
+				if seed.name == name && seed.choice == nil {
 					continue
 				}
 				if err := st.WithAccount(ctx, seed.account.ID(), func(tx pgx.Tx) error {
@@ -63,13 +60,6 @@ func TestRenamePreservesEnablement(t *testing.T) {
 					}
 					if seed.choice != nil {
 						return store.TurnOn(ctx, tx, id, *seed.choice)
-					}
-					if seed.name == name && tt.configuredDestination {
-						_, err := tx.Exec(ctx, `UPDATE repositories SET managed_by = 'file', turned_on = NULL WHERE id = $1`, id)
-						return err
-					}
-					if tt.pending {
-						return nil
 					}
 					_, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = NULL WHERE id = $1`, id)
 					return err

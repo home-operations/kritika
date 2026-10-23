@@ -84,7 +84,7 @@ func (w *FollowUp) Work(ctx context.Context, job *river.Job[jobs.FollowUpArgs]) 
 		return err
 	}
 	owner, repo := pr.ownerRepo()
-	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account, pr.repository), client: client, pr: pr,
+	f := &followUp{w: w, file: file, account: account, settings: file.Settings(account), client: client, pr: pr,
 		comment: forge.Comment{ID: args.CommentID, Number: args.Number, Inline: args.Inline}, asReply: args.Reply, owner: owner, repo: repo,
 		jobID: job.ID, attempt: job.Attempt, maxAttempts: job.MaxAttempts, requested: job.CreatedAt, logger: logger}
 	// The job of an answered review request wakes until the review ends,

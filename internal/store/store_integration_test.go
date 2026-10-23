@@ -153,12 +153,6 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 }
 
-const alphaEntry = `
-repositories:
-  alpha/one: {}
-  alpha/two: {}
-`
-
 // twoAccounts serves alpha and beta; alphaAccount, alpha alone.
 const (
 	twoAccounts = `
@@ -173,7 +167,7 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-` + alphaEntry
+`
 	alphaAccount = `
 apps:
   alpha-bot:
@@ -181,13 +175,36 @@ apps:
     clientId: Iv1.test
     privateKey: { env: KRITIKA_TEST_TOKEN }
     webhookSecret: { env: KRITIKA_TEST_TOKEN }
-` + alphaEntry
+`
 )
 
 func parse(t *testing.T, yaml string) *configfile.File {
 	t.Helper()
 	t.Setenv("KRITIKA_TEST_TOKEN", "tok")
 	return configfiletest.Load(t, yaml)
+}
+
+// listRepos records the repositories named, "owner/name", as the forge
+// would report them to the account named, turned on in the dashboard, so a
+// test's rows may hang off them.
+func listRepos(t *testing.T, s *Store, account string, names ...string) {
+	t.Helper()
+	ctx := t.Context()
+	id := accountID(t, s, account)
+	if err := s.WithAccount(ctx, id, func(tx pgx.Tx) error {
+		for _, name := range names {
+			rid, _, err := EnsureRepository(ctx, tx, id, ReachedRepository{FullName: name})
+			if err != nil {
+				return err
+			}
+			if err := TurnOn(ctx, tx, rid, true); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("repositories of %s: %v", account, err)
+	}
 }
 
 func accountID(t *testing.T, s *Store, name string) string {
@@ -206,6 +223,7 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	if got, _ := s.AppliedConfigHash(ctx); got != f.Hash() {
 		t.Fatalf("applied hash = %q, want %q", got, f.Hash())
 	}
@@ -267,26 +285,6 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 		}
 	})
 
-	t.Run("a listed repository is recorded enabled whatever its account starts it as", func(t *testing.T) {
-		off := strings.Replace(twoAccounts, "    name: alpha\n", "    name: alpha\n    enabled: false\n", 1)
-		if err := s.ApplyConfig(ctx, parse(t, off)); err != nil {
-			t.Fatalf("ApplyConfig: %v", err)
-		}
-		t.Cleanup(func() {
-			if err := s.ApplyConfig(context.Background(), parse(t, twoAccounts)); err != nil {
-				t.Errorf("ApplyConfig: %v", err)
-			}
-		})
-		var enabled bool
-		var disabledAt *time.Time
-		if err := s.owner.QueryRow(ctx, `SELECT enabled, disabled_at FROM repositories WHERE name = 'alpha/two'`).Scan(&enabled, &disabledAt); err != nil {
-			t.Fatal(err)
-		}
-		if !enabled || disabledAt != nil {
-			t.Fatalf("alpha/two enabled=%v disabled_at=%v; want it recorded as listed", enabled, disabledAt)
-		}
-	})
-
 	t.Run("an account no connection serves any more is disabled and keeps its rows", func(t *testing.T) {
 		f2 := parse(t, alphaAccount)
 		if err := s.ApplyConfig(ctx, f2); err != nil {
@@ -312,43 +310,8 @@ func TestApplyConfigAndRowLevelSecurity(t *testing.T) {
 	})
 }
 
-// TestApplyConfigHandsUnlistedRepositoryBack: a repository its account no
-// longer lists goes back to the forge, enabled, and listing it again takes
-// it over.
-func TestApplyConfigHandsUnlistedRepositoryBack(t *testing.T) {
-	s := openStore(t)
-	ctx := t.Context()
-	listed := parse(t, twoAccounts)
-	if err := s.ApplyConfig(ctx, listed); err != nil {
-		t.Fatalf("ApplyConfig: %v", err)
-	}
-	unlisted := parse(t, strings.Replace(twoAccounts, "  alpha/two: {}\n", "", 1))
-	check := func(wantOrigin string, wantEnabled bool) {
-		t.Helper()
-		var origin string
-		var enabled bool
-		var disabledAt *time.Time
-		if err := s.owner.QueryRow(ctx, `SELECT managed_by, enabled, disabled_at FROM repositories WHERE name = 'alpha/two'`).
-			Scan(&origin, &enabled, &disabledAt); err != nil {
-			t.Fatal(err)
-		}
-		if origin != wantOrigin || enabled != wantEnabled || (disabledAt == nil) != wantEnabled {
-			t.Fatalf("alpha/two managed_by=%s enabled=%v disabled_at=%v; want %s, enabled %v", origin, enabled, disabledAt, wantOrigin, wantEnabled)
-		}
-	}
-	if err := s.ApplyConfig(ctx, unlisted); err != nil {
-		t.Fatalf("ApplyConfig unlisted: %v", err)
-	}
-	check("forge", true)
-	if err := s.ApplyConfig(ctx, listed); err != nil {
-		t.Fatalf("ApplyConfig listed: %v", err)
-	}
-	check("file", true)
-}
-
-// TestRepositoryNamesIgnoreCase: GitHub's spelling of a listed repository
-// names the same row, which takes that spelling, stays listed through the
-// next apply, and is found in any case.
+// TestRepositoryNamesIgnoreCase: GitHub's spelling of a known repository
+// names the same row, which takes that spelling and is found in any case.
 func TestRepositoryNamesIgnoreCase(t *testing.T) {
 	s := openStore(t)
 	ctx := t.Context()
@@ -356,6 +319,7 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 	if err := s.ApplyConfig(ctx, f); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	spell := func(name string) (id string, isNew bool) {
 		t.Helper()
@@ -373,19 +337,16 @@ func TestRepositoryNamesIgnoreCase(t *testing.T) {
 	t.Cleanup(func() { spell("alpha/one") })
 	id, isNew := spell("Alpha/ONE")
 	if isNew || id != configfile.RepositoryID(alpha, "alpha/one") {
-		t.Fatalf("EnsureRepository = %s, new %v; want the listed row", id, isNew)
+		t.Fatalf("EnsureRepository = %s, new %v; want the known row", id, isNew)
 	}
-	if err := s.ApplyConfig(ctx, f); err != nil {
-		t.Fatalf("re-apply: %v", err)
-	}
-	var name, origin string
+	var name string
 	var rows int
-	if err := s.owner.QueryRow(ctx, `SELECT name, managed_by, (SELECT count(*) FROM repositories WHERE account_id = $1)
-		FROM repositories WHERE id = $2`, alpha, id).Scan(&name, &origin, &rows); err != nil {
+	if err := s.owner.QueryRow(ctx, `SELECT name, (SELECT count(*) FROM repositories WHERE account_id = $1 AND lower(name) = 'alpha/one')
+		FROM repositories WHERE id = $2`, alpha, id).Scan(&name, &rows); err != nil {
 		t.Fatal(err)
 	}
-	if name != "Alpha/ONE" || origin != "file" || rows != 2 {
-		t.Fatalf("name %q, managed_by %s, %d rows; want GitHub's spelling on the one listed row", name, origin, rows)
+	if name != "Alpha/ONE" || rows != 1 {
+		t.Fatalf("name %q, %d rows; want GitHub's spelling on the one row", name, rows)
 	}
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
 		row, err := FindRepo(ctx, tx, "alpha/one")
@@ -407,6 +368,7 @@ func TestRepositoryTraits(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `DELETE FROM repositories WHERE id = $1`, configfile.RepositoryID(alpha, "alpha/copy"))
@@ -453,6 +415,7 @@ func TestRunnerRoleUpdatesOnlyWhatARunnerReports(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	var runID string
 	if err := s.WithAccount(ctx, alpha, func(tx pgx.Tx) error {
@@ -649,6 +612,7 @@ func TestEnsureIndexSchemaRebuildsForANewEmbedder(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL;
 			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
@@ -724,7 +688,8 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	if err := s.ApplyConfig(ctx, on); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
-	off := parse(t, twoAccounts+"  alpha/*: { enabled: false }\n")
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
+	off := parse(t, "enabled: false\n"+twoAccounts)
 	unserved := parse(t, strings.Replace(alphaAccount, "alpha", "beta", 2))
 	// The suites share one database: leave no index schema behind.
 	t.Cleanup(func() {
@@ -774,9 +739,9 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	}
 	sweep := func(f *configfile.File, want int64) {
 		t.Helper()
-		n, err := s.SweepStoppedIndexes(ctx, time.Hour, func(accountID, fullName string, traits configfile.RepoTraits) bool {
+		n, err := s.SweepStoppedIndexes(ctx, time.Hour, func(accountID string, traits configfile.RepoTraits) bool {
 			a, ok := f.AccountByID(accountID)
-			return ok && f.Runs(a, fullName, traits)
+			return ok && f.Runs(a, traits)
 		})
 		if err != nil || n != want {
 			t.Fatalf("SweepStoppedIndexes = %d, %v; want %d", n, err, want)
@@ -831,6 +796,9 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	check("unarchived within the grace", "alpha/one", one, false, false)
 	check("turned on within the grace", "alpha/two", two, false, false)
 
+	// alpha/one has no dashboard choice, so the configuration's enabled
+	// decides for it; alpha/two is turned on.
+	exec(`UPDATE repositories SET turned_on = NULL, turned_at = NULL WHERE name = 'alpha/one'`)
 	sweep(off, 0)
 	check("off in the configuration, within the grace", "alpha/one", one, false, true)
 	check("turned on, whatever the configuration says", "alpha/two", two, false, false)
@@ -855,7 +823,7 @@ func TestSweepStoppedIndexes(t *testing.T) {
 	sweep(on, 0)
 	check("no index, a clock left behind", "alpha/one", one, true, false)
 
-	// A repository the forge reports rather than the configuration lists.
+	// A repository the forge reports and nobody turned on.
 	alpha := accountID(t, s, "alpha")
 	reach := func(archived bool) {
 		t.Helper()
@@ -909,6 +877,7 @@ func TestSweepStoppedIndexesWaitsForARebuild(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	t.Cleanup(func() {
 		_, _ = s.owner.Exec(context.Background(), `UPDATE repositories SET active_index_run_id = NULL, stopped_at = NULL;
 			DROP TABLE IF EXISTS index_chunks; DELETE FROM index_schema`)
@@ -970,7 +939,7 @@ func TestSweepStoppedIndexesWaitsForARebuild(t *testing.T) {
 	}()
 	rebuild := waitFor(hold.Conn().PgConn().PID(), "the rebuild", rebuilt)
 	go func() {
-		_, err := s.SweepStoppedIndexes(ctx, time.Hour, func(string, string, configfile.RepoTraits) bool { return true })
+		_, err := s.SweepStoppedIndexes(ctx, time.Hour, func(string, configfile.RepoTraits) bool { return true })
 		swept <- err
 	}()
 	waitFor(rebuild, "the sweep", swept)
@@ -993,6 +962,7 @@ func TestFindRepo(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	find := func(account, name string) (RepoRow, error) {
 		t.Helper()
 		var row RepoRow
@@ -1003,7 +973,7 @@ func TestFindRepo(t *testing.T) {
 		})
 		return row, err
 	}
-	if row, err := find("alpha", "alpha/one"); err != nil || row.FullName != "alpha/one" || !row.Enabled || row.ManagedBy != "file" {
+	if row, err := find("alpha", "alpha/one"); err != nil || row.FullName != "alpha/one" || !row.Enabled {
 		t.Fatalf("FindRepo(alpha/one) = %+v, %v", row, err)
 	}
 	if _, err := find("beta", "alpha/one"); !errors.Is(err, ErrNotFound) {
@@ -1052,6 +1022,7 @@ func TestGatewayTokens(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	// A run needs a review, which needs a pull request of a repository.
 	grant := func() GatewayGrant {

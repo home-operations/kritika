@@ -117,11 +117,11 @@ func TestContextChunksGiven(t *testing.T) {
 		t.Fatalf("counted %v, want the prompt's %v", got, given)
 	}
 
-	const timeout = "      commandTimeout: 5s\n"
+	const timeout = "  commandTimeout: 5s\n"
 	if !strings.Contains(h.config, timeout) {
 		t.Fatalf("the harness configuration has no %q", timeout)
 	}
-	configure(strings.Replace(h.config, timeout, timeout+"      prompt: 8000\n", 1))
+	configure(strings.Replace(h.config, timeout, timeout+"  prompt: 8000\n", 1))
 	cut, cutGiven := reviewed("completed", func() (string, string) {
 		// A re-run at the reviewed head starts afresh rather than carrying
 		// on the conversation, so what cuts its context is the budget.

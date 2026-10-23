@@ -79,7 +79,6 @@ strategy:
 #   providers: { type: object }
 #   embedding: { type: object }
 #   egress: { type: object }
-#   repositories: { type: object }
 #   accounts: { type: object }
 #   runner: { type: object }
 #   review: { type: object }

@@ -37,11 +37,9 @@ func TestParse(t *testing.T) {
 review: { model: p/big }
 trigger: { limit: 2 }
 apps:
-` + fileApp("acme-bot", "acme") + fileApp("org-bot", "org-2", "Org-3") + `repositories:
-  ORG-2/repo-1: { trigger: { limit: 3 } }
-  gone/*: { trigger: { limit: 3 } }
-accounts:
+` + fileApp("acme-bot", "acme") + fileApp("org-bot", "org-2", "Org-3") + `accounts:
   ORG-2: { limits: { reviewsPerDay: 5 } }
+  gone: { limits: { reviewsPerDay: 3 } }
 `))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -57,7 +55,7 @@ accounts:
 		t.Fatalf("accounts = %v", accounts)
 	}
 	org2, ok := f.Account(ForgeGitHub, "org-2")
-	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2, "org-2/repo-1").MaxAutoReviews != 3 || f.Settings(org2, "").MaxAutoReviews != 2 {
+	if !ok || org2.Limits.ReviewsPerDay == nil || f.Settings(org2).MaxAutoReviews != 2 || f.Settings(org2).Limits.ReviewsPerDay != 5 {
 		t.Fatalf("org-2 = %+v", org2)
 	}
 	if in := f.ConnectionFor(org2); in == nil || in.Name != "org-bot" {
@@ -83,9 +81,7 @@ func TestParseRejectsEntries(t *testing.T) {
 			"field sealed not found"},
 		{"a clientId from a file", apps(strings.Replace(fileApp("a", "x"), "clientId: Iv1.a", "clientId: { file: /x }", 1)),
 			"field file not found"},
-		{"a broken owner/* entry", "repositories: { acme/*: { review: { model: nope/x } } }\n", `repositories.acme/*.review.model references provider "nope"`},
-		{"a repository entry that turns it on or off", "repositories: { acme/x: { enabled: false } }\n",
-			"repositories.acme/x.enabled: turn a repository on or off in the dashboard"},
+		{"a repositories map", "repositories: { acme/*: { review: { model: nope/x } } }\n", "field repositories not found"},
 		{"a duplicate app", apps(fileApp("a", "x"), fileApp("a", "y")), "already defined"},
 		{"an account two apps serve", apps(fileApp("a", "x"), fileApp("b", "X")), "an account is served by one connection"},
 		{"two documents", "egress: {}\n---\negress: {}\n", "one document"},
@@ -179,8 +175,6 @@ func TestParseAccountProviders(t *testing.T) {
 	f, err := Parse([]byte("apps:\n" + fileApp("acme-bot", "acme") + `accounts:
   acme:
     providers: { own: { type: anthropic, apiKey: { env: TEST_KEY } } }
-repositories:
-  acme/*: { review: { model: own/big } }
 `))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

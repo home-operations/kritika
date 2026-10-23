@@ -31,14 +31,11 @@ const routes = `review:
 func TestReviewModelRoutes(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
-	f := mustLoad(t, routesProviders+routes+acme("  acme/plain: { review: { model: o/plain } }\n"))
+	f := mustLoad(t, routesProviders+routes+minimal)
 	a, _ := f.Account(ForgeGitHub, "acme")
-	m := f.Settings(a, "acme/widgets").Models
+	m := f.Settings(a).Models
 	if m.Review != "a/sonnet" || m.Effort != "medium" || m.Fallback != "" || len(m.Routes) != 2 {
 		t.Fatalf("models = %+v; the last entry is the default", m)
-	}
-	if got := f.Settings(a, "acme/plain").Models; got.Review != "o/plain" || got.Routes != nil {
-		t.Fatalf("models = %+v; a narrower review.model replaces the routes with it", got)
 	}
 	if got := f.FileLayer().Review.Value; got != "a/sonnet, routes deep, o/small" {
 		t.Fatalf("FileLayer review = %q", got)
@@ -120,9 +117,6 @@ func TestReviewModelRejects(t *testing.T) {
 			`review.model[0].fallback references provider "nope"`},
 		{"a route's effort that is no level", model("    - { model: a/opus, effort: loud, when: [{ expr: pr.bot }] }\n    - { model: a/sonnet }\n"),
 			"review.model[0].effort must be"},
-		{"a repository entry's route", routesProviders +
-			acme("  acme/x:\n    review:\n      model:\n        - { model: a/opus, when: [{ name: x }] }\n        - { model: a/sonnet }\n"),
-			"acme/x.review.model[0].when[0]: expr or paths is required"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := load(t, tt.doc)

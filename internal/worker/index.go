@@ -85,8 +85,8 @@ func (w *Index) Work(ctx context.Context, job *river.Job[jobs.IndexArgs]) error 
 	if err := w.waitForAppliedEmbedder(ctx, args.AccountID, emb, logger); err != nil {
 		return err
 	}
-	settings := file.Settings(account, repo.Name)
-	if !repo.Enabled || !file.Runs(account, repo.Name, repo.Traits) {
+	settings := file.Settings(account)
+	if !repo.Enabled || !file.Runs(account, repo.Traits) {
 		logger.Info("index skipped, repository disabled")
 		return nil
 	}

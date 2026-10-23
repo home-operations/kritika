@@ -101,8 +101,8 @@ type Trigger struct {
 }
 
 // File is the decoded content of .kritika.yaml: the keys the
-// configuration's own settings and repository entries take, without the
-// admin's own. Nothing in it is a secret or a reference to one.
+// configuration's own settings take, without the admin's own. Nothing in
+// it is a secret or a reference to one.
 type File struct {
 	Enabled    *bool      `yaml:"enabled,omitempty"`
 	Review     Review     `yaml:"review,omitempty"`

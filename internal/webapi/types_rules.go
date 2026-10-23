@@ -16,15 +16,12 @@ const (
 )
 
 // RuleSource is where a rule is set: a layer of the configuration, as
-// configfile.Source names it, RuleFromEntry, an account's entry for the
-// repository, or RuleFromRepository, the repository's own .kritika.yaml.
+// configfile.Source names it, or RuleFromRepository, the repository's own
+// .kritika.yaml.
 type RuleSource string
 
-// Rule sources beyond the configuration's layers.
-const (
-	RuleFromRepository RuleSource = "repository"
-	RuleFromEntry      RuleSource = "entry"
-)
+// RuleFromRepository is the rule source beyond the configuration's layers.
+const RuleFromRepository RuleSource = "repository"
 
 // Rule is one written rule or file reviews read, with where it is set,
 // the paths it applies to (every change when empty), and the running

@@ -130,7 +130,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	var webhooks map[string]store.WebhookDeliveries
 	err := s.store.WithAccount(ctx, t.ID(), func(tx pgx.Tx) error {
 		var err error
-		stats, err = store.ReadAccountStats(ctx, tx, func(name string, traits configfile.RepoTraits) bool { return file.Runs(t, name, traits) })
+		stats, err = store.ReadAccountStats(ctx, tx, func(traits configfile.RepoTraits) bool { return file.Runs(t, traits) })
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ func (s *Server) accountSummary(ctx context.Context, file *configfile.File, t *c
 	}
 	sum := AccountSummary{
 		Slug: t.Slug(), Repositories: stats.Repositories,
-		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t, "").Limits),
+		Reviews7d: stats.Reviews7d, Usage: monthUsage(stats.Month, file.Settings(t).Limits),
 		Attention: attentionDTO(attention), LastPolledAt: polled,
 		ChatGPTEnabled: len(file.ChatGPTProviders(t)) > 0,
 	}
@@ -208,7 +208,7 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request, t *accountSc
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, "")
+	settings := t.file.Settings(t.account)
 	d := AccountDetail{
 		Slug:   t.account.Slug(),
 		Models: settings.Models, Limits: settings.Limits, Filters: settings.Filters,
@@ -270,7 +270,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 	}
 	items := make([]Repository, len(rows))
 	for i, row := range rows {
-		items[i] = repository(row, t.file.Runs(t.account, row.FullName, row.RepoTraits))
+		items[i] = repository(row, t.file.Runs(t.account, row.RepoTraits))
 	}
 	writeJSON(w, http.StatusOK, newPage(items, next))
 	return nil
@@ -280,8 +280,8 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request, t *accountSco
 // it runs.
 func repository(r store.RepoRow, on bool) Repository {
 	out := Repository{
-		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, ManagedBy: r.ManagedBy,
-		DefaultBranch: r.DefaultBranch, Archived: r.Archived, Fork: r.Fork, Visibility: r.Visibility, TurnedOn: r.TurnedOn,
+		ID: r.ID, FullName: r.FullName, Enabled: r.Enabled && on, DefaultBranch: r.DefaultBranch,
+		Archived: r.Archived, Fork: r.Fork, Visibility: r.Visibility, TurnedOn: r.TurnedOn,
 		Index: IndexState{ActiveCommit: r.ActiveCommit, ActiveAt: r.ActiveAt, LastRunStatus: r.LastIndexStatus, LastRunAt: r.LastIndexAt},
 	}
 	if r.LastReview != nil {
@@ -328,10 +328,10 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request, t *accountScope
 	}); err != nil {
 		return err
 	}
-	settings := t.file.Settings(t.account, row.FullName)
+	settings := t.file.Settings(t.account)
 	d := RepoDetail{
-		Repository: repository(row, t.file.Runs(t.account, row.FullName, row.RepoTraits)),
-		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account, row.FullName),
+		Repository: repository(row, t.file.Runs(t.account, row.RepoTraits)),
+		Settings:   repoSettings(settings), Sources: t.file.Sources(t.account),
 		RepoConfig: repoConfig(settings, file), IndexRuns: indexRuns(runs),
 	}
 	writeJSON(w, http.StatusOK, d)

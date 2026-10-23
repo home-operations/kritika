@@ -177,18 +177,17 @@ type MonthUsage struct {
 }
 
 // ReadAccountStats reads the account's counts; a repository counts when
-// enabled also admits its full name and traits. The month and day
-// boundaries are the database's, as the worker's cap checks use.
-func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(fullName string, t configfile.RepoTraits) bool) (AccountStats, error) {
+// enabled also admits its traits. The month and day boundaries are the
+// database's, as the worker's cap checks use.
+func ReadAccountStats(ctx context.Context, tx pgx.Tx, enabled func(t configfile.RepoTraits) bool) (AccountStats, error) {
 	var s AccountStats
-	rows, err := tx.Query(ctx, `SELECT name, archived, fork, turned_on FROM repositories WHERE enabled`)
+	rows, err := tx.Query(ctx, `SELECT archived, fork, turned_on FROM repositories WHERE enabled`)
 	if err != nil {
 		return s, fmt.Errorf("store: account stats: %w", err)
 	}
-	var name string
 	var t configfile.RepoTraits
-	if _, err := pgx.ForEachRow(rows, []any{&name, &t.Archived, &t.Fork, &t.TurnedOn}, func() error {
-		if enabled(name, t) {
+	if _, err := pgx.ForEachRow(rows, []any{&t.Archived, &t.Fork, &t.TurnedOn}, func() error {
+		if enabled(t) {
 			s.Repositories++
 		}
 		return nil
@@ -294,7 +293,6 @@ type RepoRow struct {
 	ID            string
 	FullName      string
 	Enabled       bool
-	ManagedBy     string
 	DefaultBranch string
 	configfile.RepoTraits
 	// ActiveCommit and ActiveAt describe the active index generation, empty
@@ -316,7 +314,7 @@ type ReviewRef struct {
 
 // The last review, lr, is the repository's newest that was not skipped, as
 // a pull request's is.
-const repoColumns = `r.id, r.name, r.enabled, r.managed_by, r.default_branch, r.archived, r.fork, r.visibility, r.turned_on,
+const repoColumns = `r.id, r.name, r.enabled, r.default_branch, r.archived, r.fork, r.visibility, r.turned_on,
 	coalesce(a.commit_sha, ''), coalesce(a.finished_at, a.created_at),
 	coalesce(l.status, ''), l.created_at,
 	lr.id, lr.status, lr.created_at
@@ -332,7 +330,7 @@ func scanRepo(row pgx.CollectableRow) (RepoRow, error) {
 	var status string
 	var lrID, lrStatus *string
 	var lrAt *time.Time
-	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.ManagedBy, &r.DefaultBranch, &r.Archived, &r.Fork, &r.Visibility, &r.TurnedOn,
+	err := row.Scan(&r.ID, &r.FullName, &r.Enabled, &r.DefaultBranch, &r.Archived, &r.Fork, &r.Visibility, &r.TurnedOn,
 		&r.ActiveCommit, &r.ActiveAt, &status, &r.LastIndexAt, &lrID, &lrStatus, &lrAt)
 	r.LastIndexStatus = IndexRunStatus(status)
 	if r.ActiveCommit == "" {

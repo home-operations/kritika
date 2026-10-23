@@ -20,6 +20,7 @@ func TestChatGPTUsagePeriods(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	account := accountID(t, s, "alpha")
 	review := insertReview(t, ctx, s, account)
 	run := uuid.NewString()

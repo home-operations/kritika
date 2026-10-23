@@ -35,8 +35,6 @@ apps:
     clientId: Iv1.x
     privateKey: { env: TEST_PEM }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  onedr0p/home-ops: {}
 `
 
 // baseForge is what every fake forge here answers a pull request the
@@ -109,6 +107,7 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	}
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	var installed time.Time
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT created_at FROM accounts WHERE id = $1`, account.ID()).Scan(&installed)
@@ -129,13 +128,18 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	}
 
 	// Start from no poll state, no pull requests 7 or 8 and home-ops as
-	// the one enabled repository, whatever earlier suites left behind:
-	// the repositories they listed are the forge's again, and enabled.
+	// the one enabled repository, whatever earlier suites left behind.
+	// home-ops stands for a repository known before dashboard enablement,
+	// with no choice recorded, so turning it on does not catch up on the
+	// pull requests from before the account was known.
 	err = st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM poll_state WHERE account_id = $1`, account.ID()); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE repositories SET enabled = false WHERE name <> 'onedr0p/home-ops'`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET turned_on = NULL, turned_at = NULL WHERE name = 'onedr0p/home-ops'`); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM pull_requests WHERE number IN (7, 8)`)
@@ -215,19 +219,27 @@ func TestPollerEnqueuesOnceAndAdvancesState(t *testing.T) {
 	checkAccountOff(ctx, t, p, file, account, in, lf)
 }
 
-// checkAccountOff asserts a poll lists nothing for an account that leaves
-// its repositories off, though the App still reaches them.
+// checkAccountOff asserts a poll lists nothing for an account whose
+// repositories are turned off, though the App still reaches them.
 func checkAccountOff(
 	ctx context.Context, t *testing.T, p *Poller, file *configfile.File, account *configfile.Account, in *configfile.Connection, lf *listForge,
 ) {
 	t.Helper()
-	off := *account
-	off.Enabled = new(false)
+	turn := func(on bool) {
+		t.Helper()
+		if err := p.Store.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
+			return store.TurnOn(ctx, tx, configfile.RepositoryID(account.ID(), "onedr0p/home-ops"), on)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	turn(false)
+	defer turn(true)
 	lf.mu.Lock()
 	listed := len(lf.sinces)
 	lf.mu.Unlock()
-	if n, err := p.Poll(ctx, file, &off, in); err != nil || n != 0 {
-		t.Fatalf("poll with the account off: n=%d err=%v", n, err)
+	if n, err := p.Poll(ctx, file, account, in); err != nil || n != 0 {
+		t.Fatalf("poll with the repositories off: n=%d err=%v", n, err)
 	}
 	lf.mu.Lock()
 	defer lf.mu.Unlock()
@@ -305,6 +317,7 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 	}
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	repoID := configfile.RepositoryID(account.ID(), "onedr0p/home-ops")
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -394,10 +407,9 @@ func TestPollerIndexesAMovedDefaultBranch(t *testing.T) {
 // TestSyncRepositories: the repositories a running connection's App reaches
 // are registered on the accounts it serves, with what the forge says of
 // them, and a second sync adds none; an account it does not serve gets
-// nothing. A forge-reported repository the listing no longer has is
-// disabled, but not one the configuration lists, nor one a webhook named
-// while the listing ran, and a listing that fails or comes back empty
-// disables nothing.
+// nothing. A repository the listing no longer has is disabled, but not one
+// a webhook named while the listing ran, and a listing that fails or comes
+// back empty disables nothing.
 func TestSyncRepositories(t *testing.T) {
 	ctx := t.Context()
 	var logs bytes.Buffer
@@ -466,7 +478,7 @@ func TestSyncRepositories(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if file.Runs(account, name, r.RepoTraits) {
+			if file.Runs(account, r.RepoTraits) {
 				t.Errorf("newly discovered %s should wait for dashboard enablement", name)
 			}
 		}
@@ -481,7 +493,7 @@ func TestSyncRepositories(t *testing.T) {
 	}
 	if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
 		r, err := store.FindRepo(ctx, tx, "onedr0p/synced")
-		if err == nil && !file.Runs(account, r.FullName, r.RepoTraits) {
+		if err == nil && !file.Runs(account, r.RepoTraits) {
 			t.Error("resync should preserve dashboard enablement")
 		}
 		return err
@@ -489,17 +501,6 @@ func TestSyncRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	homeOps := func() bool {
-		t.Helper()
-		var on bool
-		if err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT enabled FROM repositories WHERE name = 'onedr0p/home-ops'`).Scan(&on)
-		}); err != nil {
-			t.Fatal(err)
-		}
-		return on
-	}
-	listedBefore := homeOps()
 	logs.Reset()
 	// A webhook names synced-late in a transaction that began before the
 	// listing and writes while it runs.
@@ -524,9 +525,8 @@ func TestSyncRepositories(t *testing.T) {
 	}
 	p.SyncRepositories(ctx)
 	want = "onedr0p/synced:true:main:false,onedr0p/synced-fork:false:main:true,onedr0p/synced-late:true::false"
-	if got := rows(); got != want || !strings.Contains(logs.String(), "disabled=1") || homeOps() != listedBefore {
-		t.Fatalf("a sync without synced-fork: repositories %q, home-ops enabled %v, logs %s; want %q, home-ops as it was",
-			got, homeOps(), logs.String(), want)
+	if got := rows(); got != want || !strings.Contains(logs.String(), "disabled=1") {
+		t.Fatalf("a sync without synced-fork: repositories %q, logs %s; want %q", got, logs.String(), want)
 	}
 
 	p.Reach = func(context.Context, *configfile.Connection) (map[string][]store.ReachedRepository, error) {
@@ -584,6 +584,7 @@ func TestPollerReadsReactions(t *testing.T) {
 	}
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 
 	var recent, stale string
 	err := st.WithAccount(ctx, account.ID(), func(tx pgx.Tx) error {
@@ -705,6 +706,7 @@ func TestPollerPollsPastAFailingRepository(t *testing.T) {
 	}
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	if _, _, err := st.RegisterRepositories(ctx, account.ID(), []store.ReachedRepository{
 		{FullName: "onedr0p/flaky", DefaultBranch: "main", Traits: &configfile.RepoTraits{}},
 	}, time.Now()); err != nil {
@@ -790,6 +792,7 @@ func TestPollerRunCutsAPollAtItsInterval(t *testing.T) {
 	}
 	in, _ := file.Connection("bot-ross")
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	if err := st.RecordWebhookDelivery(ctx, in.ID()); err != nil {
 		t.Fatal(err)
 	}
@@ -849,6 +852,7 @@ func TestPollerClosesAPullRequestWhoseEventWasMissed(t *testing.T) {
 		t.Fatal(err)
 	}
 	account, _ := file.Account(configfile.ForgeGitHub, "onedr0p")
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	in := file.ConnectionFor(account)
 	svc := ingest.NewService(st, queue)
 	open := func(number int) forge.OpenPullRequest {

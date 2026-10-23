@@ -19,6 +19,7 @@ func TestGenerationPublication(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("generation"))); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "generation", "generation/one")
 	if _, err := s.EnsureIndexSchema(ctx, "kritika_app", "test-embed", 8, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +48,7 @@ func TestGenerationPublication(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := configfile.RepositoryID(account, tt.name)
-			if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name, managed_by) VALUES ($1, $2, $3, 'file')`, repository, account, tt.name); err != nil {
+			if _, err := s.owner.Exec(ctx, `INSERT INTO repositories (id, account_id, name) VALUES ($1, $2, $3)`, repository, account, tt.name); err != nil {
 				t.Fatal(err)
 			}
 			makeRun := func(commit, mode, status string) string {
@@ -122,6 +123,7 @@ func TestFinishIndexRunPreservesTerminalStatus(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, soloAccount("finish-index"))); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "finish-index", "finish-index/one")
 	account := accountID(t, s, "finish-index")
 	for _, tt := range []struct {
 		status     IndexRunStatus
@@ -137,7 +139,7 @@ func TestFinishIndexRunPreservesTerminalStatus(t *testing.T) {
 		t.Run(string(tt.status), func(t *testing.T) {
 			repo := configfile.RepositoryID(account, t.Name())
 			if err := s.WithAccount(ctx, account, func(tx pgx.Tx) error {
-				if _, err := tx.Exec(ctx, `INSERT INTO repositories(id, account_id, name, managed_by) VALUES($1, $2, $3, 'file')`, repo, account, t.Name()); err != nil {
+				if _, err := tx.Exec(ctx, `INSERT INTO repositories(id, account_id, name) VALUES($1, $2, $3)`, repo, account, t.Name()); err != nil {
 					return err
 				}
 				var run string

@@ -21,6 +21,7 @@ func TestModelCalls(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha, beta := accountID(t, s, "alpha"), accountID(t, s, "beta")
 	reviewID := insertReview(t, ctx, s, alpha)
 	// Other tests count every model call an account has.
@@ -184,6 +185,7 @@ func TestSweepModelCalls(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	insert := func() string {
 		t.Helper()
@@ -226,6 +228,7 @@ func TestSweepDiffs(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	insert := func() string {
 		t.Helper()
@@ -290,6 +293,7 @@ func TestSweepConversations(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatalf("ApplyConfig: %v", err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	alpha := accountID(t, s, "alpha")
 	insert := func(age string) string {
 		t.Helper()

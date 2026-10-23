@@ -39,7 +39,6 @@ func TestDiscoveredRepositoryWaitsForEnablement(t *testing.T) {
 		}
 	})
 	f.Defaults.Enabled = new(true)
-	a.Enabled = new(true)
 	for _, ev := range []webhook.Event{
 		{Kind: webhook.KindPullRequest, Action: "opened", PullRequest: &webhook.PullRequest{Number: 1, HeadSHA: "new", State: "open"}},
 		{Kind: webhook.KindComment, Action: "created", Comment: &webhook.Comment{ID: 1, Number: 1, Body: "@bot-ross review"}},

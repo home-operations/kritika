@@ -79,8 +79,6 @@ apps:
     clientId: Iv1.x
     privateKey: { env: TEST_PEM }
     webhookSecret: { env: TEST_SECRET }
-repositories:
-  onedr0p/home-ops: {}
 `
 
 // localForge stands in for GitHub: the merge-base is known from the test
@@ -1646,6 +1644,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	if err := appStore.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, appStore, file, "onedr0p/home-ops")
 	current := configfile.NewCurrent(file)
 	dir, base, head := testRepo(t)
 
@@ -1825,7 +1824,7 @@ func TestReviewWorkerEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a reply in a finding thread is answered when it needs the reviewer", func(t *testing.T) {
-		replyConfig := configfiletest.Load(t, strings.Replace(configYAML, "onedr0p/home-ops: {}", "onedr0p/home-ops: { review: { replies: true } }", 1))
+		replyConfig := configfiletest.Load(t, strings.Replace(configYAML, "review:\n  model: test/reviewer\n", "review:\n  model: test/reviewer\n  replies: true\n", 1))
 		if err := appStore.ApplyConfig(ctx, replyConfig); err != nil {
 			t.Fatal(err)
 		}
@@ -3797,6 +3796,7 @@ func TestStartReviewOwnership(t *testing.T) {
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "onedr0p/home-ops")
 	insertOnly, err := river.NewClient(riverpgxv5.New(st.App()), &river.Config{})
 	if err != nil {
 		t.Fatal(err)

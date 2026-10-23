@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// TestSkillsResolve: a narrower scope's paths replace the broader one's,
-// written empty they look nowhere, and the scopes add up by name with the
-// narrower one's taking a name both give.
+// TestSkillsResolve: the root's paths replace the default ones, written
+// empty they look nowhere, and its scopes are kept as written.
 func TestSkillsResolve(t *testing.T) {
 	t.Setenv("TEST_PRIVATE_KEY", "tok")
 	t.Setenv("TEST_WEBHOOK_SECRET", "whsec")
@@ -16,53 +15,34 @@ func TestSkillsResolve(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
-		repo string
 		want Skills
 	}{
-		{name: "the default paths", yaml: minimal, repo: "acme/x", want: Skills{Paths: []string{".agents/skills", ".claude/skills"}}},
+		{name: "the default paths", yaml: minimal, want: Skills{Paths: []string{".agents/skills", ".claude/skills"}}},
 		{
 			name: "the root's paths replace the default",
-			yaml: "skills: { paths: [docs/skills] }\n" + minimal, repo: "acme/x",
-			want: Skills{Paths: []string{"docs/skills"}},
-		},
-		{
-			name: "a repository's paths replace the root's",
-			yaml: "skills: { paths: [docs/skills] }\n" + acme("  acme/x: { skills: { paths: [a, b] } }\n"), repo: "acme/x",
-			want: Skills{Paths: []string{"a", "b"}},
-		},
-		{
-			name: "another repository keeps the root's",
-			yaml: "skills: { paths: [docs/skills] }\n" + acme("  acme/x: { skills: { paths: [a, b] } }\n"), repo: "acme/y",
+			yaml: "skills: { paths: [docs/skills] }\n" + minimal,
 			want: Skills{Paths: []string{"docs/skills"}},
 		},
 		{
 			name: "empty paths turn skills off",
-			yaml: acme("  acme/x: { skills: { paths: [] } }\n"), repo: "acme/x",
+			yaml: "skills: { paths: [] }\n" + minimal,
 			want: Skills{Paths: []string{}},
 		},
 		{
 			name: "a scope alone keeps the paths",
-			yaml: acme("  acme/*: { skills: { scope: { db: { paths: ['db/**'] } } } }\n"), repo: "acme/x",
+			yaml: "skills: { scope: { db: { paths: ['db/**'] } } }\n" + minimal,
 			want: Skills{Paths: []string{".agents/skills", ".claude/skills"}, Scope: map[string]SkillScope{"db": {Paths: []string{"db/**"}}}},
 		},
 		{
-			name: "scopes add up, the narrower winning a name",
-			yaml: "skills:\n  scope:\n    renovate: { when: [{ expr: 'pr.headRef.startsWith(\"renovate/\")' }] }\n    db: { paths: ['db/**'] }\n" +
-				acme("  acme/*: { skills: { scope: { go: { paths: ['**/*.go'] } } } }\n  acme/x: { skills: { scope: { db: { paths: ['migrations/**'] } } } }\n"),
-			repo: "acme/x",
+			name: "scopes are kept as written",
+			yaml: "skills:\n  scope:\n    renovate: { when: [{ expr: 'pr.headRef.startsWith(\"renovate/\")' }] }\n    db: { paths: ['db/**'] }\n" + minimal,
 			want: Skills{Paths: []string{".agents/skills", ".claude/skills"}, Scope: map[string]SkillScope{
-				"renovate": renovate, "go": {Paths: []string{"**/*.go"}}, "db": {Paths: []string{"migrations/**"}},
+				"renovate": renovate, "db": {Paths: []string{"db/**"}},
 			}},
 		},
 		{
-			name: "the broader scope is left as written",
-			yaml: "skills: { scope: { db: { paths: ['db/**'] } } }\n" + acme("  acme/x: { skills: { scope: { db: { paths: ['migrations/**'] } } } }\n"),
-			repo: "acme/y",
-			want: Skills{Paths: []string{".agents/skills", ".claude/skills"}, Scope: map[string]SkillScope{"db": {Paths: []string{"db/**"}}}},
-		},
-		{
 			name: "a written load is kept, false apart from unset",
-			yaml: "skills: { scope: { db: { paths: ['db/**'], load: false }, docs: { load: true } } }\n" + minimal, repo: "acme/x",
+			yaml: "skills: { scope: { db: { paths: ['db/**'], load: false }, docs: { load: true } } }\n" + minimal,
 			want: Skills{Paths: []string{".agents/skills", ".claude/skills"}, Scope: map[string]SkillScope{
 				"db": {Paths: []string{"db/**"}, Load: new(false)}, "docs": {Load: new(true)},
 			}},
@@ -71,7 +51,7 @@ func TestSkillsResolve(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustLoad(t, tt.yaml)
-			if got := f.Settings(&f.Accounts[0], tt.repo).Skills; !reflect.DeepEqual(got, tt.want) {
+			if got := f.Settings(&f.Accounts[0]).Skills; !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("skills = %+v, want %+v", got, tt.want)
 			}
 			if !reflect.DeepEqual(DefaultSkillPaths, []string{".agents/skills", ".claude/skills"}) {
@@ -118,14 +98,12 @@ func TestSkillsRejects(t *testing.T) {
 	}{
 		{"absolute path", "skills: { paths: [/x] }\n" + minimal, `configfile: skills.paths[0]: path "/x" must be relative`},
 		{"blank path", "skills: { paths: [a, ' '] }\n" + minimal, "configfile: skills.paths[1]: path must not be empty"},
-		{"path outside the repository", acme("  acme/x: { skills: { paths: [../x] } }\n"),
-			`configfile: repositories.acme/x.skills.paths[0]: path "../x" escapes the repository`},
+		{"path outside the repository", "skills: { paths: [../x] }\n" + minimal,
+			`configfile: skills.paths[0]: path "../x" escapes the repository`},
 		{"scope with a bad glob", "skills: { scope: { db: { paths: ['db/**', '['] } } }\n" + minimal,
 			`configfile: skills.scope.db.paths[1] "[" is not a valid glob`},
-		{"scope with a bad glob on an entry", acme("  acme/*: { skills: { scope: { db: { paths: ['['] } } } }\n"),
-			`configfile: repositories.acme/*.skills.scope.db.paths[0] "[" is not a valid glob`},
-		{"scope condition syntax error", acme("  acme/x: { skills: { scope: { db: { when: [{ expr: 'pr.draft &&' }] } } } }\n"),
-			"configfile: repositories.acme/x.skills.scope.db.when[0]"},
+		{"scope condition syntax error", "skills: { scope: { db: { when: [{ expr: 'pr.draft &&' }] } } }\n" + minimal,
+			"configfile: skills.scope.db.when[0]"},
 		{"scope condition on pr.lines", "skills: { scope: { db: { when: [{ expr: pr.lines > 10 }] } } }\n" + minimal,
 			"configfile: skills.scope.db.when[0]: pr.lines is known to a trigger condition alone"},
 		{"scope condition with no expression", "skills: { scope: { db: { when: [{ name: empty }] } } }\n" + minimal,

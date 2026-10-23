@@ -23,8 +23,7 @@ func TestOnboardingWaitsForEnablement(t *testing.T) {
 	st := storetest.Open(t)
 	t.Setenv("TEST_PEM", "pem")
 	t.Setenv("TEST_SECRET", "s3cret")
-	doc := strings.Replace(configYAML, "repositories:\n  onedr0p/home-ops: {}\n", "", 1)
-	file := configfiletest.Load(t, strings.ReplaceAll(doc, "onedr0p", "onboard-opt-in"))
+	file := configfiletest.Load(t, strings.ReplaceAll(configYAML, "onedr0p", "onboard-opt-in"))
 	file.Defaults.Enabled = new(true)
 	if err := st.ApplyConfig(ctx, file); err != nil {
 		t.Fatal(err)

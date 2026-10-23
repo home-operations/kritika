@@ -5,7 +5,6 @@ import (
 	"maps"
 	"reflect"
 	"slices"
-	"strings"
 
 	"github.com/home-operations/kritika/internal/review"
 )
@@ -54,24 +53,11 @@ func (f *File) ConnectionFor(a *Account) *Connection {
 	return nil
 }
 
-// Repository returns the account's entry for the repository fullName,
-// "owner/repo", nil when it lists none.
-func (a *Account) Repository(fullName string) *Repository {
-	for i := range a.Repositories {
-		if r := &a.Repositories[i]; strings.EqualFold(a.Name+"/"+r.Name, fullName) {
-			return r
-		}
-	}
-	return nil
-}
-
-// Settings resolves the effective settings for the repository fullName,
-// "owner/repo", of account a. Layers apply in one direction: defaults, then
-// the account, then its entry for the repository, if one exists. A
-// repository the account does not list gets the account's settings, so it
-// is enabled unless the defaults or the account turn it off; an empty
-// fullName gives the account's settings alone.
-func (f *File) Settings(a *Account, fullName string) Settings {
+// Settings resolves the effective settings of account a's repositories:
+// kritika's defaults under the file's root, with the account's limits over
+// the root's. A repository's own .kritika.yaml is laid over them by the
+// caller that has the checkout.
+func (f *File) Settings(a *Account) Settings {
 	s := Settings{
 		Enabled:     true,
 		Ignore:      slices.Clone(DefaultIgnore),
@@ -84,23 +70,18 @@ func (f *File) Settings(a *Account, fullName string) Settings {
 	}
 	s.apply(&f.Defaults.Overrides)
 	s.Limits = s.Limits.overlay(f.Defaults.Limits)
-	s.apply(&a.Overrides)
 	s.Limits = s.Limits.overlay(a.Limits)
-	if r := a.Repository(fullName); r != nil {
-		s.apply(&r.Overrides)
-	}
 	s.Limits.Concurrency = cmp.Or(s.Limits.Concurrency, DefaultConcurrency)
 	return s
 }
 
-// Runs reports whether repository fullName of account a, known as t, is
-// reviewed, polled and indexed. An archived repository never is: it is
-// read-only until unarchived. A newly discovered repository stays off until
-// enabled in the dashboard, whose choice takes precedence. A fork does not
-// otherwise run, since an account can reach many forks
-// it never meant kritika to spend on. Any other repository runs as its
-// settings say.
-func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
+// Runs reports whether a repository of account a, known as t, is reviewed,
+// polled and indexed. An archived repository never is: it is read-only
+// until unarchived. A newly discovered repository stays off until enabled
+// in the dashboard, whose choice takes precedence. A fork does not
+// otherwise run, since an account can reach many forks it never meant
+// kritika to spend on. Any other repository runs as the settings say.
+func (f *File) Runs(a *Account, t RepoTraits) bool {
 	switch {
 	case t.Archived:
 		return false
@@ -109,7 +90,7 @@ func (f *File) Runs(a *Account, fullName string, t RepoTraits) bool {
 	case t.Fork:
 		return false
 	default:
-		return f.Settings(a, fullName).Enabled
+		return f.Settings(a).Enabled
 	}
 }
 
@@ -123,40 +104,31 @@ const (
 	SourceEnv     Source = "env"
 	SourceFile    Source = "file"
 	// SourceDefaults is the file's own settings, at its root, and
-	// SourceAccount an account's entry or one of its repository entries.
+	// SourceAccount an account's entry.
 	SourceDefaults Source = "defaults"
 	SourceAccount  Source = "account"
 )
 
 // Sources says, for each setting the policy table lets an admin write,
-// where the settings Settings resolves for the same repository take it
-// from: the narrowest scope that writes it, or the built-in default.
-// Ignore globs come from every scope; the narrowest that adds some is
-// given.
-func (f *File) Sources(a *Account, fullName string) map[string]Source {
-	type scope struct {
-		spec   any
-		source Source
-	}
-	scopes := []scope{{&f.Defaults, SourceDefaults}, {a, SourceAccount}}
-	if r := a.Repository(fullName); r != nil {
-		scopes = append(scopes, scope{r, SourceAccount})
-	}
+// where Settings(a) takes it from: a's entry for its limits when the entry
+// writes some, the file's root when it writes the setting, or the built-in
+// default.
+func (f *File) Sources(a *Account) map[string]Source {
 	out := map[string]Source{}
-	for _, p := range Policies {
-		out[p.Key] = SourceDefault
-		for _, sc := range scopes {
-			if v, ok := SpecValue(sc.spec, p.Key); ok && !reflect.ValueOf(v).IsZero() {
-				out[p.Key] = sc.source
-			}
+	for _, key := range Policies {
+		out[key] = SourceDefault
+		if v, ok := SpecValue(&f.Defaults, key); ok && !reflect.ValueOf(v).IsZero() {
+			out[key] = SourceDefaults
 		}
+	}
+	if a.Limits != (LimitsSpec{}) {
+		out["limits"] = SourceAccount
 	}
 	return out
 }
 
-// apply lays one scope's overrides over s: a field the scope writes
-// replaces s's, its ignore globs are added to s's, its rules to s's by id
-// and its filters to s's by name.
+// apply lays the file's overrides over s: a field it writes replaces s's,
+// and its ignore globs are added to s's.
 func (s *Settings) apply(o *Overrides) {
 	if o.Enabled != nil {
 		s.Enabled = *o.Enabled
@@ -207,9 +179,14 @@ func (s *Settings) apply(o *Overrides) {
 	s.Review = s.Review.overlay(o)
 }
 
-// trigger lays one scope's trigger keys over s.
+// trigger lays the file's trigger keys over s.
 func (s *Settings) trigger(o *Overrides) {
-	s.Filters = s.Filters.with(o.Trigger.Filters)
+	if len(o.Trigger.Include) > 0 {
+		s.Filters.Include = slices.Clone(o.Trigger.Include)
+	}
+	if len(o.Trigger.Exclude) > 0 {
+		s.Filters.Exclude = slices.Clone(o.Trigger.Exclude)
+	}
 	if o.Trigger.Limit != nil {
 		s.MaxAutoReviews = *o.Trigger.Limit
 	}
@@ -267,7 +244,9 @@ func (r Review) overlay(o *Overrides) Review {
 	if o.Context != nil {
 		r.Context = o.Context
 	}
-	r.Rules = WithRules(r.Rules, o.Rules)
+	if len(o.Rules) > 0 {
+		r.Rules = slices.Clone(o.Rules)
+	}
 	return r
 }
 

@@ -110,7 +110,7 @@ func seedSimilarBenchmark(b *testing.B, s *Store, account, other string, dims, s
 		repo := configfile.RepositoryID(who, fmt.Sprintf("bench/repo-%d", group))
 		var id string
 		if err := s.WithAccount(ctx, who, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, `INSERT INTO repositories(id, account_id, name, managed_by) VALUES($1, $2, $3, 'file')`, repo, who, fmt.Sprintf("bench/repo-%d", group)); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO repositories(id, account_id, name) VALUES($1, $2, $3)`, repo, who, fmt.Sprintf("bench/repo-%d", group)); err != nil {
 				return err
 			}
 			return tx.QueryRow(ctx, `INSERT INTO index_runs(account_id, repository_id, commit_sha, embed_model, embed_dims, mode, status)

@@ -89,17 +89,17 @@ func (r Review) ApprovesFor(vars map[string]any) bool {
 
 // checkConditions checks the approval, gate and confidence conditions one
 // scope writes, as a rule's are checked.
-func checkConditions(where string, r *Overrides) error {
+func checkConditions(r *Overrides) error {
 	for key, s := range map[string]*Switch{keyApprove: r.Review.Approve, keyGate: r.Confidence.Gate} {
 		if s == nil {
 			continue
 		}
 		if err := CheckWhen(s.When); err != nil {
-			return fmt.Errorf("configfile: %s%s.%w", where, key, err)
+			return fmt.Errorf("configfile: %s.%w", key, err)
 		}
 	}
 	if err := CheckWhen(r.Confidence.When); err != nil {
-		return fmt.Errorf("configfile: %sconfidence.%w", where, err)
+		return fmt.Errorf("configfile: confidence.%w", err)
 	}
 	return nil
 }

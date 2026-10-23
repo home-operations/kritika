@@ -20,6 +20,7 @@ func TestRunnerNotificationsConveyNoAuthority(t *testing.T) {
 	if err := s.ApplyConfig(ctx, parse(t, twoAccounts)); err != nil {
 		t.Fatal(err)
 	}
+	listRepos(t, s, "alpha", "alpha/one", "alpha/two")
 	runner, err := Open(ctx, Options{AppURL: testEnv(t, "KRITIKA_TEST_RUNNER_URL"), Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)

@@ -207,7 +207,7 @@ func (p *Poller) Poll(ctx context.Context, file *configfile.File, account *confi
 		repo := r.Name
 		// The App can reach it, but it is archived, a fork not turned on,
 		// or off in the settings.
-		if !file.Runs(account, repo, r.Traits) {
+		if !file.Runs(account, r.Traits) {
 			continue
 		}
 		runs[repo] = true

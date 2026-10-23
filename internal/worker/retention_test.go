@@ -34,7 +34,7 @@ type sweepCall struct {
 	name    string
 	swept   time.Duration
 	sweptAt time.Time
-	runs    func(accountID, fullName string, t configfile.RepoTraits) bool
+	runs    func(accountID string, t configfile.RepoTraits) bool
 }
 
 // fakeRetentionStore signals every call on a channel, so a test can wait for
@@ -69,7 +69,7 @@ func (s *fakeRetentionStore) SweepSessions(_ context.Context, now time.Time) (in
 }
 
 func (s *fakeRetentionStore) SweepStoppedIndexes(
-	_ context.Context, grace time.Duration, runs func(accountID, fullName string, t configfile.RepoTraits) bool,
+	_ context.Context, grace time.Duration, runs func(accountID string, t configfile.RepoTraits) bool,
 ) (int64, error) {
 	s.calls <- sweepCall{name: "stoppedIndexes", swept: grace, runs: runs}
 	if s.fail {
@@ -152,8 +152,8 @@ func TestRetentionSweep(t *testing.T) {
 		t.Fatalf("grace = %s, want %s", fourth.swept, want)
 	}
 	acme := configfile.AccountID(configfile.ForgeGitHub, "acme")
-	if !fourth.runs(acme, "acme/app", configfile.RepoTraits{}) || fourth.runs(acme, "acme/app", configfile.RepoTraits{Archived: true}) ||
-		fourth.runs(configfile.AccountID(configfile.ForgeGitHub, "gone"), "gone/app", configfile.RepoTraits{}) {
+	if !fourth.runs(acme, configfile.RepoTraits{}) || fourth.runs(acme, configfile.RepoTraits{Archived: true}) ||
+		fourth.runs(configfile.AccountID(configfile.ForgeGitHub, "gone"), configfile.RepoTraits{}) {
 		t.Fatal("a repository runs as the configuration says, and none of an account it does not serve does")
 	}
 	if fifth := next(); fifth.name != "conversations" || fifth.swept != conversationRetention {

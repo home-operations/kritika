@@ -15,7 +15,8 @@ import (
 // Filter is one condition on a pull request in a list that includes or
 // excludes pull requests: Expr, CEL over pr, Paths, globs one of which a
 // changed path must match, or both, when both must hold. Name, when set,
-// says which condition decided, and lets a narrower scope replace it.
+// says which condition decided, and keeps a repository's file from adding
+// one under it.
 type Filter struct {
 	Name  string   `yaml:"name,omitempty" json:"name"`
 	Expr  string   `yaml:"expr,omitempty" json:"expr"`
@@ -154,28 +155,6 @@ func (fs Filters) Skips(vars map[string]any, d *Diff) (bool, *Filter, error) {
 // judged before the pull request's diff is fetched.
 func (fs Filters) NeedsDiff() bool {
 	return slices.ContainsFunc(fs.Include, Filter.needsDiff) || slices.ContainsFunc(fs.Exclude, Filter.needsDiff)
-}
-
-// with is fs with more laid over them, list by list: a condition of more
-// with a name the list already has replaces that condition where it
-// stands, and the rest follow in order.
-func (fs Filters) with(more Filters) Filters {
-	return Filters{Include: withFilters(fs.Include, more.Include), Exclude: withFilters(fs.Exclude, more.Exclude)}
-}
-
-func withFilters(filters, more []Filter) []Filter {
-	if len(more) == 0 {
-		return filters
-	}
-	out := slices.Clone(filters)
-	for _, f := range more {
-		if i := slices.IndexFunc(out, func(o Filter) bool { return f.Name != "" && o.Name == f.Name }); i >= 0 {
-			out[i] = f
-		} else {
-			out = append(out, f)
-		}
-	}
-	return out
 }
 
 // Named reports whether one of fs's conditions, in either list, has name.

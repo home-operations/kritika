@@ -44,12 +44,11 @@ apps:
     clientId: Iv1.test
     privateKey: { env: PRIMARY_KEY }
     webhookSecret: { env: PRIMARY_KEY }
-repositories:
-  execution/repo: {}
 `)
 	if err := st.ApplyConfig(t.Context(), file); err != nil {
 		t.Fatal(err)
 	}
+	storetest.Repositories(t, st, file, "execution/repo")
 	account, _ := file.Account(configfile.ForgeGitHub, "execution")
 	repoID := configfile.RepositoryID(account.ID(), "execution/repo")
 	for _, tt := range []struct {
