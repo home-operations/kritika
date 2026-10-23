@@ -267,8 +267,8 @@ func newInstallation(ev webhook.Event) bool {
 
 // uninstall removes the App from an account no connection serves as it is
 // installed there, and returns the delivery's outcome. Only a new
-// installation is removed: one made before its account was dropped from
-// the configuration is the operator's, and stays.
+// installation is removed: an older one may have been made while its
+// account was served, and is the operator's to remove.
 func (h *Handler) uninstall(ctx context.Context, logger *slog.Logger, in *configfile.Connection, ev webhook.Event) string {
 	logger = logger.With("account", ev.Account, "installation", ev.Installation.ID)
 	if !h.uninstalls.Allow() {
