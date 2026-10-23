@@ -426,7 +426,9 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   const tests = (c: { expr: string; paths?: string[] }) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
   const conditions = (cs: { name: string; expr: string; paths?: string[] }[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
   await expect(settings).toContainText(`Include ${conditions(rc.settings.filters.include)}`);
-  await expect(settings).toContainText(`Exclude ${conditions(rc.settings.filters.exclude)} (account)`);
+  await expect(settings).toContainText(`Exclude ${conditions(rc.settings.filters.exclude)} (instance)`);
+  // Limits the account's entry writes are the account's.
+  await expect(settings).toContainText(`Concurrency ${g.repoDetail.settings.limits.concurrency} (account)`);
   const skills = rc.settings.skills;
   const narrows = (sc: { paths?: string[]; when?: { expr: string }[] }) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
   await expect(settings).toContainText(`Skills ${skills.paths.join(', ') || 'off'}`);
@@ -788,7 +790,7 @@ test.describe('rules', () => {
     await expect(row.locator('.rule-body')).toHaveText(r.text);
     await expect(row.locator('.rule-sub')).toHaveText(r.id);
     await expect(row.locator('code')).toHaveText(r.paths);
-    await expect(row).toContainText('Repository entry');
+    await expect(row).toContainText('Instance settings');
     await expect(row.getByRole('link', { name: r.repositories[0]! })).toHaveAttribute('href', `#/a/${g.SLUG}/repos/alpha/one`);
     // Its findings, narrowed to its one repository.
     await expect(row.locator('.rule-cited')).toContainText(`${r.addressed} addressed`);

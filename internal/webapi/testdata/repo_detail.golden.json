@@ -124,6 +124,7 @@
     }
   },
   "sources": {
+    "limits": "account",
     "review.model": "defaults",
     "trigger.exclude": "defaults",
     "trigger.limit": "default"

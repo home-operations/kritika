@@ -140,6 +140,7 @@ var goldens = map[string]any{
 		Settings:   goldenRepoSettings,
 		Sources: map[string]configfile.Source{
 			"trigger.exclude": configfile.SourceDefaults, "review.model": configfile.SourceDefaults, "trigger.limit": configfile.SourceDefault,
+			"limits": configfile.SourceAccount,
 		},
 		RepoConfig: &RepoConfig{
 			ReviewID: "rev-1", Commit: "def456", Found: true,
