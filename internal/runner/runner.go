@@ -154,7 +154,7 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 	}
 	var shares []partShare
 	if skip == "" {
-		shares, skip, scope, scopeReason = reviewShares(p, res, scope, scopeReason, deltaPaths)
+		shares, scope, scopeReason = reviewShares(p, res, scope, scopeReason, deltaPaths)
 	}
 	reportPartCount(ctx, st, p, len(shares), logger)
 	chunks, err := wholeContext(ctx, headTree, baseTree, res, ignore, skip, shares != nil, logger)
@@ -261,26 +261,23 @@ func runReview(ctx context.Context, st *store.Store, p Spec, secrets Secrets, lo
 }
 
 // reviewShares is how a review that is not skipped runs, as
-// planReviewers plans it: its shares, nil to run it whole, or a skip when
-// no reviewer applies; and its scope, full for the default reviewer alone
-// when the last review did not run it, with the reason.
+// planReviewers plans it: its shares, nil to run it whole; and its scope,
+// full for the default reviewer alone when the last review did not run it,
+// with the reason.
 func reviewShares(
 	p Spec, res *gitfetch.Result, scope review.Scope, reason string, deltaPaths []string,
-) ([]partShare, string, review.Scope, string) {
+) ([]partShare, review.Scope, string) {
 	plan := planReviewers(p, res, scope, deltaPaths)
-	switch {
-	case plan.none:
-		return nil, SkipNoReviewer, scope, reason
-	case plan.shares != nil:
-		return plan.shares, "", scope, reason
+	if plan.shares != nil {
+		return plan.shares, scope, reason
 	}
 	if plan.full && scope == review.ScopeIncremental {
 		scope, reason = review.ScopeFull, "the last review did not run the default reviewer"
 	}
 	if split := splitReview(p, res, scope); split != nil {
-		return splitShares(split, scope), "", scope, reason
+		return splitShares(split, scope), scope, reason
 	}
-	return nil, "", scope, reason
+	return nil, scope, reason
 }
 
 // wholeContext is the context stages over the whole diff, or none for a

@@ -399,12 +399,12 @@ func RecordReviewResult(ctx context.Context, tx pgx.Tx, r ReviewResult) error {
 	for i, f := range r.Result.Findings {
 		if _, err := tx.Exec(ctx, `INSERT INTO findings
 			(account_id, review_id, path, line, severity, title, explanation, suggested_fix, fingerprint, posted_inline,
-			 end_line, replacement, agent_prompt, forge_comment_id, rules, category, carried_from, reviewers)
+			 end_line, replacement, agent_prompt, forge_comment_id, rules, category, carried_from, agents)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, nullif($14::bigint, 0), coalesce($15::text[], '{}'), $16,
 				nullif($17, ''), coalesce($18::text[], '{}'))`,
 			r.AccountID, r.ReviewID, f.Path, f.Line, string(f.Severity), f.Title, f.Explanation, f.SuggestedFix,
 			review.Fingerprint(f), r.Inline[i].Posted, f.EndLine, f.Replacement, f.AgentPrompt, r.Inline[i].ID, f.Rules,
-			string(f.Category), f.CarriedFrom, f.Reviewers); err != nil {
+			string(f.Category), f.CarriedFrom, f.Agents); err != nil {
 			return fmt.Errorf("store: insert finding: %w", err)
 		}
 	}

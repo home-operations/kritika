@@ -171,7 +171,7 @@ var goldens = map[string]any{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityP0, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "if x != nil {}", AgentPrompt: "fix it",
 			Fingerprint: "fp", PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
-			Rules: []string{"wrap-errors"}, Reviewers: []string{"security", "default"}, Status: store.FindingOpen,
+			Rules: []string{"wrap-errors"}, Agents: []string{"security", "default"}, Status: store.FindingOpen,
 		}},
 		RunnerRun: &RunnerRun{
 			ID: "run-1", Phase: "done", JobName: "job", PodName: "pod", NodeName: "node", CreatedAt: t0, ScheduledAt: &t0,
@@ -187,8 +187,8 @@ var goldens = map[string]any{
 			CostUSD: 0.1, Model: "acme/large", Error: "", CreatedAt: t1, Result: json.RawMessage(`{"findings":[]}`),
 			CarriedReviewID: new("rev-0"),
 			Parts: []AgentPart{
-				{Paths: []string{"a.go"}, Stop: "submitted", Error: "", Steps: 3, Reviewer: "default", CostUSD: 0.06},
-				{Paths: []string{"a.go"}, Stop: "submitted", Error: "", Steps: 2, Reviewer: "security", Full: true, CostUSD: 0.04},
+				{Paths: []string{"a.go"}, Stop: "submitted", Error: "", Steps: 3, Agent: "default", CostUSD: 0.06},
+				{Paths: []string{"a.go"}, Stop: "submitted", Error: "", Steps: 2, Agent: "security", Full: true, CostUSD: 0.04},
 			},
 		},
 		Usage: []UsageRow{{Role: "review", Model: "acme/large", Upstream: "acme", InputTokens: 100, OutputTokens: 20, CostUSD: 0.1, CreatedAt: t1}},
@@ -207,7 +207,7 @@ var goldens = map[string]any{
 			ID: "f-1", Path: "a.go", Line: 3, EndLine: 5, Severity: review.SeverityP0, Title: "nil deref",
 			Explanation: "x may be nil", SuggestedFix: "check x", Replacement: "", AgentPrompt: "", Fingerprint: "fp",
 			PostedInline: true, ForgeCommentID: new(int64(55)), CreatedAt: t0, ReactionsUp: 2, ReactionsDown: 1,
-			Rules: []string{"wrap-errors"}, Reviewers: []string{}, Status: store.FindingAddressed,
+			Rules: []string{"wrap-errors"}, Agents: []string{}, Status: store.FindingAddressed,
 		},
 		ReviewID: "rev-1", Pull: goldenPullRef, FirstSeenAt: t0, LastSeenAt: t1,
 	},

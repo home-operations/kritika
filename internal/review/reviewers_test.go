@@ -10,7 +10,7 @@ import (
 
 func TestMergeReviewers(t *testing.T) {
 	f := func(line, end int, sev Severity, cat Category, title string, reviewers ...string) Finding {
-		return Finding{Path: "main.go", Line: line, EndLine: end, Severity: sev, Category: cat, Title: title, Reviewers: reviewers}
+		return Finding{Path: "main.go", Line: line, EndLine: end, Severity: sev, Category: cat, Title: title, Agents: reviewers}
 	}
 	for _, tt := range []struct {
 		name string
@@ -55,7 +55,7 @@ func TestMergeReviewers(t *testing.T) {
 			}
 			for i := range got {
 				g, w := got[i], tt.want[i]
-				if g.Line != w.Line || g.Severity != w.Severity || g.Title != w.Title || !slices.Equal(g.Reviewers, w.Reviewers) {
+				if g.Line != w.Line || g.Severity != w.Severity || g.Title != w.Title || !slices.Equal(g.Agents, w.Agents) {
 					t.Errorf("finding %d = %+v, want %+v", i, g, w)
 				}
 			}
@@ -67,7 +67,7 @@ func TestMergeReviewers(t *testing.T) {
 // in the finding it merged into.
 func TestMergeReviewersFingerprint(t *testing.T) {
 	got := MergeReviewers([]Finding{
-		{Path: "a.go", Line: 1, Severity: SeverityP0, Category: CategorySecurity, Title: "new", Reviewers: []string{"security"}},
+		{Path: "a.go", Line: 1, Severity: SeverityP0, Category: CategorySecurity, Title: "new", Agents: []string{"security"}},
 		{Path: "a.go", Line: 1, Severity: SeverityP2, Category: CategorySecurity, Title: "old", Fingerprint: "fp-old"},
 	})
 	if len(got) != 1 || got[0].Fingerprint != "fp-old" || got[0].Title != "new" {
@@ -77,10 +77,10 @@ func TestMergeReviewersFingerprint(t *testing.T) {
 
 func TestParseReviewers(t *testing.T) {
 	raw := `{"summary": {"take": "T."}, "findings": [
-	  {"path": "main.go", "line": 11, "severity": "p1", "category": "correctness", "title": "a", "explanation": "e", "reviewers": ["security"]},
-	  {"path": "main.go", "line": 12, "severity": "p1", "category": "correctness", "title": "b", "explanation": "e", "reviewers": ["ghost"]},
-	  {"path": "main.go", "line": 13, "severity": "p1", "category": "security", "title": "c", "explanation": "e", "reviewers": ["security"]},
-	  {"path": "main.go", "line": 14, "severity": "p1", "category": "tests", "title": "d", "explanation": "e", "reviewers": ["default"]}
+	  {"path": "main.go", "line": 11, "severity": "p1", "category": "correctness", "title": "a", "explanation": "e", "agents": ["security"]},
+	  {"path": "main.go", "line": 12, "severity": "p1", "category": "correctness", "title": "b", "explanation": "e", "agents": ["ghost"]},
+	  {"path": "main.go", "line": 13, "severity": "p1", "category": "security", "title": "c", "explanation": "e", "agents": ["security"]},
+	  {"path": "main.go", "line": 14, "severity": "p1", "category": "tests", "title": "d", "explanation": "e", "agents": ["default"]}
 	]}`
 	res, dropped, err := Parse(raw, Anchors(sampleDiff), ParseOptions{
 		Reviewers:  []string{DefaultReviewer, "security"},
@@ -91,7 +91,7 @@ func TestParseReviewers(t *testing.T) {
 	}
 	kept := make([]string, 0, len(res.Findings))
 	for _, f := range res.Findings {
-		kept = append(kept, f.Title+":"+strings.Join(f.Reviewers, ","))
+		kept = append(kept, f.Title+":"+strings.Join(f.Agents, ","))
 	}
 	if want := []string{"b:", "c:security", "d:"}; !slices.Equal(kept, want) {
 		t.Errorf("kept %q, want %q: a reviewer the review did not run is no one's, and the default reviewer's names none", kept, want)
@@ -176,7 +176,7 @@ func TestPartLead(t *testing.T) {
 	}
 }
 
-func TestReviewedBy(t *testing.T) {
+func TestAgentNames(t *testing.T) {
 	for _, tt := range []struct {
 		reviewers []string
 		want      string
@@ -186,9 +186,9 @@ func TestReviewedBy(t *testing.T) {
 		{[]string{"security"}, "security"},
 		{[]string{DefaultReviewer, "security"}, "default, security"},
 	} {
-		f := Finding{Reviewers: tt.reviewers}
-		if got := f.ReviewedBy(); got != tt.want {
-			t.Errorf("ReviewedBy(%q) = %q, want %q", tt.reviewers, got, tt.want)
+		f := Finding{Agents: tt.reviewers}
+		if got := f.AgentNames(); got != tt.want {
+			t.Errorf("AgentNames(%q) = %q, want %q", tt.reviewers, got, tt.want)
 		}
 	}
 	if !(Finding{}).RaisedBy(DefaultReviewer) || (Finding{}).RaisedBy("security") {
@@ -201,30 +201,30 @@ func TestReviewedBy(t *testing.T) {
 // default reviewer alone.
 func TestRenderReviewers(t *testing.T) {
 	f := Finding{Path: "a.go", Line: 1, Severity: SeverityP1, Category: CategorySecurity, Title: "Open redirect", Explanation: "e",
-		Reviewers: []string{"security"}}
+		Agents: []string{"security"}}
 	inline, _ := RenderInline(context.Background(), Templates{}, InlineData{Finding: f})
 	if !strings.Contains(inline, "· security · security") {
 		t.Errorf("inline comment does not credit the reviewer:\n%s", inline)
 	}
-	data := RenderData{Number: 1, HeadSHA: "abcdef1234", Result: Result{Findings: []Finding{f}}, Reviewers: []string{DefaultReviewer, "security"}}
+	data := RenderData{Number: 1, HeadSHA: "abcdef1234", Result: Result{Findings: []Finding{f}}, Agents: []string{DefaultReviewer, "security"}}
 	summary, _ := RenderSummary(context.Background(), Templates{}, data)
-	for _, want := range []string{"Open redirect · security · security", "2 reviewers", "**Reviewers:** `default` `security`"} {
+	for _, want := range []string{"Open redirect · security · security", "2 agents", "**Agents:** `default` `security`"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("summary lacks %q:\n%s", want, summary)
 		}
 	}
 	// A specialist that ran alone, finding nothing, is still named.
-	lone := RenderData{Number: 1, HeadSHA: "abcdef1234", Reviewers: []string{"security"}}
+	lone := RenderData{Number: 1, HeadSHA: "abcdef1234", Agents: []string{"security"}}
 	summary, _ = RenderSummary(context.Background(), Templates{}, lone)
-	for _, want := range []string{"1 reviewer</summary>", "**Reviewers:** `security`"} {
+	for _, want := range []string{"1 agent</summary>", "**Agents:** `security`"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("a lone specialist's summary lacks %q:\n%s", want, summary)
 		}
 	}
-	f.Reviewers, data.Reviewers = nil, []string{DefaultReviewer}
+	f.Agents, data.Agents = nil, []string{DefaultReviewer}
 	data.Result.Findings = []Finding{f}
 	summary, _ = RenderSummary(context.Background(), Templates{}, data)
-	if strings.Contains(summary, "reviewer") {
+	if strings.Contains(summary, "Agents:") || strings.Contains(summary, " agents") {
 		t.Errorf("a review by the default reviewer alone mentions reviewers:\n%s", summary)
 	}
 }
@@ -237,7 +237,7 @@ func TestParseReviewersKeepPriorThread(t *testing.T) {
 	raw := `{"summary": {"take": "T."}, "findings": [
 	  {"path": "main.go", "line": 11, "severity": "p2", "category": "security", "title": "Unchecked input", "explanation": "e"},
 	  {"path": "main.go", "line": 11, "severity": "p0", "category": "security", "title": "SQL injection", "explanation": "e",
-	   "reviewers": ["security"]}
+	   "agents": ["security"]}
 	]}`
 	res, _, err := Parse(raw, Anchors(sampleDiff), ParseOptions{Reviewers: []string{DefaultReviewer, "security"}, Prior: []Finding{prior}})
 	if err != nil {

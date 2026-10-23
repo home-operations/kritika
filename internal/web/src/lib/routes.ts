@@ -90,7 +90,7 @@ export interface FindingFilter {
   status?: FindingStatus;
   repo?: string;
   rule?: string;
-  reviewer?: string;
+  agent?: string;
   q?: string;
 }
 
@@ -104,7 +104,7 @@ export function findingFilter(f: {
   status?: string;
   repo?: string;
   rule?: string;
-  reviewer?: string;
+  agent?: string;
   q?: string;
 }): FindingFilter | undefined {
   const out: FindingFilter = {};
@@ -116,7 +116,7 @@ export function findingFilter(f: {
   if (status) out.status = status;
   if (f.repo) out.repo = f.repo;
   if (f.rule) out.rule = f.rule;
-  if (f.reviewer) out.reviewer = f.reviewer;
+  if (f.agent) out.agent = f.agent;
   if (f.q) out.q = f.q;
   return Object.keys(out).length ? out : undefined;
 }

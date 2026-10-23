@@ -19,7 +19,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request, t *account
 	q := r.URL.Query()
 	f := store.FindingFilter{
 		Severity: review.Severity(q.Get("severity")), Category: review.Category(q.Get("category")),
-		Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Reviewer: q.Get("reviewer"), Query: q.Get("q"),
+		Status: store.FindingStatus(q.Get("status")), Rule: q.Get("rule"), Reviewer: q.Get("agent"), Query: q.Get("q"),
 	}
 	if f.Severity != "" && !f.Severity.Valid() {
 		return errBadRequest(CodeBadRequest, "severity must be p0, p1 or p2")

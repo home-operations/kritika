@@ -19,68 +19,63 @@ import (
 	"github.com/home-operations/kritika/internal/store"
 )
 
-// reviewers is the reviewers a review runs, as its job document carries
-// them, whether the default reviewer is off, and the note its summary
-// states when only named no reviewer that is on.
+// reviewers is the agents a review runs, as its job document carries
+// them, and the note its summary states when only named no agent that is
+// on.
 type reviewers struct {
-	specs      []runner.Reviewer
-	defaultOff bool
-	note       string
-	// routes say which model route each reviewer that took one took.
-	routes []string
+	specs []runner.Reviewer
+	note  string
 }
 
-// notes are what the summary states of the reviewers: the note, if any,
-// and the model routes they took.
+// notes are what the summary states of the agents: the note, if any.
 func (r reviewers) notes() []string {
 	if r.note == "" {
-		return r.routes
+		return nil
 	}
-	return append([]string{r.note}, r.routes...)
+	return []string{r.note}
 }
 
-// count is how many reviewers the review runs, which its parts, grant
-// and deadline are sized for: one for the default reviewer alone.
+// count is how many agents the review runs, which its parts, grant and
+// deadline are sized for: one for the default pass alone.
 func (r reviewers) count() int { return max(1, len(r.specs)) }
 
-// chooseReviewers is the reviewers a review of a pull request with the filter
-// variables vars runs, settings being the repository's: the default one
-// unless it is off, then each other one that is on and whose when
-// conditions judgeReviewers found to hold, by name. only, when it names a reviewer, is the one a
-// review someone asked for runs alone, whatever its paths and conditions;
-// one that names none that is on runs them all, with a note. A reviewer the last
-// review, prior, did not run is marked to review the whole change. specs
-// is nil when the default reviewer runs alone and the last review ran it,
-// as a review always has, or, with defaultOff, when no reviewer is left to
-// run, which the runner skips.
+// chooseReviewers is the agents a review of a pull request with the filter
+// variables vars runs, settings being the repository's: the default pass,
+// on the model the agents that replace it picked, then each specialist
+// that is on and whose when conditions judgeReviewers found to hold, by
+// name. only, when it names a specialist, is the one a review someone
+// asked for runs alone, whatever its paths and conditions; when it names
+// the default pass or an agent that replaces it, that pass runs alone, on
+// the agent's model (see pickModels); one that names no agent that is on
+// runs them all, with a note. An agent the last review, prior, did not run
+// is marked to review the whole change. specs is nil when the default
+// pass runs alone and the last review ran it, as a review always has.
 func chooseReviewers(settings Effective, vars map[string]any, prior priorReview, only string, maxTokens int64) reviewers {
 	var out reviewers
 	names := slices.Sorted(maps.Keys(settings.Reviewers))
-	runDefault := configfile.DefaultOn(settings.Reviewers)
+	runDefault := true
 	if only != "" {
 		r, named := settings.Reviewers[only]
 		switch {
-		case only == review.DefaultReviewer && runDefault:
+		case only == review.DefaultReviewer || slices.ContainsFunc(settings.Models.Routes, func(o configfile.ModelRoute) bool {
+			return o.Name == only
+		}):
 			names = nil
-		case only != review.DefaultReviewer && named && r.On():
+		case named && r.On():
 			names, runDefault = []string{only}, false
 		default:
-			out.note = fmt.Sprintf("No reviewer named %s is on, so every reviewer that applies ran", only)
+			out.note = fmt.Sprintf("No agent named %s is on, so every agent that applies ran", only)
 			only = ""
 		}
 	}
-	out.defaultOff = !runDefault
 	full := func(name string) bool { return prior.id != "" && !slices.Contains(prior.reviewers, name) }
 	if runDefault {
 		out.specs = append(out.specs, runner.Reviewer{Name: review.DefaultReviewer, Full: full(review.DefaultReviewer)})
 	}
 	for _, name := range names {
 		r := settings.Reviewers[name]
-		if name == review.DefaultReviewer || !r.On() || only == "" && !settings.Held[name] {
+		if !r.On() || only == "" && !settings.Held[name] {
 			continue
-		}
-		if route := settings.Routes[name]; route != "" {
-			out.routes = append(out.routes, fmt.Sprintf("The %s reviewer reviewed on its model route %s", name, route))
 		}
 		spec := runner.Reviewer{
 			Name: name, Instructions: r.Instructions, File: r.File, Categories: r.Categories, Paths: r.Paths,
@@ -202,18 +197,16 @@ func (w *Review) readPull(ctx context.Context, accountID, prID, trigger string) 
 // reviewer in place of; "" for a review of every reviewer.
 func asked(args jobs.ReviewArgs) string { return cmp.Or(args.Reviewer, args.Requested) }
 
-// mayRun is eff's settings with their reviewers other than the default
-// one cut to those a review asked for as args may run, whose models it
-// holds slots on: the one asked for alone, when one is, and otherwise
-// each that is on and whose when conditions judgeReviewers found to hold.
+// mayRun is eff's settings with their specialists cut to those a review
+// asked for as args may run, whose models it holds slots on: the one asked
+// for alone, when one is, none when the default pass or an agent that
+// replaces it is, and otherwise each that is on and whose when conditions
+// judgeReviewers found to hold.
 func mayRun(eff Effective, args jobs.ReviewArgs) configfile.Settings {
 	s := eff.Settings
 	s.Reviewers = maps.Clone(s.Reviewers)
 	maps.DeleteFunc(s.Reviewers, func(name string, r configfile.Reviewer) bool {
-		switch {
-		case name == review.DefaultReviewer:
-			return false
-		case args.Reviewer != "":
+		if args.Reviewer != "" {
 			return name != args.Reviewer
 		}
 		return !r.On() || !eff.Held[name]

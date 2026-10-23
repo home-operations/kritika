@@ -83,10 +83,10 @@ type RenderData struct {
 	// the runner's record rather than the model's answer, as SourceLinks
 	// gives them.
 	Sources []string
-	// Reviewers are the reviewers the review ran, in the order it ran
+	// Agents are the reviewers the review ran, in the order it ran
 	// them; the default template lists them unless the default reviewer
-	// ran alone (see NamedReviewers).
-	Reviewers []string
+	// ran alone (see NamedAgents).
+	Agents []string
 	// Skills are the repository's skills the review was offered and the
 	// ones it read; Commands the run tool's commands it was offered and
 	// the ones it ran. Each is zero when none were offered.
@@ -104,11 +104,11 @@ type RenderData struct {
 	WebURL, PullURL string
 }
 
-// NamedReviewers reports whether the review ran a reviewer other than the
+// NamedAgents reports whether the review ran a reviewer other than the
 // default one, alone or beside it, which the default template names: a
 // review by the default reviewer alone reads as it always has.
-func (d RenderData) NamedReviewers() bool {
-	return slices.ContainsFunc(d.Reviewers, func(r string) bool { return r != DefaultReviewer })
+func (d RenderData) NamedAgents() bool {
+	return slices.ContainsFunc(d.Agents, func(r string) bool { return r != DefaultReviewer })
 }
 
 // Offered is one kind of help a review was offered, the repository's

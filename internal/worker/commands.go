@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -298,22 +299,20 @@ func (f *followUp) namedReviewer(ctx context.Context) (reviewer, requested strin
 	if _, err := f.repoConfig(ctx); err != nil {
 		return "", "", err
 	}
-	reviewer, requested = splitRequested(name, f.eff.Reviewers)
+	reviewer, requested = splitRequested(name, f.eff.Settings)
 	return reviewer, requested, nil
 }
 
-// splitRequested is name as a review request carries it: the reviewer to
-// run alone when it is one that is on, the default one included, else the
-// word requested, kept apart so the request is one of every reviewer,
-// which a review of every reviewer in flight stands in for.
-func splitRequested(name string, reviewers map[string]configfile.Reviewer) (reviewer, requested string) {
-	if name == review.DefaultReviewer {
-		if configfile.DefaultOn(reviewers) {
-			return name, ""
-		}
-		return "", name
-	}
-	if r, ok := reviewers[name]; ok && r.On() {
+// splitRequested is name as a review request carries it, settings being
+// the repository's: the agent to run alone when it is the default pass,
+// an agent that replaces it, or a specialist that is on, else the word
+// requested, kept apart so the request is one of every agent, which a
+// review of every agent in flight stands in for.
+func splitRequested(name string, settings configfile.Settings) (reviewer, requested string) {
+	r, specialist := settings.Reviewers[name]
+	switch {
+	case name == review.DefaultReviewer, specialist && r.On(),
+		slices.ContainsFunc(settings.Models.Routes, func(o configfile.ModelRoute) bool { return o.Name == name }):
 		return name, ""
 	}
 	return "", name

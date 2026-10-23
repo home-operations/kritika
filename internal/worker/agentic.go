@@ -399,7 +399,7 @@ func (w *Review) agentSpec(
 	if err != nil {
 		return deadline, nil, err
 	}
-	prompt.Reviewers, prompt.DefaultOff = chosen.specs, chosen.defaultOff
+	prompt.Reviewers = chosen.specs
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,

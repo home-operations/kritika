@@ -450,18 +450,20 @@ func TestMergeReplacesAdminGate(t *testing.T) {
 	}
 }
 
-// TestMergeModelRoutes: a file's review.model list applies whole, or is
-// dropped whole when one of its models or efforts may not be taken, and a
-// file's own model replaces the admin's routes.
-func TestMergeModelRoutes(t *testing.T) {
+// TestMergeAgentRoutes: a file's agents that replace the default pass
+// replace the admin's, whole, or are dropped whole when one of their
+// models may not be taken, and a file's own model replaces the admin's
+// routes too.
+func TestMergeAgentRoutes(t *testing.T) {
 	t.Parallel()
-	doc := "review:\n  model:\n    - { name: deep, model: p/big, effort: max, fallback: own/small, when: [{ paths: ['db/**'] }] }\n    - model: own/small\n"
+	doc := "review:\n  model: own/small\n  agents:\n" +
+		"    - { name: deep, model: p/big, effort: max, fallback: own/small, when: [{ paths: ['db/**'] }] }\n"
 	m, err := Merge([]byte(doc), adminSettings())
 	if err != nil || len(m.Dropped) > 0 {
 		t.Fatalf("Merge = %v, dropped %q", err, m.Dropped)
 	}
 	if m.Models.Review != "own/small" || m.Models.Effort != model.EffortHigh || len(m.Models.Routes) != 1 {
-		t.Fatalf("models = %+v; the file's default and routes, the admin's effort", m.Models)
+		t.Fatalf("models = %+v; the file's model and agent, the admin's effort", m.Models)
 	}
 	picked, err := m.Models.Pick(configfile.SamplePR(), &configfile.Diff{Changed: []string{"db/0042.sql"}})
 	if err != nil || picked.Review != "p/big" || picked.Effort != model.EffortMax || picked.Fallback != "own/small" || picked.Route != "deep (db/**)" {
@@ -471,26 +473,24 @@ func TestMergeModelRoutes(t *testing.T) {
 	op := adminSettings()
 	op.Models.Routes = m.Models.Routes
 	if m, err := Merge([]byte("review: { model: own/small }\n"), op); err != nil || m.Models.Review != "own/small" || m.Models.Routes != nil {
-		t.Fatalf("models = %+v, %v; a file's model replaces the admin's routes", m.Models, err)
+		t.Fatalf("models = %+v, %v; a file's model replaces the admin's agents", m.Models, err)
+	}
+	if m, err := Merge([]byte("review: { agents: [{ name: light, model: own/small }] }\n"), op); err != nil ||
+		len(m.Models.Routes) != 1 || m.Models.Routes[0].Name != "light" {
+		t.Fatalf("routes = %+v, %v; a file's agents replace the admin's", m.Models.Routes, err)
 	}
 
-	route := func(fields string) string {
-		return "review:\n  model:\n    - { model: p/big, " + fields + "when: [{ expr: pr.bot }] }\n    - model: own/small\n"
-	}
 	for _, tt := range []struct {
-		name, doc, dropped string
+		name, agent, dropped string
 	}{
-		{"a route's model of another provider", strings.Replace(route(""), "p/big", "q/big", 1),
-			`.kritika.yaml: review.model was dropped: [0].model "q/big" is not a model of own, p`},
-		{"a route's fallback of another provider", route("fallback: q/small, "),
-			`.kritika.yaml: review.model was dropped: [0].fallback "q/small" is not a model of own, p`},
-		{"a route's effort that is no level", route("effort: loud, "), `.kritika.yaml: review.model was dropped: [0].effort "loud" is not one of none,`},
-		{"a default of another provider", strings.Replace(route(""), "own/small", "q/small", 1),
-			`.kritika.yaml: review.model was dropped: "q/small" is not a model of own, p`},
+		{"a model of another provider", "{ name: deep, model: q/big, when: [{ expr: pr.bot }] }",
+			`.kritika.yaml: review.agents that replace the default pass were dropped: deep's model "q/big" is not a model of own, p`},
+		{"a fallback of another provider", "{ name: deep, model: p/big, fallback: q/small, when: [{ expr: pr.bot }] }",
+			`.kritika.yaml: review.agents that replace the default pass were dropped: deep's fallback "q/small" is not a model of own, p`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			m, err := Merge([]byte(tt.doc), adminSettings())
-			if err != nil || len(m.Dropped) != 1 || !strings.HasPrefix(m.Dropped[0], tt.dropped) {
+			m, err := Merge([]byte("review: { agents: ["+tt.agent+", { name: light, model: own/small }] }\n"), adminSettings())
+			if err != nil || len(m.Dropped) != 1 || m.Dropped[0] != tt.dropped {
 				t.Fatalf("Merge = %v, dropped %q, want %q", err, m.Dropped, tt.dropped)
 			}
 			if !reflect.DeepEqual(m.Models, adminSettings().Models) {
@@ -498,39 +498,37 @@ func TestMergeModelRoutes(t *testing.T) {
 			}
 		})
 	}
-
-	if _, err := Merge([]byte("review:\n  model:\n    - model: p/big\n    - model: own/small\n"), adminSettings()); err == nil ||
-		!strings.Contains(err.Error(), "[0]: when is required") {
-		t.Fatalf("err = %v; a route without conditions does not parse", err)
+	if _, err := Merge([]byte("review: { agents: [{ name: deep, model: p/big, effort: loud }] }\n"), adminSettings()); err == nil ||
+		!strings.Contains(err.Error(), "effort must be") {
+		t.Fatalf("err = %v; an agent's effort that is no level does not parse", err)
 	}
 }
 
-// TestMergeReviewers: a file adds reviewers of its own, its models among
-// the account's, and only rules and skill scopes to an admin's reviewer,
-// whose other keys, and the default reviewer, it cannot touch.
-func TestMergeReviewers(t *testing.T) {
+// TestMergeAgents: a file adds specialists of its own, their models among
+// the account's, and only rules and skill scopes to an admin's specialist,
+// whose other keys it cannot touch; an agent under the name of an admin's
+// agent of the other kind is dropped.
+func TestMergeAgents(t *testing.T) {
 	t.Parallel()
 	op := adminSettings()
 	op.Reviewers = map[string]configfile.Reviewer{
 		"security": {
-			Instructions: "Admin's.", Categories: []review.Category{review.CategorySecurity}, Paths: []string{"auth/**"},
+			Name: "security", Instructions: "Admin's.", Categories: []review.Category{review.CategorySecurity}, Paths: []string{"auth/**"},
 			Rules:  []configfile.Rule{{ID: "no-secrets", Rule: "No secrets."}},
 			Skills: configfile.SkillsSpec{Scope: map[string]configfile.SkillScope{"gha": {Paths: []string{".github/**"}}}},
 		},
 	}
+	op.Models.Routes = []configfile.ModelRoute{{Name: "deep", Model: "p/big"}}
 	m, err := Merge([]byte(`review:
-  reviewers:
-    default: { enabled: false }
-    security:
+  agents:
+    - name: security
+      categories: [security]
       enabled: false
       paths: ['**']
       rules: [{ id: pin-actions, rule: Pin actions. }, { id: no-secrets, rule: Weaker. }, { id: wrap-errors, rule: Weaker. }]
       skills: { scope: { gha: { load: false }, sql: { paths: ['**/*.sql'] } } }
-    perf: { instructions: Mind allocations., model: own/fast, fallback: nope/x }
-    deps:
-      model:
-        - { model: own/fast, when: [{ name: bumps, expr: 'pr.headRef.startsWith("renovate/")' }] }
-        - model: nope/x
+    - { name: perf, categories: [performance], instructions: Mind allocations., model: own/fast, fallback: nope/x }
+    - { name: deep, categories: [tests] }
 `), op)
 	if err != nil {
 		t.Fatal(err)
@@ -549,86 +547,62 @@ func TestMergeReviewers(t *testing.T) {
 	if got := sec.Skills.Scope; len(got) != 2 || got["gha"].Load != nil || len(got["sql"].Paths) != 1 {
 		t.Errorf("security's skill scopes = %+v, want the admin's gha kept and the file's sql added", got)
 	}
-	if _, ok := m.Reviewers[review.DefaultReviewer]; ok {
-		t.Error("the file turned the default reviewer off")
-	}
-	if perf := m.Reviewers["perf"]; perf.Model.Default != "own/fast" || perf.Fallback != "" || perf.Instructions != "Mind allocations." {
+	if perf := m.Reviewers["perf"]; perf.Model != "own/fast" || perf.Fallback != "" || perf.Instructions != "Mind allocations." {
 		t.Errorf("perf = %+v, want the file's with its fallback of no provider dropped", perf)
 	}
-	if deps := m.Reviewers["deps"]; deps.Model != nil {
-		t.Errorf("deps' model = %+v, want a list with a model of no provider dropped whole", deps.Model)
+	if _, ok := m.Reviewers["deep"]; ok || len(m.Models.Routes) != 1 {
+		t.Errorf("a specialist under the admin's replacing agent's name was kept")
 	}
 	if op.Reviewers["security"].Rules[0].ID != "no-secrets" || len(op.Reviewers["security"].Rules) != 1 {
 		t.Error("merging changed the admin's settings")
 	}
 	for _, want := range []string{
-		"reviewers.default was dropped", "reviewers.security was dropped but for its rules and skills",
-		"reviewers.security.rules no-secrets was dropped", "reviewers.security.rules wrap-errors was dropped",
-		"reviewers.security.skills.scope.gha was dropped", `reviewers.perf.fallback "nope/x" was dropped`,
-		"reviewers.deps.model was dropped",
+		"review.agents[0] (security) was dropped but for its rules and skills", "(security).rules no-secrets was dropped",
+		"(security).rules wrap-errors was dropped", "(security).skills.scope.gha was dropped", `(perf).fallback "nope/x" was dropped`,
+		"review.agents[2] (deep) was dropped: an admin's agent of the other kind has that name",
 	} {
 		if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, want) }) {
 			t.Errorf("dropped %q lacks %q", m.Dropped, want)
 		}
 	}
+	if m, _ := Merge([]byte("review: { agents: [{ name: security, categories: [security], rules: [{ id: x, rule: X. }] }] }\n"), op); slices.ContainsFunc(
+		m.Dropped, func(d string) bool { return strings.Contains(d, "dropped but for") }) {
+		t.Errorf("adding a rule alone noted a drop: %q", m.Dropped)
+	}
 }
 
-func TestMergeReviewersCap(t *testing.T) {
+func TestMergeAgentsCap(t *testing.T) {
 	t.Parallel()
 	op := adminSettings()
 	op.Reviewers = map[string]configfile.Reviewer{}
-	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g"} {
-		op.Reviewers[n] = configfile.Reviewer{}
+	for _, n := range []string{"a", "b", "c", "d", "e", "f"} {
+		op.Reviewers[n] = configfile.Reviewer{Name: n, Categories: []review.Category{review.CategoryTests}}
 	}
-	m, err := Merge([]byte("review: { reviewers: { x: {}, y: {} } }\n"), op)
+	op.Models.Routes = []configfile.ModelRoute{{Name: "deep", Model: "p/big"}}
+	m, err := Merge([]byte("review: { agents: [{ name: x, categories: [tests] }, { name: y, categories: [tests] }] }\n"), op)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := m.Reviewers["x"]; !ok || len(m.Reviewers) != configfile.MaxReviewers {
-		t.Fatalf("reviewers = %d, want the cap of %d with x added", len(m.Reviewers), configfile.MaxReviewers)
+	if _, ok := m.Reviewers["x"]; !ok || len(m.Reviewers)+len(m.Models.Routes) != configfile.MaxReviewers {
+		t.Fatalf("agents = %d, want the cap of %d with x added", len(m.Reviewers)+len(m.Models.Routes), configfile.MaxReviewers)
 	}
-	if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "reviewers.y was dropped") }) {
+	if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "review.agents[1] (y) was dropped") }) {
 		t.Errorf("dropped %q, want y past the cap", m.Dropped)
 	}
 }
 
-// TestReferencedReviewers: a reviewer's files are read from the merge base
+// TestReferencedAgents: a specialist's files are read from the merge base
 // with the rest, and one outside the repository is refused.
-func TestReferencedReviewers(t *testing.T) {
+func TestReferencedAgents(t *testing.T) {
 	t.Parallel()
-	f, err := Parse([]byte("review: { reviewers: { sec: { file: docs/sec.md, rules: [{ id: r, file: docs/r.md }] } } }\n"))
+	f, err := Parse([]byte("review: { agents: [{ name: sec, categories: [security], file: docs/sec.md, rules: [{ id: r, file: docs/r.md }] }] }\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := f.Referenced(); !slices.Equal(got, []string{"docs/sec.md", "docs/r.md"}) {
 		t.Errorf("referenced = %q", got)
 	}
-	if _, err := Parse([]byte("review: { reviewers: { sec: { file: /etc/passwd } } }\n")); err == nil {
-		t.Error("a reviewer's absolute file was accepted")
-	}
-}
-
-// TestMergeReviewersDefault: a file that writes the default reviewer's
-// entry, whatever it writes there, has it dropped with a note, and the
-// rest of the file applies.
-func TestMergeReviewersDefault(t *testing.T) {
-	t.Parallel()
-	m, err := Merge([]byte(`ignore: [gen/**]
-review:
-  reviewers:
-    default: { instructions: Be lenient., file: /etc/passwd, rules: [{ id: lax, rule: Allow anything. }] }
-    docs: { instructions: Check the docs. }
-`), adminSettings())
-	if err != nil {
-		t.Fatalf("a file writing the default reviewer = %v, want it parsed", err)
-	}
-	if !slices.Contains(m.Ignore, "gen/**") || m.Reviewers["docs"].Instructions != "Check the docs." {
-		t.Errorf("ignore %q, reviewers %+v; want the rest of the file applied", m.Ignore, m.Reviewers)
-	}
-	if _, ok := m.Reviewers["default"]; ok {
-		t.Error("the file wrote the default reviewer's entry")
-	}
-	if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "review.reviewers.default was dropped") }) {
-		t.Errorf("dropped %q, want the default reviewer's entry noted", m.Dropped)
+	if _, err := Parse([]byte("review: { agents: [{ name: sec, categories: [security], file: /etc/passwd }] }\n")); err == nil {
+		t.Error("an agent's absolute file was accepted")
 	}
 }

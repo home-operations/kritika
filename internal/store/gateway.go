@@ -80,7 +80,7 @@ func (s *Store) MintGatewayToken(ctx context.Context, g GatewayGrant, expires ti
 	}
 	_, err = s.app.Exec(ctx, `INSERT INTO gateway_tokens
 		(token_hash, runner_run_id, account_id, review_id, repository_id, model, fallback, effort, budget_tokens, expires_at, followup_comment_id,
-		 continues, session, reviewers)
+		 continues, session, agents)
 		VALUES ($1, $2, $3, nullif($4, '')::uuid, $5, $6, $7, $8, $9, $10, nullif($11::bigint, 0), nullif($12, '')::uuid, $13, $14::jsonb)`,
 		tokenHash(token), g.RunID, g.AccountID, g.ReviewID, g.RepositoryID, g.Model, g.Fallback, g.Effort, g.Budget, expires, g.FollowupCommentID,
 		g.Continues, g.Session, reviewers)
@@ -99,7 +99,7 @@ func (s *Store) LookupGatewayToken(ctx context.Context, token string) (GatewayGr
 	var g GatewayGrant
 	var reviewers []byte
 	err := s.app.QueryRow(ctx, `SELECT runner_run_id, account_id, coalesce(review_id::text, ''), repository_id, model, fallback, effort,
-		budget_tokens, spent_tokens, coalesce(followup_comment_id, 0), coalesce(continues::text, ''), session, reviewers
+		budget_tokens, spent_tokens, coalesce(followup_comment_id, 0), coalesce(continues::text, ''), session, agents
 		FROM gateway_tokens WHERE token_hash = $1 AND expires_at > now()`, tokenHash(token)).
 		Scan(&g.RunID, &g.AccountID, &g.ReviewID, &g.RepositoryID, &g.Model, &g.Fallback, &g.Effort, &g.Budget, &g.Spent, &g.FollowupCommentID,
 			&g.Continues, &g.Session, &reviewers)

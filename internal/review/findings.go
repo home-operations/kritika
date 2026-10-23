@@ -142,11 +142,11 @@ type Finding struct {
 	// line numbers it uses, on one a re-review carried on unchecked; ""
 	// otherwise. kritika sets it; Parse clears any the model sent.
 	CarriedFrom string `json:"carried_from,omitempty"`
-	// Reviewers name the reviewers that raised the finding, the first the
+	// Agents name the reviewers that raised the finding, the first the
 	// one whose finding was kept when several raised it; none is
 	// DefaultReviewer alone. The runner sets them on a part's findings;
 	// Parse keeps only those the review ran.
-	Reviewers []string `json:"reviewers,omitempty"`
+	Agents []string `json:"agents,omitempty"`
 	// URL links the finding's lines at the head commit. kritika sets it
 	// when rendering; the model never does.
 	URL string `json:"-"`
@@ -622,7 +622,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
 		f.Prior = strings.TrimSpace(f.Prior)
-		f.Reviewers = opts.reviewers(f)
+		f.Agents = opts.reviewers(f)
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():

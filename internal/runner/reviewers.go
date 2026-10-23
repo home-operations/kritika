@@ -12,11 +12,6 @@ import (
 	"github.com/home-operations/kritika/internal/textcut"
 )
 
-// SkipNoReviewer is the skip reason of a review none of whose reviewers
-// applies to the change: the default one is off, and no other one's
-// paths match a changed file.
-const SkipNoReviewer = "no_reviewer"
-
 // partShare is what one part of a split review reviews: its files, its
 // place among its reviewer's parts, counted from 1, and the scope it
 // reviews them at. reviewer is the reviewer it is for in a review with
@@ -101,11 +96,10 @@ func (s partShare) limits(a *AgentLimits) *AgentLimits {
 // reviewerPlan is how a review with reviewers is run: in shares, one or
 // more for each reviewer that applies, the default one's first; or, when
 // shares is nil, as a review with the default reviewer alone always has
-// been, at full scope when full is set. none says no reviewer applies.
+// been, at full scope when full is set.
 type reviewerPlan struct {
 	shares []partShare
 	full   bool
-	none   bool
 }
 
 // planReviewers decides which of the spec's reviewers review the change
@@ -114,14 +108,13 @@ type reviewerPlan struct {
 // applies when a file the change touches matches its paths, or it has
 // none, judged over the whole change as its when conditions were, so the
 // reviewers a pull request gets do not shift from push to push. A review
-// whose reviewers are the default one alone, or none, is not planned in
-// shares. Each reviewer's files are cut into parts as a review's are,
+// whose reviewers are the default one alone is not planned in shares. Each reviewer's files are cut into parts as a review's are,
 // within its share of the parts the run is granted, the diff since the
 // last review cut for a reviewer the last review ran.
 func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths []string) reviewerPlan {
 	reviewers := p.Prompt.Reviewers
 	if reviewers == nil {
-		return reviewerPlan{none: p.Prompt.DefaultOff}
+		return reviewerPlan{}
 	}
 	changed := notIgnored(res.Changed, p.Ignore)
 	type applied struct {
@@ -153,7 +146,9 @@ func planReviewers(p Spec, res *gitfetch.Result, scope review.Scope, deltaPaths 
 	}
 	switch {
 	case len(apply) == 0:
-		return reviewerPlan{none: true}
+		// The default pass always applies, but an agent asked for alone
+		// may not, as when every file it would read is ignored.
+		return reviewerPlan{}
 	case len(apply) == 1 && apply[0].reviewer.Name == review.DefaultReviewer:
 		return reviewerPlan{full: apply[0].reviewer.Full}
 	}
@@ -224,14 +219,19 @@ func reviewerNotes(shares []partShare) []string {
 		if s.reviewer != nil && s.index == 1 && s.count > 1 && !slices.ContainsFunc(shares[:i], func(o partShare) bool {
 			return o.reviewer == s.reviewer
 		}) {
-			notes = append(notes, fmt.Sprintf(noteReviewerSplit, s.reviewer.Name, s.count))
+			who := "The " + s.reviewer.Name + " agent"
+			if s.reviewer.Name == review.DefaultReviewer {
+				who = "The default pass"
+			}
+			notes = append(notes, fmt.Sprintf(noteReviewerSplit, who, s.count))
 		}
 	}
 	return notes
 }
 
-// noteReviewerSplit is noteSplit for one reviewer of several.
-const noteReviewerSplit = "The %s reviewer reviewed in %d parts, each by an agent of its own"
+// noteReviewerSplit is noteSplit for one agent of several, or the default
+// pass beside them.
+const noteReviewerSplit = "%s reviewed in %d parts, each run apart"
 
 // followUpReviewer is the reviewer a follow-up answers for, the one its
 // spec carries, "" for the default reviewer and for a review's run, whose

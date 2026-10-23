@@ -45,7 +45,7 @@ admin's policy; detailed examples follow.
 | [`context`](#context)                                        | files that explain the code                                        | added after                                     |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
 | [`tools`](#repository-tools)                                 | the tools the reviews may run, over the image's                    | added; one under an image tool's name replaces it |
-| [`review.reviewers`](#reviewers)                             | reviewers that run beside the default one, each an agent of its own | added; one under an admin's name takes only rules and skills |
+| [`review.agents`](#agents)                                   | agents that review beside the default pass, or replace it           | specialists added, one under an admin's name taking only rules and skills; the others replace the admin's |
 
 A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
@@ -60,11 +60,10 @@ naming one of them, or any other unknown key, does not parse.
 `review.model` and `review.fallback` are each a `<provider>/<model>` of a
 provider the instance or the repository's account declares, used for the
 review and for follow-ups. A model of any other provider is dropped; the
-account's limits bound what a choice can cost. `review.model` may also be
-a list of [model routes](models.md#model-routes), which pick the review's
-model per pull request; it replaces the admin's model and routes, and is
-dropped whole when one of the models it names, or a route's effort, may
-not be taken. A review whose model fails goes on with the fallback, on
+account's limits bound what a choice can cost. `review.model` replaces
+the admin's model and the admin's [agents that replace the default
+pass](models.md#agents-that-replace-the-default-pass), which the file may
+write its own of. A review whose model fails goes on with the fallback, on
 the same provider or another, and so does a follow-up.
 
 `review.effort` and `confidence.effort` set how hard the review model and
@@ -261,100 +260,103 @@ Rules, context and skills compared:
 | A `context` file | a pointer, with the configuration's description                                | no                |
 | A skill          | its own description, until the review reads it; whole, when its scope loads it | no                |
 
-### Reviewers
+### Agents
 
-Every review has a `default` reviewer: kritika's own instructions, on
+Every review has a **default pass**: kritika's own instructions, on
 `review.model`, with the repository's `rules` and `skills`.
-`review.reviewers` adds others, each an agent of its own over the change,
-or over the part of it their `paths` cover, run in parallel with the
-default one:
+`review.agents` is a list of agents beside it, each by its `name`:
 
 ```yaml
 review:
-  reviewers:
-    security:
-      instructions: |
-        Review as an application security engineer. Trace every input that
-        reaches a query, a shell, a path or a redirect, and name the exploit.
+  model: anthropic/claude-sonnet-5-5     # the default pass
+  fallback: anthropic/claude-haiku-5-5
+  effort: medium
+  agents:
+    - name: security                     # limited to categories: runs beside the others
+      model: anthropic/claude-opus-5-5
       categories: [security]
-      model:
-        - name: deep
-          model: anthropic/claude-opus-5-5
-          effort: high
-          when: [{ name: large, expr: pr.lines > 800 }]
-        - model: anthropic/claude-sonnet-5-5
-      paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"]
+      instructions: Review as an application security engineer.
+      when: [{ name: auth, paths: ["**/auth/**", ".github/workflows/**"] }]
+    - name: deep                         # every category: replaces the default pass
+      model: anthropic/claude-opus-5-5
+      effort: high
       when:
-        - { name: auth, paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"] }
-        - { name: deps, expr: 'pr.headRef.startsWith("renovate/")' }
-      rules:
-        - id: pin-actions
-          rule: Third-party actions are pinned to a commit digest.
+        - { name: migrations, paths: ["db/migrations/**"] }
+        - { name: large, expr: pr.lines > 800 }
 ```
+
+- **An agent with `categories` is a specialist.** It reviews the change,
+  or the files its `paths` cover, for those categories alone, as an agent
+  of its own beside the default pass, when one of its `when` conditions
+  holds, or always without any.
+- **An agent without `categories` replaces the default pass** when its
+  conditions hold: the first such agent that holds picks the review's
+  model, as [agents that replace the default
+  pass](models.md#agents-that-replace-the-default-pass) describes. It
+  takes only `name`, `model`, `fallback`, `effort`, `when` and `enabled`.
+
+A specialist takes:
 
 | Key            | What                                                                                                                                       |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| the name       | lowercase letters, digits and hyphens, at most 64 characters; the inline comments and the summary credit a finding to it                   |
-| `instructions` | what the reviewer reviews for, at most 8000 characters, added after kritika's own instructions                                             |
+| `name`         | lowercase letters, digits and hyphens, at most 64 characters, not `default`; the comments credit a finding to it                           |
+| `categories`   | the only finding categories it may report; its schema and its submission check refuse the rest                                            |
+| `instructions` | what it reviews for, at most 8000 characters, added after kritika's own instructions                                                       |
 | `file`         | instead of `instructions`, a file read from the merge base whose content they are; the first 32 KiB is used                                |
-| `categories`   | the only finding categories it may report; its schema and its submission check refuse the rest. Every category when unset                 |
-| `model`, `fallback`, `effort` | as `review.*`, for this reviewer: a model, or [routes](models.md) that end with one, picked once per review as the default reviewer's are, and named in the summary. Where unset, what `review.model` picks for the pull request, its route included. A list with a model of a provider the account may not use is dropped whole |
+| `model`, `fallback`, `effort` | as `review.*`, for this agent; where unset, the default pass's, as the agents picked it                                     |
 | `paths`        | the changed files it reads, every one when unset; a pull request that changes none of them is not reviewed by it                          |
-| `when`         | conditions in a model route's shape, `{name, expr}` or `{name, paths}` with `pr.lines` usable: it runs only on a pull request one of them holds for |
-| `rules`        | its checks, in place of the repository's, which are the default reviewer's                                                                 |
-| `skills.scope` | skill scopes laid over the repository's for this reviewer, so a skill can be given whole to it alone                                       |
+| `when`         | conditions as a trigger's, `{name, expr}` or `{name, paths}` with `pr.lines` usable: it runs only on a pull request one of them holds for |
+| `rules`        | its checks, in place of the repository's, which are the default pass's                                                                     |
+| `skills.scope` | skill scopes laid over the repository's for this agent, so a skill can be given whole to it alone                                          |
 | `agent`        | `steps`, `tokens` and `timeout` (at least `1s`) for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them |
 | `enabled`      | `false` turns it off                                                                                                                       |
 
-- **One review.** The reviewers' answers are merged into one summary
+- **One review.** The agents' answers are merged into one summary
   comment, one commit status and one confidence score. Each inline finding
-  names the reviewer that raised it, as in `P1 · Open redirect · security ·
-  security`, and the summary's **Review context** block lists the
-  reviewers that ran. A repository with the default reviewer alone reads
-  exactly as before.
-- **Duplicates merge.** When two reviewers raise the same thing (one path,
+  names the agent that raised it, as in `P1 · Open redirect · security ·
+  security`, and the summary's **Review context** block lists the agents
+  that ran. A review by the default pass alone reads exactly as before.
+- **Duplicates merge.** When two agents raise the same thing (one path,
   overlapping lines, the same category or title), one comment is posted:
   the more severe finding, crediting both.
-- **Split by reviewer.** A large diff is split into parts within each
-  reviewer, and the run is sized and budgeted for every reviewer's parts.
-  A reviewer whose parts did not all submit leaves the review
+- **Split by agent.** A large diff is split into parts within each agent,
+  and the run is sized and budgeted for every agent's parts. An agent
+  whose parts did not all submit leaves the review
   [incomplete](reviews.md#the-commit-status), its findings posted and named
   in the summary; a retry of the same job reuses the parts that did.
-- **Judged over the whole pull request.** Which reviewers run, and on
-  which model, is decided from the whole change before any model is
-  called, as model routes are, so a pull request keeps its reviewers from
-  push to push and its author cannot talk one away.
-- **Incremental per reviewer.** A re-review builds on the last one only for
-  the reviewers the last one ran: one it did not, whose `when` first holds
-  on a later push say, reviews its files whole, and none of its findings
-  is held back.
+- **Judged over the whole pull request.** Which agents run, and on which
+  model, is decided from the whole change before any model is called, so
+  a pull request keeps its agents from push to push and its author cannot
+  talk one away.
+- **Incremental per agent.** A re-review builds on the last one only for
+  the agents the last one ran: one it did not, whose `when` first holds on
+  a later push say, reviews its files whole, and none of its findings is
+  held back.
 - **Follow-ups.** A reply or mention in a finding's thread is answered by
-  the reviewer that raised it, with its instructions, rules and model,
-  while that reviewer is on; the default reviewer answers otherwise.
-- **On demand.** `@<bot> review <name>` runs that reviewer alone, whatever
-  its `paths` and `when`, and carries the other reviewers' findings on
-  unchecked; `@<bot> review default` runs the default one alone. A
-  reviewer that is off, the default one included, is not run on demand
-  either: every reviewer that applies runs instead, with a note.
-- **The admin's reviewers.** A reviewer the admin defines can only gain
+  the specialist that raised it, with its instructions, rules and model,
+  while it is on; the default pass answers otherwise.
+- **On demand.** `@<bot> review <name>` runs that specialist alone,
+  whatever its `paths` and `when`, and carries the other agents' findings
+  on unchecked; `@<bot> review default` runs the default pass alone, and
+  `@<bot> review <name>` of an agent without categories runs the default
+  pass on its model. A name of no agent that is on runs every agent that
+  applies, with a note.
+- **The admin's agents.** A specialist the admin defines can only gain
   rules (under ids of their own) and skill scopes (of skills it does not
-  scope) from this file; anything else written for it, and
-  `review.reviewers.default`, is dropped with a note. An admin may turn
-  the default reviewer off with
-  `review: { reviewers: { default: { enabled: false } } }`;
-  a pull request none of whose reviewers then applies is skipped as
-  `no reviewer applies to the change`.
-- **Shared tools.** A reviewer runs the repository's
-  [tools](#repository-tools) and commands, as the default one does: there
-  is no per-reviewer tool list.
+  scope) from this file; anything else written for it is dropped with a
+  note. The file's agents without categories replace the admin's, whole,
+  as its `review.model` does.
+- **Shared tools.** A specialist runs the repository's
+  [tools](#repository-tools) and commands, as the default pass does: there
+  is no per-agent tool list.
 - **Model slots.** A review holds a slot of the account's
-  [`limits.concurrency`](configuration.md#accounts) on each model its
-  reviewers that are on use, as it does on `review.model`, and waits for
-  one as it waits for the review model's.
+  [`limits.concurrency`](configuration.md#accounts) on each model of the
+  specialists it runs, as it does on the default pass's, and waits for one
+  as it waits for the default pass's.
 
-Each reviewer spends tokens of its own: with two reviewers, a review costs
-about twice as much. The dashboard's review timeline shows each part's
-reviewer and cost, with a total by reviewer.
+Each specialist spends tokens of its own: with two, a review costs about
+three times as much. The dashboard's review timeline shows each part's
+agent and cost, with a total by agent.
 
 ### Agent files
 
@@ -414,7 +416,7 @@ The summary template's dot is the review:
 | `.Reviews`                                                                   | how many reviews of the pull request this one makes                                                                      |
 | `.Model`                                                                     | the review model                                                                                                         |
 | `.Effort`                                                                    | the effort it reasoned at, "" for the provider's default                                                                 |
-| `.Route`                                                                     | the [model route](models.md#model-routes) that picked the model and the condition that held, escaped for Markdown, "" for the default |
+| `.Route`                                                                     | the [agent that replaced the default pass](models.md#agents-that-replace-the-default-pass) and the condition that held, escaped for Markdown, "" for the default |
 | `.Cost`                                                                      | what the pull request's reviews have cost, "" unless the admin's `review.cost` is on                                     |
 | `.AuthorIsBot`                                                               | whether a bot opened the pull request                                                                                    |
 | `.Result.Summary.Headline`, `.Result.Summary.Take`, `.Result.Summary.Praise` | the review's headline, its take, and what it found good                                                                  |
@@ -427,7 +429,7 @@ The summary template's dot is the review:
 | `.Incremental`, `.PriorHeadSHA`, `.PriorHeadURL`                             | whether the review covered only what changed since the last one, and that review's head                                  |
 | `.Prior`                                                                     | the last review's findings this review listed as resolved, with `.Resolved`, then those dismissed, with `.Dismissed` and `.DismissReason` |
 | `.Sources`                                                                   | links to what the review's commands fetched                                                                              |
-| `.Reviewers`, `.NamedReviewers`                                             | the [reviewers](#reviewers) the review ran, in order, and whether one other than the default ran, alone or beside it   |
+| `.Agents`, `.NamedAgents`                                                   | the [agents](#agents) the review ran, in order, and whether a specialist ran, alone or beside the default pass        |
 | `.Skills`, `.Commands`                                                       | the repository's skills and the run tool's commands the review was offered, each with `.Names`, every one offered, and `.Used`, the ones it read or ran; `.Named` is `.Used` sorted and cut to the first 10, `.More` how many that leaves out |
 | `.Incomplete`                                                                | why the head was not fully reviewed, "" otherwise                                                                        |
 | `.Confidence`                                                                | nil unless the review was scored: `.Score`, `.Threshold`, `.Passed`, `.Risk`, `.Reason` (the scorer's own), `.Explanation` (the reason, then how a floor held the risk when one did), `.Rated` and `.Held` (the scorer's rating and the path that held it, "" when none did) and `.Model` |
@@ -443,7 +445,7 @@ beside it:
 | `.Severity`, `.Category`     | how much it matters, and what kind of problem it is; `.Severity.Label` is its badge text, P0 to P2, and `.Severity.Badge .WebURL` the badge image, or the label in bold without a dashboard |
 | `.WebURL`                    | the dashboard's origin, "" when the admin's `comments.dashboard` is off |
 | `.Title`, `.Explanation`     | what it is                                                       |
-| `.Reviewers`, `.ReviewedBy`  | the [reviewers](#reviewers) that raised it, none for the default one alone, and their names joined for a comment, "" for the default one alone |
+| `.Agents`, `.AgentNames`     | the [agents](#agents) that raised it, none for the default pass alone, and their names joined for a comment, "" for the default pass alone |
 | `.SuggestedFix`              | the fix, in prose                                                |
 | `.Replacement`               | the lines that replace the finding's, for a one-click suggestion |
 | `.AgentPrompt`               | a prompt a coding agent can apply the fix from                   |
@@ -653,8 +655,8 @@ produce summary notes when content is omitted:
 | a skill's description                                | 1024 characters                           |
 | the skills' names and descriptions in the prompt     | 4 KiB                                     |
 | the skills given whole in the prompt                 | 32 KiB; one past it is offered by name    |
-| reviewers besides the default one                    | 8, the admin's and the file's together    |
-| a reviewer's instructions                            | 8000 characters, or 32 KiB of its file    |
+| agents                                               | 8, the admin's and the file's together    |
+| an agent's instructions                              | 8000 characters, or 32 KiB of its file    |
 
 Context file contents are read on demand by `read_file`, outside the
 configuration-file limits above. Each read is capped at `agent.output`

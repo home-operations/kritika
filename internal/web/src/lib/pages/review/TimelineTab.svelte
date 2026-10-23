@@ -31,13 +31,13 @@
   const segs = $derived(d.runnerRun ? segments(d.runnerRun, clock.now) : []);
   const totalMs = $derived(segs.reduce((a, s) => a + s.ms, 0));
   const split = $derived((d.agentRun?.parts.length ?? 0) > 1);
-  // reviewerCosts sums each reviewer's parts' cost, the default reviewer's being the parts with none named.
-  const reviewerCosts = $derived.by(() => {
+  // agentCosts sums each agent's parts' cost, the default agent's being the parts with none named.
+  const agentCosts = $derived.by(() => {
     const m = new Map<string, number>();
-    for (const p of d.agentRun?.parts ?? []) m.set(p.reviewer ?? 'default', (m.get(p.reviewer ?? 'default') ?? 0) + (p.costUsd ?? 0));
+    for (const p of d.agentRun?.parts ?? []) m.set(p.agent ?? 'default', (m.get(p.agent ?? 'default') ?? 0) + (p.costUsd ?? 0));
     return m;
   });
-  const named = $derived((d.agentRun?.parts ?? []).some((p) => p.reviewer));
+  const named = $derived((d.agentRun?.parts ?? []).some((p) => p.agent));
   // A split review's steps are named by part and by step within the part.
   const steps = $derived.by(() => {
     const seen = new Map<number, number>();
@@ -118,7 +118,7 @@
             {#each a.parts as p, i (i)}
               {@const files = `${p.paths.length} ${p.paths.length === 1 ? 'file' : 'files'} in`}
               <tr>
-                <td class="num">{p.reviewer ? `${p.reviewer} · part ${i + 1}` : i + 1}</td>
+                <td class="num">{p.agent ? `${p.agent} · part ${i + 1}` : i + 1}</td>
                 <td class="name-fill" title="{files} {dirs(p.paths)}">{files} <span class="mono">{dirs(p.paths)}</span>{#if p.full}<span class="small muted text-ui-sm"> · whole change</span>{/if}</td>
                 <td class="num">{p.steps}</td>
                 <td class="num">{p.costUsd !== undefined ? costTotal(p.costUsd) : ''}</td>
@@ -130,7 +130,7 @@
         </table>
       </div>
       {#if named}
-        <p class="small muted text-ui-sm mx-4 my-2">Cost by reviewer: {[...reviewerCosts].map(([name, c]) => `${name} ${costTotal(c)}`).join(' · ')}</p>
+        <p class="small muted text-ui-sm mx-4 my-2">Cost by agent: {[...agentCosts].map(([name, c]) => `${name} ${costTotal(c)}`).join(' · ')}</p>
       {/if}
     {/if}
     <dl class="deflist grid grid-cols-[minmax(120px,_max-content)_minmax(0,_1fr)] gap-y-1 gap-x-3.5 my-3 mx-4 text-ui-sm">

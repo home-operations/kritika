@@ -56,7 +56,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix,
 			f.replacement, f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up,
 			f.reactions_down, f.rules, f.category, coalesce(l.dismissed, false), coalesce(l.dismiss_reason, ''),
-			coalesce(l.addressed, false), f.reviewers
+			coalesce(l.addressed, false), f.agents
 		FROM findings f LEFT JOIN latest l
 			ON coalesce(nullif(l.fingerprint, ''), l.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
 		WHERE f.review_id = $1
@@ -191,7 +191,7 @@ type AgentPart struct {
 	// Reviewer is the reviewer the part was for in a review with several,
 	// "" in a review with the default reviewer alone; Full says it
 	// reviewed the whole change where the review built on the last one.
-	Reviewer string          `json:"reviewer,omitempty"`
+	Reviewer string          `json:"agent,omitempty"`
 	Full     bool            `json:"full,omitempty"`
 	Paths    []string        `json:"paths"`
 	Stop     string          `json:"stop"`

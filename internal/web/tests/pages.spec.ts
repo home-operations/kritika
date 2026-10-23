@@ -758,32 +758,32 @@ test.describe('findings', () => {
     await expect(search).toBeFocused();
   });
 
-  test('a finding names the reviewers that raised it, on the list and in its review', async ({ page }) => {
-    const f = { ...g.accountFinding, reviewers: ['security'] };
+  test('a finding names the agents that raised it, on the list and in its review', async ({ page }) => {
+    const f = { ...g.accountFinding, agents: ['security'] };
     const seen = await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/findings$`), g.pageOf([f])], ...g.defaultApi()]);
     await page.goto(`/${T}/findings`);
     const badge = page.locator('.finding-row').first().getByRole('link', { name: 'security', exact: true });
-    await expect(badge).toHaveAttribute('title', 'Raised by the security reviewer');
+    await expect(badge).toHaveAttribute('title', 'Raised by the security agent');
     await badge.click();
-    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?reviewer=security$`));
-    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams.get('reviewer')).toBe('security');
-    await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue('reviewer:security');
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?agent=security$`));
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams.get('agent')).toBe('security');
+    await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue('agent:security');
 
-    // A reviewer filter whose page names no reviewer keeps its token, so an edit keeps the filter.
+    // A agent filter whose page names no agent keeps its token, so an edit keeps the filter.
     await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/findings$`), g.pageOf([g.accountFinding])], ...g.defaultApi()]);
-    await page.goto(`/${T}/findings?reviewer=default`);
+    await page.goto(`/${T}/findings?agent=default`);
     const box = page.getByRole('combobox', { name: 'Search findings' });
-    await expect(box).toHaveValue('reviewer:default');
-    await box.fill('reviewer:default deref');
-    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?reviewer=default&q=deref$`));
+    await expect(box).toHaveValue('agent:default');
+    await box.fill('agent:default deref');
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?agent=default&q=deref$`));
 
-    const review = { ...g.reviewDetail, findings: [{ ...g.reviewDetail.findings[0]!, reviewers: ['security', 'default'] }] };
+    const review = { ...g.reviewDetail, findings: [{ ...g.reviewDetail.findings[0]!, agents: ['security', 'default'] }] };
     await g.mockApi(page, [[/\/reviews\/rev-1$/, review], ...g.defaultApi()]);
     await page.goto(`/${T}/reviews/rev-1`);
     await page.getByRole('button', { name: `Details for ${review.findings[0]!.title}`, exact: true }).click();
     const head = page.locator('.finding-head');
-    await expect(head.getByTitle('Raised by the security reviewer')).toHaveText('security');
-    await expect(head.getByTitle('Raised by the default reviewer')).toHaveText('default');
+    await expect(head.getByTitle('Raised by the security agent')).toHaveText('security');
+    await expect(head.getByTitle('Raised by the default agent')).toHaveText('default');
   });
 
   test('a cited rule narrows the list to the findings that cite it', async ({ page }) => {
@@ -935,7 +935,7 @@ test.describe('review', () => {
     await expect(page.locator('.finding')).toContainText(f.title);
     await expect(page.locator('.finding')).toContainText(`${f.path}:${f.line}-${f.endLine}`);
     await expect(page.locator('.finding .code-block')).toContainText(f.replacement);
-    await expect(page.locator('.finding-head .badge.mono')).toHaveText([...f.rules, ...f.reviewers]);
+    await expect(page.locator('.finding-head .badge.mono')).toHaveText([...f.rules, ...f.agents]);
     // The golden finding was posted inline as comment 55 on the pull request.
     await expect(page.locator('.finding').getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute(
       'href',
@@ -1154,7 +1154,7 @@ test.describe('review', () => {
     await expect(labels).toHaveText(['1.0', '1.1', '2.0']);
   });
 
-  test('a part names its reviewer, marks a whole-change review and shows its cost, with each reviewer\'s total', async ({ page }) => {
+  test('a part names its agent, marks a whole-change review and shows its cost, with each agent\'s total', async ({ page }) => {
     const a = g.reviewDetail.agentRun!;
     const agentRun = {
       ...a,
@@ -1164,7 +1164,7 @@ test.describe('review', () => {
         { ...a.timeline[0]!, index: 1, part: 2 },
       ],
       parts: [
-        { reviewer: 'security', paths: ['server/a.go'], stop: 'submitted', error: '', steps: 1, costUsd: 0.12 },
+        { agent: 'security', paths: ['server/a.go'], stop: 'submitted', error: '', steps: 1, costUsd: 0.12 },
         { paths: ['server/a.go', 'web/b.ts'], stop: 'submitted', error: '', steps: 1, full: true, costUsd: 0.3 },
       ],
     };
@@ -1175,16 +1175,16 @@ test.describe('review', () => {
     await expect(rows.nth(0).locator('td').nth(3)).toHaveText('$0.12');
     await expect(rows.nth(1).locator('td').first()).toHaveText('2');
     await expect(rows.nth(1).locator('td').nth(1)).toContainText('whole change');
-    await expect(page.getByText(/^Cost by reviewer: /)).toHaveText('Cost by reviewer: security $0.12 · default $0.30');
+    await expect(page.getByText(/^Cost by agent: /)).toHaveText('Cost by agent: security $0.12 · default $0.30');
   });
 
-  test('a run of one named reviewer in one part still names it, its whole-change review and its cost', async ({ page }) => {
+  test('a run of one named agent in one part still names it, its whole-change review and its cost', async ({ page }) => {
     const a = g.reviewDetail.agentRun!;
     const agentRun = {
       ...a,
       steps: 1,
       timeline: [{ ...a.timeline[0]!, index: 0, part: 1 }],
-      parts: [{ reviewer: 'security', paths: ['server/a.go'], stop: 'submitted', error: '', steps: 1, full: true, costUsd: 0.12 }],
+      parts: [{ agent: 'security', paths: ['server/a.go'], stop: 'submitted', error: '', steps: 1, full: true, costUsd: 0.12 }],
     };
     await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
     await page.goto(`/${T}/reviews/rev-1/timeline`);
@@ -1192,7 +1192,7 @@ test.describe('review', () => {
     await expect(row.locator('td').first()).toHaveText('security · part 1');
     await expect(row.locator('td').nth(1)).toContainText('whole change');
     await expect(row.locator('td').nth(3)).toHaveText('$0.12');
-    await expect(page.getByText(/^Cost by reviewer: /)).toHaveText('Cost by reviewer: security $0.12');
+    await expect(page.getByText(/^Cost by agent: /)).toHaveText('Cost by agent: security $0.12');
   });
 
   test("a split review's conversation shows each part's turns together, then those after them", async ({ page }) => {

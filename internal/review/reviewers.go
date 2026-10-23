@@ -15,16 +15,16 @@ const DefaultReviewer = "default"
 // RaisedBy reports whether reviewer raised f, a finding with no reviewers
 // being the default reviewer's.
 func (f Finding) RaisedBy(reviewer string) bool {
-	if len(f.Reviewers) == 0 {
+	if len(f.Agents) == 0 {
 		return reviewer == DefaultReviewer
 	}
-	return slices.Contains(f.Reviewers, reviewer)
+	return slices.Contains(f.Agents, reviewer)
 }
 
 // Specialist is the first reviewer other than DefaultReviewer that raised
 // f, "" when only the default reviewer did.
 func (f Finding) Specialist() string {
-	for _, r := range f.Reviewers {
+	for _, r := range f.Agents {
 		if r != DefaultReviewer {
 			return r
 		}
@@ -32,21 +32,21 @@ func (f Finding) Specialist() string {
 	return ""
 }
 
-// ReviewedBy names the reviewers that raised f, as comments credit them,
+// AgentNames names the reviewers that raised f, as comments credit them,
 // or "" when the default reviewer alone did: a repository with no other
 // reviewer reads its findings as it always has.
-func (f Finding) ReviewedBy() string {
+func (f Finding) AgentNames() string {
 	if f.Specialist() == "" {
 		return ""
 	}
-	return strings.Join(f.Reviewers, ", ")
+	return strings.Join(f.Agents, ", ")
 }
 
 // reviewers is f's reviewers that opts names, once each, nil when none
 // is, which is the default reviewer's.
 func (opts ParseOptions) reviewers(f Finding) []string {
 	var out []string
-	for _, r := range f.Reviewers {
+	for _, r := range f.Agents {
 		if slices.Contains(opts.Reviewers, r) && !slices.Contains(out, r) {
 			out = append(out, r)
 		}
@@ -59,7 +59,7 @@ func (opts ParseOptions) reviewers(f Finding) []string {
 
 // allows reports whether one of f's reviewers may report its category.
 func (opts ParseOptions) allows(f Finding) bool {
-	reviewers := f.Reviewers
+	reviewers := f.Agents
 	if len(reviewers) == 0 {
 		reviewers = []string{DefaultReviewer}
 	}
@@ -239,7 +239,7 @@ func mergeFinding(kept, other Finding) Finding {
 			reviewers = append(reviewers, r)
 		}
 	}
-	kept.Reviewers = reviewers
+	kept.Agents = reviewers
 	if kept.Fingerprint == "" && other.Fingerprint != "" {
 		kept.Fingerprint = other.Fingerprint
 	}
@@ -249,8 +249,8 @@ func mergeFinding(kept, other Finding) Finding {
 // raisedBy is f's reviewers, DefaultReviewer for a finding that names
 // none.
 func raisedBy(f Finding) []string {
-	if len(f.Reviewers) == 0 {
+	if len(f.Agents) == 0 {
 		return []string{DefaultReviewer}
 	}
-	return slices.Clone(f.Reviewers)
+	return slices.Clone(f.Agents)
 }

@@ -35,12 +35,8 @@ func TestPlanReviewers(t *testing.T) {
 		scope     review.Scope
 		want      []share
 		full      bool
-		none      bool
-		// defaultOff marks the default reviewer off, as the worker does.
-		defaultOff bool
 	}{
 		{name: "no reviewers is the review as it always was"},
-		{name: "no reviewers with the default one off is none", defaultOff: true, none: true},
 		{name: "the default reviewer alone too", reviewers: []Reviewer{def}},
 		{name: "the default reviewer the last review did not run reviews the whole change", reviewers: []Reviewer{{Name: def.Name, Full: true}},
 			scope: review.ScopeIncremental, full: true},
@@ -52,7 +48,7 @@ func TestPlanReviewers(t *testing.T) {
 				{"security", []string{"auth/login.go"}, review.ScopeFull},
 			},
 		},
-		{name: "none that applies", reviewers: []Reviewer{{Name: "docs", Paths: []string{"**/*.md"}}}, none: true},
+		{name: "an agent alone that does not apply runs the default pass as always", reviewers: []Reviewer{{Name: "docs", Paths: []string{"**/*.md"}}}},
 		{
 			name:      "on a re-review, a file reverted since the last one is still the reviewer's",
 			reviewers: []Reviewer{def, {Name: "web", Paths: []string{"web/**"}}, {Name: "gone", Paths: []string{"old/**"}}},
@@ -86,11 +82,11 @@ func TestPlanReviewers(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			s := reviewSpec()
-			s.Prompt.Reviewers, s.Prompt.DefaultOff = tt.reviewers, tt.defaultOff
+			s.Prompt.Reviewers = tt.reviewers
 			deltaPaths := []string{"web/page.go", "old/x.go"}
 			plan := planReviewers(s, res, tt.scope, deltaPaths)
-			if plan.full != tt.full || plan.none != tt.none {
-				t.Fatalf("plan = %+v, want full %v none %v", plan, tt.full, tt.none)
+			if plan.full != tt.full {
+				t.Fatalf("plan = %+v, want full %v", plan, tt.full)
 			}
 			var got []share
 			for _, sh := range plan.shares {
@@ -124,7 +120,7 @@ func TestPlanReviewersSplit(t *testing.T) {
 			t.Errorf("share %d is part %d of %d of %s", i, sh.index, sh.count, sh.name())
 		}
 	}
-	if notes := reviewerNotes(plan.shares); len(notes) != 2 || !strings.Contains(notes[1], "security reviewer reviewed in 2 parts") {
+	if notes := reviewerNotes(plan.shares); len(notes) != 2 || !strings.Contains(notes[0], "The default pass reviewed in 2 parts") || !strings.Contains(notes[1], "The security agent reviewed in 2 parts") {
 		t.Errorf("notes = %q", notes)
 	}
 }
@@ -143,7 +139,7 @@ func TestPartPromptsReviewers(t *testing.T) {
 	s.Prompt.Rules = []configfile.Rule{{ID: "house-rule", Rule: "Mind the house."}}
 	s.Prompt.Prior = []review.Finding{
 		{Path: "auth/login.go", Line: 1, Severity: review.SeverityP1, Title: "default's earlier finding"},
-		{Path: "auth/login.go", Line: 2, Severity: review.SeverityP1, Title: "security's earlier finding", Reviewers: []string{"security"}},
+		{Path: "auth/login.go", Line: 2, Severity: review.SeverityP1, Title: "security's earlier finding", Agents: []string{"security"}},
 	}
 	s.Prompt.Reviewers = []Reviewer{
 		{Name: review.DefaultReviewer},
@@ -204,7 +200,7 @@ func TestPartPromptsReviewers(t *testing.T) {
 func TestMergePartsReviewers(t *testing.T) {
 	parts := []reviewPart{{paths: []string{"a.go"}, reviewer: review.DefaultReviewer}, {paths: []string{"a.go"}, reviewer: "security", full: true}}
 	sub := json.RawMessage(`{"summary":{"headline":"H","take":"T.","praise":[]},"findings":[{"path":"a.go","line":1,"severity":"p2",` +
-		`"category":"security","title":"t","explanation":"e","reviewers":["ghost"]}]}`)
+		`"category":"security","title":"t","explanation":"e","agents":["ghost"]}]}`)
 	results := []agent.Result{{Stop: agent.StopSubmitted, Submitted: sub}, {Stop: agent.StopSubmitted, Submitted: sub}}
 	merged, records, err := mergeParts(parts, results, Secrets{})
 	if err != nil {
@@ -214,8 +210,8 @@ func TestMergePartsReviewers(t *testing.T) {
 	if err := json.Unmarshal(merged.Submitted, &res); err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Findings) != 2 || !slices.Equal(res.Findings[0].Reviewers, []string{"default"}) ||
-		!slices.Equal(res.Findings[1].Reviewers, []string{"security"}) {
+	if len(res.Findings) != 2 || !slices.Equal(res.Findings[0].Agents, []string{"default"}) ||
+		!slices.Equal(res.Findings[1].Agents, []string{"security"}) {
 		t.Errorf("findings = %+v, want each naming its part's reviewer", res.Findings)
 	}
 	if records[1].Reviewer != "security" || !records[1].Full || records[0].Full {

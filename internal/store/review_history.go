@@ -64,7 +64,7 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 		return CompletedReview{}, err
 	}
 	rows, err := tx.Query(ctx, `SELECT path, line, severity, category, title, explanation, suggested_fix, posted_inline,
-		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules, fingerprint, coalesce(carried_from, ''), reviewers
+		end_line, replacement, agent_prompt, coalesce(forge_comment_id, 0), rules, fingerprint, coalesce(carried_from, ''), agents
 		FROM findings WHERE review_id = $1 ORDER BY path, line`, p.ID)
 	if err != nil {
 		return CompletedReview{}, fmt.Errorf("store: load findings: %w", err)
@@ -73,10 +73,10 @@ func LastCompletedReview(ctx context.Context, tx pgx.Tx, prID string) (Completed
 		var f CompletedFinding
 		var sev, cat string
 		err := row.Scan(&f.Path, &f.Line, &sev, &cat, &f.Title, &f.Explanation, &f.SuggestedFix, &f.PostedInline,
-			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.CommentID, &f.Rules, &f.Fingerprint, &f.CarriedFrom, &f.Reviewers)
+			&f.EndLine, &f.Replacement, &f.AgentPrompt, &f.CommentID, &f.Rules, &f.Fingerprint, &f.CarriedFrom, &f.Agents)
 		f.Severity, f.Category = review.Severity(sev), review.Category(cat)
-		if len(f.Reviewers) == 0 {
-			f.Reviewers = nil
+		if len(f.Agents) == 0 {
+			f.Agents = nil
 		}
 		return f, err
 	})

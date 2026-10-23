@@ -511,7 +511,7 @@ func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (ag
 			// A part answers for its reviewer alone, whatever its
 			// submission says.
 			for j := range res.Findings {
-				res.Findings[j].Reviewers = []string{name}
+				res.Findings[j].Agents = []string{name}
 			}
 		}
 		summary, err := json.Marshal(res.Summary)

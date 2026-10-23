@@ -264,7 +264,7 @@ func unfinishedParts(parts []store.AgentPart) []string {
 			files = append(slices.Clone(files[:maxNamedFiles]), fmt.Sprintf("%d more", n-maxNamedFiles))
 		}
 		if part.Reviewer != "" {
-			notes = append(notes, fmt.Sprintf("Part %d of %d, the %s reviewer's, ended before it submitted, so it did not review: %s",
+			notes = append(notes, fmt.Sprintf("Part %d of %d, the %s agent's, ended before it submitted, so it did not review: %s",
 				i+1, len(parts), part.Reviewer, strings.Join(files, ", ")))
 			continue
 		}
@@ -278,14 +278,11 @@ func unfinishedParts(parts []store.AgentPart) []string {
 const maxNamedFiles = 5
 
 // skipDescription is how the commit status states a skip: a repository's
-// own reason, a bot's unchanged patch or no reviewer that applies, and for
-// a filtered one the name of the condition that decided, "" for none.
+// own reason or a bot's unchanged patch, and for a filtered one the name
+// of the condition that decided, "" for none.
 func skipDescription(reason, filter string) string {
-	switch reason {
-	case runner.SkipUnchangedPatch:
+	if reason == runner.SkipUnchangedPatch {
 		return "patch unchanged since the last review"
-	case runner.SkipNoReviewer:
-		return "no reviewer applies to the change"
 	}
 	desc := repoconfig.SkipReason(reason).Description()
 	if filter != "" {
@@ -453,7 +450,7 @@ func (p *publishPhase) writeBack(
 		Effort: string(p.settings.Models.Effort), Route: review.FooterText(p.settings.Models.Route),
 		HeadSubject: p.headSubject(ctx, owner, repo), Reviews: p.reviews(ctx), Cost: p.cost(ctx),
 		AuthorIsBot: p.pr.authorIsBot, Result: res, Counts: counts, Notes: notes, Unanchored: unanchored, HeldBack: p.heldBack,
-		Reviewers:   p.parse.Reviewers,
+		Agents:      p.parse.Reviewers,
 		Incremental: p.scope == review.ScopeIncremental, PriorHeadSHA: p.prior.headSHA, Sources: sources, Skills: skills, Commands: commands,
 		WebURL: web, PullURL: pull, Confidence: p.confidence,
 	}

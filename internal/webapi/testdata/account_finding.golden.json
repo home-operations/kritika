@@ -17,7 +17,7 @@
   "reactionsUp": 2,
   "reactionsDown": 1,
   "rules": ["wrap-errors"],
-  "reviewers": [],
+  "agents": [],
   "status": "addressed",
   "dismissReason": "",
   "reviewId": "rev-1",

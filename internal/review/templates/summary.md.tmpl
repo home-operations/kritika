@@ -18,14 +18,14 @@
 
 {{ if .Result.Findings -}}
 {{ range .Result.Findings -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .ReviewedBy }} · {{ . }}{{ end }}{{ if .CarriedFrom }} · not rechecked since `{{ trunc 7 .CarriedFrom }}`{{ end }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}{{ if .CarriedFrom }} · not rechecked since `{{ trunc 7 .CarriedFrom }}`{{ end }}
 {{ end }}
 {{ end -}}
 {{ if .Unanchored -}}
 **Outside the diff**
 
 {{ range .Unanchored -}}
-- {{ .Severity.Badge $.WebURL }} `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .ReviewedBy }} · {{ . }}{{ end }}
+- {{ .Severity.Badge $.WebURL }} `{{ .Path }}:{{ .Line }}` {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
 
 {{ .Explanation | indent 2 }}
 {{ end }}
@@ -35,7 +35,7 @@
 <summary>Held back ({{ len .HeldBack }}): not on lines changed since the last review</summary>
 
 {{ range .HeldBack -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .ReviewedBy }} · {{ . }}{{ end }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ .Title }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }}
 {{ end }}
 </details>
 
@@ -47,7 +47,7 @@
 <summary>Earlier findings ({{ if $resolved }}{{ $resolved }} resolved{{ end }}{{ if and $resolved $dismissed }}, {{ end }}{{ if $dismissed }}{{ $dismissed }} dismissed{{ end }})</summary>
 
 {{ range .Prior -}}
-- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .ReviewedBy }} · {{ . }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else }}resolved{{ end }}
+- {{ .Severity.Badge $.WebURL }} {{ if .URL }}[`{{ .Path }}:{{ .Line }}`]({{ .URL }}){{ else }}`{{ .Path }}:{{ .Line }}`{{ end }} {{ if .ThreadURL }}[{{ .Title }}]({{ .ThreadURL }}){{ else }}{{ .Title }}{{ end }}{{ if .Category }} · {{ .Category }}{{ end }}{{ with .AgentNames }} · {{ . }}{{ end }} · {{ if .Dismissed }}dismissed{{ if .DismissReason }}: {{ .DismissReason }}{{ end }}{{ else }}resolved{{ end }}
 {{ end }}
 </details>
 
@@ -79,12 +79,12 @@
 {{ end -}}
 {{ end -}}
 {{ end -}}
-{{ if or .Sources .Skills.Names .Commands.Names .NamedReviewers }}
+{{ if or .Sources .Skills.Names .Commands.Names .NamedAgents }}
 <details>
-<summary>Review context{{ if .NamedReviewers }} · {{ len .Reviewers }} {{ plural "reviewer" "reviewers" (len .Reviewers) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
+<summary>Review context{{ if .NamedAgents }} · {{ len .Agents }} {{ plural "agent" "agents" (len .Agents) }}{{ end }}{{ if .Sources }} · {{ len .Sources }} {{ plural "source" "sources" (len .Sources) }}{{ end }}{{ if .Skills.Names }} · {{ len .Skills.Used }}/{{ len .Skills.Names }} skills{{ end }}{{ if .Commands.Names }} · {{ len .Commands.Used }}/{{ len .Commands.Names }} commands{{ end }}</summary>
 
-{{ if .NamedReviewers -}}
-- **Reviewers:** `{{ join "` `" .Reviewers }}`
+{{ if .NamedAgents -}}
+- **Agents:** `{{ join "` `" .Agents }}`
 {{ end -}}
 {{ if .Sources -}}
 - **Sources:**

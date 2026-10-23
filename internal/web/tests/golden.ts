@@ -27,17 +27,17 @@ export const repoPage = golden<T.Page<T.Repository>>('page');
 export const repoDetail = golden<T.RepoDetail>('repo_detail');
 export const pull = golden<T.Pull>('pull');
 export const pullDetail = golden<T.PullDetail>('pull_detail');
-// Findings carry the reviewers that raised them, which the goldens may leave
-// out: the default reviewer alone is an empty list.
+// Findings carry the agents that raised them, which the goldens may leave
+// out: the default agent alone is an empty list.
 const reviewDetailGolden = golden<T.ReviewDetail>('review_detail');
-export const reviewDetail: T.ReviewDetail = { ...reviewDetailGolden, findings: reviewDetailGolden.findings.map((f) => ({ reviewers: [], ...f })) };
+export const reviewDetail: T.ReviewDetail = { ...reviewDetailGolden, findings: reviewDetailGolden.findings.map((f) => ({ agents: [], ...f })) };
 export const reviewDiff = golden<T.ReviewDiff>('review_diff');
 export const reviewRaw = golden<T.ReviewRaw>('review_raw');
 export const transcript = golden<T.Transcript>('transcript');
 export const job = golden<T.Job>('job');
 export const instanceQueue = golden<T.InstanceQueue>('instance_queue');
 export const followup = golden<T.Followup>('followup');
-export const accountFinding: T.AccountFinding = { reviewers: [], ...golden<T.AccountFinding>('account_finding') };
+export const accountFinding: T.AccountFinding = { agents: [], ...golden<T.AccountFinding>('account_finding') };
 export const analytics = golden<T.Analytics>('analytics');
 export const attention = golden<T.Attention>('attention');
 export const rule = golden<T.Rule>('rule');

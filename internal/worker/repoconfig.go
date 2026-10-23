@@ -30,11 +30,9 @@ type Effective struct {
 	repoconfig.Merged
 	// Found is whether the repository has a .kritika.yaml.
 	Found bool
-	// Held are the reviewers other than the default one whose when
-	// conditions judgeReviewers found to hold for the pull request, and
-	// Routes the model route each one it took, by name.
-	Held   map[string]bool
-	Routes map[string]string
+	// Held are the specialists whose when conditions judgeReviewers found
+	// to hold for the pull request, by name.
+	Held map[string]bool
 }
 
 // readRepoConfig reads .kritika.yaml at ref through the forge: nil when the
@@ -107,9 +105,15 @@ func pickRoute(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDi
 	eff.Models = picked
 }
 
-// pickModels has eff's model routes pick the review's model (pickRoute),
-// then judges its reviewers and picks theirs (judgeReviewers).
-func pickModels(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
+// pickModels picks the review's model and judges its specialists: the
+// agent asked picks it when asked names one that replaces the default pass,
+// and otherwise the first of those that holds does (pickRoute); then the
+// specialists are judged (judgeReviewers).
+func pickModels(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error), asked string) {
+	if i := slices.IndexFunc(eff.Models.Routes, func(r configfile.ModelRoute) bool { return r.Name == asked }); i >= 0 {
+		eff.Models.Routes = []configfile.ModelRoute{eff.Models.Routes[i]}
+		eff.Models.Routes[0].When = nil
+	}
 	pickRoute(logger, eff, vars, forgeDiff)
 	judgeReviewers(logger, eff, vars, forgeDiff)
 }
@@ -127,36 +131,27 @@ func pullDiff(logger *slog.Logger, eff *Effective, forgeDiff func() (string, err
 }
 
 // judgeReviewers judges, over the whole pull request, whether the when
-// conditions of each of eff's reviewers other than the default one that is
-// on hold, and has each one's model routes pick its model as pickRoute
-// picks the review's, after it, reading the forge's diff when a condition
-// needs it. Each such reviewer's model is then the one it picked, with its
-// fallback and effort.
+// conditions of each of eff's specialists that is on hold, reading the
+// forge's diff when a condition needs it, and gives each its models: its
+// own, or the default pass's as the agents picked them.
 func judgeReviewers(logger *slog.Logger, eff *Effective, vars map[string]any, forgeDiff func() (string, error)) {
 	var d *configfile.Diff
 	if slices.ContainsFunc(slices.Collect(maps.Values(eff.Reviewers)), configfile.Reviewer.NeedsDiff) {
 		d = pullDiff(logger, eff, forgeDiff)
 	}
 	reviewers := maps.Clone(eff.Reviewers)
-	eff.Held, eff.Routes = map[string]bool{}, map[string]string{}
+	eff.Held = map[string]bool{}
 	for name, r := range reviewers {
-		if name == review.DefaultReviewer || !r.On() {
+		if !r.On() {
 			continue
 		}
 		held, err := r.Holds(vars, d)
 		if err != nil {
-			logger.Warn("reviewer condition failed to evaluate", "reviewer", name, "error", err)
-		}
-		picked, err := r.Models(eff.Models).Pick(vars, d)
-		if err != nil {
-			logger.Warn("reviewer model route condition failed to evaluate", "reviewer", name, "error", err)
+			logger.Warn("agent condition failed to evaluate", "agent", name, "error", err)
 		}
 		eff.Held[name] = held
-		if picked.Route != "" && r.Model != nil {
-			eff.Routes[name] = picked.Route
-			logger.Info("reviewer model route picked", "reviewer", name, "route", picked.Route, "model", picked.Review)
-		}
-		r.Model, r.Fallback, r.Effort = &configfile.ReviewModel{Default: picked.Review}, picked.Fallback, &picked.Effort
+		models := r.Models(eff.Models)
+		r.Model, r.Fallback, r.Effort = models.Review, models.Fallback, &models.Effort
 		reviewers[name] = r
 	}
 	eff.Reviewers = reviewers

@@ -12,7 +12,6 @@ import (
 	"github.com/home-operations/kritika/internal/jobs"
 	"github.com/home-operations/kritika/internal/model"
 	"github.com/home-operations/kritika/internal/review"
-	"github.com/home-operations/kritika/internal/runner"
 	"github.com/home-operations/kritika/internal/store"
 )
 
@@ -28,7 +27,7 @@ func TestChooseReviewers(t *testing.T) {
 	eff := Effective{
 		Reviewers: configured, Agent: configfile.AgentSettings{MaxSteps: 30, MaxTokens: 1000, Timeout: time.Minute},
 		Skills: configfile.Skills{Paths: []string{".agents/skills"}}, Held: map[string]bool{"security": true, "renovate": false},
-		Routes: map[string]string{"security": "deep (auth)"}}
+		Models: configfile.Models{Routes: []configfile.ModelRoute{{Name: "deep", Model: "p/big"}}}}
 	vars := map[string]any{"headRef": "feature/x", "draft": false}
 	names := func(r reviewers) []string {
 		out := make([]string, 0, len(r.specs))
@@ -49,37 +48,24 @@ func TestChooseReviewers(t *testing.T) {
 		want  []string
 		note  string
 	}{
-		{name: "the default reviewer and each that is on and holds", eff: eff, want: []string{"default", "security"}},
+		{name: "the default pass and each specialist that is on and holds", eff: eff, want: []string{"default", "security"}},
 		{name: "one the last review did not run reviews the whole change", eff: eff,
 			prior: priorReview{id: "rev-0", reviewers: []string{"default"}}, want: []string{"default", "security(full)"}},
-		{name: "one asked for runs alone", eff: eff, only: "security", want: []string{"security"}},
-		{name: "the default one asked for runs alone", eff: eff, only: "default", want: nil},
-		{name: "a name no reviewer has runs every one, with a note", eff: eff, only: "please", want: []string{"default", "security"},
-			note: "No reviewer named please is on"},
-		{name: "none is the default reviewer alone", eff: Effective{}, want: nil},
-		{name: "with the default one off and no other that holds, none runs", eff: Effective{Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "retired": {Enabled: &off}}},
-			want: nil},
-		{name: "the default one asked for while it is off runs every one, with a note", eff: Effective{Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "docs": {}}, Held: map[string]bool{"docs": true}},
-			only: "default", want: []string{"docs"}, note: "No reviewer named default is on"},
-		{name: "a reviewer asked for while it is off runs every one, with a note", eff: eff, only: "retired",
-			want: []string{"default", "security"}, note: "No reviewer named retired is on"},
-		{name: "the default one off", eff: Effective{
-			Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}, "docs": {}}, Held: map[string]bool{"docs": true}}, want: []string{"docs"}},
+		{name: "a specialist asked for runs alone", eff: eff, only: "security", want: []string{"security"}},
+		{name: "the default pass asked for runs alone", eff: eff, only: "default", want: nil},
+		{name: "an agent that replaces the default pass asked for runs it alone", eff: eff, only: "deep", want: nil},
+		{name: "a name no agent has runs every one, with a note", eff: eff, only: "please", want: []string{"default", "security"},
+			note: "No agent named please is on"},
+		{name: "a specialist asked for while it is off runs every one, with a note", eff: eff, only: "retired",
+			want: []string{"default", "security"}, note: "No agent named retired is on"},
+		{name: "none is the default pass alone", eff: Effective{}, want: nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := chooseReviewers(tt.eff, vars, tt.prior, tt.only, 1000)
 			if !slices.Equal(names(got), tt.want) || !strings.Contains(got.note, tt.note) || (tt.note == "") != (got.note == "") {
-				t.Fatalf("reviewers = %q, note %q; want %q, note %q", names(got), got.note, tt.want, tt.note)
+				t.Fatalf("agents = %q, note %q; want %q, note %q", names(got), got.note, tt.want, tt.note)
 			}
 		})
-	}
-	offOnly := Effective{Reviewers: map[string]configfile.Reviewer{"default": {Enabled: &off}}}
-	if got := chooseReviewers(offOnly, vars, priorReview{}, "", 1000); got.specs != nil || !got.defaultOff {
-		t.Errorf("the default reviewer off and no other = %+v, want no specs and the default marked off for the runner to skip", got)
-	}
-	if got := chooseReviewers(eff, vars, priorReview{}, "", 1000); got.defaultOff ||
-		!slices.Contains(got.notes(), "The security reviewer reviewed on its model route deep (auth)") {
-		t.Errorf("reviewers = %+v, want the default on and security's route noted", got)
 	}
 	got := chooseReviewers(eff, vars, priorReview{}, "security", 1000)
 	sec := got.specs[0]
@@ -88,28 +74,26 @@ func TestChooseReviewers(t *testing.T) {
 	}
 }
 
-// TestJudgeReviewers: a reviewer's conditions and its model routes are
-// judged over the whole pull request, the diff read once when one needs it,
-// and its model is then the one it picked, or the default reviewer's.
+// TestJudgeReviewers: a specialist's conditions are judged over the whole
+// pull request, the diff read once when one needs it, and its models are
+// its own, or the default pass's as the agents picked them.
 func TestJudgeReviewers(t *testing.T) {
 	high := model.EffortHigh
 	off := false
-	routes := &configfile.ReviewModel{Default: "p/mid", Routes: []configfile.ModelRoute{
-		{Name: "deep", Model: "p/big", Effort: &high, When: []configfile.Filter{{Name: "migrations", Paths: []string{"db/**"}}}},
-	}}
-	reviewers := map[string]configfile.Reviewer{
-		"security": {Model: routes, When: []configfile.Filter{{Name: "auth", Paths: []string{"auth/**"}}}},
-		"large":    {When: []configfile.Filter{{Expr: "pr.lines > 100"}}},
-		"docs":     {When: []configfile.Filter{{Paths: []string{"**/*.md"}}}},
-		"retired":  {Enabled: &off},
+	agents := []configfile.Reviewer{
+		{Name: "security", Categories: []review.Category{review.CategorySecurity}, Model: "p/big", Effort: &high,
+			When: []configfile.Filter{{Name: "auth", Paths: []string{"auth/**"}}}},
+		{Name: "large", Categories: []review.Category{review.CategoryTests}, When: []configfile.Filter{{Expr: "pr.lines > 100"}}},
+		{Name: "docs", Categories: []review.Category{review.CategoryTests}, When: []configfile.Filter{{Paths: []string{"**/*.md"}}}},
+		{Name: "retired", Categories: []review.Category{review.CategoryTests}, Enabled: &off},
 	}
-	if err := configfile.CheckReviewers(reviewers); err != nil {
+	if err := configfile.CheckAgents(agents); err != nil {
 		t.Fatal(err)
 	}
+	reviewers, _ := configfile.SplitAgents(agents)
 	eff := Effective{Reviewers: reviewers, Models: configfile.Models{Review: "p/small", Fallback: "p/backup", Effort: model.EffortLow}}
 	reads := 0
-	diff := "diff --git a/auth/a.go b/auth/a.go\n--- a/auth/a.go\n+++ b/auth/a.go\n@@ -1 +1 @@\n-a\n+b\n" +
-		"diff --git a/db/1.sql b/db/1.sql\n--- a/db/1.sql\n+++ b/db/1.sql\n@@ -1 +1 @@\n-a\n+b\n"
+	diff := "diff --git a/auth/a.go b/auth/a.go\n--- a/auth/a.go\n+++ b/auth/a.go\n@@ -1 +1 @@\n-a\n+b\n"
 	judgeReviewers(slog.New(slog.DiscardHandler), &eff, map[string]any{}, func() (string, error) { reads++; return diff, nil })
 	if reads != 1 {
 		t.Errorf("the diff was read %d times, want once", reads)
@@ -117,15 +101,36 @@ func TestJudgeReviewers(t *testing.T) {
 	if want := map[string]bool{"security": true, "large": false, "docs": false}; !maps.Equal(eff.Held, want) {
 		t.Errorf("held = %v, want %v", eff.Held, want)
 	}
-	sec := eff.Reviewers["security"]
-	if sec.Model.Default != "p/big" || *sec.Effort != model.EffortHigh || sec.Fallback != "p/backup" || eff.Routes["security"] != "deep (migrations)" {
-		t.Errorf("security = %+v %v, route %q; want its deep route", sec.Model, *sec.Effort, eff.Routes["security"])
+	if sec := eff.Reviewers["security"]; sec.Model != "p/big" || *sec.Effort != model.EffortHigh || sec.Fallback != "p/backup" {
+		t.Errorf("security = %+v, want its own model and effort, the default pass's fallback", sec)
 	}
-	if docs := eff.Reviewers["docs"]; docs.Model.Default != "p/small" || *docs.Effort != model.EffortLow || eff.Routes["docs"] != "" {
-		t.Errorf("docs = %+v, want the default reviewer's model", docs.Model)
+	if docs := eff.Reviewers["docs"]; docs.Model != "p/small" || *docs.Effort != model.EffortLow {
+		t.Errorf("docs = %+v, want the default pass's model", docs)
 	}
-	if reviewers["security"].Model.Default != "p/mid" {
-		t.Error("judging changed the configuration's reviewers")
+	if reviewers["docs"].Model != "" {
+		t.Error("judging changed the configuration's agents")
+	}
+}
+
+// TestPickModelsAsked: an agent that replaces the default pass, asked for
+// by name, picks the review's model whatever its conditions; asked for no
+// such agent, the first that holds does.
+func TestPickModelsAsked(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+	fresh := func() Effective {
+		return Effective{Models: configfile.Models{Review: "p/small", Routes: []configfile.ModelRoute{
+			{Name: "deep", Model: "p/big", When: []configfile.Filter{{Expr: "pr.draft"}}},
+			{Name: "light", Model: "p/tiny", When: []configfile.Filter{{Expr: "pr.bot"}}},
+		}}}
+	}
+	vars := map[string]any{"draft": false, "bot": false}
+	noDiff := func() (string, error) { return "", nil }
+	for asked, want := range map[string]configfile.ModelRef{"": "p/small", "light": "p/tiny", "security": "p/small"} {
+		eff := fresh()
+		pickModels(logger, &eff, vars, noDiff, asked)
+		if eff.Models.Review != want {
+			t.Errorf("asked %q: model = %s, want %s", asked, eff.Models.Review, want)
+		}
 	}
 }
 
@@ -159,54 +164,45 @@ func TestRequestedReviewer(t *testing.T) {
 	}
 }
 
-func TestSkipDescriptionNoReviewer(t *testing.T) {
-	if got := skipDescription(runner.SkipNoReviewer, ""); got != "no reviewer applies to the change" {
-		t.Errorf("description = %q", got)
-	}
-}
-
-// TestRequestedNoReviewer: "@<bot> review <word>" that names no reviewer
-// queues a review of every reviewer that keeps the word, so the review
-// states why the one asked for did not run.
+// TestRequestedNoReviewer: "@<bot> review <word>" that names no agent
+// that is on queues a review of every agent that keeps the word, so the
+// review states why the one asked for did not run.
 func TestRequestedNoReviewer(t *testing.T) {
 	off := false
-	configured := map[string]configfile.Reviewer{"security": {}, "retired": {Enabled: &off}}
-	defaultOff := map[string]configfile.Reviewer{"default": {Enabled: &off}}
-	for _, tt := range []struct {
-		name                string
-		reviewers           map[string]configfile.Reviewer
-		reviewer, requested string
-	}{
-		{"security", configured, "security", ""}, {"default", configured, "default", ""}, {"please", configured, "", "please"},
-		// A reviewer that is off is a word that names none: the request is
-		// one of every reviewer, as its review runs.
-		{"retired", configured, "", "retired"}, {"default", defaultOff, "", "default"},
+	settings := configfile.Settings{
+		Reviewers: map[string]configfile.Reviewer{"security": {}, "retired": {Enabled: &off}},
+		Models:    configfile.Models{Routes: []configfile.ModelRoute{{Name: "deep", Model: "p/big"}}},
+	}
+	for _, tt := range []struct{ name, reviewer, requested string }{
+		{"security", "security", ""}, {"default", "default", ""}, {"deep", "deep", ""}, {"please", "", "please"},
+		// A specialist that is off is a word that names none: the request
+		// is one of every agent, as its review runs.
+		{"retired", "", "retired"},
 	} {
-		if r, q := splitRequested(tt.name, tt.reviewers); r != tt.reviewer || q != tt.requested {
+		if r, q := splitRequested(tt.name, settings); r != tt.reviewer || q != tt.requested {
 			t.Errorf("splitRequested(%q) = %q, %q; want %q, %q", tt.name, r, q, tt.reviewer, tt.requested)
 		}
 	}
 	args := jobs.ReviewArgs{Requested: "please"}
-	eff := Effective{Reviewers: configured, Held: map[string]bool{"security": true}}
+	eff := Effective{Reviewers: settings.Reviewers, Held: map[string]bool{"security": true}}
 	got := chooseReviewers(eff, map[string]any{}, priorReview{}, asked(args), 1000)
-	if len(got.specs) != 2 || !slices.Contains(got.notes(), "No reviewer named please is on, so every reviewer that applies ran") {
-		t.Errorf("reviewers = %+v, want every one with the note", got)
+	if len(got.specs) != 2 || !slices.Contains(got.notes(), "No agent named please is on, so every agent that applies ran") {
+		t.Errorf("agents = %+v, want every one with the note", got)
 	}
 }
 
-// TestMayRun: a review holds slots on the models of the reviewers it may
-// run alone: those whose conditions held, or the one asked for.
+// TestMayRun: a review holds slots on the models of the specialists it
+// may run alone: those whose conditions held, or the one asked for, and
+// none when the default pass or an agent that replaces it is asked for.
 func TestMayRun(t *testing.T) {
 	off := false
-	ref := func(m configfile.ModelRef) *configfile.ReviewModel { return &configfile.ReviewModel{Default: m} }
 	eff := Effective{
 		Reviewers: map[string]configfile.Reviewer{
-			"default":  {Enabled: &off},
-			"security": {Model: ref("p/big")},
-			"docs":     {Model: ref("p/doc")},
-			"retired":  {Enabled: &off, Model: ref("p/old")},
+			"security": {Model: "p/big"},
+			"docs":     {Model: "p/doc"},
+			"retired":  {Enabled: &off, Model: "p/old"},
 		},
-		Models: configfile.Models{Review: "p/small"},
+		Models: configfile.Models{Review: "p/small", Routes: []configfile.ModelRoute{{Name: "deep", Model: "p/huge"}}},
 		Held:   map[string]bool{"security": true, "docs": false, "retired": true},
 	}
 	for _, tt := range []struct {
@@ -216,17 +212,14 @@ func TestMayRun(t *testing.T) {
 		{jobs.ReviewArgs{}, []string{"p/big"}},
 		{jobs.ReviewArgs{Reviewer: "docs"}, []string{"p/doc"}},
 		{jobs.ReviewArgs{Reviewer: "default"}, nil},
+		{jobs.ReviewArgs{Reviewer: "deep"}, nil},
 		{jobs.ReviewArgs{Requested: "please"}, []string{"p/big"}},
 	} {
-		s := mayRun(eff, tt.args)
-		if got := reviewerModelKeys(s); !slices.Equal(got, tt.want) {
+		if got := reviewerModelKeys(mayRun(eff, tt.args)); !slices.Equal(got, tt.want) {
 			t.Errorf("slots for %+v = %q, want %q", tt.args, got, tt.want)
 		}
-		if _, ok := s.Reviewers["default"]; !ok {
-			t.Errorf("%+v dropped the default reviewer's entry, which says it is off", tt.args)
-		}
 	}
-	if len(eff.Reviewers) != 4 {
-		t.Error("mayRun changed the review's reviewers")
+	if len(eff.Reviewers) != 3 {
+		t.Error("mayRun changed the review's agents")
 	}
 }

@@ -66,7 +66,7 @@ type Finding struct {
 	Rules []string `json:"rules"`
 	// Reviewers are the reviewers that raised it, empty for the default
 	// reviewer alone.
-	Reviewers []string `json:"reviewers"`
+	Agents []string `json:"agents"`
 	// Status is what became of it on its pull request: whether a later
 	// review no longer reported it, or a maintainer dismissed it, with
 	// DismissReason the reason they gave.
@@ -141,7 +141,7 @@ type AgentRun struct {
 // review that built on the last one.
 type AgentPart struct {
 	ReusedFrom string   `json:"reusedFrom,omitzero"`
-	Reviewer   string   `json:"reviewer,omitzero"`
+	Agent      string   `json:"agent,omitzero"`
 	Full       bool     `json:"full,omitzero"`
 	Paths      []string `json:"paths"`
 	Stop       string   `json:"stop"`

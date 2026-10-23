@@ -220,9 +220,10 @@ type ReviewSpec struct {
 	Diagram     *bool         `yaml:"diagram,omitempty"`
 	Cost        *bool         `yaml:"cost,omitempty"`
 	Replies     *bool         `yaml:"replies,omitempty"`
-	// Reviewers are the reviewers a review runs beside the default one, by
-	// name, and under review.DefaultReviewer whether that one is on.
-	Reviewers map[string]Reviewer `yaml:"reviewers,omitempty"`
+	// Agents are the agents a review runs beside the default pass, those
+	// with categories, and those that replace it when their conditions
+	// hold, the others, the first that holds doing.
+	Agents []Reviewer `yaml:"agents,omitempty"`
 }
 
 // ConfidenceSpec sets how a review is judged: the model that scores the
@@ -766,8 +767,8 @@ type Settings struct {
 	Review         Review
 	Confidence     Confidence
 	Skills         Skills
-	// Reviewers are the reviewers a review runs beside the default one, by
-	// name, and under review.DefaultReviewer whether that one is on.
+	// Reviewers are the review's specialists, its agents with categories,
+	// by name; the agents that replace the default pass are Models.Routes.
 	Reviewers map[string]Reviewer
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may

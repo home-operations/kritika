@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"maps"
 	"slices"
 	"strings"
 
@@ -76,9 +75,10 @@ type Review struct {
 	Fixes    *bool                  `yaml:"fixes,omitempty"`
 	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
 	Diagram  *bool                  `yaml:"diagram,omitempty"`
-	// Reviewers add reviewers of the repository's own; under an admin's
-	// reviewer's name, they may only add rules and skill scopes to it.
-	Reviewers map[string]configfile.Reviewer `yaml:"reviewers,omitempty"`
+	// Agents add agents of the repository's own, its own that replace the
+	// default pass replacing the admin's; under the name of an admin's
+	// specialist, they may only add rules and skill scopes to it.
+	Agents []configfile.Reviewer `yaml:"agents,omitempty"`
 }
 
 // Confidence is how the repository's reviews are judged: the model that
@@ -183,11 +183,7 @@ func Parse(data []byte) (File, error) {
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
-	// The default reviewer's entry is the admin's: Merge drops it with a
-	// note, whatever it writes, rather than the file being refused.
-	others := maps.Clone(f.Review.Reviewers)
-	delete(others, review.DefaultReviewer)
-	if err := configfile.CheckReviewers(others); err != nil {
+	if err := configfile.CheckAgents(f.Review.Agents); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
 	for _, p := range f.Referenced() {
@@ -198,9 +194,6 @@ func Parse(data []byte) (File, error) {
 
 	if err := f.Trigger.Compile(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: trigger.%w", err)
-	}
-	if err := f.Review.Model.Compile(); err != nil {
-		return File{}, fmt.Errorf("repoconfig: review.model%w", err)
 	}
 
 	return f, nil
@@ -240,7 +233,8 @@ func (f File) Referenced() []string {
 			add(*t)
 		}
 	}
-	for _, p := range configfile.ReviewerFiles(f.Review.Reviewers) {
+	specialists, _ := configfile.SplitAgents(f.Review.Agents)
+	for _, p := range configfile.ReviewerFiles(specialists) {
 		add(p)
 	}
 	return out

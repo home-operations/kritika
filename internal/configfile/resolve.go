@@ -134,7 +134,7 @@ func (s *Settings) apply(o *Overrides) {
 		s.Enabled = *o.Enabled
 	}
 	if o.Review.Model != nil {
-		s.Models.Review, s.Models.Routes = o.Review.Model.Default, o.Review.Model.Routes
+		s.Models.Review = o.Review.Model.Default
 	}
 	if o.Review.Fallback != nil {
 		s.Models.Fallback = *o.Review.Fallback
@@ -174,7 +174,7 @@ func (s *Settings) apply(o *Overrides) {
 	}
 	s.Ignore = append(s.Ignore, o.Ignore...)
 	s.Skills = s.Skills.overlay(o.Skills)
-	s.Reviewers = o.Review.Reviewers
+	s.Reviewers, s.Models.Routes = SplitAgents(o.Review.Agents)
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)
 	s.Review = s.Review.overlay(o)

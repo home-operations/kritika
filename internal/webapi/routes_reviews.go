@@ -108,7 +108,7 @@ func finding(f store.FindingRow) Finding {
 		Explanation:  f.Explanation,
 		SuggestedFix: f.SuggestedFix, Replacement: f.Replacement, AgentPrompt: f.AgentPrompt, Fingerprint: f.Fingerprint,
 		PostedInline: f.PostedInline, ForgeCommentID: f.ForgeCommentID, CreatedAt: f.CreatedAt,
-		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: f.Rules, Reviewers: f.Reviewers,
+		ReactionsUp: f.ReactionsUp, ReactionsDown: f.ReactionsDown, Rules: f.Rules, Agents: f.Reviewers,
 		Status: f.Status, DismissReason: f.DismissReason,
 	}
 }
@@ -172,7 +172,7 @@ func agentRun(a *store.AgentRunRow) *AgentRun {
 	}
 	for i, p := range a.Parts {
 		out.Parts[i] = AgentPart{
-			Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom, Reviewer: p.Reviewer, Full: p.Full,
+			Paths: p.Paths, Stop: p.Stop, Error: p.Error, Steps: p.Steps, ReusedFrom: p.ReusedFrom, Agent: p.Reviewer, Full: p.Full,
 		}
 	}
 	return out

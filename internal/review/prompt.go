@@ -537,8 +537,8 @@ func priorLine(f Finding) string {
 
 func findingText(f Finding) string {
 	text := fmt.Sprintf("%s:%d [%s] %s: %s", f.Path, f.Line, f.Severity, oneLine(f.Title), oneLine(f.Explanation))
-	if by := f.ReviewedBy(); by != "" {
-		text += " (raised by the " + by + " reviewer" + plural(len(f.Reviewers)) + ")"
+	if by := f.AgentNames(); by != "" {
+		text += " (raised by the " + by + " agent" + plural(len(f.Agents)) + ")"
 	}
 	return text
 }
