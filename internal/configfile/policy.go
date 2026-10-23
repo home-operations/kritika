@@ -70,6 +70,7 @@ var Policies = []string{
 	"ignore",
 	"skills.paths",
 	"skills.scope",
+	"reviewers",
 	keySteps,
 	keyOutput,
 	"agent.tokens",

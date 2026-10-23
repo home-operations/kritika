@@ -39,7 +39,7 @@
   const account = $derived(accountApi(slug));
   function query(after?: string): string {
     const p = new URLSearchParams({ limit: '50' });
-    for (const k of ['severity', 'category', 'status', 'repo', 'rule', 'q'] as const) {
+    for (const k of ['severity', 'category', 'status', 'repo', 'rule', 'reviewer', 'q'] as const) {
       const v = filter?.[k];
       if (v) p.set(k, v);
     }
@@ -62,9 +62,13 @@
     { key: 'category', hint: 'what kind of problem', values: CATEGORIES },
     { key: 'status', hint: 'open, addressed or dismissed', values: FINDING_STATUSES },
     { key: 'rule', hint: 'a rule id', values: [...new Set(paged.items.flatMap((f) => f.rules))].sort(), open: true },
+    // A finding no named reviewer raised is the default reviewer's, so the default reviewer is offered only with a named one on the page.
+    ...(paged.items.some((f) => f.reviewers.length)
+      ? [{ key: 'reviewer', hint: 'a reviewer name', values: [...new Set(paged.items.flatMap((f) => (f.reviewers.length ? f.reviewers : ['default'])))].sort(), open: true }]
+      : []),
   ]);
   const boxText = (f: FindingFilter | undefined) =>
-    formatTokens(specs, { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, rule: f?.rule }, f?.q);
+    formatTokens(specs, { repo: f?.repo, severity: f?.severity, category: f?.category, status: f?.status, rule: f?.rule, reviewer: f?.reviewer }, f?.q);
 
   // As on the pull request list: written is the box's text for the filter it
   // last wrote to the URL, and any other change to the filter rewrites it.
@@ -210,10 +214,13 @@
                   <td class="finding-main">
                     <a class="finding-link block overflow-hidden text-ellipsis text-ink text-ui-md [font-weight:550]" href={href(reviewOf(f))} aria-current={i === selected ? 'true' : undefined} aria-haspopup="dialog" onclick={(e) => onTitleClick(e, f)}>{f.title}</a>
                     <span class="finding-sub block mt-0.5 overflow-hidden text-ellipsis text-ui-xs text-muted">{f.explanation}</span>
-                    {#if f.rules.length}
+                    {#if f.rules.length || f.reviewers.length}
                       <span class="finding-rules flex flex-wrap gap-1 mt-1">
                         {#each f.rules as id (id)}
                           <a class="mono" href={href({ name: 'findings', slug, filter: { rule: id } })} title="Findings that cite the rule {id}">{id}</a>
+                        {/each}
+                        {#each f.reviewers as name (name)}
+                          <a class="mono" href={href({ name: 'findings', slug, filter: { reviewer: name } })} title="Raised by the {name} reviewer">{name}</a>
                         {/each}
                       </span>
                     {/if}

@@ -142,6 +142,11 @@ type Finding struct {
 	// line numbers it uses, on one a re-review carried on unchecked; ""
 	// otherwise. kritika sets it; Parse clears any the model sent.
 	CarriedFrom string `json:"carried_from,omitempty"`
+	// Reviewers name the reviewers that raised the finding, the first the
+	// one whose finding was kept when several raised it; none is
+	// DefaultReviewer alone. The runner sets them on a part's findings;
+	// Parse keeps only those the review ran.
+	Reviewers []string `json:"reviewers,omitempty"`
 	// URL links the finding's lines at the head commit. kritika sets it
 	// when rendering; the model never does.
 	URL string `json:"-"`
@@ -258,6 +263,13 @@ type ParseOptions struct {
 	// finding on one's path that names its id, or that has its path and
 	// title, carries its fingerprint on, as the first such finding only.
 	Prior []Finding
+	// Reviewers are the reviewers the review ran, the only ones a finding
+	// may name; none is DefaultReviewer alone.
+	Reviewers []string `json:",omitempty"`
+	// Categories are, by reviewer, the categories it may report; a
+	// reviewer not named may report any. A finding none of whose
+	// reviewers may report its category is dropped as DropBadCategory.
+	Categories map[string][]Category `json:",omitempty"`
 }
 
 // Field names of the contract, shared by its JSON Schema and the template
@@ -577,12 +589,14 @@ func Lenient(check func(json.RawMessage) error) func(json.RawMessage) bool {
 }
 
 // Parse decodes the model's JSON and drops findings kritika cannot post: an
-// unknown severity or category, a missing field, a missing fix when opts
+// unknown severity or category, a category none of the finding's reviewers
+// may report, a missing field, a missing fix when opts
 // require one, or a line the diff
 // does not add or keep. Dropped findings are returned
 // with the reason so they can be logged and counted, never silently lost.
 // anchors maps a path to the head-side lines the diff covers, each with
-// its text. A range or a replacement the diff does not wholly cover is
+// its text. Findings different reviewers raised about the same thing are
+// merged (see MergeReviewers). A range or a replacement the diff does not wholly cover is
 // cleared rather than the finding dropped, and an insertion becomes a
 // replacement of its line by that line plus the added ones. Kept findings
 // are ordered most severe first, then by path and line. The summary keeps
@@ -608,11 +622,12 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		f.AgentPrompt = strings.TrimSpace(f.AgentPrompt)
 		f.Rules = citedRules(f.Rules, opts.Rules)
 		f.Prior = strings.TrimSpace(f.Prior)
+		f.Reviewers = opts.reviewers(f)
 		var reason DropReason
 		switch {
 		case !f.Severity.Valid():
 			reason = DropBadSeverity
-		case !f.Category.Valid():
+		case !f.Category.Valid() || !opts.allows(f):
 			reason = DropBadCategory
 		case f.Path == "" || f.Line <= 0 || f.Title == "" || f.Explanation == "":
 			reason = DropIncomplete
@@ -653,6 +668,7 @@ func Parse(raw string, anchors map[string]map[int]string, opts ParseOptions) (Re
 		}
 		kept = append(kept, f)
 	}
+	kept = MergeReviewers(kept)
 	slices.SortStableFunc(kept, func(a, b Finding) int {
 		return cmp.Or(
 			cmp.Compare(a.Severity.Rank(), b.Severity.Rank()),

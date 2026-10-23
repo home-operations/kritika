@@ -65,6 +65,7 @@
       "reactionsUp": 2,
       "reactionsDown": 1,
       "rules": ["wrap-errors"],
+      "reviewers": ["security", "default"],
       "status": "open",
       "dismissReason": ""
     }
@@ -124,10 +125,21 @@
     "carriedReviewId": "rev-0",
     "parts": [
       {
+        "reviewer": "default",
         "paths": ["a.go"],
         "stop": "submitted",
         "error": "",
-        "steps": 3
+        "steps": 3,
+        "costUsd": 0.06
+      },
+      {
+        "reviewer": "security",
+        "full": true,
+        "paths": ["a.go"],
+        "stop": "submitted",
+        "error": "",
+        "steps": 2,
+        "costUsd": 0.04
       }
     ]
   },

@@ -24,7 +24,7 @@ import (
 // SpecVersion is the only job document version this runner understands. A
 // worker and runner on different images must agree on it, so a runner
 // refuses any other version instead of guessing at its meaning.
-const SpecVersion = 38
+const SpecVersion = 39
 
 // HeartbeatInterval is how often a runner stamps runner_runs.heartbeat_at.
 // The worker's staleness threshold is several of these.
@@ -162,6 +162,42 @@ type Prompt struct {
 	// review would send it the same system prompt and tools; nil starts
 	// afresh.
 	Continue *Continuation `json:"continue,omitempty"`
+	// Reviewers are the reviewers to run, the default one, when it is
+	// among them, by its name alone, the rules, skills and the rest of the
+	// prompt being its own; each other one whose when conditions the
+	// worker found to hold, and which the runner runs when the change
+	// touches its paths. Nil runs the default reviewer alone, as a review
+	// always has. A follow-up carries the reviewer of the finding it
+	// answers about, when that is not the default one.
+	Reviewers []Reviewer `json:"reviewers,omitempty"`
+}
+
+// Reviewer is one reviewer a review runs, as its job document carries it
+// (see configfile.Reviewer): its instructions, or the merge-base file
+// among the spec's RepoFiles they are read from; the categories it may
+// report; the changed paths it reviews, every one when none; its rules,
+// whose when conditions the worker has judged; its skills, as Prompt's;
+// and its agent's bounds where they are lower than the run's. Full says
+// the last review did not run it, so it reviews the whole change rather
+// than what changed since.
+type Reviewer struct {
+	Name         string            `json:"name"`
+	Instructions string            `json:"instructions,omitempty"`
+	File         string            `json:"file,omitempty"`
+	Categories   []review.Category `json:"categories,omitempty"`
+	Paths        []string          `json:"paths,omitempty"`
+	Rules        []configfile.Rule `json:"rules,omitempty"`
+	Skills       *Skills           `json:"skills,omitempty"`
+	Limits       *ReviewerLimits   `json:"limits,omitempty"`
+	Full         bool              `json:"full,omitempty"`
+}
+
+// ReviewerLimits are a reviewer's agent's bounds where they are lower than
+// the run's AgentLimits; a zero bound is the run's.
+type ReviewerLimits struct {
+	MaxSteps       int   `json:"maxSteps,omitempty"`
+	MaxTokens      int64 `json:"maxTokens,omitempty"`
+	TimeoutSeconds int   `json:"timeoutSeconds,omitempty"`
 }
 
 // Continuation is the last review's conversation a review may carry on.
@@ -254,6 +290,13 @@ func (s Spec) Validate() error {
 	}
 	if s.Kind == KindFollowUp && len(s.Thread) == 0 {
 		return errors.New("runner: a followup spec needs the thread it answers")
+	}
+	if s.Prompt != nil {
+		for i, r := range s.Prompt.Reviewers {
+			if r.Name == "" || slices.ContainsFunc(s.Prompt.Reviewers[:i], func(o Reviewer) bool { return o.Name == r.Name }) {
+				return fmt.Errorf("runner: spec reviewer %q is unnamed or listed twice", r.Name)
+			}
+		}
 	}
 	if s.Kind.agentic() {
 		if s.Agent == nil {

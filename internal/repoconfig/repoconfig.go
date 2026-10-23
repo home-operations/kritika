@@ -122,6 +122,9 @@ type File struct {
 	// Tools are the tools the repository's reviews may run, over the
 	// image's.
 	Tools Tools `yaml:"tools,omitempty"`
+	// Reviewers add reviewers of the repository's own; under an admin's
+	// reviewer's name, they may only add rules and skill scopes to it.
+	Reviewers map[string]configfile.Reviewer `yaml:"reviewers,omitempty"`
 }
 
 // Parse decodes data as .kritika.yaml. A second document, unknown fields, invalid glob patterns
@@ -179,6 +182,9 @@ func Parse(data []byte) (File, error) {
 	if err := f.Tools.check(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: %w", err)
 	}
+	if err := configfile.CheckReviewers(f.Reviewers); err != nil {
+		return File{}, fmt.Errorf("repoconfig: %w", err)
+	}
 	for _, p := range f.Referenced() {
 		if err := validateRefPath(p); err != nil {
 			return File{}, err
@@ -208,7 +214,8 @@ func validateRefPath(p string) error {
 
 // Referenced lists the in-repo paths the file names whose contents a
 // review reads: its rules' files first, then the summary and finding
-// templates, deduplicated in the order first seen. Context files are
+// templates, then its reviewers' files, deduplicated in the order first
+// seen. Context files are
 // pointers the agent follows with its tools.
 func (f File) Referenced() []string {
 	seen := make(map[string]bool, len(f.Rules)+2)
@@ -227,6 +234,9 @@ func (f File) Referenced() []string {
 		if t != nil {
 			add(*t)
 		}
+	}
+	for _, p := range configfile.ReviewerFiles(f.Reviewers) {
+		add(p)
 	}
 	return out
 }

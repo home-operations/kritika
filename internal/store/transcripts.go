@@ -42,7 +42,10 @@ type ModelCall struct {
 	Step    int
 	// Part is the part of a split review an agent step belongs to, from 1,
 	// and 0 for a review that was not split.
-	Part        int
+	Part int
+	// Reviewer is the reviewer other than the default one an agent step
+	// was for, "" for the default reviewer's.
+	Reviewer    string
 	Model       string
 	Upstream    string
 	Row         transcript.Encoded
@@ -74,15 +77,15 @@ func InsertModelCall(ctx context.Context, tx pgx.Tx, c ModelCall) error {
 		(account_id, review_id, runner_run_id, followup_comment_id, kind, step, model, upstream, system, tools,
 		 messages_from, messages, response, stop_reason, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
 		 cost_usd, duration_ms, error, truncated, messages_end, messages_sha, system_sha, tools_sha, run_bytes, carried_from, part,
-		 chatgpt_plan, unpriced)
+		 chatgpt_plan, unpriced, reviewer)
 		VALUES ($1, nullif($2, '')::uuid, nullif($3, '')::uuid, nullif($4::bigint, 0), $5, $6, $7, $8, $9, $10::jsonb,
 		 $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-		 nullif($28, '')::uuid, $29, $30, $31)`,
+		 nullif($28, '')::uuid, $29, $30, $31, $32)`,
 		c.AccountID, c.ReviewID, c.RunnerRunID, c.FollowupCommentID, string(c.Kind), c.Step, c.Model, c.Upstream, c.Row.System, tools,
 		c.Row.MessagesFrom, string(c.Row.Messages), string(c.Row.Response), string(c.Stop),
 		c.Usage.Input, c.Usage.CacheRead, c.Usage.CacheWrite, c.Usage.Output, c.CostUSD, c.Duration.Milliseconds(), c.Error,
 		c.Row.Truncated, st.MessagesEnd, st.MessagesSHA[:], st.SystemSHA[:], st.ToolsSHA[:], st.Bytes,
-		c.Carries, c.Part, c.ChatGPTPlan, c.Unpriced)
+		c.Carries, c.Part, c.ChatGPTPlan, c.Unpriced, c.Reviewer)
 	if err != nil {
 		return fmt.Errorf("store: insert model call: %w", err)
 	}

@@ -39,36 +39,43 @@ func splitReview(p Spec, res *gitfetch.Result, scope review.Scope) [][]string {
 }
 
 // reviewPart is one part of a split review: the files it reviews and its
-// prompt.
+// prompt, and in a review with several reviewers the reviewer it is for,
+// whether it reviews the whole change, and its agent's bounds.
 type reviewPart struct {
-	paths  []string
-	prompt agentPrompt
+	paths    []string
+	prompt   agentPrompt
+	reviewer string
+	full     bool
+	agent    *AgentLimits
 }
 
 // partPrompts writes each part's prompt: its own files' diff, the context
 // built from that diff, the rules, skills and context references of its
 // paths, and the last review's and the dismissed findings on its files.
-// The first part also gets those on files no part reviews. Every part has
-// a submit check that refuses a finding on another part's file.
-// tools gets search_code when the
-// repository has an index, and load_skill offers every part's skills. It
-// returns the parts, and the context and the rules they were given
-// together, which the pack keeps.
+// The first part of each reviewer also gets those on files none of its
+// parts reviews. Every part has a submit check that refuses a finding on
+// another part's file, or a file its reviewer does not review. In a
+// review with several reviewers, a part is given its reviewer's role,
+// rules and skills, and the findings of the last review its reviewer
+// raised, and its submission may hold only the categories its reviewer
+// reports. tools gets search_code when the repository has an index, and
+// load_skill offers every part's skills. It returns the parts, and the
+// context and the rules they were given together, which the pack keeps.
 func partPrompts(
 	ctx context.Context, p Spec, secrets Secrets, head, base *object.Tree, res *gitfetch.Result, files repoconfig.Files,
-	found []repoconfig.Skill, split [][]string, scope review.Scope, tools *agentTools, logger *slog.Logger,
+	found []repoconfig.Skill, shares []partShare, tools *agentTools, logger *slog.Logger,
 ) ([]reviewPart, []contextpack.Chunk, []string, error) {
-	diffs := make([]string, len(split))
-	inputs := make([]contextpack.Part, len(split))
-	for i, paths := range split {
-		diffs[i] = review.PartDiff(res.Diff, paths)
-		inputs[i] = contextpack.Part{Diff: diffs[i], Changed: paths}
+	diffs := make([]string, len(shares))
+	inputs := make([]contextpack.Part, len(shares))
+	for i, sh := range shares {
+		diffs[i] = review.PartDiff(res.Diff, sh.paths)
+		inputs[i] = contextpack.Part{Diff: diffs[i], Changed: sh.paths}
 	}
 	chunks, stats, err := contextpack.BuildParts(ctx, head, base, p.Ignore, inputs, contextpack.DefaultOptions)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("runner: context stages of parts: %w", err)
 	}
-	logger.Info("parts context built", "parts", len(split), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
+	logger.Info("parts context built", "parts", len(shares), "files_scanned", stats.FilesScanned, "files_parsed", stats.FilesParsed,
 		"bytes_scanned", stats.BytesScanned, "truncated", stats.ScanTruncated, "elapsed", stats.Elapsed)
 	similar, err := partSimilarCode(ctx, p, secrets, diffs, res.Changed, logger)
 	if err != nil {
@@ -80,12 +87,12 @@ func partPrompts(
 			tools.search = newSearchTool(p, secrets, res.Changed)
 		}
 	}
-	ins := make([]promptInputs, len(split))
+	ins := make([]promptInputs, len(shares))
 	var skills []repoconfig.Skill
 	var loaded []string
 	rules := []string{}
-	for i, paths := range split {
-		ins[i] = newPromptInputs(p, files, found, paths)
+	for i, sh := range shares {
+		ins[i] = newPromptInputs(sh.spec(p), files, found, sh.paths)
 		for _, s := range slices.Concat(ins[i].skills, ins[i].loaded) {
 			if !slices.ContainsFunc(skills, func(o repoconfig.Skill) bool { return o.Name == s.Name }) {
 				skills = append(skills, s)
@@ -106,21 +113,31 @@ func partPrompts(
 	if len(skills) > 0 {
 		tools.skills = &skillTool{base: base, skills: skills, maxBytes: p.Agent.limits().MaxToolOutputBytes, opened: loaded}
 	}
-	parts := make([]reviewPart, len(split))
+	parts := make([]reviewPart, len(shares))
 	all := []contextpack.Chunk{}
-	for i, paths := range split {
+	for i, sh := range shares {
 		pack := packView{
-			Diff: diffs[i], Changed: res.Changed, Context: chunks[i], DeltaDiff: review.PartDiff(res.DeltaDiff, paths), Scope: scope,
-			Part: &review.PartInput{Index: i + 1, Count: len(split), Paths: paths},
+			Diff: diffs[i], Changed: res.Changed, Context: chunks[i], DeltaDiff: review.PartDiff(res.DeltaDiff, sh.paths), Scope: sh.scope,
+			Part: &review.PartInput{Index: sh.index, Count: sh.count, Paths: sh.paths, Reviewer: sh.name()},
 		}
-		checks := paths
-		if i == 0 {
-			checks = append(slices.Clone(paths), unsplitPaths(p, split)...)
+		checks := sh.paths
+		if sh.index == 1 {
+			checks = append(slices.Clone(sh.paths), unsplitPaths(p, sh.name(), append(siblings(shares, i), sh.paths))...)
 		}
-		prompt := newAgentPrompt(partSpec(p, checks), ins[i], pack, tools.commands(), tools.fetch != nil, tools.search != nil)
-		prompt.validate = review.CheckPart(paths, slices.Concat(slices.Concat(split[:i]...), slices.Concat(split[i+1:]...)))
+		prompt := newAgentPrompt(partSpec(sh.spec(p), checks, sh.name()), ins[i], pack, tools.commands(), tools.fetch != nil,
+			tools.search != nil)
+		role := sh.role(files)
+		prompt.system = review.WithReviewer(prompt.system, role)
+		var categories []review.Category
+		if role != nil {
+			categories = role.Categories
+			prompt.submit = submitTool(p.Prompt.RequireSuggestedFix, p.Prompt.Diagram, categories)
+		}
+		prompt.validate = review.CheckCategories(review.CheckPart(sh.paths, others(shares, i, res.Changed)), categories)
 		prompt.fallback = review.Lenient(prompt.validate)
-		parts[i] = reviewPart{paths: paths, prompt: prompt}
+		parts[i] = reviewPart{
+			paths: sh.paths, prompt: prompt, reviewer: sh.name(), full: sh.full(p), agent: sh.limits(p.Agent),
+		}
 		all = append(all, prompt.context...)
 	}
 	return parts, all, rules, nil
@@ -131,28 +148,37 @@ func partPrompts(
 func partSimilarCode(
 	ctx context.Context, p Spec, secrets Secrets, diffs, changed []string, logger *slog.Logger,
 ) ([]contextpack.SimilarResponse, error) {
-	out := make([]contextpack.SimilarResponse, len(diffs))
+	// Reviewers that review the same files have the same diffs, each of
+	// which is asked about once.
+	unique := slices.Compact(slices.Sorted(slices.Values(diffs)))
+	found := make([]contextpack.SimilarResponse, len(unique))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(max(1, p.Agent.Parallel))
-	for i, diff := range diffs {
+	for i, diff := range unique {
 		g.Go(func() error {
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			out[i], _ = similarCodeFor(gctx, p, secrets, diff, changed, logger.With("part", i+1))
+			found[i], _ = similarCodeFor(gctx, p, secrets, diff, changed, logger.With("part", slices.Index(diffs, diff)+1))
 			return gctx.Err()
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	out := make([]contextpack.SimilarResponse, len(diffs))
+	for i, diff := range diffs {
+		j, _ := slices.BinarySearch(unique, diff)
+		out[i] = found[j]
+	}
 	return out, nil
 }
 
-// unsplitPaths are the files of the last review's and the dismissed
-// findings that no part of split reviews, which the first part checks
-// again, as a review not split would.
-func unsplitPaths(p Spec, split [][]string) []string {
+// unsplitPaths are the files of the last review's findings, those
+// reviewer raised where it names one, and of the dismissed findings that
+// no part of split reviews, which the first part checks again, as a review
+// not split would.
+func unsplitPaths(p Spec, reviewer string, split [][]string) []string {
 	var out []string
 	add := func(path string) {
 		if !slices.ContainsFunc(split, func(paths []string) bool { return slices.Contains(paths, path) }) && !slices.Contains(out, path) {
@@ -160,7 +186,9 @@ func unsplitPaths(p Spec, split [][]string) []string {
 		}
 	}
 	for _, f := range p.Prompt.Prior {
-		add(f.Path)
+		if reviewer == "" || f.RaisedBy(reviewer) {
+			add(f.Path)
+		}
 	}
 	for _, d := range p.Prompt.Dismissed {
 		add(d.Path)
@@ -169,12 +197,15 @@ func unsplitPaths(p Spec, split [][]string) []string {
 }
 
 // partSpec is p for one part of a split review: the last review's and the
-// dismissed findings on paths alone, and no diagram to carry forward, since
-// the review's summary is written from all the parts'.
-func partSpec(p Spec, paths []string) Spec {
+// dismissed findings on paths alone, of the last review's only those
+// reviewer raised where it names one, and no diagram to carry forward,
+// since the review's summary is written from all the parts'.
+func partSpec(p Spec, paths []string, reviewer string) Spec {
 	prompt := *p.Prompt
 	theirs := func(path string) bool { return !slices.Contains(paths, path) }
-	prompt.Prior = slices.DeleteFunc(slices.Clone(prompt.Prior), func(f review.Finding) bool { return theirs(f.Path) })
+	prompt.Prior = slices.DeleteFunc(slices.Clone(prompt.Prior), func(f review.Finding) bool {
+		return theirs(f.Path) || reviewer != "" && !f.RaisedBy(reviewer)
+	})
 	prompt.Dismissed = slices.DeleteFunc(slices.Clone(prompt.Dismissed), func(d review.DismissedFinding) bool {
 		return theirs(d.Path)
 	})
@@ -183,13 +214,17 @@ func partSpec(p Spec, paths []string) Spec {
 	return p
 }
 
-// splitNotes are what the summary states of a split review: its parts,
-// and what their prompts' cuts left out, stated as one prompt's would be.
-func splitNotes(parts []reviewPart) []string {
+// splitNotes are what the summary states of a review in parts: a split
+// review's parts, or each reviewer's of several split, and what their
+// prompts' cuts left out, stated as one prompt's would be.
+func splitNotes(parts []reviewPart, shares []partShare) []string {
 	var whole agentPrompt
 	for _, part := range parts {
 		whole.omitted = append(whole.omitted, part.prompt.omitted...)
 		whole.contextOmitted += part.prompt.contextOmitted
+	}
+	if shares[0].reviewer != nil {
+		return append(reviewerNotes(shares), whole.notes()...)
 	}
 	return append([]string{fmt.Sprintf(noteSplit, len(parts))}, whole.notes()...)
 }
@@ -400,13 +435,21 @@ func runPartLoops(
 			results[i] = agent.Result{Stop: agent.StopCanceled, Err: "no agent time left"}
 			return nil
 		}
-		stepper, err := gatewayStepper(p, secrets, i+1)
+		stepper, err := gatewayStepper(p, secrets, i+1, part.reviewer)
 		if err != nil {
 			return err
 		}
 		plog := logger.With("part", i+1)
+		if part.reviewer != "" {
+			plog = plog.With("reviewer", part.reviewer)
+		}
 		offered := lockTools(offeredTools(p, head, ignore, tools.extra()), locks)
-		res, partSteps := agentLoop(gctx, stepper, p, offered, part.prompt, min(timeout, left), plog)
+		ps, partTimeout := p, timeout
+		if part.agent != nil {
+			ps.Agent = part.agent
+			partTimeout = time.Duration(part.agent.TimeoutSeconds) * time.Second
+		}
+		res, partSteps := agentLoop(gctx, stepper, ps, offered, part.prompt, min(partTimeout, left), plog)
 		results[i], steps[i] = res, partSteps
 		// The checkpoint is a retry's shortcut: an answer it fails to
 		// keep, or a cancellation finds it waiting to keep, is still
@@ -435,9 +478,10 @@ func runPartLoops(
 }
 
 // mergeParts is a split review's run as one agent.Result: the reviews its
-// parts submitted joined (review.MergeParts), what they spent together, and
-// why the others stopped; and how each part ended, its summary once it
-// submitted. A run no part submitted for stops as its first part did.
+// parts submitted joined (review.MergeParts), each finding of a part for a
+// reviewer naming it, what they spent together, and why the others
+// stopped; and how each part ended, its summary once it submitted. A run
+// no part submitted for stops as its first part did.
 func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (agent.Result, []store.AgentPart, error) {
 	merged := agent.Result{ToolCalls: map[string]int{}}
 	var submitted []review.Result
@@ -452,7 +496,10 @@ func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (ag
 		for name, n := range r.ToolCalls {
 			merged.ToolCalls[name] += n
 		}
-		records[i] = store.AgentPart{Paths: parts[i].paths, Stop: string(r.Stop), Error: secrets.Mask(r.Err), Steps: r.Steps}
+		records[i] = store.AgentPart{
+			Reviewer: parts[i].reviewer, Full: parts[i].full, Paths: parts[i].paths, Stop: string(r.Stop), Error: secrets.Mask(r.Err),
+			Steps: r.Steps,
+		}
 		if r.Stop != agent.StopSubmitted {
 			stops = append(stops, fmt.Sprintf("part %d of %d: %s", i+1, len(parts), cmp.Or(r.Err, string(r.Stop))))
 			continue
@@ -460,6 +507,13 @@ func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (ag
 		var res review.Result
 		if err := json.Unmarshal(r.Submitted, &res); err != nil {
 			return agent.Result{}, nil, fmt.Errorf("runner: part %d's review: %w", i+1, err)
+		}
+		if name := parts[i].reviewer; name != "" {
+			// A part answers for its reviewer alone, whatever its
+			// submission says.
+			for j := range res.Findings {
+				res.Findings[j].Reviewers = []string{name}
+			}
 		}
 		summary, err := json.Marshal(res.Summary)
 		if err != nil {

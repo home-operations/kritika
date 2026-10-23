@@ -3,6 +3,8 @@ package repoconfig
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/home-operations/kritika/internal/configfile"
 	"github.com/home-operations/kritika/internal/model"
+	"github.com/home-operations/kritika/internal/review"
 )
 
 // Merged is the admin's settings with the merge-base FileName applied.
@@ -35,7 +38,8 @@ type Merged struct {
 // admin's, may only turn review.fixes on and lower confidence.risk, and replaces the models,
 // their effort, the confidence threshold, how the review comments,
 // whether it approves and whether its summary draws a diagram, and adds
-// approval and confidence conditions that must hold beside the admin's. A model must be one of a provider
+// approval and confidence conditions that must hold beside the admin's, and
+// adds reviewers of its own (see reviewers). A model must be one of a provider
 // op.Providers names, and an effort one of model.Efforts or empty, which
 // leaves it to the provider. A value it may not take is dropped, and
 // Dropped says so. A file that does not parse is ignored as a whole: op stands, and the
@@ -118,6 +122,7 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		m.drop("confidence.risk", strconv.Quote(string(risk)), string(op.Confidence.Risk)+" or lower")
 	}
 	m.Skills = configfile.WithSkills(m.Skills, f.Skills)
+	m.reviewers(f.Reviewers, op)
 	m.choose(&f, op.Providers)
 	for _, e := range []struct {
 		field string
@@ -133,6 +138,89 @@ func Merge(doc []byte, op configfile.Settings) (Merged, error) {
 		}
 	}
 	return m, nil
+}
+
+// reviewers adds the file's reviewers to the admin's: one of its own as
+// written, its models among op.Providers, while there is room for it under
+// configfile.MaxReviewers; and, to a reviewer of the admin's name, its
+// rules, but under an id that reviewer's rules or the admin's have, and
+// its skill scopes, but of a skill that reviewer scopes. Anything else it
+// writes of an admin's reviewer, the default reviewer's being the
+// admin's too, is dropped with a note: a pull request must not be able to
+// turn off, narrow or retune a reviewer the admin set.
+func (m *Merged) reviewers(file map[string]configfile.Reviewer, op configfile.Settings) {
+	if len(file) == 0 {
+		return
+	}
+	m.Reviewers = maps.Clone(m.Reviewers)
+	if m.Reviewers == nil {
+		m.Reviewers = map[string]configfile.Reviewer{}
+	}
+	for _, name := range slices.Sorted(maps.Keys(file)) {
+		r := file[name]
+		key := "reviewers." + name
+		admin, ok := op.Reviewers[name]
+		switch {
+		case name == review.DefaultReviewer:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: the default reviewer is the admin's to turn off", FileName, key))
+		case ok:
+			m.Reviewers[name] = m.addTo(key, admin, r, op.Review.Rules)
+		case others(m.Reviewers) >= configfile.MaxReviewers:
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped: %d reviewers besides the default one are the most a review runs",
+				FileName, key, configfile.MaxReviewers))
+		default:
+			for _, c := range []struct {
+				field string
+				ref   *configfile.ModelRef
+			}{{key + ".model", &r.Model}, {key + ".fallback", &r.Fallback}} {
+				if *c.ref != "" && (c.ref.Model() == "" || !slices.Contains(op.Providers, c.ref.Provider())) {
+					m.drop(c.field, strconv.Quote(string(*c.ref)), "a model of "+list(op.Providers))
+					*c.ref = ""
+				}
+			}
+			m.Reviewers[name] = r
+		}
+	}
+}
+
+// addTo is the admin's reviewer with the file's rules and skill scopes
+// for it added (see reviewers), key naming it in the notes.
+func (m *Merged) addTo(key string, admin, r configfile.Reviewer, adminRules []configfile.Rule) configfile.Reviewer {
+	rules, scopes := r.Rules, r.Skills.Scope
+	r.Rules, r.Skills.Scope = nil, nil
+	if !reflect.ValueOf(r).IsZero() {
+		m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s was dropped but for its rules and skills: it is an admin's reviewer", FileName, key))
+	}
+	admin.Rules = slices.Clone(admin.Rules)
+	for _, rule := range rules {
+		taken := func(o configfile.Rule) bool { return o.ID == rule.ID }
+		if slices.ContainsFunc(admin.Rules, taken) || slices.ContainsFunc(adminRules, taken) {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s.rules %s was dropped: an admin's rule has that id", FileName, key, rule.ID))
+			continue
+		}
+		admin.Rules = append(admin.Rules, rule)
+	}
+	for _, skill := range slices.Sorted(maps.Keys(scopes)) {
+		if _, set := admin.Skills.Scope[skill]; set {
+			m.Dropped = append(m.Dropped, fmt.Sprintf("%s: %s.skills.scope.%s was dropped: the admin scopes that skill", FileName, key, skill))
+			continue
+		}
+		admin.Skills.Scope = maps.Clone(admin.Skills.Scope)
+		if admin.Skills.Scope == nil {
+			admin.Skills.Scope = map[string]configfile.SkillScope{}
+		}
+		admin.Skills.Scope[skill] = scopes[skill]
+	}
+	return admin
+}
+
+// others counts the reviewers besides the default one.
+func others(reviewers map[string]configfile.Reviewer) int {
+	n := len(reviewers)
+	if _, ok := reviewers[review.DefaultReviewer]; ok {
+		n--
+	}
+	return n
 }
 
 // choose applies the models f chooses: a model of one of providers. A

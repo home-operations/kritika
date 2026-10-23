@@ -117,10 +117,15 @@ func changedPaths(diff string) []string {
 }
 
 // repoFiles are the paths the runner reads from the merge base: the files
-// the settings name, and .kritika.yaml itself, which the review's context
-// pack keeps a copy of.
+// the settings and their reviewers name, and .kritika.yaml itself, which
+// the review's context pack keeps a copy of.
 func (e *Effective) repoFiles() []string {
 	paths := e.Review.Referenced()
+	for _, p := range configfile.ReviewerFiles(e.Reviewers) {
+		if !slices.Contains(paths, p) {
+			paths = append(paths, p)
+		}
+	}
 	if e.Found && !slices.Contains(paths, repoconfig.FileName) {
 		paths = append(paths, repoconfig.FileName)
 	}

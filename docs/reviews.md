@@ -12,6 +12,7 @@ repository, and webhooks must be working.
 | --- | --- |
 | `@<bot> <question>` | Reads the code and answers in the thread. |
 | `@<bot> review` | Requests a full review of the current commit. |
+| `@<bot> review <name>` | Runs the [reviewer](repository-config.md#reviewers) of that name alone on the current commit. A word that names no reviewer requests a full review. |
 | `@<bot> pause` | Stops automatic reviews for this pull request. |
 | `@<bot> resume` | Resumes automatic reviews. |
 | `@<bot> dismiss <reason>` | Dismisses a finding when posted in its thread. |
@@ -45,7 +46,8 @@ Reactions and automatic thread resolution need the relevant
 | `p2` | Optional polish. |
 
 Findings also have a category: correctness, security, performance, reliability,
-maintainability or tests. The summary includes findings outside the visible
+maintainability or tests. With [reviewers](repository-config.md#reviewers) beside the
+default one, a finding also names the reviewer that raised it. The summary includes findings outside the visible
 diff, which cannot get an inline comment.
 
 A later review can mark a finding fixed. To dismiss one you disagree with,

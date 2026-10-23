@@ -49,7 +49,15 @@ var ErrReindexQueued = errors.New("jobs: reindex already queued")
 func EnqueueRerun(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual)
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, "")
+}
+
+// EnqueueReviewerRerun is EnqueueRerun for a re-run of reviewer alone, the
+// one whose name someone wrote after "@<bot> review".
+func EnqueueReviewerRerun(
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, reviewer string,
+) (int64, error) {
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, TriggerManual, reviewer)
 }
 
 // EnqueueLabelChange queues a review of number's current head for trigger,
@@ -60,11 +68,11 @@ func EnqueueRerun(
 func EnqueueLabelChange(
 	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
 ) (int64, error) {
-	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger)
+	return enqueueFresh(ctx, tx, c, accountID, repositoryID, number, trigger, "")
 }
 
 func enqueueFresh(
-	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger string,
+	ctx context.Context, tx pgx.Tx, c *river.Client[pgx.Tx], accountID, repositoryID string, number int, trigger, reviewer string,
 ) (int64, error) {
 	var headSHA string
 	err := tx.QueryRow(ctx, `SELECT head_sha FROM pull_requests
@@ -101,7 +109,7 @@ func enqueueFresh(
 	}
 	res, err := c.InsertTx(ctx, tx, ReviewArgs{
 		AccountID: accountID, RepositoryID: repositoryID, Number: number, HeadSHA: headSHA,
-		Trigger: trigger, Request: uuid.NewString(),
+		Trigger: trigger, Request: uuid.NewString(), Reviewer: reviewer,
 	}, nil)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: enqueue rerun: %w", err)

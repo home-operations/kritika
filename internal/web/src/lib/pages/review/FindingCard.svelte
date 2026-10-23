@@ -27,6 +27,7 @@
       <Pill label="dismissed" title="A maintainer dismissed it in its thread" />
     {/if}
     {#each f.rules as id (id)}<span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Enforces the review rule {id}">{id}</span>{/each}
+    {#each f.reviewers as name (name)}<span class="badge mono inline-flex items-center gap-1 text-ui-xs leading-[1.5] border border-solid border-line py-0 px-[7px] text-muted whitespace-nowrap rounded-[3px] font-medium" title="Raised by the {name} reviewer">{name}</span>{/each}
     {#if !compact}<span class="mono small muted text-ui-sm">{where}</span>{/if}
     <Reactions up={f.reactionsUp} down={f.reactionsDown} />
     {#if thread}

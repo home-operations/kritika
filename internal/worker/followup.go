@@ -372,6 +372,18 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 		Repository: f.pr.repository, Context: f.eff.Review.Context, Rules: repoconfig.RulesFor(f.eff.Review.Rules, rec.vars),
 		Prior: rec.findings,
 	}
+	models := f.settings.Models
+	name, err := f.findingReviewer(ctx, rec)
+	if err != nil {
+		return nil, err
+	}
+	if r, ok := f.eff.Reviewers[name]; ok && name != "" {
+		// The finding's reviewer answers for it, by its own instructions,
+		// rules and models.
+		prompt.Rules = repoconfig.RulesFor(r.Rules, rec.vars)
+		prompt.Reviewers = []runner.Reviewer{{Name: name, Instructions: r.Instructions, File: r.File}}
+		models = reviewerModels(r, models)
+	}
 	var agent *store.AgentRunRow
 	err = f.w.withLease(ctx, f.account, string(ref), f.settings.Limits.Concurrency, f.jobID, func(ctx context.Context) error {
 		var runID string
@@ -387,20 +399,21 @@ func (f *followUp) ask(ctx context.Context, thread []review.Message, rec reviewR
 			return err
 		}
 		prompt.Trim()
-		agent, err = f.runAgent(ctx, runID, gitToken, prompt, thread, rec)
+		agent, err = f.runAgent(ctx, runID, gitToken, prompt, thread, rec, models)
 		return err
 	})
 	return agent, err
 }
 
-// runAgent runs the follow-up's runner as run runID and reads the agent's
-// run back.
+// runAgent runs the follow-up's runner as run runID, granted models, and
+// reads the agent's run back.
 func (f *followUp) runAgent(
 	ctx context.Context, runID, gitToken string, prompt *runner.Prompt, thread []review.Message, rec reviewRecord,
+	models configfile.Models,
 ) (*store.AgentRunRow, error) {
-	limits, ref := f.settings.Agent, f.settings.Models.Review
+	limits, ref := f.settings.Agent, models.Review
 	deadline := agentDeadline(f.file.RunnerDeadline(), limits.Timeout)
-	models := pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, f.settings.Models)
+	models = pinModels(ctx, f.logger, f.w.Steppers, f.file, f.account, models)
 	token, err := f.w.Store.MintGatewayToken(ctx, store.GatewayGrant{
 		RunID: runID, AccountID: f.account.ID(), ReviewID: rec.id, RepositoryID: f.pr.repositoryID, FollowupCommentID: f.comment.ID,
 		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort), Budget: limits.MaxTokens,

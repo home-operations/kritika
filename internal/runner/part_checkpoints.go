@@ -44,6 +44,7 @@ func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error)
 	}
 	type prompt struct {
 		Paths        []string
+		Reviewer     string
 		System, User string
 		Submit       model.ToolDef
 	}
@@ -53,7 +54,7 @@ func partInputHash(p Spec, parts []reviewPart, tools agentTools) (string, error)
 		Tools   []model.ToolDef
 	}{Spec: p}
 	for _, part := range parts {
-		input.Prompts = append(input.Prompts, prompt{part.paths, part.prompt.system, part.prompt.user, part.prompt.submit})
+		input.Prompts = append(input.Prompts, prompt{part.paths, part.reviewer, part.prompt.system, part.prompt.user, part.prompt.submit})
 	}
 	for _, tool := range tools.extra() {
 		input.Tools = append(input.Tools, tool.Def())

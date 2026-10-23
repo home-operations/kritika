@@ -314,27 +314,29 @@ func pinModels(
 	return models
 }
 
-// agentSpec gives spec its agent: the prompt, the gateway and a run
-// token for it, granting models, which lets it carry on cont when that is
-// set, and the agent's bounds, for a review sized for size's parts. The
+// agentSpec gives spec its agent: the prompt, with the reviewers it runs,
+// the gateway and a run token for it, granting models and each other
+// reviewer's grants, which lets it carry on cont when that is set, and the
+// agent's bounds, for a review sized for size's parts. The
 // token is minted last, so an error leaves none behind; the caller
 // revokes it once the run ends. It returns the runner Job's deadline,
 // which the agent's timeout may lengthen, and the prompt's notes.
 func (w *Review) agentSpec(
 	ctx context.Context, accountID, reviewID, runID, trigger string, pr *pullRequest, eff Effective, models configfile.Models,
 	prior priorReview, cont *runner.Continuation, admitted admission, size sizing, spec *runner.Spec, secrets *runner.Secrets,
-	deadline time.Duration, client forge.Client, logger *slog.Logger,
+	deadline time.Duration, client forge.Client, logger *slog.Logger, reviewers []runner.Reviewer, grants map[string]store.ReviewerGrant,
 ) (time.Duration, []string, error) {
 	settings := eff.Settings
 	prompt, notes, err := w.agentPrompt(ctx, accountID, reviewID, trigger, pr, eff, prior, client, logger)
 	if err != nil {
 		return deadline, nil, err
 	}
+	prompt.Reviewers = reviewers
 	deadline = agentDeadline(deadline, partsTimeout(size.rounds(), settings.Agent.Timeout))
 	grant := store.GatewayGrant{
 		RunID: runID, AccountID: accountID, ReviewID: reviewID, RepositoryID: pr.repositoryID,
 		Model: string(models.Review), Fallback: string(models.Fallback), Effort: string(models.Effort),
-		Budget: admitted.budget(size.parts),
+		Budget: admitted.budget(size.parts), Reviewers: grants,
 	}
 	if cont != nil {
 		prompt.Continue, grant.Continues, grant.Session = cont, cont.RunID, cont.Session

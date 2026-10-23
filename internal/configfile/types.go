@@ -195,6 +195,9 @@ type Overrides struct {
 	Rules      []Rule         `yaml:"rules,omitempty"`
 	Context    []ContextFile  `yaml:"context,omitempty"`
 	Skills     SkillsSpec     `yaml:"skills,omitempty"`
+	// Reviewers are the reviewers a review runs beside the default one, by
+	// name.
+	Reviewers map[string]Reviewer `yaml:"reviewers,omitempty"`
 	// Ignore are globs of the paths kritika leaves out of a review's
 	// context and of the index; a pull request that changes nothing else
 	// is skipped. They add to kritika's own.
@@ -763,6 +766,9 @@ type Settings struct {
 	Review         Review
 	Confidence     Confidence
 	Skills         Skills
+	// Reviewers are the reviewers a review runs beside the default one, by
+	// name, and under review.DefaultReviewer whether that one is on.
+	Reviewers map[string]Reviewer
 	// Providers name the model providers the repository's account may use,
 	// the instance's and its own, sorted: the ones a .kritika.yaml may
 	// choose a model of.

@@ -36,6 +36,9 @@ type FindingRow struct {
 	ReactionsDown  int
 	// Rules are the ids of the review rules it enforces.
 	Rules []string
+	// Reviewers are the reviewers that raised it, none for the default
+	// reviewer alone.
+	Reviewers []string
 	// Status is what became of it on its pull request, and DismissReason
 	// the reason a dismissed one was dismissed with.
 	Status        FindingStatus
@@ -53,7 +56,7 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		SELECT f.id, f.path, f.line, f.end_line, f.severity, f.title, f.explanation, f.suggested_fix,
 			f.replacement, f.agent_prompt, f.fingerprint, f.posted_inline, f.forge_comment_id, f.created_at, f.reactions_up,
 			f.reactions_down, f.rules, f.category, coalesce(l.dismissed, false), coalesce(l.dismiss_reason, ''),
-			coalesce(l.addressed, false)
+			coalesce(l.addressed, false), f.reviewers
 		FROM findings f LEFT JOIN latest l
 			ON coalesce(nullif(l.fingerprint, ''), l.id::text) = coalesce(nullif(f.fingerprint, ''), f.id::text)
 		WHERE f.review_id = $1
@@ -67,12 +70,34 @@ func ListFindings(ctx context.Context, tx pgx.Tx, reviewID string) ([]FindingRow
 		var dismissed, addressed bool
 		err := row.Scan(&f.ID, &f.Path, &f.Line, &f.EndLine, &sev, &f.Title, &f.Explanation, &f.SuggestedFix, &f.Replacement,
 			&f.AgentPrompt, &f.Fingerprint, &f.PostedInline, &f.ForgeCommentID, &f.CreatedAt, &f.ReactionsUp, &f.ReactionsDown, &f.Rules, &cat,
-			&dismissed, &f.DismissReason, &addressed)
+			&dismissed, &f.DismissReason, &addressed, &f.Reviewers)
 		f.Severity, f.Category, f.Status = review.Severity(sev), review.Category(cat), findingStatus(dismissed, addressed)
 		return f, err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: list findings: %w", err)
+	}
+	return out, nil
+}
+
+// PartCosts is what the model calls of each part of a split review's run
+// runnerRunID cost, by part, from 1; a run whose calls were swept, or that
+// was not split, has none.
+func PartCosts(ctx context.Context, tx pgx.Tx, runnerRunID string) (map[int]float64, error) {
+	rows, err := tx.Query(ctx, `SELECT part, sum(cost_usd)::float8 FROM model_calls WHERE runner_run_id = $1 AND part > 0
+		GROUP BY part`, runnerRunID)
+	if err != nil {
+		return nil, fmt.Errorf("store: read part costs: %w", err)
+	}
+	out := map[int]float64{}
+	var part int
+	var cost float64
+	_, err = pgx.ForEachRow(rows, []any{&part, &cost}, func() error {
+		out[part] = cost
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: read part costs: %w", err)
 	}
 	return out, nil
 }
@@ -162,12 +187,17 @@ type AgentRunRow struct {
 // files it reviewed, why it stopped and, once it submitted, the summary it
 // wrote.
 type AgentPart struct {
-	ReusedFrom string          `json:"reused_from,omitempty"`
-	Paths      []string        `json:"paths"`
-	Stop       string          `json:"stop"`
-	Error      string          `json:"error,omitempty"`
-	Steps      int             `json:"steps"`
-	Summary    json.RawMessage `json:"summary,omitempty"`
+	ReusedFrom string `json:"reused_from,omitempty"`
+	// Reviewer is the reviewer the part was for in a review with several,
+	// "" in a review with the default reviewer alone; Full says it
+	// reviewed the whole change where the review built on the last one.
+	Reviewer string          `json:"reviewer,omitempty"`
+	Full     bool            `json:"full,omitempty"`
+	Paths    []string        `json:"paths"`
+	Stop     string          `json:"stop"`
+	Error    string          `json:"error,omitempty"`
+	Steps    int             `json:"steps"`
+	Summary  json.RawMessage `json:"summary,omitempty"`
 }
 
 // FindAgentRun returns the agent run of a runner run, or ErrNotFound.

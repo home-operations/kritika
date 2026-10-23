@@ -356,8 +356,14 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ref := configfile.ModelRef(c.grant.Model)
-	call, err := g.Steppers.Execution(c.file, c.account, ref, configfile.ModelRef(c.grant.Fallback), true, c.logger)
+	reviewer := r.Header.Get(model.ReviewerHeader)
+	granted, ok := c.grant.For(reviewer)
+	if !ok {
+		refuse(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("the run is granted no reviewer %q", reviewer))
+		return
+	}
+	ref := configfile.ModelRef(granted.Model)
+	call, err := g.Steppers.Execution(c.file, c.account, ref, configfile.ModelRef(granted.Fallback), true, c.logger)
 	if err != nil {
 		c.logger.Error("gateway: no model adapter", "error", err)
 		refuse(w, http.StatusInternalServerError, "server_error", "the run's model is not configured")
@@ -367,7 +373,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	// one that carries on an earlier run's keeps its session; a
 	// follow-up's is its mention's, which a retried run carries on. The
 	// effort is the grant's, as the model is: a runner chooses neither.
-	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, cmp.Or(c.grant.Session, c.grant.RunID), model.Effort(c.grant.Effort)
+	req.Model, req.Fallbacks, req.Session, req.Effort = ref.Model(), nil, cmp.Or(c.grant.Session, c.grant.RunID), model.Effort(granted.Effort)
 	if id := c.grant.FollowupCommentID; id != 0 {
 		req.Session = "followup-" + strconv.FormatInt(id, 10)
 	}
@@ -389,7 +395,7 @@ func (g *Server) chat(w http.ResponseWriter, r *http.Request) {
 	call.Recorder = adapter.Recorder{Store: g.Store, Metrics: g.Metrics}
 	call.Record = store.ModelCall{
 		AccountID: c.grant.AccountID, ReviewID: c.grant.ReviewID, RunnerRunID: c.grant.RunID, FollowupCommentID: c.grant.FollowupCommentID,
-		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part,
+		Carries: c.grant.Continues, Kind: store.ModelCallAgentStep, Part: part, Reviewer: reviewer,
 	}
 	call.Usage = store.Usage{AccountID: c.grant.AccountID, RepositoryID: c.grant.RepositoryID, ReviewID: c.usageReview(),
 		Role: c.role(), RunnerRunID: c.grant.RunID}

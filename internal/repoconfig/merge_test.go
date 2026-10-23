@@ -504,3 +504,97 @@ func TestMergeModelRoutes(t *testing.T) {
 		t.Fatalf("err = %v; a route without conditions does not parse", err)
 	}
 }
+
+// TestMergeReviewers: a file adds reviewers of its own, its models among
+// the account's, and only rules and skill scopes to an admin's reviewer,
+// whose other keys, and the default reviewer, it cannot touch.
+func TestMergeReviewers(t *testing.T) {
+	t.Parallel()
+	op := adminSettings()
+	op.Reviewers = map[string]configfile.Reviewer{
+		"security": {
+			Instructions: "Admin's.", Categories: []review.Category{review.CategorySecurity}, Paths: []string{"auth/**"},
+			Rules:  []configfile.Rule{{ID: "no-secrets", Rule: "No secrets."}},
+			Skills: configfile.SkillsSpec{Scope: map[string]configfile.SkillScope{"gha": {Paths: []string{".github/**"}}}},
+		},
+	}
+	m, err := Merge([]byte(`reviewers:
+  default: { enabled: false }
+  security:
+    enabled: false
+    paths: ['**']
+    rules: [{ id: pin-actions, rule: Pin actions. }, { id: no-secrets, rule: Weaker. }, { id: wrap-errors, rule: Weaker. }]
+    skills: { scope: { gha: { load: false }, sql: { paths: ['**/*.sql'] } } }
+  perf: { instructions: Mind allocations., model: own/fast, fallback: nope/x }
+`), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := m.Reviewers["security"]
+	if !sec.On() || sec.Instructions != "Admin's." || !slices.Equal(sec.Paths, []string{"auth/**"}) {
+		t.Errorf("security = %+v, want the admin's on, its keys untouched", sec)
+	}
+	ids := make([]string, 0, len(sec.Rules))
+	for _, r := range sec.Rules {
+		ids = append(ids, r.ID)
+	}
+	if !slices.Equal(ids, []string{"no-secrets", "pin-actions"}) {
+		t.Errorf("security's rules = %q, want the admin's then the file's under an id of its own", ids)
+	}
+	if got := sec.Skills.Scope; len(got) != 2 || got["gha"].Load != nil || len(got["sql"].Paths) != 1 {
+		t.Errorf("security's skill scopes = %+v, want the admin's gha kept and the file's sql added", got)
+	}
+	if _, ok := m.Reviewers[review.DefaultReviewer]; ok {
+		t.Error("the file turned the default reviewer off")
+	}
+	if perf := m.Reviewers["perf"]; perf.Model != "own/fast" || perf.Fallback != "" || perf.Instructions != "Mind allocations." {
+		t.Errorf("perf = %+v, want the file's with its fallback of no provider dropped", perf)
+	}
+	if op.Reviewers["security"].Rules[0].ID != "no-secrets" || len(op.Reviewers["security"].Rules) != 1 {
+		t.Error("merging changed the admin's settings")
+	}
+	for _, want := range []string{
+		"reviewers.default was dropped", "reviewers.security was dropped but for its rules and skills",
+		"reviewers.security.rules no-secrets was dropped", "reviewers.security.rules wrap-errors was dropped",
+		"reviewers.security.skills.scope.gha was dropped", `reviewers.perf.fallback "nope/x" was dropped`,
+	} {
+		if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, want) }) {
+			t.Errorf("dropped %q lacks %q", m.Dropped, want)
+		}
+	}
+}
+
+func TestMergeReviewersCap(t *testing.T) {
+	t.Parallel()
+	op := adminSettings()
+	op.Reviewers = map[string]configfile.Reviewer{}
+	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		op.Reviewers[n] = configfile.Reviewer{}
+	}
+	m, err := Merge([]byte("reviewers: { x: {}, y: {} }\n"), op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Reviewers["x"]; !ok || len(m.Reviewers) != configfile.MaxReviewers {
+		t.Fatalf("reviewers = %d, want the cap of %d with x added", len(m.Reviewers), configfile.MaxReviewers)
+	}
+	if !slices.ContainsFunc(m.Dropped, func(d string) bool { return strings.Contains(d, "reviewers.y was dropped") }) {
+		t.Errorf("dropped %q, want y past the cap", m.Dropped)
+	}
+}
+
+// TestReferencedReviewers: a reviewer's files are read from the merge base
+// with the rest, and one outside the repository is refused.
+func TestReferencedReviewers(t *testing.T) {
+	t.Parallel()
+	f, err := Parse([]byte("reviewers: { sec: { file: docs/sec.md, rules: [{ id: r, file: docs/r.md }] } }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Referenced(); !slices.Equal(got, []string{"docs/sec.md", "docs/r.md"}) {
+		t.Errorf("referenced = %q", got)
+	}
+	if _, err := Parse([]byte("reviewers: { sec: { file: /etc/passwd } }\n")); err == nil {
+		t.Error("a reviewer's absolute file was accepted")
+	}
+}

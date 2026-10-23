@@ -107,6 +107,7 @@ export const skipText: Record<Exclude<SkipReason, ''>, string> = {
   only_skipped_paths: 'only ignored paths changed',
   unchanged_patch: 'patch unchanged since the last review',
   too_large: 'more changed lines than the repository allows',
+  no_reviewer: 'no reviewer applies to the change',
 };
 
 // noMoreReviews says why a pull request that is not open takes no

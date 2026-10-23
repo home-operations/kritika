@@ -39,7 +39,7 @@ func (p *publishPhase) mergeSummary(ctx context.Context, parts []store.AgentPart
 		if len(part.Summary) == 0 || json.Unmarshal(part.Summary, &s) != nil {
 			continue
 		}
-		merge = append(merge, review.MergePart{Paths: part.Paths, Summary: s})
+		merge = append(merge, review.MergePart{Paths: part.Paths, Summary: s, Reviewer: part.Reviewer})
 	}
 	if len(merge) < 2 {
 		return answer, ""

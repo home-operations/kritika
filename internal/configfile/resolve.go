@@ -174,6 +174,7 @@ func (s *Settings) apply(o *Overrides) {
 	}
 	s.Ignore = append(s.Ignore, o.Ignore...)
 	s.Skills = s.Skills.overlay(o.Skills)
+	s.Reviewers = o.Reviewers
 	s.trigger(o)
 	s.Agent = s.Agent.overlay(o.Agent)
 	s.Review = s.Review.overlay(o)

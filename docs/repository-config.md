@@ -45,6 +45,7 @@ admin's policy; detailed examples follow.
 | [`context`](#context)                                        | files that explain the code                                        | added after                                     |
 | [`skills`](#skills)                                          | where the repository's Agent Skills live, and when each is offered | `paths` replaces; `scope` adds up               |
 | [`tools`](#repository-tools)                                 | the tools the reviews may run, over the image's                    | added; one under an image tool's name replaces it |
+| [`reviewers`](#reviewers)                                    | reviewers that run beside the default one, each an agent of its own | added; one under an admin's name takes only rules and skills |
 
 A value the file may not take, such as a model of an undeclared provider,
 is dropped: the admin's value applies for that field, a note in the
@@ -259,6 +260,81 @@ Rules, context and skills compared:
 | A rule           | whole, wherever it applies                                                     | yes, by id        |
 | A `context` file | a pointer, with the configuration's description                                | no                |
 | A skill          | its own description, until the review reads it; whole, when its scope loads it | no                |
+
+### Reviewers
+
+Every review has a `default` reviewer: kritika's own instructions, on
+`review.model`, with the repository's `rules` and `skills`. `reviewers`
+adds others, each an agent of its own over the change, or over the part of
+it their `paths` cover, run in parallel with the default one:
+
+```yaml
+reviewers:
+  security:
+    instructions: |
+      Review as an application security engineer. Trace every input that
+      reaches a query, a shell, a path or a redirect, and name the exploit.
+    categories: [security]
+    model: anthropic/claude-opus-5-5
+    effort: high
+    paths: ["**/auth/**", ".github/workflows/**", "Dockerfile"]
+    rules:
+      - id: pin-actions
+        rule: Third-party actions are pinned to a commit digest.
+```
+
+| Key            | What                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| the name       | lowercase letters, digits and hyphens, at most 64 characters; the inline comments and the summary credit a finding to it                   |
+| `instructions` | what the reviewer reviews for, at most 8000 characters, added after kritika's own instructions                                             |
+| `file`         | instead of `instructions`, a file read from the merge base whose content they are; the first 32 KiB is used                                |
+| `categories`   | the only finding categories it may report; its schema and its submission check refuse the rest. Every category when unset                 |
+| `model`, `fallback`, `effort` | as `review.*`, for this reviewer; `review.*`'s where unset                                                                  |
+| `paths`        | it reviews only the changed files that match one, and a pull request that changes none is not reviewed by it                               |
+| `when`         | conditions as a rule's: it runs only on a pull request one of them holds for                                                               |
+| `rules`        | its checks, in place of the repository's, which are the default reviewer's                                                                 |
+| `skills.scope` | skill scopes laid over the repository's for this reviewer, so a skill can be given whole to it alone                                       |
+| `agent`        | `steps`, `tokens` and `timeout` for its agent, or each of its parts; they may lower the repository's `agent` bounds and never raise them    |
+| `enabled`      | `false` turns it off                                                                                                                       |
+
+- **One review.** The reviewers' answers are merged into one summary
+  comment, one commit status and one confidence score. Each inline finding
+  names the reviewer that raised it, as in `P1 · Open redirect · security ·
+  security`, and the summary's **Review context** block lists the
+  reviewers that ran. A repository with the default reviewer alone reads
+  exactly as before.
+- **Duplicates merge.** When two reviewers raise the same thing (one path,
+  overlapping lines, the same category or title), one comment is posted:
+  the more severe finding, crediting both.
+- **Split by reviewer.** A large diff is split into parts within each
+  reviewer, and the run is sized and budgeted for every reviewer's parts.
+  A reviewer whose parts did not all submit leaves the review
+  [incomplete](reviews.md#the-commit-status), its findings posted and named
+  in the summary; a retry of the same job reuses the parts that did.
+- **Incremental per reviewer.** A re-review builds on the last one only for
+  the reviewers the last one ran: one it did not, whose paths a push
+  touches for the first time say, reviews its files whole, and none of its
+  findings is held back. A reviewer none of whose files changed since the
+  last review does not run on a re-review.
+- **Follow-ups.** A reply or mention in a finding's thread is answered by
+  the reviewer that raised it, with its instructions, rules and model.
+- **On demand.** `@<bot> review <name>` runs that reviewer alone, whatever
+  its `paths` and `when`, and carries the other reviewers' findings on
+  unchecked; `@<bot> review default` runs the default one alone.
+- **The admin's reviewers.** A reviewer the admin defines can only gain
+  rules (under ids of their own) and skill scopes (of skills it does not
+  scope) from this file; anything else written for it, and
+  `reviewers.default`, is dropped with a note. An admin may turn the
+  default reviewer off with `reviewers: { default: { enabled: false } }`;
+  a pull request none of whose reviewers then applies is skipped as
+  `no reviewer applies to the change`.
+- **Shared tools.** A reviewer runs the repository's
+  [tools](#repository-tools) and commands, as the default one does: there
+  is no per-reviewer tool list.
+
+Each reviewer spends tokens of its own: with two reviewers, a review costs
+about twice as much. The dashboard's review timeline shows each part's
+reviewer and cost, with a total by reviewer.
 
 ### Agent files
 
@@ -555,6 +631,8 @@ produce summary notes when content is omitted:
 | a skill's description                                | 1024 characters                           |
 | the skills' names and descriptions in the prompt     | 4 KiB                                     |
 | the skills given whole in the prompt                 | 32 KiB; one past it is offered by name    |
+| reviewers besides the default one                    | 8, the admin's and the file's together    |
+| a reviewer's instructions                            | 8000 characters, or 32 KiB of its file    |
 
 Context file contents are read on demand by `read_file`, outside the
 configuration-file limits above. Each read is capped at `agent.output`

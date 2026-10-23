@@ -14,7 +14,8 @@ import (
 // mergeSystem is the instructions of the call that writes a split review's
 // summary from its parts'.
 const mergeSystem = `You are kritika, a code reviewer for pull requests, writing the summary of a review that was split into
-parts, each part's files read by a reviewer of its own. You see the pull request's title and description, each
+parts, each part's files read by a reviewer of its own; where several reviewers each looked at the change for a
+concern of their own, a part names the reviewer it was for. You see the pull request's title and description, each
 part's files and the summary its reviewer wrote, and the findings the parts reported. Write one summary of the
 whole change, as a single reviewer who had read every part would.
 
@@ -50,6 +51,9 @@ func MergeSchema(diagram bool) json.RawMessage {
 type MergePart struct {
 	Paths   []string
 	Summary Summary
+	// Reviewer is the reviewer the part was for in a review with several,
+	// "" in a review with one.
+	Reviewer string
 }
 
 // maxMergePaths is how many of a part's files the merge call is shown
@@ -104,7 +108,11 @@ func mergeSection(i, n int, p MergePart) string {
 		take = textcut.Prefix(take, maxMergeTake) + " …"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nPart %d of %d, reviewing %s:\n<summary>\nHeadline: %s\nTake: %s\n", i+1, n,
+	by := ""
+	if p.Reviewer != "" {
+		by = " by the " + p.Reviewer + " reviewer"
+	}
+	fmt.Fprintf(&b, "\nPart %d of %d%s, reviewing %s:\n<summary>\nHeadline: %s\nTake: %s\n", i+1, n, by,
 		strings.Join(paths, ", "), inSummary(oneLine(p.Summary.Headline)), inSummary(take))
 	for _, pr := range p.Summary.Praise {
 		fmt.Fprintf(&b, "Praise: %s\n", inSummary(oneLine(pr)))

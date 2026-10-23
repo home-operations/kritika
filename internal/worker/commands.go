@@ -23,7 +23,7 @@ import (
 
 var (
 	mentionPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)`)
-	reviewPattern  = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+review\b`)
+	reviewPattern  = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+review\b(?:[ \t]+([a-z0-9][a-z0-9-]{0,63})\b)?`)
 	dismissPattern = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+dismiss(?:ed)?\b`)
 	pausePattern   = regexp.MustCompile(`(?i)(^|[^\w@])@([\w-]+)\s+(pause|resume)\b`)
 )
@@ -37,6 +37,18 @@ func requestsReview(body, slug string) bool {
 		}
 	}
 	return false
+}
+
+// requestedReviewer is the word that follows "@<slug> review" on its line
+// in body, lowercased, which names the reviewer to run when it is one; ""
+// when nothing follows.
+func requestedReviewer(body, slug string) string {
+	for _, m := range reviewPattern.FindAllStringSubmatch(body, -1) {
+		if strings.EqualFold(m[2], slug) {
+			return strings.ToLower(m[3])
+		}
+	}
+	return ""
 }
 
 // requestsDismiss reports whether body asks slug to dismiss the finding it
@@ -117,6 +129,23 @@ func (f *followUp) dismissedFinding(ctx context.Context) (string, error) {
 	return fingerprint, nil
 }
 
+// findingReviewer is the reviewer other than the default one that raised
+// the finding of rec, the pull request's last review, whose thread the
+// comment is in: "" when it is in none, or the default reviewer raised
+// it.
+func (f *followUp) findingReviewer(ctx context.Context, rec reviewRecord) (string, error) {
+	fingerprint, err := f.dismissedFinding(ctx)
+	if err != nil || fingerprint == "" {
+		return "", err
+	}
+	for _, finding := range rec.findings {
+		if review.Fingerprint(finding) == fingerprint {
+			return finding.Specialist(), nil
+		}
+	}
+	return "", nil
+}
+
 // answer posts body as the reply and records the mention answered, for
 // reason. Both run on past the job's ctx, as run's reply does: a reply cut
 // after the forge created it refunds the attempt when the worker stops,
@@ -181,7 +210,7 @@ const reviewRequested = "review requested"
 
 // requestReview queues a review of the pull request's head, as the
 // dashboard's re-run does, for someone with write access who asked with
-// "@<bot> review": it is how a pull request from a fork, which is not
+// "@<bot> review", or of one reviewer's alone with "@<bot> review <name>": it is how a pull request from a fork, which is not
 // reviewed on its own, gets one, and a merged or closed one a look back. A
 // review of the head already queued or running stands in for it. The
 // request is answered with the bot's marks rather than a reply: its eyes
@@ -206,10 +235,14 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 			return f.answer(ctx, review.NothingToReviewBody(f.pr.headSHA, f.pr.baseRef), nothingToReview(f.pr))
 		}
 	}
+	reviewer, err := f.namedReviewer(ctx)
+	if err != nil {
+		return store.FollowupFailed, err
+	}
 	queue := river.ClientFromContext[pgx.Tx](ctx)
 	already := false
 	err = f.w.Store.WithAccount(ctx, f.account.ID(), func(tx pgx.Tx) error {
-		_, err := jobs.EnqueueRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number)
+		_, err := jobs.EnqueueReviewerRerun(ctx, tx, queue, f.account.ID(), f.pr.repositoryID, f.pr.number, reviewer)
 		if errors.Is(err, jobs.ErrRerunQueued) {
 			already, err = true, nil
 		}
@@ -224,8 +257,27 @@ func (f *followUp) requestReview(ctx context.Context) (store.FollowupStatus, err
 	if err != nil {
 		return store.FollowupFailed, fmt.Errorf("worker: queue the requested review: %w", err)
 	}
-	f.logger.Info("review requested", "already_queued", already)
+	f.logger.Info("review requested", "already_queued", already, "reviewer", reviewer)
 	return store.FollowupAnswered, f.awaitReview(ctx)
+}
+
+// namedReviewer is the reviewer "@<bot> review <name>" asks to run alone:
+// the default one, or one the repository's settings, its .kritika.yaml
+// applied, name; "" when the word after review names none, or nothing
+// follows it, for a review of every reviewer that applies.
+func (f *followUp) namedReviewer(ctx context.Context) (string, error) {
+	slug := strings.TrimSuffix(f.botLogin, "[bot]")
+	name := requestedReviewer(f.comment.Body, slug)
+	if name == "" || name == review.DefaultReviewer {
+		return name, nil
+	}
+	if _, err := f.repoConfig(ctx); err != nil {
+		return "", err
+	}
+	if _, ok := f.eff.Reviewers[name]; !ok {
+		return "", nil
+	}
+	return name, nil
 }
 
 // awaitInterval is how long the job of an answered review request sleeps

@@ -83,6 +83,9 @@ type RenderData struct {
 	// the runner's record rather than the model's answer, as SourceLinks
 	// gives them.
 	Sources []string
+	// Reviewers are the reviewers the review ran, in the order it ran
+	// them; the default template lists them when there is more than one.
+	Reviewers []string
 	// Skills are the repository's skills the review was offered and the
 	// ones it read; Commands the run tool's commands it was offered and
 	// the ones it ran. Each is zero when none were offered.

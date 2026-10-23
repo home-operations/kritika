@@ -758,6 +758,26 @@ test.describe('findings', () => {
     await expect(search).toBeFocused();
   });
 
+  test('a finding names the reviewers that raised it, on the list and in its review', async ({ page }) => {
+    const f = { ...g.accountFinding, reviewers: ['security'] };
+    const seen = await g.mockApi(page, [[new RegExp(`/api/v1/accounts/${g.SLUG}/findings$`), g.pageOf([f])], ...g.defaultApi()]);
+    await page.goto(`/${T}/findings`);
+    const badge = page.locator('.finding-row').first().getByRole('link', { name: 'security', exact: true });
+    await expect(badge).toHaveAttribute('title', 'Raised by the security reviewer');
+    await badge.click();
+    await expect(page).toHaveURL(new RegExp(`${T}/findings\\?reviewer=security$`));
+    await expect.poll(() => seen.filter((u) => u.pathname.endsWith('/findings')).at(-1)?.searchParams.get('reviewer')).toBe('security');
+    await expect(page.getByRole('combobox', { name: 'Search findings' })).toHaveValue('reviewer:security');
+
+    const review = { ...g.reviewDetail, findings: [{ ...g.reviewDetail.findings[0]!, reviewers: ['security', 'default'] }] };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, review], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1`);
+    await page.getByRole('button', { name: `Details for ${review.findings[0]!.title}`, exact: true }).click();
+    const head = page.locator('.finding-head');
+    await expect(head.getByTitle('Raised by the security reviewer')).toHaveText('security');
+    await expect(head.getByTitle('Raised by the default reviewer')).toHaveText('default');
+  });
+
   test('a cited rule narrows the list to the findings that cite it', async ({ page }) => {
     const seen = await g.mockApi(page, g.defaultApi());
     await page.goto(`/${T}/findings`);
@@ -907,7 +927,7 @@ test.describe('review', () => {
     await expect(page.locator('.finding')).toContainText(f.title);
     await expect(page.locator('.finding')).toContainText(`${f.path}:${f.line}-${f.endLine}`);
     await expect(page.locator('.finding .code-block')).toContainText(f.replacement);
-    await expect(page.locator('.finding-head .badge.mono')).toHaveText(f.rules);
+    await expect(page.locator('.finding-head .badge.mono')).toHaveText([...f.rules, ...f.reviewers]);
     // The golden finding was posted inline as comment 55 on the pull request.
     await expect(page.locator('.finding').getByRole('link', { name: 'Thread on GitHub' })).toHaveAttribute(
       'href',
@@ -1101,10 +1121,8 @@ test.describe('review', () => {
   test("a split review's timeline lists its parts and names each step by its part", async ({ page }) => {
     await page.goto(`/${T}/reviews/rev-1/timeline`);
     await expect(page.locator('.chart-tick').first()).toBeVisible();
-    await expect(page.getByRole('table', { name: 'Parts' })).toHaveCount(0);
     const a = g.reviewDetail.agentRun!;
     const step = a.timeline[0]!;
-    const part = a.parts[0]!;
     const agentRun = {
       ...a,
       steps: 3,
@@ -1114,18 +1132,42 @@ test.describe('review', () => {
         { ...step, index: 2, part: 2 },
       ],
       parts: [
-        { ...part, paths: ['server/a.ts', 'server/b.ts', 'web/c.ts'], steps: 2 },
-        { ...part, paths: ['docs/d.md'], stop: 'no_submit', error: 'answered in prose', steps: 1 },
+        { paths: ['server/a.ts', 'server/b.ts', 'web/c.ts'], stop: 'submitted', error: '', steps: 2 },
+        { paths: ['docs/d.md'], stop: 'no_submit', error: 'answered in prose', steps: 1 },
       ],
     };
     await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
     await page.goto(`/${T}/reviews/rev-1/timeline`);
     await expect(page.locator('section[aria-labelledby="tl-agent"] .panel-head')).toContainText('3 steps in 2 parts');
     const rows = page.getByRole('table', { name: 'Parts' }).locator('tbody tr');
-    await expect(rows.nth(0).locator('td')).toHaveText(['1', '3 files in server/, web/', '2', 'submitted', '']);
-    await expect(rows.nth(1).locator('td')).toHaveText(['2', '1 file in docs/', '1', 'no_submit', 'answered in prose']);
+    await expect(rows.nth(0).locator('td')).toHaveText(['1', '3 files in server/, web/', '2', '', 'submitted', '']);
+    await expect(rows.nth(1).locator('td')).toHaveText(['2', '1 file in docs/', '1', '', 'no_submit', 'answered in prose']);
     const labels = page.getByRole('img', { name: /^Tokens per agent step/ }).locator('.chart-tick').filter({ hasText: /^\d+\.\d+$/ });
     await expect(labels).toHaveText(['1.0', '1.1', '2.0']);
+  });
+
+  test('a part names its reviewer, marks a whole-change review and shows its cost, with each reviewer\'s total', async ({ page }) => {
+    const a = g.reviewDetail.agentRun!;
+    const agentRun = {
+      ...a,
+      steps: 2,
+      timeline: [
+        { ...a.timeline[0]!, index: 0, part: 1 },
+        { ...a.timeline[0]!, index: 1, part: 2 },
+      ],
+      parts: [
+        { reviewer: 'security', paths: ['server/a.go'], stop: 'submitted', error: '', steps: 1, costUsd: 0.12 },
+        { paths: ['server/a.go', 'web/b.ts'], stop: 'submitted', error: '', steps: 1, full: true, costUsd: 0.3 },
+      ],
+    };
+    await g.mockApi(page, [[/\/reviews\/rev-1$/, { ...g.reviewDetail, agentRun }], ...g.defaultApi()]);
+    await page.goto(`/${T}/reviews/rev-1/timeline`);
+    const rows = page.getByRole('table', { name: 'Parts' }).locator('tbody tr');
+    await expect(rows.nth(0).locator('td').first()).toHaveText('security · part 1');
+    await expect(rows.nth(0).locator('td').nth(3)).toHaveText('$0.12');
+    await expect(rows.nth(1).locator('td').first()).toHaveText('2');
+    await expect(rows.nth(1).locator('td').nth(1)).toContainText('whole change');
+    await expect(page.getByText(/^Cost by reviewer: /)).toHaveText('Cost by reviewer: security $0.12 · default $0.30');
   });
 
   test("a split review's conversation shows each part's turns together, then those after them", async ({ page }) => {

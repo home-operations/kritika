@@ -66,7 +66,7 @@ export type ReviewStatus =
   | 'canceled';
 export type ReviewScope = 'full' | 'incremental';
 // The repository's own reasons, then the runner's.
-export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths' | 'unchanged_patch' | 'too_large';
+export type SkipReason = '' | 'disabled' | 'filtered' | 'only_skipped_paths' | 'unchanged_patch' | 'too_large' | 'no_reviewer';
 export type Severity = 'p0' | 'p1' | 'p2';
 export type IndexRunStatus = 'running' | 'completed' | 'failed' | 'superseded';
 export type FollowupStatus = 'answered' | 'limited' | 'ignored' | 'failed';
@@ -538,6 +538,9 @@ export interface Finding {
   reactionsDown: number;
   // rules are the ids of the review rules it enforces.
   rules: string[];
+  // reviewers are the names of the reviewers that raised it; empty when the
+  // default reviewer alone did, and "default" may appear alongside others.
+  reviewers: string[];
   // status is what became of it on its pull request; dismissReason is the
   // reason a dismissed one was dismissed with.
   status: FindingStatus;
@@ -714,6 +717,12 @@ export interface AgentRun {
 // AgentPart is one part of a split review: its files, why its agent stopped, with the error it ended on, and its steps.
 export interface AgentPart {
   reusedFrom?: string;
+  // reviewer is the named reviewer the part was for; absent for the default reviewer alone.
+  reviewer?: string;
+  // full is whether that reviewer reviewed the whole change, though the review was incremental.
+  full?: boolean;
+  // costUsd is the part's model-call cost; absent when it is 0 or unknown.
+  costUsd?: number;
   paths: string[];
   stop: string;
   error: string;
