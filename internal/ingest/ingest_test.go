@@ -455,7 +455,7 @@ func (f *fakeUninstaller) Uninstall(ctx context.Context, in *configfile.Connecti
 // fakeEvents records pod Events as "Type Reason: note".
 type fakeEvents struct{ got []string }
 
-func (f *fakeEvents) PodEvent(_ context.Context, warning bool, reason, _, note string) {
+func (f *fakeEvents) PodEventAsync(_ context.Context, warning bool, reason, _, note string) {
 	kind := "Normal"
 	if warning {
 		kind = "Warning"

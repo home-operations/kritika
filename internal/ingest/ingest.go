@@ -77,10 +77,11 @@ type Uninstaller interface {
 	Uninstall(ctx context.Context, in *configfile.Connection, account string, installation int64) error
 }
 
-// PodEvents records an Event on this replica's pod. The implementation is
-// executor.Events, which records none outside Kubernetes.
+// PodEvents records an Event on this replica's pod without waiting for the
+// write. The implementation is executor.Events, which records none outside
+// Kubernetes.
 type PodEvents interface {
-	PodEvent(ctx context.Context, warning bool, reason, action, note string)
+	PodEventAsync(ctx context.Context, warning bool, reason, action, note string)
 }
 
 // dispatchTimeout bounds one dispatch, which does not end with its request.
@@ -295,7 +296,7 @@ func (h *Handler) uninstall(ctx context.Context, logger *slog.Logger, in *config
 	}
 	logger.Warn("App uninstalled from an undeclared account")
 	if h.Events != nil {
-		h.Events.PodEvent(ctx, true, "AppUninstalled", "Uninstall", fmt.Sprintf(
+		h.Events.PodEventAsync(ctx, true, "AppUninstalled", "Uninstall", fmt.Sprintf(
 			"GitHub App uninstalled from %s (installation %d) as it was installed there: apps.%s.accounts does not list it; "+
 				"add it there and roll out before installing again", ev.Account, ev.Installation.ID, in.Name))
 	}
