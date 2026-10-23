@@ -15,9 +15,9 @@ import (
 const connectionsYAML = `
 apps:
   personal-bot: { accounts: [Alice], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
-  org-bot: { accounts: [acme], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
-  adminorg-bot: { accounts: [widgets], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
-  several-bot: { accounts: [nobody, Initech], clientId: Iv1.x, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  org-bot: { accounts: [acme], clientId: Iv1.org-bot, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  adminorg-bot: { accounts: [widgets], clientId: Iv1.adminorg-bot, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
+  several-bot: { accounts: [nobody, Initech], clientId: Iv1.several-bot, privateKey: { env: TEST_AUTH_SECRET }, webhookSecret: { env: TEST_AUTH_SECRET } }
 `
 
 // adminPassword is an auth block's local admin, so a file whose sign-ins

@@ -228,7 +228,7 @@ apps:
 | --------------- | -------------------------------------------------------------------------------------------------------------- |
 | the entry's key | the app's name, which is its webhook path, `/hooks/<name>`                                                     |
 | `accounts`      | the users and organizations it serves; a webhook for any other is ignored, and an account is served by one app |
-| `clientId`      | the App's client ID, inline or, like the secrets, as a reference                                               |
+| `clientId`      | the App's client ID, inline or, like the secrets, as a reference; an App is declared by one entry              |
 | `privateKey`    | the App's private key                                                                                          |
 | `webhookSecret` | the same value as the App's webhook secret                                                                     |
 

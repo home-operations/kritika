@@ -47,7 +47,9 @@ Contents write access also permits pushing code, although kritika does not push.
 If you change permissions later, each installation must approve them.
 
 Allow installation only on your account unless you intend to serve several.
-For a public App, kritika reviews only accounts explicitly listed in `apps`.
+Anyone can install a public App: kritika reviews only the accounts listed in
+`apps` and ignores any other installation, which an admin can uninstall from
+the dashboard's Connections section.
 
 ## Deploy
 

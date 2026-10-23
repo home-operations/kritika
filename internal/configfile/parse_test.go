@@ -84,6 +84,8 @@ func TestParseRejectsEntries(t *testing.T) {
 		{"a repositories map", "repositories: { acme/*: { review: { model: nope/x } } }\n", "field repositories not found"},
 		{"a duplicate app", apps(fileApp("a", "x"), fileApp("a", "y")), "already defined"},
 		{"an account two apps serve", apps(fileApp("a", "x"), fileApp("b", "X")), "an account is served by one connection"},
+		{"an App two entries declare", apps(fileApp("a", "x"), strings.Replace(fileApp("b", "y"), "clientId: Iv1.b", "clientId: Iv1.a", 1)),
+			`apps.b.clientId is "a"'s App already`},
 		{"two documents", "egress: {}\n---\negress: {}\n", "one document"},
 		{"an embedder without a provider", embeddingDoc("model: voyage-code-3"), `embedding.model must be "<provider>/<model>"`},
 		{"an embedder of an undeclared provider", embeddingDoc("model: other/voyage-code-3"), `references provider "other"`},

@@ -262,10 +262,13 @@ func forgesServing(conns []Connection) map[string][]Forge {
 }
 
 // validateConnections checks one layer's connections: names that are hook
-// paths; accounts listed; credentials that resolved; and every account
-// served by one connection alone.
+// paths; accounts listed; credentials that resolved; every account served
+// by one connection alone; and every GitHub App declared once. An App has
+// one webhook, so a second entry's accounts would be undeclared on the
+// first's hook path, and offered for uninstalling as not served.
 func validateConnections(conns []Connection) error {
 	served := map[string]string{}
+	apps := map[string]string{}
 	for i := range conns {
 		in := &conns[i]
 		where := in.where()
@@ -282,6 +285,12 @@ func validateConnections(conns []Connection) error {
 		}
 		if err := in.validate(where); err != nil {
 			return err
+		}
+		if in.Forge == ForgeGitHub {
+			if other, dup := apps[in.App.clientID]; dup {
+				return fmt.Errorf("configfile: %s.clientId is %q's App already; an App is one connection", where, other)
+			}
+			apps[in.App.clientID] = in.Name
 		}
 		for ai, a := range in.Accounts {
 			key := AccountKey(in.Forge, a)
