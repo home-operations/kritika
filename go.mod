@@ -4,8 +4,8 @@ go 1.27.0
 
 require (
 	cel.dev/cel-go v0.32.0
-	github.com/KimMachineGun/automemlimit v1.0.0
-	github.com/anthropics/anthropic-sdk-go v1.83.0
+	github.com/KimMachineGun/automemlimit v1.0.1
+	github.com/anthropics/anthropic-sdk-go/v2 v2.2.0
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coreos/go-oidc/v3 v3.21.0
@@ -23,7 +23,7 @@ require (
 	github.com/knadh/koanf/v2 v2.4.1
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/odvcencio/gotreesitter v0.56.0
-	github.com/openai/openai-go/v3 v3.82.0
+	github.com/openai/openai-go/v3 v3.86.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.25.0
@@ -31,7 +31,7 @@ require (
 	github.com/riverqueue/river v0.49.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.49.0
 	github.com/riverqueue/river/rivertype v0.49.0
-	gitlab.com/gitlab-org/api/client-go/v3 v3.30.1
+	gitlab.com/gitlab-org/api/client-go/v3 v3.32.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/net v0.61.0
 	golang.org/x/oauth2 v0.37.0
@@ -40,7 +40,7 @@ require (
 	k8s.io/apimachinery v0.37.1
 	k8s.io/client-go v0.37.1
 	k8s.io/klog/v2 v2.140.0
-	oras.land/oras-go/v2 v2.6.4
+	oras.land/oras-go/v2 v2.7.0
 )
 
 require (

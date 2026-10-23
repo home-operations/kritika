@@ -183,7 +183,8 @@ func (p *Provider) resolve(where, sessionKey string, s *secrets) error {
 }
 
 // reservedHeaders are the headers of a provider request that apiKey, the
-// SDKs or Go's HTTP client set, canonicalized.
+// SDKs or Go's HTTP client set, and X-Api-Key, which would send a second
+// key, canonicalized.
 var reservedHeaders = []string{
 	"Authorization", "X-Api-Key", "Host", "Content-Type", "Content-Length", "Content-Encoding",
 	"Transfer-Encoding", "Connection", "Accept", "Accept-Encoding",

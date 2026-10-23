@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/v2"
+	"github.com/anthropics/anthropic-sdk-go/v2/option"
 )
 
 // defaultAnthropicMaxTokens applies when a request sets none; the Messages
@@ -138,14 +138,21 @@ func anthropicParams(req StepRequest) (anthropic.MessageNewParams, error) {
 			p.System[0].CacheControl = anthropic.NewCacheControlEphemeralParam()
 		}
 	}
+	var last []anthropic.ContentBlockParamUnion
 	for _, m := range req.Messages {
-		if blocks := anthropicBlocks(m); len(blocks) > 0 {
-			p.Messages = append(p.Messages, anthropic.MessageParam{Role: anthropic.MessageParamRole(m.Role), Content: blocks})
+		blocks := anthropicBlocks(m)
+		if len(blocks) == 0 {
+			continue
 		}
+		if m.Role == RoleAssistant {
+			p.Messages = append(p.Messages, anthropic.NewAssistantMessage(blocks...))
+		} else {
+			p.Messages = append(p.Messages, anthropic.NewUserMessage(blocks...))
+		}
+		last = blocks
 	}
-	if n := len(p.Messages); n > 0 && !req.Once {
-		blocks := p.Messages[n-1].Content
-		if cc := blocks[len(blocks)-1].GetCacheControl(); cc != nil {
+	if len(last) > 0 && !req.Once {
+		if cc := last[len(last)-1].GetCacheControl(); cc != nil {
 			*cc = anthropic.NewCacheControlEphemeralParam()
 		}
 	}
