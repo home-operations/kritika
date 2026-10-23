@@ -53,6 +53,17 @@ const (
 	StopError     StopReason = "error"
 )
 
+// ForcedBy is the limit that made the loop tell the model to submit with
+// what it had, before it chose to.
+type ForcedBy string
+
+// Limits a Run can be forced to submit by.
+const (
+	ForcedBySteps  ForcedBy = "steps"
+	ForcedByTokens ForcedBy = "tokens"
+	ForcedByTime   ForcedBy = "time"
+)
+
 // Tool is one function the loop offers the model.
 type Tool interface {
 	Def() model.ToolDef
@@ -101,6 +112,10 @@ type Result struct {
 	// Refused is Validate's refusal of Submitted when the Run took it as
 	// its Fallback, empty when Submitted was accepted.
 	Refused string
+	// ForcedBy is the limit that first made the loop tell the model to
+	// submit, empty when it never did: a submission then may not cover all
+	// the model meant to read.
+	ForcedBy ForcedBy
 }
 
 // add counts resp, the answer to one of the Run's steps.
@@ -270,6 +285,44 @@ func (r Run) submitNowText() string {
 // bounds the retries where the step cap does not.
 const forcedRetries = 2
 
+// wrapUpFloor is the least time a Run keeps, before its context's
+// deadline, for the steps it tells the model to submit on, unless the Run
+// was given less than four times that in all. A submission writes the
+// whole answer, so it can take longer than any step before it.
+const wrapUpFloor = 2 * time.Minute
+
+// wrapUpReserve is the time left before the deadline at which a Run that
+// was given total time in all, and whose slowest answer so far took
+// slowest, tells the model to submit: two such answers, one for the
+// submission and one for a retry, and at least wrapUpFloor, or a quarter
+// of total when that is less.
+func wrapUpReserve(slowest, total time.Duration) time.Duration {
+	return max(2*slowest, min(wrapUpFloor, total/4))
+}
+
+// clock is a Run's time: the deadline its ctx has, when timed, when it
+// began, and the longest a step's answer has taken.
+type clock struct {
+	deadline, begun time.Time
+	timed           bool
+	slowest         time.Duration
+}
+
+// forcedBy is the limit that has step, from 0, told to submit, "" for
+// none: the last step, nine tenths of the tokens spent, or less time left
+// than wrapUpReserve keeps.
+func forcedBy(step int, spent int64, limits Limits, c clock) ForcedBy {
+	switch {
+	case step >= limits.MaxSteps-1:
+		return ForcedBySteps
+	case spent*10 >= limits.MaxTokens*9:
+		return ForcedByTokens
+	case c.timed && time.Until(c.deadline) < wrapUpReserve(c.slowest, c.deadline.Sub(c.begun)):
+		return ForcedByTime
+	}
+	return ""
+}
+
 // onlySubmitText answers a tool call other than Submit on a step the model
 // was told to submit on; the tool is not run.
 func (r Run) onlySubmitText() string { return "agent: only " + r.Submit.Name + " is available now" }
@@ -330,7 +383,9 @@ func (r Run) endedWith(toolDefs []model.ToolDef, messages []model.Message, resp 
 	}
 }
 
-// Do runs the loop to completion.
+// Do runs the loop to completion. The model is told to submit with what it
+// has on the last step it may take, once 90% of its tokens are spent, and,
+// when ctx has a deadline, once the time left is under wrapUpReserve.
 func (r Run) Do(ctx context.Context) (result Result) {
 	limits := r.Limits.WithDefaults()
 
@@ -361,6 +416,8 @@ func (r Run) Do(ctx context.Context) (result Result) {
 	// forcedSteps counts the steps the model was told to submit on; the
 	// Run ends when the retries after the first are spent.
 	forcedSteps := 0
+	c := clock{begun: time.Now()}
+	c.deadline, c.timed = ctx.Deadline()
 	forcedEnd := func(lastStep bool) Result {
 		result.Err = fmt.Sprintf("no valid %s in the %d step(s) it was told to submit on", r.Submit.Name, forcedSteps)
 		result.Stop = StopNoSubmit
@@ -383,8 +440,10 @@ func (r Run) Do(ctx context.Context) (result Result) {
 		}
 
 		lastStep := step >= limits.MaxSteps-1
-		forced := lastStep || total*10 >= limits.MaxTokens*9
+		by := forcedBy(step, total, limits, c)
+		forced := by != ""
 		if forced {
+			result.ForcedBy = cmp.Or(result.ForcedBy, by)
 			forcedSteps++
 			last := &messages[len(messages)-1]
 			if last.Text != "" {
@@ -402,7 +461,8 @@ func (r Run) Do(ctx context.Context) (result Result) {
 		}
 
 		start := time.Now()
-		resp, err := r.step(ctx, req)
+		resp, answered, err := r.step(ctx, req)
+		c.slowest = max(c.slowest, answered)
 		if err != nil {
 			if ctx.Err() != nil {
 				result.Stop = StopCanceled
@@ -519,21 +579,28 @@ func (r Run) Do(ctx context.Context) (result Result) {
 }
 
 // step sends req, again after each of stepRetryWaits while the failure is
-// transient and ctx lives.
-func (r Run) step(ctx context.Context, req model.StepRequest) (model.StepResponse, error) {
-	resp, err := r.Stepper.Step(ctx, req)
+// transient and ctx lives, and says how long the last attempt took: the
+// waits between attempts are not the model's, and would make a Run keep
+// far more time to submit in than a submission takes.
+func (r Run) step(ctx context.Context, req model.StepRequest) (model.StepResponse, time.Duration, error) {
+	attempt := func() (model.StepResponse, time.Duration, error) {
+		start := time.Now()
+		resp, err := r.Stepper.Step(ctx, req)
+		return resp, time.Since(start), err
+	}
+	resp, took, err := attempt()
 	for _, wait := range stepRetryWaits {
 		if err == nil || !model.Transient(err) {
 			break
 		}
 		select {
 		case <-ctx.Done():
-			return resp, err
+			return resp, took, err
 		case <-time.After(wait):
-			resp, err = r.Stepper.Step(ctx, req)
+			resp, took, err = attempt()
 		}
 	}
-	return resp, err
+	return resp, took, err
 }
 
 // runTool runs call on tool, nil for a tool the loop does not offer, and

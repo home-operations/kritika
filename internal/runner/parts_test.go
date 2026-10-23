@@ -85,14 +85,15 @@ func TestMergeParts(t *testing.T) {
 		{Stop: agent.StopSubmitted, Submitted: submission("a/x.go", "One."), Steps: 3, Usage: model.Usage{Input: 10, Output: 1},
 			CostUSD: 0.1, Model: "m1", ToolCalls: map[string]int{"grep": 1}},
 		{Stop: agent.StopNoSubmit, Err: "no valid submit_review", Steps: 2, Usage: model.Usage{Input: 5}, Model: "m2"},
-		{Stop: agent.StopSubmitted, Submitted: submission("c/z.go", "Three."), Steps: 1, Model: "m3", ToolCalls: map[string]int{"grep": 2}},
+		{Stop: agent.StopSubmitted, Submitted: submission("c/z.go", "Three."), Steps: 1, Model: "m3", ToolCalls: map[string]int{"grep": 2},
+			ForcedBy: agent.ForcedByTime},
 	}
 	merged, records, err := mergeParts(parts, results, Secrets{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if merged.Stop != agent.StopSubmitted || merged.Steps != 6 || merged.Usage.Input != 15 || merged.ToolCalls["grep"] != 3 ||
-		merged.Model != "m3" || !strings.Contains(merged.Err, "part 2 of 3: no valid submit_review") {
+		merged.Model != "m3" || !strings.Contains(merged.Err, "part 2 of 3: no valid submit_review") || merged.ForcedBy != "" {
 		t.Fatalf("merged = %+v", merged)
 	}
 	var res review.Result
@@ -100,7 +101,8 @@ func TestMergeParts(t *testing.T) {
 		t.Fatalf("merged review = %+v, %v", res, err)
 	}
 	if len(records) != 3 || records[1].Stop != string(agent.StopNoSubmit) || records[1].Summary != nil ||
-		!strings.Contains(string(records[0].Summary), `"take":"One."`) || !slices.Equal(records[2].Paths, []string{"c/z.go"}) {
+		!strings.Contains(string(records[0].Summary), `"take":"One."`) || !slices.Equal(records[2].Paths, []string{"c/z.go"}) ||
+		records[0].ForcedBy != "" || records[2].ForcedBy != string(agent.ForcedByTime) {
 		t.Fatalf("records = %+v", records)
 	}
 	failed := []agent.Result{{Stop: agent.StopNoSubmit}, {Stop: agent.StopCanceled}, {Stop: agent.StopCanceled}}

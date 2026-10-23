@@ -61,7 +61,7 @@ const SkipUnchangedPatch = "unchanged_patch"
 // the review's summary states.
 const (
 	noteRulesLeft         = "%d review rules left out, past the 16 KiB of rule text or 32 KiB of rule files a review is given"
-	noteDiffOmitted       = "%d diff file(s) left out of the prompt to fit its budget: %s"
+	noteDiffOmitted       = "%d diff file(s) left out of the prompt to fit its budget, for the agent to read with read_diff: %s"
 	noteReferencesOmitted = "%d reference file(s) left out of the prompt to fit its budget"
 	noteContextOmitted    = "%d context chunk(s) left out of the prompt to fit its budget"
 	noteDiffNotKept       = "%d diff file(s) too large to keep, so findings in them have no line to attach to: %s"
@@ -528,6 +528,9 @@ type agentRecord struct {
 	// parts are how a split review's parts ended, encoded, nil for a
 	// review that was not split.
 	parts []byte
+	// forcedBy is the limit that made the loop tell the agent to submit,
+	// "" when it never did; a split review's parts each record their own.
+	forcedBy agent.ForcedBy
 }
 
 // keptConversation is the conversation of a review's agent, encoded, that
@@ -561,7 +564,7 @@ func keptConversation(c *agent.Conversation, secrets Secrets, logger *slog.Logge
 func newAgentRecord(res agent.Result, timeline []store.TimelineStep, sources []string, secrets Secrets) (agentRecord, error) {
 	rec := agentRecord{
 		stop: res.Stop, steps: res.Steps, usage: res.Usage, costUSD: res.CostUSD, unpricedSteps: res.UnpricedSteps, model: res.Model,
-		err: secrets.Mask(res.Err),
+		err: secrets.Mask(res.Err), forcedBy: res.ForcedBy,
 	}
 	masked := make([]string, len(sources))
 	for i, s := range sources {
@@ -590,14 +593,14 @@ func writeAgentRun(ctx context.Context, st *store.Store, p Spec, rec agentRecord
 			INSERT INTO agent_runs (runner_run_id, account_id, stop_reason, result, steps, tool_calls, timeline,
 				input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost_usd, model, error, sources,
 				skills_offered, skills_opened, commands_offered, commands_run, continued_from, parts,
-				unpriced_steps, command_errors, command_counts)
+				unpriced_steps, command_errors, command_counts, forced_by)
 			SELECT id, account_id, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, left($13, 2000), $14, $15, $16, $17, $18,
-				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22, coalesce($23::jsonb, '{}'::jsonb)
+				nullif($19, '')::uuid, coalesce($20::jsonb, '[]'::jsonb), $21, $22, coalesce($23::jsonb, '{}'::jsonb), $24
 			FROM runner_runs WHERE id = $1`,
 			p.RunID, string(rec.stop), rec.result, rec.steps, rec.toolCalls, rec.timeline,
 			rec.usage.Input, rec.usage.CacheRead, rec.usage.CacheWrite, rec.usage.Output, rec.costUSD, rec.model, rec.err,
 			rec.sources, rec.skillsOffered, rec.skillsOpened, rec.commandsOffered, rec.commandsRun, rec.continued, rec.parts,
-			rec.unpricedSteps, rec.commandErrors, rec.commandCounts)
+			rec.unpricedSteps, rec.commandErrors, rec.commandCounts, string(rec.forcedBy))
 		if err != nil {
 			return fmt.Errorf("runner: write agent run: %w", err)
 		}

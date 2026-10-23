@@ -175,6 +175,7 @@ func (p *publishPhase) prepare(ctx context.Context) (*publicationAnswer, error) 
 	partNotes := unfinishedParts(run.Parts)
 	p.unfinished = len(partNotes)
 	notes = append(notes, partNotes...)
+	notes = append(notes, cutShort(run)...)
 	var dismissed, dismissedOff int
 	res.Findings, dismissed = dropDismissed(res.Findings, p.prior.dismissed)
 	unanchored, dismissedOff = dropDismissed(unanchored, p.prior.dismissed)

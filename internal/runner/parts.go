@@ -497,7 +497,7 @@ func mergeParts(parts []reviewPart, results []agent.Result, secrets Secrets) (ag
 		}
 		records[i] = store.AgentPart{
 			Reviewer: parts[i].reviewer, Full: parts[i].full, Paths: parts[i].paths, Stop: string(r.Stop), Error: secrets.Mask(r.Err),
-			Steps: r.Steps,
+			Steps: r.Steps, ForcedBy: string(r.ForcedBy),
 		}
 		if r.Stop != agent.StopSubmitted {
 			stops = append(stops, fmt.Sprintf("part %d of %d: %s", i+1, len(parts), cmp.Or(r.Err, string(r.Stop))))
