@@ -24,7 +24,25 @@
     "models": {
       "review": "openrouter/acme-large",
       "fallback": "",
-      "effort": "high"
+      "effort": "high",
+      "routes": [
+        {
+          "name": "deep",
+          "model": "openrouter/acme-xl",
+          "effort": "max",
+          "when": [
+            {
+              "name": "migrations",
+              "expr": "",
+              "paths": ["db/migrations/**"]
+            },
+            {
+              "name": "",
+              "expr": "pr.lines > 800"
+            }
+          ]
+        }
+      ]
     },
     "filters": {
       "include": [

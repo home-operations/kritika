@@ -60,20 +60,21 @@ type Comments struct {
 	Finding *string `yaml:"finding,omitempty"`
 }
 
-// Review is how the repository's reviews are done: the review and fallback
-// models, each a "<provider>/<model>" of a provider its account may use,
-// how hard they reason, whether a finding must carry a suggested fix,
+// Review is how the repository's reviews are done: the review model, or
+// routes that pick one per pull request, and the fallback model, each a
+// "<provider>/<model>" of a provider its account may use, how hard they
+// reason, whether a finding must carry a suggested fix,
 // whether a review that finds nothing at P0 or P1 approves the
 // pull request, and whether the summary draws the change's flow. Effort,
 // Approve and Diagram replace the admin's; an Effort written empty leaves
 // it to the provider.
 type Review struct {
-	Model    configfile.ModelRef `yaml:"model,omitempty"`
-	Fallback configfile.ModelRef `yaml:"fallback,omitempty"`
-	Effort   *model.Effort       `yaml:"effort,omitempty"`
-	Fixes    *bool               `yaml:"fixes,omitempty"`
-	Approve  *configfile.Switch  `yaml:"approve,omitempty"`
-	Diagram  *bool               `yaml:"diagram,omitempty"`
+	Model    configfile.ReviewModel `yaml:"model,omitempty"`
+	Fallback configfile.ModelRef    `yaml:"fallback,omitempty"`
+	Effort   *model.Effort          `yaml:"effort,omitempty"`
+	Fixes    *bool                  `yaml:"fixes,omitempty"`
+	Approve  *configfile.Switch     `yaml:"approve,omitempty"`
+	Diagram  *bool                  `yaml:"diagram,omitempty"`
 }
 
 // Confidence is how the repository's reviews are judged: the model that
@@ -186,6 +187,9 @@ func Parse(data []byte) (File, error) {
 
 	if err := f.Trigger.Compile(); err != nil {
 		return File{}, fmt.Errorf("repoconfig: trigger.%w", err)
+	}
+	if err := f.Review.Model.Compile(); err != nil {
+		return File{}, fmt.Errorf("repoconfig: review.model%w", err)
 	}
 
 	return f, nil

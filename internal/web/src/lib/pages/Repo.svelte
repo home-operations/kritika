@@ -4,7 +4,7 @@
   import { href } from '../router.svelte';
   import { Resource } from '../resource.svelte';
   import { duration, indexTone, shortSha, bytes, wholeNumber } from '../format';
-  import type { Condition, ConfigSource, Page, Pull, RepoDetail, RepoSettings, Risk, SkillScope } from '../types';
+  import type { Condition, ConfigSource, ModelRoute, Page, Pull, RepoDetail, RepoSettings, Risk, SkillScope } from '../types';
   import StateView from '../components/StateView.svelte';
   import Pill from '../components/Pill.svelte';
   import Time from '../components/Time.svelte';
@@ -32,6 +32,15 @@
   const tests = (c: Condition) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');
   // Conditions are parted by a semicolon: a condition's globs are already parted by commas.
   const conditions = (cs: Condition[]) => cs.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join('; ') || '—';
+  // A route's conditions are parted by "or": one holding picks its model.
+  const routes = (rs: ModelRoute[] = []) =>
+    rs
+      .map((r) => {
+        const model = `${r.model}${r.effort ? `/${r.effort}` : ''}${r.fallback ? `, fallback ${r.fallback}` : ''}`;
+        const when = r.when.map((c) => (c.name ? `${c.name}: ${tests(c)}` : tests(c))).join(' or ');
+        return `${r.name ? `${r.name}: ` : ''}${model} when ${when}`;
+      })
+      .join('; ') || '—';
   const narrows = (sc: SkillScope) => [sc.paths?.length ? `paths ${sc.paths.join(', ')}` : '', (sc.when ?? []).map((w) => w.expr).join(' or ')].filter(Boolean).join(' && ');
   const scopes = (scope: Record<string, SkillScope>) =>
     Object.entries(scope)
@@ -60,6 +69,7 @@
   }
   const settingRows: Row[] = [
     { label: 'Review model', key: 'review.model', value: (s) => s.models.review || '—', mono: true },
+    { label: 'Model routes', key: 'review.model', value: (s) => routes(s.models.routes), mono: true },
     { label: 'Fallback model', key: 'review.fallback', value: (s) => s.models.fallback || '—', mono: true },
     { label: 'Review effort', key: 'review.effort', value: (s) => s.models.effort || "the provider's default" },
     { label: 'Confidence model', key: 'confidence.model', value: (s) => s.confidence.model || '—', mono: true },

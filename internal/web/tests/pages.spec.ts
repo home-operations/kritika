@@ -417,6 +417,10 @@ test('repository settings say where each comes from and what .kritika.yaml chose
   await expect(settings.getByText(rc.settings.models.review, { exact: true })).toBeVisible();
   await expect(settings).toContainText(`(.kritika.yaml; the admin's is ${g.repoDetail.settings.models.review})`);
   await expect(settings).toContainText(`Review effort ${rc.settings.models.effort} (default)`);
+  // The file's review.model replaces the admin's routes with it.
+  await expect(settings).toContainText(
+    "Model routes — (.kritika.yaml; the admin's is deep: openrouter/acme-xl/max when migrations: paths db/migrations/** or pr.lines > 800)",
+  );
   await expect(settings).toContainText(`Confidence effort ${rc.settings.confidence.effort} (default)`);
   await expect(settings).toContainText(`Confidence fallback ${g.repoDetail.settings.confidence.fallback} (default)`);
   const tests = (c: { expr: string; paths?: string[] }) => [c.expr, c.paths?.length ? `paths ${c.paths.join(', ')}` : ''].filter(Boolean).join(' && ');

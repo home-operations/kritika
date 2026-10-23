@@ -23,6 +23,7 @@ Everything else is optional:
 | Try another model when a call fails | [`review.fallback`](#fallback) |
 | Retry temporary failures | Provider [`retries`](#retries) |
 | Adjust reasoning effort | [`review.effort`](#effort) |
+| Use a stronger model for some pull requests | [Model routes](#model-routes) |
 | Score reviews or approve pull requests | [`confidence.model`](confidence.md) |
 | Search for similar code | [`embedding.model`](#the-embedder) |
 | Use a different model for one repository | [Repository settings](repository-config.md#models) |
@@ -464,6 +465,59 @@ Both are set in the configuration file. In Helm, use
 `config.review.effort` and `config.confidence.effort`. The dashboard's
 repository page shows each repository's effective levels beside its
 models.
+
+## Model routes
+
+`review.model` may be a list of routes instead of one model, which pick
+another model for some pull requests. The list ends with the default, an
+entry with `model` alone. The first route one of whose conditions holds
+picks the review's model, and a pull request no route picks gets the
+default:
+
+```yaml
+review:
+  model:
+    - name: deep
+      model: anthropic/claude-opus-5-5
+      effort: high
+      when:
+        - { name: migrations, paths: ["db/migrations/**"] }
+        - { name: large, expr: pr.lines > 800 }
+    - model: anthropic/claude-sonnet-5-5
+  fallback: anthropic/claude-sonnet-5-5
+  effort: medium
+```
+
+- A route's `when` takes the conditions `trigger.include` does
+  ([trigger conditions](configuration.md#which-pull-requests-are-reviewed)):
+  an `expr`, `paths` or both, when both must hold, with an optional
+  `name`. One condition holding is enough, and `paths` holds when one
+  changed file matches, whatever else the pull request changes.
+- The conditions are judged as the review starts, over the whole pull
+  request against its base rather than its last push, so a pull request
+  keeps its route while it still changes what picked it, and its reviews'
+  conversation and findings stay on one model.
+- A condition with `paths` or `pr.lines` reads the pull request's diff
+  from the forge before any model is called. A diff the forge will not
+  give whole leaves those conditions not holding; the others are judged
+  as ever.
+- A route may set its own `effort` and `fallback`; otherwise
+  `review.effort` and `review.fallback` apply. The default takes `model`
+  alone: `review.effort` and `review.fallback` are its own.
+- The summary's footer names the route and the condition that picked the
+  model, as `via deep (migrations)`.
+- A scope that writes `review.model` replaces the broader scope's, routes
+  and all. In a repository's `.kritika.yaml`, every model a list names
+  must be of a provider the account may use, or the whole list is dropped
+  ([repository models](repository-config.md#models)).
+- A route's model waits for its own [`concurrency`](configuration.md#accounts)
+  slots, as a repository's own model does. Follow-ups run on the default.
+
+Since `paths` holds when any changed file matches, routes suit picking a
+stronger model for what a change touches. A pull request a route misses
+gets the default, as it would without routes; a route for pull requests
+that change only some paths, such as documentation alone, cannot be
+written.
 
 ## The embedder
 

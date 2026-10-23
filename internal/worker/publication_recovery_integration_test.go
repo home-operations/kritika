@@ -286,7 +286,10 @@ func TestPublicationOnlyCompletedPatchesAreReusable(t *testing.T) {
 		t.Fatal(err)
 	}
 	pr.authorIsBot = true
-	_, unchanged := h.review.botPatch(h.ctx, h.review.Logger, h.lf, "acme", "widgets", h.account.ID(), pr, h.base)
+	forgeDiff := func() (string, error) {
+		return h.lf.PullRequestDiff(h.ctx, "acme", "widgets", pr.number, h.base, pr.headSHA)
+	}
+	_, unchanged := h.review.botPatch(h.ctx, h.review.Logger, forgeDiff, h.account.ID(), pr)
 	if unchanged {
 		t.Fatal("unpublished bot patch was treated as already reviewed")
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -335,5 +336,56 @@ func TestNarrowToGate(t *testing.T) {
 	e.narrowTo(bot)
 	if !e.Confidence.Gate {
 		t.Fatalf("confidence = %+v, want a bot's pull request gated", e.Confidence)
+	}
+}
+
+// TestPickRoute: model routes read the forge's diff only when a condition
+// needs it, see a deleted file by its base-side path and pr.lines without
+// the ignored paths, and leave a pull request whose diff the forge will
+// not give on the default model.
+func TestPickRoute(t *testing.T) {
+	t.Parallel()
+	const diff = "diff --git a/db/0042.sql b/db/0042.sql\n--- a/db/0042.sql\n+++ b/db/0042.sql\n@@ -1 +1,2 @@\n x\n+y\n" +
+		"diff --git a/vendor/big.go b/vendor/big.go\n--- a/vendor/big.go\n+++ b/vendor/big.go\n@@ -1 +1,3 @@\n x\n+y\n+z\n" +
+		"diff --git a/old.go b/old.go\ndeleted file mode 100644\n--- a/old.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+	routed := func(t *testing.T, c configfile.Filter) Effective {
+		t.Helper()
+		if err := c.Compile(); err != nil {
+			t.Fatal(err)
+		}
+		var e Effective
+		e.Ignore = []string{"vendor/**"}
+		e.Models = configfile.Models{Review: "p/default", Routes: []configfile.ModelRoute{{Model: "p/routed", When: []configfile.Filter{c}}}}
+		return e
+	}
+	logger := slog.New(slog.DiscardHandler)
+	served := func() (string, error) { return diff, nil }
+	for _, tt := range []struct {
+		name string
+		when configfile.Filter
+		want configfile.ModelRef
+	}{
+		{"a changed path", configfile.Filter{Paths: []string{"db/**"}}, "p/routed"},
+		{"a deleted file", configfile.Filter{Paths: []string{"old.go"}}, "p/routed"},
+		{"lines without the ignored paths", configfile.Filter{Expr: "pr.lines == 2"}, "p/routed"},
+		{"a path the diff does not change", configfile.Filter{Paths: []string{"api/**"}}, "p/default"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := routed(t, tt.when)
+			pickRoute(logger, &e, configfile.SamplePR(), served)
+			if e.Models.Review != tt.want {
+				t.Fatalf("model = %s, want %s", e.Models.Review, tt.want)
+			}
+		})
+	}
+	e := routed(t, configfile.Filter{Expr: "pr.bot"})
+	pickRoute(logger, &e, configfile.SamplePR(), func() (string, error) {
+		t.Fatal("a condition on the pull request alone read the diff")
+		return "", nil
+	})
+	e = routed(t, configfile.Filter{Paths: []string{"db/**"}})
+	pickRoute(logger, &e, configfile.SamplePR(), func() (string, error) { return "", errors.New("forge: diff too large") })
+	if e.Models.Review != "p/default" || e.Models.Route != "" {
+		t.Fatalf("models = %+v, want the default without the diff", e.Models)
 	}
 }

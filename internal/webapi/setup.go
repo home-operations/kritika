@@ -28,7 +28,7 @@ func setupStatus(f *configfile.File, webURL string) SetupStatus {
 		out.Connections = append(out.Connections, in.Name)
 	}
 	if ref := f.Defaults.Review.Model; ref != nil {
-		out.ReviewModel = string(*ref)
+		out.ReviewModel = string(ref.Default)
 	}
 	out.Embedding = f.Embedding != nil
 	return out

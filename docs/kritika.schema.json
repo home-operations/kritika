@@ -15,7 +15,20 @@
       "additionalProperties": false,
       "description": "How a review is done.",
       "properties": {
-        "model": { "$ref": "#/$defs/model" },
+        "model": {
+          "description": "The model the review runs on, or a list of routes that ends with it, an entry with model alone: the first route one of whose conditions holds for a pull request picks its model instead. Replaces the admin's, routes and all; a list with a model of a provider the account may not use is dropped whole.",
+          "anyOf": [
+            { "$ref": "#/$defs/model" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "anyOf": [{ "$ref": "#/$defs/modelRoute" }, { "$ref": "#/$defs/defaultModel" }] },
+              "contains": { "$ref": "#/$defs/defaultModel" },
+              "minContains": 1,
+              "maxContains": 1
+            }
+          ]
+        },
         "fallback": { "$ref": "#/$defs/model" },
         "effort": {
           "$ref": "#/$defs/effort",
@@ -315,11 +328,11 @@
       "type": "object",
       "additionalProperties": false,
       "anyOf": [{ "required": ["expr"] }, { "required": ["paths"] }],
-      "description": "One condition on a pull request, in trigger.include or trigger.exclude: expr, paths, or both, when both must hold. One with paths, or whose expr reads pr.lines, is judged once the pull request's diff is fetched.",
+      "description": "One condition on a pull request, in trigger.include, trigger.exclude or a review.model route's when: expr, paths, or both, when both must hold. One with paths, or whose expr reads pr.lines, is judged once the pull request's diff is fetched.",
       "properties": {
         "name": {
           "type": "string",
-          "description": "What the condition is called where a skip names it, unique in its list; it may not be one an admin's condition has."
+          "description": "What the condition is called where a skip or a route names it. In a trigger list it is unique in the list, and may not be one an admin's condition has."
         },
         "expr": {
           "type": "string",
@@ -345,6 +358,34 @@
           "type": "string",
           "pattern": "\\S",
           "description": "A CEL expression over pr, as a trigger.include or trigger.exclude expression sees it, without pr.lines."
+        }
+      }
+    },
+    "defaultModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model"],
+      "description": "The last entry of a review.model list: the model a pull request no route picks is reviewed on.",
+      "properties": { "model": { "$ref": "#/$defs/model" } }
+    },
+    "modelRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "when"],
+      "description": "A route of review.model: the model a pull request one of its conditions holds for is reviewed on. The first route that holds picks the model.",
+      "properties": {
+        "name": { "type": "string", "description": "What the summary's footer calls the route, beside the condition that held." },
+        "model": { "$ref": "#/$defs/model" },
+        "effort": { "$ref": "#/$defs/effort", "description": "How hard the route's model reasons, in place of review.effort." },
+        "fallback": {
+          "$ref": "#/$defs/model",
+          "description": "The model that takes the review's step when the route's model fails, in place of review.fallback."
+        },
+        "when": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The conditions one of which a pull request must hold for the route to pick its model, judged over the whole pull request before its review starts.",
+          "items": { "$ref": "#/$defs/condition" }
         }
       }
     },

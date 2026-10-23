@@ -162,7 +162,7 @@ func (s *Settings) apply(o *Overrides) {
 		s.Enabled = *o.Enabled
 	}
 	if o.Review.Model != nil {
-		s.Models.Review = *o.Review.Model
+		s.Models.Review, s.Models.Routes = o.Review.Model.Default, o.Review.Model.Routes
 	}
 	if o.Review.Fallback != nil {
 		s.Models.Fallback = *o.Review.Fallback

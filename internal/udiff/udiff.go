@@ -99,9 +99,9 @@ func Parse(diff string) []File {
 	return files
 }
 
-// Path is the file's head-side path: NewPath, OldPath once deleted, or the
-// second name of its "diff --git" line when it has neither, as a rename
-// alone has not.
+// Path is the file's head-side path: NewPath, OldPath once deleted, or,
+// when it has neither, the name its "rename to" or "copy to" line gives,
+// or else its "diff --git" line's, as a rename alone or a binary file has.
 func (f File) Path() string {
 	if f.NewPath != "" {
 		return f.NewPath
@@ -110,7 +110,28 @@ func (f File) Path() string {
 		return f.OldPath
 	}
 	first, _, _ := strings.Cut(f.Header, "\n")
-	if _, after, ok := strings.Cut(first, "diff --git "); ok {
+	_, after, isDiff := strings.Cut(first, "diff --git ")
+	// git quotes a name whole, its prefix with it, and go-git writes every
+	// name bare, so a rename's name is git's quoting only where the diff
+	// line quotes the head-side name too.
+	quoted := strings.Contains(after, ` "b/`)
+	for l := range strings.Lines(f.Header) {
+		l = strings.TrimSuffix(l, "\n")
+		for _, prefix := range []string{"rename to ", "copy to "} {
+			if name, ok := strings.CutPrefix(l, prefix); ok {
+				if quoted {
+					return unquoteName(name)
+				}
+				return name
+			}
+		}
+	}
+	if isDiff {
+		// Without a rename or copy, both names are the file's, and a name git
+		// quotes is quoted whole, so the first says it.
+		if q, err := strconv.QuotedPrefix(after); err == nil && strings.HasPrefix(q, `"`) {
+			return strings.TrimPrefix(unquoteName(q), "a/")
+		}
 		if _, name, ok := strings.CutLast(after, " b/"); ok {
 			return name
 		}
@@ -150,7 +171,20 @@ func sidePath(p, prefix string) string {
 	if p == "/dev/null" {
 		return ""
 	}
-	return strings.TrimPrefix(p, prefix)
+	return strings.TrimPrefix(unquoteName(p), prefix)
+}
+
+// unquoteName is a name as a git header writes it, unquoted: git writes
+// one with a byte it does not print as it is, a quote, a backslash, a
+// control or a non-ASCII one, as a C string, whose escapes Go's string
+// literals share. go-git writes every name bare.
+func unquoteName(name string) string {
+	if strings.HasPrefix(name, `"`) {
+		if unquoted, err := strconv.Unquote(name); err == nil {
+			return unquoted
+		}
+	}
+	return name
 }
 
 // hunkHeader reads "@@ -oldStart,oldCount +newStart,newCount @@"; a count

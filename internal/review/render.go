@@ -48,6 +48,9 @@ type RenderData struct {
 	Model   string
 	// Effort is how hard the model reasoned, "" for the provider's default.
 	Effort string
+	// Route names the review.model route that picked Model and the
+	// condition that held, as FooterText escapes it, "" for the default.
+	Route string
 	// Cost is what the pull request's reviews have cost together, as
 	// FormatCost writes it, "" where the repository does not show it.
 	Cost string
@@ -167,8 +170,14 @@ func FooterSubject(subject string) string {
 	if runes := []rune(subject); len(runes) > footerSubjectRunes {
 		subject = strings.TrimSpace(string(runes[:footerSubjectRunes])) + "..."
 	}
+	return FooterText(subject)
+}
+
+// FooterText escapes what Markdown would read as markup in s, which the
+// footer shows as it is written: a route's condition may hold a glob's *.
+func FooterText(s string) string {
 	var b strings.Builder
-	for _, r := range subject {
+	for _, r := range s {
 		if strings.ContainsRune("\\`*_[]<>", r) {
 			b.WriteByte('\\')
 		}
