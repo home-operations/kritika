@@ -289,7 +289,7 @@ reviewers:
 | `instructions` | what the reviewer reviews for, at most 8000 characters, added after kritika's own instructions                                             |
 | `file`         | instead of `instructions`, a file read from the merge base whose content they are; the first 32 KiB is used                                |
 | `categories`   | the only finding categories it may report; its schema and its submission check refuse the rest. Every category when unset                 |
-| `model`, `fallback`, `effort` | as `review.*`, for this reviewer; `review.*`'s where unset                                                                  |
+| `model`, `fallback`, `effort` | as `review.*`, for this reviewer, a single model rather than [routes](models.md); where unset, what `review.model` picks for the pull request, its route included |
 | `paths`        | it reviews only the changed files that match one, and a pull request that changes none is not reviewed by it                               |
 | `when`         | conditions as a rule's: it runs only on a pull request one of them holds for                                                               |
 | `rules`        | its checks, in place of the repository's, which are the default reviewer's                                                                 |
