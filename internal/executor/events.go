@@ -32,8 +32,7 @@ type Events struct {
 	pod      corev1.ObjectReference
 	instance string
 	logger   *slog.Logger
-	// pending counts the Events still being written that RunEvent and
-	// PodEventAsync returned before.
+	// pending counts the Job Events still being written.
 	pending sync.WaitGroup
 }
 
@@ -74,8 +73,7 @@ func (e *Events) RunEvent(ctx context.Context, res Result, warning bool, reason,
 	e.pending.Go(func() { e.record(ctx, job, warning, reason, "EndRun", note) })
 }
 
-// Wait waits for the Events RunEvent and PodEventAsync are still writing,
-// or until ctx ends.
+// Wait waits for the Job Events still being written, or until ctx ends.
 func (e *Events) Wait(ctx context.Context) {
 	if e == nil {
 		return
@@ -100,13 +98,15 @@ func (e *Events) PodEvent(ctx context.Context, warning bool, reason, action, not
 }
 
 // PodEventAsync records an Event on this replica's pod as PodEvent does,
-// but returns at once, as RunEvent does: a webhook's answer must not wait
-// on the Kubernetes API.
+// but returns at once: a webhook's answer must not wait on the Kubernetes
+// API. Wait does not wait for it, since webhooks are still answered while
+// the queues drain and joining that count then could panic; one still
+// being written as the process exits is lost, as any Event may be.
 func (e *Events) PodEventAsync(ctx context.Context, warning bool, reason, action, note string) {
 	if e == nil || e.pod.Name == "" {
 		return
 	}
-	e.pending.Go(func() { e.record(ctx, e.pod, warning, reason, action, note) })
+	go e.record(ctx, e.pod, warning, reason, action, note)
 }
 
 // record writes one Event. It often says why a run ended, which is when
